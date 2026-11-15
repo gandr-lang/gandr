@@ -1,0 +1,22 @@
+//! `task-base` declares the shared protocols for every task source.
+//!
+//! A fork makes the parent and task peers. The task gives its result back
+//! on its end. A fork is the parallel product of two strategies, and an
+//! operation is a move of one of them.
+//!
+//! The parent reads the end to its close and joins. No task outlives its parent
+//! or the Trio nursery that starts it.
+//!
+//! - cites: [Mellies-2020-concurrent_separation_logic_meets_template_games]
+//! [Mellies-2020-concurrent_separation_logic_meets_template_games]: https://doi.org/10.1145/3373718.3394762 "Melliès and Stefanesco, Concurrent Separation Logic Meets Template Games"
+
+/// A task: the protocols its end carries back to the parent, and the path it
+/// reads.
+pub module Task :> *{
+  type Join = !String. end,
+  type Relay = ?String. !String. end,
+  type Volunteer = !String. ?String. end,
+  notes : String
+} where
+  /// The path a task reads.
+  def notes = "notes";

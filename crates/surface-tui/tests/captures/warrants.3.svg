@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="362" height="260" viewBox="0 0 362 260" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" xml:space="preserve">
+<style>
+svg { color: #1f2328; --gandr-warrant-pending: #6e7781; --gandr-warrant-checked: #1f2328; --gandr-warrant-replayed: #1a7f37; --gandr-warrant-refused: #cf222e; --gandr-warrant-withheld: #9a6700; }
+@media (prefers-color-scheme: dark) { svg { color: #e6edf3; --gandr-warrant-pending: #8b949e; --gandr-warrant-checked: #e6edf3; --gandr-warrant-replayed: #3fb950; --gandr-warrant-refused: #f85149; --gandr-warrant-withheld: #d29922; } }
+text { fill: currentColor; }
+.gandr-warrant-pending { fill: #6e7781; }
+.gandr-warrant-checked { fill: #1f2328; }
+.gandr-warrant-replayed { fill: #1a7f37; }
+.gandr-warrant-refused { fill: #cf222e; }
+.gandr-warrant-withheld { fill: #9a6700; }
+@supports (fill: var(--gandr-warrant-checked)) {
+.gandr-warrant-pending { fill: var(--gandr-warrant-pending); }
+.gandr-warrant-checked { fill: var(--gandr-warrant-checked); }
+.gandr-warrant-replayed { fill: var(--gandr-warrant-replayed); }
+.gandr-warrant-refused { fill: var(--gandr-warrant-refused); }
+.gandr-warrant-withheld { fill: var(--gandr-warrant-withheld); }
+}
+</style>
+<text y="25"><tspan x="10">declaration</tspan><tspan x="145">kernel</tspan><tspan x="208">tier</tspan><tspan x="289">verdict</tspan></text>
+<text y="45"><tspan x="10">involutive</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="65"><tspan x="10">collapse</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="85"><tspan x="10">collapsed_loop</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="105"><tspan x="10">two</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="125"><tspan x="10">undone</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="145"><tspan x="10">joined</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="165"><tspan x="10">unwound_word</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="185"><tspan x="10">moved</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="205"><tspan x="10">conjugated</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="225"><tspan x="10">constant</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+<text y="245"><tspan x="10">flipped</tspan><tspan x="145" class="gandr-warrant-replayed">✓✓</tspan><tspan x="208">replayed</tspan><tspan x="289">checked</tspan></text>
+</svg>

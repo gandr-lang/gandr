@@ -1,0 +1,7 @@
+{PROTOCOLS}  def sub : Flow[.A = Type](Old, New);
+  def sub = Flow.sim Old New;
+  def flip() -> -F Flow[.A = Type](New, Old) {{
+    become Path.back sub
+  }}
+  def half = Flow.sim Old;
+}}

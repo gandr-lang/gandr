@@ -1,0 +1,1856 @@
+//! Native variable-arity judgments on the explicit frame machine.
+//!
+//! Records infer exact label sets. Checking admits width and recursive depth
+//! subtyping: every expected field must exist and its value must check at the
+//! expected classifier. Projection returns the named field's type. Equality
+//! stays exact in its labels; assignability is directional. The empty record
+//! is the record top, not a top for arbitrary values.
+//!
+//! A nominal constructor reads its annotation at its weak head, as each
+//! former's rule reads its type, so an annotation that a definition computes
+//! reads as the family the definition returns.
+//!
+//! # References
+//!
+//! - `vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4` — exemplar: a former's rule
+//!   reads its type at its weak head before it reads a view.
+
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::Binders;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::ConstructorTag;
+use gandr_core_term::SplitMotive;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::instantiate_comp_type;
+use gandr_core_term::shift_comp_type_under;
+use gandr_kernel_term::Apartness;
+use gandr_kernel_term::Component;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::StagedPosition;
+use quenchant_shape::shape::Maybe;
+
+use super::Crossing;
+use super::Frame;
+use super::Goal;
+use super::Machine;
+use super::Produced;
+use super::Step;
+use super::Waiting;
+use crate::CheckRefusal;
+use crate::CoreNode;
+use crate::ExpectedShape;
+use crate::TermNode;
+use crate::TypeNode;
+use crate::answer::Direction;
+use crate::comonoid::Grade;
+use crate::former;
+use crate::respect::Reading;
+use crate::respect::obligation;
+use crate::respect::root;
+use crate::view::ValueTypeView;
+use crate::view::value_type_view;
+
+impl Machine<'_, '_>
+{
+    /// Queue a nominal constructor's formation and field checks.
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor node.
+    /// - ensures: the annotation forms before the declaration-ordered field
+    ///   checks; their success synthesizes that same nominal annotation. The
+    ///   fields and the stated indices read the annotation at its weak head, so
+    ///   an annotation a definition computes reads as its family. The family
+    ///   the constructor names is the family at that weak head
+    ///   ([`Self::of_its_family`]). An annotation whose indices compute the
+    ///   stated ones records the constructor restated ([`Self::stands_at`]).
+    /// - fails: wrong nominal shape at the weak head, a constructor of another
+    ///   family than the weak head names, unknown tag, or wrong field arity; an
+    ///   annotation at indices that neither agree with nor convert with the
+    ///   ones the constructor states ([`Self::stands_at`]).
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] names the failed constructor premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct heads, arities, tags and field types
+    ///   separate the nominal introduction rule; so do a vector's indices and
+    ///   an annotation whose definition unfolds to the family.
+    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    /// - witness: `tests::native_formers::a_constructor_at_a_computed_type_checks_at_its_family_3570`
+    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
+    /// - witness: `tests::native_formers::a_constructor_of_another_family_is_refused_at_its_classifier_5400`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
+    pub(super) fn native_constructor(
+        &mut self,
+        term: ValueId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let (family, datatype, tag, count) = match self.value(term)? {
+            &Value::Constructor {
+                family,
+                ref datatype,
+                ref tag,
+                ref fields,
+                ..
+            } => (family, *datatype, *tag, fields.len()),
+            &Value::Primitive { .. }
+            | &Value::PathRefl(_)
+            | &Value::PathProduct(..)
+            | &Value::PathEquiv { .. }
+            | &Value::Here(_)
+            | &Value::Funext(..)
+            | &Value::Equiv(..)
+            | &Value::Univalence(..)
+            | &Value::Ua { .. }
+            | &Value::Compose { .. }
+            | &Value::Fill { .. }
+            | &Value::SessionRelated { .. }
+            | &Value::Stay(_)
+            | &Value::Then(..)
+            | &Value::FlowProduct(..)
+            | &Value::Forward(_)
+            | &Value::FunctionFlow(..)
+            | &Value::Recorded(_)
+            | &Value::Dialogue(_)
+            | &Value::Web(_)
+            | &Value::Returned(_)
+            | &Value::Nested(_)
+            | &Value::Run(_)
+            | &Value::RecordUpdate { .. }
+            | &Value::Variable { .. }
+            | &Value::Constant(_)
+            | &Value::Literal(_)
+            | &Value::Tuple(_)
+            | &Value::Injection(..)
+            | &Value::ListNil
+            | &Value::ListCons(..)
+            | &Value::Thunk(_)
+            | &Value::Ascribe { .. }
+            | &Value::Lift { .. }
+            | &Value::Quote(_)
+            | &Value::QuoteComputation(_)
+            | &Value::StaticLambda(_)
+            | &Value::StaticApplication(..)
+            | &Value::Record(_)
+            | &Value::Hole(_)
+            | &Value::Mark { .. }
+            | &Value::Reify(_)
+            | &Value::Row(_) => return Err(CheckRefusal::MachineInvariant),
+        };
+        // A type a definition computes is read at its weak head, so a call
+        // that returns a family reads as the family it returns.
+        let head = self.context.whnf_value_type(datatype)?;
+        if !matches!(
+            self.context.arena().value_type(head),
+            Some(ValueType::Data { .. })
+        ) {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(term),
+                wanted: ExpectedShape::Data,
+                found: TypeNode::Value(datatype),
+                unfolded: TypeNode::Value(head),
+            });
+        }
+        self.of_its_family(term, family, head, datatype)?;
+        let signature = former::signature(self.context, head)?;
+        let declared = signature
+            .constructors()
+            .get(usize::from(tag))
+            .ok_or(CheckRefusal::UnknownConstructor { at: term, tag })?;
+        if declared.len() != count {
+            return Err(CheckRefusal::ConstructorArity(term));
+        }
+        self.stands_at(term, head, tag)?;
+        self.read_fields(term, head, tag)?;
+        self.wait(Frame::NativeYield(Produced::ValueType(datatype.into())));
+        for (index, &field_type) in declared.iter().enumerate().rev() {
+            let expected = former::field_at(
+                self.context,
+                (head, term),
+                field_type,
+                gandr_kernel_term::FieldPosition::from(index),
+            )?;
+            let field = match self.value(term)? {
+                &Value::Constructor { ref fields, .. } => fields
+                    .get(index)
+                    .copied()
+                    .ok_or(CheckRefusal::MachineInvariant)?,
+                &Value::Primitive { .. }
+                | &Value::PathRefl(_)
+                | &Value::PathProduct(..)
+                | &Value::PathEquiv { .. }
+                | &Value::Here(_)
+                | &Value::Funext(..)
+                | &Value::Equiv(..)
+                | &Value::Univalence(..)
+                | &Value::Ua { .. }
+                | &Value::Compose { .. }
+                | &Value::Fill { .. }
+                | &Value::SessionRelated { .. }
+                | &Value::Stay(_)
+                | &Value::Then(..)
+                | &Value::FlowProduct(..)
+                | &Value::Forward(_)
+                | &Value::FunctionFlow(..)
+                | &Value::Recorded(_)
+                | &Value::Dialogue(_)
+                | &Value::Web(_)
+                | &Value::Returned(_)
+                | &Value::Nested(_)
+                | &Value::Run(_)
+                | &Value::RecordUpdate { .. }
+                | &Value::Variable { .. }
+                | &Value::Constant(_)
+                | &Value::Literal(_)
+                | &Value::Tuple(_)
+                | &Value::Injection(..)
+                | &Value::ListNil
+                | &Value::ListCons(..)
+                | &Value::Thunk(_)
+                | &Value::Ascribe { .. }
+                | &Value::Lift { .. }
+                | &Value::Quote(_)
+                | &Value::QuoteComputation(_)
+                | &Value::StaticLambda(_)
+                | &Value::StaticApplication(..)
+                | &Value::Record(_)
+                | &Value::Hole(_)
+                | &Value::Mark { .. }
+                | &Value::Reify(_)
+                | &Value::Row(_) => return Err(CheckRefusal::MachineInvariant),
+            };
+            self.wait(Frame::NativeNext(Goal::Value {
+                term: field,
+                direction: Direction::Check(expected),
+            }));
+        }
+        Ok(Step::Descend(Goal::Form(TypeNode::Value(datatype))))
+    }
+
+    /// Check a nominal constructor at a stage: every occurrence of its family
+    /// or, in a mutual block, of any of the block's families that the stage
+    /// order places in a field one step below the stage, its fields otherwise
+    /// at their declared types. A field whose own type is such a family holds
+    /// a value below the stage; a thunked one may hold a computation that
+    /// never returns and shows nothing (#598).
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor and `owed` what the stage it is
+    ///   checked at owes ([`crate::recursion::constructor_owes`]).
+    /// - ensures: the annotation forms before the declaration-ordered field
+    ///   checks; each field checks at its declared type with the occurrences of
+    ///   the constructor's [`crate::recursion::families`] the stage order
+    ///   places at `owed.fields` ([`crate::recursion::stage_field`]); the
+    ///   constructor checks once they have.
+    /// - fails: [`CheckRefusal::TypeMismatch`] for an annotation that does not
+    ///   convert with the type the stage refines;
+    ///   [`CheckRefusal::StageNotBelow`] for a constructor with no field whose
+    ///   own type is a family of its block where no hypothesis shows the wanted
+    ///   stage above the first ([`crate::recursion::room`]); otherwise as
+    ///   [`Self::native_constructor`], but at the annotation as written: one
+    ///   that reads as a family only at its weak head is refused
+    ///   [`CheckRefusal::NotADataType`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] names the failed premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a successor rebuilt two cases deep is admitted at the
+    ///   bound, one rebuilt one case deep is refused, a zero is admitted under
+    ///   a successor's field and refused under the zero arm, and a constructor
+    ///   whose one recursive field is thunked is refused with nothing below the
+    ///   stage.
+    /// - witness: `tests::recursion::a_call_on_a_value_rebuilt_below_the_stage_is_admitted`
+    /// - witness: `tests::recursion::a_nullary_argument_needs_a_value_below_the_stage`
+    /// - witness: `tests::recursion::a_constructor_of_plain_fields_needs_a_value_below_the_stage`
+    /// - witness: `tests::recursion::a_thunked_field_shows_no_value_below_the_stage_598`
+    /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Value(_))))))]
+    pub(super) fn staged_constructor(
+        &mut self,
+        term: ValueId,
+        expected: ValueTypeId,
+        owed: crate::recursion::Owed,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let &Value::Constructor {
+            family,
+            datatype,
+            tag,
+            ref fields,
+        } = self.value(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let count = fields.len();
+        if crate::conversion::equivalent(self.context, datatype, owed.base)?
+            != crate::conversion::Agreement::Convertible
+        {
+            return Err(CheckRefusal::TypeMismatch(
+                crate::refusal::Mismatch::Value {
+                    at: term,
+                    synthesised: datatype,
+                    expected,
+                },
+            ));
+        }
+        let signature = former::signature(self.context, datatype)?;
+        self.of_its_family(term, family, datatype, datatype)?;
+        let declared = signature
+            .constructors()
+            .get(usize::from(tag))
+            .ok_or(CheckRefusal::UnknownConstructor { at: term, tag })?;
+        if declared.len() != count {
+            return Err(CheckRefusal::ConstructorArity(term));
+        }
+        self.stands_at(term, datatype, tag)?;
+        self.read_fields(term, datatype, tag)?;
+        self.wait(Frame::NativeYield(Produced::Checked));
+        let block = crate::recursion::families(self.context, datatype)?;
+        let mut holding = 0_usize;
+        for (index, &field_type) in declared.iter().enumerate().rev() {
+            let declared_type = former::field_at(
+                self.context,
+                (datatype, term),
+                field_type,
+                gandr_kernel_term::FieldPosition::from(index),
+            )?;
+            let wanted =
+                crate::recursion::stage_field(self.context, declared_type, &block, owed.fields)?;
+            if matches!(
+                self.context.arena().value_type(wanted),
+                Some(&ValueType::Staged { .. })
+            ) {
+                // A field of the block's family stands one step below: the
+                // constructor is above it whatever stage the field is at.
+                holding = holding.saturating_add(1);
+            }
+            let &Value::Constructor { ref fields, .. } = self.value(term)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let field = fields
+                .get(index)
+                .copied()
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.wait(Frame::NativeNext(Goal::Value {
+                term: field,
+                direction: Direction::Check(wanted),
+            }));
+        }
+        if holding == 0
+            && crate::recursion::room(self.context, owed.wanted)?
+                == crate::recursion::Room::Unwitnessed
+        {
+            return Err(CheckRefusal::StageNotBelow {
+                at: term,
+                found: gandr_kernel_term::Standing::Top,
+                bound: owed.wanted,
+            });
+        }
+        Ok(Step::Descend(Goal::Form(TypeNode::Value(datatype))))
+    }
+
+    /// Queue each genuine parameter and index argument at its instantiated
+    /// classifier.
+    ///
+    /// # Specification
+    /// - requires: `datatype` is a Data application.
+    /// - ensures: every supplied argument checks against its telescope entry,
+    ///   the indices' after the parameters'.
+    /// - fails: absent declaration, wrong arity or malformed internal nodes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] identifies the failed formation premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — dependent arguments separate first-order indices from
+    ///   type atoms and expose capture in simultaneous substitution; a vector's
+    ///   length checks at `Nat`.
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
+    pub(super) fn native_data(
+        &mut self,
+        datatype: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let signature = former::signature(self.context, datatype)?;
+        // The indices follow the parameters, each scoped under every argument
+        // before it.
+        let parameters = signature.parameters().len();
+        for index in (0 .. signature.arity().0).rev() {
+            let parameter = index
+                .checked_sub(parameters)
+                .map_or_else(
+                    || signature.parameters().get(index),
+                    |position| signature.indices().get(position),
+                )
+                .copied()
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            let expected = former::instantiate(
+                self.context,
+                datatype,
+                parameter,
+                gandr_core_term::BinderDepth::from(index),
+            )?;
+            let argument = match self.context.arena().value_type(datatype) {
+                Some(&ValueType::Data { ref arguments, .. }) => arguments
+                    .get(index)
+                    .copied()
+                    .ok_or(CheckRefusal::MachineInvariant)?,
+                _ => return Err(CheckRefusal::MachineInvariant),
+            };
+            self.wait(Frame::NativeNext(Goal::Value {
+                term: argument,
+                direction: Direction::Check(expected),
+            }));
+        }
+        Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// Queue each argument of a codata application at its instantiated
+    /// parameter classifier.
+    ///
+    /// # Specification
+    /// - requires: `codata` is a codata application.
+    /// - ensures: every argument checks against its telescope entry,
+    ///   instantiated at the arguments before it.
+    /// - fails: as [`crate::codata::signature`]: the declaration whose
+    ///   observations are forming, an absent declaration or a wrong arity.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::Codata`] names the failed formation premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream at a type code forms; a stream at an integer
+    ///   is a type mismatch and one at two arguments refused by arity.
+    /// - witness: `tests::codata::a_codata_application_names_an_admitted_declaration_at_its_arity`
+    #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
+    pub(super) fn native_codata(
+        &mut self,
+        codata: gandr_core_term::CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let signature = crate::codata::signature(self.context, codata)?;
+        for (index, &parameter) in signature.parameters().iter().enumerate().rev() {
+            let at = crate::codata::ParameterAt(index);
+            let expected = crate::codata::instantiate_value(self.context, codata, parameter, at)?;
+            let argument = crate::codata::argument(self.context, codata, at)?;
+            self.wait(Frame::NativeNext(Goal::Value {
+                term: argument,
+                direction: Direction::Check(expected),
+            }));
+        }
+        Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// Refuse a constructor whose family is not the family its classifier
+    /// names: its tag counts within its own family, never within another
+    /// family of one shape.
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor value that names `family`; `head` is
+    ///   its annotation `written` or that annotation's weak head.
+    /// - ensures: success exactly when `head` is a data type that names
+    ///   `family`.
+    /// - fails: [`CheckRefusal::TypeMismatch`] with `written` as expected and,
+    ///   as found, `family` over the arguments of `head`, or over none when the
+    ///   family takes another count of arguments;
+    ///   [`CheckRefusal::MachineInvariant`] when `head` is no data type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor of one family at a classifier of
+    ///   another family of one shape is refused, at the classifier as written
+    ///   and at a classifier a definition computes.
+    /// - witness: `tests::native_formers::a_constructor_of_another_family_is_refused_at_its_classifier_5400`
+    #[spec(ensures: |ret| ret.is_ok() == matches!(self.context.arena().value_type(head), Some(&ValueType::Data { declaration, .. }) if declaration == family))]
+    fn of_its_family(
+        &mut self,
+        term: ValueId,
+        family: ConstantIndex,
+        head: ValueTypeId,
+        written: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let Some(&ValueType::Data {
+            declaration,
+            ref arguments,
+        }) = self.context.arena().value_type(head)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        if declaration == family {
+            return Ok(());
+        }
+        // The found type is the constructor's own family, over the
+        // classifier's arguments when the family takes as many.
+        let arguments = match self.context.data_in_scope(family) {
+            Maybe::Present(signature) if signature.arity().0 == arguments.len() => {
+                arguments.clone()
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
+        };
+        let found = self.context.arena_mut().value_type_data(family, arguments);
+        Err(CheckRefusal::TypeMismatch(
+            crate::refusal::Mismatch::Value {
+                at: term,
+                synthesised: found,
+                expected: written,
+            },
+        ))
+    }
+
+    /// Decide each field of the constructor `term` that a type reads as a
+    /// value a type reads: a pure call written there stands as the value it
+    /// returns, which the annotation and the later fields' types read.
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor value of `datatype` tagged `tag`.
+    /// - ensures: every field [`former::type_read_fields`] names is read by a
+    ///   type, as a dependent function's argument is.
+    /// - fails: as [`former::type_read_fields`];
+    ///   [`CheckRefusal::MachineInvariant`] for a field the constructor lacks.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`former::type_read_fields`].
+    /// - witness: `tests::native_formers::a_constructor_field_written_as_a_call_meets_its_annotation_3625`
+    #[spec(captures: depth = self.context.depth(Zone::Intuitionistic), ensures: self.context.depth(Zone::Intuitionistic) == depth)]
+    fn read_fields(
+        &mut self,
+        term: ValueId,
+        datatype: ValueTypeId,
+        tag: ConstructorTag,
+    ) -> Result<(), CheckRefusal>
+    {
+        for position in former::type_read_fields(self.context, datatype, tag)? {
+            let &Value::Constructor { ref fields, .. } = self.value(term)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let field = fields
+                .get(usize::from(position))
+                .copied()
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.read_by_a_type(field);
+        }
+        Ok(())
+    }
+
+    /// Refuse a constructor of an indexed family whose annotation names other
+    /// indices than the ones the constructor states, and restate one whose
+    /// annotation computes them.
+    ///
+    /// # Specification
+    /// - requires: `term` is a constructor value of `datatype` tagged `tag`, at
+    ///   its declared field count; `datatype` is its annotation's weak head.
+    /// - ensures: success exactly when the family has no index, each index of
+    ///   the application [`former::stated_at`] reads agrees with the
+    ///   annotation's as syntax ([`crate::conversion::indices_agree`]), or the
+    ///   stated application converts with `datatype`
+    ///   ([`crate::conversion::equivalent`]). In the last case the constructor
+    ///   is recorded restated: at its stated application, ascribed its
+    ///   annotation. The kernel compares indices as syntax and checks the
+    ///   restatement in the constructor's place.
+    /// - fails: [`CheckRefusal::TypeMismatch`] with the stated application as
+    ///   found and the annotation as expected; otherwise as
+    ///   [`former::stated_at`] and the conversion.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Nil` annotated at `Vec(a, S(Z))` is refused and at
+    ///   `Vec(a, Z)` admitted. A constructor annotated at a call that returns
+    ///   its stated index is admitted in both checkers, and one at a call that
+    ///   returns another index is refused.
+    /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
+    #[spec(captures: depth = self.context.depth(Zone::Intuitionistic), ensures: self.context.depth(Zone::Intuitionistic) == depth)]
+    fn stands_at(
+        &mut self,
+        term: ValueId,
+        datatype: ValueTypeId,
+        tag: ConstructorTag,
+    ) -> Result<(), CheckRefusal>
+    {
+        let stated = former::stated_at(self.context, (datatype, term), tag)?;
+        if stated == datatype {
+            return Ok(());
+        }
+        let parameters = former::signature(self.context, datatype)?
+            .parameters()
+            .len();
+        let arena = self.context.arena();
+        let (
+            Some(&ValueType::Data {
+                arguments: ref found,
+                ..
+            }),
+            Some(&ValueType::Data {
+                arguments: ref wanted,
+                ..
+            }),
+        ) = (arena.value_type(stated), arena.value_type(datatype))
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let pairs: Vec<(ValueId, ValueId)> = found
+            .iter()
+            .copied()
+            .zip(wanted.iter().copied())
+            .skip(parameters)
+            .collect();
+        let mut apart = false;
+        for (found, wanted) in pairs {
+            if crate::conversion::indices_agree(self.context, found, wanted)?
+                != crate::conversion::Agreement::Convertible
+            {
+                apart = true;
+                break;
+            }
+        }
+        if !apart {
+            return Ok(());
+        }
+        let mismatch = CheckRefusal::TypeMismatch(crate::refusal::Mismatch::Value {
+            at: term,
+            synthesised: stated,
+            expected: datatype,
+        });
+        // An annotation whose index is a call that computes the stated index:
+        // the kernel reads the constructor at its stated application, ascribed
+        // the annotation, and converts the two types.
+        if crate::conversion::equivalent(self.context, stated, datatype)?
+            != crate::conversion::Agreement::Convertible
+        {
+            return Err(mismatch);
+        }
+        let &Value::Constructor {
+            family,
+            datatype: written,
+            ref fields,
+            ..
+        } = self.value(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let fields = fields.clone();
+        let arena = self.context.arena_mut();
+        let at_stated = arena.value_constructor(family, stated, tag, fields);
+        let restated = arena.value_ascribe(at_stated, written);
+        self.context.record_restated(term, restated);
+        Ok(())
+    }
+
+    /// Synthesize all record field types without making the host stack
+    /// recursive.
+    ///
+    /// # Specification
+    /// - requires: `term` is a record literal.
+    /// - ensures: starts the first field synthesis, or produces the empty
+    ///   record classifier; its continuation pairs exact labels with field
+    ///   types in label order, using disjoint result-stack suffixes.
+    /// - fails: a malformed internal node or any field's synthesis refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::MachineInvariant`] for a non-record internal node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested records with unequal fields separate ordering
+    ///   and result-stack ownership.
+    /// - witness: `tests::native_formers::record_width_depth_and_projection`
+    #[spec(ensures: |ret| matches!(ret,
+        Ok(Step::Descend(Goal::Value { direction: Direction::Synthesise, .. })
+            | Step::Ascend(Produced::ValueType(_))) | Err(_)))]
+    pub(super) fn native_record(
+        &mut self,
+        term: ValueId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Some(matched_native_node) = self.context.arena().value(term)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let Value::Record(ref fields) = *matched_native_node
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let owner = self.owner;
+        self.frames.push(Waiting {
+            frame: Frame::NativeRecord {
+                term,
+                base: self.native_types.len(),
+            },
+            owner,
+        });
+        for &field in fields.values().rev() {
+            self.frames.push(Waiting {
+                frame: Frame::NativeCollect,
+                owner,
+            });
+            self.frames.push(Waiting {
+                frame: Frame::NativeNext(Goal::Value {
+                    term: field,
+                    direction: Direction::Synthesise,
+                }),
+                owner,
+            });
+        }
+        let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
+        self.resume(first.frame, Produced::Checked)
+    }
+
+    /// Check a record literal fieldwise, permitting width and recursive depth.
+    ///
+    /// Extra fields must still synthesize; a missing required label refuses.
+    ///
+    /// # Specification
+    /// - requires: `term` is a record and `expected` is formed.
+    /// - ensures: each required field checks at its declared type, and every
+    ///   additional field has a type rather than escaping judgment. At a
+    ///   patched type, the required fields are its base's free fields, and a
+    ///   fixed field is an additional one that converts with the value the type
+    ///   fixes at its label.
+    /// - fails: wrong expected shape or a missing field; then, least label
+    ///   first, [`CheckRefusal::FixedFieldDiffers`] for a fixed field that does
+    ///   not convert with its fixed value; then field refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] identifies the failed structural premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — width in both directions, nested depth and a field of
+    ///   the wrong type separate record checking from mere label inclusion; a
+    ///   fixed field stating the fixed value and one stating another separate
+    ///   the comparison from a discard.
+    /// - witness: `tests::native_formers::record_width_depth_and_projection`
+    /// - witness: `tests::native_formers::a_patched_type_forms_over_its_base_and_types_its_free_fields`
+    /// - witness: `tests::native_formers::a_literal_s_fixed_field_converts_with_the_fixed_value_5612`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
+    #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
+    pub(super) fn check_native_record(
+        &mut self,
+        term: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(expected)?;
+        let Some(matched_native_node) = self.context.arena().value_type(head)
+        else {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(term),
+                wanted: ExpectedShape::Record,
+                found: TypeNode::Value(expected),
+                unfolded: TypeNode::Value(head),
+            });
+        };
+        let mismatch = CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(term),
+            wanted: ExpectedShape::Record,
+            found: TypeNode::Value(expected),
+            unfolded: TypeNode::Value(head),
+        };
+        // A patched type's elements are the records of its free fields: the
+        // fields it fixes are wanted nowhere.
+        let Some(wanted) = self.context.arena().element_fields(matched_native_node)
+        else {
+            return Err(mismatch);
+        };
+        let fixed = wanted.fixed();
+        let Some(matched_native_node) = self.context.arena().value(term)
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let Value::Record(ref fields) = *matched_native_node
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        if !wanted.iter().all(|(label, _)| fields.contains_key(label)) {
+            return Err(CheckRefusal::MissingRecordField { at: term, expected });
+        }
+        // Each field the literal holds at a fixed label, beside the fixed
+        // value, least label first. Only a literal at a patched type that
+        // states a fixed field allocates.
+        let held: Vec<(ValueId, ValueId)> = fixed.map_or_else(Vec::new, |fixed| {
+            fixed
+                .iter()
+                .filter_map(|(label, &value)| fields.get(label).map(|&field| (field, value)))
+                .collect()
+        });
+        let owner = self.owner;
+        let depth = self.frames.len();
+        for (label, &field) in fields.iter().rev() {
+            let direction = if let Some(expected) = wanted.get(label) {
+                Direction::Check(expected)
+            }
+            else {
+                self.frames.push(Waiting {
+                    frame: Frame::NativeDiscard,
+                    owner,
+                });
+                Direction::Synthesise
+            };
+            self.frames.push(Waiting {
+                frame: Frame::NativeNext(Goal::Value {
+                    term: field,
+                    direction,
+                }),
+                owner,
+            });
+        }
+        // A field the literal holds at a fixed label is the value the type
+        // fixes there, or the literal contradicts its type. A refusal takes
+        // back the field checks queued above.
+        for (field, value) in held {
+            let refusal = match crate::conversion::fixed_field_agrees(self.context, field, value) {
+                Ok(crate::conversion::Agreement::Convertible) => continue,
+                Ok(_) => CheckRefusal::FixedFieldDiffers {
+                    at: field,
+                    fixed: value,
+                },
+                Err(refusal) => refusal,
+            };
+            self.frames.truncate(depth);
+            return Err(refusal);
+        }
+        Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// Form a case's motive under exactly one scrutinee binder.
+    ///
+    /// # Specification
+    /// - requires: `term` is a case whose scrutinee synthesized `datatype`.
+    /// - ensures: exhaustive coverage before motive checking; branches remain
+    ///   ordinary ambient functions and are not given implicit field binders. A
+    ///   scrutinee at a stage is read as the type the stage refines, and the
+    ///   case opens one stage below it for its recursive fields
+    ///   ([`crate::recursion::open_case`]). The root a structural fixpoint
+    ///   marked is taken whichever case this is; over a presented type with
+    ///   rules the case is read as that fixpoint when it is the marked case,
+    ///   and as itself otherwise.
+    /// - fails: non-data scrutinee, wrong coverage or absent declaration;
+    ///   [`CheckRefusal::MachineInvariant`] for arities other than the
+    ///   declaration's constructors' field counts, which no source writes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] identifies the failed elimination premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, missing and surplus branches distinguish exact
+    ///   coverage; a dependent motive distinguishes its binder's scope; over
+    ///   the circle a fixpoint's root case and a bare case are read apart; a
+    ///   case on a vector checks each constructor's branch at its own fields; a
+    ///   misstated arity is refused.
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    /// - witness: `tests::native_formers::a_case_over_the_circle_takes_its_constructors_and_loops_only`
+    /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
+    #[spec(ensures: |ret| matches!(self.root, Maybe::Absent(root::Absent::Unmarked)) && (ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_)))))))]
+    pub(super) fn native_case(
+        &mut self,
+        term: ComputationId,
+        datatype: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let root = core::mem::replace(&mut self.root, Maybe::Absent(root::Absent::Unmarked));
+        let (datatype, opened) = crate::recursion::open_case(self.context, datatype)?;
+        // A scrutinee at a looped point's path is split over the words its
+        // free cells mint.
+        let datatype = self.context.whnf_value_type(datatype)?;
+        let datatype = self.context.identified(datatype)?;
+        // A case of no branches over a path between two apart terms of a data
+        // type owes no branch and no rule.
+        if let ValueTypeView::Path {
+            carrier,
+            left,
+            right,
+        } = value_type_view(self.context.arena(), datatype)?
+            && let &Computation::DataCase {
+                motive,
+                ref branches,
+                ..
+            } = self.computation(term)?
+            && branches.is_empty()
+            && let Maybe::Present(reason) = former::apart(self.context, carrier, (left, right))?
+        {
+            if reason != Apartness::Apart {
+                return Err(CheckRefusal::NotApart { at: term, reason });
+            }
+            self.wait(Frame::NativeMotive {
+                term,
+                datatype,
+                respect: Maybe::Absent(obligation::Absent::Absurd),
+                opened,
+            });
+            self.context.binders().open(Zone::Intuitionistic, datatype);
+            return Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))));
+        }
+        if !matches!(
+            self.context.arena().value_type(datatype),
+            Some(ValueType::Data { .. })
+        ) {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(term),
+                wanted: ExpectedShape::Data,
+                found: TypeNode::Value(datatype),
+                unfolded: TypeNode::Value(datatype),
+            });
+        }
+        let signature = former::signature(self.context, datatype)?;
+        // reason: the arities are minted from the declaration, never written,
+        // and a runtime sizes the constructors' cells by them.
+        let (motive, count, stated, equations) = match self.computation(term)? {
+            &Computation::DataCase {
+                ref motive,
+                ref branches,
+                ref arities,
+                equations,
+                ..
+            } => (
+                *motive,
+                branches.len(),
+                arities
+                    .iter()
+                    .map(|&arity| usize::from(arity))
+                    .eq(signature.constructors().iter().map(alloc::vec::Vec::len)),
+                usize::from(equations),
+            ),
+            &Computation::Primitive { .. }
+            | &Computation::Transport(..)
+            | &Computation::PathTransport { .. }
+            | &Computation::Ride { .. }
+            | &Computation::TelescopeTransport { .. }
+            | &Computation::Lambda(_)
+            | &Computation::LinearLambda(_)
+            | &Computation::Fixpoint { .. }
+            | &Computation::Application(..)
+            | &Computation::Return(_)
+            | &Computation::Bind(..)
+            | &Computation::ReturnAll(_)
+            | &Computation::BindAll { .. }
+            | &Computation::Ascribe { .. }
+            | &Computation::Force(_)
+            | &Computation::Decompose(_)
+            | &Computation::Case { .. }
+            | &Computation::Split { .. }
+            | &Computation::RecordProjection(..)
+            | &Computation::TupleProjection(..)
+            | &Computation::Hole(_)
+            | &Computation::Mark { .. }
+            | &Computation::ListFold { .. }
+            | &Computation::ListCase { .. }
+            | &Computation::Perform { .. }
+            | &Computation::Handle { .. }
+            | &Computation::Exercise { .. }
+            | &Computation::Scope { .. }
+            | &Computation::Resume(..)
+            | &Computation::Abandon(_)
+            | &Computation::Reset(_)
+            | &Computation::Shift(_)
+            | &Computation::With(..)
+            | &Computation::Project(..)
+            | &Computation::Session(_)
+            | &Computation::Memory(_)
+            | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
+        };
+        let constructors = signature.constructors().len();
+        // A case carries one branch per constructor, and then either no loop
+        // arm or one per cell of its sort, loops and cells above dimension one
+        // alike.
+        let looped = crate::loops::loops(self.context, datatype).len();
+        if count != constructors && (looped == 0 || constructors.checked_add(looped) != Some(count))
+        {
+            return Err(CheckRefusal::NonExhaustiveDataCase(term));
+        }
+        // A branch at an indexed family binds one equation per index past its
+        // fields; the case states how many, so the evaluators need no lookup.
+        if equations != signature.indices().len() {
+            return Err(CheckRefusal::NonExhaustiveDataCase(term));
+        }
+        if !stated {
+            return Err(CheckRefusal::MachineInvariant);
+        }
+        let respect = if signature.presentation().rules().is_empty() {
+            Maybe::Absent(obligation::Absent::Free)
+        }
+        else {
+            Maybe::Present(match root {
+                Maybe::Present((case, reading)) if case == term => reading,
+                Maybe::Present(_) | Maybe::Absent(_) => Reading::Case { datatype },
+            })
+        };
+        self.wait(Frame::NativeMotive {
+            term,
+            datatype,
+            respect,
+            opened,
+        });
+        self.context.binders().open(Zone::Intuitionistic, datatype);
+        Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))))
+    }
+
+    /// Check every branch at the motive specialized to its own constructor,
+    /// and then, over a presented type, the case's respect for its rules.
+    ///
+    /// # Specification
+    /// - requires: the motive has formed under its one open scrutinee binder.
+    /// - ensures: that binder closes before branch functions check; the final
+    ///   type substitutes the actual scrutinee into the motive; when the case
+    ///   `opened` a stage, each branch binds its recursive fields at it
+    ///   ([`crate::recursion::stage_branch`]), a telescope that read the
+    ///   declaration's constant as its self binder formed in the block's
+    ///   foresight before the branch checks; with `respect` present the rules
+    ///   are decided after every branch has checked and before the type is
+    ///   yielded. A case the machine holds a staged motive for
+    ///   ([`crate::recursion::motive_at`]) has it taken, and reads its branches
+    ///   there over a type with no rules and no loops; every other reads the
+    ///   written motive.
+    /// - fails: the internal scope guard or telescope instantiation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] preserves the failed scope or branch-type judgment.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — dependent motives and unequal fields distinguish
+    ///   capture, branch order and an incorrectly ambient result type; an
+    ///   ill-typed branch of a case over the circle is refused by its own
+    ///   mismatch before any rule is decided; a predecessor's case judged at a
+    ///   staged result owes it in each branch.
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    /// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
+    #[spec(ensures: |ret| ret.is_err() || ret == Ok(Step::Ascend(Produced::Checked)))]
+    pub(super) fn native_branches(
+        &mut self,
+        term: ComputationId,
+        datatype: ValueTypeId,
+        respect: Maybe<Reading, obligation::Absent>,
+        opened: Maybe<gandr_kernel_term::StageId, crate::recursion::Unstaged>,
+    ) -> Result<Step, CheckRefusal>
+    {
+        self.close()?;
+        let (scrutinee, written, count) = match self.computation(term)? {
+            &Computation::DataCase {
+                ref scrutinee,
+                ref motive,
+                ref branches,
+                ..
+            } => (*scrutinee, *motive, branches.len()),
+            &Computation::Primitive { .. }
+            | &Computation::Transport(..)
+            | &Computation::PathTransport { .. }
+            | &Computation::Ride { .. }
+            | &Computation::TelescopeTransport { .. }
+            | &Computation::Lambda(_)
+            | &Computation::LinearLambda(_)
+            | &Computation::Fixpoint { .. }
+            | &Computation::Application(..)
+            | &Computation::Return(_)
+            | &Computation::Bind(..)
+            | &Computation::ReturnAll(_)
+            | &Computation::BindAll { .. }
+            | &Computation::Ascribe { .. }
+            | &Computation::Force(_)
+            | &Computation::Decompose(_)
+            | &Computation::Case { .. }
+            | &Computation::Split { .. }
+            | &Computation::RecordProjection(..)
+            | &Computation::TupleProjection(..)
+            | &Computation::Hole(_)
+            | &Computation::Mark { .. }
+            | &Computation::ListFold { .. }
+            | &Computation::ListCase { .. }
+            | &Computation::Perform { .. }
+            | &Computation::Handle { .. }
+            | &Computation::Exercise { .. }
+            | &Computation::Scope { .. }
+            | &Computation::Resume(..)
+            | &Computation::Abandon(_)
+            | &Computation::Reset(_)
+            | &Computation::Shift(_)
+            | &Computation::With(..)
+            | &Computation::Project(..)
+            | &Computation::Session(_)
+            | &Computation::Memory(_)
+            | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
+        };
+        // A rule or a loop is owed at the written motive; only a type with
+        // neither reads its branches at a staged one.
+        let staged = self
+            .staged_motives
+            .iter()
+            .rposition(|&(case, _)| case == term)
+            .map(|at| self.staged_motives.swap_remove(at).1);
+        let motive = match staged {
+            Some(read)
+                if matches!(respect, Maybe::Absent(_))
+                    && crate::loops::loops(self.context, datatype).is_empty() =>
+            {
+                read
+            },
+            Some(_) | None => written,
+        };
+        let result =
+            gandr_core_term::instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
+        self.wait(Frame::NativeYield(Produced::CompType(result)));
+        // A case of no branches over apart endpoints checks no branch, and its
+        // scrutinee's path type owes no loop.
+        if matches!(respect, Maybe::Absent(obligation::Absent::Absurd)) {
+            return Ok(Step::Ascend(Produced::Checked));
+        }
+        if !crate::loops::loops(self.context, datatype).is_empty() {
+            self.wait(Frame::NativeLoops { term, datatype });
+        }
+        if let Maybe::Present(reading) = respect {
+            self.wait(Frame::NativeRespect {
+                term,
+                datatype,
+                reading,
+            });
+        }
+        let constructors = former::signature(self.context, datatype)?;
+        let owed = crate::loops::loops(self.context, datatype);
+        // While the run holds a value, has a buffer live or an endpoint open,
+        // each arm starts from the zone the case found; an arm with another
+        // after it ends by handing that zone on.
+        let joining = self.arms_opened();
+        // The arm checked first, whose endpoints every later arm agrees with.
+        let mut first = term;
+        if let super::session::Joining::Joined(zones) = joining {
+            let Computation::DataCase { ref branches, .. } = *self.computation(term)?
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            // An empty case checks no arm, so no arm can disagree: the join
+            // names the case itself.
+            let arm = branches.last().copied().unwrap_or(term);
+            first = branches.first().copied().unwrap_or(term);
+            self.wait(Frame::ArmsJoined { zones, first, arm });
+        }
+        let mut followed = false;
+        if count != constructors.constructors().len() {
+            for (position, &loop_arm) in owed.iter().enumerate().rev() {
+                let expected = crate::loops::arm_type(
+                    self.context,
+                    term,
+                    (datatype, &constructors),
+                    loop_arm,
+                )?;
+                let index = constructors
+                    .constructors()
+                    .len()
+                    .checked_add(position)
+                    .ok_or(CheckRefusal::MachineInvariant)?;
+                let arm = match self.computation(term)? {
+                    &Computation::DataCase { ref branches, .. } => branches
+                        .get(index)
+                        .copied()
+                        .ok_or(CheckRefusal::MachineInvariant)?,
+                    &Computation::Primitive { .. }
+                    | &Computation::Transport(..)
+                    | &Computation::PathTransport { .. }
+                    | &Computation::Ride { .. }
+                    | &Computation::TelescopeTransport { .. }
+                    | &Computation::Lambda(_)
+                    | &Computation::LinearLambda(_)
+                    | &Computation::Fixpoint { .. }
+                    | &Computation::Application(..)
+                    | &Computation::Return(_)
+                    | &Computation::Bind(..)
+                    | &Computation::ReturnAll(_)
+                    | &Computation::BindAll { .. }
+                    | &Computation::Ascribe { .. }
+                    | &Computation::Force(_)
+                    | &Computation::Decompose(_)
+                    | &Computation::Case { .. }
+                    | &Computation::Split { .. }
+                    | &Computation::RecordProjection(..)
+                    | &Computation::TupleProjection(..)
+                    | &Computation::Hole(_)
+                    | &Computation::Mark { .. }
+                    | &Computation::ListFold { .. }
+                    | &Computation::ListCase { .. }
+                    | &Computation::Perform { .. }
+                    | &Computation::Handle { .. }
+                    | &Computation::Exercise { .. }
+                    | &Computation::Scope { .. }
+                    | &Computation::Resume(..)
+                    | &Computation::Abandon(_)
+                    | &Computation::Reset(_)
+                    | &Computation::Shift(_)
+                    | &Computation::With(..)
+                    | &Computation::Project(..)
+                    | &Computation::Session(_)
+                    | &Computation::Memory(_)
+                    | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
+                };
+                if let super::session::Joining::Joined(zones) = joining
+                    && followed
+                {
+                    self.wait(Frame::ArmEnded { zones, first, arm });
+                }
+                self.wait(Frame::NativeNext(Goal::Computation {
+                    term: arm,
+                    direction: Direction::Check(expected),
+                }));
+                followed = true;
+            }
+        }
+        for index in (0 .. constructors.constructors().len()).rev() {
+            let expected =
+                former::branch_type(self.context, datatype, ConstructorTag::from(index), motive)?;
+            let (expected, identified) = match opened {
+                Maybe::Present(child) => {
+                    let fields = constructors
+                        .constructors()
+                        .get(index)
+                        .map_or(&[][..], alloc::vec::Vec::as_slice);
+                    crate::recursion::stage_branch(
+                        self.context,
+                        datatype,
+                        expected,
+                        (fields, child),
+                    )?
+                },
+                Maybe::Absent(_plain) => (expected, crate::recursion::Identified::Kept),
+            };
+            let branch = match self.computation(term)? {
+                &Computation::DataCase { ref branches, .. } => branches
+                    .get(index)
+                    .copied()
+                    .ok_or(CheckRefusal::MachineInvariant)?,
+                &Computation::Primitive { .. }
+                | &Computation::Transport(..)
+                | &Computation::PathTransport { .. }
+                | &Computation::Ride { .. }
+                | &Computation::TelescopeTransport { .. }
+                | &Computation::Lambda(_)
+                | &Computation::LinearLambda(_)
+                | &Computation::Fixpoint { .. }
+                | &Computation::Application(..)
+                | &Computation::Return(_)
+                | &Computation::Bind(..)
+                | &Computation::ReturnAll(_)
+                | &Computation::BindAll { .. }
+                | &Computation::Ascribe { .. }
+                | &Computation::Force(_)
+                | &Computation::Decompose(_)
+                | &Computation::Case { .. }
+                | &Computation::Split { .. }
+                | &Computation::RecordProjection(..)
+                | &Computation::TupleProjection(..)
+                | &Computation::Hole(_)
+                | &Computation::Mark { .. }
+                | &Computation::ListFold { .. }
+                | &Computation::ListCase { .. }
+                | &Computation::Perform { .. }
+                | &Computation::Handle { .. }
+                | &Computation::Exercise { .. }
+                | &Computation::Scope { .. }
+                | &Computation::Resume(..)
+                | &Computation::Abandon(_)
+                | &Computation::Reset(_)
+                | &Computation::Shift(_)
+                | &Computation::With(..)
+                | &Computation::Project(..)
+                | &Computation::Session(_)
+                | &Computation::Memory(_)
+                | &Computation::World(_) => return Err(CheckRefusal::MachineInvariant),
+            };
+            if let super::session::Joining::Joined(zones) = joining
+                && followed
+            {
+                self.wait(Frame::ArmEnded {
+                    zones,
+                    first,
+                    arm: branch,
+                });
+            }
+            // An arm whose index equation has a variable side is checked as
+            // its refinement, which the bridge carries to the kernel.
+            let fields = constructors
+                .constructors()
+                .get(index)
+                .map_or(0, alloc::vec::Vec::len);
+            let checked = match crate::solution::refined_arm(
+                self.context,
+                branch,
+                expected,
+                (
+                    gandr_core_term::BinderDepth::from(fields),
+                    gandr_core_term::BinderDepth::from(constructors.indices().len()),
+                ),
+            )? {
+                Maybe::Present(refined) => {
+                    self.context.record_refinement(branch, &refined);
+                    refined.term
+                },
+                Maybe::Absent(_) => branch,
+            };
+            self.wait(Frame::NativeNext(Goal::Computation {
+                term: checked,
+                direction: Direction::Check(expected),
+            }));
+            followed = true;
+            if identified == crate::recursion::Identified::Read {
+                self.wait(Frame::NativeForesee(expected));
+            }
+        }
+        Ok(Step::Ascend(Produced::Checked))
+    }
+
+    /// The case a structural fixpoint opens with past its `leading` binders
+    /// and any binders after the one it recurses on, read as the fixpoint
+    /// against its type's rules.
+    ///
+    /// # Specification
+    /// - requires: `body` is the body of the fixpoint `fixpoint`, whose
+    ///   evidence stages its parameter at `leading` at `expected`.
+    /// - ensures: the case under the body's `leading + 1` lambdas and the
+    ///   lambdas directly beneath them beside [`Reading::Fold`] naming the
+    ///   fixpoint, `leading`, the domain of the arrow `expected` holds past
+    ///   `leading` plain arrows, read as its words where it is a path at a
+    ///   looped point, and that arrow, when that case's scrutinee is the
+    ///   argument of the `leading + 1`th lambda; [`root::Absent::NotOverCase`]
+    ///   otherwise, and where a leading arrow is dependent.
+    /// - fails: as [`crate::context::CheckingContext::identified`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// - reason: a `for` loop over the leading binders and a `while` loop down
+    ///   the lambdas beneath the staged one, both finite.
+    /// - measure: the leading binders left, then the lambdas left above the
+    ///   case.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::respect::respected`]: the fold reading
+    ///   admits a fixpoint over the circle that a bare reading of its case
+    ///   would refuse, a fold over a path at a looped point respects its words'
+    ///   cancellations, a fold over the integers past an accumulator respects
+    ///   the cancellations the accumulator meets, and a fold whose case sits
+    ///   beneath a parameter after the one it recurses on is read as the
+    ///   fixpoint: admitted where its call meets itself at both sides of the
+    ///   rule, refused where its arm tells them apart.
+    /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
+    /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
+    /// - witness: `tests::native_formers::a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint`
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| match *root { Maybe::Present((_, reading)) => matches!(reading, Reading::Fold { fixpoint: marked, leading: past, .. } if marked == fixpoint && past == leading), Maybe::Absent(reason) => reason == root::Absent::NotOverCase }))]
+    pub(super) fn fold_root(
+        &mut self,
+        fixpoint: ComputationId,
+        (expected, leading): (gandr_core_term::CompTypeId, StagedPosition),
+        body: ComputationId,
+    ) -> Result<Maybe<(ComputationId, Reading), root::Absent>, CheckRefusal>
+    {
+        let arena = self.context.arena();
+        let not_over_case = Ok(Maybe::Absent(root::Absent::NotOverCase));
+        let mut arrow = expected;
+        let mut body = body;
+        for _ in 0 .. usize::from(leading) {
+            let (
+                Some(&gandr_core_term::CompType::Arrow { codomain, .. }),
+                Some(&Computation::Lambda(inner)),
+            ) = (arena.comp_type(arrow), arena.computation(body))
+            else {
+                return not_over_case;
+            };
+            arrow = codomain;
+            body = inner;
+        }
+        let Some(
+            &(gandr_core_term::CompType::Arrow { domain, .. }
+            | gandr_core_term::CompType::Pi { domain, .. }),
+        ) = arena.comp_type(arrow)
+        else {
+            return not_over_case;
+        };
+        let Some(&Computation::Lambda(mut case)) = arena.computation(body)
+        else {
+            return not_over_case;
+        };
+        let mut trailing = 0_u32;
+        while let Some(&Computation::Lambda(inner)) = arena.computation(case) {
+            case = inner;
+            trailing = trailing.saturating_add(1);
+        }
+        let Some(&Computation::DataCase { scrutinee, .. }) = arena.computation(case)
+        else {
+            return not_over_case;
+        };
+        let argument = gandr_core_term::Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(trailing),
+        };
+        if arena.value(scrutinee) != Some(&argument) {
+            return not_over_case;
+        }
+        Ok(Maybe::Present((case, Reading::Fold {
+            fixpoint,
+            leading,
+            domain: self.context.identified(domain)?,
+            arrow,
+        })))
+    }
+
+    /// Synthesize the returner of the exact projected field or component.
+    ///
+    /// # Specification
+    /// - requires: `term` is a projection with a synthesized operand type.
+    /// - ensures: only an existing label yields its declared field classifier,
+    ///   and only a component short of the product's arity yields that
+    ///   component's classifier; of a dependent pair, component zero yields the
+    ///   first factor and component one the second factor at the first
+    ///   component, read as the value the projection of component zero returns;
+    ///   of a patched type, a free label yields its field's classifier, and a
+    ///   fixed label its base field's, the operand recorded to stand as the
+    ///   record of the value that the type fixes there.
+    /// - fails: a record projection of a non-record, a tuple projection of a
+    ///   record, which keeps its fields by label, a tuple projection of any
+    ///   other non-product and non-dependent pair, absent labels and absent
+    ///   components refuse separately.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::ShapeMismatch`], [`CheckRefusal::AbsentRecordField`] or
+    /// [`CheckRefusal::AbsentTupleComponent`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal fields and an absent label expose exact
+    ///   lookup; each component of a three-component product and the component
+    ///   past its last expose positional lookup; both components of a dependent
+    ///   pair and the component past them expose the fibre; a fixed label and a
+    ///   free one of a patched type separate the read of the fixed value.
+    /// - witness: `tests::native_formers::record_width_depth_and_projection`
+    /// - witness: `tests::native_formers::tuple_projection_reads_each_component`
+    /// - witness: `judgement::tests::a_projection_of_a_dependent_pair_reads_its_second_factor_at_the_first_6574`
+    /// - witness: `judgement::tests::each_former_refuses_a_classifier_of_another_shape_by_name`
+    /// - witness: `tests::module::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::CompType(_)))))]
+    pub(super) fn native_projection(
+        &mut self,
+        term: ComputationId,
+        projected: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(projected)?;
+        let arena = self.context.arena();
+        let mismatch = |wanted| CheckRefusal::ShapeMismatch {
+            at: TermNode::Computation(term),
+            wanted,
+            found: TypeNode::Value(projected),
+            unfolded: TypeNode::Value(head),
+        };
+        let part = match (arena.computation(term), arena.value_type(head)) {
+            (
+                Some(&Computation::RecordProjection(_, ref label)),
+                Some(&ValueType::Record(ref fields)),
+            ) => fields
+                .get(label)
+                .copied()
+                .ok_or(CheckRefusal::AbsentRecordField(term))?,
+            // A patched type's elements hold only its free fields. A fixed
+            // label projects the record of the value that the type fixes
+            // there, at the base's field type: the elaboration stands the
+            // operand as that record (#5579).
+            (
+                Some(&Computation::RecordProjection(operand, ref label)),
+                Some(
+                    patched @ &ValueType::Patched {
+                        base, ref fixed, ..
+                    },
+                ),
+            ) => {
+                let Some(free) = arena.element_fields(patched)
+                else {
+                    return Err(mismatch(ExpectedShape::Record));
+                };
+                if let Some(field) = free.get(label) {
+                    field
+                }
+                else if let (Some(&value), Some(&ValueType::Record(ref fields))) =
+                    (fixed.get(label), arena.value_type(base))
+                    && let Some(&field) = fields.get(label)
+                {
+                    let overlay = alloc::collections::BTreeMap::from([(label.clone(), value)]);
+                    let overlay = self.context.arena_mut().value_record(overlay);
+                    self.context.record_overlay(operand, overlay, Vec::new());
+                    field
+                }
+                else {
+                    return Err(CheckRefusal::AbsentRecordField(term));
+                }
+            },
+            (Some(&Computation::RecordProjection(..)), _) => {
+                return Err(mismatch(ExpectedShape::Record));
+            },
+            (
+                Some(&Computation::TupleProjection(_, component)),
+                Some(&ValueType::Product(ref parts)),
+            ) => parts
+                .get(usize::from(component))
+                .copied()
+                .ok_or(CheckRefusal::AbsentTupleComponent(term))?,
+            (
+                Some(&Computation::TupleProjection(tuple, component)),
+                Some(&ValueType::Sigma { first, second }),
+            ) => match usize::from(component) {
+                0 => first,
+                1 => {
+                    let arena = self.context.arena_mut();
+                    let at_first =
+                        arena.computation_tuple_projection(tuple, Component::from(0_usize));
+                    let point = arena.value_returned(at_first);
+                    self.context.instantiate_value_type(second, point)
+                },
+                _ => return Err(CheckRefusal::AbsentTupleComponent(term)),
+            },
+            (Some(&Computation::TupleProjection(..)), Some(&ValueType::Record(_))) => {
+                return Err(mismatch(ExpectedShape::Positional));
+            },
+            (Some(&Computation::TupleProjection(..)), _) => {
+                return Err(mismatch(ExpectedShape::Product));
+            },
+            _ => return Err(CheckRefusal::MachineInvariant),
+        };
+        let result = self.context.arena_mut().comp_type_returner(part);
+        Ok(Step::Ascend(Produced::CompType(result)))
+    }
+
+    /// Read a record update's base at the type it synthesised, then
+    /// synthesise its overlay.
+    ///
+    /// # Specification
+    /// - requires: `at` is a record update whose base synthesised `base`.
+    /// - ensures: success waits on the overlay's type, `base` in hand, and
+    ///   descends to synthesise the overlay.
+    /// - fails: a base whose classifier is no record at its weak head refuses
+    ///   as a shape mismatch at the base, wanting a record, before the overlay
+    ///   is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::ShapeMismatch`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::native_update`].
+    /// - witness: `judgement::tests::a_record_update_extends_retypes_and_refuses_a_non_record_base`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Value { direction: Direction::Synthesise, .. }))))]
+    pub(super) fn update_base(
+        &mut self,
+        at: ValueId,
+        base: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let &Value::RecordUpdate {
+            base: updated,
+            overlay,
+        } = self.value(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let _fields = self.record_fields(updated, base)?;
+        self.wait(Frame::UpdateOverlay { at, base });
+        Ok(Step::Descend(Goal::Value {
+            term: overlay,
+            direction: Direction::Synthesise,
+        }))
+    }
+
+    /// Synthesize a record update's type: its base's record with each field
+    /// its overlay writes standing at the overlay's type.
+    ///
+    /// # Specification
+    /// - requires: `at` is a record update whose base synthesised `base` and
+    ///   whose overlay synthesised `overlay`.
+    /// - ensures: success ascends the record type holding, at each label the
+    ///   overlay writes, the overlay's field type — a label the base lacks
+    ///   extends it, one the base has at another type retypes it — and at each
+    ///   other label of the base the base's; the base's labels the overlay does
+    ///   not write are recorded as `at`'s kept labels.
+    /// - fails: a base or an overlay whose classifier is no record at its weak
+    ///   head refuses as a shape mismatch at that operand, wanting a record.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::ShapeMismatch`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an overlay writing a label the base lacks, one
+    ///   writing a label at another type and a base of another shape separate
+    ///   extension, retyping and the refusal.
+    /// - witness: `judgement::tests::a_record_update_extends_retypes_and_refuses_a_non_record_base`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::ValueType(_)))))]
+    pub(super) fn native_update(
+        &mut self,
+        at: ValueId,
+        base: ValueTypeId,
+        overlay: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let &Value::RecordUpdate {
+            base: updated,
+            overlay: written,
+        } = self.value(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let mut fields = self.record_fields(updated, base)?;
+        let overlaid = self.record_fields(written, overlay)?;
+        let kept = fields
+            .keys()
+            .filter(|label| !overlaid.contains_key(*label))
+            .cloned()
+            .collect();
+        fields.extend(overlaid);
+        self.context.record_update(at, kept);
+        let record = self.context.arena_mut().value_type_record(fields);
+        Ok(Step::Ascend(Produced::ValueType(record.into())))
+    }
+
+    /// The fields of the record type `classifier` names at its weak head, the
+    /// type `operand` synthesised.
+    ///
+    /// # Specification
+    /// - requires: `operand` synthesised `classifier`.
+    /// - ensures: success returns the record's fields, label by label.
+    /// - fails: a shape mismatch at `operand`, wanting a record, when the weak
+    ///   head is no record.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::ShapeMismatch`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::native_update`].
+    /// - witness: `judgement::tests::a_record_update_extends_retypes_and_refuses_a_non_record_base`
+    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at, wanted, found, .. }) => at == TermNode::Value(operand) && wanted == ExpectedShape::Record && found == TypeNode::Value(classifier), Ok(_) | Err(_) => true })]
+    fn record_fields(
+        &mut self,
+        operand: ValueId,
+        classifier: ValueTypeId,
+    ) -> Result<
+        alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueTypeId>,
+        CheckRefusal,
+    >
+    {
+        let head = self.context.whnf_value_type(classifier)?;
+        let arena = self.context.arena();
+        match arena.value_type(head) {
+            Some(&ValueType::Record(ref fields)) => return Ok(fields.clone()),
+            // A patched operand holds its free fields only.
+            Some(patched @ &ValueType::Patched { .. }) => {
+                if let Some(free) = arena.element_fields(patched) {
+                    return Ok(free
+                        .iter()
+                        .map(|(label, field)| (label.clone(), field))
+                        .collect());
+                }
+            },
+            _ => {},
+        }
+        Err(CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(operand),
+            wanted: ExpectedShape::Record,
+            found: TypeNode::Value(classifier),
+            unfolded: TypeNode::Value(head),
+        })
+    }
+
+    /// Open a dependent split's motive binder over the scrutinee's classifier
+    /// and form the motive under it.
+    ///
+    /// # Specification
+    /// - requires: `term` is a split with a motive over its scrutinee, and
+    ///   `classifier` its scrutinee's synthesised type.
+    /// - ensures: one binder of `classifier` is open and the motive's formation
+    ///   is the next goal, a frame awaiting it.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at the scrutinee, wanting a
+    ///   dependent pair, when the classifier is no dependent pair or the
+    ///   unknown type at its weak head, or the split binds other than two
+    ///   components; [`CheckRefusal::MachineInvariant`] for any other split.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent split over a dependent pair forms its
+    ///   motive, and over an eager product is a shape mismatch.
+    /// - witness: `judgement::tests::a_dependent_split_synthesises_its_motive_at_the_scrutinee`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Form(TypeNode::Computation(_))))))]
+    pub(super) fn sigma_split(
+        &mut self,
+        term: ComputationId,
+        classifier: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Scrutinee(motive),
+            ..
+        } = *self.computation(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let sigma = self.context.whnf_value_type(classifier)?;
+        let dependent = matches!(
+            value_type_view(self.context.arena(), sigma)?,
+            ValueTypeView::Sigma { .. } | ValueTypeView::Unknown
+        );
+        if !dependent || usize::from(arity) != 2_usize {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(scrutinee),
+                wanted: ExpectedShape::Sigma,
+                found: TypeNode::Value(classifier),
+                unfolded: TypeNode::Value(sigma),
+            });
+        }
+        self.wait(Frame::SigmaSplitMotive { term, sigma });
+        self.context
+            .binders()
+            .open(Zone::Intuitionistic, classifier);
+        Ok(Step::Descend(Goal::Form(TypeNode::Computation(motive))))
+    }
+
+    /// Check a dependent split's body under its two components against the
+    /// motive at their pair, and synthesise the motive at the scrutinee.
+    ///
+    /// # Specification
+    /// - requires: the motive has formed under its one open scrutinee binder,
+    ///   and `sigma` is the scrutinee's classifier at its weak head.
+    /// - ensures: the motive binder closes; the first component's binder is
+    ///   open over the first factor and the second's over the second factor;
+    ///   the body checks against the motive at the pair of the two, and the
+    ///   split synthesises the motive at the scrutinee once it has.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for any other split or
+    ///   classifier, and the scope guard's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body whose type reads the pair checks against the
+    ///   motive at it, and the split's type reads the scrutinee.
+    /// - witness: `judgement::tests::a_dependent_split_synthesises_its_motive_at_the_scrutinee`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Computation { .. }))))]
+    pub(super) fn sigma_split_body(
+        &mut self,
+        term: ComputationId,
+        sigma: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        self.close()?;
+        let Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Scrutinee(motive),
+            body,
+        } = *self.computation(term)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let (first, second) = match value_type_view(self.context.arena(), sigma)? {
+            ValueTypeView::Sigma { first, second } => (first, second),
+            ValueTypeView::Unknown => (sigma, sigma),
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
+            | ValueTypeView::Stack { .. }
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Path { .. }
+            | ValueTypeView::Bridge { .. }
+            | ValueTypeView::Flow { .. }
+            | ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::List(_)
+            | ValueTypeView::Integer
+            | ValueTypeView::String
+            | ValueTypeView::Character
+            | ValueTypeView::Float64
+            | ValueTypeView::Fixed(_)
+            | ValueTypeView::Unit
+            | ValueTypeView::Thunk(_)
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::Product(_)
+            | ValueTypeView::StaticPi { .. }
+            | ValueTypeView::Abstract(_)
+            | ValueTypeView::Staged { .. }
+            | ValueTypeView::Kept { .. }
+            | ValueTypeView::Capability { .. }
+            | ValueTypeView::Buffer
+            | ValueTypeView::Qubit
+            | ValueTypeView::Row
+            | ValueTypeView::RowTail(_)
+            | ValueTypeView::Session(_)
+            | ValueTypeView::World(_) => return Err(CheckRefusal::MachineInvariant),
+        };
+        let result = instantiate_comp_type(self.context.arena_mut(), motive, scrutinee);
+        let lifted = shift_comp_type_under(
+            self.context.arena_mut(),
+            motive,
+            Binders::ONE,
+            Binders::from(2_u32),
+        );
+        let lifted = self.context.settle_comp_type(lifted);
+        let arena = self.context.arena_mut();
+        let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let pair = arena.value_tuple(&[outer, inner]);
+        let expected = instantiate_comp_type(arena, lifted, pair);
+        let split = CoreNode::Term(TermNode::Computation(term));
+        self.context
+            .open_intuitionistic(split, first, Grade::Many)?;
+        self.context
+            .open_intuitionistic(split, second, Grade::Many)?;
+        self.wait(Frame::NativeYield(Produced::CompType(result)));
+        self.wait(Frame::SplitBody {
+            at: term,
+            arity,
+            crossing: Crossing::Written,
+        });
+        Ok(Step::Descend(Goal::Computation {
+            term: body,
+            direction: Direction::Check(expected),
+        }))
+    }
+}

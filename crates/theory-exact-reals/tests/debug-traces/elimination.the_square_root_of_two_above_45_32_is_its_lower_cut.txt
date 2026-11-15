@@ -1,0 +1,76 @@
+test: elimination::the_square_root_of_two_above_45_32_is_its_lower_cut
+package: gandr-theory-exact-reals
+command: mise run debug:test gandr-theory-exact-reals elimination::the_square_root_of_two_above_45_32_is_its_lower_cut --break exact_reals::elimination::eliminate$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-theory-exact-reals/285a43397d834ce6/out/tests-285a43397d834ce6"
+Current executable set to 'target/debug-trace/debug/build/gandr-theory-exact-reals/285a43397d834ce6/out/tests-285a43397d834ce6' (arm64).
+(lldb) settings set -- target.run-args  "elimination::the_square_root_of_two_above_45_32_is_its_lower_cut" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex exact_reals::elimination::eliminate$
+Breakpoint 1: where = tests-285a43397d834ce6`gandr_theory_exact_reals::elimination::eliminate + 100 at elimination.rs:363:9, address = 0x0000000100179df8
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-285a43397d834ce6`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001002bba68
+(lldb) run
+
+running 1 test
+test elimination::the_square_root_of_two_above_45_32_is_its_lower_cut ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 51490 launched: 'target/debug-trace/debug/build/gandr-theory-exact-reals/285a43397d834ce6/out/tests-285a43397d834ce6' (arm64)
+Process 51490 stopped
+* thread #2, name = 'elimination::the_square_root_of_two_above_45_32_is_its_lower_cu', stop reason = breakpoint 1.1
+       frame #0: 0x0000000100179df8 tests-285a43397d834ce6`gandr_theory_exact_reals::elimination::eliminate(plan={plan:{nodes:size=18, root:Open({0:{0:17}})}}, quotas={bytes:{0:16777216}, nodes:{0:1048576}, height:{0:65536}, binders:{0:256}, width:{0:16777216}, power:{0:1024}}, table={entries:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}) at elimination.rs:363:9
+   360 	    table: &EvidenceTable,
+   361 	) -> Result<Elimination, EliminationError>
+   362 	{
+-> 363 	    let original = plan.plan();
+    	        ^
+   364 	    let count = usize::from(original.node_count());
+   365 	    // A plan with no cut needs no rewrite, so the scan allocates nothing for
+   366 	    // it.
+(lldb) bt 24
+* thread #2, name = 'elimination::the_square_root_of_two_above_45_32_is_its_lower_cu', stop reason = breakpoint 1.1
+   * frame #0: 0x0000000100179df8 tests-285a43397d834ce6`gandr_theory_exact_reals::elimination::eliminate(plan={plan:{nodes:size=18, root:Open({0:{0:17}})}}, quotas={bytes:{0:16777216}, nodes:{0:1048576}, height:{0:65536}, binders:{0:256}, width:{0:16777216}, power:{0:1024}}, table={entries:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}) at elimination.rs:363:9
+     frame #1: 0x0000000100074524 tests-285a43397d834ce6`tests::elimination::eliminated(plan={plan:{nodes:size=18, root:Open({0:{0:17}})}}) at elimination.rs:118:12
+     frame #2: 0x0000000100078588 tests-285a43397d834ce6`tests::elimination::the_square_root_of_two_above_45_32_is_its_lower_cut at elimination.rs:278:23
+     frame #3: 0x000000010006fc38 tests-285a43397d834ce6`tests::elimination::the_square_root_of_two_above_45_32_is_its_lower_cut::{closure#0}((null)={}) at elimination.rs:269:57
+     frame #4: 0x00000001001160e8 tests-285a43397d834ce6`<tests::elimination::the_square_root_of_two_above_45_32_is_its_lower_cut::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x000000010018d8d8 tests-285a43397d834ce6`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #6: 0x000000010018d8d0 tests-285a43397d834ce6`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #7: 0x0000000100198df4 tests-285a43397d834ce6`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #8: 0x0000000100198de8 tests-285a43397d834ce6`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #9: 0x0000000100198de8 tests-285a43397d834ce6`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #10: 0x0000000100198de4 tests-285a43397d834ce6`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #11: 0x0000000100198de4 tests-285a43397d834ce6`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #12: 0x0000000100198de4 tests-285a43397d834ce6`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #13: 0x0000000100198dd8 tests-285a43397d834ce6`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #14: 0x00000001001937e8 tests-285a43397d834ce6`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #15: 0x0000000100193784 tests-285a43397d834ce6`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #16: 0x000000010019b2b8 tests-285a43397d834ce6`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #17: 0x000000010019b2a8 tests-285a43397d834ce6`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #18: 0x000000010019b2a8 tests-285a43397d834ce6`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #19: 0x000000010019b2a4 tests-285a43397d834ce6`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #20: 0x000000010019b2a4 tests-285a43397d834ce6`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #21: 0x000000010019b2a4 tests-285a43397d834ce6`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #22: 0x000000010019b294 tests-285a43397d834ce6`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #23: 0x0000000100297978 tests-285a43397d834ce6`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+(lldb) frame variable --depth 3
+(gandr_theory_exact_reals::validate::ValidatedPlan) plan = {plan:{nodes:size=18, root:Open({0:{0:17}})}}
+(gandr_theory_exact_reals::validate::Quotas *) quotas = 0x0000000170005e38 {bytes:{0:16777216}, nodes:{0:1048576}, height:{0:65536}, binders:{0:256}, width:{0:16777216}, power:{0:1024}}
+(gandr_theory_exact_reals::validate::EvidenceTable *) table = 0x0000000170005e60 {entries:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}
+(lldb) up
+frame #1: 0x0000000100074524 tests-285a43397d834ce6`tests::elimination::eliminated(plan={plan:{nodes:size=18, root:Open({0:{0:17}})}}) at elimination.rs:118:12
+   115 	/// trivial.
+   116 	fn eliminated(plan: &ValidatedPlan) -> Elimination
+   117 	{
+-> 118 	    return eliminate(plan.clone(), &Quotas::default(), &table()).unwrap();
+    	           ^
+   119 	}
+   120 	
+   121 	/// What a real operand of a comparison is.
+(lldb) frame variable --depth 3
+(gandr_theory_exact_reals::validate::ValidatedPlan *) plan = 0x0000000170005f80 {plan:{nodes:size=18, root:Open({0:{0:17}})}}
