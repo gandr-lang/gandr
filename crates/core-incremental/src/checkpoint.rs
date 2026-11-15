@@ -138,6 +138,9 @@
 //!   arc-zero-drift-differential — the incremental-equals-batch law. So the
 //!   support records each register read of a located judgement, and a changed
 //!   home or grant judges again the items that read it.
+//! - `vault:01a178aa-7772-7e72-a3d0-5855883d3db1` — anchor: § Decisions, item 2
+//!   — an arena id is not canonical. So `NodeKeys` keys a node by its canonical
+//!   content, never by its id.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

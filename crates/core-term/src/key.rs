@@ -5,6 +5,12 @@
 //! content key names the node by its canonical content. So two sessions that
 //! judge the same text give each node the same key, in whatever order they
 //! mint their nodes.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-7772-7e72-a3d0-5855883d3db1` — anchor: § Decisions, item 2
+//!   — an arena id is not canonical. So the name of a node outside its arena is
+//!   the digest of its content.
 
 use gandr_kernel_check_memo::ContentDigest;
 
