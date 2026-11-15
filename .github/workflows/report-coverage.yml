@@ -96,7 +96,7 @@ jobs:
       - &identify-coverage-state
         name: identify coverage-state inputs
         env:
-          CI_STATE_FINGERPRINT: ${{ hashFiles('**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          CI_STATE_FINGERPRINT: ${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
         run: printf 'COVERAGE_STATE_FINGERPRINT=%s\n' "$CI_STATE_FINGERPRINT" >> "$GITHUB_ENV"
       - &restore-coverage-state
         name: restore instrumented build state

@@ -117,7 +117,7 @@ jobs:
       - &identify-build-state
         name: identify build-state inputs
         env:
-          CI_STATE_INPUTS: ${{ hashFiles('**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          CI_STATE_INPUTS: ${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
           CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
         run: printf 'CI_BUILD_FINGERPRINT=%s\nCI_BUILD_GENERATION=%s\n' "$CI_STATE_INPUTS" "$CI_STATE_GENERATION" >> "$GITHUB_ENV"
       - &restore-test-state
