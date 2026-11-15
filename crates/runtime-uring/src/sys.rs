@@ -113,7 +113,7 @@ pub mod test
 
             #[test]
             #[should_panic(
-                expected = r#"called `Result::unwrap()` on an `Err` value: Os { code: 22, kind: InvalidInput, message: "Invalid argument" }"#
+                expected = r#"called `Result::unwrap()` on an `Err` value: Os { code: 22, kind: InvalidInput, message: "Invalid argument"#
             )]
             fn err()
             {
@@ -135,7 +135,7 @@ pub mod test
 
             #[test]
             #[should_panic(
-                expected = r#"called `Result::unwrap()` on an `Err` value: Os { code: 22, kind: InvalidInput, message: "Invalid argument" }"#
+                expected = r#"called `Result::unwrap()` on an `Err` value: Os { code: 22, kind: InvalidInput, message: "Invalid argument"#
             )]
             fn err()
             {
