@@ -3,6 +3,7 @@ use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
 use ::socket2::SockAddr;
+use ::socket2::SockAddrStorage;
 use ::std::os::fd::AsRawFd as _;
 use ::std::os::fd::BorrowedFd;
 
@@ -16,6 +17,7 @@ pub struct OpSocketBind<'tsk, 'env: 'tsk, 'fd> {
     #[pin]
     rsp: Completion<'tsk>,
     fd: BorrowedFd<'fd>,
+    addr: Pin<Box<SockAddrStorage>>,
 }
 }
 impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
@@ -27,9 +29,9 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
     ) -> Self
     {
         let addrlen = addr.len();
+        let mut addr = Box::new(addr.as_storage());
         let op = {
             let fd = ::io_uring::types::Fd(fd.as_raw_fd());
-            let mut addr = addr.as_storage();
             // SAFETY:
             let addr = unsafe { addr.view_as::<::libc::sockaddr>() };
             ::io_uring::opcode::Bind::new(fd, addr, addrlen)
@@ -37,7 +39,12 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
         let sqe = op.build();
         let rsp = scope.request(sqe);
 
-        Self { scope, rsp, fd }
+        Self {
+            scope,
+            rsp,
+            fd,
+            addr: Pin::new(addr),
+        }
     }
 }
 impl Future for OpSocketBind<'_, '_, '_>
