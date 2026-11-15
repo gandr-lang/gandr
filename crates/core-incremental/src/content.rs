@@ -4261,6 +4261,30 @@ impl TypeContent
         Self::tabulated(&encoder.nodes, raw)
     }
 
+    /// The content of the node `root` of `arena` as a page reads it: each
+    /// staged type as its base, constants resolved through `layout`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`TypeContent::of`] the node with each staged type read as
+    ///   its base, so it holds no staged type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Encoder::read_as`].
+    /// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    pub(crate) fn unstaged(
+        arena: &CoreArena,
+        layout: &Layout,
+        root: ArenaNode,
+    ) -> Self
+    {
+        let mut encoder = Encoder::unstaging(arena, layout);
+        let raw = encoder.discover(root);
+        encoder.drain();
+        Self::tabulated(&encoder.nodes, raw)
+    }
+
     /// The content of the node `root` of `arena`, as [`TypeContent::of`]
     /// builds it, beside the place in it of each node it was built from.
     ///
@@ -4951,6 +4975,21 @@ fn local_site(site: gandr_core_checker::SealSite) -> gandr_core_checker::SealSit
     )
 }
 
+/// How the encoder reads a staged type.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stages
+{
+    /// A staged type stays opaque. A stage is minted by one judgement and
+    /// names nothing past it, so stored content holds none.
+    Opaque,
+    /// A staged type reads as its base, as a page spells it. A report keys
+    /// its nodes so.
+    Erased,
+}
+
 /// The breadth-first walk that numbers an arena graph by discovery.
 ///
 /// # Specification
@@ -4979,6 +5018,8 @@ struct Encoder<'arena, 'layout>
     /// The children of the node being read, by family. A read empties the
     /// queues and leaves them here, so a read past the first allocates none.
     found: Discovered,
+    /// How a staged type reads.
+    stages: Stages,
 }
 
 impl<'arena, 'layout> Encoder<'arena, 'layout>
@@ -4999,15 +5040,65 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             queue: VecDeque::new(),
             nodes: Vec::new(),
             found: Discovered::new(),
+            stages: Stages::Opaque,
         }
     }
 
-    /// The number of `node`, numbering and queueing it on first discovery.
+    /// An empty walk over `arena` that reads each staged type as its base.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn unstaging(
+        arena: &'arena CoreArena,
+        layout: &'layout Layout,
+    ) -> Self
+    {
+        Self {
+            arena,
+            layout,
+            seen: BTreeMap::new(),
+            queue: VecDeque::new(),
+            nodes: Vec::new(),
+            found: Discovered::new(),
+            stages: Stages::Erased,
+        }
+    }
+
+    /// The node a discovery numbers for `node`: the base of a staged type
+    /// under [`Stages::Erased`], and `node` itself otherwise.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the number `node` took when first discovered; a node
-    ///   discovered now takes the next number and joins the queue.
+    /// - ensures: `node`, but for a value type under [`Stages::Erased`], which
+    ///   reads as [`gandr_core_term::unstaged`] gives it, never staged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a staged type, a former over one, and two staged
+    ///   types over two bases separate the reading from the stage.
+    /// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    #[spec(ensures: |ret| ret == node || (self.stages == Stages::Erased && matches!(node, ArenaNode::ValueType(_))))]
+    fn read_as(
+        &self,
+        node: ArenaNode,
+    ) -> ArenaNode
+    {
+        match (self.stages, node) {
+            (Stages::Erased, ArenaNode::ValueType(id)) => {
+                ArenaNode::ValueType(gandr_core_term::unstaged(self.arena, id))
+            },
+            (Stages::Erased | Stages::Opaque, _) => node,
+        }
+    }
+
+    /// The number of `node`, numbering and queueing it on first discovery. A
+    /// node is discovered as [`Self::read_as`] reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the number the node `node` reads as took when first
+    ///   discovered; a node discovered now takes the next number and joins the
+    ///   queue.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5015,11 +5106,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   allocated equal nodes retain distinct numbers.
     /// - witness: `content::tests::a_shared_node_is_listed_once`
     #[spec(
-        captures: [old = self.seen.get(&node).copied(), count = self.seen.len(), queued = self.queue.len()],
-        ensures: |ret| self.seen.get(&node) == Some(&ret) && match old {
+        captures: [old = self.seen.get(&self.read_as(node)).copied(), count = self.seen.len(), queued = self.queue.len()],
+        ensures: |ret| self.seen.get(&self.read_as(node)) == Some(&ret) && match old {
             Some(index) => ret == index && self.seen.len() == count && self.queue.len() == queued,
             None => usize::from(ret) == count && self.seen.len() == count.saturating_add(1)
-                && self.queue.len() == queued.saturating_add(1) && self.queue.back() == Some(&node),
+                && self.queue.len() == queued.saturating_add(1) && self.queue.back() == Some(&self.read_as(node)),
         },
     )]
     fn discover(
@@ -5027,6 +5118,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         node: ArenaNode,
     ) -> NodeIndex
     {
+        let node = self.read_as(node);
         let next = NodeIndex::from(self.seen.len());
         let index = *self.seen.entry(node).or_insert(next);
         if index == next {

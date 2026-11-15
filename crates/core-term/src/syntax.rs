@@ -2016,7 +2016,7 @@ pub fn equal_type_reading(
 /// - hypothesis: L3 — as [`equal_type_reading`].
 /// - witness: `syntax::tests::a_staged_type_reads_as_its_base_465`
 #[spec(ensures: |ret| ret == id || matches!(arena.value_type(id), Some(&ValueType::Staged { base, .. }) if base == ret))]
-fn unstaged(
+pub fn unstaged(
     arena: &crate::CoreArena,
     id: ValueTypeId,
 ) -> ValueTypeId

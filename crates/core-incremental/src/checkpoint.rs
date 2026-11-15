@@ -2470,21 +2470,28 @@ pub fn content_key(
 }
 
 /// The content key of the node `node` of `arena`: the digest of its canonical
-/// content, each constant named by the item that `layout` gives it.
+/// content, each constant named by the item that `layout` gives it, and each
+/// staged type read as its base.
+///
+/// A page spells a staged type as its base, and a stage names nothing past
+/// the judgement that mints it. So the key of a staged type is the key of its
+/// base, and a recursive binder's type keys apart from the binder's own type.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the digest of the bytes of [`TypeContent::of`] `node`, as a key;
-///   absent as [`recall::Absent::Opaque`] for a node whose content holds an
-///   unresolved node, which no key names.
+/// - ensures: the digest of the bytes of [`TypeContent::unstaged`] `node`, as a
+///   key; absent as [`recall::Absent::Opaque`] for a node whose content holds
+///   an unresolved node, which no key names.
 /// - panics: none.
 /// - executable: none — a clause would encode the node's content a second time,
 ///   which is the body itself.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two nodes of one content minted apart share a key, in one
-///   arena and in two arenas numbered apart; nodes of different content do not.
+///   arena and in two arenas numbered apart; nodes of different content do not;
+///   a staged type keys as its base.
 /// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
+/// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
 #[inline]
 pub fn node_key(
     (arena, layout): (&CoreArena, &Layout),
@@ -2492,7 +2499,7 @@ pub fn node_key(
 ) -> Maybe<NodeKey, recall::Absent>
 {
     let mut hasher = blake3::Hasher::new();
-    if write_node_content(&mut hasher, &TypeContent::of(arena, layout, node)).is_err() {
+    if write_node_content(&mut hasher, &TypeContent::unstaged(arena, layout, node)).is_err() {
         return Maybe::Absent(recall::Absent::Opaque);
     }
     Maybe::Present(NodeKey::from(digest_of(&hasher)))

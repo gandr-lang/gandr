@@ -371,4 +371,5 @@ pub use crate::syntax::equal_type_reading;
 pub use crate::syntax::equal_type_syntax;
 pub use crate::syntax::folded_computation;
 pub use crate::syntax::identified_words;
+pub use crate::syntax::unstaged;
 pub use crate::syntax::unworded;
