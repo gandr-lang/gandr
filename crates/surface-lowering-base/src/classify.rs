@@ -587,9 +587,10 @@ impl FragmentFeature
 /// - requires: nothing.
 /// - ensures: a component relating a many-out operation's results, a circuit
 ///   rule, a law at a binding port, an abstracting operation and a port at a
-///   computation sort are unimplemented, each naming its issue; an unknown
-///   head, a wrong arity, an ill-sorted term, an unsorted variable, a
-///   constructor term, a component inheriting another's failure and a stated
+///   computation sort are unimplemented, each naming its issue; a component
+///   whose names pass the bound of its description's table is an engine fault;
+///   an unknown head, a wrong arity, an ill-sorted term, an unsorted variable,
+///   a constructor term, a component inheriting another's failure and a stated
 ///   law's unbound variable are malformed source.
 /// - provides: the lowering classifier's arm for `UnstatedComponent`.
 /// - fails: never.
@@ -601,7 +602,8 @@ impl FragmentFeature
 #[spec(
     ensures: |ret| matches!(ret, FailureClass::Unimplemented(_))
         == matches!(fault, ModelFault::ManyOut | ModelFault::Circuit | ModelFault::Binding | ModelFault::Abstraction | ModelFault::Computation)
-        && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
+        && matches!(ret, FailureClass::EngineFault) == matches!(fault, ModelFault::Full)
+        && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource | FailureClass::EngineFault),
 )]
 #[must_use]
 fn unstated(fault: ModelFault) -> FailureClass
@@ -612,6 +614,7 @@ fn unstated(fault: ModelFault) -> FailureClass
         ModelFault::Binding => FailureClass::Unimplemented(TrackingIssue::MODEL_BINDING),
         ModelFault::Abstraction => FailureClass::Unimplemented(TrackingIssue::MODEL_ABSTRACTION),
         ModelFault::Computation => FailureClass::Unimplemented(TrackingIssue::MODEL_COMPUTATION),
+        ModelFault::Full => FailureClass::EngineFault,
         ModelFault::UnknownHead
         | ModelFault::Arity
         | ModelFault::IllSorted

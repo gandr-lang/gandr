@@ -106,16 +106,21 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_theory_circuit_algebras::SpiderCanon;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::NameId;
+use gandr_theory_levitation::Names;
 use gandr_theory_levitation::NominalId;
 use gandr_theory_levitation::OperationKind;
 use gandr_theory_levitation::Representability;
+use gandr_theory_levitation::TermName;
 use gandr_theory_levitation::TheoryBinder;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TheoryFault;
 use gandr_theory_levitation::TheoryInclusion;
 use gandr_theory_levitation::TheoryPort;
 use gandr_theory_levitation::TheoryValue;
-use gandr_theory_levitation::presented_names;
+use gandr_theory_levitation::name_mint;
+use gandr_theory_levitation::name_text;
+use gandr_theory_levitation::presented_ids;
 use quenchant_shape::shape::Maybe;
 
 use crate::description::DescriptionGrade;
@@ -164,12 +169,12 @@ pub type Presented = Maybe<Presentation, presentation::Absent>;
 ///   derived forms are asserted whole.
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SortTerm
+pub struct SortTerm<N = Name>
 {
     /// The sort's name.
-    pub sort: Name,
+    pub sort: N,
     /// Its index terms, left to right.
-    pub indices: Vec<FreeTerm>,
+    pub indices: Vec<FreeTerm<N>>,
 }
 
 quenchant_shape::reason_enum! {
@@ -208,18 +213,21 @@ pub enum BuiltinSort
     Universe(GroundSort),
 }
 
-impl SortTerm
+impl<N> SortTerm<N>
+where
+    N: TermName,
 {
-    /// The builtin of the host the term names: the value types for a bare
-    /// `Type`, the sort an index of a sort indexed by host types ranges over,
-    /// or the builtin type an unindexed name spells.
+    /// The builtin of the host the term names, its name read in `names`: the
+    /// value types for a bare `Type`, the sort an index of a sort indexed by
+    /// host types ranges over, or the builtin type an unindexed name spells.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`BuiltinSort::Universe`] at the value sort exactly when the
     ///   term is `Type` applied to no index term; [`BuiltinSort::Atom`] when it
     ///   is a builtin type's name applied to none.
-    /// - fails: never; every other term is an absence.
+    /// - fails: never; every other term, and a name `names` does not hold, is
+    ///   an absence.
     /// - panics: none.
     /// - executable: none — the clause would read the name again, which is the
     ///   comparison the body makes.
@@ -231,18 +239,68 @@ impl SortTerm
     /// - witness: `model::tests::a_sort_indexed_by_host_types_is_a_family_over_the_universe_2114`
     /// - witness: `model::tests::a_sort_indexed_by_a_builtin_type_is_a_family_over_it_3079`
     #[inline]
-    pub fn builtin(&self) -> Maybe<BuiltinSort, builtin_sort::Absent>
+    pub fn builtin_in(
+        &self,
+        names: &Names,
+    ) -> Maybe<BuiltinSort, builtin_sort::Absent>
     {
         if !self.indices.is_empty() {
             return Maybe::Absent(builtin_sort::Absent::Indexed);
         }
-        if self.sort.as_ref() == crate::form::TileName::UNIVERSE.as_ref() {
+        let Maybe::Present(spelled) = self.sort.spelled(names)
+        else {
+            return Maybe::Absent(builtin_sort::Absent::Named);
+        };
+        if spelled.as_ref() == crate::form::TileName::UNIVERSE.as_ref() {
             return Maybe::Present(BuiltinSort::Universe(GroundSort::Value));
         }
-        match type_atom(SurfaceName::from(self.sort.as_ref())) {
+        match type_atom(SurfaceName::from(spelled.as_ref())) {
             Maybe::Present(atom) => Maybe::Present(BuiltinSort::Atom(atom)),
             Maybe::Absent(_) => Maybe::Absent(builtin_sort::Absent::Named),
         }
+    }
+}
+
+impl SortTerm
+{
+    /// The builtin of the host a text sort term names, as
+    /// [`SortTerm::builtin_in`] reads it: a text name reads itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn builtin(&self) -> Maybe<BuiltinSort, builtin_sort::Absent>
+    {
+        self.builtin_in(&Names::new())
+    }
+}
+
+impl<N> SortTerm<N>
+{
+    /// The sort term with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped index terms, durable by the term it maps
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<SortTerm<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        let sort = name(&self.sort)?;
+        let mut indices = Vec::with_capacity(self.indices.len());
+        for index in &self.indices {
+            indices.push(index.map_names(&mut *name)?);
+        }
+        Ok(SortTerm { sort, indices })
     }
 }
 
@@ -260,18 +318,18 @@ impl SortTerm
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Port
+pub struct Port<N = Name>
 {
     /// The port's name.
-    pub name: Name,
+    pub name: N,
     /// Its sort.
-    pub sort: SortTerm,
+    pub sort: SortTerm<N>,
     /// The restricted binders over it, each a named variable of a representable
     /// sort; empty for a first-order port.
-    pub binders: Vec<Binder>,
+    pub binders: Vec<Binder<N>>,
     /// The atoms `bind` abstracts over it, outside its binders, each of an
     /// atom sort; empty for a port that abstracts none.
-    pub abstractions: Vec<Binder>,
+    pub abstractions: Vec<Binder<N>>,
 }
 
 /// A sort a theory declares, with its index telescope and the ground sort its
@@ -289,14 +347,14 @@ pub struct Port
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 /// - witness: `model::tests::a_computation_sort_derives_a_family_into_computation_types`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PresentedSort
+pub struct PresentedSort<N = Name>
 {
     /// The sort's name.
-    pub name: Name,
+    pub name: N,
     /// Its name tile.
     pub named: Placed,
     /// Its written index telescope.
-    pub indices: Vec<Port>,
+    pub indices: Vec<Port<N>>,
     /// The ground sort its model lands in.
     pub ground: GroundSort,
 }
@@ -313,18 +371,18 @@ pub struct PresentedSort
 /// - hypothesis: L3 — as [`SortTerm`].
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PresentedOperation
+pub struct PresentedOperation<N = Name>
 {
     /// The operation's name.
-    pub name: Name,
+    pub name: N,
     /// Its name tile.
     pub named: Placed,
     /// An operation, an observation or a constant.
     pub kind: OperationKind,
     /// Its input ports.
-    pub inputs: Vec<Port>,
+    pub inputs: Vec<Port<N>>,
     /// Its output ports.
-    pub outputs: Vec<Port>,
+    pub outputs: Vec<Port<N>>,
 }
 
 /// A rule a theory writes as a face between two terms.
@@ -339,16 +397,16 @@ pub struct PresentedOperation
 /// - hypothesis: L3 — the three `CatShape` laws derive their components.
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PresentedLaw
+pub struct PresentedLaw<N = Name>
 {
     /// The rule's name.
-    pub name: Name,
+    pub name: N,
     /// Its name tile.
     pub named: Placed,
     /// The term it rewrites from.
-    pub left: FreeTerm,
+    pub left: FreeTerm<N>,
     /// The term it rewrites to.
-    pub right: FreeTerm,
+    pub right: FreeTerm<N>,
 }
 
 /// A circuit rule a theory wires, kept by name.
@@ -460,22 +518,22 @@ pub struct Presentation
 ///   at the wrong sort is refused.
 /// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StatedLaw
+pub struct StatedLaw<N = Name>
 {
     /// The law's name.
-    pub name: Name,
+    pub name: N,
     /// Its name tile.
     pub named: Placed,
     /// The variables it quantifies over, each at its written sort.
-    pub binders: Vec<Binder>,
+    pub binders: Vec<Binder<N>>,
     /// The paths it assumes, after every variable.
-    pub hypotheses: Vec<Hypothesis>,
+    pub hypotheses: Vec<Hypothesis<N>>,
     /// The sort both sides inhabit.
-    pub carrier: SortTerm,
+    pub carrier: SortTerm<N>,
     /// The path's left side.
-    pub left: FreeTerm,
+    pub left: FreeTerm<N>,
     /// Its right side.
-    pub right: FreeTerm,
+    pub right: FreeTerm<N>,
 }
 
 /// A path a law assumes, `p : Path[.A = Bool](eq(a, b), true)`: an argument of
@@ -492,16 +550,16 @@ pub struct StatedLaw
 ///   a path over them.
 /// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Hypothesis
+pub struct Hypothesis<N = Name>
 {
     /// The hypothesis' name.
-    pub name: Name,
+    pub name: N,
     /// The sort both sides inhabit.
-    pub carrier: SortTerm,
+    pub carrier: SortTerm<N>,
     /// The path's left side.
-    pub left: FreeTerm,
+    pub left: FreeTerm<N>,
     /// Its right side.
-    pub right: FreeTerm,
+    pub right: FreeTerm<N>,
 }
 
 /// One theory a block includes, and where the `include` names it.
@@ -554,25 +612,79 @@ pub struct Placement
     pub faces: Vec<ByteSpan>,
 }
 
-/// The members a presentation's value codes, each at its name tile.
+/// The members a presentation's value codes, each at its name tile, their
+/// names `N`: the ids of the members' table, or the text a text consumer reads
+/// back.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: sorts, operations and faces, each in written order.
+/// - ensures: sorts, operations and faces, each in written order; each id reads
+///   its text in the table. A text form's names are their own text, and its
+///   table is empty.
 /// - executable: none — members are data the derivation reads.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentation::members`].
 /// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Members
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Members<N = NameId>
 {
+    /// The table of the members' names: each id below reads its text here.
+    pub names: Names,
     /// The declared sorts.
-    pub sorts: Vec<PresentedSort>,
+    pub sorts: Vec<PresentedSort<N>>,
     /// The declared operations.
-    pub operations: Vec<PresentedOperation>,
+    pub operations: Vec<PresentedOperation<N>>,
     /// The rules written as faces.
-    pub laws: Vec<PresentedLaw>,
+    pub laws: Vec<PresentedLaw<N>>,
+}
+
+impl Members
+{
+    /// The members read back as text, for a consumer that holds text: a
+    /// boundary of the lowering's text, which #7663 moves to ids.
+    ///
+    /// # Specification
+    /// - ensures: the same members, each name the text its id reads in the
+    ///   table; the text form's table is empty.
+    /// - fails: [`name_text::Absent::Unminted`] for an id the table did not
+    ///   mint.
+    /// - panics: none.
+    /// - executable: none — the reading is the table's, name by name.
+    ///
+    /// # Cost
+    /// - allocation: each name's text and member, durable by the text form
+    ///
+    /// # Errors
+    /// As the fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a presentation's members read back as the text its
+    ///   value codes, an unnamed port at its placeholder.
+    /// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+    #[inline]
+    pub fn spelled(&self) -> Result<Members<Name>, name_text::Absent>
+    {
+        let mut spell = speller(&self.names);
+        let mut sorts = Vec::with_capacity(self.sorts.len());
+        for sort in &self.sorts {
+            sorts.push(sort.map_names(&mut spell)?);
+        }
+        let mut operations = Vec::with_capacity(self.operations.len());
+        for operation in &self.operations {
+            operations.push(operation.map_names(&mut spell)?);
+        }
+        let mut laws = Vec::with_capacity(self.laws.len());
+        for law in &self.laws {
+            laws.push(law.map_names(&mut spell)?);
+        }
+        Ok(Members {
+            names: Names::new(),
+            sorts,
+            operations,
+            laws,
+        })
+    }
 }
 
 /// Why a presentation's members cannot be read.
@@ -592,6 +704,8 @@ pub enum PresentationFault
     Value(TheoryFault),
     /// The value codes a member its placement holds no tile for.
     Unplaced,
+    /// The derivation holds a name that its table did not mint.
+    Unminted,
 }
 
 impl Presentation
@@ -609,17 +723,22 @@ impl Presentation
             .chain(self.diagrams.iter().map(|diagram| &diagram.circuit))
     }
 
-    /// The members the value codes, each at its tile; an unnamed port reads
-    /// as the placeholder its position names.
+    /// The members the value codes, each at its tile and each name minted
+    /// into the members' table; an unnamed port reads as the placeholder its
+    /// position names.
     ///
     /// # Specification
     /// - ensures: one presented sort, operation and face per member the value
     ///   codes, in its order, each at the placement's tile of the same
     ///   position.
     /// - fails: [`PresentationFault::Value`] for a value that codes no
-    ///   presentation; [`PresentationFault::Unplaced`] when the value codes
-    ///   more members of a kind than the placement places.
+    ///   presentation, or names more than a table holds;
+    ///   [`PresentationFault::Unplaced`] when the value codes more members of a
+    ///   kind than the placement places.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the table and the members, durable by the members
     ///
     /// # Errors
     /// As stated.
@@ -639,48 +758,98 @@ impl Presentation
     }))]
     pub fn members(&self) -> Result<Members, PresentationFault>
     {
-        let parts = self.value.decode().map_err(PresentationFault::Value)?;
+        let mut names = Names::new();
+        let parts = self
+            .value
+            .decode_into(&mut names)
+            .map_err(PresentationFault::Value)?;
         if parts.sorts.len() > self.placement.sorts.len()
             || parts.operations.len() > self.placement.operations.len()
             || parts.rules.len() > self.placement.laws.len()
         {
             return Err(PresentationFault::Unplaced);
         }
-        let mut members = Members::default();
+        let full = PresentationFault::Value(TheoryFault::Full);
+        let mut sorts = Vec::with_capacity(parts.sorts.len());
         for (sort, &named) in parts.sorts.into_iter().zip(&self.placement.sorts) {
-            let names = presented_names(&sort.indices, &[]);
+            let Maybe::Present(presented) = presented_ids(&sort.indices, &[], &mut names)
+            else {
+                return Err(full);
+            };
             let ground = match sort.representability {
                 Representability::Computation => GroundSort::Computation,
                 Representability::Ordinary
                 | Representability::Representable
                 | Representability::Atom => GroundSort::Value,
             };
-            members.sorts.push(PresentedSort {
+            sorts.push(PresentedSort {
                 name: sort.name,
                 named,
-                indices: ports(sort.indices, names),
+                indices: ports(sort.indices, presented),
                 ground,
             });
         }
+        let mut operations = Vec::with_capacity(parts.operations.len());
         for (operation, &named) in parts.operations.into_iter().zip(&self.placement.operations) {
-            let mut names = presented_names(&operation.inputs, &operation.outputs).into_iter();
-            members.operations.push(PresentedOperation {
+            let Maybe::Present(presented) =
+                presented_ids(&operation.inputs, &operation.outputs, &mut names)
+            else {
+                return Err(full);
+            };
+            let mut presented = presented.into_iter();
+            operations.push(PresentedOperation {
                 name: operation.name,
                 named,
                 kind: operation.kind,
-                inputs: ports(operation.inputs, names.by_ref()),
-                outputs: ports(operation.outputs, names),
+                inputs: ports(operation.inputs, presented.by_ref()),
+                outputs: ports(operation.outputs, presented),
             });
         }
-        for (law, &named) in parts.rules.into_iter().zip(&self.placement.laws) {
-            members.laws.push(PresentedLaw {
+        let laws = parts
+            .rules
+            .into_iter()
+            .zip(&self.placement.laws)
+            .map(|(law, &named)| PresentedLaw {
                 name: law.name,
                 named,
                 left: law.left,
                 right: law.right,
-            });
-        }
-        Ok(members)
+            })
+            .collect();
+        Ok(Members {
+            names,
+            sorts,
+            operations,
+            laws,
+        })
+    }
+
+    /// The members the value codes, read back as text for a consumer that
+    /// holds text, as [`Members::spelled`] reads them.
+    ///
+    /// # Specification
+    /// - ensures: [`Self::members`], each name its text.
+    /// - fails: as [`Self::members`]; [`PresentationFault::Unminted`] for an id
+    ///   the table did not mint.
+    /// - panics: none.
+    /// - executable: none — as [`Members::spelled`].
+    ///
+    /// # Cost
+    /// - allocation: the members on ids, setup
+    /// - allocation: their text form, durable by the text form
+    ///
+    /// # Errors
+    /// As the fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::members`].
+    /// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
+    #[inline]
+    pub fn spelled_members(&self) -> Result<Members<Name>, PresentationFault>
+    {
+        self.members()?
+            .spelled()
+            .map_err(|_unminted| PresentationFault::Unminted)
     }
 }
 
@@ -691,11 +860,14 @@ impl Members
     /// # Specification
     /// - ensures: a wire's sort is the first one that its ports, its rewrite
     ///   port or an operation's port give it. That sort is one the theory
-    ///   declares unindexed.
+    ///   declares unindexed, read back as text: the circuit is written text.
     /// - fails: never; a wire that no sort reaches has no entry.
     /// - panics: none.
     /// - executable: none — each sort is read off the receiver's sorts, which a
     ///   predicate would walk again for each wire.
+    ///
+    /// # Cost
+    /// - allocation: the text of each wire's sort, durable by the wires
     ///
     /// # Termination
     /// Each round over the node lines sorts a wire or stops, and there are
@@ -712,10 +884,20 @@ impl Members
         circuit: &WrittenCircuit,
     ) -> BTreeMap<Name, Name>
     {
+        let spelled = |id: NameId| match self.names.text(id) {
+            Maybe::Present(text) => Some(Name::from(text)),
+            Maybe::Absent(_) => None,
+        };
         let declared = |sort: &Name| {
+            self.sorts.iter().any(|held| {
+                held.indices.is_empty()
+                    && self.names.text(held.name) == Maybe::Present(sort.as_name_ref())
+            })
+        };
+        let declared_id = |sort: NameId| {
             self.sorts
                 .iter()
-                .any(|held| held.name == *sort && held.indices.is_empty())
+                .any(|held| held.name == sort && held.indices.is_empty())
         };
         let mut wires: BTreeMap<Name, Name> = BTreeMap::new();
         for port in &circuit.ports {
@@ -730,9 +912,11 @@ impl Members
                 (&rewrite.left.name, &rewrite.right.name),
             );
         }
-        let mut operations = BTreeMap::new();
+        let mut operations: BTreeMap<&str, &PresentedOperation<NameId>> = BTreeMap::new();
         for operation in &self.operations {
-            let _first = operations.entry(&operation.name).or_insert(operation);
+            if let Maybe::Present(text) = self.names.text(operation.name) {
+                let _first = operations.entry(<&str>::from(text)).or_insert(operation);
+            }
         }
         for _round in 0 ..= circuit.frames.len().saturating_add(circuit.rewrites.len()) {
             let before = wires.len();
@@ -772,14 +956,15 @@ impl Members
                             .map(|_| sort.clone())
                             .collect()
                     }
-                    else if let Some(operation) = operations.get(&frame.head.name) {
+                    else if let Some(operation) = operations.get(frame.head.name.as_ref()) {
                         operation
                             .inputs
                             .iter()
                             .chain(&operation.outputs)
                             .map(|port| {
-                                (port.sort.indices.is_empty() && declared(&port.sort.sort))
-                                    .then(|| port.sort.sort.clone())
+                                (port.sort.indices.is_empty() && declared_id(port.sort.sort))
+                                    .then(|| spelled(port.sort.sort))
+                                    .flatten()
                             })
                             .collect()
                     }
@@ -812,14 +997,14 @@ impl Members
 ///   emptied, padded or stripped of its binders or atoms shows.
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
 /// - witness: `model::tests::a_presentation_reads_its_members_off_its_value`
-fn ports<Names>(
-    coded: Vec<TheoryPort>,
-    names: Names,
-) -> Vec<Port>
+fn ports<N, Presented>(
+    coded: Vec<TheoryPort<N>>,
+    names: Presented,
+) -> Vec<Port<N>>
 where
-    Names: IntoIterator<Item = Name>,
+    Presented: IntoIterator<Item = N>,
 {
-    let binders = |list: Vec<TheoryBinder>| {
+    let binders = |list: Vec<TheoryBinder<N>>| {
         list.into_iter()
             .map(|binder| Binder {
                 name: binder.name,
@@ -846,6 +1031,353 @@ where
         .collect()
 }
 
+impl<N> Port<N>
+{
+    /// The port with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped sort and binders, durable by the port
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<Port<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        let port = name(&self.name)?;
+        let sort = self.sort.map_names(name)?;
+        let mut binders = Vec::with_capacity(self.binders.len());
+        for binder in &self.binders {
+            binders.push(binder.map_names(name)?);
+        }
+        let mut abstractions = Vec::with_capacity(self.abstractions.len());
+        for abstraction in &self.abstractions {
+            abstractions.push(abstraction.map_names(name)?);
+        }
+        Ok(Port {
+            name: port,
+            sort,
+            binders,
+            abstractions,
+        })
+    }
+}
+
+impl<N> PresentedSort<N>
+{
+    /// The sort with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped index ports, durable by the sort
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<PresentedSort<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        let sort = name(&self.name)?;
+        let mut indices = Vec::with_capacity(self.indices.len());
+        for index in &self.indices {
+            indices.push(index.map_names(name)?);
+        }
+        Ok(PresentedSort {
+            name: sort,
+            named: self.named,
+            indices,
+            ground: self.ground,
+        })
+    }
+}
+
+impl<N> PresentedOperation<N>
+{
+    /// The operation with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped ports, durable by the operation
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<PresentedOperation<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        let operation = name(&self.name)?;
+        let mut inputs = Vec::with_capacity(self.inputs.len());
+        for input in &self.inputs {
+            inputs.push(input.map_names(name)?);
+        }
+        let mut outputs = Vec::with_capacity(self.outputs.len());
+        for output in &self.outputs {
+            outputs.push(output.map_names(name)?);
+        }
+        Ok(PresentedOperation {
+            name: operation,
+            named: self.named,
+            kind: self.kind,
+            inputs,
+            outputs,
+        })
+    }
+}
+
+impl<N> Variable<N>
+{
+    /// The variable with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped sort, durable by the variable it maps
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<Variable<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        Ok(Variable {
+            name: name(&self.name)?,
+            sort: self.sort.map_names(name)?,
+        })
+    }
+}
+
+impl<N> Binder<N>
+{
+    /// The binder with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped variables and sort, durable by the binder
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<Binder<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        let binder = name(&self.name)?;
+        let mut over = Vec::with_capacity(self.over.len());
+        for variable in &self.over {
+            over.push(variable.map_names(name)?);
+        }
+        Ok(Binder {
+            name: binder,
+            over,
+            sort: self.sort.map_names(name)?,
+        })
+    }
+}
+
+impl<N> Hypothesis<N>
+{
+    /// The hypothesis with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped carrier and sides, durable by the hypothesis
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<Hypothesis<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        Ok(Hypothesis {
+            name: name(&self.name)?,
+            carrier: self.carrier.map_names(name)?,
+            left: self.left.map_names(&mut *name)?,
+            right: self.right.map_names(&mut *name)?,
+        })
+    }
+}
+
+impl<N> StatedLaw<N>
+{
+    /// The law with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped parts, durable by the law it maps
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<StatedLaw<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        let law = name(&self.name)?;
+        let mut binders = Vec::with_capacity(self.binders.len());
+        for binder in &self.binders {
+            binders.push(binder.map_names(name)?);
+        }
+        let mut hypotheses = Vec::with_capacity(self.hypotheses.len());
+        for hypothesis in &self.hypotheses {
+            hypotheses.push(hypothesis.map_names(name)?);
+        }
+        Ok(StatedLaw {
+            name: law,
+            named: self.named,
+            binders,
+            hypotheses,
+            carrier: self.carrier.map_names(name)?,
+            left: self.left.map_names(&mut *name)?,
+            right: self.right.map_names(&mut *name)?,
+        })
+    }
+}
+
+impl<N> PresentedLaw<N>
+{
+    /// The law with each name replaced by its image under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped sides, durable by the law it maps
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<PresentedLaw<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        Ok(PresentedLaw {
+            name: name(&self.name)?,
+            named: self.named,
+            left: self.left.map_names(&mut *name)?,
+            right: self.right.map_names(&mut *name)?,
+        })
+    }
+}
+
+impl<N> ModelForm<N>
+{
+    /// The form with each name replaced by its image under `name`: a text
+    /// consumer reads a form of ids back this way at its boundary.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the mapped parts, durable by the form it maps
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    #[inline]
+    pub fn map_names<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<ModelForm<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        let binders = |list: &[Binder<N>], name: &mut F| -> Result<Vec<Binder<M>>, E> {
+            let mut mapped = Vec::with_capacity(list.len());
+            for binder in list {
+                mapped.push(binder.map_names(name)?);
+            }
+            Ok(mapped)
+        };
+        Ok(match *self {
+            Self::Sort {
+                ref indices,
+                ground,
+            } => ModelForm::Sort {
+                indices: binders(indices, name)?,
+                ground,
+            },
+            Self::Operation {
+                ref telescope,
+                ref results,
+            } => {
+                let telescope = binders(telescope, name)?;
+                let mut mapped = Vec::with_capacity(results.len());
+                for result in results {
+                    mapped.push(result.map_names(name)?);
+                }
+                ModelForm::Operation {
+                    telescope,
+                    results: mapped,
+                }
+            },
+            Self::Constant(ref sort) => ModelForm::Constant(sort.map_names(name)?),
+            Self::Nested(ref theory) => ModelForm::Nested(name(theory)?),
+            Self::Law {
+                ref telescope,
+                ref hypotheses,
+                ref carrier,
+                ref left,
+                ref right,
+            } => {
+                let telescope = binders(telescope, name)?;
+                let mut assumed = Vec::with_capacity(hypotheses.len());
+                for hypothesis in hypotheses {
+                    assumed.push(hypothesis.map_names(name)?);
+                }
+                ModelForm::Law {
+                    telescope,
+                    hypotheses: assumed,
+                    carrier: carrier.map_names(name)?,
+                    left: left.map_names(&mut *name)?,
+                    right: right.map_names(&mut *name)?,
+                }
+            },
+        })
+    }
+}
+
 /// One binder of a derived telescope.
 ///
 /// A binder that takes variables is a binding port's: in a model over host
@@ -865,14 +1397,14 @@ where
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Binder
+pub struct Binder<N = Name>
 {
     /// The binder's name.
-    pub name: Name,
+    pub name: N,
     /// The variables it takes, outermost first; empty for a value binder.
-    pub over: Vec<Variable>,
+    pub over: Vec<Variable<N>>,
     /// Its sort, under the variables it takes.
-    pub sort: SortTerm,
+    pub sort: SortTerm<N>,
 }
 
 /// One variable a binding port's binder takes.
@@ -887,12 +1419,12 @@ pub struct Binder
 /// - hypothesis: L3 — as [`Binder`].
 /// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Variable
+pub struct Variable<N = Name>
 {
     /// The variable's name.
-    pub name: Name,
+    pub name: N,
     /// Its sort.
-    pub sort: SortTerm,
+    pub sort: SortTerm<N>,
 }
 
 /// What one component of a model signature states.
@@ -912,14 +1444,14 @@ pub struct Variable
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ModelForm
+pub enum ModelForm<N = Name>
 {
     /// A sort: a type, or a type family over its indices, landing in its
     /// ground sort.
     Sort
     {
         /// The index telescope; empty for an unindexed sort.
-        indices: Vec<Binder>,
+        indices: Vec<Binder<N>>,
         /// The ground sort its model lands in: the computation types for a
         /// `Type[-]` sort, the value types for any other.
         ground: GroundSort,
@@ -928,30 +1460,30 @@ pub enum ModelForm
     Operation
     {
         /// The free sort variables, then the input ports.
-        telescope: Vec<Binder>,
+        telescope: Vec<Binder<N>>,
         /// One sort per output port.
-        results: Vec<SortTerm>,
+        results: Vec<SortTerm<N>>,
     },
     /// A constant: a value of its type, a sort term that binds no variable —
     /// a sort of the theory, or a builtin type it does not declare.
-    Constant(SortTerm),
+    Constant(SortTerm<N>),
     /// A nested model: a module ascribed the model signature of the theory
     /// this name declares, `oper inner : Model(T)`.
-    Nested(Name),
+    Nested(N),
     /// A law: a path between two terms, quantified over their variables and
     /// assuming its hypotheses — a rule's, with none, or a stated law's.
     Law
     {
         /// The law's variables.
-        telescope: Vec<Binder>,
+        telescope: Vec<Binder<N>>,
         /// The paths it assumes, after every variable.
-        hypotheses: Vec<Hypothesis>,
+        hypotheses: Vec<Hypothesis<N>>,
         /// The sort both terms inhabit.
-        carrier: SortTerm,
+        carrier: SortTerm<N>,
         /// The left term: the one a rule rewrites from.
-        left: FreeTerm,
+        left: FreeTerm<N>,
         /// The right term: the one a rule rewrites to.
-        right: FreeTerm,
+        right: FreeTerm<N>,
     },
 }
 
@@ -1000,6 +1532,9 @@ pub enum ModelFault
     /// A sort indexed by, or an operation with a port at, a computation sort:
     /// a computation type, which a model's binders do not range over yet.
     Computation,
+    /// A component whose derivation names more names than its description's
+    /// table holds.
+    Full,
 }
 
 impl core::fmt::Display for ModelFault
@@ -1036,6 +1571,7 @@ impl core::fmt::Display for ModelFault
             Self::Computation => {
                 "has a port at a computation sort, which a model does not read yet"
             },
+            Self::Full => "names more names than its description's table holds",
         })
     }
 }
@@ -1125,14 +1661,14 @@ impl core::fmt::Display for InterfaceFault
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelComponent
+pub struct ModelComponent<N = Name>
 {
     /// The member's name.
-    pub name: Name,
+    pub name: N,
     /// Its name tile in the theory.
     pub named: Placed,
     /// What it states.
-    pub form: Result<ModelForm, ModelFault>,
+    pub form: Result<ModelForm<N>, ModelFault>,
     /// Whether the member is an operation its theory marks `@[ inert ]`.
     pub inert: bool,
 }
@@ -1158,6 +1694,69 @@ pub struct ModelSignature
     pub components: Vec<ModelComponent>,
 }
 
+/// The model signature of a presentation's members on ids: each component,
+/// and the table its names read their text in.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: as [`ModelSignature`]; each id reads its text in the table.
+/// - executable: none — a derivation is data its readers read back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`derive_members`].
+/// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Derivation
+{
+    /// The table of the components' names: each id below reads its text here.
+    names: Names,
+    /// The components, in signature order.
+    components: Vec<ModelComponent<NameId>>,
+}
+
+impl Derivation
+{
+    /// The signature read back as text, for the consumers that hold text: the
+    /// boundary of the lowering's text, which #7663 moves to ids.
+    ///
+    /// # Specification
+    /// - ensures: one component per component, in order, each name the text its
+    ///   id reads in the table.
+    /// - fails: [`PresentationFault::Unminted`] for an id the table did not
+    ///   mint.
+    /// - panics: none.
+    /// - executable: none — as [`Members::spelled`], component by component.
+    ///
+    /// # Cost
+    /// - allocation: each name's text and form, durable by the signature
+    ///
+    /// # Errors
+    /// As the fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`derive_members`].
+    /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
+    pub(crate) fn spelled(&self) -> Result<ModelSignature, PresentationFault>
+    {
+        let unminted = |_absent| PresentationFault::Unminted;
+        let mut spell = speller(&self.names);
+        let mut components = Vec::with_capacity(self.components.len());
+        for component in &self.components {
+            let form = match component.form {
+                Ok(ref form) => Ok(form.map_names(&mut spell).map_err(unminted)?),
+                Err(fault) => Err(fault),
+            };
+            components.push(ModelComponent {
+                name: spell(&component.name).map_err(unminted)?,
+                named: component.named,
+                form,
+                inert: component.inert,
+            });
+        }
+        Ok(ModelSignature { components })
+    }
+}
+
 /// Derive the model signature of what a theory presents, reading its members
 /// off its value.
 ///
@@ -1167,12 +1766,18 @@ pub struct ModelSignature
 ///   the stated laws kept beside it, each component inert exactly when the
 ///   presentation marks its name inert.
 /// - fails: a value whose members cannot be read, as [`Presentation::members`];
-///   any other fault is kept on its component.
+///   [`PresentationFault::Value`] and [`PresentationFault::Unminted`] as
+///   [`derive_members`] and [`Derivation::spelled`]; any other fault is kept on
+///   its component.
 /// - panics: none.
 /// - executable: none — as [`derive_members`].
 ///
+/// # Cost
+/// - allocation: the members and the derivation on ids, setup
+/// - allocation: the signature's text, durable by the signature
+///
 /// # Errors
-/// As [`Presentation::members`].
+/// As the fails clause.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`derive_members`].
@@ -1182,7 +1787,8 @@ pub struct ModelSignature
 pub fn derive(presentation: &Presentation) -> Result<ModelSignature, PresentationFault>
 {
     let members = presentation.members()?;
-    let mut signature = derive_members(&members, presentation.wired(), &presentation.laws);
+    let mut signature =
+        derive_members(&members, presentation.wired(), &presentation.laws)?.spelled()?;
     for component in &mut signature.components {
         component.inert = presentation.inert.contains(&component.name);
     }
@@ -1211,10 +1817,17 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 ///   [`ModelFault::Computation`], a law relating a term at a binding port keeps
 ///   [`ModelFault::Binding`], and one naming such a component is
 ///   [`ModelFault::Inherited`].
-/// - fails: never; a fault is kept on its component.
+/// - fails: [`PresentationFault::Value`] when the table cannot mint the name of
+///   a stated law or a circuit rule; any other fault is kept on its component.
 /// - panics: none.
 /// - executable: none — the inference the components result from is the
 ///   derivation itself.
+///
+/// # Cost
+/// - allocation: the table and the components, durable by the derivation
+///
+/// # Errors
+/// As the fails clause.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the `CatShape` presentation and an ill-sorted, an
@@ -1228,40 +1841,85 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 /// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
 /// - witness: `model::tests::a_constant_derives_its_type_alone`
 /// - witness: `model::tests::a_computation_sort_derives_a_family_into_computation_types`
-#[must_use]
 pub(crate) fn derive_members<'wired>(
     members: &Members,
     circuits: impl IntoIterator<Item = &'wired PresentedCircuit>,
     stated: &[StatedLaw],
-) -> ModelSignature
+) -> Result<Derivation, PresentationFault>
 {
-    let (heads, mut components) = derive_heads(members);
+    let full = PresentationFault::Value(TheoryFault::Full);
+    let mut names = members.names.clone();
+    let mut minted = Vec::with_capacity(stated.len());
+    for law in stated {
+        minted.push(
+            law.map_names(&mut minter(&mut names))
+                .map_err(|_full| full)?,
+        );
+    }
+    let (heads, mut components) = derive_heads(members, &mut names);
     for law in &members.laws {
         components.push(ModelComponent {
-            name: law.name.clone(),
+            name: law.name,
             named: law.named,
-            form: infer::derive_law(&heads, law),
+            form: infer::derive_law(&heads, law, &mut names),
             inert: false,
         });
     }
-    for law in stated {
+    for law in &minted {
         components.push(ModelComponent {
-            name: law.name.clone(),
+            name: law.name,
             named: law.named,
-            form: infer::derive_stated(&heads, law),
+            form: infer::derive_stated(&heads, law, &mut names),
             inert: false,
         });
     }
     for circuit in circuits {
+        let Maybe::Present(name) = names.mint(circuit.name.as_name_ref())
+        else {
+            return Err(full);
+        };
         components.push(ModelComponent {
-            name: circuit.name.clone(),
+            name,
             named: circuit.named,
             form: Err(ModelFault::Circuit),
             inert: false,
         });
     }
 
-    ModelSignature { components }
+    Ok(Derivation { names, components })
+}
+
+/// The map that mints each text name into `names`: the map a text form takes
+/// to reach the ids of a description's table.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: each new name's text, growth within the table
+fn minter(names: &mut Names) -> impl FnMut(&Name) -> Result<NameId, name_mint::Absent>
+{
+    |name| match names.mint(name.as_name_ref()) {
+        Maybe::Present(id) => Ok(id),
+        Maybe::Absent(absent) => Err(absent),
+    }
+}
+
+/// The map that reads each id of `names` back as text: the map a text
+/// consumer reads a form of ids by, at its boundary.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: each name's text, durable by the text form it builds
+pub(crate) fn speller(names: &Names)
+-> impl FnMut(&NameId) -> Result<Name, name_text::Absent> + '_
+{
+    |&id| match names.text(id) {
+        Maybe::Present(text) => Ok(Name::from(text)),
+        Maybe::Absent(absent) => Err(absent),
+    }
 }
 
 /// Derive the law each of `laws` states over the sorts and operations of
@@ -1271,10 +1929,14 @@ pub(crate) fn derive_members<'wired>(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one form per law, in order, each the form [`derive_members`]
-///   gives a law of `members` written with the same sides.
-/// - fails: never; a fault is kept on its law.
+///   gives a law of `members` written with the same sides, read back as text.
+/// - fails: never; a fault is kept on its law, and a law whose names the table
+///   cannot mint keeps [`ModelFault::Full`].
 /// - panics: none.
 /// - executable: none — as [`derive_members`].
+///
+/// # Cost
+/// - allocation: the table copy and each law's forms, durable by the forms
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a rule a group's completion derives states its telescope
@@ -1287,9 +1949,17 @@ pub fn derive_laws(
     laws: &[PresentedLaw],
 ) -> Vec<Result<ModelForm, ModelFault>>
 {
-    let (heads, _components) = derive_heads(members);
+    let mut names = members.names.clone();
+    let (heads, _components) = derive_heads(members, &mut names);
     laws.iter()
-        .map(|law| infer::derive_law(&heads, law))
+        .map(|law| {
+            let minted = law
+                .map_names(&mut minter(&mut names))
+                .map_err(|_full| ModelFault::Full)?;
+            let form = infer::derive_law(&heads, &minted, &mut names)?;
+            form.map_names(&mut speller(&names))
+                .map_err(|_unminted| ModelFault::Full)
+        })
         .collect()
 }
 
@@ -1300,9 +1970,13 @@ pub fn derive_laws(
 /// - requires: nothing.
 /// - ensures: one form per stated law, in order, each the form
 ///   [`derive_members`] gives it.
-/// - fails: never; a fault is kept on its law.
+/// - fails: never; a fault is kept on its law, and a law whose names the table
+///   cannot mint keeps [`ModelFault::Full`].
 /// - panics: none.
 /// - executable: none — as [`derive_members`].
+///
+/// # Cost
+/// - allocation: the table copy and each law's id form, durable by the forms
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a stated law naming a variable it does not bind keeps its
@@ -1312,20 +1986,27 @@ pub fn derive_laws(
 pub(crate) fn derive_stated(
     members: &Members,
     stated: &[StatedLaw],
-) -> Vec<Result<ModelForm, ModelFault>>
+) -> Vec<Result<ModelForm<NameId>, ModelFault>>
 {
-    let (heads, _components) = derive_heads(members);
+    let mut names = members.names.clone();
+    let (heads, _components) = derive_heads(members, &mut names);
     stated
         .iter()
-        .map(|law| infer::derive_stated(&heads, law))
+        .map(|law| {
+            let minted = law
+                .map_names(&mut minter(&mut names))
+                .map_err(|_full| ModelFault::Full)?;
+            infer::derive_stated(&heads, &minted, &mut names)
+        })
         .collect()
 }
 
 /// The heads of `members`' sorts and operations, each beside its derived
-/// component, as [`derive_members`] states them before the laws.
+/// component, as [`derive_members`] states them before the laws; each fresh
+/// name minted into `names`.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: `names` holds the members' names.
 /// - ensures: one component per presented sort and operation, in that order,
 ///   each group in written order, and each one's head by its name, every
 ///   builtin a sort's index or a port names — the host universe or a builtin
@@ -1334,50 +2015,64 @@ pub(crate) fn derive_stated(
 /// - panics: none.
 /// - executable: none — as [`derive_members`].
 ///
+/// # Cost
+/// - allocation: the heads and the components, durable by the signature
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`derive_members`].
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 fn derive_heads(
-    members: &Members
-) -> (
-    BTreeMap<Name, Result<infer::Head, ModelFault>>,
-    Vec<ModelComponent>,
-)
+    members: &Members,
+    names: &mut Names,
+) -> (infer::Heads, Vec<ModelComponent<NameId>>)
 {
-    let mut heads: BTreeMap<Name, Result<infer::Head, ModelFault>> = BTreeMap::new();
-    let mut components = Vec::new();
-    let computations: BTreeSet<&Name> = members
+    /// Hold the builtin `term` names as a closed sort, once.
+    ///
+    /// # Specification
+    /// trivial.
+    fn close(
+        heads: &mut infer::Heads,
+        names: &mut Names,
+        term: &SortTerm<NameId>,
+    )
+    {
+        if let Maybe::Present(_) = term.builtin_in(names)
+            && heads.get(term.sort).is_none()
+        {
+            let closed = infer::derive_head(heads, infer::HeadKind::Sort, (&[], &[]), names);
+            heads.insert(term.sort, closed);
+        }
+    }
+    let mut heads = infer::Heads::default();
+    let mut components =
+        Vec::with_capacity(members.sorts.len().saturating_add(members.operations.len()));
+    let computations: Vec<NameId> = members
         .sorts
         .iter()
         .filter(|sort| sort.ground == GroundSort::Computation)
-        .map(|sort| &sort.name)
+        .map(|sort| sort.name)
         .collect();
-    let computational = |port: &Port| computations.contains(&port.sort.sort);
-    let close = |heads: &mut BTreeMap<Name, Result<infer::Head, ModelFault>>, term: &SortTerm| {
-        if let Maybe::Present(_) = term.builtin()
-            && !heads.contains_key(&term.sort)
-        {
-            let closed = infer::derive_head(heads, infer::HeadKind::Sort, &[], &[]);
-            let _first = heads.insert(term.sort.clone(), closed);
-        }
-    };
+    let computational = |port: &Port<NameId>| computations.contains(&port.sort.sort);
     for sort in &members.sorts {
         for index in &sort.indices {
-            close(&mut heads, &index.sort);
+            close(&mut heads, names, &index.sort);
         }
         let head = if sort.indices.iter().any(computational) {
             Err(ModelFault::Computation)
         }
         else {
-            infer::derive_head(&heads, infer::HeadKind::Sort, &sort.indices, &[])
+            infer::derive_head(&heads, infer::HeadKind::Sort, (&sort.indices, &[]), names)
         };
-        let form = head.clone().map(|derived| ModelForm::Sort {
-            indices: derived.binders,
-            ground: sort.ground,
-        });
-        let _first = heads.insert(sort.name.clone(), head);
+        let form = match head {
+            Ok(ref derived) => Ok(ModelForm::Sort {
+                indices: derived.binders.clone(),
+                ground: sort.ground,
+            }),
+            Err(fault) => Err(fault),
+        };
+        heads.insert(sort.name, head);
         components.push(ModelComponent {
-            name: sort.name.clone(),
+            name: sort.name,
             named: sort.named,
             form,
             inert: false,
@@ -1388,7 +2083,7 @@ fn derive_heads(
         .iter()
         .flat_map(|operation| operation.inputs.iter().chain(&operation.outputs));
     for port in ports {
-        close(&mut heads, &port.sort);
+        close(&mut heads, names, &port.sort);
     }
     for operation in &members.operations {
         let head = if operation
@@ -1411,34 +2106,36 @@ fn derive_heads(
             infer::derive_head(
                 &heads,
                 infer::HeadKind::Operation,
-                &operation.inputs,
-                &operation.outputs,
+                (&operation.inputs, &operation.outputs),
+                names,
             )
         };
-        let form = match (operation.kind, head.clone()) {
-            (OperationKind::Constant, Ok(derived)) if derived.binders.is_empty() => {
+        let form = match (operation.kind, &head) {
+            (OperationKind::Constant, &Ok(ref derived)) if derived.binders.is_empty() => {
                 match *derived.results.as_slice() {
                     [ref sort] => Ok(ModelForm::Constant(sort.clone())),
                     _ => Err(ModelFault::ManyOut),
                 }
             },
             (OperationKind::Nested, _) => match *operation.outputs.as_slice() {
-                [ref port] if port.sort.indices.is_empty() => {
-                    Ok(ModelForm::Nested(port.sort.sort.clone()))
-                },
+                [ref port] if port.sort.indices.is_empty() => Ok(ModelForm::Nested(port.sort.sort)),
                 _ => Err(ModelFault::ManyOut),
             },
             (
                 OperationKind::Operation | OperationKind::Observation | OperationKind::Constant,
-                _,
-            ) => head.clone().map(|derived| ModelForm::Operation {
-                telescope: derived.binders,
-                results: derived.results,
+                &Ok(ref derived),
+            ) => Ok(ModelForm::Operation {
+                telescope: derived.binders.clone(),
+                results: derived.results.clone(),
             }),
+            (
+                OperationKind::Operation | OperationKind::Observation | OperationKind::Constant,
+                &Err(fault),
+            ) => Err(fault),
         };
-        let _first = heads.insert(operation.name.clone(), head);
+        heads.insert(operation.name, head);
         components.push(ModelComponent {
-            name: operation.name.clone(),
+            name: operation.name,
             named: operation.named,
             form,
             inert: false,
@@ -1485,6 +2182,10 @@ pub enum Tail<'form>
 ///   hypotheses, sorts and terms.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the flags, durable by the list
+/// - allocation: the names seen, setup
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `comp`'s sort binders bind and its morphisms do not;
@@ -1621,6 +2322,9 @@ fn binder_vars<'term>(
 /// - ensures: one entry per variable leaf of each index term, in order.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the names pushed, growth within `into`
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`dependence`].

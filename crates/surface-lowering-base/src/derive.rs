@@ -709,6 +709,10 @@ impl<'cells> Theory<'cells>
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the theory's maps and rules, durable by the theory
+    /// - allocation: the laws and the signature read back as text, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`plan`].
     /// - witness: `derive::tests::a_derived_rule_states_its_law_over_the_theory`
@@ -722,7 +726,22 @@ impl<'cells> Theory<'cells>
             .map_err(|_unpresented| DeriveFault::Incoherent)?;
         // A stated law is no rule: a derived rule reads the theory's sorts
         // and operations alone.
-        let signature = derive_members(&members, presentation.wired(), &[]);
+        let signature = derive_members(&members, presentation.wired(), &[])
+            .and_then(|derivation| derivation.spelled())
+            .map_err(|_unpresented| DeriveFault::Incoherent)?;
+        // A cell matches a law by its written sides, which `Flat` reads as
+        // text: the laws read back at that boundary, which #7663 moves to ids.
+        let laws = {
+            let mut spell = crate::model::speller(&members.names);
+            let mut laws = Vec::with_capacity(members.laws.len());
+            for law in &members.laws {
+                laws.push(
+                    law.map_names(&mut spell)
+                        .map_err(|_unminted| DeriveFault::Incoherent)?,
+                );
+            }
+            laws
+        };
         let mut sorts = Sorts::default();
         let mut constants = BTreeMap::new();
         for component in &signature.components {
@@ -781,8 +800,7 @@ impl<'cells> Theory<'cells>
                 };
                 let firing = match stored.provenance() {
                     TermProv::Derived => Firing::Derived(cell),
-                    TermProv::SurfaceRule => members
-                        .laws
+                    TermProv::SurfaceRule => laws
                         .iter()
                         .find_map(|law| {
                             let written = (Flat::of(&law.left)?, Flat::of(&law.right)?);

@@ -4,13 +4,15 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::format;
 use alloc::vec::Vec;
 
 use gandr_theory_levitation::FreeTerm;
-use gandr_theory_levitation::Name;
+use gandr_theory_levitation::NameId;
+use gandr_theory_levitation::NameRef;
+use gandr_theory_levitation::Names;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
+use gandr_theory_levitation::name_mint;
 use quenchant_shape::shape::Maybe;
 
 use super::Binder;
@@ -47,12 +49,77 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The derived heads, by name: a sort's or an operation's telescope, or the
-/// fault its derivation met.
+quenchant_shape::reason_enum! {
+    /// Why no head derives under a name.
+    pub mod underived {
+        /// The reason no head is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No sort or operation of the theory derives under the name.
+            Underived,
+        }
+    }
+}
+
+/// The derived heads, by the id of their name: a sort's or an operation's
+/// telescope, or the fault its derivation met.
+///
+/// The ids are the indices of a description's table, so the heads are a
+/// dense table by id, and a lookup is one index.
 ///
 /// # Specification
 /// trivial.
-pub(super) type Heads = BTreeMap<Name, Result<Head, ModelFault>>;
+#[derive(Default)]
+#[repr(transparent)]
+pub(super) struct Heads
+{
+    /// Each head at the index of its name's id; absent for a name that no
+    /// head derives under.
+    entries: Vec<Maybe<Result<Head, ModelFault>, underived::Absent>>,
+}
+
+impl Heads
+{
+    /// The head that derives under `name`, or its fault.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn get(
+        &self,
+        name: NameId,
+    ) -> Option<&Result<Head, ModelFault>>
+    {
+        match self.entries.get(usize::from(name)) {
+            Some(&Maybe::Present(ref head)) => Some(head),
+            Some(&Maybe::Absent(_)) | None => None,
+        }
+    }
+
+    /// Hold `head` under `name`, in place of any head before it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the entries up to the index of `name`, growth within the
+    ///   heads
+    pub(super) fn insert(
+        &mut self,
+        name: NameId,
+        head: Result<Head, ModelFault>,
+    )
+    {
+        let index = usize::from(name);
+        if self.entries.len() <= index {
+            self.entries.resize_with(index.saturating_add(1), || {
+                Maybe::Absent(underived::Absent::Underived)
+            });
+        }
+        if let Some(entry) = self.entries.get_mut(index) {
+            *entry = Maybe::Present(head);
+        }
+    }
+}
 
 /// Whether a head is a sort or an operation.
 ///
@@ -78,11 +145,11 @@ pub(super) struct Head
     /// Sort or operation.
     kind: HeadKind,
     /// Every binder, implicit ones first.
-    pub binders: Vec<Binder>,
+    pub binders: Vec<Binder<NameId>>,
     /// How many trailing binders an application writes.
     explicit: usize,
     /// An operation's result sorts over the binders; none for a sort.
-    pub results: Vec<SortTerm>,
+    pub results: Vec<SortTerm<NameId>>,
 }
 
 /// A node of the inference graph.
@@ -121,7 +188,7 @@ enum Node
     /// A variable.
     Variable(VariableId),
     /// An operation applied to every argument it binds.
-    Apply(Name, Vec<NodeId>),
+    Apply(NameId, Vec<NodeId>),
 }
 
 /// A sort under inference: a sort name over index nodes.
@@ -132,7 +199,7 @@ enum Node
 struct Sorted
 {
     /// The sort's name.
-    sort: Name,
+    sort: NameId,
     /// Its index nodes, implicit ones first.
     indices: Vec<NodeId>,
 }
@@ -145,7 +212,7 @@ struct Sorted
 struct Variable
 {
     /// Its written name.
-    name: Name,
+    name: NameId,
     /// Its sort, once an occurrence gives it one.
     sort: Maybe<Sorted, unsorted::Absent>,
 }
@@ -209,8 +276,79 @@ struct Engine
     /// Each application node's sort.
     applied: BTreeMap<NodeId, Sorted>,
     /// The written names in scope.
-    scope: BTreeMap<Name, NodeId>,
+    scope: Scope,
 }
+
+/// The names in scope, each at its node: a map over a short list. A clause
+/// binds few names, so a search in a line costs less than an order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+#[repr(transparent)]
+struct Scope
+{
+    /// Each name and its node, each name once.
+    bound: Vec<(NameId, NodeId)>,
+}
+
+impl Scope
+{
+    /// The node `name` is bound to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn get(
+        &self,
+        name: NameId,
+    ) -> Option<NodeId>
+    {
+        self.bound
+            .iter()
+            .find(|&&(held, _)| held == name)
+            .map(|&(_, node)| node)
+    }
+
+    /// Bind `name` to `node`, and give the node it was bound to before.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the entry, growth within the scope
+    fn insert(
+        &mut self,
+        name: NameId,
+        node: NodeId,
+    ) -> Option<NodeId>
+    {
+        if let Some(entry) = self.bound.iter_mut().find(|entry| entry.0 == name) {
+            return Some(core::mem::replace(&mut entry.1, node));
+        }
+        self.bound.push((name, node));
+        None
+    }
+
+    /// Unbind `name`, and give the node it was bound to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn remove(
+        &mut self,
+        name: NameId,
+    ) -> Option<NodeId>
+    {
+        let at = self.bound.iter().position(|&(held, _)| held == name)?;
+        Some(self.bound.swap_remove(at).1)
+    }
+}
+
+/// A telescope as the order names it: its binders, then the name of each
+/// item it binds.
+///
+/// # Specification
+/// trivial.
+type Telescope = (Vec<Binder<NameId>>, BTreeMap<Item, NameId>);
 
 /// One side of a stated law's path, as its derivation reads it: a `Bool`
 /// literal, which no theory declares, or a term the engine elaborated.
@@ -220,7 +358,7 @@ struct Engine
 enum Side
 {
     /// `true` or `false`, standing as a whole side.
-    Literal(FreeTerm),
+    Literal(FreeTerm<NameId>),
     /// The elaborated term's node.
     Node(NodeId),
 }
@@ -253,7 +391,7 @@ enum Mode
 struct Instantiation<'input>
 {
     /// The head's name.
-    name: &'input Name,
+    name: NameId,
     /// Its derived telescope.
     head: &'input Head,
     /// The arguments the source wrote, in order.
@@ -271,19 +409,19 @@ struct Instantiation<'input>
 enum Task<'input>
 {
     /// Elaborate a term, pushing its node.
-    Read(TermNode<'input>, Mode),
+    Read(TermNode<'input, NameId>, Mode),
     /// Apply the head of the kind to the nodes last pushed.
-    Apply(&'input Name, HeadKind, OperandCount, Mode),
+    Apply(NameId, HeadKind, OperandCount, Mode),
     /// Instantiate a sort term under the environment, pushing its sort.
-    Sort(&'input SortTerm, EnvId),
+    Sort(&'input SortTerm<NameId>, EnvId),
     /// Gather the nodes last pushed as the named sort's indices.
-    Gather(&'input Name, OperandCount),
+    Gather(NameId, OperandCount),
     /// Instantiate the next binder of a written application, or finish it.
     Binder(Instantiation<'input>),
     /// Bind the next binder at the sort last pushed.
     Bound(Instantiation<'input>),
     /// Build the application, its result sort last pushed.
-    Applied(&'input Name, Vec<NodeId>),
+    Applied(NameId, Vec<NodeId>),
 }
 
 /// What an elaboration walk has built and not yet consumed.
@@ -298,7 +436,7 @@ struct Built
     /// Instantiated sorts, innermost last.
     sorts: Vec<Sorted>,
     /// Every environment the walk opened, by [`EnvId`].
-    envs: Vec<BTreeMap<Name, NodeId>>,
+    envs: Vec<Scope>,
 }
 
 impl Built
@@ -333,9 +471,12 @@ impl Built
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the environment, growth within the walk
     fn open(
         &mut self,
-        bindings: BTreeMap<Name, NodeId>,
+        bindings: Scope,
     ) -> EnvId
     {
         self.envs.push(bindings);
@@ -377,9 +518,12 @@ impl Engine
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the variable and its node, growth within the engine
     fn variable(
         &mut self,
-        name: Name,
+        name: NameId,
         sort: Maybe<Sorted, unsorted::Absent>,
     ) -> NodeId
     {
@@ -459,6 +603,9 @@ impl Engine
     /// - fails: as [`Self::run`].
     /// - executable: none — the node built is the term's image in the graph.
     ///
+    /// # Cost
+    /// - allocation: the walk's tasks and nodes, growth within the engine
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — a law's sides elaborate to the operations' nodes and
     ///   sort as the derived heads instantiate.
@@ -470,7 +617,7 @@ impl Engine
     fn term(
         &mut self,
         heads: &Heads,
-        term: &FreeTerm,
+        term: &FreeTerm<NameId>,
     ) -> Result<NodeId, ModelFault>
     {
         let mut built = Built::default();
@@ -490,6 +637,9 @@ impl Engine
     /// - fails: as [`Self::run`], the sort's name read as a sort head.
     /// - executable: none — as [`Self::term`].
     ///
+    /// # Cost
+    /// - allocation: the sort's tasks and nodes, growth within the engine
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — a port's sort instantiates its family's telescope,
     ///   the implicit indices fresh metavariables.
@@ -501,12 +651,12 @@ impl Engine
     fn elaborate_sort(
         &mut self,
         heads: &Heads,
-        sort: &SortTerm,
+        sort: &SortTerm<NameId>,
     ) -> Result<Sorted, ModelFault>
     {
         let mut pending = Vec::with_capacity(sort.indices.len().saturating_add(1));
         pending.push(Task::Apply(
-            &sort.sort,
+            sort.sort,
             HeadKind::Sort,
             OperandCount::from(sort.indices.len()),
             Mode::Written,
@@ -534,6 +684,9 @@ impl Engine
     ///   answers; [`ModelFault::Arity`] for fewer arguments than an application
     ///   names.
     /// - executable: none — the walk is the elaboration.
+    ///
+    /// # Cost
+    /// - allocation: each task's nodes and sorts, growth within the engine
     ///
     /// # Adequacy
     /// - hypothesis: L2 — operations, sorts and laws elaborate as the written
@@ -568,7 +721,7 @@ impl Engine
                 },
                 Task::Sort(sort, env) => {
                     pending.push(Task::Gather(
-                        &sort.sort,
+                        sort.sort,
                         OperandCount::from(sort.indices.len()),
                     ));
                     pending.extend(
@@ -581,7 +734,7 @@ impl Engine
                 Task::Gather(name, count) => {
                     let indices = built.take(count)?;
                     built.sorts.push(Sorted {
-                        sort: name.clone(),
+                        sort: name,
                         indices,
                     });
                 },
@@ -591,7 +744,7 @@ impl Engine
                 },
                 Task::Applied(name, arguments) => {
                     let sort = built.sorts.pop().ok_or(ModelFault::Unsorted)?;
-                    let applied = self.node(Node::Apply(name.clone(), arguments));
+                    let applied = self.node(Node::Apply(name, arguments));
                     let _first = self.applied.insert(applied, sort);
                     built.nodes.push(applied);
                 },
@@ -616,6 +769,9 @@ impl Engine
     ///   name the environment does not bind.
     /// - executable: none — the node pushed is the variable's image.
     ///
+    /// # Cost
+    /// - allocation: the tasks and scope entries, growth within the engine
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — a law's free names become its variables, a head's
     ///   binders its instantiation's arguments.
@@ -625,7 +781,7 @@ impl Engine
     /// The [`ModelFault`] the specification names.
     fn read<'input>(
         &mut self,
-        node: TermNode<'input>,
+        node: TermNode<'input, NameId>,
         mode: Mode,
         pending: &mut Vec<Task<'input>>,
         built: &mut Built,
@@ -634,21 +790,19 @@ impl Engine
         match node.view() {
             TermView::Var(name) => {
                 let bound = match mode {
-                    Mode::Instance(env) => *built
+                    Mode::Instance(env) => built
                         .envs
                         .get(env.0)
-                        .and_then(|bindings| bindings.get(name))
+                        .and_then(|bindings| bindings.get(*name))
                         .ok_or(ModelFault::UnknownHead)?,
                     Mode::Written => {
-                        if let Some(&bound) = self.scope.get(name) {
+                        if let Some(bound) = self.scope.get(*name) {
                             bound
                         }
                         else {
-                            let fresh = self.variable(
-                                name.clone(),
-                                Maybe::Absent(unsorted::Absent::Unoccurred),
-                            );
-                            let _first = self.scope.insert(name.clone(), fresh);
+                            let fresh =
+                                self.variable(*name, Maybe::Absent(unsorted::Absent::Unoccurred));
+                            let _first = self.scope.insert(*name, fresh);
                             fresh
                         }
                     },
@@ -656,9 +810,9 @@ impl Engine
                 built.nodes.push(bound);
             },
             TermView::Op { name, args } => {
-                let arguments: Vec<TermNode<'input>> = args.collect();
+                let arguments: Vec<TermNode<'input, NameId>> = args.collect();
                 pending.push(Task::Apply(
-                    name,
+                    *name,
                     HeadKind::Operation,
                     OperandCount::from(arguments.len()),
                     mode,
@@ -695,6 +849,9 @@ impl Engine
     ///   faults of [`Self::finish`].
     /// - executable: none — the tasks queued are the application's steps.
     ///
+    /// # Cost
+    /// - allocation: the environment and the tasks, growth within the engine
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — an implicit argument is solved from the explicit
     ///   ones' sorts, and an operation's result sort instantiates over them.
@@ -705,7 +862,7 @@ impl Engine
     /// # Errors
     /// The [`ModelFault`] the specification names.
     fn apply<'input>(
-        name: &'input Name,
+        name: NameId,
         head: &'input Head,
         arguments: Vec<NodeId>,
         mode: Mode,
@@ -721,12 +878,12 @@ impl Engine
                 if head.binders.iter().any(|binder| !binder.over.is_empty()) {
                     return Err(ModelFault::Binding);
                 }
-                let bindings = head
-                    .binders
-                    .iter()
-                    .map(|binder| binder.name.clone())
-                    .zip(arguments.iter().copied())
-                    .collect();
+                let mut bindings = Scope {
+                    bound: Vec::with_capacity(head.binders.len()),
+                };
+                for (binder, &argument) in head.binders.iter().zip(&arguments) {
+                    let _shadowed = bindings.insert(binder.name, argument);
+                }
                 let env = built.open(bindings);
                 Self::finish(name, head, arguments, env, pending)
             },
@@ -734,7 +891,7 @@ impl Engine
                 if arguments.len() != head.explicit {
                     return Err(ModelFault::Arity);
                 }
-                let env = built.open(BTreeMap::new());
+                let env = built.open(Scope::default());
                 pending.push(Task::Binder(Instantiation {
                     name,
                     head,
@@ -757,6 +914,9 @@ impl Engine
     /// - fails: [`ModelFault::Binding`] for a binder that takes variables,
     ///   whose argument is a host function; the faults of [`Self::finish`].
     /// - executable: none — the tasks queued are the instantiation's steps.
+    ///
+    /// # Cost
+    /// - allocation: the tasks and the sort, growth within the engine
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every binder is instantiated in telescope order, a
@@ -784,7 +944,7 @@ impl Engine
         match head.kind {
             HeadKind::Sort => {
                 built.sorts.push(Sorted {
-                    sort: instantiation.name.clone(),
+                    sort: instantiation.name,
                     indices: instantiation.arguments,
                 });
                 Ok(())
@@ -810,6 +970,9 @@ impl Engine
     ///   [`ModelFault::Unsorted`] for no sort pushed; the faults of
     ///   [`Self::expect`].
     /// - executable: none — the check is the unification.
+    ///
+    /// # Cost
+    /// - allocation: the binding and the tasks, growth within the engine
     ///
     /// # Adequacy
     /// - hypothesis: L2 — a written argument of the wrong sort is refused, and
@@ -843,7 +1006,7 @@ impl Engine
             None => self.meta(expected),
         };
         if let Some(bindings) = built.envs.get_mut(instantiation.env.0) {
-            let _first = bindings.insert(binder.name.clone(), argument);
+            let _first = bindings.insert(binder.name, argument);
         }
         instantiation.arguments.push(argument);
         pending.push(Task::Binder(instantiation));
@@ -858,6 +1021,9 @@ impl Engine
     /// - fails: [`ModelFault::ManyOut`] for an operation of several results.
     /// - executable: none — the tasks queued are the node's steps.
     ///
+    /// # Cost
+    /// - allocation: the sort and the tasks, growth within the engine
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — an application's sort is its operation's result over
     ///   its arguments.
@@ -866,7 +1032,7 @@ impl Engine
     /// # Errors
     /// [`ModelFault::ManyOut`] for an operation of several results.
     fn finish<'input>(
-        name: &'input Name,
+        name: NameId,
         head: &'input Head,
         arguments: Vec<NodeId>,
         env: EnvId,
@@ -924,6 +1090,9 @@ impl Engine
     /// - fails: [`ModelFault::IllSorted`] for distinct names or index counts.
     /// - executable: none — as [`Self::unify`].
     ///
+    /// # Cost
+    /// - allocation: the index pairs, growth within the worklist
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — a law's two sides agree on one carrier sort.
     /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
@@ -963,6 +1132,9 @@ impl Engine
     /// metavariables, or replaces itself by the pairs of its arguments, nodes
     /// built strictly before it; a solved metavariable's sort pairs are
     /// nodes built before the metavariable.
+    ///
+    /// # Cost
+    /// - allocation: the pairs of the worklist, growth within the worklist
     ///
     /// # Adequacy
     /// - hypothesis: L2 — `comp`'s middle object is solved by its arguments'
@@ -1013,6 +1185,9 @@ impl Engine
     /// - fails: [`ModelFault::IllSorted`] when `solution` contains `meta`, or
     ///   their sorts' names differ.
     /// - executable: none — as [`Self::unify`].
+    ///
+    /// # Cost
+    /// - allocation: the sorts' index pairs, growth within the worklist
     ///
     /// # Adequacy
     /// - hypothesis: L2 — an implicit object solved by a morphism's sort reads
@@ -1227,6 +1402,10 @@ impl Engine
     /// - fails: [`ModelFault::Unsorted`] for an item no binder names.
     /// - executable: none — the term is the node's image.
     ///
+    /// # Cost
+    /// - allocation: the term read back, durable by the form
+    /// - allocation: the walk's stack, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — `unitL`'s left side reads back with every implicit
     ///   argument written.
@@ -1234,26 +1413,26 @@ impl Engine
     fn read_back(
         &self,
         node: NodeId,
-        names: &BTreeMap<Item, Name>,
-    ) -> Result<FreeTerm, ModelFault>
+        names: &BTreeMap<Item, NameId>,
+    ) -> Result<FreeTerm<NameId>, ModelFault>
     {
         /// One pending step of a read-back.
-        enum Back<'engine>
+        enum Back
         {
             /// Read a node.
             Read(NodeId),
             /// Apply an operation to the last `count` terms read.
-            Apply(&'engine Name, usize),
+            Apply(NameId, usize),
         }
         let mut pending = Vec::from([Back::Read(node)]);
-        let mut built: Vec<FreeTerm> = Vec::new();
+        let mut built: Vec<FreeTerm<NameId>> = Vec::new();
         while let Some(step) = pending.pop() {
             match step {
                 Back::Read(current) => {
                     let item = match self.nodes.get(self.resolve(current).0) {
                         Some(&Node::Meta(meta)) => Item::Meta(meta),
                         Some(&Node::Variable(variable)) => Item::Variable(variable),
-                        Some(&Node::Apply(ref name, ref arguments)) => {
+                        Some(&Node::Apply(name, ref arguments)) => {
                             pending.push(Back::Apply(name, arguments.len()));
                             pending.extend(
                                 arguments.iter().rev().map(|&argument| Back::Read(argument)),
@@ -1262,12 +1441,14 @@ impl Engine
                         },
                         None => return Err(ModelFault::Unsorted),
                     };
-                    built.push(FreeTerm::var(names.get(&item).ok_or(ModelFault::Unsorted)?));
+                    built.push(FreeTerm::var_id(
+                        *names.get(&item).ok_or(ModelFault::Unsorted)?,
+                    ));
                 },
                 Back::Apply(name, count) => {
                     let start = built.len().checked_sub(count).ok_or(ModelFault::Unsorted)?;
-                    let arguments: Vec<FreeTerm> = built.drain(start ..).collect();
-                    built.push(FreeTerm::op(name, arguments));
+                    let arguments: Vec<FreeTerm<NameId>> = built.drain(start ..).collect();
+                    built.push(FreeTerm::op_id(name, arguments));
                 },
             }
         }
@@ -1281,37 +1462,45 @@ impl Engine
     /// - fails: as [`Self::read_back`].
     /// - executable: none — as [`Self::read_back`].
     ///
+    /// # Cost
+    /// - allocation: the sort read back, durable by the form
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — `comp`'s result reads back as `Hom(a, c)`.
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
     fn read_back_sort(
         &self,
         sort: &Sorted,
-        names: &BTreeMap<Item, Name>,
-    ) -> Result<SortTerm, ModelFault>
+        names: &BTreeMap<Item, NameId>,
+    ) -> Result<SortTerm<NameId>, ModelFault>
     {
         let mut indices = Vec::with_capacity(sort.indices.len());
         for &index in &sort.indices {
             indices.push(self.read_back(index, names)?);
         }
         Ok(SortTerm {
-            sort: sort.sort.clone(),
+            sort: sort.sort,
             indices,
         })
     }
 
     /// Name every item of `order` — a written variable by its name, a
-    /// metavariable by the first letter no written name takes — and read each
-    /// one's sort back as its binder, an item `taken` lists taking its
-    /// variables, each sort read under the ones before it.
+    /// metavariable by the first letter no written name takes, minted into
+    /// `table` — and read each one's sort back as its binder, an item `taken`
+    /// lists taking its variables, each sort read under the ones before it.
     ///
     /// # Specification
     /// - ensures: one binder per item, in order, each sort naming only the
     ///   binders before it and its own variables; the names hold the items of
     ///   `order` alone.
     /// - fails: [`ModelFault::Unsorted`] for an item or a variable with no
-    ///   sort, or a sort naming an item outside `order` or after it.
+    ///   sort, or a sort naming an item outside `order` or after it;
+    ///   [`ModelFault::Full`] when `table` cannot mint a metavariable's name.
     /// - executable: none — the telescope is the order's.
+    ///
+    /// # Cost
+    /// - allocation: the binders, durable by the form
+    /// - allocation: each fresh name, growth within the table
     ///
     /// # Adequacy
     /// - hypothesis: L2 — `comp`'s and `assoc`'s telescopes spell as the
@@ -1323,14 +1512,11 @@ impl Engine
         &self,
         order: &[Item],
         taken: &BTreeMap<Item, Vec<Item>>,
-    ) -> Result<(Vec<Binder>, BTreeMap<Item, Name>), ModelFault>
+        table: &mut Names,
+    ) -> Result<Telescope, ModelFault>
     {
-        let mut used: BTreeSet<Name> = self
-            .variables
-            .iter()
-            .map(|known| known.name.clone())
-            .collect();
-        let mut names: BTreeMap<Item, Name> = BTreeMap::new();
+        let mut used: Vec<NameId> = self.variables.iter().map(|known| known.name).collect();
+        let mut names: BTreeMap<Item, NameId> = BTreeMap::new();
         let mut binders = Vec::with_capacity(order.len());
         for &item in order {
             let Maybe::Present(sort) = self.item_sort(item)
@@ -1345,17 +1531,17 @@ impl Engine
                     return Err(ModelFault::Unsorted);
                 };
                 let bound = self.read_back_sort(&sort, &names)?;
-                let name = self.item_name(variable, &used)?;
-                let _first = names.insert(variable, name.clone());
+                let name = self.item_name(variable, &used, table)?;
+                let _first = names.insert(variable, name);
                 over.push(super::Variable { name, sort: bound });
             }
             let bound = self.read_back_sort(&sort, &names);
             for variable in variables {
                 let _scoped = names.remove(variable);
             }
-            let name = self.item_name(item, &used)?;
-            let _fresh = used.insert(name.clone());
-            let _first = names.insert(item, name.clone());
+            let name = self.item_name(item, &used, table)?;
+            used.push(name);
+            let _first = names.insert(item, name);
             binders.push(Binder {
                 name,
                 over,
@@ -1366,13 +1552,13 @@ impl Engine
     }
 
     /// The name `item` binds under: a written variable's own, a
-    /// metavariable's the first `used` leaves free.
+    /// metavariable's the first `used` leaves free, minted into `table`.
     ///
     /// # Specification
     /// - ensures: a variable's written name; a metavariable's name outside
     ///   `used`.
     /// - fails: [`ModelFault::Unsorted`] for a variable the engine does not
-    ///   hold.
+    ///   hold; [`ModelFault::Full`] as [`fresh`].
     /// - executable: none — the name is the variable's or [`fresh`]'s.
     ///
     /// # Adequacy
@@ -1382,16 +1568,17 @@ impl Engine
     fn item_name(
         &self,
         item: Item,
-        used: &BTreeSet<Name>,
-    ) -> Result<Name, ModelFault>
+        used: &[NameId],
+        table: &mut Names,
+    ) -> Result<NameId, ModelFault>
     {
         match item {
             Item::Variable(variable) => self
                 .variables
                 .get(variable.0)
-                .map(|known| known.name.clone())
+                .map(|known| known.name)
                 .ok_or(ModelFault::Unsorted),
-            Item::Meta(_) => Ok(fresh(used)),
+            Item::Meta(_) => fresh(used, table),
         }
     }
 
@@ -1414,12 +1601,19 @@ impl Engine
 }
 
 /// The first name, `a` to `z` and then `x0`, `x1`, …, that `taken` does not
-/// hold.
+/// hold, minted into `table`.
+///
+/// A candidate that `taken` holds is in `table` already, so its mint adds
+/// nothing: `table` grows by the name returned alone.
 ///
 /// # Specification
 /// - ensures: a name `taken` does not contain.
+/// - fails: [`ModelFault::Full`] when `table` cannot mint a candidate.
 /// - executable: none — the candidates are tried in order until one is free,
 ///   which the finite `taken` guarantees.
+///
+/// # Cost
+/// - allocation: the name returned, growth within the table
 ///
 /// # Termination
 /// `taken` is finite, so some candidate past its size is free.
@@ -1429,23 +1623,38 @@ impl Engine
 ///   the first letter its telescope leaves free.
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
 /// - witness: `model::tests::an_implicit_object_past_the_last_free_letter_is_numbered`
-fn fresh(taken: &BTreeSet<Name>) -> Name
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `taken` holds the names of one telescope"
+    )
+)]
+fn fresh(
+    taken: &[NameId],
+    table: &mut Names,
+) -> Result<NameId, ModelFault>
 {
+    let minted = |candidate: Maybe<NameId, name_mint::Absent>| match candidate {
+        Maybe::Present(id) => Ok(id),
+        Maybe::Absent(_) => Err(ModelFault::Full),
+    };
     for letter in 'a' ..= 'z' {
-        let candidate = Name::from(format!("{letter}"));
+        let mut spelled = [0_u8; 4];
+        let candidate = minted(table.mint(NameRef::from(&*letter.encode_utf8(&mut spelled))))?;
         if !taken.contains(&candidate) {
-            return candidate;
+            return Ok(candidate);
         }
     }
     let mut suffix = 0_usize;
     for _step in 0 ..= taken.len() {
-        let candidate = Name::from(format!("x{suffix}"));
+        let candidate = minted(table.mint_numbered('x', suffix))?;
         if !taken.contains(&candidate) {
-            return candidate;
+            return Ok(candidate);
         }
         suffix = suffix.saturating_add(1);
     }
-    Name::from(format!("x{suffix}"))
+    minted(table.mint_numbered('x', suffix))
 }
 
 /// The derived head `name` names, of `kind`.
@@ -1460,11 +1669,11 @@ fn fresh(taken: &BTreeSet<Name>) -> Name
 /// - hypothesis: L2 — a component naming a faulted operation inherits its
 ///   fault.
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
-fn head_of<'heads>(
-    heads: &'heads Heads,
+fn head_of(
+    heads: &Heads,
     kind: HeadKind,
-    name: &Name,
-) -> Result<&'heads Head, ModelFault>
+    name: NameId,
+) -> Result<&Head, ModelFault>
 {
     match heads.get(name) {
         Some(&Ok(ref head)) if head.kind == kind => Ok(head),
@@ -1485,8 +1694,13 @@ fn head_of<'heads>(
 ///   binding port's binder taking its variables; `explicit` is the port count;
 ///   an operation's results read over the binders.
 /// - fails: a [`ModelFault`] for a sort naming no earlier sort or variable, an
-///   index of the wrong sort, or a free variable no occurrence sorts.
+///   index of the wrong sort, or a free variable no occurrence sorts;
+///   [`ModelFault::Full`] when `table` cannot mint a free variable's name.
 /// - executable: none — the head is the inference.
+///
+/// # Cost
+/// - allocation: the engine, setup
+/// - allocation: the head, durable by the heads
 ///
 /// # Adequacy
 /// - hypothesis: L2 — `Ob`, `Hom`, `id` and `comp` derive the written
@@ -1500,8 +1714,8 @@ fn head_of<'heads>(
 pub(super) fn derive_head(
     heads: &Heads,
     kind: HeadKind,
-    ports: &[Port],
-    outputs: &[Port],
+    (ports, outputs): (&[Port<NameId>], &[Port<NameId>]),
+    table: &mut Names,
 ) -> Result<Head, ModelFault>
 {
     let mut engine = Engine::default();
@@ -1513,11 +1727,8 @@ pub(super) fn derive_head(
         let mut outer = Vec::with_capacity(port.binders.len());
         for variable in &port.binders {
             let sort = engine.elaborate_sort(heads, &variable.sort)?;
-            let bound = engine.variable(variable.name.clone(), Maybe::Present(sort));
-            outer.push((
-                variable.name.clone(),
-                engine.scope.insert(variable.name.clone(), bound),
-            ));
+            let bound = engine.variable(variable.name, Maybe::Present(sort));
+            outer.push((variable.name, engine.scope.insert(variable.name, bound)));
             if let Maybe::Present(item) = engine.item(bound) {
                 variables.push(item);
             }
@@ -1526,11 +1737,11 @@ pub(super) fn derive_head(
         for (name, shadowed) in outer.into_iter().rev() {
             let _scoped = match shadowed {
                 Some(shadowed) => engine.scope.insert(name, shadowed),
-                None => engine.scope.remove(&name),
+                None => engine.scope.remove(name),
             };
         }
-        let bound = engine.variable(port.name.clone(), Maybe::Present(sort));
-        let _shadowed = engine.scope.insert(port.name.clone(), bound);
+        let bound = engine.variable(port.name, Maybe::Present(sort));
+        let _shadowed = engine.scope.insert(port.name, bound);
         if let Maybe::Present(item) = engine.item(bound) {
             roots.extend(variables.iter().copied());
             roots.push(item);
@@ -1570,7 +1781,7 @@ pub(super) fn derive_head(
         &mut placed,
     );
     order.extend(explicit);
-    let (binders, names) = engine.telescope(&order, &taken)?;
+    let (binders, names) = engine.telescope(&order, &taken, table)?;
     let mut read = Vec::with_capacity(results.len());
     for result in &results {
         read.push(engine.read_back_sort(result, &names)?);
@@ -1596,8 +1807,13 @@ pub(super) fn derive_head(
 /// - fails: a [`ModelFault`] for an ill-sorted term, a variable no occurrence
 ///   sorts, or a term naming a refused or undeclared head;
 ///   [`ModelFault::Binding`] for a term relating a binding port's field, its
-///   variable or an instantiation.
+///   variable or an instantiation; [`ModelFault::Full`] when `table` cannot
+///   mint an implicit argument's name.
 /// - executable: none — the law is the inference.
+///
+/// # Cost
+/// - allocation: the engine, setup
+/// - allocation: the law's form, durable by the signature
 ///
 /// # Adequacy
 /// - hypothesis: L2 — `unitL`, `unitR` and `assoc` derive the written laws, and
@@ -1609,8 +1825,9 @@ pub(super) fn derive_head(
 /// - allocation: the law's telescope and terms, growth within the variables
 pub(super) fn derive_law(
     heads: &Heads,
-    law: &PresentedLaw,
-) -> Result<ModelForm, ModelFault>
+    law: &PresentedLaw<NameId>,
+    table: &mut Names,
+) -> Result<ModelForm<NameId>, ModelFault>
 {
     let mut engine = Engine::default();
     let left = engine.term(heads, &law.left)?;
@@ -1632,7 +1849,7 @@ pub(super) fn derive_law(
     };
     let mut written: Vec<Item> = Vec::new();
     for name in law.left.to_node().vars().chain(law.right.to_node().vars()) {
-        if let Some(&bound) = engine.scope.get(name)
+        if let Some(bound) = engine.scope.get(*name)
             && let Maybe::Present(item) = engine.item(bound)
         {
             written.push(item);
@@ -1673,7 +1890,7 @@ pub(super) fn derive_law(
             order.push(item);
         }
     }
-    let (telescope, names) = engine.telescope(&order, &BTreeMap::new())?;
+    let (telescope, names) = engine.telescope(&order, &BTreeMap::new(), table)?;
 
     Ok(ModelForm::Law {
         telescope,
@@ -1698,13 +1915,18 @@ pub(super) fn derive_law(
 ///   `Bool` literal stands only as a whole side at `Bool`.
 /// - fails: [`ModelFault::Unbound`] for a side naming a variable no binder
 ///   binds, or a binder written twice; [`ModelFault::IllSorted`] for a side at
-///   another sort than its path's carrier; the faults of elaborating a sort or
-///   a side.
+///   another sort than its path's carrier; [`ModelFault::Full`] when `table`
+///   cannot mint an implicit argument's name; the faults of elaborating a sort
+///   or a side.
 /// - panics: none.
 /// - executable: none — the inference is the derivation.
 ///
 /// # Errors
 /// The [`ModelFault`] the specification names.
+///
+/// # Cost
+/// - allocation: the engine, setup
+/// - allocation: the law's form, durable by the signature
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `refl`, `sym` and `trans` derive their components, and a
@@ -1715,22 +1937,23 @@ pub(super) fn derive_law(
 /// - allocation: the law's telescope and terms, growth within the binders
 pub(super) fn derive_stated(
     heads: &Heads,
-    law: &StatedLaw,
-) -> Result<ModelForm, ModelFault>
+    law: &StatedLaw<NameId>,
+    table: &mut Names,
+) -> Result<ModelForm<NameId>, ModelFault>
 {
     let mut engine = Engine::default();
     let mut written: Vec<Item> = Vec::with_capacity(law.binders.len());
     for binder in &law.binders {
         let sort = engine.stated_sort(heads, &binder.sort)?;
-        let variable = engine.variable(binder.name.clone(), Maybe::Present(sort));
-        if engine.scope.insert(binder.name.clone(), variable).is_some() {
+        let variable = engine.variable(binder.name, Maybe::Present(sort));
+        if engine.scope.insert(binder.name, variable).is_some() {
             return Err(ModelFault::Unbound);
         }
         if let Maybe::Present(item) = engine.item(variable) {
             written.push(item);
         }
     }
-    let bound = engine.scope.len();
+    let bound = engine.scope.bound.len();
     let paths = law
         .hypotheses
         .iter()
@@ -1739,11 +1962,11 @@ pub(super) fn derive_stated(
     let mut equations = Vec::with_capacity(law.hypotheses.len().saturating_add(1));
     for (carrier, left, right) in paths {
         let sort = engine.stated_sort(heads, carrier)?;
-        let left = engine.side(heads, left, &sort)?;
-        let right = engine.side(heads, right, &sort)?;
+        let left = engine.side(heads, left, &sort, table)?;
+        let right = engine.side(heads, right, &sort, table)?;
         equations.push((sort, left, right));
     }
-    if engine.scope.len() != bound {
+    if engine.scope.bound.len() != bound {
         return Err(ModelFault::Unbound);
     }
     let mut indexing = BTreeSet::new();
@@ -1787,7 +2010,7 @@ pub(super) fn derive_stated(
             order.push(item);
         }
     }
-    let (telescope, names) = engine.telescope(&order, &BTreeMap::new())?;
+    let (telescope, names) = engine.telescope(&order, &BTreeMap::new(), table)?;
     let mut read = Vec::with_capacity(equations.len());
     for &(ref sort, ref left, ref right) in &equations {
         read.push((
@@ -1805,7 +2028,7 @@ pub(super) fn derive_stated(
         .iter()
         .zip(read)
         .map(|(hypothesis, (carrier, left, right))| Hypothesis {
-            name: hypothesis.name.clone(),
+            name: hypothesis.name,
             carrier,
             left,
             right,
@@ -1845,12 +2068,12 @@ impl Engine
     fn stated_sort(
         &mut self,
         heads: &Heads,
-        sort: &SortTerm,
+        sort: &SortTerm<NameId>,
     ) -> Result<Sorted, ModelFault>
     {
-        if heads.get(&sort.sort).is_none() && sort.indices.is_empty() {
+        if heads.get(sort.sort).is_none() && sort.indices.is_empty() {
             return Ok(Sorted {
-                sort: sort.sort.clone(),
+                sort: sort.sort,
                 indices: Vec::new(),
             });
         }
@@ -1861,7 +2084,8 @@ impl Engine
     ///
     /// # Specification
     /// - ensures: a `Bool` literal as itself; any other term elaborated through
-    ///   the scope and checked at `carrier`.
+    ///   the scope and checked at `carrier`. Each name reads its text in
+    ///   `table`.
     /// - fails: [`ModelFault::IllSorted`] for a literal at another carrier than
     ///   `Bool`; the faults of [`Self::term`] and [`Self::expect`].
     /// - panics: none.
@@ -1870,6 +2094,10 @@ impl Engine
     /// # Errors
     /// The [`ModelFault`] the specification names.
     ///
+    /// # Cost
+    /// - allocation: the literal's copy, durable by the form
+    /// - allocation: the walk's nodes, growth within the engine
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `refl`'s `true` reads as a literal and `sym`'s sides
     ///   as elaborated terms.
@@ -1877,15 +2105,18 @@ impl Engine
     fn side(
         &mut self,
         heads: &Heads,
-        term: &FreeTerm,
+        term: &FreeTerm<NameId>,
         carrier: &Sorted,
+        table: &Names,
     ) -> Result<Side, ModelFault>
     {
         if let TermView::Ctor { name, mut args } = term.to_node().view()
-            && matches!(name.as_ref(), "true" | "false")
+            && matches!(table.text(*name), Maybe::Present(text) if matches!(text.as_ref(), "true" | "false"))
             && args.next().is_none()
         {
-            if carrier.sort.as_ref() != "Bool" || !carrier.indices.is_empty() {
+            if table.text(carrier.sort) != Maybe::Present(NameRef::from("Bool"))
+                || !carrier.indices.is_empty()
+            {
                 return Err(ModelFault::IllSorted);
             }
             return Ok(Side::Literal(term.clone()));
@@ -1906,14 +2137,17 @@ impl Engine
     /// # Errors
     /// The [`ModelFault`] of [`Self::read_back`].
     ///
+    /// # Cost
+    /// - allocation: the side read back, durable by the form
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::side`].
     /// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
     fn side_back(
         &self,
         side: &Side,
-        names: &BTreeMap<Item, Name>,
-    ) -> Result<FreeTerm, ModelFault>
+        names: &BTreeMap<Item, NameId>,
+    ) -> Result<FreeTerm<NameId>, ModelFault>
     {
         match *side {
             Side::Literal(ref literal) => Ok(literal.clone()),

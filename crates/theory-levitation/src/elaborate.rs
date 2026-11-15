@@ -317,6 +317,10 @@ impl InterfacePair
     /// # Errors
     /// See [`PortInstantiationError`].
     ///
+    /// # Cost
+    /// - allocation: the redex's terms, durable by the redex
+    /// - allocation: the bindings and the names, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the two endpoint arms and the two declines are
     ///   separated pointwise: an unpinned pair leaves the target opaque and so
@@ -1154,6 +1158,9 @@ pub fn redex_occurrences(body: &CircuitBody)
 ///   occurrence: the declaration order the boundary language's `r(t₁, …, tₙ)`
 ///   instantiates in.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the distinct names, durable by the list
 ///
 /// # Adequacy
 /// - hypothesis: L3 — ground, single-variable and repeated mixed-variable

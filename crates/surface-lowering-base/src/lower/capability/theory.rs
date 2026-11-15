@@ -219,6 +219,9 @@ pub struct TheoryLaw
 /// # Errors
 /// The member out of shape and its fault.
 ///
+/// # Cost
+/// - allocation: the operations read, durable by the interface
+///
 /// # Adequacy
 /// - hypothesis: L3 — `State` read as its two operations, a theory refused at
 ///   each fault, and a cost theory's `zero` and `plus` read as value operations
@@ -229,7 +232,7 @@ pub struct TheoryLaw
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.effects.len().saturating_add(read.values.len()) == members.operations.len()))]
 #[inline]
 pub fn operations(
-    members: &Members,
+    members: &Members<Name>,
     fixed: &BTreeMap<Name, NodeIndex>,
 ) -> Result<Operations, (Placed, InterfaceFault)>
 {
@@ -291,6 +294,9 @@ pub fn operations(
 /// # Errors
 /// The law no handler reads.
 ///
+/// # Cost
+/// - allocation: the laws read, durable by the interface
+///
 /// # Adequacy
 /// - hypothesis: L3 — put-get read over State's operations, a law storing a
 ///   constructor refused, a cost theory's two laws, each applying a value
@@ -304,7 +310,7 @@ pub fn operations(
 }))]
 #[inline]
 pub fn laws(
-    members: &Members,
+    members: &Members<Name>,
     stated: &[StatedLaw],
     operations: &[TheoryOperation],
     values: &[ValueOperation],
@@ -385,6 +391,9 @@ fn applied_value<'term>(
 /// - fails: never; a law no subject rewrite reads is left out.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the rules read, durable by the scope
+///
 /// # Adequacy
 /// - hypothesis: L3 — State's three laws read as three rules and a reordering
 ///   law as none, and get-get marked turned is read from its right side, which
@@ -394,7 +403,7 @@ fn applied_value<'term>(
 #[must_use]
 #[inline]
 pub fn rules(
-    members: &Members,
+    members: &Members<Name>,
     operations: &[TheoryOperation],
     turns: &[RuleTurn],
 ) -> Vec<SubjectRule>

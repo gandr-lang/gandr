@@ -37,7 +37,7 @@ const COST: &str = include_str!("tests/fixtures/cost.gandr");
 ///
 /// # Specification
 /// trivial.
-fn members(source: SourceText<'_>) -> Members
+fn members(source: SourceText<'_>) -> Members<Name>
 {
     let grammar = grammar();
     let tree = parse(&grammar, source).unwrap().into_tree();
@@ -50,7 +50,7 @@ fn members(source: SourceText<'_>) -> Members
     else {
         panic!("a theory presents its members");
     };
-    presentation.members().unwrap()
+    presentation.spelled_members().unwrap()
 }
 
 /// A manifest fixing each of `sorts` at a type node of its own, in order.

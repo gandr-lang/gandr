@@ -2215,6 +2215,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the members read back as text, setup
+    /// - allocation: the interface, durable by the scope
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `State` fixed at `Integer` handled and exercised; a
     ///   theory refused at each fault; a manifest sort the theory does not
@@ -2287,7 +2291,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
         };
         // A handler is a model of the theory: a value presenting no theory
         // has none, as `Model(T)` refuses it.
-        let Ok(members) = presentation.members()
+        // The handler reads text, so the members read back at its boundary,
+        // which #7663 moves to ids.
+        let Ok(members) = presentation.spelled_members()
         else {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::ModelType)));
         };

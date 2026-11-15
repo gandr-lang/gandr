@@ -120,6 +120,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Decoding into core types | [`typed_rule`](src/typed_rule.rs) |
 | Flat representation | [`tree`](src/tree.rs) |
 | Code equality | [`code`](src/code.rs) |
+| The table of names and the id a name holds | [`names`](src/names.rs) |
 | Circuit rules and their derived boundaries | [`circuit`](src/circuit.rs) |
 | Elaborating a circuit block | [`elaborate`](src/elaborate.rs) |
 | The presentation code `Theory` and what waits on the fragment | [`theory`](src/theory.rs) |
@@ -128,6 +129,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 ## References
 
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a sort's index ranges over the host's types.
+- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: the performance programme (§ performance-picture) — a name of the code is an id into its description's table, so a copy of a term copies no text.
 
 ## License
 

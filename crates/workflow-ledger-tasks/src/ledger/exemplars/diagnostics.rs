@@ -125,7 +125,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 68_usize] = [
+const OWED: [(&str, Owed); 69_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -218,6 +218,13 @@ const OWED: [(&str, Owed); 68_usize] = [
         Owed::Unreachable(Reason(
             "a theory declares no constructor, and a rule naming an undeclared head is \
              refused as ill-formed first",
+        )),
+    ),
+    (
+        "UnstatedComponent.Full",
+        Owed::Unreachable(Reason(
+            "a model's table of names is full only at the bound of a `u32`, more distinct names \
+             than a source of the corpus can hold",
         )),
     ),
     ("UnstatedComponent.Inherited", Owed::Unwritten(LOWERING)),
@@ -538,6 +545,10 @@ impl core::fmt::Display for Subject
 ///
 /// # Errors
 /// [`LedgerFault::Unreadable`] naming the folder.
+///
+/// # Cost
+/// - allocation: the folder's listing, the map of owed rows, each subject's
+///   path and the findings, growth within the subjects and the folder's files
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the committed exemplars and table pair every subject; a

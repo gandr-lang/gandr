@@ -309,6 +309,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
@@ -316,6 +317,7 @@ use quenchant_shape::shape::Maybe;
 use crate::arity::BridgeArity;
 use crate::arity::SortRef;
 use crate::boundary::ConstructorTag;
+use crate::boundary::NameRef;
 use crate::boundary::NominalSerial;
 use crate::boundary::RuleIndex;
 use crate::boundary::SerializedValueBytes;
@@ -343,10 +345,14 @@ use crate::generic::Payload;
 use crate::generic::PayloadNode;
 use crate::generic::PayloadView;
 use crate::generic::serialize_value;
+use crate::names::NameId;
+use crate::names::Names;
+use crate::names::name_mint;
 use crate::rule::FreeTerm;
 use crate::rule::Freshness;
 use crate::rule::RowTail;
 use crate::rule::RuleFace;
+use crate::rule::TermHead;
 use crate::rule::TermNode;
 use crate::rule::TermView;
 use crate::rule::Under;
@@ -637,22 +643,22 @@ where
 /// - hypothesis: L3 — as [`TheoryValue::encode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct TheoryPort
+pub struct TheoryPort<N = Name>
 {
     /// The port's name; empty for an unnamed port.
-    pub name: Name,
+    pub name: N,
     /// The name of the port's sort.
-    pub sort: Name,
+    pub sort: N,
     /// The sort's index terms, in order.
-    pub indices: Vec<FreeTerm>,
+    pub indices: Vec<FreeTerm<N>>,
     /// The `pi+` binders over the port, outermost first, each a variable of a
     /// representable sort; empty for a first-order port. Only an operation's
     /// port binds.
-    pub bindings: Vec<TheoryBinder>,
+    pub bindings: Vec<TheoryBinder<N>>,
     /// The atoms `bind` abstracts over the port, outermost first and outside
     /// its binders, each of an atom sort; empty for a port that abstracts
     /// none. Only an operation's port abstracts.
-    pub abstractions: Vec<TheoryBinder>,
+    pub abstractions: Vec<TheoryBinder<N>>,
 }
 
 /// One `pi+` binder of a port: the bound variable's name and its sort, a
@@ -668,14 +674,14 @@ pub struct TheoryPort
 /// - hypothesis: L3 — as [`TheoryValue::encode`].
 /// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct TheoryBinder
+pub struct TheoryBinder<N = Name>
 {
     /// The bound variable's name.
-    pub name: Name,
+    pub name: N,
     /// The name of the variable's sort.
-    pub sort: Name,
+    pub sort: N,
     /// The sort's index terms, in order.
-    pub indices: Vec<FreeTerm>,
+    pub indices: Vec<FreeTerm<N>>,
 }
 
 /// One sort of a presentation: its name, its index telescope and whether it
@@ -691,12 +697,12 @@ pub struct TheoryBinder
 /// - hypothesis: L3 — as [`TheoryValue::encode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct TheorySort
+pub struct TheorySort<N = Name>
 {
     /// The sort's name.
-    pub name: Name,
+    pub name: N,
     /// The index telescope, in order.
-    pub indices: Vec<TheoryPort>,
+    pub indices: Vec<TheoryPort<N>>,
     /// Whether a port may bind a variable of the sort.
     pub representability: Representability,
 }
@@ -713,17 +719,17 @@ pub struct TheorySort
 /// - hypothesis: L3 — as [`TheoryValue::encode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct TheoryOperation
+pub struct TheoryOperation<N = Name>
 {
     /// The operation's name.
-    pub name: Name,
+    pub name: N,
     /// Whether it is an operation, an observation, a constant or a nested
     /// model.
     pub kind: OperationKind,
     /// The input ports, in order.
-    pub inputs: Vec<TheoryPort>,
+    pub inputs: Vec<TheoryPort<N>>,
     /// The output ports, in order.
-    pub outputs: Vec<TheoryPort>,
+    pub outputs: Vec<TheoryPort<N>>,
 }
 
 /// Which member declared an operation of a presentation.
@@ -753,18 +759,18 @@ pub enum OperationKind
 /// - hypothesis: L3 — as [`TheoryValue::encode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct TheoryRule
+pub struct TheoryRule<N = Name>
 {
     /// The rule's name.
-    pub name: Name,
+    pub name: N,
     /// The left-hand side.
-    pub left: FreeTerm,
+    pub left: FreeTerm<N>,
     /// The right-hand side.
-    pub right: FreeTerm,
+    pub right: FreeTerm<N>,
     /// The freshness conditions the rule states, in written order.
-    pub fresh: Vec<Freshness>,
+    pub fresh: Vec<Freshness<N>>,
     /// The row the rule fires under.
-    pub under: Maybe<Under, row_condition::Absent>,
+    pub under: Maybe<Under<N>, row_condition::Absent>,
 }
 
 /// How a written rule rewrites: as written, or right to left.
@@ -844,12 +850,12 @@ pub struct DerivedPeak
 /// - hypothesis: L3 — as [`TheoryValue::encode_certified`].
 /// - witness: `theory::tests::a_certified_presentation_carries_its_rule_certificate`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct DerivedFace
+pub struct DerivedFace<N = Name>
 {
     /// The left side.
-    pub left: FreeTerm,
+    pub left: FreeTerm<N>,
     /// The right side.
-    pub right: FreeTerm,
+    pub right: FreeTerm<N>,
     /// The critical pair it joins.
     pub peak: DerivedPeak,
 }
@@ -867,15 +873,32 @@ pub struct DerivedFace
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryValue::encode_certified`].
 /// - witness: `theory::tests::a_certified_presentation_carries_its_rule_certificate`
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct RuleCertificate
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RuleCertificate<N = Name>
 {
     /// Each written rule's orientation, in rule order.
     pub turns: Vec<RuleTurn>,
     /// The derived rules, in derivation order.
-    pub derived: Vec<DerivedFace>,
+    pub derived: Vec<DerivedFace<N>>,
     /// Each ranked operation's name and rank.
-    pub ranks: Vec<(Name, crate::termination::Rank)>,
+    pub ranks: Vec<(N, crate::termination::Rank)>,
+}
+
+impl<N> Default for RuleCertificate<N>
+{
+    /// The certificate of no rule.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            turns: Vec::new(),
+            derived: Vec::new(),
+            ranks: Vec::new(),
+        }
+    }
 }
 
 /// A presentation's members as `Theory` codes them, each list in written order.
@@ -889,19 +912,19 @@ pub struct RuleCertificate
 /// - hypothesis: L3 — as [`TheoryValue::encode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct TheoryParts
+pub struct TheoryParts<N = Name>
 {
     /// The shape parameter, absent for a presentation that states none.
     pub shape: Maybe<TheoryShape, shape_parameter::Absent>,
     /// The sorts.
-    pub sorts: Vec<TheorySort>,
+    pub sorts: Vec<TheorySort<N>>,
     /// The operations.
-    pub operations: Vec<TheoryOperation>,
+    pub operations: Vec<TheoryOperation<N>>,
     /// The rule faces.
-    pub rules: Vec<TheoryRule>,
+    pub rules: Vec<TheoryRule<N>>,
 }
 
-impl Default for TheoryParts
+impl<N> Default for TheoryParts<N>
 {
     /// The presentation of nothing: no shape and no members.
     ///
@@ -1261,6 +1284,8 @@ pub enum TheoryFault
     /// decimal numerals joined by `,`, ascending and each once, each in its
     /// one spelling.
     Numeral,
+    /// The table the decode mints names into holds no room for another name.
+    Full,
 }
 
 /// A value of `Theory`: one presentation.
@@ -1506,6 +1531,69 @@ impl TheoryValue
     #[spec(ensures: |ref ret| ret.is_err() || self.0.ctor == Tag::Presents.constructor())]
     pub fn decode(&self) -> Result<TheoryParts, TheoryFault>
     {
+        self.decode_with(&mut written)
+    }
+
+    /// The presentation the value codes, each name minted into `names`: the
+    /// form a lowering session decodes, whose terms copy no text.
+    ///
+    /// # Specification
+    /// - ensures: [`Self::decode`]'s parts with each name replaced by the id
+    ///   `names` mints for it, so each id reads back as the decoded text.
+    /// - fails: as [`Self::decode`]; [`TheoryFault::Full`] when `names` has no
+    ///   room for a name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the first [`TheoryFault`] met, root first.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a presentation with every kind of member decodes into
+    ///   a table and reads back through it as its text decode; a decode that
+    ///   skips a name or mints a stale one changes the read.
+    /// - witness: `theory::tests::a_presentation_decodes_into_a_table_as_its_text_reads`
+    #[inline]
+    #[spec(ensures: |ref ret| ret.is_err() || self.0.ctor == Tag::Presents.constructor())]
+    pub fn decode_into<A>(
+        &self,
+        names: &mut Names<A>,
+    ) -> Result<TheoryParts<NameId>, TheoryFault>
+    where
+        A: Allocator + Clone,
+    {
+        self.decode_with(&mut |spelled: NameRef<'_>| match names.mint(spelled) {
+            Maybe::Present(id) => Ok(id),
+            Maybe::Absent(_) => Err(TheoryFault::Full),
+        })
+    }
+
+    /// The presentation the value codes, each name the image of its text
+    /// under `mint`.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::decode`], each name read through `mint`.
+    /// - fails: as [`Self::decode`], and the error `mint` returns.
+    /// - panics: none.
+    /// - executable: none — the two forms' predicates stand on [`Self::decode`]
+    ///   and [`Self::decode_into`].
+    ///
+    /// # Errors
+    /// Returns the first [`TheoryFault`] met, root first.
+    ///
+    /// # Cost
+    /// - allocation: the decoded parts, durable by the parts
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::decode`] and [`Self::decode_into`].
+    /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
+    /// - witness: `theory::tests::a_presentation_decodes_into_a_table_as_its_text_reads`
+    fn decode_with<N, F>(
+        &self,
+        mint: &mut F,
+    ) -> Result<TheoryParts<N>, TheoryFault>
+    where
+        F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
+    {
         let root = Node {
             ctor: self.0.ctor,
             payload: self.0.payload.to_node(),
@@ -1536,9 +1624,9 @@ impl TheoryValue
             else {
                 break;
             };
-            let name = text(name)?;
+            let name = named(name, mint)?;
             let indices = nested(indices)?;
-            let indices = read_plain(indices, unbound)?;
+            let indices = read_plain(indices, mint, unbound)?;
             parts.sorts.push(TheorySort {
                 name,
                 indices,
@@ -1565,11 +1653,11 @@ impl TheoryValue
             else {
                 break;
             };
-            let name = text(name)?;
+            let name = named(name, mint)?;
             let inputs = nested(inputs)?;
-            let inputs = read_ports(inputs)?;
+            let inputs = read_ports(inputs, mint)?;
             let outputs = nested(outputs)?;
-            let outputs = read_ports(outputs)?;
+            let outputs = read_ports(outputs, mint)?;
             parts.operations.push(TheoryOperation {
                 name,
                 kind,
@@ -1578,7 +1666,7 @@ impl TheoryValue
             });
             at = nested(rest)?;
         }
-        parts.rules = read_rules(nested(rules)?)?.0;
+        parts.rules = read_rules(nested(rules)?, mint)?.0;
         Ok(parts)
     }
 
@@ -1613,7 +1701,7 @@ impl TheoryValue
             payload: self.0.payload.to_node(),
         };
         let [_, _, rules] = expect::<3>(root, Tag::Presents)?;
-        Ok(read_rules(nested(rules)?)?.1)
+        Ok(read_rules(nested(rules)?, &mut written)?.1)
     }
 
     /// The value's canonical bytes: the presentation's identity.
@@ -2012,11 +2100,56 @@ fn nested(field: PayloadNode<'_>) -> Result<Node<'_>, TheoryFault>
 ))]
 fn text(field: PayloadNode<'_>) -> Result<Name, TheoryFault>
 {
+    named(field, &mut written)
+}
+
+/// The field's bytes as a name, the image of its text under `mint`.
+///
+/// # Specification
+/// - ensures: the name `mint` gives for the field's text.
+/// - fails: [`TheoryFault::Payload`] for a field that is no leaf;
+///   [`TheoryFault::Text`] for bytes that are not UTF-8; the error `mint`
+///   returns.
+/// - panics: none.
+/// - executable: none — the name is the image of a caller's mint, whose
+///   predicates stand on [`text`] and [`TheoryValue::decode_into`].
+///
+/// # Errors
+/// As stated.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryValue::decode`] and
+///   [`TheoryValue::decode_into`].
+/// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
+/// - witness: `theory::tests::a_presentation_decodes_into_a_table_as_its_text_reads`
+fn named<N, F>(
+    field: PayloadNode<'_>,
+    mint: &mut F,
+) -> Result<N, TheoryFault>
+where
+    F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
+{
     let PayloadView::Leaf(bytes) = field.view()
     else {
         return Err(TheoryFault::Payload);
     };
     let spelled = core::str::from_utf8(bytes.as_ref()).map_err(|_invalid| TheoryFault::Text)?;
+    mint(NameRef::from(spelled))
+}
+
+/// The text form of a decoded name: the name spelled by the text.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the name's text, durable by the decoded parts that hold it
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the text mint takes the shape of every mint a decode reads names through"
+)]
+fn written(spelled: NameRef<'_>) -> Result<Name, TheoryFault>
+{
     Ok(Name::from(spelled))
 }
 
@@ -2144,10 +2277,18 @@ fn read_shape(
 /// # Errors
 /// As stated.
 ///
+/// # Cost
+/// - allocation: the rules read, durable by the parts
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryValue::certificate`].
 /// - witness: `theory::tests::a_certified_presentation_carries_its_rule_certificate`
-fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), TheoryFault>
+fn read_rules<N, F>(
+    mut at: Node<'_>,
+    mint: &mut F,
+) -> Result<(Vec<TheoryRule<N>>, RuleCertificate<N>), TheoryFault>
+where
+    F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let numeral = |field: PayloadNode<'_>| -> Result<usize, TheoryFault> {
         let &[number] = read_numerals(&text(field)?)?.as_slice()
@@ -2173,20 +2314,23 @@ fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), Th
         else {
             return Ok((rules, certificate));
         };
-        let name = text(name)?;
-        let left = read_term(nested(left)?)?;
-        let right = read_term(nested(right)?)?;
+        let name = named(name, mint)?;
+        let left = read_term(nested(left)?, mint)?;
+        let right = read_term(nested(right)?, mint)?;
         let mut fresh = Vec::new();
         at = nested(rest)?;
         while at.ctor == Tag::Fresh.constructor() {
             let [atom, term, rest] = expect::<3>(at, Tag::Fresh)?;
-            fresh.push(Freshness::new(text(atom)?, text(term)?));
+            fresh.push(Freshness {
+                atom: named(atom, mint)?,
+                term: named(term, mint)?,
+            });
             at = nested(rest)?;
         }
         let mut theories = Vec::new();
         while at.ctor == Tag::Under.constructor() {
             let [theory, rest] = expect::<2>(at, Tag::Under)?;
-            theories.push(text(theory)?);
+            theories.push(named(theory, mint)?);
             at = nested(rest)?;
         }
         let tail = if !theories.is_empty() && at.ctor == Tag::Open.constructor() {
@@ -2222,8 +2366,8 @@ fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), Th
             position: SidePlace(numeral(position)?),
             inner: RuleIndex::from(numeral(inner)?),
         };
-        let left = read_term(nested(left)?)?;
-        let right = read_term(nested(right)?)?;
+        let left = read_term(nested(left)?, mint)?;
+        let right = read_term(nested(right)?, mint)?;
         certificate.derived.push(DerivedFace { left, right, peak });
         at = nested(rest)?;
     }
@@ -2232,7 +2376,7 @@ fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), Th
         else {
             return Ok((rules, certificate));
         };
-        let name = text(name)?;
+        let name = named(name, mint)?;
         let rank = crate::termination::Rank::from(numeral(rank)?);
         certificate.ranks.push((name, rank));
         at = nested(rest)?;
@@ -2255,24 +2399,32 @@ fn read_rules(mut at: Node<'_>) -> Result<(Vec<TheoryRule>, RuleCertificate), Th
 /// # Errors
 /// As stated.
 ///
+/// # Cost
+/// - allocation: the ports read, durable by the parts
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryValue::decode`].
 /// - witness: `theory::tests::a_second_order_presentation_encodes_its_binders`
 /// - witness: `theory::tests::a_binder_outside_an_operation_port_is_misplaced`
 /// - witness: `theory::tests::an_abstracting_port_takes_its_own_tag`
-fn read_ports(mut node: Node<'_>) -> Result<Vec<TheoryPort>, TheoryFault>
+fn read_ports<N, F>(
+    mut node: Node<'_>,
+    mint: &mut F,
+) -> Result<Vec<TheoryPort<N>>, TheoryFault>
+where
+    F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let mut ports = Vec::new();
     loop {
         if node.ctor == Tag::Abstracted.constructor() {
             let [name, sort, indices, atoms, binders, rest] = expect::<6>(node, Tag::Abstracted)?;
-            let port = plain_at(name, sort, indices)?;
+            let port = plain_at(name, sort, indices, mint)?;
             let atoms = nested(atoms)?;
             if atoms.ctor == Tag::End.constructor() {
                 return Err(TheoryFault::Misplaced(atoms.ctor));
             }
-            let abstractions = read_plain(atoms, core::convert::identity)?;
-            let bindings = read_plain(nested(binders)?, core::convert::identity)?;
+            let abstractions = read_plain(atoms, mint, core::convert::identity)?;
+            let bindings = read_plain(nested(binders)?, mint, core::convert::identity)?;
             ports.push(TheoryPort {
                 name: port.name,
                 sort: port.sort,
@@ -2289,18 +2441,18 @@ fn read_ports(mut node: Node<'_>) -> Result<Vec<TheoryPort>, TheoryFault>
             else {
                 break;
             };
-            let port = plain_at(name, sort, indices)?;
+            let port = plain_at(name, sort, indices, mint)?;
             ports.push(unbound(port));
             node = nested(rest)?;
             continue;
         }
         let [name, sort, indices, binders, rest] = expect::<5>(node, Tag::Bound)?;
-        let port = plain_at(name, sort, indices)?;
+        let port = plain_at(name, sort, indices, mint)?;
         let binders = nested(binders)?;
         if binders.ctor == Tag::End.constructor() {
             return Err(TheoryFault::Misplaced(binders.ctor));
         }
-        let bindings = read_plain(binders, core::convert::identity)?;
+        let bindings = read_plain(binders, mint, core::convert::identity)?;
         ports.push(TheoryPort {
             name: port.name,
             sort: port.sort,
@@ -2326,14 +2478,20 @@ fn read_ports(mut node: Node<'_>) -> Result<Vec<TheoryPort>, TheoryFault>
 /// # Errors
 /// As stated.
 ///
+/// # Cost
+/// - allocation: the members read, durable by the parts
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryValue::decode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 /// - witness: `theory::tests::a_binder_outside_an_operation_port_is_misplaced`
-fn read_plain<Read>(
+fn read_plain<N, F, Read>(
     mut node: Node<'_>,
-    read: fn(TheoryBinder) -> Read,
+    mint: &mut F,
+    read: fn(TheoryBinder<N>) -> Read,
 ) -> Result<Vec<Read>, TheoryFault>
+where
+    F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let mut members = Vec::new();
     loop {
@@ -2342,7 +2500,7 @@ fn read_plain<Read>(
         else {
             break;
         };
-        let port = plain_at(name, sort, indices)?;
+        let port = plain_at(name, sort, indices, mint)?;
         members.push(read(port));
         node = nested(rest)?;
     }
@@ -2358,7 +2516,7 @@ fn read_plain<Read>(
 /// - hypothesis: L3 — every member of a first-order presentation reads back as
 ///   written, so a port read with another name or sort differs.
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
-fn unbound(plain: TheoryBinder) -> TheoryPort
+fn unbound<N>(plain: TheoryBinder<N>) -> TheoryPort<N>
 {
     TheoryPort {
         name: plain.name,
@@ -2384,16 +2542,19 @@ fn unbound(plain: TheoryBinder) -> TheoryPort
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryValue::decode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
-fn plain_at(
+fn plain_at<N, F>(
     name: PayloadNode<'_>,
     sort: PayloadNode<'_>,
     indices: PayloadNode<'_>,
-) -> Result<TheoryBinder, TheoryFault>
+    mint: &mut F,
+) -> Result<TheoryBinder<N>, TheoryFault>
+where
+    F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
-    let name = text(name)?;
-    let sort = text(sort)?;
+    let name = named(name, mint)?;
+    let sort = named(sort, mint)?;
     let indices = nested(indices)?;
-    let indices = read_arguments(indices)?;
+    let indices = read_arguments(indices, mint)?;
     Ok(TheoryBinder {
         name,
         sort,
@@ -2412,15 +2573,23 @@ fn plain_at(
 /// # Errors
 /// As stated.
 ///
+/// # Cost
+/// - allocation: the argument terms, durable by the parts
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryValue::decode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
-fn read_arguments(node: Node<'_>) -> Result<Vec<FreeTerm>, TheoryFault>
+fn read_arguments<N, F>(
+    node: Node<'_>,
+    mint: &mut F,
+) -> Result<Vec<FreeTerm<N>>, TheoryFault>
+where
+    F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let arguments = argument_nodes(node)?;
     let mut terms = Vec::with_capacity(arguments.len());
     for argument in arguments {
-        let term = read_term(argument)?;
+        let term = read_term(argument, mint)?;
         terms.push(term);
     }
     Ok(terms)
@@ -2457,29 +2626,29 @@ fn argument_nodes(mut node: Node<'_>) -> Result<Vec<Node<'_>>, TheoryFault>
 }
 
 /// The head a term application read back carries.
-enum Applied
+enum Applied<N>
 {
     /// An operation application, by the operation's name.
-    Operation(Name),
+    Operation(N),
     /// A constructor application, by the constructor's name.
-    Constructor(Name),
+    Constructor(N),
     /// A results tuple.
     Tuple,
     /// A metavariable's instantiation, by the metavariable's name.
-    Instantiation(Name),
+    Instantiation(N),
     /// An atom's abstraction over its one body, by the atom's name.
-    Abstraction(Name),
+    Abstraction(N),
     /// A binding field over its one body, by the bound variable's name.
-    Field(Name),
+    Field(N),
 }
 
 /// One pending step of [`read_term`].
-enum Read<'value>
+enum Read<'value, N>
 {
     /// Read this node as a term.
     Visit(Node<'value>),
     /// Apply the head to the last `count` read terms.
-    Apply(Applied, usize),
+    Apply(Applied<N>, usize),
 }
 
 /// The free term the value at `root` codes.
@@ -2501,45 +2670,54 @@ enum Read<'value>
 /// # Errors
 /// As stated.
 ///
+/// # Cost
+/// - allocation: the term read, durable by the parts
+/// - allocation: the walk's stack, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryValue::decode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 /// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
 /// - witness: `theory::tests::an_atom_occurrence_takes_its_own_tag`
 /// - witness: `theory::tests::a_binding_field_takes_its_own_tags`
-fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
+fn read_term<N, F>(
+    root: Node<'_>,
+    mint: &mut F,
+) -> Result<FreeTerm<N>, TheoryFault>
+where
+    F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let mut pending = vec![Read::Visit(root)];
-    let mut read: Vec<FreeTerm> = Vec::new();
+    let mut read: Vec<FreeTerm<N>> = Vec::new();
     while let Some(step) = pending.pop() {
         match step {
             Read::Visit(node) => {
                 let (applied, chain) = if node.ctor == Tag::Var.constructor() {
                     let [name] = expect::<1>(node, Tag::Var)?;
-                    let name = text(name)?;
-                    read.push(FreeTerm::var(name));
+                    let name = named(name, mint)?;
+                    read.push(FreeTerm::leaf_of(TermHead::Var(name)));
                     continue;
                 }
                 else if node.ctor == Tag::Occ.constructor() {
                     let [name] = expect::<1>(node, Tag::Occ)?;
-                    let name = text(name)?;
-                    read.push(FreeTerm::atom(name));
+                    let name = named(name, mint)?;
+                    read.push(FreeTerm::leaf_of(TermHead::Atom(name)));
                     continue;
                 }
                 else if node.ctor == Tag::Bvar.constructor() {
                     let [name] = expect::<1>(node, Tag::Bvar)?;
-                    let name = text(name)?;
-                    read.push(FreeTerm::bound(name));
+                    let name = named(name, mint)?;
+                    read.push(FreeTerm::leaf_of(TermHead::Bound(name)));
                     continue;
                 }
                 else if node.ctor == Tag::App.constructor() {
                     let [head, chain] = expect::<2>(node, Tag::App)?;
-                    let head = text(head)?;
+                    let head = named(head, mint)?;
                     (Applied::Operation(head), chain)
                 }
                 else if node.ctor == Tag::Con.constructor() {
                     let [head, chain] = expect::<2>(node, Tag::Con)?;
-                    let head = text(head)?;
+                    let head = named(head, mint)?;
                     (Applied::Constructor(head), chain)
                 }
                 else if node.ctor == Tag::Tuple.constructor() {
@@ -2548,17 +2726,17 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                 }
                 else if node.ctor == Tag::Inst.constructor() {
                     let [head, chain] = expect::<2>(node, Tag::Inst)?;
-                    let head = text(head)?;
+                    let head = named(head, mint)?;
                     (Applied::Instantiation(head), chain)
                 }
                 else if node.ctor == Tag::Abs.constructor() {
                     let [atom, chain] = expect::<2>(node, Tag::Abs)?;
-                    let atom = text(atom)?;
+                    let atom = named(atom, mint)?;
                     (Applied::Abstraction(atom), chain)
                 }
                 else if node.ctor == Tag::Lam.constructor() {
                     let [var, chain] = expect::<2>(node, Tag::Lam)?;
-                    let var = text(var)?;
+                    let var = named(var, mint)?;
                     (Applied::Field(var), chain)
                 }
                 else {
@@ -2587,21 +2765,31 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                 let start = read.len().saturating_sub(count);
                 let arguments = read.split_off(start);
                 read.push(match applied {
-                    Applied::Operation(head) => FreeTerm::op(head, arguments),
-                    Applied::Constructor(head) => FreeTerm::ctor(head, arguments),
-                    Applied::Tuple => FreeTerm::results(arguments),
-                    Applied::Instantiation(head) => FreeTerm::inst(head, arguments),
+                    Applied::Operation(head) => {
+                        FreeTerm::applied(|arity| TermHead::Op(head, arity), arguments)
+                    },
+                    Applied::Constructor(head) => {
+                        FreeTerm::applied(|arity| TermHead::Ctor(head, arity), arguments)
+                    },
+                    Applied::Tuple => FreeTerm::applied(TermHead::Results, arguments),
+                    Applied::Instantiation(head) => {
+                        FreeTerm::applied(|arity| TermHead::Inst(head, arity), arguments)
+                    },
                     Applied::Abstraction(atom) => {
                         let mut arguments = arguments.into_iter();
                         match (arguments.next(), arguments.next()) {
-                            (Some(body), None) => FreeTerm::abs(atom, body),
+                            (Some(body), None) => {
+                                FreeTerm::applied(|_one| TermHead::Abs(atom), [body])
+                            },
                             _ => return Err(TheoryFault::Misplaced(Tag::Abs.constructor())),
                         }
                     },
                     Applied::Field(var) => {
                         let mut arguments = arguments.into_iter();
                         match (arguments.next(), arguments.next()) {
-                            (Some(body), None) => FreeTerm::lam(var, body),
+                            (Some(body), None) => {
+                                FreeTerm::applied(|_one| TermHead::Lam(var), [body])
+                            },
                             _ => return Err(TheoryFault::Misplaced(Tag::Lam.constructor())),
                         }
                     },
@@ -2771,6 +2959,53 @@ pub fn presented_names(
             }
         })
         .collect()
+}
+
+/// The names a member's ports present under, `inputs` then `outputs`, as ids
+/// of `names`: [`presented_names`] for ports that hold ids.
+///
+/// # Specification
+/// - ensures: one id per port, in order; a named port's own id, and an unnamed
+///   one's the id of its placeholder `_position`, minted into `names`.
+/// - fails: [`name_mint::Absent::Full`] when `names` cannot mint a placeholder.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the ids, durable by the member's ports
+/// - allocation: each placeholder's text, growth within the table
+///
+/// # Adequacy
+/// - hypothesis: L3 — the ports of a decoded member present as the ids of the
+///   names that [`presented_names`] gives the text form.
+/// - witness: `theory::tests::a_presentation_decodes_into_a_table_as_its_text_reads`
+#[inline]
+#[spec(ensures: |ref presented| match *presented {
+    | Maybe::Present(ref ids) => ids.len() == inputs.len().saturating_add(outputs.len()),
+    | Maybe::Absent(_) => true,
+})]
+pub fn presented_ids<A>(
+    inputs: &[TheoryPort<NameId>],
+    outputs: &[TheoryPort<NameId>],
+    names: &mut Names<A>,
+) -> Maybe<Vec<NameId>, name_mint::Absent>
+where
+    A: Allocator + Clone,
+{
+    let mut presented = Vec::with_capacity(inputs.len().saturating_add(outputs.len()));
+    for (position, port) in inputs.iter().chain(outputs).enumerate() {
+        let unnamed =
+            matches!(names.text(port.name), Maybe::Present(text) if text.as_ref().is_empty());
+        if unnamed {
+            match names.mint_numbered('_', position) {
+                Maybe::Present(placeholder) => presented.push(placeholder),
+                Maybe::Absent(absent) => return Maybe::Absent(absent),
+            }
+        }
+        else {
+            presented.push(port.name);
+        }
+    }
+    Maybe::Present(presented)
 }
 
 impl TheoryOperation
