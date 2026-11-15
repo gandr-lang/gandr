@@ -445,6 +445,14 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// constant the segment names, first named first, in 32 bytes. Each admission
 /// position that a segment writes is twice the entry of its key in that table,
 /// or one more than twice the position for a constant the table does not name.
+/// Version eleven writes no global index. After the version, the header gives
+/// the width of a key in every table: the fewest bytes from one word up that
+/// keep the artifact's keys apart. Each table writes the first bytes of each
+/// key to that width. After the table, a segment writes its imports: a count,
+/// then for each entry of an earlier segment that it reads, that segment's
+/// position, written as the segment writes any position, and the entry's
+/// offset inside it. A child or a root is twice its offset from the segment's
+/// first entry, or one more than twice its import's place.
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -467,7 +475,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(10);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(11);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);

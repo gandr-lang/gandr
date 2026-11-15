@@ -133,24 +133,24 @@ impl AsRef<[u8]> for Bytes
 ///   exact entry count and drops the sole graph owner there. The bounded
 ///   structural walk rules out a shallow graph with the same count.
 ///   Byte-identical re-encoding supplies agreement, while the predicate
-///   independently projects the frozen tags and predecessor ordinals; neither
+///   independently projects the frozen tags and predecessor references; neither
 ///   witness claims arbitrary graph totality or allocation-failure behavior.
 /// - witness: `tests::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 /// - witness: `tests::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 #[spec(
         ensures: |ret| { let entries = CHAIN_LINKS.saturating_mul(2).saturating_add(1);
             let count_word = u64::try_from(entries).unwrap_or(u64::MAX);
-            let first = 14_usize.saturating_add(usize::try_from(64_u32.saturating_sub((count_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
-            ret.0.starts_with(&[b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 1, 0, 0, 0])
+            let first = 16_usize.saturating_add(usize::try_from(64_u32.saturating_sub((count_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+            ret.0.starts_with(&[b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 1, 0, 0, 0])
                 && ({ let scalar = count_word;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            ret.0.as_slice().get(14_usize .. (14_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            ret.0.as_slice().get(16_usize .. (16_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
                 && ret.0.get(first) == Some(&3)
                 && ret.0.get(first.saturating_add(1)) == Some(&0)
                 && (1 .. entries).try_fold(first.saturating_add(2),
-            |position, index| { let previous = u64::try_from(index.saturating_sub(1)).unwrap_or(u64::MAX);
+            |position, index| { let previous = u64::try_from(index.saturating_sub(1)).unwrap_or(u64::MAX).saturating_mul(2);
             let tag = if index.rem_euclid(2) == 1 { 0x07 }
             else { 0x05 };
             (ret.0.get(position) == Some(&tag)
@@ -158,7 +158,7 @@ impl AsRef<[u8]> for Bytes
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get((position.saturating_add(1)) .. (position.saturating_add(1)).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
-                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })).then_some(position.saturating_add(1).saturating_add(usize::try_from(64_u32.saturating_sub((previous).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }).is_some_and(|position| { let root_word = u64::try_from(entries.saturating_sub(1)).unwrap_or(u64::MAX);
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })).then_some(position.saturating_add(1).saturating_add(usize::try_from(64_u32.saturating_sub((previous).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }).is_some_and(|position| { let root_word = u64::try_from(entries.saturating_sub(1)).unwrap_or(u64::MAX).saturating_mul(2);
             ({ let scalar = root_word;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);

@@ -362,6 +362,15 @@ pub enum MalformedSite
     /// A segment's table of names held a key that names no one place of the
     /// names the decoder was given.
     UnplacedName,
+    /// A reference named no import of its segment, or an import named no entry
+    /// of an earlier segment.
+    Import,
+    /// The header gave a width of a table's keys below one word or past a
+    /// whole key.
+    KeyWidth,
+    /// An entry of a segment's table of names began two names that the
+    /// decoder was given.
+    SharedPrefix,
 }
 
 impl fmt::Display for MalformedSite
@@ -425,6 +434,9 @@ impl fmt::Display for MalformedSite
             Self::TrailingBytes => "bytes remained after a complete artifact",
             Self::NameEntry => "a position named an entry past its segment's table of names",
             Self::UnplacedName => "a segment's table of names held a key that names no place",
+            Self::Import => "a reference named no import, or an import named no earlier entry",
+            Self::KeyWidth => "the header gave a key width below one word or past a whole key",
+            Self::SharedPrefix => "an entry of a segment's table of names began two names",
         })
     }
 }

@@ -351,6 +351,10 @@ impl Exported
 ///   than an independent oracle.
 /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+#[expect(
+    clippy::large_enum_variant,
+    reason = "each value lives only until its source's sweep unwraps it, so a box would add an allocation for each source and save nothing"
+)]
 enum Swept
 {
     /// The lowering read it, and it was exported.
@@ -1662,14 +1666,14 @@ mod kernel_generative_distinctness
     use super::Swept;
     use super::export;
 
-    /// The offset of the header's minted-atom count: past the four-byte magic
-    /// and the two-byte version.
-    const MINTED_ATOM_TABLE_COUNT_OFFSET: usize = 6;
+    /// The offset of the header's minted-atom count: past the four-byte magic,
+    /// the two-byte version and the one-byte key width.
+    const MINTED_ATOM_TABLE_COUNT_OFFSET: usize = 7;
     /// The offset of the table's entry for the first application's atom, past
     /// the count and the argument's entry, each one byte in the functor pair.
-    const FIRST_APPLICATION_ENTRY_OFFSET: usize = 8;
+    const FIRST_APPLICATION_ENTRY_OFFSET: usize = 9;
     /// The offset of the table's entry for the second application's atom.
-    const SECOND_APPLICATION_ENTRY_OFFSET: usize = 9;
+    const SECOND_APPLICATION_ENTRY_OFFSET: usize = 10;
 
     /// The classic functor pair exported: `Seed` sealed, then `MkCounter`
     /// applied to it twice, as `A` and as `B`.

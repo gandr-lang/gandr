@@ -805,6 +805,21 @@ impl EncodedArtifact
         Self(Vec::new())
     }
 
+    /// An empty image with room for `capacity` bytes, so a writer that knows
+    /// its length allocates once.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the room for `capacity` bytes, setup.
+    #[inline]
+    #[must_use]
+    pub(crate) fn with_capacity(capacity: ByteCount) -> Self
+    {
+        Self(Vec::with_capacity(capacity.0))
+    }
+
     /// Empty this image and keep its capacity, so the next segment written
     /// through it allocates nothing until it outgrows the largest before it.
     ///

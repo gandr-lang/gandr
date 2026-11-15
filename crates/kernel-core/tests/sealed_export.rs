@@ -34,11 +34,11 @@ use gandr_kernel_term::Sign;
 use gandr_kernel_term::decode;
 use gandr_kernel_term::encode;
 
-/// The offset of the header's minted-atom count: past the four-byte magic
-/// and the two-byte version.
-const MINTED_ATOM_TABLE_COUNT_OFFSET: usize = 6;
+/// The offset of the header's minted-atom count: past the four-byte magic,
+/// the two-byte version and the one-byte key width.
+const MINTED_ATOM_TABLE_COUNT_OFFSET: usize = 7;
 /// The offset of the first minted-atom entry in a one-atom artifact.
-const MINTED_ATOM_FIRST_ENTRY_OFFSET: usize = 7;
+const MINTED_ATOM_FIRST_ENTRY_OFFSET: usize = 8;
 
 /// Every declaration the environment admitted, as it holds it, marked as
 /// it was admitted, encoded over its arena.
