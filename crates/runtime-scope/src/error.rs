@@ -19,6 +19,15 @@ pub enum RuntimeError
     /// The kernel's count of bytes passed the length of the buffer that the
     /// operation lent it.
     Overrun,
+    /// The kernel refused the cancel of the operation in slot `data` at a
+    /// scope's end, with this error.
+    Cancel
+    {
+        /// The slot of the operation that the cancel names.
+        data: u64,
+        /// The kernel's error.
+        errno: Errno,
+    },
     /// A completion's user data named no slot of the table.
     Unknown(u64),
 }
@@ -57,6 +66,12 @@ impl fmt::Display for RuntimeError
             Self::Full => f.write_str("submission queue full"),
             Self::Read => f.write_str("completion polled after its result"),
             Self::Overrun => f.write_str("the kernel's count passed the buffer"),
+            Self::Cancel { data, errno } => {
+                write!(
+                    f,
+                    "the kernel refused the cancel of the operation in slot {data}: {errno}"
+                )
+            },
             Self::Unknown(data) => write!(f, "task lookup failed: {data}"),
         }
     }

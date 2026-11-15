@@ -133,8 +133,11 @@ impl Runtime
     }
 }
 
-/// The user data of a cancel's own completion, which names no slot.
-const CANCEL: u64 = u64::MAX;
+/// The bit of the user data that marks a cancel's own completion. The other
+/// bits name the slot of the operation that the cancel ends, so a refused
+/// cancel names its operation. A key of the table is below the ring's depth,
+/// so no request's user data holds the bit.
+const CANCEL: u64 = 1 << 63;
 
 /// Ends a scope: submits a cancel for each operation that the kernel holds,
 /// then drains every completion, two for each cancel.
@@ -142,8 +145,9 @@ const CANCEL: u64 = u64::MAX;
 /// # Specification
 ///
 /// - ensures: the table is drained.
-/// - fails: the kernel's error when a submission, a wait or a cancel fails, and
-///   `Unknown` when a completion names no slot.
+/// - fails: the kernel's error when a submission or a wait fails, `Cancel` with
+///   the operation's slot when a cancel fails, and `Unknown` when a completion
+///   names no slot.
 /// - panics: none.
 /// - executable: none — the kernel's state of the ring is not a value that the
 ///   call can read.
@@ -169,7 +173,7 @@ fn end(
         // cancel of each slot that the table holds.
         squ.submit()?;
         for key in table.in_kernel() {
-            let data = u64::try_from(key).map_err(|_overflow| RuntimeError::Unknown(CANCEL))?;
+            let data = u64::try_from(key).map_err(|_overflow| RuntimeError::Full)?;
             let mut sqe = squ.get_sqe().ok_or(RuntimeError::Full)?;
             // SAFETY: a cancel by user data reads no pointer and names no
             // descriptor.
@@ -179,7 +183,7 @@ fn end(
             // SAFETY: the user data is a number that the kernel only hands
             // back.
             unsafe {
-                sqe.set_data64(CANCEL);
+                sqe.set_data64(CANCEL | data);
             }
         }
     }
@@ -195,9 +199,9 @@ fn end(
 /// # Specification
 ///
 /// - ensures: each completion that was ready is in its slot.
-/// - fails: the kernel's error when the submission or the wait fails, or a
-///   cancel fails other than with `ENOENT` or `EALREADY`; `Unknown` when a
-///   completion names no slot.
+/// - fails: the kernel's error when the submission or the wait fails; `Cancel`
+///   with the operation's slot when a cancel fails other than with `ENOENT` or
+///   `EALREADY`; `Unknown` when a completion names no slot.
 /// - panics: none.
 /// - executable: none — the kernel's state of the ring is not a value that the
 ///   call can read.
@@ -219,12 +223,19 @@ pub fn reap(
 
     for cqe in cqu.ready() {
         let data = cqe.user_data();
-        if data == CANCEL {
+        if data & CANCEL != 0 {
             // A cancel finds its operation, or finds it already complete or
             // past the point of a cancel; the operation's own completion
-            // follows in each case. Any other refusal is the kernel's error.
+            // follows in each case. Any other refusal names the operation's
+            // slot.
             match Cqe::from(cqe).done() {
                 Ok(()) | Err(RuntimeError::Kernel(Errno::NOENT | Errno::ALREADY)) => {},
+                Err(RuntimeError::Kernel(errno)) => {
+                    return Err(RuntimeError::Cancel {
+                        data: data & !CANCEL,
+                        errno,
+                    });
+                },
                 Err(error) => return Err(error),
             }
             continue;
