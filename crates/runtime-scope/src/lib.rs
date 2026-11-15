@@ -15,10 +15,13 @@
 
 extern crate alloc;
 
-mod buf;
 mod completion;
 mod error;
-pub mod io;
+/// The operations of the scope on the kernel's files.
+pub mod io
+{
+    pub mod socket;
+}
 pub mod net;
 mod runtime;
 mod scope;
