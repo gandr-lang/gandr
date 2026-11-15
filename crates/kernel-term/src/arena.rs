@@ -706,6 +706,21 @@ impl Truncated
     }
 }
 
+/// Where a clone of an arena stands: its stamp and its watermark, which
+/// [`TermArena::dropped`] reads once the clone's holder lets go of it. A
+/// holder that keeps the clone's lists for a later clone takes the mark first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CloneMark
+{
+    /// The clone's stamp.
+    stamp: TruncationStamp,
+    /// The clone's watermark.
+    watermark: ArenaWatermark,
+}
+
 /// One truncation of one family: the length it left, and the stamp it took.
 #[derive(Clone, Copy, Debug)]
 struct Floor
@@ -723,8 +738,41 @@ struct Floor
 /// family reached since, and the stack holds one floor per length still
 /// standing above a lower one.
 #[repr(transparent)]
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 struct Floors(Vec<Floor>);
+
+impl Clone for Floors
+{
+    /// The same floors in a list of their own.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the list of the clone, growth within the source's floors
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self(self.0.clone())
+    }
+
+    /// `source`'s floors, in this list's room.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the room this list lacks, growth within the source's
+    ///   floors
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.0.clone_from(&source.0);
+    }
+}
 
 impl Floors
 {
@@ -771,7 +819,7 @@ impl Floors
 ///
 /// Not part of the arena's content: two arenas holding the same nodes are
 /// equal whatever truncations brought each there.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 struct Truncations
 {
     /// How many truncations dropped a node.
@@ -784,6 +832,49 @@ struct Truncations
     value_types: Floors,
     /// The [`CompType`] family's floors.
     comp_types: Floors,
+}
+
+impl Clone for Truncations
+{
+    /// The same record in lists of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the lists of the clone, growth within the source's floors
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            stamp: self.stamp,
+            values: self.values.clone(),
+            computations: self.computations.clone(),
+            value_types: self.value_types.clone(),
+            comp_types: self.comp_types.clone(),
+        }
+    }
+
+    /// `source`'s record, in this record's lists.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the room these lists lack, growth within the source's
+    ///   floors
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.stamp = source.stamp;
+        self.values.clone_from(&source.values);
+        self.computations.clone_from(&source.computations);
+        self.value_types.clone_from(&source.value_types);
+        self.comp_types.clone_from(&source.comp_types);
+    }
 }
 
 impl PartialEq for Truncations
@@ -867,6 +958,25 @@ impl Truncations
             floors.lower(stamp, ArenaLength(length));
         }
     }
+
+    /// Let go of each floor, back at the default stamp, and keep the room of
+    /// the lists.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn vacate(&mut self)
+    {
+        self.stamp = TruncationStamp::default();
+        for floors in [
+            &mut self.values,
+            &mut self.computations,
+            &mut self.value_types,
+            &mut self.comp_types,
+        ] {
+            floors.0.clear();
+        }
+    }
 }
 
 /// The append-only arena owning every term and type node of one environment.
@@ -902,7 +1012,7 @@ impl Truncations
 ///   ceiling is not exercised; its conversion is checked separately.
 /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct TermArena
 {
     /// The value nodes, in allocation order, which is child-before-parent.
@@ -927,6 +1037,65 @@ pub struct TermArena
     /// The truncations that dropped a node, for the readers that name nodes
     /// by position; not part of the arena's content.
     truncations: Truncations,
+}
+
+impl Clone for TermArena
+{
+    /// The same nodes, each family cloned as [`Family`]'s clone holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the lists of the clone, growth within the source's
+    ///   families
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            values: self.values.clone(),
+            value_supports: self.value_supports.clone(),
+            computations: self.computations.clone(),
+            computation_supports: self.computation_supports.clone(),
+            value_types: self.value_types.clone(),
+            value_type_supports: self.value_type_supports.clone(),
+            comp_types: self.comp_types.clone(),
+            comp_type_supports: self.comp_type_supports.clone(),
+            unrelated: self.unrelated.clone(),
+            truncations: self.truncations.clone(),
+        }
+    }
+
+    /// `source`'s nodes and truncations, in this arena's lists. An arena that
+    /// [`TermArena::vacate`] emptied keeps the room of its lists, so a clone
+    /// into it of a source no larger allocates nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the room these lists lack, growth within the source's
+    ///   families
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.values.clone_from(&source.values);
+        self.value_supports.clone_from(&source.value_supports);
+        self.computations.clone_from(&source.computations);
+        self.computation_supports
+            .clone_from(&source.computation_supports);
+        self.value_types.clone_from(&source.value_types);
+        self.value_type_supports
+            .clone_from(&source.value_type_supports);
+        self.comp_types.clone_from(&source.comp_types);
+        self.comp_type_supports
+            .clone_from(&source.comp_type_supports);
+        self.unrelated.clone_from(&source.unrelated);
+        self.truncations.clone_from(&source.truncations);
+    }
 }
 
 /// One family's nodes in allocation order.
@@ -956,7 +1125,7 @@ pub struct TermArena
 /// - witness: `arena::tests::a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476`
 /// - witness: `arena::tests::a_write_to_a_frozen_node_copies_its_chunk_alone_7243`
 /// - witness: `arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335`
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Family<Node>
 {
     /// The whole chunks of the frozen nodes, [`CHUNK`] nodes each, oldest
@@ -1036,6 +1205,53 @@ impl<Node> Default for Family<Node>
     }
 }
 
+impl<Node: Clone> Clone for Family<Node>
+{
+    /// The same nodes: the frozen ones shared by reference, the tail's list
+    /// and the nodes minted since in lists of the clone's own.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the lists of the clone, growth within the source's tail
+    ///   and its own nodes
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            frozen: self.frozen.clone(),
+            tail: self.tail.clone(),
+            ends: self.ends,
+            frozen_len: self.frozen_len,
+            own: self.own.clone(),
+        }
+    }
+
+    /// `source`'s nodes, as [`Self::clone`] holds them, in this family's
+    /// lists. A family that [`Family::vacate`] emptied keeps the room of its
+    /// lists, so a clone into it of a source no larger allocates nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the room these lists lack, growth within the source's tail
+    ///   and its own nodes
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.frozen.clone_from(&source.frozen);
+        self.tail.clone_from(&source.tail);
+        self.ends = source.ends;
+        self.frozen_len = source.frozen_len;
+        self.own.clone_from(&source.own);
+    }
+}
+
 impl<Node> From<Vec<Node>> for Family<Node>
 {
     /// The family holding `nodes` as its own, in order, nothing frozen.
@@ -1101,6 +1317,24 @@ impl<Node> Family<Node>
             frozen_len: 0,
             own: Vec::new(),
         }
+    }
+
+    /// Let go of each node this family holds and of each chunk and segment it
+    /// shares, and keep the room of its own lists. A later
+    /// [`Clone::clone_from`] fills them with no allocation, and a family it
+    /// shared a chunk with no longer counts this one as a clone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[spec(ensures: self.len() == ArenaLength(0))]
+    #[inline]
+    pub fn vacate(&mut self)
+    {
+        self.frozen = None;
+        self.tail.clear();
+        self.ends = [u8::MAX; SEGMENTS];
+        self.frozen_len = 0;
+        self.own.clear();
     }
 
     /// How many of this family's frozen nodes `other` holds by the same
@@ -1740,15 +1974,31 @@ impl TermArena
         self.truncations.record(before, after);
     }
 
-    /// Record that `clone`, taken at this arena's watermark, minted nodes or
-    /// truncated them, and is dropped: a reader that names nodes by their
-    /// positions, through this arena or through the clone, forgets every name
-    /// at or past this arena's watermark, as if this arena minted the clone's
-    /// nodes itself and truncated them.
+    /// Where this arena stands as a clone: its stamp and its watermark, for
+    /// [`Self::dropped`] of the arena it was cloned from.
     ///
     /// # Specification
-    /// - requires: `clone` is a clone of this arena, and this arena minted and
-    ///   truncated nothing since the clone was taken.
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn clone_mark(&self) -> CloneMark
+    {
+        CloneMark {
+            stamp: self.truncations.stamp,
+            watermark: self.watermark(),
+        }
+    }
+
+    /// Record that the clone that stands at `clone`, taken at this arena's
+    /// watermark, minted nodes or truncated them, and is dropped: a reader
+    /// that names nodes by their positions, through this arena or through the
+    /// clone, forgets every name at or past this arena's watermark, as if this
+    /// arena minted the clone's nodes itself and truncated them.
+    ///
+    /// # Specification
+    /// - requires: `clone` is the [`Self::clone_mark`] of a clone of this
+    ///   arena, and this arena minted and truncated nothing since the clone was
+    ///   taken.
     /// - ensures: the watermark and every node are unchanged. When the clone
     ///   minted or truncated, the stamp passes each stamp of this arena and of
     ///   the clone, and [`Self::truncated_since`] answers a truncation to the
@@ -1770,13 +2020,37 @@ impl TermArena
     #[inline]
     pub fn dropped(
         &mut self,
-        clone: &Self,
+        clone: CloneMark,
     )
     {
         let now = self.watermark();
-        if clone.truncations.stamp != self.truncations.stamp || clone.watermark() != now {
-            self.truncations.absorb(clone.truncations.stamp, now);
+        if clone.stamp != self.truncations.stamp || clone.watermark != now {
+            self.truncations.absorb(clone.stamp, now);
         }
+    }
+
+    /// Let go of each node this arena holds and of each chunk and segment it
+    /// shares, as [`Family::vacate`] does for each family, and keep the room
+    /// of its lists. A later [`Clone::clone_from`] of an arena no larger fills
+    /// them with no allocation. A worker of a fork keeps its clone so between
+    /// two parts, and the arena it cloned shares its chunks with no clone the
+    /// worker holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[spec(ensures: self.watermark() == ArenaWatermark::default())]
+    #[inline]
+    pub fn vacate(&mut self)
+    {
+        self.values.vacate();
+        self.value_supports.vacate();
+        self.computations.vacate();
+        self.computation_supports.vacate();
+        self.value_types.vacate();
+        self.value_type_supports.vacate();
+        self.comp_types.vacate();
+        self.comp_type_supports.vacate();
+        self.truncations.vacate();
     }
 
     /// What a reader that last read `since` learns: the stamp now, and the
@@ -5555,7 +5829,7 @@ mod tests
         kept.freeze();
         let mut clone = kept.clone();
         intermediates(&mut clone);
-        kept.dropped(&clone);
+        kept.dropped(clone.clone_mark());
         assert_eq!(kept.watermark(), mark, "the arena keeps its content alone");
         assert_eq!(plain, kept, "and every node of it");
         assert!(
@@ -5569,7 +5843,7 @@ mod tests
         );
         let unchanged = kept.truncated_since(since).map(super::Truncated::now);
         let idle = kept.clone();
-        kept.dropped(&idle);
+        kept.dropped(idle.clone_mark());
         assert_eq!(
             kept.truncated_since(since).map(super::Truncated::now),
             unchanged,
@@ -5586,7 +5860,7 @@ mod tests
             .truncated_since(since)
             .map(super::Truncated::now)
             .expect("the clone's truncation takes a stamp");
-        kept.dropped(&back);
+        kept.dropped(back.clone_mark());
         assert_eq!(
             kept.truncated_since(read).map(super::Truncated::floor),
             Some(start),
@@ -5633,10 +5907,10 @@ mod tests
             .truncated_since(since)
             .map(super::Truncated::now)
             .expect("the innermost clone's truncation takes a stamp");
-        left.dropped(&inner);
+        left.dropped(inner.clone_mark());
         intermediates(&mut right);
-        check.dropped(&left);
-        check.dropped(&right);
+        check.dropped(left.clone_mark());
+        check.dropped(right.clone_mark());
         assert_eq!(
             check.watermark(),
             mark,

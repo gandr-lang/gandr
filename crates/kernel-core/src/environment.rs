@@ -1717,7 +1717,7 @@ impl Environment
             session: _,
         }) = ran.scope
         {
-            self.arena.dropped(&arena);
+            self.arena.dropped(arena.clone_mark());
             let _outside = view.close();
             self.entries.restore(view);
         }
@@ -1789,7 +1789,7 @@ impl Environment
             names.session_mut().join(frozen, session)
         };
         // A reader that names nodes by their positions forgets the clone's.
-        self.arena.dropped(&arena);
+        self.arena.dropped(arena.clone_mark());
         let outside = view.close();
         self.entries.restore(view);
         // Two outcomes under one key refuse the environment, whatever the

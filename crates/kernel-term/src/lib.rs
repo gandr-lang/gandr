@@ -179,6 +179,7 @@ mod wire;
 pub use crate::arena::AnyNode;
 pub use crate::arena::ArenaLength;
 pub use crate::arena::ArenaWatermark;
+pub use crate::arena::CloneMark;
 pub use crate::arena::CompTypeId;
 pub use crate::arena::ComputationId;
 pub use crate::arena::Family;

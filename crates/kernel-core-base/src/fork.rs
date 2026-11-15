@@ -25,7 +25,9 @@
 //!   kernel-reassessment-design item 11 — the independent obligations of one
 //!   check fork under one seam, and the serial check is the reference.
 
+use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::any::Any;
 use core::fmt;
 use core::num::NonZeroUsize;
 
@@ -96,6 +98,99 @@ pub trait ObligationFork: Sync
     ///   width of their fork, and count the jobs.
     /// - declaration-only: the obligation is each implementation's.
     fn workers(&self) -> ForkWidth;
+
+    /// Lend `body` the shell of the worker that calls it: the structures
+    /// that the parts this worker ran before left in it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `body` runs one time, on the calling thread, with a shell. A
+    ///   fork that keeps shells lends each worker the shell that its last part
+    ///   gave back, so a part fills the structures with no allocation. This
+    ///   default keeps none, and lends an empty shell each time.
+    /// - panics: a panic of `body`.
+    /// - executable: none — what a shell holds is the kernel's, and the
+    ///   implementation never reads it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the forked frame's witnesses run their parts through
+    ///   this default, and the pool's witness lends one worker its shell again.
+    /// - witness: `gandr-kernel-core::check::tests::a_forked_frame_gives_the_serial_verdict_at_each_order`
+    #[inline]
+    fn lend_shell(
+        &self,
+        body: &mut dyn FnMut(&mut Shell),
+    )
+    {
+        body(&mut Shell::default());
+    }
+}
+
+/// The structures that one worker of a fork keeps across the parts it runs,
+/// of one fork and of the forks after it. They are the kernel's own: the
+/// worker holds them and never reads them. A shell holds one value of any
+/// type, or nothing.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Default)]
+pub struct Shell(Option<Box<dyn Any + Send>>);
+
+impl Shell
+{
+    /// A shell that holds nothing, for a static.
+    pub const EMPTY: Self = Self(None);
+
+    /// The value of type `Kept` that this shell holds, taken out, or a new
+    /// one when the shell holds nothing or a value of another type.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the new value's box when the shell holds no `Kept`, setup
+    #[inline]
+    #[must_use]
+    pub fn take<Kept>(&mut self) -> Box<Kept>
+    where
+        Kept: Any + Send + Default,
+    {
+        match self.0.take().map(<Box<dyn Any + Send>>::downcast::<Kept>) {
+            Some(Ok(kept)) => kept,
+            Some(Err(_)) | None => Box::new(Kept::default()),
+        }
+    }
+
+    /// Hold `kept`, in place of what this shell held.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn put<Kept>(
+        &mut self,
+        kept: Box<Kept>,
+    ) where
+        Kept: Any + Send,
+    {
+        self.0 = Some(kept);
+    }
+}
+
+impl fmt::Debug for Shell
+{
+    /// `held` or `empty`: what a shell holds is the kernel's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(if self.0.is_some() { "held" } else { "empty" })
+    }
 }
 
 /// How many jobs a fork runs at once: the workers it has, the calling thread
