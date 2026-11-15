@@ -442,8 +442,10 @@ records_evict() {
 # then loads a library without the lints that its crates expect (#7384). So
 # `dylint` of the records target holds a stamp of the revision that it
 # builds, as `check:dylint` does, and a run under another revision starts
-# from an empty `dylint`. The stamp also names the checkout of that revision,
-# from which the run loads the library.
+# from an empty `dylint`.
+#
+# The stamp also names the checkout of that revision. The run loads the
+# library from that checkout.
 # - see: #7492, `.config/policy/library.bash`
 records_stamp() {
   local revision stamp=$records_target/dylint/quenchant-revision

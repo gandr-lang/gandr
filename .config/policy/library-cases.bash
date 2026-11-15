@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# A policy run writes nothing into the checkouts of the cargo home (#7492).
-# `check:dylint` runs the case after its own run, through its own command
-# (`policy`). The case gives the run a cargo home of its own, with no
-# network. That home holds one checkouts directory under each name of
-# quenchant's checkouts in the cargo home of the gate. Each directory holds
-# one empty checkout. A scratch workspace carries the library entry of this
+# A policy run writes nothing into the checkouts of the cargo home.
+# `check:dylint` runs the case before its policy run, through its own
+# command `policy`. The case gives the run a cargo home of its own, with no
+# network.
+# - see: #7492
+#
+# That home holds a checkouts directory under each name of quenchant's
+# checkouts in the cargo home of the gate. Each directory holds one empty
+# checkout. A scratch workspace carries the library entry of this
 # workspace's metadata. A run that resolves that entry writes a dummy crate
-# into each empty checkout, and the checkout then has a new time. The case
-# reads only those times, so the exit of the run tells it nothing.
-# Dylint reads the metadata of the working directory, so the run starts in
-# the scratch workspace. That workspace stands under `target`, so the run
-# takes the lane of this tree, and `.config` there points at this tree's.
+# into each empty checkout. The checkout then has a new time.
+#
+# The case reads only those times. The exit of the run tells it nothing.
+#
+# Dylint reads the metadata of the working directory. So the run starts in
+# the scratch workspace. That workspace stands under `target`. So the run
+# takes the lane of this tree, and its `.config` points at this tree's.
 set -euo pipefail
 declare -F policy > /dev/null || { echo "library case: run it from check:dylint, which exports \`policy\`" >&2; exit 2; }
 mkdir -p target

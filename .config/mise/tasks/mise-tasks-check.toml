@@ -710,11 +710,12 @@ directory = "{{ config_root }}/target/embedded-sources"
 # stamp holds the version of Dylint, and a run under another version starts
 # from an empty `target/dylint` too. A state with no second stamp keeps its
 # units and takes the stamp.
-# The run loads the library from a checkout of the pinned revision under the
-# cache directory, and not from the git entry of the workspace metadata. To
-# resolve a git entry, Dylint writes a dummy crate into each checkout of that
-# repository in the shared cargo home. Another gate's cargo that reads one of
-# those checkouts then fails.
+#
+# The run loads the library from a checkout of the pinned revision. That
+# checkout stands under the cache directory. The run does not read the git
+# entry of the workspace metadata. To resolve a git entry, Dylint writes a
+# dummy crate into each checkout of that repository in the shared cargo
+# home. Another gate's cargo that reads one of those checkouts then fails.
 # - see: #7492, `.config/policy/library.bash`
 run = '''
 #!/usr/bin/env bash

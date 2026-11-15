@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Prints the root of a checkout of quenchant at <revision>, for
-# `cargo dylint --path <root> --pattern crates/quenchant-dylints`. With
-# `--path`, Dylint reads no library entry of the workspace metadata.
+# Prints the root of a checkout of quenchant at <revision>. `cargo dylint
+# --path <root>` loads the lint library from that root. With `--path`,
+# Dylint reads no library entry of the workspace metadata.
+#
 # Dylint resolves a git library of the workspace metadata through the cargo
 # home. It puts a dummy crate into each checkout of that repository there,
 # and then it removes the crate. Another cargo that reads one of those
