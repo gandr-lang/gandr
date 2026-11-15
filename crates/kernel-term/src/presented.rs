@@ -78,11 +78,14 @@
 //!   spherical cells at a point are abelian, so [`Presentation::normalize`]
 //!   sorts and counts them.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 
 use crate::term::ConstructorTag;
 
@@ -276,6 +279,10 @@ impl PresentedRule
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the slots of the left side's variables, growth within the
+    ///   left side's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the circle's cancellation reads its one variable at
     ///   the own type, and a constructor with a field of another type reads its
@@ -286,8 +293,8 @@ impl PresentedRule
     #[inline]
     pub fn slots<T>(
         &self,
-        table: &[Vec<RuleSlot<T>>],
-    ) -> Result<Vec<RuleSlot<T>>, RuleFault>
+        table: &[SmallVec<RuleSlot<T>, 0, Global>],
+    ) -> Result<SmallVec<RuleSlot<T>, 0, Global>, RuleFault>
     where
         T: Copy + Eq,
     {
@@ -321,10 +328,10 @@ impl PresentedRule
 pub struct Presentation
 {
     /// The rules, in written order.
-    rules: Arc<[PresentedRule]>,
+    rules: ThinShared<(), PresentedRule, Global>,
     /// The free cells a type of words is minted over; absent for every other
     /// presentation.
-    cells: Option<Arc<FreeCells>>,
+    cells: Option<Shared<FreeCells, Global>>,
 }
 
 impl Presentation
@@ -334,12 +341,16 @@ impl Presentation
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared list of the presentation's rules, growth within
+    ///   the given rules
     #[inline]
     #[must_use]
-    pub fn new(rules: alloc::vec::Vec<PresentedRule>) -> Self
+    pub fn new(rules: SmallVec<PresentedRule, 0, Global>) -> Self
     {
         Self {
-            rules: Arc::from(rules),
+            rules: ThinShared::from_header_and_iter((), rules),
             cells: None,
         }
     }
@@ -356,6 +367,10 @@ impl Presentation
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the shared rules of the two cancellations of every cell,
+    ///   and the shared cells, growth within the cells
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the circle's one cell mints its two cancellations.
     /// - witness: `presented::tests::a_cell_mints_its_words_and_its_cancellations`
@@ -365,8 +380,8 @@ impl Presentation
     pub fn words(cells: FreeCells) -> Self
     {
         Self {
-            rules: Arc::from(cells.cancellations()),
-            cells: Some(Arc::new(cells)),
+            rules: ThinShared::from_header_and_iter((), cells.cancellations()),
+            cells: Some(Shared::new(cells)),
         }
     }
 
@@ -375,6 +390,9 @@ impl Presentation
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared handle on the carried cells, setup
     #[inline]
     #[must_use]
     pub fn carrying(
@@ -383,7 +401,7 @@ impl Presentation
     ) -> Self
     {
         Self {
-            cells: Some(Arc::new(cells)),
+            cells: Some(Shared::new(cells)),
             ..self
         }
     }
@@ -442,6 +460,10 @@ impl Presentation
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the binding table and use mask of each rule's variables,
+    ///   growth within the rule's sides
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the circle's two rules pass, and one rule per fault
     ///   is refused by that fault and no other.
@@ -450,13 +472,16 @@ impl Presentation
     #[inline]
     pub fn validate<T>(
         &self,
-        table: &[Vec<RuleSlot<T>>],
+        table: &[SmallVec<RuleSlot<T>, 0, Global>],
     ) -> Result<(), RuleRefusal>
     where
         T: Copy + Eq,
     {
         // One binding table and one use mask, refilled per rule.
-        let (mut bound, mut used): (Vec<RuleSlot<T>>, Vec<bool>) = (Vec::new(), Vec::new());
+        let (mut bound, mut used): (SmallVec<RuleSlot<T>, 0, Global>, SmallVec<bool, 0, Global>) = (
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+        );
         for (index, rule) in self.rules().iter().enumerate() {
             let refuse = |fault| RuleRefusal {
                 rule: RuleIndex(index),
@@ -475,7 +500,7 @@ impl Presentation
             }
             let right = read_side(rule.right(), table).map_err(refuse)?;
             used.clear();
-            used.resize(bound.len(), false);
+            used.resize(Count::from(bound.len()), false);
             for &(variable, slot) in &right.variables {
                 let ordinal = usize::try_from(u32::from(variable)).unwrap_or(usize::MAX);
                 let (Some(&written), Some(seen)) = (bound.get(ordinal), used.get_mut(ordinal))
@@ -561,7 +586,7 @@ impl Presentation
     pub fn normalize<C, L, F>(
         &self,
         arities: &[FieldCount],
-        term: &mut Vec<RuleTerm<C, L>>,
+        term: &mut SmallVec<RuleTerm<C, L>, 0, Global>,
         fresh: F,
         fuel: &mut RewriteFuel,
     ) -> Result<Normalized, Exhausted>
@@ -595,6 +620,10 @@ impl Presentation
     /// - measure: the term's constructor count, which every rewrite of a
     ///   validated presentation lowers; and `fuel`, which every node charges.
     ///
+    /// # Cost
+    /// - allocation: the built right side of each rewrite and the rewritten
+    ///   term, growth within the rule's sides and the term's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::normalize`].
     /// - witness: `presented::tests::normalization_reduces_circle_words`
@@ -603,7 +632,7 @@ impl Presentation
     fn rewritten<C, L, F>(
         &self,
         arities: &[FieldCount],
-        term: &mut Vec<RuleTerm<C, L>>,
+        term: &mut SmallVec<RuleTerm<C, L>, 0, Global>,
         fresh: F,
         fuel: &mut RewriteFuel,
     ) -> Result<Normalized, Exhausted>
@@ -627,7 +656,7 @@ impl Presentation
                     else {
                         continue;
                     };
-                    let mut built = Vec::new();
+                    let mut built = SmallVec::<_, 0, Global>::new();
                     for &node in rule.right() {
                         fuel.charge()?;
                         match node {
@@ -651,7 +680,7 @@ impl Presentation
                         }
                     }
                     cursor = start.saturating_add(built.len());
-                    let _replaced = term.splice(start .. end, built);
+                    term.replace_range(start .. end, built);
                     outcome = Normalized::Rewritten;
                     continue 'rewrite;
                 }
@@ -697,6 +726,10 @@ impl Presentation
     /// - reason: one `for` loop over the letters, from the last to the first.
     /// - measure: the letters still to read.
     ///
+    /// # Cost
+    /// - allocation: the stack of kept positions and the normal word, growth
+    ///   within the term's letters
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::normalize`]: every word of up to six
     ///   letters over two loops, over a leaf or the empty word, gives the
@@ -708,7 +741,7 @@ impl Presentation
         && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
     fn cancelled<C, L>(
         &self,
-        term: &mut Vec<RuleTerm<C, L>>,
+        term: &mut SmallVec<RuleTerm<C, L>, 0, Global>,
         fuel: &mut RewriteFuel,
     ) -> Result<Option<Normalized>, Exhausted>
     where
@@ -757,7 +790,8 @@ impl Presentation
                 .any(|rule| pair(rule) == Some((first, second)))
         };
         // The positions of the normal suffix, its first letter last.
-        let mut kept: Vec<usize> = Vec::with_capacity(letters.len());
+        let mut kept: SmallVec<usize, 0, Global> =
+            SmallVec::<_, 0, Global>::with_capacity(Count::from(letters.len()));
         for at in (0 .. letters.len()).rev() {
             fuel.charge()?;
             let matched = match (tag_at(at), kept.last().and_then(|&top| tag_at(top))) {
@@ -774,7 +808,8 @@ impl Presentation
         if kept.len() == letters.len() {
             return Ok(Some(Normalized::Unchanged));
         }
-        let mut normal: Vec<RuleTerm<C, L>> = Vec::with_capacity(kept.len().saturating_add(1));
+        let mut normal: SmallVec<RuleTerm<C, L>, 0, Global> =
+            SmallVec::<_, 0, Global>::with_capacity(Count::from(kept.len().saturating_add(1)));
         normal.extend(kept.iter().rev().filter_map(|&at| letters.get(at).copied()));
         normal.push(last);
         *term = normal;
@@ -812,6 +847,10 @@ impl Presentation
     ///   sorted letters, each over a finite slice.
     /// - measure: the letters still to read.
     ///
+    /// # Cost
+    /// - allocation: the sorted order of the letters and the counted word,
+    ///   growth within the term's letters
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — two words of two cells that differ by the order of
     ///   their letters give one normal form; two that differ by a count give
@@ -821,7 +860,7 @@ impl Presentation
     #[spec(captures: before = fuel.0, ensures: |ret| fuel.0 <= before
         && (!matches!(ret, Err(Exhausted)) || fuel.0 == 0))]
     fn counted<C, L>(
-        term: &mut Vec<RuleTerm<C, L>>,
+        term: &mut SmallVec<RuleTerm<C, L>, 0, Global>,
         fuel: &mut RewriteFuel,
     ) -> Result<Normalized, Exhausted>
     where
@@ -847,9 +886,10 @@ impl Presentation
         if normal {
             return Ok(Normalized::Unchanged);
         }
-        let mut order: Vec<usize> = (0 .. letters.len()).collect();
+        let mut order: SmallVec<usize, 0, Global> = (0 .. letters.len()).collect();
         order.sort_by_key(|&at| cell_at(at));
-        let mut counted: Vec<RuleTerm<C, L>> = Vec::with_capacity(term.len());
+        let mut counted: SmallVec<RuleTerm<C, L>, 0, Global> =
+            SmallVec::<_, 0, Global>::with_capacity(Count::from(term.len()));
         for group in order.chunk_by(|&first, &second| cell_at(first) == cell_at(second)) {
             let Some(cell) = group.first().and_then(|&at| cell_at(at))
             else {
@@ -1010,6 +1050,10 @@ impl Presentation
     ///   terminate; the scans are `for` loops over the two finite terms.
     /// - measure: the decision's fuel; the nodes left to scan.
     ///
+    /// # Cost
+    /// - allocation: the constructors' arities and the two flattened terms,
+    ///   growth within the constructor table and the two terms' nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `S(Z)` and `Z` over the integers are apart, `S(P(Z))`
     ///   and `Z` agree, `S(x)` and `Z` over a leaf of the type are open, a
@@ -1024,16 +1068,16 @@ impl Presentation
     #[must_use]
     pub fn apart<T, V, R>(
         &self,
-        table: &[Vec<RuleSlot<T>>],
+        table: &[SmallVec<RuleSlot<T>, 0, Global>],
         (left, right): (V, V),
         mut read: R,
     ) -> Apartness
     where
         T: Copy + Eq,
         V: Copy + Eq,
-        R: FnMut(V, &mut Vec<V>) -> TermReading<V>,
+        R: FnMut(V, &mut SmallVec<V, 0, Global>) -> TermReading<V>,
     {
-        let arities: Vec<FieldCount> = table
+        let arities: SmallVec<FieldCount, 0, Global> = table
             .iter()
             .map(|fields| FieldCount(fields.len()))
             .collect();
@@ -1090,12 +1134,16 @@ pub enum TermReading<V>
 ///   `fuel`.
 /// - measure: `fuel`.
 ///
+/// # Cost
+/// - allocation: the flattened term, its pending stack and the read fields,
+///   growth within `fuel`
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentation::apart`].
 /// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |term| !term.is_empty()))]
 fn flatten<T, V, R>(
-    table: &[Vec<RuleSlot<T>>],
+    table: &[SmallVec<RuleSlot<T>, 0, Global>],
     root: V,
     read: &mut R,
     fuel: &mut RewriteFuel,
@@ -1103,11 +1151,11 @@ fn flatten<T, V, R>(
 where
     T: Copy + Eq,
     V: Copy + Eq,
-    R: FnMut(V, &mut Vec<V>) -> TermReading<V>,
+    R: FnMut(V, &mut SmallVec<V, 0, Global>) -> TermReading<V>,
 {
-    let mut term = Vec::new();
-    let mut fields = Vec::new();
-    let mut pending = Vec::from([(root, RuleSlot::<T>::Own)]);
+    let mut term = SmallVec::<_, 0, Global>::new();
+    let mut fields = SmallVec::<_, 0, Global>::new();
+    let mut pending = SmallVec::<_, 0, Global>::from_iter([(root, RuleSlot::<T>::Own)]);
     while let Some((at, slot)) = pending.pop() {
         fuel.charge()?;
         fields.clear();
@@ -1223,7 +1271,7 @@ pub enum Apartness
 #[spec(ensures: |ret| ret != Ok(Apartness::Undecided))]
 fn decide_apart<T, L>(
     presentation: &Presentation,
-    (table, arities): (&[Vec<RuleSlot<T>>], &[FieldCount]),
+    (table, arities): (&[SmallVec<RuleSlot<T>, 0, Global>], &[FieldCount]),
     (left, right): (&mut FlatTerm<L>, &mut FlatTerm<L>),
     fuel: &mut RewriteFuel,
 ) -> Result<Apartness, Exhausted>
@@ -1282,7 +1330,7 @@ where
 /// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
 #[spec(ensures: |ret| matches!(ret, Apartness::Open | Apartness::Leaf))]
 fn unsettled<T, L>(
-    table: &[Vec<RuleSlot<T>>],
+    table: &[SmallVec<RuleSlot<T>, 0, Global>],
     left: &[RuleTerm<(), L>],
     right: &[RuleTerm<(), L>],
 ) -> Apartness
@@ -1327,18 +1375,22 @@ enum Closure
 /// - reason: one `for` loop over the term.
 /// - measure: the nodes left.
 ///
+/// # Cost
+/// - allocation: the stack of field slots that the walk expects, growth within
+///   the term's nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentation::apart`].
 /// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
 #[spec(ensures: |ret| !term.is_empty() || ret == Closure::Open)]
 fn closure<T, C, L>(
-    table: &[Vec<RuleSlot<T>>],
+    table: &[SmallVec<RuleSlot<T>, 0, Global>],
     term: &[RuleTerm<C, L>],
 ) -> Closure
 where
     T: Copy + Eq,
 {
-    let mut expected = Vec::from([RuleSlot::Own]);
+    let mut expected = SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]);
     for node in term {
         let Some(slot) = expected.pop()
         else {
@@ -1383,7 +1435,7 @@ enum PairVariable
 
 /// A term flattened in pre-order with no payload on its constructors: what
 /// the apartness decision and the critical pairs compare.
-type FlatTerm<L> = Vec<RuleTerm<(), L>>;
+type FlatTerm<L> = SmallVec<RuleTerm<(), L>, 0, Global>;
 
 /// One side of a critical pair, flattened in pre-order.
 type PairTerm = FlatTerm<PairVariable>;
@@ -1430,6 +1482,10 @@ enum Overlap
 ///   `position` every round; the builds are `for` loops over finite sides.
 /// - measure: the subterm's nodes left.
 ///
+/// # Cost
+/// - allocation: the unifier's bindings and the two sides of the critical pair,
+///   growth within the two rules' sides
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentation::converges`].
 /// - witness: `presented::tests::critical_pairs_decide_convergence`
@@ -1452,8 +1508,10 @@ fn overlap(
         return Ok(Overlap::Disjoint);
     };
     let overlapping = inner.left();
-    let mut outer_bound: Vec<(RuleVariable, PairTerm)> = Vec::new();
-    let mut inner_bound: Vec<(RuleVariable, PairTerm)> = Vec::new();
+    let mut outer_bound: SmallVec<(RuleVariable, PairTerm), 0, Global> =
+        SmallVec::<_, 0, Global>::new();
+    let mut inner_bound: SmallVec<(RuleVariable, PairTerm), 0, Global> =
+        SmallVec::<_, 0, Global>::new();
     let (mut a, mut b) = (0_usize, 0_usize);
     while let Some(&node) = at.get(a) {
         fuel.charge()?;
@@ -1551,6 +1609,10 @@ fn subterm_end(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the pair's term, one entry for each node, growth within the
+///   given nodes
 fn flattened(
     nodes: &[RuleNode],
     side: fn(RuleVariable) -> PairVariable,
@@ -1582,6 +1644,10 @@ fn flattened(
 /// - executable: none — sortedness of `bound` would rescan it on every call,
 ///   and the substituted term is the body's own construction.
 ///
+/// # Cost
+/// - allocation: the substituted term, growth within the rule side's nodes and
+///   the unifier's terms
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentation::converges`].
 /// - witness: `presented::tests::critical_pairs_decide_convergence`
@@ -1592,7 +1658,7 @@ fn substituted(
     arities: &[FieldCount],
 ) -> PairTerm
 {
-    let mut term = Vec::with_capacity(nodes.len());
+    let mut term = SmallVec::<_, 0, Global>::with_capacity(Count::from(nodes.len()));
     for &node in nodes {
         match node {
             RuleNode::Constructor(tag) => term.push(RuleTerm::Constructor {
@@ -1733,11 +1799,15 @@ impl FreeCells
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the boxed slice of the sort's cells, growth within the
+    ///   given cells
     #[inline]
     #[must_use]
     pub fn new(
         sort: crate::term::ConstantIndex,
-        cells: Vec<FreeCell>,
+        cells: SmallVec<FreeCell, 0, Global>,
     ) -> Self
     {
         Self {
@@ -1881,6 +1951,10 @@ impl FreeCells
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the cancellation rules and their sides, growth within the
+    ///   presentation's cells
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the circle's one cell mints the landed circle's two
     ///   rules over tags 1 and 2.
@@ -1888,10 +1962,12 @@ impl FreeCells
     #[spec(ensures: |ret| ret.len() == self.cells.len().saturating_mul(2))]
     #[inline]
     #[must_use]
-    pub fn cancellations(&self) -> Vec<PresentedRule>
+    pub fn cancellations(&self) -> SmallVec<PresentedRule, 0, Global>
     {
         let rest = RuleNode::Variable(RuleVariable(0));
-        let mut rules = Vec::with_capacity(self.cells.len().saturating_mul(2));
+        let mut rules = SmallVec::<_, 0, Global>::with_capacity(Count::from(
+            self.cells.len().saturating_mul(2),
+        ));
         for generator in (0 .. self.cells.len()).map(CellIndex) {
             let letter = RuleNode::Constructor(Self::letter(generator));
             let inverse = RuleNode::Constructor(Self::inverse(generator));
@@ -1938,7 +2014,7 @@ impl FreeCells
     #[inline]
     pub fn validate<T>(
         &self,
-        table: &[Vec<RuleSlot<T>>],
+        table: &[SmallVec<RuleSlot<T>, 0, Global>],
     ) -> Result<(), CellFault>
     where
         T: Copy + Eq,
@@ -2129,6 +2205,10 @@ pub enum CellFault
 /// - reason: one `for` loop over the side, not recursion.
 /// - measure: the nodes left to read.
 ///
+/// # Cost
+/// - allocation: the stack of built terms and each node's fields, growth within
+///   the side's nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's `loop(unloop(x))` builds `unloop` over the
 ///   variable and `loop` over that; a side one field short and a tag past the
@@ -2142,12 +2222,12 @@ pub fn build_side<T, F>(
     mut node: F,
 ) -> Result<T, RuleFault>
 where
-    F: FnMut(RuleNode, Vec<T>) -> T,
+    F: FnMut(RuleNode, SmallVec<T, 0, Global>) -> T,
 {
-    let mut built: Vec<T> = Vec::new();
+    let mut built: SmallVec<T, 0, Global> = SmallVec::<_, 0, Global>::new();
     for &written in side.iter().rev() {
         let fields = match written {
-            RuleNode::Variable(_) => Vec::new(),
+            RuleNode::Variable(_) => SmallVec::<_, 0, Global>::new(),
             RuleNode::Constructor(tag) => {
                 let arity = arities
                     .get(usize::from(tag))
@@ -2438,7 +2518,7 @@ impl RewriteFuel
 struct SideReading<T>
 {
     /// Each variable in pre-order with the slot it stands at.
-    variables: Vec<(RuleVariable, RuleSlot<T>)>,
+    variables: SmallVec<(RuleVariable, RuleSlot<T>), 0, Global>,
     /// How many constructors the side holds.
     constructors: usize,
 }
@@ -2462,6 +2542,10 @@ struct SideReading<T>
 /// - reason: the `for` loop over the side's nodes, not recursion.
 /// - measure: the nodes left.
 ///
+/// # Cost
+/// - allocation: the expected slots and the side's variables with their slots,
+///   growth within the side's nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentation::validate`].
 /// - witness: `presented::tests::validation_names_each_fault`
@@ -2469,14 +2553,14 @@ struct SideReading<T>
     || matches!(ret, Err(RuleFault::UnknownConstructor | RuleFault::NotOwnPosition | RuleFault::DependentSlot | RuleFault::Arity)))]
 fn read_side<T>(
     side: &[RuleNode],
-    table: &[Vec<RuleSlot<T>>],
+    table: &[SmallVec<RuleSlot<T>, 0, Global>],
 ) -> Result<SideReading<T>, RuleFault>
 where
     T: Copy + Eq,
 {
-    let mut expected = Vec::from([RuleSlot::Own]);
+    let mut expected = SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]);
     let mut reading = SideReading {
-        variables: Vec::new(),
+        variables: SmallVec::<_, 0, Global>::new(),
         constructors: 0,
     };
     for &node in side {
@@ -2527,7 +2611,7 @@ enum Matched
         /// One past the redex's last node.
         end: usize,
         /// Each variable's span, in variable order.
-        bindings: Vec<(usize, usize)>,
+        bindings: SmallVec<(usize, usize), 0, Global>,
     },
 }
 
@@ -2551,6 +2635,10 @@ enum Matched
 ///   subterm's nodes, not recursion.
 /// - measure: the pattern nodes left; the subterm nodes still owed.
 ///
+/// # Cost
+/// - allocation: the bindings of the pattern's variables, growth within the
+///   left side's variables
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentation::normalize`].
 /// - witness: `presented::tests::normalization_reduces_circle_words`
@@ -2567,7 +2655,7 @@ fn matched<C, L>(
 ) -> Result<Matched, Exhausted>
 {
     let mut at = start.0;
-    let mut bindings = Vec::new();
+    let mut bindings = SmallVec::<_, 0, Global>::new();
     for &node in left {
         fuel.charge()?;
         match (node, term.get(at)) {
@@ -2601,8 +2689,11 @@ fn matched<C, L>(
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::string::String;
-    use alloc::vec::Vec;
+
+    use gandr_kernel_data::Count;
+    use gandr_kernel_data::SmallVec;
 
     use super::Apartness;
     use super::CellFault;
@@ -2658,15 +2749,15 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn table() -> Vec<Vec<RuleSlot<Classifier>>>
+    fn table() -> SmallVec<SmallVec<RuleSlot<Classifier>, 0, Global>, 0, Global>
     {
-        alloc::vec![
-            alloc::vec![],
-            alloc::vec![RuleSlot::Own],
-            alloc::vec![RuleSlot::Own],
-            alloc::vec![RuleSlot::Other(Classifier::Integer)],
-            alloc::vec![RuleSlot::Own, RuleSlot::Dependent],
-        ]
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]),
+            SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]),
+            SmallVec::<_, 0, Global>::from_iter([RuleSlot::Other(Classifier::Integer)]),
+            SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own, RuleSlot::Dependent]),
+        ])
     }
 
     /// The one-rule presentation `left ==> right`.
@@ -2678,7 +2769,10 @@ mod tests
         right: &[RuleNode],
     ) -> Presentation
     {
-        Presentation::new(alloc::vec![PresentedRule::new(left.into(), right.into())])
+        Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+            left.into(),
+            right.into(),
+        )]))
     }
 
     /// The circle's two rules.
@@ -2690,10 +2784,10 @@ mod tests
         let looped = RuleNode::Constructor(ConstructorTag::from(1_usize));
         let unlooped = RuleNode::Constructor(ConstructorTag::from(2_usize));
         let x = RuleNode::Variable(RuleVariable::from(0_u32));
-        Presentation::new(alloc::vec![
+        Presentation::new(SmallVec::<_, 0, Global>::from_iter([
             PresentedRule::new([looped, unlooped, x].into(), [x].into()),
             PresentedRule::new([unlooped, looped, x].into(), [x].into()),
-        ])
+        ]))
     }
 
     #[test]
@@ -2731,15 +2825,15 @@ mod tests
                 "{fault:?}"
             );
         }
-        let doubled = Presentation::new(alloc::vec![PresentedRule::new(
+        let doubled = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
             [c(1), c(2), c(1), v(0)].into(),
             [c(1), v(0)].into(),
-        )]);
+        )]));
         assert_eq!(doubled.validate(&table), Ok(()));
-        let duplicated = Presentation::new(alloc::vec![
+        let duplicated = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
             PresentedRule::new([c(1), c(2), v(0)].into(), [v(0)].into()),
             PresentedRule::new([c(1), c(1), c(1), v(0)].into(), [c(2), v(0), v(0)].into()),
-        ]);
+        ]));
         assert_eq!(
             duplicated.validate(&table),
             Err(RuleRefusal {
@@ -2756,7 +2850,10 @@ mod tests
         let base =
             || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
         let sort = crate::term::ConstantIndex::from(3_usize);
-        let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())]);
+        let cells = FreeCells::new(
+            sort,
+            SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+        );
         assert_eq!(
             (
                 usize::from(cells.constructors()),
@@ -2778,14 +2875,20 @@ mod tests
         );
         assert_eq!(words.cells(), Some(&cells));
         assert_eq!(
-            Presentation::new(circle().rules().to_vec()).carrying(cells),
+            Presentation::new(SmallVec::<_, 0, Global>::from_iter(
+                circle().rules().iter().cloned()
+            ))
+            .carrying(cells),
             words,
             "the decoder's rules and cells are the mint's"
         );
-        let twice = FreeCells::new(sort, alloc::vec![
-            FreeCell::new(base(), base()),
-            FreeCell::new(base(), base())
-        ]);
+        let twice = FreeCells::new(
+            sort,
+            SmallVec::<_, 0, Global>::from_iter([
+                FreeCell::new(base(), base()),
+                FreeCell::new(base(), base()),
+            ]),
+        );
         let second = twice.cancellations();
         assert_eq!(
             second.get(2).map(PresentedRule::left),
@@ -2862,7 +2965,7 @@ mod tests
         // `word` over the point, each letter `1` a `loop` and `2` an `unloop`,
         // each carrying its position as written.
         let word = |letters: &[usize]| {
-            let mut term: Vec<RuleTerm<Letter, Point>> = letters
+            let mut term: SmallVec<RuleTerm<Letter, Point>, 0, Global> = letters
                 .iter()
                 .enumerate()
                 .map(|(position, &letter)| RuleTerm::Constructor {
@@ -2890,10 +2993,10 @@ mod tests
             "the innermost pair, `unloop(loop(x))` from the second letter, goes first, keeping \
              the outer `loop` as written"
         );
-        let built = Presentation::new(alloc::vec![PresentedRule::new(
+        let built = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
             [c(1), c(2), c(1), x].into(),
             [c(1), x].into(),
-        )]);
+        )]));
         let mut term = word(&[1, 2, 1]);
         assert_eq!(
             built.normalize(&arities, &mut term, shifted, &mut fuel),
@@ -2945,7 +3048,10 @@ mod tests
             || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
         Presentation::words(FreeCells::new(
             crate::term::ConstantIndex::from(3_usize),
-            alloc::vec![FreeCell::new(base(), base()), FreeCell::new(base(), base())],
+            SmallVec::<_, 0, Global>::from_iter([
+                FreeCell::new(base(), base()),
+                FreeCell::new(base(), base()),
+            ]),
         ))
     }
 
@@ -2956,9 +3062,9 @@ mod tests
     fn spelled(
         letters: &[ConstructorTag],
         end: RuleTerm<Letter, Point>,
-    ) -> Vec<RuleTerm<Letter, Point>>
+    ) -> SmallVec<RuleTerm<Letter, Point>, 0, Global>
     {
-        let mut term: Vec<RuleTerm<Letter, Point>> = letters
+        let mut term: SmallVec<RuleTerm<Letter, Point>, 0, Global> = letters
             .iter()
             .enumerate()
             .map(|(position, &tag)| RuleTerm::Constructor {
@@ -2983,8 +3089,10 @@ mod tests
             payload: Letter(usize::MAX),
         };
         let mut compared = 0_usize;
-        let mut letters: Vec<ConstructorTag> = Vec::with_capacity(6);
-        let mut rewritten: Vec<RuleTerm<Letter, Point>> = Vec::with_capacity(7);
+        let mut letters: SmallVec<ConstructorTag, 0, Global> =
+            SmallVec::<_, 0, Global>::with_capacity(Count::from(6));
+        let mut rewritten: SmallVec<RuleTerm<Letter, Point>, 0, Global> =
+            SmallVec::<_, 0, Global>::with_capacity(Count::from(7));
         for length in 0 ..= 6_u32 {
             for code in 0 .. 4_usize.pow(length) {
                 letters.clear();
@@ -3046,7 +3154,10 @@ mod tests
         let (forward, back) = (ConstructorTag::from(1_usize), ConstructorTag::from(2_usize));
         for letters in [100_usize, 589, 10_000] {
             let mut fuel = RewriteFuel::from(u64::MAX);
-            let mut looped = spelled(&alloc::vec![forward; letters], RuleTerm::Leaf(Point));
+            let mut looped = spelled(
+                &SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(forward, letters)),
+                RuleTerm::Leaf(Point),
+            );
             assert_eq!(
                 words.normalize(&arities, &mut looped, kept, &mut fuel),
                 Ok(Normalized::Unchanged)
@@ -3058,7 +3169,11 @@ mod tests
             );
             let half = letters.div_euclid(2);
             let mut cancelling = spelled(
-                &[alloc::vec![forward; half], alloc::vec![back; half]].concat(),
+                &[
+                    SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(forward, half)),
+                    SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(back, half)),
+                ]
+                .concat(),
                 RuleTerm::Leaf(Point),
             );
             assert_eq!(
@@ -3089,10 +3204,13 @@ mod tests
         let base =
             || alloc::boxed::Box::from([RuleNode::Constructor(ConstructorTag::from(0_usize))]);
         let spheres = Presentation::words(
-            FreeCells::new(crate::term::ConstantIndex::from(3_usize), alloc::vec![
-                FreeCell::new(base(), base()),
-                FreeCell::new(base(), base())
-            ])
+            FreeCells::new(
+                crate::term::ConstantIndex::from(3_usize),
+                SmallVec::<_, 0, Global>::from_iter([
+                    FreeCell::new(base(), base()),
+                    FreeCell::new(base(), base()),
+                ]),
+            )
             .wrapped(Reflexivities::from(1_usize)),
         );
         let arities = [0_usize, 1, 1, 1, 1].map(FieldCount::from);
@@ -3100,12 +3218,12 @@ mod tests
         // A word's outcome and its tags, the leaf written as `0`, and the fuel
         // it spends.
         let normal = |words: &Presentation, letters: &[usize]| {
-            let tags: Vec<ConstructorTag> =
+            let tags: SmallVec<ConstructorTag, 0, Global> =
                 letters.iter().copied().map(ConstructorTag::from).collect();
             let mut term = spelled(&tags, RuleTerm::Leaf(Point));
             let mut fuel = RewriteFuel::from(100_u64);
             let outcome = words.normalize(&arities, &mut term, kept, &mut fuel);
-            let read: Vec<usize> = term
+            let read: SmallVec<usize, 0, Global> = term
                 .iter()
                 .map(|node| match *node {
                     RuleTerm::Constructor { tag, .. } => usize::from(tag),
@@ -3116,36 +3234,57 @@ mod tests
         };
         assert_eq!(
             normal(&spheres, &[3, 1]),
-            (Ok(Normalized::Rewritten), alloc::vec![1, 3, 0], 2),
+            (
+                Ok(Normalized::Rewritten),
+                SmallVec::<_, 0, Global>::from_iter([1, 3, 0]),
+                2
+            ),
             "the second cell's letter moves after the first's"
         );
         assert_eq!(
             normal(&spheres, &[1, 3]),
-            (Ok(Normalized::Unchanged), alloc::vec![1, 3, 0], 2),
+            (
+                Ok(Normalized::Unchanged),
+                SmallVec::<_, 0, Global>::from_iter([1, 3, 0]),
+                2
+            ),
             "a word in the order of its cells is normal"
         );
         assert_eq!(
             normal(&spheres, &[1, 3, 2]),
-            (Ok(Normalized::Rewritten), alloc::vec![3, 0], 3),
+            (
+                Ok(Normalized::Rewritten),
+                SmallVec::<_, 0, Global>::from_iter([3, 0]),
+                3
+            ),
             "the first cell's letter cancels its inverse across the second cell"
         );
         assert_eq!(
             normal(&spheres, &[4, 1, 4, 2, 2]),
-            (Ok(Normalized::Rewritten), alloc::vec![2, 4, 4, 0], 5),
+            (
+                Ok(Normalized::Rewritten),
+                SmallVec::<_, 0, Global>::from_iter([2, 4, 4, 0]),
+                5
+            ),
             "each cell keeps its count, as a letter or an inverse by its sign"
         );
         assert_eq!(
             normal(&two_loops(), &[3, 1]),
-            (Ok(Normalized::Unchanged), alloc::vec![3, 1, 0], 2),
+            (
+                Ok(Normalized::Unchanged),
+                SmallVec::<_, 0, Global>::from_iter([3, 1, 0]),
+                2
+            ),
             "two loops do not commute"
         );
-        let table: Vec<Vec<RuleSlot<Classifier>>> = alloc::vec![
-            alloc::vec![],
-            alloc::vec![RuleSlot::Own],
-            alloc::vec![RuleSlot::Own],
-            alloc::vec![RuleSlot::Own],
-            alloc::vec![RuleSlot::Own],
-        ];
+        let table: SmallVec<SmallVec<RuleSlot<Classifier>, 0, Global>, 0, Global> =
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]),
+                SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]),
+                SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]),
+                SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]),
+            ]);
         let mut terms = Terms::default();
         let mut apart = |words: &Presentation, left: &[Node], right: &[Node]| {
             let (left, right) = (terms.build(left, &arities), terms.build(right, &arities));
@@ -3173,7 +3312,7 @@ mod tests
     {
         let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
         let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
-        let shown = |node: RuleNode, fields: Vec<String>| match node {
+        let shown = |node: RuleNode, fields: SmallVec<String, 0, Global>| match node {
             RuleNode::Variable(variable) => alloc::format!("x{}", u32::from(variable)),
             RuleNode::Constructor(tag) => {
                 alloc::format!("c{}({})", usize::from(tag), fields.join(","))
@@ -3192,15 +3331,18 @@ mod tests
             super::build_side(cancellation.right(), &arities, shown),
             Ok(String::from("x0"))
         );
-        let own = alloc::vec![RuleSlot::<u8>::Own];
-        let table = [alloc::vec![], own.clone(), own.clone(), alloc::vec![
-            RuleSlot::Other(7_u8)
-        ]];
+        let own = SmallVec::<_, 0, Global>::from_iter([RuleSlot::<u8>::Own]);
+        let table = [
+            SmallVec::<_, 0, Global>::new(),
+            own.clone(),
+            own.clone(),
+            SmallVec::<_, 0, Global>::from_iter([RuleSlot::Other(7_u8)]),
+        ];
         assert_eq!(cancellation.slots(&table), Ok(own));
         let marked = PresentedRule::new([c(1), c(3), v(0)].into(), [c(0)].into());
         assert_eq!(
             marked.slots(&table),
-            Ok(alloc::vec![RuleSlot::Other(7_u8)]),
+            Ok(SmallVec::<_, 0, Global>::from_iter([RuleSlot::Other(7_u8)])),
             "a variable under a constructor's field of another type reads that classifier"
         );
         assert_eq!(
@@ -3264,7 +3406,7 @@ mod tests
     enum Stored
     {
         /// A constructor and its fields' ids.
-        Constructor(usize, Vec<Id>),
+        Constructor(usize, SmallVec<Id, 0, Global>),
         /// A reference and the id of its definition.
         Defined(Id),
         /// A leaf.
@@ -3277,7 +3419,7 @@ mod tests
     /// trivial.
     #[repr(transparent)]
     #[derive(Debug, Default)]
-    struct Terms(Vec<Stored>);
+    struct Terms(SmallVec<Stored, 0, Global>);
 
     impl Terms
     {
@@ -3292,12 +3434,12 @@ mod tests
             arities: &[FieldCount],
         ) -> Id
         {
-            let mut built: Vec<Id> = Vec::new();
+            let mut built: SmallVec<Id, 0, Global> = SmallVec::<_, 0, Global>::new();
             for &node in nodes.iter().rev() {
                 let stored =
                     match node {
                         Node::C(tag) => {
-                            let mut fields = Vec::new();
+                            let mut fields = SmallVec::<_, 0, Global>::new();
                             for _ in 0 .. arities[tag].0 {
                                 fields.push(built.pop().expect("a field is written"));
                             }
@@ -3327,7 +3469,7 @@ mod tests
         fn read(
             &self,
             at: Id,
-            fields: &mut Vec<Id>,
+            fields: &mut SmallVec<Id, 0, Global>,
         ) -> TermReading<Id>
         {
             match self.0[at.0] {
@@ -3346,19 +3488,24 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn integers() -> (Vec<Vec<RuleSlot<Classifier>>>, Presentation)
+    fn integers() -> (
+        SmallVec<SmallVec<RuleSlot<Classifier>, 0, Global>, 0, Global>,
+        Presentation,
+    )
     {
         let successor = RuleNode::Constructor(ConstructorTag::from(1_usize));
         let predecessor = RuleNode::Constructor(ConstructorTag::from(2_usize));
         let x = RuleNode::Variable(RuleVariable::from(0_u32));
         (
-            alloc::vec![alloc::vec![], alloc::vec![RuleSlot::Own], alloc::vec![
-                RuleSlot::Own
-            ],],
-            Presentation::new(alloc::vec![
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]),
+                SmallVec::<_, 0, Global>::from_iter([RuleSlot::Own]),
+            ]),
+            Presentation::new(SmallVec::<_, 0, Global>::from_iter([
                 PresentedRule::new([successor, predecessor, x].into(), [x].into()),
                 PresentedRule::new([predecessor, successor, x].into(), [x].into()),
-            ]),
+            ])),
         )
     }
 
@@ -3381,10 +3528,10 @@ mod tests
             integers.converges(&arities, &mut fuel),
             Ok(Convergence::Converges)
         );
-        let forked = Presentation::new(alloc::vec![
+        let forked = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
             PresentedRule::new([c(1), c(2), v(0)].into(), [v(0)].into()),
             PresentedRule::new([c(1), c(2), v(0)].into(), [c(0)].into()),
-        ]);
+        ]));
         assert_eq!(forked.validate(&table), Ok(()));
         assert_eq!(
             forked.converges(&arities, &mut fuel),
@@ -3424,10 +3571,10 @@ mod tests
         let v = |ordinal: u32| RuleNode::Variable(RuleVariable::from(ordinal));
         let mut terms = Terms::default();
         let mut apart = |presentation: &Presentation,
-                         table: &[Vec<RuleSlot<Classifier>>],
+                         table: &[SmallVec<RuleSlot<Classifier>, 0, Global>],
                          left: &[Node],
                          right: &[Node]| {
-            let arities: Vec<FieldCount> = table
+            let arities: SmallVec<FieldCount, 0, Global> = table
                 .iter()
                 .map(|fields| FieldCount(fields.len()))
                 .collect();
@@ -3467,10 +3614,10 @@ mod tests
             Apartness::Apart,
             "a rule that erases the leaf leaves a closed normal form"
         );
-        let forked = Presentation::new(alloc::vec![
+        let forked = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
             PresentedRule::new([c(1), c(2), v(0)].into(), [v(0)].into()),
             PresentedRule::new([c(1), c(2), v(0)].into(), [c(0)].into()),
-        ]);
+        ]));
         assert_eq!(
             apart(&forked, &numbers, &[C(1), C(0)], &[C(0)]),
             Apartness::Diverges {
@@ -3530,7 +3677,8 @@ mod tests
         let successor = terms.build(&[C(1), C(0)], &arities);
         let zero = terms.build(&[C(0)], &arities);
         let named = terms.build(&[R(successor)], &arities);
-        let read = |terms: &Terms, at: Id, fields: &mut Vec<Id>| terms.read(at, fields);
+        let read =
+            |terms: &Terms, at: Id, fields: &mut SmallVec<Id, 0, Global>| terms.read(at, fields);
         assert_eq!(
             integers.apart(&numbers, (named, zero), |at, fields| read(
                 &terms, at, fields
@@ -3550,7 +3698,10 @@ mod tests
         let mark_table = super::tests::table();
         let marked = terms.build(&[C(3), R(zero)], &[0_usize, 1, 1, 1].map(FieldCount));
         let direct = Id(terms.0.len());
-        terms.0.push(Stored::Constructor(3, alloc::vec![zero]));
+        terms.0.push(Stored::Constructor(
+            3,
+            SmallVec::<_, 0, Global>::from_iter([zero]),
+        ));
         assert_eq!(
             circle().apart(&mark_table, (marked, direct), |at, fields| read(
                 &terms, at, fields

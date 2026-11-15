@@ -41,11 +41,12 @@
 //! [`ConstantIndex`]: crate::ConstantIndex
 //! [`FORMAT_VERSION`]: crate::FORMAT_VERSION
 
+use alloc::alloc::Global;
 use alloc::string::String;
-use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::LandmarkConstraint;
 use quenchant_shape::shape::Maybe;
 
@@ -409,7 +410,7 @@ pub struct LevelSignature
     /// The number of prenex level parameters.
     params: LevelParamCount,
     /// The declared landmark constraints, in declaration order.
-    constraints: Vec<LandmarkConstraint>,
+    constraints: SmallVec<LandmarkConstraint, 0, Global>,
 }
 
 impl LevelSignature
@@ -473,7 +474,7 @@ impl LevelSignature
     #[spec(captures: [entry_constraint_count = constraints.len()], ensures: |ret| ret.params() == params && ret.constraints().len() == entry_constraint_count)]
     pub fn new(
         params: LevelParamCount,
-        constraints: Vec<LandmarkConstraint>,
+        constraints: SmallVec<LandmarkConstraint, 0, Global>,
     ) -> Self
     {
         Self {
@@ -538,17 +539,17 @@ pub enum DeclarationContent
     Data
     {
         /// Classifier telescope, each entry scoped under earlier parameters.
-        parameters: Vec<ValueTypeId>,
+        parameters: SmallVec<ValueTypeId, 0, Global>,
         /// Index classifiers, each scoped under the parameters and the indices
         /// before it; none for a family indexed by nothing.
-        indices: Vec<ValueTypeId>,
+        indices: SmallVec<ValueTypeId, 0, Global>,
         /// Field types per constructor, each scoped under the whole parameter
         /// telescope and then its constructor's fields before it.
-        constructors: Vec<Vec<ValueTypeId>>,
+        constructors: SmallVec<SmallVec<ValueTypeId, 0, Global>, 0, Global>,
         /// The index each constructor's value stands at, one value per index,
         /// scoped under the parameters and that constructor's fields; empty
         /// when `indices` is.
-        results: Vec<Vec<ValueId>>,
+        results: SmallVec<SmallVec<ValueId, 0, Global>, 0, Global>,
         /// Universe classifier bounding every constructor field.
         kind: ValueTypeId,
     },
@@ -608,11 +609,11 @@ pub enum DeclarationContent
     Codata
     {
         /// Classifier telescope, each entry scoped under earlier parameters.
-        parameters: Vec<ValueTypeId>,
+        parameters: SmallVec<ValueTypeId, 0, Global>,
         /// The observations, in order, each a computation type scoped under the
         /// whole parameter telescope, naming the declaration itself at its
         /// parameters where the fixpoint recurs.
-        observations: Vec<CompTypeId>,
+        observations: SmallVec<CompTypeId, 0, Global>,
         /// Computation-universe classifier bounding every observation.
         kind: ValueTypeId,
     },
@@ -732,7 +733,7 @@ impl AsRef<str> for NameSegment
 /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct StructuredName(Vec<NameSegment>);
+pub struct StructuredName(SmallVec<NameSegment, 0, Global>);
 
 impl StructuredName
 {
@@ -748,14 +749,14 @@ impl StructuredName
     }
 }
 
-impl From<Vec<NameSegment>> for StructuredName
+impl From<SmallVec<NameSegment, 0, Global>> for StructuredName
 {
     /// The name made of `segments`, outermost first.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(segments: Vec<NameSegment>) -> Self
+    fn from(segments: SmallVec<NameSegment, 0, Global>) -> Self
     {
         Self(segments)
     }
@@ -833,14 +834,14 @@ pub struct Declaration
     /// is a claim about *this declaration's type*, which a choke point
     /// re-derives by walking it. Empty for every declaration no projection
     /// touched.
-    provenance: Vec<ConstantIndex>,
+    provenance: SmallVec<ConstantIndex, 0, Global>,
     /// The structured name the artifact's name record carries; empty for a
     /// declaration no producer named.
     name: StructuredName,
     /// The path endpoints the definition's type conversions relate, with the
     /// dialogue relating each pair; empty for every declaration whose
     /// conversions the kernel's forced reading decides alone.
-    related: Vec<RelatedEndpoints>,
+    related: SmallVec<RelatedEndpoints, 0, Global>,
     /// The rules rewriting a data declaration's constructor terms; free for
     /// every free type and every declaration that is not data.
     presentation: crate::presented::Presentation,
@@ -848,7 +849,7 @@ pub struct Declaration
     /// type in written order: a rule whose two sides a fold computes apart is
     /// respected by its law instead. Empty for every declaration that rests
     /// on none.
-    laws: Vec<ConstantIndex>,
+    laws: SmallVec<ConstantIndex, 0, Global>,
     /// The rules of the operation a definition lowered from, which the kernel
     /// decides converge; none for every other declaration.
     operation_rules: crate::operation_rules::OperationRules,
@@ -857,7 +858,7 @@ pub struct Declaration
     stages: crate::stage_signature::StageSignature,
     /// The matches of a definition's body, each with the derivation that
     /// covers it; empty for every other declaration.
-    covers: Vec<crate::cover::Covered>,
+    covers: SmallVec<crate::cover::Covered, 0, Global>,
     /// The built-in role the declaration holds, which the kernel validates
     /// against the role's canonical form; none for every other declaration.
     role: Maybe<crate::Builtin, crate::builtin_role::Absent>,
@@ -1204,7 +1205,7 @@ impl Declaration
     #[must_use]
     pub fn relating(
         self,
-        related: Vec<RelatedEndpoints>,
+        related: SmallVec<RelatedEndpoints, 0, Global>,
     ) -> Self
     {
         match self.content {
@@ -1252,7 +1253,7 @@ impl Declaration
     #[must_use]
     pub fn lawful(
         self,
-        laws: Vec<ConstantIndex>,
+        laws: SmallVec<ConstantIndex, 0, Global>,
     ) -> Self
     {
         match self.content {
@@ -1376,7 +1377,7 @@ impl Declaration
     #[must_use]
     pub fn covered(
         self,
-        covers: Vec<crate::cover::Covered>,
+        covers: SmallVec<crate::cover::Covered, 0, Global>,
     ) -> Self
     {
         match self.content {
@@ -1889,14 +1890,14 @@ impl<'arena> DeclarationBuilder<'arena>
         Declaration {
             levels,
             content: DeclarationContent::Def { declared, body },
-            provenance: Vec::new(),
+            provenance: SmallVec::<_, 0, Global>::new(),
             name: StructuredName::default(),
-            related: Vec::new(),
+            related: SmallVec::<_, 0, Global>::new(),
             presentation: crate::presented::Presentation::default(),
-            laws: Vec::new(),
+            laws: SmallVec::<_, 0, Global>::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
-            covers: Vec::new(),
+            covers: SmallVec::<_, 0, Global>::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             fixpoint: DataFixpoint::Least,
         }
@@ -1942,7 +1943,7 @@ impl<'arena> DeclarationBuilder<'arena>
         levels: LevelSignature,
         declared: ValueTypeId,
         body: ValueId,
-        provenance: Vec<ConstantIndex>,
+        provenance: SmallVec<ConstantIndex, 0, Global>,
     ) -> Declaration
     {
         let _kept = ManuallyDrop::new(self);
@@ -1951,12 +1952,12 @@ impl<'arena> DeclarationBuilder<'arena>
             content: DeclarationContent::Def { declared, body },
             provenance,
             name: StructuredName::default(),
-            related: Vec::new(),
+            related: SmallVec::<_, 0, Global>::new(),
             presentation: crate::presented::Presentation::default(),
-            laws: Vec::new(),
+            laws: SmallVec::<_, 0, Global>::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
-            covers: Vec::new(),
+            covers: SmallVec::<_, 0, Global>::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             fixpoint: DataFixpoint::Least,
         }
@@ -2006,14 +2007,14 @@ impl<'arena> DeclarationBuilder<'arena>
         Declaration {
             levels,
             content: DeclarationContent::Axiom { declared },
-            provenance: Vec::new(),
+            provenance: SmallVec::<_, 0, Global>::new(),
             name: StructuredName::default(),
-            related: Vec::new(),
+            related: SmallVec::<_, 0, Global>::new(),
             presentation: crate::presented::Presentation::default(),
-            laws: Vec::new(),
+            laws: SmallVec::<_, 0, Global>::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
-            covers: Vec::new(),
+            covers: SmallVec::<_, 0, Global>::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             fixpoint: DataFixpoint::Least,
         }
@@ -2054,14 +2055,14 @@ impl<'arena> DeclarationBuilder<'arena>
         Declaration {
             levels,
             content: DeclarationContent::LiteralIdentity { declared, test },
-            provenance: Vec::new(),
+            provenance: SmallVec::<_, 0, Global>::new(),
             name: StructuredName::default(),
-            related: Vec::new(),
+            related: SmallVec::<_, 0, Global>::new(),
             presentation: crate::presented::Presentation::default(),
-            laws: Vec::new(),
+            laws: SmallVec::<_, 0, Global>::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
-            covers: Vec::new(),
+            covers: SmallVec::<_, 0, Global>::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             fixpoint: DataFixpoint::Least,
         }
@@ -2119,14 +2120,14 @@ impl<'arena> DeclarationBuilder<'arena>
                 scope,
                 interface: Maybe::Absent(interface::Absent::Unstated),
             },
-            provenance: Vec::new(),
+            provenance: SmallVec::<_, 0, Global>::new(),
             name: StructuredName::default(),
-            related: Vec::new(),
+            related: SmallVec::<_, 0, Global>::new(),
             presentation: crate::presented::Presentation::default(),
-            laws: Vec::new(),
+            laws: SmallVec::<_, 0, Global>::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
-            covers: Vec::new(),
+            covers: SmallVec::<_, 0, Global>::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             fixpoint: DataFixpoint::Least,
         }
@@ -2166,6 +2167,14 @@ impl Drop for DeclarationBuilder<'_>
     }
 }
 
+/// The table of an indexed family: its indices, the fields of each
+/// constructor, and the indices that each constructor's value states.
+pub type IndexedTable = (
+    SmallVec<ValueTypeId, 0, Global>,
+    SmallVec<SmallVec<ValueTypeId, 0, Global>, 0, Global>,
+    SmallVec<SmallVec<ValueId, 0, Global>, 0, Global>,
+);
+
 impl DeclarationBuilder<'_>
 {
     /// Finish a nominal declaration with a parameter telescope and
@@ -2178,15 +2187,19 @@ impl DeclarationBuilder<'_>
     pub fn data(
         self,
         levels: LevelSignature,
-        parameters: Vec<ValueTypeId>,
-        constructors: Vec<Vec<ValueTypeId>>,
+        parameters: SmallVec<ValueTypeId, 0, Global>,
+        constructors: SmallVec<SmallVec<ValueTypeId, 0, Global>, 0, Global>,
         kind: ValueTypeId,
     ) -> Declaration
     {
         self.indexed(
             levels,
             parameters,
-            (Vec::new(), constructors, Vec::new()),
+            (
+                SmallVec::<_, 0, Global>::new(),
+                constructors,
+                SmallVec::<_, 0, Global>::new(),
+            ),
             kind,
         )
     }
@@ -2201,12 +2214,8 @@ impl DeclarationBuilder<'_>
     pub fn indexed(
         self,
         levels: LevelSignature,
-        parameters: Vec<ValueTypeId>,
-        (indices, constructors, results): (
-            Vec<ValueTypeId>,
-            Vec<Vec<ValueTypeId>>,
-            Vec<Vec<ValueId>>,
-        ),
+        parameters: SmallVec<ValueTypeId, 0, Global>,
+        (indices, constructors, results): IndexedTable,
         kind: ValueTypeId,
     ) -> Declaration
     {
@@ -2220,14 +2229,14 @@ impl DeclarationBuilder<'_>
                 results,
                 kind,
             },
-            provenance: Vec::new(),
+            provenance: SmallVec::<_, 0, Global>::new(),
             name: StructuredName::default(),
-            related: Vec::new(),
+            related: SmallVec::<_, 0, Global>::new(),
             presentation: crate::presented::Presentation::default(),
-            laws: Vec::new(),
+            laws: SmallVec::<_, 0, Global>::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
-            covers: Vec::new(),
+            covers: SmallVec::<_, 0, Global>::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             fixpoint: DataFixpoint::Least,
         }
@@ -2243,8 +2252,8 @@ impl DeclarationBuilder<'_>
     pub fn codata(
         self,
         levels: LevelSignature,
-        parameters: Vec<ValueTypeId>,
-        observations: Vec<CompTypeId>,
+        parameters: SmallVec<ValueTypeId, 0, Global>,
+        observations: SmallVec<CompTypeId, 0, Global>,
         kind: ValueTypeId,
     ) -> Declaration
     {
@@ -2256,14 +2265,14 @@ impl DeclarationBuilder<'_>
                 observations,
                 kind,
             },
-            provenance: Vec::new(),
+            provenance: SmallVec::<_, 0, Global>::new(),
             name: StructuredName::default(),
-            related: Vec::new(),
+            related: SmallVec::<_, 0, Global>::new(),
             presentation: crate::presented::Presentation::default(),
-            laws: Vec::new(),
+            laws: SmallVec::<_, 0, Global>::new(),
             operation_rules: crate::operation_rules::OperationRules::default(),
             stages: crate::stage_signature::StageSignature::default(),
-            covers: Vec::new(),
+            covers: SmallVec::<_, 0, Global>::new(),
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             fixpoint: DataFixpoint::Least,
         }
@@ -2273,6 +2282,10 @@ impl DeclarationBuilder<'_>
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
+
+    use gandr_kernel_data::SmallVec;
+
     use super::DeclarationBuilder;
     use super::LevelSignature;
     use crate::arena::TermArena;
@@ -2304,10 +2317,10 @@ mod tests
             }
         }
         let unnamed = super::StructuredName::default();
-        let empty_segment = super::StructuredName::from(alloc::vec![
+        let empty_segment = super::StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
             super::NameSegment::from_text(alloc::string::String::new())
-                .expect("an empty segment has no separator")
-        ]);
+                .expect("an empty segment has no separator"),
+        ]));
         let mut arena = TermArena::new();
         let mut builder = DeclarationBuilder::new(&mut arena);
         let declared = builder.arena().value_type_unit();
@@ -2397,16 +2410,16 @@ mod tests
         let y = gandr_kernel_strata::Level::var(gandr_kernel_strata::LevelVar::new(
             gandr_kernel_strata::LevelVarIndex::from(1_u32),
         ));
-        let constraints = alloc::vec![
+        let constraints = SmallVec::<_, 0, Global>::from_iter([
             gandr_kernel_strata::LandmarkConstraint::equal(y.clone(), x.clone())
                 .expect("variable-only sides"),
             gandr_kernel_strata::LandmarkConstraint::leq(x, y).expect("variable-only sides"),
-        ];
-        let provenance = alloc::vec![
+        ]);
+        let provenance = SmallVec::<_, 0, Global>::from_iter([
             crate::term::ConstantIndex::from(usize::MAX),
             crate::term::ConstantIndex::from(0_usize),
-            crate::term::ConstantIndex::from(usize::MAX)
-        ];
+            crate::term::ConstantIndex::from(usize::MAX),
+        ]);
         let mut arena = TermArena::new();
         let _prefix_type = arena.value_type_base(crate::base::BaseType::Numeric);
         let _prefix_value = arena.value_variable(crate::term::DeBruijnIndex::from(9_u32));
@@ -2476,18 +2489,20 @@ mod tests
                 };
                 assert_eq!(declaration.provenance(), expected_provenance);
                 assert_eq!(declaration.name().segments(), &[]);
-                let first_name = super::StructuredName::from(alloc::vec![
-                    super::NameSegment::from_text(alloc::string::String::from("old"))
-                        .expect("bare name")
-                ]);
-                let replacement = super::StructuredName::from(alloc::vec![
-                    super::NameSegment::from_text(alloc::string::String::new())
-                        .expect("empty segment"),
-                    super::NameSegment::from_text(alloc::string::String::from("e\u{301}"))
-                        .expect("decomposed Unicode"),
-                    super::NameSegment::from_text(alloc::string::String::from("\0"))
-                        .expect("NUL segment"),
-                ]);
+                let first_name =
+                    super::StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
+                        super::NameSegment::from_text(alloc::string::String::from("old"))
+                            .expect("bare name"),
+                    ]));
+                let replacement =
+                    super::StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
+                        super::NameSegment::from_text(alloc::string::String::new())
+                            .expect("empty segment"),
+                        super::NameSegment::from_text(alloc::string::String::from("e\u{301}"))
+                            .expect("decomposed Unicode"),
+                        super::NameSegment::from_text(alloc::string::String::from("\0"))
+                            .expect("NUL segment"),
+                    ]));
                 let named = declaration.named(first_name).named(replacement.clone());
                 assert_eq!(named.name(), &replacement);
                 assert_eq!(named.content(), &expected_content);
@@ -2606,11 +2621,13 @@ mod tests
         let unit = arena.value_unit();
         let star = arena.value_tuple(&[unit]);
         let unit_type = arena.value_type_unit();
-        let related = alloc::vec![super::RelatedEndpoints {
+        let related = SmallVec::<_, 0, Global>::from_iter([super::RelatedEndpoints {
             left: unit,
             right: star,
-            dialogue: alloc::vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
-        }];
+            dialogue: SmallVec::<_, 0, Global>::from_iter([
+                gandr_kernel_conversion_trace::ConversionDecision::Decompose,
+            ]),
+        }]);
         let definition =
             DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), unit_type, unit);
         assert!(
@@ -2646,21 +2663,32 @@ mod tests
         let unit_type = arena.value_type_unit();
         let kind =
             arena.value_type_universe(crate::GroundSort::Value, gandr_kernel_strata::Level::zero());
-        let own = arena.value_type_data(crate::ConstantIndex::from(0_usize), alloc::vec![]);
+        let own = arena.value_type_data(
+            crate::ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let tag = |ordinal: usize| RuleNode::Constructor(crate::ConstructorTag::from(ordinal));
-        let presentation = Presentation::new(alloc::vec![PresentedRule::new(
-            alloc::vec![
-                tag(1),
-                tag(2),
-                RuleNode::Variable(RuleVariable::from(0_u32))
-            ]
-            .into(),
-            alloc::vec![RuleNode::Variable(RuleVariable::from(0_u32))].into(),
-        )]);
+        let presentation =
+            Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+                SmallVec::<_, 0, Global>::from_iter([
+                    tag(1),
+                    tag(2),
+                    RuleNode::Variable(RuleVariable::from(0_u32)),
+                ])
+                .into(),
+                SmallVec::<_, 0, Global>::from_iter([RuleNode::Variable(RuleVariable::from(
+                    0_u32,
+                ))])
+                .into(),
+            )]));
         let data = DeclarationBuilder::new(&mut arena).data(
             LevelSignature::monomorphic(),
-            alloc::vec![],
-            alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         );
         assert!(

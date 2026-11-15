@@ -1575,6 +1575,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-theory-path-orders",
  "proptest",

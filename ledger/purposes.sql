@@ -1881,6 +1881,7 @@ INSERT INTO purpose VALUES('kernel-term','decl::DataFixpoint','enum','Which fixp
 INSERT INTO purpose VALUES('kernel-term','decl::Declaration','struct','A declaration: a level interface, its content roots, its sealing provenance, and its structured name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::DeclarationBuilder','struct','A borrowing builder for one declaration''s content.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::DeclarationContent','enum','The content of a declaration: its roots into the arena that owns them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','decl::IndexedTable','type_alias','The table of an indexed family: its indices, the fields of each constructor, and the indices that each constructor''s value states.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::LevelParamCount','struct','The number of prenex level parameters a declaration binds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::LevelSignature','struct','A declaration''s prenex level interface: how many level parameters it binds and which landmark constraints it declares over them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','decl::MarkedDeclaration','struct','A declaration paired with the admission mark it carries on the wire.',NULL,'fits','sound',NULL);

@@ -1,6 +1,7 @@
+use alloc::alloc::Global;
 use alloc::boxed::Box;
-use alloc::vec;
-use alloc::vec::Vec;
+
+use gandr_kernel_data::SmallVec;
 
 use super::OperationNode;
 use super::OperationRule;
@@ -52,8 +53,8 @@ macro_rules! var {
 macro_rules! free {
     ($($fields:expr),* $(,)?) => {
         Scope {
-            families: vec![(ConstantIndex::from(FAMILY), vec![$($fields),*], Presentation::default())],
-            operations: Vec::new(),
+            families: SmallVec::<_, 0, Global>::from_iter([(ConstantIndex::from(FAMILY), SmallVec::<_, 0, Global>::from_iter([$($fields),*]), Presentation::default())]),
+            operations: SmallVec::<_, 0, Global>::new(),
         }
     };
 }
@@ -79,9 +80,9 @@ macro_rules! decide {
 struct Scope
 {
     /// Each family's position, field count per constructor and presentation.
-    families: Vec<(ConstantIndex, Vec<usize>, Presentation)>,
+    families: SmallVec<(ConstantIndex, SmallVec<usize, 0, Global>, Presentation), 0, Global>,
     /// Each ruled definition's position and rules.
-    operations: Vec<(ConstantIndex, OperationRules)>,
+    operations: SmallVec<(ConstantIndex, OperationRules), 0, Global>,
 }
 
 impl RuleScope for Scope
@@ -169,17 +170,17 @@ fn two_overlapping_rules_that_join_converge()
 {
     let scope = free!(0, 0);
     let or = |left: &[OperationNode], right: OperationNode| {
-        let mut call = vec![op!(1_usize, 2_usize)];
+        let mut call = SmallVec::<_, 0, Global>::from_iter([op!(1_usize, 2_usize)]);
         call.extend_from_slice(left);
         rule(&call, &[right])
     };
     // `or(True, y)` and `or(x, True)` overlap at `or(True, True)`, where both
     // give `True`.
-    let rules = vec![
+    let rules = SmallVec::<_, 0, Global>::from_iter([
         or(&[ctor!(TRUE), var!(0_u32)], ctor!(TRUE)),
         or(&[var!(0_u32), ctor!(TRUE)], ctor!(TRUE)),
         or(&[ctor!(FALSE), ctor!(FALSE)], ctor!(FALSE)),
-    ];
+    ]);
     assert_eq!(
         decide!(rules, 1_usize, &scope),
         Ok(()),
@@ -191,14 +192,14 @@ fn two_overlapping_rules_that_join_converge()
 fn two_overlapping_rules_that_part_are_refused_at_the_later()
 {
     let scope = free!(0, 0);
-    let rules = vec![
+    let rules = SmallVec::<_, 0, Global>::from_iter([
         rule(&[op!(1_usize, 2_usize), ctor!(TRUE), var!(0_u32)], &[
             ctor!(TRUE),
         ]),
         rule(&[op!(1_usize, 2_usize), var!(0_u32), ctor!(TRUE)], &[
             ctor!(FALSE),
         ]),
-    ];
+    ]);
     assert_eq!(
         decide!(rules, 1_usize, &scope),
         Err(OperationRuleRefusal {
@@ -218,11 +219,12 @@ const SUCC: usize = 1;
 fn a_growing_rule_is_unoriented()
 {
     let scope = free!(0, 1);
-    let growing = vec![rule(&[op!(1_usize, 1_usize), var!(0_u32)], &[
-        op!(1_usize, 1_usize),
-        ctor!(SUCC),
-        var!(0_u32),
-    ])];
+    let growing =
+        SmallVec::<_, 0, Global>::from_iter([rule(&[op!(1_usize, 1_usize), var!(0_u32)], &[
+            op!(1_usize, 1_usize),
+            ctor!(SUCC),
+            var!(0_u32),
+        ])]);
     assert_eq!(
         decide!(growing, 1_usize, &scope),
         Err(OperationRuleRefusal {
@@ -231,13 +233,13 @@ fn a_growing_rule_is_unoriented()
         }),
         "`f(x) ==> f(Succ(x))` rebuilds its own call on a larger argument"
     );
-    let descending = vec![
+    let descending = SmallVec::<_, 0, Global>::from_iter([
         rule(&[op!(1_usize, 1_usize), ctor!(ZERO)], &[ctor!(ZERO)]),
         rule(&[op!(1_usize, 1_usize), ctor!(SUCC), var!(0_u32)], &[
             op!(1_usize, 1_usize),
             var!(0_u32),
         ]),
-    ];
+    ]);
     assert_eq!(
         decide!(descending, 1_usize, &scope),
         Ok(()),
@@ -251,7 +253,7 @@ fn a_growing_rule_is_unoriented()
 /// trivial.
 fn add() -> OperationRules
 {
-    OperationRules::new(vec![
+    OperationRules::new(SmallVec::<_, 0, Global>::from_iter([
         rule(&[op!(1_usize, 2_usize), ctor!(ZERO), var!(0_u32)], &[var!(
             0_u32
         )]),
@@ -259,7 +261,7 @@ fn add() -> OperationRules
             &[op!(1_usize, 2_usize), ctor!(SUCC), var!(0_u32), var!(1_u32)],
             &[ctor!(SUCC), op!(1_usize, 2_usize), var!(0_u32), var!(1_u32)],
         ),
-    ])
+    ]))
 }
 
 #[test]
@@ -281,14 +283,14 @@ fn an_operation_over_an_earlier_one_converges()
     scope.operations.push((ConstantIndex::from(1_usize), add()));
     // `double(Zero)` and `double(x)` overlap at `double(Zero)`: `Zero` against
     // `add(Zero, Zero)`, which add's own rules bring to `Zero`.
-    let double = vec![
+    let double = SmallVec::<_, 0, Global>::from_iter([
         rule(&[op!(2_usize, 1_usize), ctor!(ZERO)], &[ctor!(ZERO)]),
         rule(&[op!(2_usize, 1_usize), var!(0_u32)], &[
             op!(1_usize, 2_usize),
             var!(0_u32),
             var!(0_u32),
         ]),
-    ];
+    ]);
     assert_eq!(
         decide!(double.clone(), 2_usize, &scope),
         Ok(()),
@@ -296,11 +298,12 @@ fn an_operation_over_an_earlier_one_converges()
     );
     // The same rules one position lower call add from below: add is not
     // admitted before them, so the call names no known operation.
-    let lowered = vec![rule(&[op!(1_usize, 1_usize), var!(0_u32)], &[
-        op!(2_usize, 2_usize),
-        var!(0_u32),
-        var!(0_u32),
-    ])];
+    let lowered =
+        SmallVec::<_, 0, Global>::from_iter([rule(&[op!(1_usize, 1_usize), var!(0_u32)], &[
+            op!(2_usize, 2_usize),
+            var!(0_u32),
+            var!(0_u32),
+        ])]);
     assert_eq!(
         decide!(lowered, 1_usize, &scope).map_err(|refusal| refusal.fault),
         Err(OperationRuleFault::UnknownOperation),
@@ -311,10 +314,10 @@ fn an_operation_over_an_earlier_one_converges()
     scope.operations.clear();
     scope.operations.push((
         ConstantIndex::from(1_usize),
-        OperationRules::new(vec![rule(
+        OperationRules::new(SmallVec::<_, 0, Global>::from_iter([rule(
             &[op!(1_usize, 2_usize), ctor!(SUCC), var!(0_u32), var!(1_u32)],
             &[var!(1_u32)],
-        )]),
+        )])),
     ));
     assert_eq!(
         decide!(double, 2_usize, &scope),
@@ -336,7 +339,7 @@ fn integers() -> Scope
     let side = |nodes: &[RuleNode]| Box::from(nodes);
     let constructor = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
     let variable = RuleNode::Variable(RuleVariable::from(0_u32));
-    let presentation = Presentation::new(vec![
+    let presentation = Presentation::new(SmallVec::<_, 0, Global>::from_iter([
         PresentedRule::new(
             side(&[constructor(1), constructor(2), variable]),
             side(&[variable]),
@@ -345,10 +348,14 @@ fn integers() -> Scope
             side(&[constructor(2), constructor(1), variable]),
             side(&[variable]),
         ),
-    ]);
+    ]));
     Scope {
-        families: vec![(ConstantIndex::from(FAMILY), vec![0, 1, 1], presentation)],
-        operations: Vec::new(),
+        families: SmallVec::<_, 0, Global>::from_iter([(
+            ConstantIndex::from(FAMILY),
+            SmallVec::<_, 0, Global>::from_iter([0, 1, 1]),
+            presentation,
+        )]),
+        operations: SmallVec::<_, 0, Global>::new(),
     }
 }
 
@@ -358,7 +365,7 @@ fn a_pattern_below_a_presented_rule_is_decided_against_it()
     let scope = integers();
     // The identity homomorphism: its pattern `Succ(x)` meets `Succ(Pred(y))`,
     // and both reducts reach `h(y)`.
-    let homomorphism = vec![
+    let homomorphism = SmallVec::<_, 0, Global>::from_iter([
         rule(&[op!(1_usize, 1_usize), ctor!(0_usize)], &[ctor!(0_usize)]),
         rule(&[op!(1_usize, 1_usize), ctor!(1_usize), var!(0_u32)], &[
             ctor!(1_usize),
@@ -370,7 +377,7 @@ fn a_pattern_below_a_presented_rule_is_decided_against_it()
             op!(1_usize, 1_usize),
             var!(0_u32),
         ]),
-    ];
+    ]);
     assert_eq!(
         decide!(homomorphism, 1_usize, &scope),
         Ok(()),
@@ -378,7 +385,7 @@ fn a_pattern_below_a_presented_rule_is_decided_against_it()
     );
     // Reading `Succ(x)` as "x is a predecessor" tells `Succ(Pred(y))` apart
     // from `y`.
-    let projection = vec![
+    let projection = SmallVec::<_, 0, Global>::from_iter([
         rule(&[op!(1_usize, 1_usize), ctor!(0_usize)], &[ctor!(0_usize)]),
         rule(&[op!(1_usize, 1_usize), ctor!(1_usize), var!(0_u32)], &[
             var!(0_u32),
@@ -388,7 +395,7 @@ fn a_pattern_below_a_presented_rule_is_decided_against_it()
             ctor!(2_usize),
             var!(0_u32),
         ]),
-    ];
+    ]);
     assert_eq!(
         decide!(projection, 1_usize, &scope),
         Err(OperationRuleRefusal {
@@ -463,7 +470,11 @@ fn a_malformed_rule_is_refused_by_its_fault()
     for (malformed, fault) in cases {
         let first = rule(&[op!(2_usize, 1_usize), ctor!(ZERO)], &[ctor!(ZERO)]);
         assert_eq!(
-            decide!(vec![first, malformed], 2_usize, &scope),
+            decide!(
+                SmallVec::<_, 0, Global>::from_iter([first, malformed]),
+                2_usize,
+                &scope
+            ),
             Err(OperationRuleRefusal {
                 rule: RuleIndex::from(1_usize),
                 fault,
@@ -477,9 +488,9 @@ fn a_malformed_rule_is_refused_by_its_fault()
 ///
 /// # Specification
 /// trivial.
-fn add_with(law: OperationRule) -> Vec<OperationRule>
+fn add_with(law: OperationRule) -> SmallVec<OperationRule, 0, Global>
 {
-    let mut rules = add().rules().to_vec();
+    let mut rules = SmallVec::<_, 0, Global>::from_iter(add().rules().iter().cloned());
     rules.push(law);
     rules
 }
@@ -543,7 +554,7 @@ fn a_law_over_an_earlier_call_is_decided_against_its_rules_1510()
     scope.operations.push((ConstantIndex::from(1_usize), add()));
     // `double` at position 2, with a law over add's call.
     let double = |law: &[OperationNode]| {
-        vec![
+        SmallVec::<_, 0, Global>::from_iter([
             rule(&[op!(2_usize, 1_usize), ctor!(ZERO)], &[ctor!(ZERO)]),
             rule(&[op!(2_usize, 1_usize), ctor!(SUCC), var!(0_u32)], &[
                 ctor!(SUCC),
@@ -560,7 +571,7 @@ fn a_law_over_an_earlier_call_is_decided_against_its_rules_1510()
                 ],
                 law,
             ),
-        ]
+        ])
     };
     let distributes = [
         op!(1_usize, 2_usize),

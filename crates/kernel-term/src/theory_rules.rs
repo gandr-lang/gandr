@@ -112,12 +112,14 @@
 //!   a sort classified `Type[-]`, which the presentation code admits under its
 //!   own tag.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_theory_path_orders::Evidence;
 use gandr_theory_path_orders::Explicit;
 use gandr_theory_path_orders::Former;
@@ -287,7 +289,7 @@ mod tag
 pub fn presentation_code(
     arena: &TermArena,
     own: ConstantIndex,
-    constructors: &[Vec<ValueTypeId>],
+    constructors: &[SmallVec<ValueTypeId, 0, Global>],
 ) -> CodeRecognition
 {
     let field = |id: ValueTypeId, string: bool| match arena.value_type(id) {
@@ -735,6 +737,10 @@ impl TheoryRule
     /// - intension: one pass over the occurrences per variable read, the
     ///   distances kept end to end.
     ///
+    /// # Cost
+    /// - allocation: the variable occurrences and each occurrence's binder
+    ///   distances, growth within the rule's sides
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — scope extrusion applies the process it keeps under
     ///   its restriction to the restriction's atom on both sides and the one it
@@ -764,7 +770,7 @@ impl TheoryRule
             TheoryNode::Variable(variable) | TheoryNode::Instance(variable, _) => Some(variable),
             TheoryNode::Symbol(_) => None,
         };
-        let occurrences: Vec<RuleVariable> = self
+        let occurrences: SmallVec<RuleVariable, 0, Global> = self
             .left
             .iter()
             .chain(self.right.iter())
@@ -795,8 +801,8 @@ impl TheoryRule
                 .nth(rank)
                 .map(|(place, _)| place)
         };
-        let mut distances = Vec::new();
-        let mut ends = Vec::with_capacity(occurrences.len());
+        let mut distances = SmallVec::<_, 0, Global>::new();
+        let mut ends = SmallVec::<_, 0, Global>::with_capacity(Count::from(occurrences.len()));
         for (at, &occurring) in occurrences.iter().enumerate() {
             let first = occurrences
                 .get(.. lefts)
@@ -1003,19 +1009,19 @@ pub struct TheoryRuleRefusal
 pub struct TheoryRules
 {
     /// Each symbol's kind and arity, by its position.
-    symbols: Vec<(SymbolKind, FieldCount)>,
+    symbols: SmallVec<(SymbolKind, FieldCount), 0, Global>,
     /// The written rules, then the derived ones.
-    rules: Vec<TheoryRule>,
+    rules: SmallVec<TheoryRule, 0, Global>,
     /// One peak per derived rule, in order: the last `peaks.len()` rules.
-    peaks: Vec<CriticalPeak>,
+    peaks: SmallVec<CriticalPeak, 0, Global>,
     /// The rules in the indexed reading ([`indexed`]), in the same order;
     /// empty where the presentation has none, its pairs then decided over
     /// `rules`.
-    indexed: Vec<TheoryRule>,
+    indexed: SmallVec<TheoryRule, 0, Global>,
     /// How many arguments each symbol is written with, by its position: an
     /// operation that carries implicit indices takes them before these. A
     /// symbol past the end is written with every argument.
-    explicit: Vec<FieldCount>,
+    explicit: SmallVec<FieldCount, 0, Global>,
 }
 
 impl TheoryRules
@@ -1027,16 +1033,16 @@ impl TheoryRules
     #[inline]
     #[must_use]
     pub fn new(
-        symbols: Vec<(SymbolKind, FieldCount)>,
-        written: Vec<TheoryRule>,
+        symbols: SmallVec<(SymbolKind, FieldCount), 0, Global>,
+        written: SmallVec<TheoryRule, 0, Global>,
     ) -> Self
     {
         Self {
             symbols,
             rules: written,
-            peaks: Vec::new(),
-            indexed: Vec::new(),
-            explicit: Vec::new(),
+            peaks: SmallVec::<_, 0, Global>::new(),
+            indexed: SmallVec::<_, 0, Global>::new(),
+            explicit: SmallVec::<_, 0, Global>::new(),
         }
     }
 
@@ -1044,6 +1050,10 @@ impl TheoryRules
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the derived rule and the critical peak that it joins,
+    ///   growth within the theory's rules
     #[inline]
     pub fn derive(
         &mut self,
@@ -1554,6 +1564,10 @@ impl TheoryRules
     /// # Errors
     /// [`TheoryRuleFault::Malformed`] or [`TheoryRuleFault::Unbound`].
     ///
+    /// # Cost
+    /// - allocation: the set of names an instance's arguments occur at, growth
+    ///   within the rule's sides
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::decide`]; a get-get rule instantiating its
     ///   continuation at the two names it abstracts reads, and one
@@ -1679,6 +1693,10 @@ impl TheoryRules
     /// - executable: none — the order is the table it fills and the derivation
     ///   it replays; a predicate restating it would be the order again.
     ///
+    /// # Cost
+    /// - allocation: the order table and the derivation it replays, growth
+    ///   within the rule's sides
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::decide`]: associativity, a unit law and an
     ///   inverse law orient, and a rule calling an operation of its head's rank
@@ -1724,14 +1742,18 @@ impl TheoryRules
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the end of the subterm at each position of the side,
+    ///   growth within the side's nodes
     fn ends(
         &self,
         side: &[TheoryNode],
-        ends: &mut Vec<Position>,
+        ends: &mut SmallVec<Position, 0, Global>,
     )
     {
         ends.clear();
-        ends.resize(side.len(), Position(0));
+        ends.resize(Count::from(side.len()), Position(0));
         for (position, &node) in side.iter().enumerate().rev() {
             let mut end = position.saturating_add(1);
             let width = match node {
@@ -2043,8 +2065,11 @@ impl TheoryRules
     fn normalize(
         &self,
         rules: &[TheoryRule],
-        term: &mut Vec<Flat>,
-        (bindings, built): (&mut Vec<Option<Span>>, &mut Vec<Flat>),
+        term: &mut SmallVec<Flat, 0, Global>,
+        (bindings, built): (
+            &mut SmallVec<Option<Span>, 0, Global>,
+            &mut SmallVec<Flat, 0, Global>,
+        ),
         fuel: &mut RewriteFuel,
     ) -> Result<(), Exhausted>
     {
@@ -2073,6 +2098,10 @@ impl TheoryRules
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the built right side and the rewritten term, growth within the
+///   rules' right sides and the term's bindings
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryRules::normalize`]; the indexed reading
 ///   normalizes a sort by the laws of lower rank the same way.
@@ -2080,8 +2109,11 @@ impl TheoryRules
 /// - witness: `theory_rules::tests::a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042`
 fn normal_form<W>(
     rules: &[TheoryRule],
-    term: &mut Vec<Flat>,
-    (bindings, built): (&mut Vec<Option<Span>>, &mut Vec<Flat>),
+    term: &mut SmallVec<Flat, 0, Global>,
+    (bindings, built): (
+        &mut SmallVec<Option<Span>, 0, Global>,
+        &mut SmallVec<Flat, 0, Global>,
+    ),
     width: W,
     fuel: &mut RewriteFuel,
 ) -> Result<(), Exhausted>
@@ -2124,7 +2156,7 @@ where
                     }
                 }
                 cursor = start.saturating_add(built.len());
-                let _replaced = term.splice(start .. end.0, built.iter().copied());
+                term.replace_range(start .. end.0, built.iter().copied());
                 continue 'rewrite;
             }
         }
@@ -2277,6 +2309,10 @@ fn flat_end(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: a binding slot for each variable of the left side, growth
+///   within the left side's variables
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryRules::decide`]: the inverse law matches a
 ///   product of an inverse and its own argument and no other.
@@ -2285,7 +2321,7 @@ fn matched(
     term: &[Flat],
     start: Position,
     left: &[TheoryNode],
-    bindings: &mut Vec<Option<Span>>,
+    bindings: &mut SmallVec<Option<Span>, 0, Global>,
     fuel: &mut RewriteFuel,
 ) -> Result<Option<Position>, Exhausted>
 {
@@ -2326,7 +2362,7 @@ fn matched(
                 }
                 else {
                     if bindings.len() <= ordinal {
-                        bindings.resize(ordinal.saturating_add(1), None);
+                        bindings.resize(Count::from(ordinal.saturating_add(1)), None);
                     }
                     if let Some(slot) = bindings.get_mut(ordinal) {
                         *slot = Some(Span {
@@ -2370,6 +2406,10 @@ enum Canonical
 /// - panics: none.
 /// - executable: none — a clause would restate the renumbering node by node.
 ///
+/// # Cost
+/// - allocation: the renumbered nodes of both sides, growth within the nodes of
+///   `first` and `second`
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TheoryRules::joins`]: the derived rule's sides read
 ///   so are the peak's two normal forms read so.
@@ -2377,7 +2417,10 @@ enum Canonical
 fn canonical_flats(
     first: &[Flat],
     second: &[Flat],
-    (out, seen): (&mut Vec<Canonical>, &mut Vec<Node>),
+    (out, seen): (
+        &mut SmallVec<Canonical, 0, Global>,
+        &mut SmallVec<Node, 0, Global>,
+    ),
 )
 {
     out.clear();
@@ -2403,13 +2446,20 @@ fn canonical_flats(
 /// - panics: none.
 /// - executable: none — a clause would restate the renumbering node by node.
 ///
+/// # Cost
+/// - allocation: the renumbered nodes of both sides, growth within the rule's
+///   sides
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`canonical_flats`].
 /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
 fn canonical_sides(
     left: &[TheoryNode],
     right: &[TheoryNode],
-    (out, seen): (&mut Vec<Canonical>, &mut Vec<Ordinal>),
+    (out, seen): (
+        &mut SmallVec<Canonical, 0, Global>,
+        &mut SmallVec<Ordinal, 0, Global>,
+    ),
 )
 {
     out.clear();
@@ -2431,8 +2481,12 @@ fn canonical_sides(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the new key's place among the seen keys, growth within the
+///   distinct keys of the caller's input
 fn first_seen<K>(
-    seen: &mut Vec<K>,
+    seen: &mut SmallVec<K, 0, Global>,
     key: K,
 ) -> Ordinal
 where
@@ -2453,9 +2507,9 @@ where
 struct OrderBuffers
 {
     /// Each left position's subterm end.
-    left_ends: Vec<Position>,
+    left_ends: SmallVec<Position, 0, Global>,
     /// Each right position's subterm end.
-    right_ends: Vec<Position>,
+    right_ends: SmallVec<Position, 0, Global>,
     /// The order's tables.
     order: Buffers,
 }
@@ -2635,36 +2689,36 @@ struct PairBuffers
     /// The unifier's graph.
     graph: Graph,
     /// The outer rule's variables' nodes, by ordinal.
-    outer_variables: Vec<Option<Node>>,
+    outer_variables: SmallVec<Option<Node>, 0, Global>,
     /// The inner rule's variables' nodes, by ordinal.
-    inner_variables: Vec<Option<Node>>,
+    inner_variables: SmallVec<Option<Node>, 0, Global>,
     /// Each position of the side last loaded, by its node.
-    positions: Vec<Node>,
+    positions: SmallVec<Node, 0, Global>,
     /// The loader's and the expander's stack.
-    stack: Vec<Node>,
+    stack: SmallVec<Node, 0, Global>,
     /// The unifier's worklist.
-    pairs: Vec<(Node, Node)>,
+    pairs: SmallVec<(Node, Node), 0, Global>,
     /// The occurs check's marks.
-    marks: Vec<Mark>,
+    marks: SmallVec<Mark, 0, Global>,
     /// The occurs check's walk: each node open and its next child's place.
-    walk: Vec<(Node, Position)>,
+    walk: SmallVec<(Node, Position), 0, Global>,
     /// The pair's side rewritten by the outer rule.
-    by_outer: Vec<Flat>,
+    by_outer: SmallVec<Flat, 0, Global>,
     /// The pair's side rewritten by the inner rule.
-    by_inner: Vec<Flat>,
+    by_inner: SmallVec<Flat, 0, Global>,
     /// A matched left side's bindings.
-    bindings: Vec<Option<Span>>,
+    bindings: SmallVec<Option<Span>, 0, Global>,
     /// A firing rule's right side, built before it replaces its redex.
-    rewritten: Vec<Flat>,
+    rewritten: SmallVec<Flat, 0, Global>,
     /// The pair's normal forms, renumbered.
-    canonical: Vec<Canonical>,
+    canonical: SmallVec<Canonical, 0, Global>,
     /// A derived rule's sides, renumbered.
-    stated: Vec<Canonical>,
+    stated: SmallVec<Canonical, 0, Global>,
     /// The pair's variables, in the order their renumbering first meets them.
-    seen_nodes: Vec<Node>,
+    seen_nodes: SmallVec<Node, 0, Global>,
     /// The derived rule's variables, in the order their renumbering first
     /// meets them.
-    seen_ordinals: Vec<Ordinal>,
+    seen_ordinals: SmallVec<Ordinal, 0, Global>,
 }
 
 /// One node of the unifier's graph.
@@ -2712,9 +2766,9 @@ enum Mark
 struct Graph
 {
     /// The nodes.
-    nodes: Vec<GraphNode>,
+    nodes: SmallVec<GraphNode, 0, Global>,
     /// Every symbol node's children, each run in argument order.
-    children: Vec<Node>,
+    children: SmallVec<Node, 0, Global>,
 }
 
 impl Graph
@@ -2744,6 +2798,12 @@ impl Graph
     /// - panics: none.
     /// - executable: none — the nodes made are the graph's own state.
     ///
+    /// # Cost
+    /// - allocation: the side's nodes, children, positions and stack in the
+    ///   graph, growth within the side's nodes
+    /// - allocation: a slot for each variable's ordinal, growth within the
+    ///   rules' variables
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::decide`].
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
@@ -2752,14 +2812,17 @@ impl Graph
         &mut self,
         rules: &TheoryRules,
         side: &[TheoryNode],
-        variables: &mut Vec<Option<Node>>,
+        variables: &mut SmallVec<Option<Node>, 0, Global>,
         graft: Option<Graft>,
-        (positions, stack): (&mut Vec<Node>, &mut Vec<Node>),
+        (positions, stack): (
+            &mut SmallVec<Node, 0, Global>,
+            &mut SmallVec<Node, 0, Global>,
+        ),
     ) -> Option<Node>
     {
         stack.clear();
         positions.clear();
-        positions.resize(side.len(), Node(usize::MAX));
+        positions.resize(Count::from(side.len()), Node(usize::MAX));
         for (index, &node) in side.iter().enumerate().rev() {
             if let Some(Graft {
                 span,
@@ -2782,7 +2845,7 @@ impl Graph
                     }
                     let Ordinal(ordinal) = ordinal(variable);
                     if variables.len() <= ordinal {
-                        variables.resize(ordinal.saturating_add(1), None);
+                        variables.resize(Count::from(ordinal.saturating_add(1)), None);
                     }
                     let slot = variables.get_mut(ordinal)?;
                     if let Some(made) = *slot {
@@ -2860,6 +2923,10 @@ impl Graph
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the pending pairs of the walk, growth within the nodes of
+    ///   the two unified terms
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::decide`].
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
@@ -2867,7 +2934,7 @@ impl Graph
         &mut self,
         one: Node,
         other: Node,
-        pairs: &mut Vec<(Node, Node)>,
+        pairs: &mut SmallVec<(Node, Node), 0, Global>,
         fuel: &mut RewriteFuel,
     ) -> Result<Verdict, Exhausted>
     {
@@ -2934,18 +3001,22 @@ impl Graph
     /// - panics: none.
     /// - executable: none — restating it is this walk.
     ///
+    /// # Cost
+    /// - allocation: the marks and the walk in the caller's buffers, growth
+    ///   within the graph's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::decide`].
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
     fn acyclic(
         &self,
         root: Node,
-        marks: &mut Vec<Mark>,
-        walk: &mut Vec<(Node, Position)>,
+        marks: &mut SmallVec<Mark, 0, Global>,
+        walk: &mut SmallVec<(Node, Position), 0, Global>,
     ) -> Verdict
     {
         marks.clear();
-        marks.resize(self.nodes.len(), Mark::Unvisited);
+        marks.resize(Count::from(self.nodes.len()), Mark::Unvisited);
         walk.clear();
         let start = self.resolve(root);
         if let Some(mark) = marks.get_mut(start.0) {
@@ -2998,14 +3069,18 @@ impl Graph
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the flattened term and the walk's pending nodes, growth
+    ///   within the nodes reached from the root
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::decide`].
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
     fn expand(
         &self,
         root: Node,
-        out: &mut Vec<Flat>,
-        stack: &mut Vec<Node>,
+        out: &mut SmallVec<Flat, 0, Global>,
+        stack: &mut SmallVec<Node, 0, Global>,
         fuel: &mut RewriteFuel,
     ) -> Result<(), Exhausted>
     {
@@ -3163,16 +3238,16 @@ struct ReadBuffers<'arena>
     variables: BTreeMap<&'arena StringLiteral, Ordinal>,
     /// The nodes still to read, each with the number of abstractions above it
     /// and where it stands.
-    stack: Vec<(ValueId, usize, Stands)>,
+    stack: SmallVec<(ValueId, usize, Stands), 0, Global>,
     /// One node's arguments.
-    arguments: Vec<ValueId>,
+    arguments: SmallVec<ValueId, 0, Global>,
     /// The binders above the node being read, outermost first: each one's
     /// name and what it binds.
-    atoms: Vec<(&'arena StringLiteral, Binds)>,
+    atoms: SmallVec<(&'arena StringLiteral, Binds), 0, Global>,
     /// Each variable's binders at its first occurrence, as a range of `above`.
     scopes: BTreeMap<&'arena StringLiteral, (usize, usize)>,
     /// The binders of every variable's first occurrence, end to end.
-    above: Vec<(&'arena StringLiteral, Binds)>,
+    above: SmallVec<(&'arena StringLiteral, Binds), 0, Global>,
     /// How far some variable of the rule stands under other abstractions at
     /// one occurrence than at another.
     moved: Moved,
@@ -3188,17 +3263,17 @@ struct ReadBuffers<'arena>
     /// The binders above each variable occurrence of the rule read last,
     /// outermost first, end to end, its left side's occurrences in pre-order
     /// first.
-    held: Vec<Above<&'arena StringLiteral>>,
+    held: SmallVec<Above<&'arena StringLiteral>, 0, Global>,
     /// One past each of those occurrences' last binder in `held`.
-    held_ends: Vec<usize>,
+    held_ends: SmallVec<usize, 0, Global>,
     /// The freshness conditions stated for the rule read last, each an atom's
     /// name and the variable it is fresh for.
-    fresh: Vec<(&'arena StringLiteral, RuleVariable)>,
+    fresh: SmallVec<(&'arena StringLiteral, RuleVariable), 0, Global>,
     /// Whether the rule read last still waits for its atoms to be read off.
     pending: bool,
     /// The theories the row of the written rule read last names, each by its
     /// label.
-    row: Vec<RowLabel>,
+    row: SmallVec<RowLabel, 0, Global>,
     /// Whether that row has met its tail.
     tail: Tail,
 }
@@ -3231,13 +3306,13 @@ struct Reader<'arena>
     /// The arena the value lives in.
     arena: &'arena TermArena,
     /// Each interned symbol's key, in interning order.
-    keys: Vec<SymbolKey<'arena>>,
+    keys: SmallVec<SymbolKey<'arena>, 0, Global>,
     /// Each interned symbol, by its key.
     interned: BTreeMap<SymbolKey<'arena>, TheorySymbol>,
     /// The rules read so far.
-    rules: Vec<TheoryRule>,
+    rules: SmallVec<TheoryRule, 0, Global>,
     /// The derived rules' peaks.
-    peaks: Vec<CriticalPeak>,
+    peaks: SmallVec<CriticalPeak, 0, Global>,
     /// Each ranked operation's rank, by its name.
     ranks: BTreeMap<&'arena StringLiteral, OperationRank>,
     /// Whether a term of the presentation can name an atom or a bound
@@ -3264,10 +3339,10 @@ impl<'arena> Reader<'arena>
     {
         Self {
             arena,
-            keys: Vec::new(),
+            keys: SmallVec::<_, 0, Global>::new(),
             interned: BTreeMap::new(),
-            rules: Vec::new(),
-            peaks: Vec::new(),
+            rules: SmallVec::<_, 0, Global>::new(),
+            peaks: SmallVec::<_, 0, Global>::new(),
             ranks: BTreeMap::new(),
             naming: Naming::Unnamed,
             split: None,
@@ -3285,6 +3360,10 @@ impl<'arena> Reader<'arena>
     ///
     /// # Errors
     /// As [`TheoryRules::read`].
+    ///
+    /// # Cost
+    /// - allocation: the read rules, their fresh atoms, row labels, peaks,
+    ///   ranks and symbols, growth within the presentation's rule chain
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::read`].
@@ -3452,7 +3531,7 @@ impl<'arena> Reader<'arena>
             rules: self.rules,
             peaks: self.peaks,
             indexed,
-            explicit: Vec::new(),
+            explicit: SmallVec::<_, 0, Global>::new(),
         };
         if let Some((carried, signature)) = every {
             rules.explicit = self
@@ -3584,6 +3663,10 @@ impl<'arena> Reader<'arena>
     /// - intension: one walk of the chain, each input kept with its sort and
     ///   filtered once every returned sort is known.
     ///
+    /// # Cost
+    /// - allocation: the input ports, the returned sorts and the set of value
+    ///   ports, growth within the chain's ports
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::read`]: put-get orients while no
     ///   operation returns the sort `put` stores, and is refused once one does.
@@ -3598,7 +3681,8 @@ impl<'arena> Reader<'arena>
                 .map(|(tag, fields)| (usize::from(tag), fields))
         };
         let mut returned: BTreeSet<&StringLiteral> = BTreeSet::new();
-        let mut inputs: Vec<(InputPort<'arena>, &StringLiteral)> = Vec::new();
+        let mut inputs: SmallVec<(InputPort<'arena>, &StringLiteral), 0, Global> =
+            SmallVec::<_, 0, Global>::new();
         let mut at = operations;
         loop {
             let (name, ports, outputs, rest) = match tagged(at)? {
@@ -3726,6 +3810,10 @@ impl<'arena> Reader<'arena>
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
     ///
+    /// # Cost
+    /// - allocation: the rule's sides, its values and its place among the
+    ///   rules, growth within the theory's rules
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::read`].
     /// - witness: `theory_rules::tests::a_presentation_value_reads_as_its_oriented_rules`
@@ -3745,7 +3833,10 @@ impl<'arena> Reader<'arena>
         buffers.split = false;
         buffers.valued.clear();
         buffers.served.clear();
-        let mut sides = (Vec::new(), Vec::new());
+        let mut sides = (
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+        );
         buffers.left = true;
         self.term(left, buffers, &mut sides.0)?;
         buffers.left = false;
@@ -3780,6 +3871,12 @@ impl<'arena> Reader<'arena>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the binders above each variable occurrence, growth within
+    ///   the rule's variable occurrences
+    /// - allocation: the rule's place among the read rules, growth within the
+    ///   theory's rules
     fn held(
         &mut self,
         buffers: &mut ReadBuffers<'arena>,
@@ -3790,7 +3887,7 @@ impl<'arena> Reader<'arena>
         {
             if self.naming == Naming::Named {
                 let mut start = 0;
-                let above: Vec<&[Above<&StringLiteral>]> = buffers
+                let above: SmallVec<&[Above<&StringLiteral>], 0, Global> = buffers
                     .held_ends
                     .iter()
                     .map(|&end| {
@@ -3840,6 +3937,12 @@ impl<'arena> Reader<'arena>
     ///   of binders above it, so no step recurses; the binders in scope are one
     ///   stack cut back to a node's number as it is read.
     ///
+    /// # Cost
+    /// - allocation: the read nodes, the worklist, the binders in scope, the
+    ///   arguments and the kept variables, growth within the term's nodes
+    /// - allocation: the interned occurrence, bound and applied symbols,
+    ///   durable by the theory's symbols
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::read`].
     /// - witness: `theory_rules::tests::a_presentation_value_reads_as_its_oriented_rules`
@@ -3848,7 +3951,7 @@ impl<'arena> Reader<'arena>
         &mut self,
         root: ValueId,
         buffers: &mut ReadBuffers<'arena>,
-        out: &mut Vec<TheoryNode>,
+        out: &mut SmallVec<TheoryNode, 0, Global>,
     ) -> Option<()>
     {
         let tagged = |found: Option<(ConstructorTag, &'arena [ValueId])>| {
@@ -3858,7 +3961,7 @@ impl<'arena> Reader<'arena>
         buffers.atoms.clear();
         buffers.stack.push((root, 0, Stands::Elsewhere));
         while let Some((node, depth, stands)) = buffers.stack.pop() {
-            buffers.atoms.truncate(depth);
+            buffers.atoms.truncate(Count::from(depth));
             let (applied, chain, below) = match tagged(self.constructor(node))? {
                 (tag::VAR, &[name]) => {
                     let name = self.text(name)?;
@@ -3985,6 +4088,10 @@ impl<'arena> Reader<'arena>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the new symbol's entry and its key, durable by the
+    ///   interned symbol keys
     fn intern(
         &mut self,
         key: SymbolKey<'arena>,
@@ -4017,6 +4124,10 @@ fn variable<'arena>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the binders above each read occurrence and the end of each
+///   occurrence's run, growth within the term's occurrences and their binders
 fn hold(buffers: &mut ReadBuffers<'_>)
 {
     let ReadBuffers {
@@ -4038,6 +4149,10 @@ fn hold(buffers: &mut ReadBuffers<'_>)
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the atoms in scope at a name's first occurrence and their
+///   span, growth within the rule's names
 fn scoped<'arena>(
     name: &'arena StringLiteral,
     buffers: &mut ReadBuffers<'arena>,

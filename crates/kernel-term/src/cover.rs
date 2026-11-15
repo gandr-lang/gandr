@@ -33,9 +33,10 @@
 //!   unification, § coverage-evidence-form — the derivation as the evidence
 //!   form a match carries.
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 use crate::CellIndex;
 use crate::ComputationId;
@@ -199,9 +200,9 @@ pub enum Cases
         /// The family's declaration.
         family: ConstantIndex,
         /// Each branch's constructor and the fields it binds.
-        constructors: Vec<(ConstructorTag, FieldCount)>,
+        constructors: SmallVec<(ConstructorTag, FieldCount), 0, Global>,
         /// Each loop the case owes, after the constructors' branches.
-        loops: Vec<Loop>,
+        loops: SmallVec<Loop, 0, Global>,
     },
     /// A boolean: `true`, then `false`.
     Boolean,
@@ -270,7 +271,7 @@ pub enum Step
         /// The cases, in the order the column's type lists them.
         cases: Cases,
         /// One child for each case, in the same order.
-        branches: Vec<StepId>,
+        branches: SmallVec<StepId, 0, Global>,
     },
     /// `compose`: a derivation standing under one branch of a split.
     Compose(StepId),
@@ -316,7 +317,7 @@ impl Step
 pub struct Cover
 {
     /// The steps, by id.
-    steps: Vec<Step>,
+    steps: SmallVec<Step, 0, Global>,
 }
 
 /// Why a cover derivation is refused.
@@ -372,6 +373,12 @@ impl Cover
     /// - fails: never.
     /// - panics: none — an id past the representable ceiling saturates, which
     ///   the requirement excludes.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the minted step that the specification check
+    ///   reads, diagnostic
+    /// - allocation: the new step's place in the derivation, growth within the
+    ///   derivation's steps
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two steps minted in turn get distinct ids, each

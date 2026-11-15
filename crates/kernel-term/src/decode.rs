@@ -48,10 +48,13 @@
 
 pub mod session;
 
+use alloc::alloc::Global;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::ConstraintRelation;
 use gandr_kernel_strata::LandmarkConstraint;
 use gandr_kernel_strata::Level;
@@ -200,11 +203,11 @@ struct Table
     /// The arena every entry mints into, sharing retained.
     arena: TermArena,
     /// Each entry's arena id.
-    nodes: Vec<DecodedNode>,
+    nodes: SmallVec<DecodedNode, 0, Global>,
     /// Each entry's polarity family, for the child-polarity check.
-    families: Vec<Family>,
+    families: SmallVec<Family, 0, Global>,
     /// Each entry's child global indices, for the expanded-size scan.
-    children: Vec<Vec<GlobalIndex>>,
+    children: SmallVec<SmallVec<GlobalIndex, 0, Global>, 0, Global>,
     /// What each admission position a segment writes resolves against.
     resolver: Resolver,
 }
@@ -243,9 +246,9 @@ impl Table
     {
         Self {
             arena: TermArena::new(),
-            nodes: Vec::new(),
-            families: Vec::new(),
-            children: Vec::new(),
+            nodes: SmallVec::<_, 0, Global>::new(),
+            families: SmallVec::<_, 0, Global>::new(),
+            children: SmallVec::<_, 0, Global>::new(),
             resolver: Resolver::default(),
         }
     }
@@ -297,14 +300,14 @@ struct Resolver
     width: usize,
     /// The place each entry of the current segment's table names, in its
     /// order.
-    table: Vec<ConstantIndex>,
+    table: SmallVec<ConstantIndex, 0, Global>,
     /// The first global index of each segment read before the current one, by
     /// place.
-    bases: Vec<GlobalIndex>,
+    bases: SmallVec<GlobalIndex, 0, Global>,
     /// The current segment's first global index.
     base: GlobalIndex,
     /// The global index of each import of the current segment, in its order.
-    imports: Vec<GlobalIndex>,
+    imports: SmallVec<GlobalIndex, 0, Global>,
 }
 
 impl Resolver
@@ -591,36 +594,36 @@ struct DeclMeta
     /// kind or [`tags::KIND_ABSTRACT_INTERFACED`] only.
     interface: Option<(GlobalIndex, GlobalIndex, Option<GlobalIndex>)>,
     /// Parameter roots for a data signature; empty for other declarations.
-    parameters: Vec<GlobalIndex>,
+    parameters: SmallVec<GlobalIndex, 0, Global>,
     /// Constructor field roots for a data signature.
-    constructors: Vec<Vec<GlobalIndex>>,
+    constructors: SmallVec<SmallVec<GlobalIndex, 0, Global>, 0, Global>,
     /// Index classifier roots for an indexed data signature; empty otherwise.
-    indices: Vec<GlobalIndex>,
+    indices: SmallVec<GlobalIndex, 0, Global>,
     /// Observation roots for a codata signature; empty for other declarations.
-    observations: Vec<GlobalIndex>,
+    observations: SmallVec<GlobalIndex, 0, Global>,
     /// Each constructor's result index roots for an indexed data signature;
     /// empty otherwise.
-    results: Vec<Vec<GlobalIndex>>,
+    results: SmallVec<SmallVec<GlobalIndex, 0, Global>, 0, Global>,
     /// The sealing-provenance slot's atoms, for a definition only.
-    provenance: Vec<ConstantIndex>,
+    provenance: SmallVec<ConstantIndex, 0, Global>,
     /// The left and right endpoint roots and the dialogue of each pair a
     /// relating definition carries; empty for every other declaration.
-    related: Vec<(GlobalIndex, GlobalIndex, crate::Dialogue)>,
+    related: SmallVec<(GlobalIndex, GlobalIndex, crate::Dialogue), 0, Global>,
     /// The laws a lawful definition's folds rest on; empty for every other
     /// declaration.
-    laws: Vec<ConstantIndex>,
+    laws: SmallVec<ConstantIndex, 0, Global>,
     /// The rules of the operation a ruled definition lowered from; empty for
     /// every other declaration.
-    operation_rules: Vec<crate::operation_rules::OperationRule>,
+    operation_rules: SmallVec<crate::operation_rules::OperationRule, 0, Global>,
     /// The root and the derivation of each match a covered definition
     /// carries; empty for every other declaration.
-    covers: Vec<(GlobalIndex, crate::cover::Cover)>,
+    covers: SmallVec<(GlobalIndex, crate::cover::Cover), 0, Global>,
     /// The stages a definition's signature quantifies over; empty for every
     /// other declaration.
     stages: crate::stage_signature::StageSignature,
     /// The rules a presented data declaration carries; empty for every other
     /// declaration.
-    rules: Vec<crate::presented::PresentedRule>,
+    rules: SmallVec<crate::presented::PresentedRule, 0, Global>,
     /// The free cells a type of words carries; absent for every other
     /// declaration.
     cells: Option<crate::presented::FreeCells>,
@@ -672,7 +675,7 @@ pub struct SegmentLayout
     header_end: ByteOffset,
     /// The offset one past each declaration segment's last byte, in admission
     /// order.
-    declaration_ends: Vec<ByteOffset>,
+    declaration_ends: SmallVec<ByteOffset, 0, Global>,
 }
 
 impl SegmentLayout
@@ -804,7 +807,7 @@ pub struct DecodedArtifact
     /// The arena every decoded declaration's content lives in.
     arena: TermArena,
     /// The decoded declarations, in admission order.
-    declarations: Vec<MarkedDeclaration>,
+    declarations: SmallVec<MarkedDeclaration, 0, Global>,
     /// The deterministic decode-budget metrics.
     metrics: DecodeMetrics,
     /// Where the header and each declaration segment ended.
@@ -865,7 +868,7 @@ impl DecodedArtifact
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn into_parts(self) -> (TermArena, Vec<MarkedDeclaration>)
+    pub fn into_parts(self) -> (TermArena, SmallVec<MarkedDeclaration, 0, Global>)
     {
         (self.arena, self.declarations)
     }
@@ -1006,9 +1009,9 @@ pub fn decode_named(
 pub fn decode_measured(
     image: ArtifactImage<'_>,
     names: &Names,
-) -> Result<(DecodedArtifact, Vec<DeclarationMeasure>), DecodeError>
+) -> Result<(DecodedArtifact, SmallVec<DeclarationMeasure, 0, Global>), DecodeError>
 {
-    let mut measures = Vec::new();
+    let mut measures = SmallVec::<_, 0, Global>::new();
     let (artifact, _) = decode_splitting(image, names, None, Some(&mut measures))?;
     Ok((artifact, measures))
 }
@@ -1030,7 +1033,7 @@ struct Kept
     /// The table once the leading segments were decoded.
     table: Table,
     /// Each of its entries' expanded work.
-    expanded: Vec<ExpandedWork>,
+    expanded: SmallVec<ExpandedWork, 0, Global>,
     /// The largest expanded work of a leading declaration's root.
     largest: ExpandedWork,
     /// The saturating sum of the leading declarations' roots' expanded work.
@@ -1063,7 +1066,7 @@ fn decode_splitting(
     image: ArtifactImage<'_>,
     names: &Names,
     keep: Option<ConstantIndex>,
-    mut measures: Option<&mut Vec<DeclarationMeasure>>,
+    mut measures: Option<&mut SmallVec<DeclarationMeasure, 0, Global>>,
 ) -> Result<(DecodedArtifact, Option<Kept>), DecodeError>
 {
     let mut reader = ByteReader::new(image);
@@ -1076,8 +1079,8 @@ fn decode_splitting(
     let declared_atoms = reader.read_minted_atom_table(&mut table.resolver)?;
     let count = reader.read_uvarint()?;
     let header_end = reader.position;
-    let mut metas: Vec<DeclMeta> = Vec::new();
-    let mut declaration_ends: Vec<ByteOffset> = Vec::new();
+    let mut metas: SmallVec<DeclMeta, 0, Global> = SmallVec::<_, 0, Global>::new();
+    let mut declaration_ends: SmallVec<ByteOffset, 0, Global> = SmallVec::<_, 0, Global>::new();
     let mut snapshot = None;
     let mut remaining = u64::from(count);
     loop {
@@ -1104,7 +1107,7 @@ fn decode_splitting(
             site: MalformedSite::TrailingBytes,
         });
     }
-    let mut expanded = Vec::with_capacity(table.children.len());
+    let mut expanded = SmallVec::<_, 0, Global>::with_capacity(Count::from(table.children.len()));
     let metrics = budget_report(&table, &metas, &mut expanded);
     check_budget(metrics)?;
     if let Some(measures) = measures {
@@ -1114,7 +1117,8 @@ fn decode_splitting(
         }
     }
     let kept = snapshot.map(|leading| {
-        let mut expanded = Vec::with_capacity(leading.children.len());
+        let mut expanded =
+            SmallVec::<_, 0, Global>::with_capacity(Count::from(leading.children.len()));
         extend_expanded(&leading.children, &mut expanded);
         let roots = keep.map_or(0_usize, usize::from);
         let (largest, total) = root_work(&expanded, metas.get(.. roots).unwrap_or_default());
@@ -1169,19 +1173,19 @@ fn decode_splitting(
 pub struct DecodedPrefix
 {
     /// The leading segments' bytes.
-    segments: Vec<u8>,
+    segments: SmallVec<u8, 0, Global>,
     /// Where each leading segment ends, counted from the first one's start.
-    ends: Vec<ByteOffset>,
+    ends: SmallVec<ByteOffset, 0, Global>,
     /// What decoding them kept of the table.
     table: Table,
     /// Each of the table's entries' expanded work.
-    expanded: Vec<ExpandedWork>,
+    expanded: SmallVec<ExpandedWork, 0, Global>,
     /// The largest expanded work of a leading declaration's root.
     largest: ExpandedWork,
     /// The saturating sum of the leading declarations' roots' expanded work.
     total: ExpandedWork,
     /// The leading declarations, as built.
-    declarations: Vec<MarkedDeclaration>,
+    declarations: SmallVec<MarkedDeclaration, 0, Global>,
     /// The fewest declarations an artifact holds for every leading seal's
     /// extent to fit.
     sealed_through: usize,
@@ -1303,7 +1307,9 @@ pub fn decode_keeping(
             .as_ref()
             .get(header_end .. segments_end)
             .unwrap_or_default()
-            .to_vec(),
+            .iter()
+            .copied()
+            .collect(),
         ends: ends
             .iter()
             .map(|&end| ByteOffset::from(usize::from(end).saturating_sub(header_end)))
@@ -1312,7 +1318,7 @@ pub fn decode_keeping(
         expanded: kept.expanded,
         largest: kept.largest,
         total: kept.total,
-        declarations: declarations.to_vec(),
+        declarations: SmallVec::<_, 0, Global>::from_iter(declarations.iter().cloned()),
         sealed_through,
         encoded,
     };
@@ -1388,12 +1394,12 @@ pub fn decode_after(
     table.resolver.names = names.clone();
     reader.position =
         ByteOffset::from(usize::from(header_end).saturating_add(prefix.segments.len()));
-    let mut declaration_ends: Vec<ByteOffset> = prefix
+    let mut declaration_ends: SmallVec<ByteOffset, 0, Global> = prefix
         .ends
         .iter()
         .map(|&end| ByteOffset::from(usize::from(header_end).saturating_add(usize::from(end))))
         .collect();
-    let mut metas: Vec<DeclMeta> = Vec::new();
+    let mut metas: SmallVec<DeclMeta, 0, Global> = SmallVec::<_, 0, Global>::new();
     for _ in leading .. total {
         let meta = decode_declaration(&mut reader, &mut table)?;
         metas.push(meta);
@@ -1488,7 +1494,7 @@ pub fn decode_after(
 fn budget_report(
     table: &Table,
     metas: &[DeclMeta],
-    expanded: &mut Vec<ExpandedWork>,
+    expanded: &mut SmallVec<ExpandedWork, 0, Global>,
 ) -> DecodeMetrics
 {
     extend_expanded(&table.children, expanded);
@@ -1510,6 +1516,10 @@ fn budget_report(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the expanded work of each later entry, growth within the
+///   table's entries
+///
 /// # Adequacy
 /// - hypothesis: L2 compares a small topological graph with explicit path
 ///   expansion rather than the memoized recurrence.
@@ -1520,8 +1530,8 @@ fn budget_report(
     ensures: expanded.len() == children.len(),
 )]
 fn extend_expanded(
-    children: &[Vec<GlobalIndex>],
-    expanded: &mut Vec<ExpandedWork>,
+    children: &[SmallVec<GlobalIndex, 0, Global>],
+    expanded: &mut SmallVec<ExpandedWork, 0, Global>,
 )
 {
     for child_globals in children.get(expanded.len() ..).unwrap_or_default() {
@@ -1861,7 +1871,7 @@ fn decode_cover(
             tags::COVER_SPLIT => {
                 let cases = decode_cases(reader, resolver)?;
                 let width = usize::from(reader.read_usize()?);
-                let mut branches = Vec::new();
+                let mut branches = SmallVec::<_, 0, Global>::new();
                 for _ in 0 .. width {
                     branches.push(decode_step_id(reader)?);
                 }
@@ -1935,14 +1945,14 @@ fn decode_cases(
         tags::COVER_DATA => {
             let family = resolver.read(reader)?;
             let count = usize::from(reader.read_usize()?);
-            let mut constructors = Vec::new();
+            let mut constructors = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 let tag = crate::ConstructorTag::from(usize::from(reader.read_usize()?));
                 let fields = crate::FieldCount::from(usize::from(reader.read_usize()?));
                 constructors.push((tag, fields));
             }
             let count = usize::from(reader.read_usize()?);
-            let mut loops = Vec::new();
+            let mut loops = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 let words = resolver.read(reader)?;
                 let cell = crate::CellIndex::from(usize::from(reader.read_usize()?));
@@ -1991,6 +2001,10 @@ fn decode_cases(
 ///   otherwise within the validated-root domain.
 /// - panics: none within that domain.
 ///
+/// # Cost
+/// - allocation: the decoded declarations with their parameters, constructors,
+///   and relations, growth within the artifact's declaration metadata
+///
 /// # Adequacy
 /// - hypothesis: L3 — ordinary declaration assembly preserves shared roots,
 ///   level interfaces, marks, provenance and moved Unicode names; native
@@ -2020,13 +2034,13 @@ fn decode_cases(
             DeclKind::Axiom => meta.root_body.is_none(),
             DeclKind::LiteralIdentity => meta.root_body.is_none() && meta.identity.is_some(),
         }),
-    captures: [entry = table.arena.watermark(), related = metas.iter().map(|meta| meta.related.len()).collect::<Vec<_>>()],
+    captures: [entry = table.arena.watermark(), related = metas.iter().map(|meta| meta.related.len()).collect::<SmallVec<_, 0, Global>>()],
     ensures: |ret| table.arena.watermark() == entry && ret.as_ref().map_or_else(
         |error| *error == DecodeError::Malformed { site: MalformedSite::SealExtent },
         |declarations| declarations.len() == metas.len() && declarations.iter().zip(metas.iter()).zip(related.iter()).all(|((marked, meta), &count)| {
             let declaration = marked.declaration();
             marked.mark() == meta.mark && declaration.levels() == &meta.levels
-                && declaration.provenance() == meta.provenance && meta.name.segments().is_empty()
+                && declaration.provenance() == meta.provenance.as_slice() && meta.name.segments().is_empty()
                 && meta.related.is_empty() && declaration.related().len() == count
                 && match *declaration.content() {
                     DeclarationContent::Def { declared, body } => matches!(meta.kind, DeclKind::Def)
@@ -2077,9 +2091,9 @@ fn build_declarations(
     table: &mut Table,
     metas: &mut [DeclMeta],
     (first, end): (ConstantIndex, ConstantIndex),
-) -> Result<Vec<MarkedDeclaration>, DecodeError>
+) -> Result<SmallVec<MarkedDeclaration, 0, Global>, DecodeError>
 {
-    let mut declarations = Vec::new();
+    let mut declarations = SmallVec::<_, 0, Global>::new();
     for (offset, meta) in metas.iter_mut().enumerate() {
         let position = usize::from(first).saturating_add(offset);
         let declared =
@@ -2097,17 +2111,22 @@ fn build_declarations(
                     .parameters
                     .iter()
                     .map(resolve)
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<SmallVec<_, 0, Global>, _>>()?;
                 let constructors = meta
                     .constructors
                     .iter()
-                    .map(|fields| fields.iter().map(resolve).collect::<Result<Vec<_>, _>>())
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .map(|fields| {
+                        fields
+                            .iter()
+                            .map(resolve)
+                            .collect::<Result<SmallVec<_, 0, Global>, _>>()
+                    })
+                    .collect::<Result<SmallVec<_, 0, Global>, _>>()?;
                 let indices = meta
                     .indices
                     .iter()
                     .map(resolve)
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<SmallVec<_, 0, Global>, _>>()?;
                 let value = |root: &GlobalIndex| {
                     value_id_at(&table.nodes, *root).ok_or(DecodeError::Malformed {
                         site: MalformedSite::Polarity,
@@ -2116,8 +2135,13 @@ fn build_declarations(
                 let results = meta
                     .results
                     .iter()
-                    .map(|values| values.iter().map(value).collect::<Result<Vec<_>, _>>())
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .map(|values| {
+                        values
+                            .iter()
+                            .map(value)
+                            .collect::<Result<SmallVec<_, 0, Global>, _>>()
+                    })
+                    .collect::<Result<SmallVec<_, 0, Global>, _>>()?;
                 let presentation =
                     crate::presented::Presentation::new(core::mem::take(&mut meta.rules));
                 let presentation = match meta.cells.take() {
@@ -2142,7 +2166,7 @@ fn build_declarations(
                             site: MalformedSite::Polarity,
                         })
                     })
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<SmallVec<_, 0, Global>, _>>()?;
                 let observations = meta
                     .observations
                     .iter()
@@ -2151,7 +2175,7 @@ fn build_declarations(
                             site: MalformedSite::Polarity,
                         })
                     })
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<SmallVec<_, 0, Global>, _>>()?;
                 DeclarationBuilder::new(&mut table.arena).codata(
                     meta.levels.clone(),
                     parameters,
@@ -2171,7 +2195,8 @@ fn build_declarations(
                         site: MalformedSite::Polarity,
                     })
                 };
-                let mut related = Vec::with_capacity(meta.related.len());
+                let mut related =
+                    SmallVec::<_, 0, Global>::with_capacity(Count::from(meta.related.len()));
                 for (left, right, dialogue) in core::mem::take(&mut meta.related) {
                     let left = resolve(left)?;
                     let right = resolve(right)?;
@@ -2181,7 +2206,8 @@ fn build_declarations(
                         dialogue,
                     });
                 }
-                let mut covers = Vec::with_capacity(meta.covers.len());
+                let mut covers =
+                    SmallVec::<_, 0, Global>::with_capacity(Count::from(meta.covers.len()));
                 for (root, cover) in core::mem::take(&mut meta.covers) {
                     let root =
                         computation_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
@@ -2583,6 +2609,10 @@ impl<'bytes> ByteReader<'bytes>
     /// # Cost
     /// - allocation: the atoms and the table, growth within their counts.
     ///
+    /// # Cost
+    /// - allocation: the decoded admission positions of the minted-atom table,
+    ///   growth within the artifact's bytes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 uses literal record bytes with empty and nonempty
     ///   names, Unicode, out-of-order provenance, occupied reserved slots,
@@ -2600,10 +2630,10 @@ impl<'bytes> ByteReader<'bytes>
     fn read_minted_atom_table(
         &mut self,
         resolver: &mut Resolver,
-    ) -> Result<Vec<MintedAtom>, DecodeError>
+    ) -> Result<SmallVec<MintedAtom, 0, Global>, DecodeError>
     {
         let count = self.read_uvarint()?;
-        let mut atoms: Vec<MintedAtom> = Vec::new();
+        let mut atoms: SmallVec<MintedAtom, 0, Global> = SmallVec::<_, 0, Global>::new();
         let mut remaining = u64::from(count);
         if remaining == 0_u64 {
             return Ok(atoms);
@@ -2922,19 +2952,19 @@ fn decode_declaration(
         remaining = remaining.wrapping_sub(1_u64);
     }
     let root_declared = decode_root(reader, table, Family::ValueType)?;
-    let mut provenance: Vec<ConstantIndex> = Vec::new();
-    let mut parameters = Vec::new();
-    let mut constructors = Vec::new();
-    let mut indices = Vec::new();
-    let mut results = Vec::new();
-    let mut observations = Vec::new();
+    let mut provenance: SmallVec<ConstantIndex, 0, Global> = SmallVec::<_, 0, Global>::new();
+    let mut parameters = SmallVec::<_, 0, Global>::new();
+    let mut constructors = SmallVec::<_, 0, Global>::new();
+    let mut indices = SmallVec::<_, 0, Global>::new();
+    let mut results = SmallVec::<_, 0, Global>::new();
+    let mut observations = SmallVec::<_, 0, Global>::new();
     let mut sealed = None;
     let mut interface = None;
-    let mut related = Vec::new();
-    let mut laws = Vec::new();
-    let mut rules = Vec::new();
-    let mut operation_rules = Vec::new();
-    let mut covers = Vec::new();
+    let mut related = SmallVec::<_, 0, Global>::new();
+    let mut laws = SmallVec::<_, 0, Global>::new();
+    let mut rules = SmallVec::<_, 0, Global>::new();
+    let mut operation_rules = SmallVec::<_, 0, Global>::new();
+    let mut covers = SmallVec::<_, 0, Global>::new();
     let mut stages = crate::stage_signature::StageSignature::default();
     let mut cells = None;
     let mut identity = None;
@@ -2948,7 +2978,7 @@ fn decode_declaration(
             let count = usize::from(reader.read_usize()?);
             for _ in 0 .. count {
                 let arity = usize::from(reader.read_usize()?);
-                let mut fields = Vec::new();
+                let mut fields = SmallVec::<_, 0, Global>::new();
                 for _ in 0 .. arity {
                     fields.push(decode_root(reader, table, Family::ValueType)?);
                 }
@@ -2965,7 +2995,7 @@ fn decode_declaration(
                     indices.push(decode_root(reader, table, Family::ValueType)?);
                 }
                 for _ in 0 .. constructors.len() {
-                    let mut result = Vec::new();
+                    let mut result = SmallVec::<_, 0, Global>::new();
                     for _ in 0 .. count {
                         result.push(decode_root(reader, table, Family::Value)?);
                     }
@@ -2999,7 +3029,7 @@ fn decode_declaration(
                     0
                 };
                 let count = usize::from(reader.read_usize()?);
-                let mut written = Vec::new();
+                let mut written = SmallVec::<_, 0, Global>::new();
                 for _ in 0 .. count {
                     let source = decode_rule_side(reader)?;
                     let target = decode_rule_side(reader)?;
@@ -3241,6 +3271,10 @@ fn decode_role(reader: &mut ByteReader<'_>) -> Result<crate::Builtin, DecodeErro
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the decoded nodes of the rule side, growth within the
+///   artifact's bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 — a presented declaration's rules round-trip; an unknown
 ///   node tag refuses at its own site.
@@ -3251,7 +3285,7 @@ fn decode_rule_side(
 ) -> Result<alloc::boxed::Box<[crate::presented::RuleNode]>, DecodeError>
 {
     let count = usize::from(reader.read_usize()?);
-    let mut side = Vec::new();
+    let mut side = SmallVec::<_, 0, Global>::new();
     for _ in 0 .. count {
         let tag = reader.next_tag()?;
         let ordinal = reader.read_usize()?;
@@ -3309,7 +3343,7 @@ fn decode_operation_side(
 ) -> Result<alloc::boxed::Box<[crate::operation_rules::OperationNode]>, DecodeError>
 {
     let count = usize::from(reader.read_usize()?);
-    let mut side = Vec::new();
+    let mut side = SmallVec::<_, 0, Global>::new();
     for _ in 0 .. count {
         let tag = reader.next_tag()?;
         let first = usize::from(reader.read_usize()?);
@@ -3486,12 +3520,12 @@ fn decode_entry(
     }
     let this = table.next_index();
     let tag = reader.next_tag()?;
-    let mut children: Vec<GlobalIndex> = Vec::new();
+    let mut children: SmallVec<GlobalIndex, 0, Global> = SmallVec::<_, 0, Global>::new();
     let (node, family) = match tag {
         tags::NODE_VT_DATA => {
             let declaration = table.resolver.read(reader)?;
             let count = usize::from(reader.read_usize()?);
-            let mut arguments = Vec::new();
+            let mut arguments = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 arguments.push(read_value(reader, table, this, &mut children)?);
             }
@@ -3502,7 +3536,7 @@ fn decode_entry(
         },
         tags::NODE_VT_RECORD | tags::NODE_V_RECORD => {
             let count = usize::from(reader.read_usize()?);
-            let mut labels = Vec::new();
+            let mut labels = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 labels.push(crate::FieldLabel::from(
                     reader.read_text(MalformedSite::LiteralPayload)?,
@@ -3531,7 +3565,7 @@ fn decode_entry(
         },
         tags::NODE_V_RESTRICT => {
             let count = usize::from(reader.read_usize()?);
-            let mut labels = Vec::new();
+            let mut labels = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 labels.push(crate::FieldLabel::from(
                     reader.read_text(MalformedSite::LiteralPayload)?,
@@ -3552,7 +3586,7 @@ fn decode_entry(
             let tag = crate::ConstructorTag::from(usize::from(reader.read_usize()?));
             let count = usize::from(reader.read_usize()?);
             let datatype = read_value_type(reader, table, this, &mut children)?;
-            let mut fields = Vec::new();
+            let mut fields = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 fields.push(read_value(reader, table, this, &mut children)?);
             }
@@ -3579,7 +3613,7 @@ fn decode_entry(
             };
             let scrutinee = read_value(reader, table, this, &mut children)?;
             let motive = read_comp_type(reader, table, this, &mut children)?;
-            let mut branches = Vec::new();
+            let mut branches = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 branches.push(read_computation(reader, table, this, &mut children)?);
             }
@@ -3624,20 +3658,17 @@ fn decode_entry(
         tags::NODE_VT_SESSION => {
             let graph = session::graph(reader)?;
             let payloads = read_value_type(reader, table, this, &mut children)?;
-            let id = table
-                .arena
-                .value_type_session(alloc::sync::Arc::new(graph), payloads);
+            let id = table.arena.value_type_session(Shared::new(graph), payloads);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         tags::NODE_V_SESSION_PATH => {
             let evidence = session::evidence(reader)?;
             let path_type = read_value_type(reader, table, this, &mut children)?;
             let payload_paths = read_value(reader, table, this, &mut children)?;
-            let id = table.arena.value_session_path(
-                path_type,
-                alloc::sync::Arc::new(evidence),
-                payload_paths,
-            );
+            let id =
+                table
+                    .arena
+                    .value_session_path(path_type, Shared::new(evidence), payload_paths);
             (DecodedNode::Value(id), Family::Value)
         },
         tags::NODE_VT_PATH_UNIVERSE => {
@@ -3650,11 +3681,10 @@ fn decode_entry(
             let evidence = session::evidence(reader)?;
             let flow_type = read_value_type(reader, table, this, &mut children)?;
             let payload_paths = read_value(reader, table, this, &mut children)?;
-            let id = table.arena.value_session_flow(
-                flow_type,
-                alloc::sync::Arc::new(evidence),
-                payload_paths,
-            );
+            let id =
+                table
+                    .arena
+                    .value_session_flow(flow_type, Shared::new(evidence), payload_paths);
             (DecodedNode::Value(id), Family::Value)
         },
         tags::NODE_VT_FLOW_UNIVERSE => {
@@ -3681,7 +3711,7 @@ fn decode_entry(
         tags::NODE_V_PATH_EQUIV => {
             let source = decode_dialogues(reader)?;
             let target = decode_dialogues(reader)?;
-            let evidence = alloc::sync::Arc::new(crate::PathEvidence { source, target });
+            let evidence = Shared::new(crate::PathEvidence { source, target });
             let path_type = read_value_type(reader, table, this, &mut children)?;
             let forward = read_value(reader, table, this, &mut children)?;
             let backward = read_value(reader, table, this, &mut children)?;
@@ -3731,7 +3761,7 @@ fn decode_entry(
             else {
                 table.arena.value_here_relating(
                     point,
-                    alloc::sync::Arc::new(crate::EndpointDialogues { left, right }),
+                    Shared::new(crate::EndpointDialogues { left, right }),
                 )
             };
             (DecodedNode::Value(id), Family::Value)
@@ -3782,7 +3812,7 @@ fn decode_entry(
             else {
                 table.arena.value_stay_relating(
                     point,
-                    alloc::sync::Arc::new(crate::EndpointDialogues { left, right }),
+                    Shared::new(crate::EndpointDialogues { left, right }),
                 )
             };
             (DecodedNode::Value(id), Family::Value)
@@ -3791,7 +3821,7 @@ fn decode_entry(
             let dialogues = decode_dialogues(reader)?;
             let flow_type = read_value_type(reader, table, this, &mut children)?;
             let translator = read_value(reader, table, this, &mut children)?;
-            let mut outputs = Vec::with_capacity(dialogues.len());
+            let mut outputs = SmallVec::<_, 0, Global>::with_capacity(Count::from(dialogues.len()));
             for _ in &dialogues {
                 outputs.push(read_value(reader, table, this, &mut children)?);
             }
@@ -3799,7 +3829,7 @@ fn decode_entry(
                 flow_type,
                 translator,
                 outputs.into_boxed_slice(),
-                alloc::sync::Arc::from(dialogues),
+                dialogues.into(),
             );
             (DecodedNode::Value(id), Family::Value)
         },
@@ -3845,7 +3875,7 @@ fn decode_entry(
         },
         tags::NODE_V_HIGHER => {
             let program = decode_higher_program(reader)?;
-            let mut evidence = Vec::new();
+            let mut evidence = SmallVec::<_, 0, Global>::new();
             for layer in &program.layers {
                 if matches!(layer, crate::HigherLayer::Guard { .. }) {
                     evidence.push(read_value(reader, table, this, &mut children)?);
@@ -3853,18 +3883,19 @@ fn decode_entry(
             }
             let id = table
                 .arena
-                .value_higher(alloc::sync::Arc::new(program), evidence.into_boxed_slice());
+                .value_higher(Shared::new(program), evidence.into_boxed_slice());
             (DecodedNode::Value(id), Family::Value)
         },
         tags::NODE_V_HIGHER_EVALUATION => {
             let count = reader.read_uvarint()?;
-            let mut dialogues = Vec::new();
+            let mut dialogues = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. u64::from(count) {
                 let left = decode_dialogue(reader)?;
                 let right = decode_dialogue(reader)?;
                 dialogues.push(crate::EvaluationDialogues { left, right });
             }
-            let mut components = Vec::with_capacity(dialogues.len());
+            let mut components =
+                SmallVec::<_, 0, Global>::with_capacity(Count::from(dialogues.len()));
             for _ in &dialogues {
                 let left = read_value(reader, table, this, &mut children)?;
                 let right = read_value(reader, table, this, &mut children)?;
@@ -3875,15 +3906,14 @@ fn decode_entry(
                     evidence,
                 });
             }
-            let id = table.arena.value_higher_evaluation(
-                alloc::sync::Arc::from(dialogues),
-                components.into_boxed_slice(),
-            );
+            let id = table
+                .arena
+                .value_higher_evaluation(dialogues.into(), components.into_boxed_slice());
             (DecodedNode::Value(id), Family::Value)
         },
         tags::NODE_V_QUANTIFIED_EVALUATION => {
             let count = reader.read_uvarint()?;
-            let mut steps = Vec::new();
+            let mut steps = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. u64::from(count) {
                 let word = u64::from(reader.read_uvarint()?);
                 let left = decode_dialogue(reader)?;
@@ -3901,7 +3931,7 @@ fn decode_entry(
                     },
                 });
             }
-            let mut values = Vec::new();
+            let mut values = SmallVec::<_, 0, Global>::new();
             for step in &steps {
                 let owed = match *step {
                     crate::QuantifiedStep::Return(_) => 3_u8,
@@ -3911,10 +3941,9 @@ fn decode_entry(
                     values.push(read_value(reader, table, this, &mut children)?);
                 }
             }
-            let id = table.arena.value_quantified_evaluation(
-                alloc::sync::Arc::from(steps),
-                values.into_boxed_slice(),
-            );
+            let id = table
+                .arena
+                .value_quantified_evaluation(steps.into(), values.into_boxed_slice());
             (DecodedNode::Value(id), Family::Value)
         },
         tags::NODE_C_RELATED_APPLICATION => {
@@ -3957,7 +3986,7 @@ fn decode_entry(
         },
         tags::NODE_VT_PRODUCT => {
             let count = usize::from(reader.read_usize()?);
-            let mut components = Vec::new();
+            let mut components = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 components.push(read_value_type(reader, table, this, &mut children)?);
             }
@@ -3999,7 +4028,7 @@ fn decode_entry(
         },
         tags::NODE_VT_SUM => {
             let count = usize::from(reader.read_usize()?);
-            let mut summands = Vec::new();
+            let mut summands = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 summands.push(read_value_type(reader, table, this, &mut children)?);
             }
@@ -4042,7 +4071,7 @@ fn decode_entry(
         },
         tags::NODE_CT_RETURNS => {
             let count = usize::from(reader.read_usize()?);
-            let mut results = Vec::new();
+            let mut results = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 results.push(read_value_type(reader, table, this, &mut children)?);
             }
@@ -4069,7 +4098,7 @@ fn decode_entry(
         },
         tags::NODE_CT_WITH => {
             let count = usize::from(reader.read_usize()?);
-            let mut components = Vec::new();
+            let mut components = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 components.push(read_comp_type(reader, table, this, &mut children)?);
             }
@@ -4079,7 +4108,7 @@ fn decode_entry(
         tags::NODE_CT_CODATA => {
             let declaration = table.resolver.read(reader)?;
             let count = usize::from(reader.read_usize()?);
-            let mut arguments = Vec::new();
+            let mut arguments = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 arguments.push(read_value(reader, table, this, &mut children)?);
             }
@@ -4105,7 +4134,7 @@ fn decode_entry(
         },
         tags::NODE_V_TUPLE => {
             let count = usize::from(reader.read_usize()?);
-            let mut components = Vec::new();
+            let mut components = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 components.push(read_value(reader, table, this, &mut children)?);
             }
@@ -4175,7 +4204,7 @@ fn decode_entry(
         },
         tags::NODE_C_RETURN_ALL => {
             let count = usize::from(reader.read_usize()?);
-            let mut values = Vec::new();
+            let mut values = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 values.push(read_value(reader, table, this, &mut children)?);
             }
@@ -4197,7 +4226,7 @@ fn decode_entry(
         tags::NODE_C_CASE => {
             let count = usize::from(reader.read_usize()?);
             let scrutinee = read_value(reader, table, this, &mut children)?;
-            let mut branches = Vec::new();
+            let mut branches = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 branches.push(read_computation(reader, table, this, &mut children)?);
             }
@@ -4206,7 +4235,7 @@ fn decode_entry(
         },
         tags::NODE_C_WITH => {
             let count = usize::from(reader.read_usize()?);
-            let mut components = Vec::new();
+            let mut components = SmallVec::<_, 0, Global>::new();
             for _ in 0 .. count {
                 components.push(read_computation(reader, table, this, &mut children)?);
             }
@@ -4244,20 +4273,27 @@ fn decode_entry(
 /// # Errors
 /// The byte reader's error or malformed path evidence.
 ///
+/// # Cost
+/// - allocation: the decoded dialogues and their decisions, growth within the
+///   reader's consumed bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 — native artifacts round-trip; truncated dialogue payloads
 ///   and invalid words are rejected before admission.
 /// - witness: `tests::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
-#[spec(captures: before = reader.position.0, ensures: |ret| reader.position.0 >= before && ret.as_ref().map_or(true, |dialogues| 1_usize.saturating_add(dialogues.len()).saturating_add(dialogues.iter().map(Vec::len).sum::<usize>()) <= reader.position.0.saturating_sub(before)))]
+#[spec(captures: before = reader.position.0, ensures: |ret| reader.position.0 >= before && ret.as_ref().map_or(true, |dialogues| 1_usize.saturating_add(dialogues.len()).saturating_add(dialogues.iter().map(|dialogue| dialogue.len()).sum::<usize>()) <= reader.position.0.saturating_sub(before)))]
 fn decode_dialogues(
     reader: &mut ByteReader<'_>
-) -> Result<Vec<Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>>, DecodeError>
+) -> Result<
+    SmallVec<SmallVec<gandr_kernel_conversion_trace::ConversionDecision<()>, 0, Global>, 0, Global>,
+    DecodeError,
+>
 {
     let count = reader.read_uvarint()?;
-    let mut dialogues = Vec::new();
+    let mut dialogues = SmallVec::<_, 0, Global>::new();
     for _ in 0 .. u64::from(count) {
         let count = reader.read_uvarint()?;
-        let mut dialogue = Vec::new();
+        let mut dialogue = SmallVec::<_, 0, Global>::new();
         for _ in 0 .. u64::from(count) {
             let word = reader.read_uvarint()?;
             let decision = crate::EvidenceWord(u64::from(word))
@@ -4319,6 +4355,10 @@ fn named_polarity(
 /// # Errors
 /// The byte reader's error or malformed path evidence.
 ///
+/// # Cost
+/// - allocation: the dialogue's decisions, growth within the reader's remaining
+///   bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 — a higher evaluation's dialogues round-trip and an invalid
 ///   word refuses before admission.
@@ -4327,7 +4367,7 @@ fn named_polarity(
 fn decode_dialogue(reader: &mut ByteReader<'_>) -> Result<crate::Dialogue, DecodeError>
 {
     let count = reader.read_uvarint()?;
-    let mut dialogue = Vec::new();
+    let mut dialogue = SmallVec::<_, 0, Global>::new();
     for _ in 0 .. u64::from(count) {
         let word = reader.read_uvarint()?;
         let decision = crate::EvidenceWord(u64::from(word))
@@ -4356,6 +4396,10 @@ fn decode_dialogue(reader: &mut ByteReader<'_>) -> Result<crate::Dialogue, Decod
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the program's decoded layers, growth within the reader's
+///   remaining bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 — guard and redirect layers round-trip; an out-of-range
 ///   target and an unknown kind refuse at their own sites.
@@ -4373,7 +4417,7 @@ fn decode_higher_program(reader: &mut ByteReader<'_>) -> Result<crate::HigherPro
     let depth = crate::HigherDepth(position(reader)?.0);
     let root = position(reader)?;
     let count = reader.read_uvarint()?;
-    let mut layers = Vec::new();
+    let mut layers = SmallVec::<_, 0, Global>::new();
     for _ in 0 .. u64::from(count) {
         let kind = reader.next_tag()?;
         let target = position(reader)?;
@@ -4459,7 +4503,7 @@ fn read_child(
     table: &Table,
     this: GlobalIndex,
     required: Family,
-    children: &mut Vec<GlobalIndex>,
+    children: &mut SmallVec<GlobalIndex, 0, Global>,
 ) -> Result<DecodedNode, DecodeError>
 {
     let index = table.resolver.reference(reader)?;
@@ -4527,7 +4571,7 @@ fn read_value_type(
     reader: &mut ByteReader<'_>,
     table: &Table,
     this: GlobalIndex,
-    children: &mut Vec<GlobalIndex>,
+    children: &mut SmallVec<GlobalIndex, 0, Global>,
 ) -> Result<ValueTypeId, DecodeError>
 {
     let child = read_child(reader, table, this, Family::ValueType, children)?;
@@ -4576,7 +4620,7 @@ fn read_comp_type(
     reader: &mut ByteReader<'_>,
     table: &Table,
     this: GlobalIndex,
-    children: &mut Vec<GlobalIndex>,
+    children: &mut SmallVec<GlobalIndex, 0, Global>,
 ) -> Result<CompTypeId, DecodeError>
 {
     let child = read_child(reader, table, this, Family::CompType, children)?;
@@ -4625,7 +4669,7 @@ fn read_value(
     reader: &mut ByteReader<'_>,
     table: &Table,
     this: GlobalIndex,
-    children: &mut Vec<GlobalIndex>,
+    children: &mut SmallVec<GlobalIndex, 0, Global>,
 ) -> Result<ValueId, DecodeError>
 {
     let child = read_child(reader, table, this, Family::Value, children)?;
@@ -4674,7 +4718,7 @@ fn read_computation(
     reader: &mut ByteReader<'_>,
     table: &Table,
     this: GlobalIndex,
-    children: &mut Vec<GlobalIndex>,
+    children: &mut SmallVec<GlobalIndex, 0, Global>,
 ) -> Result<ComputationId, DecodeError>
 {
     let child = read_child(reader, table, this, Family::Computation, children)?;
@@ -4814,6 +4858,10 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 ///   not UTF-8 or holds the separator.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the decoded name segments and their storage, growth within the
+///   artifact's bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 uses literal record bytes with empty and nonempty names,
 ///   Unicode, out-of-order provenance, occupied reserved slots, invalid UTF-8
@@ -4848,7 +4896,7 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 fn decode_structured_name(reader: &mut ByteReader<'_>) -> Result<StructuredName, DecodeError>
 {
     let count = reader.read_uvarint()?;
-    let mut segments: Vec<NameSegment> = Vec::new();
+    let mut segments: SmallVec<NameSegment, 0, Global> = SmallVec::<_, 0, Global>::new();
     let mut remaining = u64::from(count);
     while remaining > 0_u64 {
         let text = reader.read_text(MalformedSite::NameSegment)?;
@@ -4883,6 +4931,10 @@ fn decode_structured_name(reader: &mut ByteReader<'_>) -> Result<StructuredName,
 ///   failures.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the signature's bounds, marks and mark paths, growth within
+///   the artifact's bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 — a signature with a bound binder and two marks decodes to
 ///   itself; a bound naming a later binder and a mark naming an unbound one are
@@ -4906,7 +4958,7 @@ fn decode_stage_signature(
     if binders == 0 {
         return Ok(crate::stage_signature::StageSignature::default());
     }
-    let mut bounds = Vec::new();
+    let mut bounds = SmallVec::<_, 0, Global>::new();
     for at in 0 .. binders {
         bounds.push(match usize::from(reader.read_usize()?).checked_sub(1) {
             None => StageBound::Unbounded,
@@ -4917,7 +4969,7 @@ fn decode_stage_signature(
         });
     }
     let count = usize::from(reader.read_usize()?);
-    let mut marks = Vec::new();
+    let mut marks = SmallVec::<_, 0, Global>::new();
     for _ in 0 .. count {
         let binder = usize::from(reader.read_usize()?);
         if binder >= binders {
@@ -4930,7 +4982,7 @@ fn decode_stage_signature(
             Err(_) => return Err(malformed),
         };
         let length = usize::from(reader.read_usize()?);
-        let mut path = Vec::new();
+        let mut path = SmallVec::<_, 0, Global>::new();
         for _ in 0 .. length {
             path.push(crate::stage_signature::PlacedChild::from(usize::from(
                 reader.read_usize()?,
@@ -4997,7 +5049,9 @@ fn decode_stage_signature(
             && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((ordinal).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) == Some(reader.position.0.saturating_sub(1)) }),
 )]
 #[inline]
-fn decode_definition_slots(reader: &mut ByteReader<'_>) -> Result<Vec<ConstantIndex>, DecodeError>
+fn decode_definition_slots(
+    reader: &mut ByteReader<'_>
+) -> Result<SmallVec<ConstantIndex, 0, Global>, DecodeError>
 {
     expect_empty_slot(reader, ReservedSlot::ModeGradeAnnotation)?;
     let provenance = decode_sealing_provenance(reader)?;
@@ -5060,6 +5114,10 @@ fn expect_empty_slot(
 /// - fails: the count and position reads' own failures.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the decoded admission positions of the sealing provenance,
+///   growth within the slot's decoded positions
+///
 /// # Adequacy
 /// - hypothesis: L3 uses literal record bytes with empty and nonempty names,
 ///   Unicode, out-of-order provenance, occupied reserved slots, invalid UTF-8
@@ -5086,11 +5144,12 @@ fn expect_empty_slot(
             && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((ordinal).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) == Some(reader.position.0) }),
 )]
 #[inline]
-fn decode_sealing_provenance(reader: &mut ByteReader<'_>)
--> Result<Vec<ConstantIndex>, DecodeError>
+fn decode_sealing_provenance(
+    reader: &mut ByteReader<'_>
+) -> Result<SmallVec<ConstantIndex, 0, Global>, DecodeError>
 {
     let count = reader.read_uvarint()?;
-    let mut atoms: Vec<ConstantIndex> = Vec::new();
+    let mut atoms: SmallVec<ConstantIndex, 0, Global> = SmallVec::<_, 0, Global>::new();
     let mut remaining = u64::from(count);
     while remaining > 0_u64 {
         let atom = reader.read_usize()?;
@@ -5113,6 +5172,10 @@ fn decode_sealing_provenance(reader: &mut ByteReader<'_>)
 /// - fails: integer and level-read failures, unknown constraint relations, or
 ///   malformed non-variable-only constraint sides.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the rebuilt constraints of the signature, growth within the
+///   artifact's bytes
 ///
 /// # Adequacy
 /// - hypothesis: L3 contrasts local normalization with whole-artifact wire
@@ -5144,7 +5207,7 @@ fn decode_level_signature(reader: &mut ByteReader<'_>) -> Result<LevelSignature,
 {
     let params = reader.read_u32()?;
     let count = reader.read_uvarint()?;
-    let mut constraints: Vec<LandmarkConstraint> = Vec::new();
+    let mut constraints: SmallVec<LandmarkConstraint, 0, Global> = SmallVec::<_, 0, Global>::new();
     let mut remaining = u64::from(count);
     while remaining > 0_u64 {
         let relation = decode_relation(reader)?;
@@ -5710,9 +5773,12 @@ fn decode_fraction(reader: &mut ByteReader<'_>) -> Result<FractionDigits, Decode
 #[cfg(test)]
 mod tests
 {
-    use alloc::vec;
+    use alloc::alloc::Global;
 
     use anodized::spec;
+    use gandr_kernel_data::Shared;
+    use gandr_kernel_data::SmallVec;
+    use gandr_kernel_data::ThinShared;
     use quenchant_shape::shape::Maybe;
 
     use super::ByteReader;
@@ -5791,7 +5857,7 @@ mod tests
             0x0C00,
             u16::MAX,
         ] {
-            let mut image = magic.to_vec();
+            let mut image = SmallVec::<_, 0, Global>::from_iter(magic.iter().copied());
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
@@ -5807,7 +5873,7 @@ mod tests
             assert_eq!(reader.position.0, 6);
         }
         for suffix in [&[][..], &[2_u8][..]] {
-            let mut image = magic.to_vec();
+            let mut image = SmallVec::<_, 0, Global>::from_iter(magic.iter().copied());
             image.extend_from_slice(suffix);
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
@@ -5820,7 +5886,7 @@ mod tests
     fn integer_fields_match_independent_boundary_bytes()
     {
         let reference = |mut value: u64| {
-            let mut bytes = vec![];
+            let mut bytes = SmallVec::<_, 0, Global>::new();
             loop {
                 let digit = u8::try_from(value.rem_euclid(128)).expect("seven-bit remainder");
                 value = value.div_euclid(128);
@@ -5831,13 +5897,13 @@ mod tests
             }
             bytes
         };
-        let mut values = vec![
+        let mut values = SmallVec::<_, 0, Global>::from_iter([
             0_u64,
             1,
             u64::from(u32::MAX),
             u64::from(u32::MAX).saturating_add(1),
             u64::MAX,
-        ];
+        ]);
         for shift in [7_u32, 14, 21, 28, 35, 42, 49, 56, 63] {
             let boundary = 1_u64.checked_shl(shift).expect("bounded shift");
             values.extend([
@@ -5846,7 +5912,7 @@ mod tests
                 boundary.saturating_add(1),
             ]);
         }
-        let mut bytes: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+        let mut bytes: SmallVec<u8, 0, Global> = SmallVec::<_, 0, Global>::new();
         for value in values {
             let digits = reference(value);
             bytes.clear();
@@ -5875,14 +5941,18 @@ mod tests
             assert_eq!(reader.position.0, end);
         }
         for count in 0_usize ..= 10 {
-            let bytes = vec![0x80_u8; count];
+            let bytes = SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(0x80_u8, count));
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             assert_eq!(reader.read_uvarint(), Err(DecodeError::Truncated));
             assert_eq!(reader.position.0, count);
         }
-        for mut bytes in [vec![0x81_u8, 0], vec![0x80_u8; 11], vec![
-            0x80_u8, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 2,
-        ]] {
+        for mut bytes in [
+            SmallVec::<_, 0, Global>::from_iter([0x81_u8, 0]),
+            SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(0x80_u8, 11)),
+            SmallVec::<_, 0, Global>::from_iter([
+                0x80_u8, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 2,
+            ]),
+        ] {
             let end = bytes.len();
             bytes.push(0x55);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
@@ -6337,7 +6407,7 @@ mod tests
                     super::GlobalIndex::from(6_u32),
                     super::GlobalIndex::from(4_u32),
                 ];
-                let mut children = prefix.to_vec();
+                let mut children = SmallVec::<_, 0, Global>::from_iter(prefix.iter().copied());
                 let next = table.next_index();
                 let result = match required {
                     super::Family::ValueType => {
@@ -6366,7 +6436,8 @@ mod tests
                             .copied()
                             .expect("live row");
                         assert!(nodes_equal(node, stored));
-                        let mut expected_children = prefix.to_vec();
+                        let mut expected_children =
+                            SmallVec::<_, 0, Global>::from_iter(prefix.iter().copied());
                         expected_children.push(global);
                         assert_eq!(children, expected_children);
                     },
@@ -6389,7 +6460,7 @@ mod tests
             assert_eq!(super::value_id_at(&table.nodes, global), expected_value);
         }
         let mut reader = ByteReader::new(ArtifactImage::from([].as_slice()));
-        let mut children = vec![super::GlobalIndex::from(4_u32)];
+        let mut children = SmallVec::<_, 0, Global>::from_iter([super::GlobalIndex::from(4_u32)]);
         assert!(matches!(
             super::read_child(
                 &mut reader,
@@ -6407,7 +6478,7 @@ mod tests
     #[test]
     fn budget_scan_matches_explicit_expansion_and_saturating_boundaries()
     {
-        let report = |edges: &[alloc::vec::Vec<usize>], roots: &[usize]| {
+        let report = |edges: &[SmallVec<usize, 0, Global>], roots: &[usize]| {
             let mut table = super::Table::new();
             for children in edges {
                 let resolve = |index: usize| match table.nodes.get(index).copied() {
@@ -6432,14 +6503,14 @@ mod tests
                         .collect(),
                 );
             }
-            let metas: alloc::vec::Vec<_> = roots
+            let metas: SmallVec<_, 0, Global> = roots
                 .iter()
                 .map(|&root| super::DeclMeta {
-                    parameters: vec![],
-                    constructors: vec![],
-                    indices: vec![],
-                    results: vec![],
-                    observations: vec![],
+                    parameters: SmallVec::<_, 0, Global>::new(),
+                    constructors: SmallVec::<_, 0, Global>::new(),
+                    indices: SmallVec::<_, 0, Global>::new(),
+                    results: SmallVec::<_, 0, Global>::new(),
+                    observations: SmallVec::<_, 0, Global>::new(),
                     mark: super::AdmissionMark::Checked,
                     kind: super::DeclKind::Axiom,
                     name: super::StructuredName::default(),
@@ -6450,34 +6521,34 @@ mod tests
                     root_body: None,
                     sealed: None,
                     interface: None,
-                    provenance: vec![],
-                    related: vec![],
-                    laws: vec![],
-                    operation_rules: vec![],
-                    covers: vec![],
+                    provenance: SmallVec::<_, 0, Global>::new(),
+                    related: SmallVec::<_, 0, Global>::new(),
+                    laws: SmallVec::<_, 0, Global>::new(),
+                    operation_rules: SmallVec::<_, 0, Global>::new(),
+                    covers: SmallVec::<_, 0, Global>::new(),
                     stages: crate::StageSignature::default(),
-                    rules: vec![],
+                    rules: SmallVec::<_, 0, Global>::new(),
                     cells: None,
                     identity: None,
                     role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
                     fixpoint: crate::DataFixpoint::Least,
                 })
                 .collect();
-            super::budget_report(&table, &metas, &mut alloc::vec::Vec::new())
+            super::budget_report(&table, &metas, &mut SmallVec::<_, 0, Global>::new())
         };
         let edges = [
-            vec![],
-            vec![0_usize],
-            vec![0_usize, 0],
-            vec![1_usize, 2],
-            vec![2_usize, 3],
-            vec![4_usize, 4],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([0_usize]),
+            SmallVec::<_, 0, Global>::from_iter([0_usize, 0]),
+            SmallVec::<_, 0, Global>::from_iter([1_usize, 2]),
+            SmallVec::<_, 0, Global>::from_iter([2_usize, 3]),
+            SmallVec::<_, 0, Global>::from_iter([4_usize, 4]),
         ];
         let roots = [5_usize, 3, 5];
         let mut maximum = 0_u128;
         let mut total = 0_u128;
         for root in roots {
-            let mut pending = vec![root];
+            let mut pending = SmallVec::<_, 0, Global>::from_iter([root]);
             let mut expanded = 0_u128;
             while let Some(index) = pending.pop() {
                 expanded = expanded.checked_add(1).expect("small explicit expansion");
@@ -6511,10 +6582,10 @@ mod tests
         let missing = report(&edges, &[99_usize]);
         assert_eq!(u64::from(missing.max_declaration_expanded_work()), u64::MAX);
         assert_eq!(u64::from(missing.artifact_expanded_work()), u64::MAX);
-        let mut diamonds = vec![vec![]];
+        let mut diamonds = SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::new()]);
         for index in 1_usize ..= 64 {
             let child = index.saturating_sub(1);
-            diamonds.push(vec![child, child]);
+            diamonds.push(SmallVec::<_, 0, Global>::from_iter([child, child]));
         }
         for root in [0_usize, 1, 31, 62, 63, 64] {
             let shift = u32::try_from(root.saturating_add(1)).expect("small exponent");
@@ -6532,11 +6603,11 @@ mod tests
         }
         let table = four_family_table();
         let meta = super::DeclMeta {
-            parameters: vec![],
-            constructors: vec![],
-            indices: vec![],
-            results: vec![],
-            observations: vec![],
+            parameters: SmallVec::<_, 0, Global>::new(),
+            constructors: SmallVec::<_, 0, Global>::new(),
+            indices: SmallVec::<_, 0, Global>::new(),
+            results: SmallVec::<_, 0, Global>::new(),
+            observations: SmallVec::<_, 0, Global>::new(),
             mark: super::AdmissionMark::Checked,
             kind: super::DeclKind::Def,
             name: super::StructuredName::default(),
@@ -6545,23 +6616,23 @@ mod tests
             root_body: Some(super::GlobalIndex::from(5_u32)),
             sealed: None,
             interface: None,
-            provenance: vec![],
-            related: vec![(
+            provenance: SmallVec::<_, 0, Global>::new(),
+            related: SmallVec::<_, 0, Global>::from_iter([(
                 super::GlobalIndex::from(5_u32),
                 super::GlobalIndex::from(5_u32),
-                vec![],
-            )],
-            laws: vec![],
-            operation_rules: vec![],
-            covers: vec![],
+                SmallVec::<_, 0, Global>::new(),
+            )]),
+            laws: SmallVec::<_, 0, Global>::new(),
+            operation_rules: SmallVec::<_, 0, Global>::new(),
+            covers: SmallVec::<_, 0, Global>::new(),
             stages: crate::StageSignature::default(),
-            rules: vec![],
+            rules: SmallVec::<_, 0, Global>::new(),
             cells: None,
             identity: None,
             role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
             fixpoint: crate::DataFixpoint::Least,
         };
-        let metrics = super::budget_report(&table, &[meta], &mut alloc::vec::Vec::new());
+        let metrics = super::budget_report(&table, &[meta], &mut SmallVec::<_, 0, Global>::new());
         assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
         assert_eq!(
             u64::from(metrics.artifact_expanded_work()),
@@ -6607,9 +6678,9 @@ mod tests
     fn normalized_levels_and_literals_are_not_wire_acceptance()
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
-            let mut bytes = vec![
+            let mut bytes = SmallVec::<_, 0, Global>::from_iter([
                 b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
-            ];
+            ]);
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 2, 0, 0, 0, 0]);
             bytes
@@ -6803,9 +6874,9 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![
+            let mut bytes = SmallVec::<_, 0, Global>::from_iter([
                 b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 1, 0, 3, 0, 1, 2,
-            ];
+            ]);
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes
@@ -7145,9 +7216,9 @@ mod tests
                     path_type: vt1,
                     forward: v1,
                     backward: v0,
-                    evidence: alloc::sync::Arc::new(crate::PathEvidence {
-                        source: vec![],
-                        target: vec![],
+                    evidence: Shared::new(crate::PathEvidence {
+                        source: SmallVec::<_, 0, Global>::new(),
+                        target: SmallVec::<_, 0, Global>::new(),
                     }),
                 },
                 &[4, 5, 1],
@@ -7422,22 +7493,26 @@ mod tests
                         super::NameSegment::from_text(alloc::string::String::from(part))
                             .expect("separator-free fixture")
                     })
-                    .collect::<alloc::vec::Vec<_>>(),
+                    .collect::<SmallVec<_, 0, Global>>(),
             )
         };
         let variable =
             |index| super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(index)));
-        let levels = super::LevelSignature::new(super::LevelParamCount::from(2_u32), vec![
-            super::LandmarkConstraint::leq(variable(0_u32), variable(1_u32))
-                .expect("variable-only sides"),
-        ]);
+        let levels = super::LevelSignature::new(
+            super::LevelParamCount::from(2_u32),
+            SmallVec::<_, 0, Global>::from_iter([super::LandmarkConstraint::leq(
+                variable(0_u32),
+                variable(1_u32),
+            )
+            .expect("variable-only sides")]),
+        );
         let mut metas = [
             super::DeclMeta {
-                parameters: vec![],
-                constructors: vec![],
-                indices: vec![],
-                results: vec![],
-                observations: vec![],
+                parameters: SmallVec::<_, 0, Global>::new(),
+                constructors: SmallVec::<_, 0, Global>::new(),
+                indices: SmallVec::<_, 0, Global>::new(),
+                results: SmallVec::<_, 0, Global>::new(),
+                observations: SmallVec::<_, 0, Global>::new(),
                 mark: super::AdmissionMark::UncheckedBypass,
                 kind: super::DeclKind::Def,
                 name: name(&["definition", "é"]),
@@ -7446,32 +7521,34 @@ mod tests
                 root_body: Some(super::GlobalIndex::from(5_u32)),
                 sealed: None,
                 interface: None,
-                provenance: vec![
+                provenance: SmallVec::<_, 0, Global>::from_iter([
                     super::ConstantIndex::from(129_usize),
                     super::ConstantIndex::from(0_usize),
                     super::ConstantIndex::from(128_usize),
-                ],
-                related: vec![(
+                ]),
+                related: SmallVec::<_, 0, Global>::from_iter([(
                     super::GlobalIndex::from(5_u32),
                     super::GlobalIndex::from(5_u32),
-                    vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
-                )],
-                laws: vec![],
-                operation_rules: vec![],
-                covers: vec![],
+                    SmallVec::<_, 0, Global>::from_iter([
+                        gandr_kernel_conversion_trace::ConversionDecision::Decompose,
+                    ]),
+                )]),
+                laws: SmallVec::<_, 0, Global>::new(),
+                operation_rules: SmallVec::<_, 0, Global>::new(),
+                covers: SmallVec::<_, 0, Global>::new(),
                 stages: crate::StageSignature::default(),
-                rules: vec![],
+                rules: SmallVec::<_, 0, Global>::new(),
                 cells: None,
                 identity: None,
                 role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
                 fixpoint: crate::DataFixpoint::Least,
             },
             super::DeclMeta {
-                parameters: vec![],
-                constructors: vec![],
-                indices: vec![],
-                results: vec![],
-                observations: vec![],
+                parameters: SmallVec::<_, 0, Global>::new(),
+                constructors: SmallVec::<_, 0, Global>::new(),
+                indices: SmallVec::<_, 0, Global>::new(),
+                results: SmallVec::<_, 0, Global>::new(),
+                observations: SmallVec::<_, 0, Global>::new(),
                 mark: super::AdmissionMark::Checked,
                 kind: super::DeclKind::Axiom,
                 name: name(&[""]),
@@ -7480,28 +7557,31 @@ mod tests
                 root_body: None,
                 sealed: None,
                 interface: None,
-                provenance: vec![],
-                related: vec![],
-                laws: vec![],
-                operation_rules: vec![],
-                covers: vec![],
+                provenance: SmallVec::<_, 0, Global>::new(),
+                related: SmallVec::<_, 0, Global>::new(),
+                laws: SmallVec::<_, 0, Global>::new(),
+                operation_rules: SmallVec::<_, 0, Global>::new(),
+                covers: SmallVec::<_, 0, Global>::new(),
                 stages: crate::StageSignature::default(),
-                rules: vec![],
+                rules: SmallVec::<_, 0, Global>::new(),
                 cells: None,
                 identity: None,
                 role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
                 fixpoint: crate::DataFixpoint::Least,
             },
             super::DeclMeta {
-                parameters: vec![],
-                constructors: vec![],
-                indices: vec![],
-                results: vec![],
-                observations: vec![],
+                parameters: SmallVec::<_, 0, Global>::new(),
+                constructors: SmallVec::<_, 0, Global>::new(),
+                indices: SmallVec::<_, 0, Global>::new(),
+                results: SmallVec::<_, 0, Global>::new(),
+                observations: SmallVec::<_, 0, Global>::new(),
                 mark: super::AdmissionMark::Checked,
                 kind: super::DeclKind::AbstractType,
                 name: name(&[]),
-                levels: super::LevelSignature::new(super::LevelParamCount::from(1_u32), vec![]),
+                levels: super::LevelSignature::new(
+                    super::LevelParamCount::from(1_u32),
+                    SmallVec::<_, 0, Global>::new(),
+                ),
                 root_declared: super::GlobalIndex::from(4_u32),
                 root_body: None,
                 sealed: Some((
@@ -7509,13 +7589,13 @@ mod tests
                     super::SealExtent::from(0_usize),
                 )),
                 interface: None,
-                provenance: vec![],
-                related: vec![],
-                laws: vec![],
-                operation_rules: vec![],
-                covers: vec![],
+                provenance: SmallVec::<_, 0, Global>::new(),
+                related: SmallVec::<_, 0, Global>::new(),
+                laws: SmallVec::<_, 0, Global>::new(),
+                operation_rules: SmallVec::<_, 0, Global>::new(),
+                covers: SmallVec::<_, 0, Global>::new(),
                 stages: crate::StageSignature::default(),
-                rules: vec![],
+                rules: SmallVec::<_, 0, Global>::new(),
                 cells: None,
                 identity: None,
                 role: Maybe::Absent(crate::builtin_role::Absent::Unmarked),
@@ -7577,7 +7657,9 @@ mod tests
             [crate::decl::RelatedEndpoints {
                 left: body,
                 right: body,
-                dialogue: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+                dialogue: SmallVec::<_, 0, Global>::from_iter([
+                    gandr_kernel_conversion_trace::ConversionDecision::Decompose
+                ]),
             }],
             "the definition keeps its pair, resolved to the arena"
         );
@@ -7605,7 +7687,7 @@ mod tests
     {
         let overlong = MalformedSite::Varint;
         // A redundant trailing zero group: a second image of the value one.
-        let redundant = vec![0x81_u8, 0x00];
+        let redundant = SmallVec::<_, 0, Global>::from_iter([0x81_u8, 0x00]);
         let mut reader = ByteReader::new(ArtifactImage::from(redundant.as_slice()));
         assert_eq!(
             Err(DecodeError::Malformed { site: overlong }),
@@ -7614,7 +7696,7 @@ mod tests
         );
 
         // Eleven groups: more than sixty-four bits admit.
-        let too_many = vec![0x80_u8; 11];
+        let too_many = SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(0x80_u8, 11));
         let mut reader = ByteReader::new(ArtifactImage::from(too_many.as_slice()));
         assert_eq!(
             Err(DecodeError::Malformed { site: overlong }),
@@ -7623,9 +7705,9 @@ mod tests
         );
 
         // A tenth group carrying more than the single remaining bit.
-        let over_range = vec![
+        let over_range = SmallVec::<_, 0, Global>::from_iter([
             0x80_u8, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02,
-        ];
+        ]);
         let mut reader = ByteReader::new(ArtifactImage::from(over_range.as_slice()));
         assert_eq!(
             Err(DecodeError::Malformed { site: overlong }),
@@ -7637,7 +7719,7 @@ mod tests
     #[test]
     fn a_truncated_varint_is_refused_as_truncation()
     {
-        let dangling = vec![0x80_u8];
+        let dangling = SmallVec::<_, 0, Global>::from_iter([0x80_u8]);
         let mut reader = ByteReader::new(ArtifactImage::from(dangling.as_slice()));
         assert_eq!(
             Err(DecodeError::Truncated),
@@ -7678,16 +7760,18 @@ mod tests
         let program = HigherProgram {
             depth: HigherDepth(2),
             root: LayerPosition(0),
-            layers: vec![
+            layers: SmallVec::<_, 0, Global>::from_iter([
                 HigherLayer::Guard {
                     tail: LayerPosition(1),
                 },
                 HigherLayer::Redirect(LayerPosition(0)),
-            ],
+            ]),
         };
-        let dialogues = alloc::sync::Arc::from([EvaluationDialogues {
-            left: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
-            right: vec![],
+        let dialogues = ThinShared::from_header_and_iter((), [EvaluationDialogues {
+            left: SmallVec::<_, 0, Global>::from_iter([
+                gandr_kernel_conversion_trace::ConversionDecision::Decompose,
+            ]),
+            right: SmallVec::<_, 0, Global>::new(),
         }]);
         let component = EvaluationComponent {
             left: v1,
@@ -7749,17 +7833,19 @@ mod tests
         let expected_values = [
             Value::Here {
                 point: v1,
-                dialogues: alloc::sync::Arc::new(EndpointDialogues::default()),
+                dialogues: Shared::new(EndpointDialogues::default()),
             },
             Value::Here {
                 point: v1,
-                dialogues: alloc::sync::Arc::new(EndpointDialogues {
-                    left: vec![],
-                    right: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+                dialogues: Shared::new(EndpointDialogues {
+                    left: SmallVec::<_, 0, Global>::new(),
+                    right: SmallVec::<_, 0, Global>::from_iter([
+                        gandr_kernel_conversion_trace::ConversionDecision::Decompose,
+                    ]),
                 }),
             },
             Value::Higher {
-                program: alloc::sync::Arc::new(program),
+                program: Shared::new(program),
                 evidence: [v1].into(),
             },
             Value::Returned(c1),
@@ -7768,14 +7854,14 @@ mod tests
                 components: [component].into(),
             },
             Value::QuantifiedEvaluation {
-                steps: alloc::sync::Arc::from([
+                steps: ThinShared::from_header_and_iter((), [
                     crate::QuantifiedStep::Apply {
                         fibre: crate::DeBruijnIndex::from(2_u32),
                         dialogues: EvaluationDialogues {
-                            left: vec![
+                            left: SmallVec::<_, 0, Global>::from_iter([
                                 gandr_kernel_conversion_trace::ConversionDecision::Decompose,
-                            ],
-                            right: vec![],
+                            ]),
+                            right: SmallVec::<_, 0, Global>::new(),
                         },
                     },
                     crate::QuantifiedStep::Return(EvaluationDialogues::default()),
@@ -7935,25 +8021,31 @@ mod tests
         let identity = arena.value_type_path(unit_type, unit, unit);
         let here = arena.value_here_relating(
             unit,
-            alloc::sync::Arc::new(EndpointDialogues {
-                left: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
-                right: vec![],
+            Shared::new(EndpointDialogues {
+                left: SmallVec::<_, 0, Global>::from_iter([
+                    gandr_kernel_conversion_trace::ConversionDecision::Decompose,
+                ]),
+                right: SmallVec::<_, 0, Global>::new(),
             }),
         );
         let field = arena.value_higher(
-            alloc::sync::Arc::new(HigherProgram {
+            Shared::new(HigherProgram {
                 depth: HigherDepth(3),
                 root: LayerPosition(0),
-                layers: vec![HigherLayer::Guard {
+                layers: SmallVec::<_, 0, Global>::from_iter([HigherLayer::Guard {
                     tail: LayerPosition(0),
-                }],
+                }]),
             }),
             [unit].into(),
         );
         let evaluation = arena.value_higher_evaluation(
-            alloc::sync::Arc::from([EvaluationDialogues {
-                left: vec![gandr_kernel_conversion_trace::ConversionDecision::Force { thunk: () }],
-                right: vec![gandr_kernel_conversion_trace::ConversionDecision::Decompose],
+            ThinShared::from_header_and_iter((), [EvaluationDialogues {
+                left: SmallVec::<_, 0, Global>::from_iter([
+                    gandr_kernel_conversion_trace::ConversionDecision::Force { thunk: () },
+                ]),
+                right: SmallVec::<_, 0, Global>::from_iter([
+                    gandr_kernel_conversion_trace::ConversionDecision::Decompose,
+                ]),
             }]),
             [EvaluationComponent {
                 left: unit,
@@ -8113,7 +8205,7 @@ mod tests
                 6, 5, 1, 5, 1,
             ]),
         ];
-        let decompose = || vec![ConversionDecision::Decompose];
+        let decompose = || SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Decompose]);
         let expected_value_types = [ValueType::Flow {
             domain: vt1,
             source: v1,
@@ -8122,12 +8214,12 @@ mod tests
         let expected_values = [
             Value::Stay {
                 point: v1,
-                dialogues: alloc::sync::Arc::new(EndpointDialogues::default()),
+                dialogues: Shared::new(EndpointDialogues::default()),
             },
             Value::Stay {
                 point: v1,
-                dialogues: alloc::sync::Arc::new(EndpointDialogues {
-                    left: vec![],
+                dialogues: Shared::new(EndpointDialogues {
+                    left: SmallVec::<_, 0, Global>::new(),
                     right: decompose(),
                 }),
             },
@@ -8135,7 +8227,10 @@ mod tests
                 flow_type: vt1,
                 translator: v1,
                 outputs: [v0, v1].into(),
-                dialogues: alloc::sync::Arc::from([vec![], decompose()]),
+                dialogues: ThinShared::from_header_and_iter((), [
+                    SmallVec::<_, 0, Global>::new(),
+                    decompose(),
+                ]),
             },
             Value::FunctionFlow {
                 flow_type: vt1,
@@ -8274,9 +8369,9 @@ mod tests
         let universe_flow = arena.value_type_flow_universe(code, code);
         let stay = arena.value_stay_relating(
             unit,
-            alloc::sync::Arc::new(EndpointDialogues {
+            Shared::new(EndpointDialogues {
                 left: decompose(),
-                right: vec![],
+                right: SmallVec::<_, 0, Global>::new(),
             }),
         );
         let point = arena.value_variable(crate::DeBruijnIndex::from(0_u32));
@@ -8287,7 +8382,7 @@ mod tests
             universe_flow,
             translator,
             [unit].into(),
-            alloc::sync::Arc::from([decompose()]),
+            ThinShared::from_header_and_iter((), [decompose()]),
         );
         let function = arena.value_function_flow(universe_flow, forward, stay);
         let then = arena.value_then(forward, function, Seam::Feedback);
@@ -8324,7 +8419,7 @@ mod tests
     fn equal_bytes_under_two_tables_stay_two_entries_7340()
     {
         let mut arena = crate::TermArena::new();
-        let mut declarations = alloc::vec::Vec::new();
+        let mut declarations = SmallVec::<_, 0, Global>::new();
         for index in 0_usize .. 3 {
             let declared = arena.value_type_unit();
             let body = match index.checked_sub(1) {
@@ -8372,8 +8467,10 @@ mod tests
     #[test]
     fn a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776()
     {
+        use alloc::alloc::Global;
         use alloc::string::String;
-        use alloc::vec::Vec;
+
+        use gandr_kernel_data::SmallVec;
 
         let mut arena = crate::TermArena::new();
         let mut builder = crate::DeclarationBuilder::new(&mut arena);
@@ -8394,9 +8491,12 @@ mod tests
         let quote = builder.arena().value_quote(abstract_type);
         let definition = builder
             .def(crate::LevelSignature::monomorphic(), universe, quote)
-            .named(crate::StructuredName::from(vec![
-                crate::NameSegment::from_text(String::from("a")).expect("segment"),
-            ]));
+            .named(crate::StructuredName::from(
+                SmallVec::<_, 0, Global>::from_iter([crate::NameSegment::from_text(String::from(
+                    "a",
+                ))
+                .expect("segment")]),
+            ));
         let axiom = crate::DeclarationBuilder::new(&mut arena)
             .axiom(crate::LevelSignature::monomorphic(), abstract_type);
         let shared = crate::DeclarationBuilder::new(&mut arena).def(
@@ -8451,7 +8551,8 @@ mod tests
                     super::decode_named(short.as_image(), &names),
                     "an artifact ending inside the leading seal, after {split}"
                 );
-                let mut changed = Vec::from(bytes.as_ref());
+                let mut changed =
+                    SmallVec::<u8, 0, Global>::from_iter(bytes.as_ref().iter().copied());
                 for position in 0 .. changed.len() {
                     let byte = changed.get_mut(position).expect("a byte");
                     *byte ^= 1;

@@ -7,11 +7,13 @@
 //! describe, and two rows' [`RuleRow::meet`] is their unifier: the rows both
 //! describe, as one row, or none where they share no row.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 
 /// A theory a rule's row names, by its place among the theories a
 /// presentation's rows name.
@@ -82,6 +84,9 @@ impl RuleRow
     /// - executable: none — the labels are private, and the order and meet the
     ///   witness observes read them.
     ///
+    /// # Cost
+    /// - allocation: the row's sorted labels, growth within the given labels
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a row written with a theory twice and out of order is
     ///   the row written once in order.
@@ -95,7 +100,7 @@ impl RuleRow
     where
         L: IntoIterator<Item = RowLabel>,
     {
-        let mut labels: Vec<RowLabel> = labels.into_iter().collect();
+        let mut labels: SmallVec<RowLabel, 0, Global> = labels.into_iter().collect();
         labels.sort_unstable();
         labels.dedup();
         Self {
@@ -203,12 +208,17 @@ fn missing(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the merged labels, growth within the labels of both rows
 fn union(
     first: &[RowLabel],
     second: &[RowLabel],
 ) -> Box<[RowLabel]>
 {
-    let mut out = Vec::with_capacity(first.len().saturating_add(second.len()));
+    let mut out = SmallVec::<_, 0, Global>::with_capacity(Count::from(
+        first.len().saturating_add(second.len()),
+    ));
     let (mut first, mut second) = (first.iter().peekable(), second.iter().peekable());
     loop {
         let next = match (first.peek(), second.peek()) {

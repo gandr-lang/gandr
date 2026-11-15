@@ -42,13 +42,14 @@
 //!   match to an overlap and transported along a rule, and the composite of two
 //!   rules carrying both.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
-use alloc::vec;
-use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::slice;
+
+use gandr_kernel_data::SmallVec;
 
 use super::BinderDistance;
 use super::NormalNode;
@@ -113,7 +114,7 @@ enum Node
 }
 
 /// A term, its nodes in pre-order.
-type Term = Vec<Node>;
+type Term = SmallVec<Node, 0, Global>;
 
 /// What a metavariable stands for: a term abstracted over its parameters,
 /// the last parameter at distance zero, its other free occurrences counted
@@ -172,7 +173,7 @@ enum Step
     /// The equation holds as it stands.
     Holds,
     /// These bindings, after which the equation is unified again.
-    Bind(Vec<(Meta, Value)>),
+    Bind(SmallVec<(Meta, Value), 0, Global>),
     /// No unifier.
     Apart,
     /// Not a pattern equation.
@@ -224,7 +225,7 @@ pub(super) struct Higher
 {
     /// Each rule's reading, by its index; [`None`] where a rule names a
     /// symbol outside the table.
-    rules: Vec<Option<Rule>>,
+    rules: SmallVec<Option<Rule>, 0, Global>,
     /// The binding field of one argument a metavariable expands under, when
     /// the table holds one.
     field: Option<TheorySymbol>,
@@ -236,6 +237,10 @@ impl Higher
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the second-order reading of each rule, growth within the
+    ///   theory's rules
     pub(super) fn new(rules: &TheoryRules) -> Self
     {
         let field = rules
@@ -274,6 +279,10 @@ impl Higher
     ///
     /// # Errors
     /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the redex and the outer left side with the inner
+    ///   right side grafted at `at`, growth within the two rules' sides
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `let` instantiating its argument joins a second
@@ -325,7 +334,7 @@ impl Higher
             return Ok(Pair::Undecided);
         };
         let solution = match unified(
-            redex.to_vec(),
+            redex.iter().copied().collect(),
             lifted_left,
             Count(binders.len()),
             fresh,
@@ -336,7 +345,13 @@ impl Higher
             Unified::Apart => return Ok(Pair::Joins),
             Unified::Undecided => return Ok(Pair::Undecided),
         };
-        let mut grafted = over.left.get(.. place.0).unwrap_or_default().to_vec();
+        let mut grafted = over
+            .left
+            .get(.. place.0)
+            .unwrap_or_default()
+            .iter()
+            .copied()
+            .collect::<Term>();
         grafted.extend(lifted_right);
         grafted.extend_from_slice(over.left.get(stop.0 ..).unwrap_or_default());
         let (Some(by_outer), Some(by_inner)) = (
@@ -370,6 +385,10 @@ impl Higher
     ///
     /// # Errors
     /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: the rewritten term, where a reduct replaces a redex,
+    ///   growth within the rules' right sides and the fuel
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::pair`].
@@ -412,7 +431,7 @@ impl Higher
                     else {
                         return Ok(None);
                     };
-                    drop(term.splice(at .. stop, reduct));
+                    term.replace_range(at .. stop, reduct);
                     term = contracted(term, fuel)?;
                     continue 'rewrite;
                 }
@@ -428,6 +447,10 @@ impl Higher
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the normal form's nodes, growth within the normalized
+    ///   term's nodes
     pub(super) fn closed_normal_form(
         &self,
         rules: &TheoryRules,
@@ -467,6 +490,10 @@ impl Higher
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the second-order sides, their operation places and the rule's
+///   row, growth within the rule's sides
 fn reading(
     rules: &TheoryRules,
     rule: &TheoryRule,
@@ -501,7 +528,7 @@ fn reading(
             .enumerate()
             .filter(|&(_, &node)| matches!(node, Node::Symbol(_, _, Binds::Nothing)))
             .map(|(at, _)| Position(at))
-            .collect::<Vec<Position>>()
+            .collect::<SmallVec<Position, 0, Global>>()
     };
     let places = operations(&left)
         .into_iter()
@@ -522,6 +549,10 @@ fn reading(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the second-order side and its atom abstractions, growth within
+///   the side's nodes and the rule's scoped atoms
 fn side(
     rules: &TheoryRules,
     rule: &TheoryRule,
@@ -529,7 +560,8 @@ fn side(
     Occurrence(first): Occurrence,
 ) -> Option<Term>
 {
-    let mut term = Vec::with_capacity(nodes.len());
+    let mut term =
+        SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(nodes.len()));
     let mut occurrence = first;
     for &node in nodes {
         let (variable, written) = match node {
@@ -584,6 +616,10 @@ fn symbol_node(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the closed term read second-order, growth within the term's
+///   nodes
 fn closed(
     rules: &TheoryRules,
     nodes: &[TheoryNode],
@@ -647,13 +683,18 @@ fn end(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the positions of the node's subterms, growth within the node's
+///   width
 fn children(
     term: &[Node],
     at: Position,
-) -> Option<Vec<Position>>
+) -> Option<SmallVec<Position, 0, Global>>
 {
     let &node = term.get(at.0)?;
-    let mut out = Vec::with_capacity(width(node).0);
+    let mut out =
+        SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(width(node).0));
     let mut next = Position(at.0.saturating_add(1));
     for _ in 0 .. width(node).0 {
         out.push(next);
@@ -666,11 +707,22 @@ fn children(
 ///
 /// # Specification
 /// trivial.
-fn subterms(term: &[Node]) -> Option<Vec<Term>>
+///
+/// # Cost
+/// - allocation: the copied subterms of the root, growth within the term's
+///   nodes
+fn subterms(term: &[Node]) -> Option<SmallVec<Term, 0, Global>>
 {
     children(term, Position(0))?
         .into_iter()
-        .map(|start| Some(term.get(start.0 .. end(term, start)?.0)?.to_vec()))
+        .map(|start| {
+            Some(
+                term.get(start.0 .. end(term, start)?.0)?
+                    .iter()
+                    .copied()
+                    .collect::<Term>(),
+            )
+        })
         .collect()
 }
 
@@ -679,11 +731,16 @@ fn subterms(term: &[Node]) -> Option<Vec<Term>>
 ///
 /// # Specification
 /// trivial.
-fn depths(term: &[Node]) -> Vec<Count>
+///
+/// # Cost
+/// - allocation: the depth of each node and the stack of open nodes, growth
+///   within the term's nodes
+fn depths(term: &[Node]) -> SmallVec<Count, 0, Global>
 {
-    let mut out = Vec::with_capacity(term.len());
+    let mut out =
+        SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(term.len()));
     // Each open node's arguments still to come, and what it binds.
-    let mut open: Vec<(usize, Binds)> = Vec::new();
+    let mut open: SmallVec<(usize, Binds), 0, Global> = SmallVec::<_, 0, Global>::new();
     let mut depth = 0_usize;
     for &node in term {
         out.push(Count(depth));
@@ -713,12 +770,16 @@ fn depths(term: &[Node]) -> Vec<Count>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the open binders and the binders above the position, growth
+///   within the term's nodes
 fn binders_above(
     term: &[Node],
     at: Position,
-) -> Option<Vec<Binds>>
+) -> Option<SmallVec<Binds, 0, Global>>
 {
-    let mut open: Vec<(usize, Binds)> = Vec::new();
+    let mut open: SmallVec<(usize, Binds), 0, Global> = SmallVec::<_, 0, Global>::new();
     for (position, &node) in term.iter().enumerate() {
         if position == at.0 {
             return Some(
@@ -749,6 +810,9 @@ fn binders_above(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the shifted term, growth within the term's nodes
 fn shifted(
     term: &[Node],
     from: Count,
@@ -780,6 +844,10 @@ fn shifted(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the substituted term, growth within the body's nodes and the
+///   arguments' nodes
 fn substituted(
     body: &[Node],
     args: &[Term],
@@ -788,7 +856,8 @@ fn substituted(
 ) -> Result<Option<Term>, Exhausted>
 {
     let params = args.len();
-    let mut out = Vec::with_capacity(body.len());
+    let mut out =
+        SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(body.len()));
     for (&node, Count(local)) in body.iter().zip(depths(body)) {
         fuel.charge()?;
         let Node::Index(kind, Count(index)) = node
@@ -828,6 +897,10 @@ fn substituted(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the metavariable's application extended by each argument,
+///   growth within the arguments' nodes
 fn applied(
     head: Term,
     args: &[Term],
@@ -868,6 +941,10 @@ fn applied(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the shifted arguments and the abstracted instance, growth
+///   within the value's parameters
 fn instance(
     value: &Value,
     args: &[Term],
@@ -889,7 +966,7 @@ fn instance(
         return Ok(None);
     };
     let wrap = params.saturating_sub(args.len());
-    let mut all = Vec::with_capacity(params);
+    let mut all = SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(params));
     for arg in args {
         let Some(moved) = shifted(arg, Count(0), Shift::Up(Count(wrap)))
         else {
@@ -898,16 +975,19 @@ fn instance(
         all.push(moved);
     }
     for place in args.len() .. params {
-        all.push(vec![Node::Index(
+        all.push(SmallVec::<_, 0, Global>::from_iter([Node::Index(
             Binds::Variable,
             Count(params.saturating_sub(place.saturating_add(1))),
-        )]);
+        )]));
     }
     let Some(body) = substituted(&value.body, &all, Count(under.0.saturating_add(wrap)), fuel)?
     else {
         return Ok(None);
     };
-    let mut out = vec![Node::Symbol(field, Count(1), Binds::Variable); wrap];
+    let mut out = SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(
+        Node::Symbol(field, Count(1), Binds::Variable),
+        wrap,
+    ));
     out.extend(body);
     Ok(Some(out))
 }
@@ -918,6 +998,10 @@ fn instance(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the contracted term in place of each binding field, growth
+///   within the term's length
 fn contracted(
     term: Term,
     fuel: &mut RewriteFuel,
@@ -932,7 +1016,7 @@ fn contracted(
             else {
                 continue;
             };
-            drop(term.splice(at .. stop, short));
+            term.replace_range(at .. stop, short);
             continue 'search;
         }
         return Ok(term);
@@ -943,6 +1027,9 @@ fn contracted(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the contracted term, growth within the term's nodes
 fn contraction(
     term: &[Node],
     at: Position,
@@ -971,7 +1058,9 @@ fn contraction(
         Count(0),
         Shift::Down(Count(1)),
     )?;
-    let mut short = Vec::with_capacity(rest.len().saturating_add(1));
+    let mut short = SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(
+        rest.len().saturating_add(1),
+    ));
     short.push(Node::Meta(meta, Count(kept)));
     short.extend(rest);
     Some(short)
@@ -982,6 +1071,9 @@ fn contraction(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the η-expanded term, growth within the application's nodes
 fn expansion(
     flex: &[Node],
     field: TheorySymbol,
@@ -992,7 +1084,9 @@ fn expansion(
         return None;
     };
     let lifted = shifted(args, Count(0), Shift::Up(Count(1)))?;
-    let mut out = Vec::with_capacity(flex.len().saturating_add(2));
+    let mut out = SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(
+        flex.len().saturating_add(2),
+    ));
     out.push(Node::Symbol(field, Count(1), Binds::Variable));
     out.push(Node::Meta(meta, Count(count.saturating_add(1))));
     out.extend(lifted);
@@ -1005,7 +1099,11 @@ fn expansion(
 ///
 /// # Specification
 /// trivial.
-fn pattern(flex: &[Node]) -> Option<Vec<(Binds, Count)>>
+///
+/// # Cost
+/// - allocation: the binder and index of each argument of the application,
+///   growth within the application's arguments
+fn pattern(flex: &[Node]) -> Option<SmallVec<(Binds, Count), 0, Global>>
 {
     subterms(flex)?
         .into_iter()
@@ -1023,6 +1121,10 @@ fn pattern(flex: &[Node]) -> Option<Vec<(Binds, Count)>>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the place of each listed occurrence and the abstracted term,
+///   growth within the term's nodes and the listed names
 fn abstraction(
     term: &[Node],
     depth: Count,
@@ -1076,6 +1178,11 @@ fn abstraction(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the subject's copies, their η-expansions, the pairs to match,
+///   and the bindings, growth within the subject's nodes and the left side's
+///   nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Higher::pair`].
 /// - witness: `theory_rules::tests::a_relative_monads_laws_join_their_overlaps_2328`
@@ -1086,10 +1193,11 @@ fn matched(
 ) -> Result<Option<Bindings>, Exhausted>
 {
     let left_depths = depths(left);
-    let mut buffers: Vec<Term> = vec![subject.to_vec()];
+    let mut buffers: SmallVec<Term, 0, Global> =
+        SmallVec::from_iter([subject.iter().copied().collect()]);
     let mut bindings = Bindings::new();
     // Each pair still to match: a left position, a buffer, and its position.
-    let mut pairs = vec![(Position(0), Count(0), Position(0))];
+    let mut pairs = SmallVec::<_, 0, Global>::from_iter([(Position(0), Count(0), Position(0))]);
     while let Some((at, Count(buffer), from)) = pairs.pop() {
         fuel.charge()?;
         let (Some(&rule), Some(term)) = (left.get(at.0), buffers.get(buffer))
@@ -1169,6 +1277,10 @@ fn matched(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the subterms built so far and their arguments, growth within
+///   the template's nodes
 fn built(
     template: &[Node],
     bindings: &Bindings,
@@ -1177,14 +1289,18 @@ fn built(
 ) -> Result<Option<Term>, Exhausted>
 {
     // Each subterm built so far, the next to the right on top.
-    let mut done: Vec<Term> = Vec::new();
+    let mut done: SmallVec<Term, 0, Global> = SmallVec::<_, 0, Global>::new();
     for (&node, depth) in template.iter().zip(depths(template)).rev() {
         fuel.charge()?;
         let Some(first) = done.len().checked_sub(width(node).0)
         else {
             return Ok(None);
         };
-        let args: Vec<Term> = done.split_off(first).into_iter().rev().collect();
+        let args: SmallVec<Term, 0, Global> = done
+            .split_off(gandr_kernel_data::Count::from(first))
+            .into_iter()
+            .rev()
+            .collect();
         let bound = match node {
             Node::Meta(meta, _) => bindings.get(&meta),
             Node::Symbol(..) | Node::Index(..) => None,
@@ -1197,7 +1313,7 @@ fn built(
             term
         }
         else {
-            let mut out = vec![node];
+            let mut out = SmallVec::<_, 0, Global>::from_iter([node]);
             out.extend(args.into_iter().flatten());
             out
         };
@@ -1213,6 +1329,10 @@ fn built(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the lifted side and the binder indices that each metavariable
+///   takes, growth within the rule's side and the binders
 fn lifted(
     side: &[Node],
     binders: &[Binds],
@@ -1220,7 +1340,8 @@ fn lifted(
 ) -> Term
 {
     let lift = binders.len();
-    let mut out = Vec::with_capacity(side.len());
+    let mut out =
+        SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(side.len()));
     for (&node, Count(local)) in side.iter().zip(depths(side)) {
         match node {
             Node::Meta(Meta(meta), Count(count)) => {
@@ -1256,6 +1377,10 @@ fn lifted(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the pending equations, the step's bindings and the solution,
+///   growth within the subterms of `first` and `second`
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Higher::pair`].
 /// - witness: `theory_rules::tests::a_relative_monads_laws_join_their_overlaps_2328`
@@ -1270,7 +1395,7 @@ fn unified(
 {
     let mut fresh = fresh;
     let mut solution = Bindings::new();
-    let mut equations = vec![(first, second, depth)];
+    let mut equations = SmallVec::<_, 0, Global>::from_iter([(first, second, depth)]);
     while let Some((left, right, depth)) = equations.pop() {
         fuel.charge()?;
         let (Some(&head), Some(&other)) = (left.first(), right.first())
@@ -1331,7 +1456,9 @@ fn unified(
             };
             value.body = contracted(body, fuel)?;
         }
-        let mut next = Vec::with_capacity(equations.len().saturating_add(1));
+        let mut next = SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(
+            equations.len().saturating_add(1),
+        ));
         for (left, right, depth) in equations.into_iter().chain([(left, right, depth)]) {
             let (Some(left), Some(right)) = (
                 built(&left, &bound, field, fuel)?,
@@ -1352,6 +1479,10 @@ fn unified(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the kept names, the name map and the projection bindings,
+///   growth within the two applications' arguments
 fn flex_flex(
     left: &[Node],
     right: &[Node],
@@ -1370,7 +1501,9 @@ fn flex_flex(
     let new = *fresh;
     *fresh = Meta(new.0.saturating_add(1));
     let projection = |count: usize, kinds: &[(usize, Binds)]| {
-        let mut body = Vec::with_capacity(kinds.len().saturating_add(1));
+        let mut body = SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(
+            kinds.len().saturating_add(1),
+        ));
         body.push(Node::Meta(new, Count(kinds.len())));
         body.extend(kinds.iter().map(|&(place, kind)| {
             Node::Index(kind, Count(count.saturating_sub(place.saturating_add(1))))
@@ -1384,7 +1517,7 @@ fn flex_flex(
         if count != other_count {
             return Step::Undecided;
         }
-        let kept: Vec<(usize, Binds)> = names
+        let kept: SmallVec<(usize, Binds), 0, Global> = names
             .iter()
             .zip(&other_names)
             .enumerate()
@@ -1394,7 +1527,10 @@ fn flex_flex(
         if kept.len() == count {
             return Step::Holds;
         }
-        return Step::Bind(vec![(meta, projection(count, &kept))]);
+        return Step::Bind(SmallVec::<_, 0, Global>::from_iter([(
+            meta,
+            projection(count, &kept),
+        )]));
     }
     let other_place_of: BTreeMap<(Binds, Count), usize> = other_names
         .iter()
@@ -1402,7 +1538,7 @@ fn flex_flex(
         .rev()
         .map(|(place, &name)| (name, place))
         .collect();
-    let (kept, other_kept): (Vec<_>, Vec<_>) = names
+    let (kept, other_kept): (SmallVec<_, 0, Global>, SmallVec<_, 0, Global>) = names
         .iter()
         .enumerate()
         .filter_map(|(place, &name)| {
@@ -1410,10 +1546,10 @@ fn flex_flex(
             Some(((place, name.0), (other_place, name.0)))
         })
         .unzip();
-    Step::Bind(vec![
+    Step::Bind(SmallVec::<_, 0, Global>::from_iter([
         (meta, projection(count, &kept)),
         (other, projection(other_count, &other_kept)),
-    ])
+    ]))
 }
 
 /// One step on an equation between a metavariable application and a term
@@ -1421,6 +1557,12 @@ fn flex_flex(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the kept arguments of an inner metavariable, growth within the
+///   rigid term's nodes
+/// - allocation: the pruning binding or the abstraction binding, growth within
+///   the rigid term's nodes
 fn flex_rigid(
     flex: &[Node],
     rigid: &[Node],
@@ -1445,7 +1587,7 @@ fn flex_rigid(
     };
     let rigid_depths = depths(rigid);
     let mut at = 0_usize;
-    let mut kept: Vec<(usize, Binds)> = Vec::new();
+    let mut kept: SmallVec<(usize, Binds), 0, Global> = SmallVec::<_, 0, Global>::new();
     while let (Some(&node), Some(&Count(local))) = (rigid.get(at), rigid_depths.get(at)) {
         match node {
             Node::Meta(other, Count(count)) => {
@@ -1465,15 +1607,17 @@ fn flex_rigid(
                 if kept.len() < count {
                     let new = *fresh;
                     *fresh = Meta(new.0.saturating_add(1));
-                    let mut body = Vec::with_capacity(kept.len().saturating_add(1));
+                    let mut body = SmallVec::<_, 0, Global>::with_capacity(
+                        gandr_kernel_data::Count::from(kept.len().saturating_add(1)),
+                    );
                     body.push(Node::Meta(new, Count(kept.len())));
                     body.extend(kept.iter().map(|&(place, kind)| {
                         Node::Index(kind, Count(count.saturating_sub(place.saturating_add(1))))
                     }));
-                    return Step::Bind(vec![(other, Value {
+                    return Step::Bind(SmallVec::<_, 0, Global>::from_iter([(other, Value {
                         params: Count(count),
                         body,
-                    })]);
+                    })]));
                 }
                 at = at.saturating_add(count);
             },
@@ -1487,6 +1631,9 @@ fn flex_rigid(
         at = at.saturating_add(1);
     }
     abstraction(rigid, depth, &names).map_or(Step::Undecided, |body| {
-        Step::Bind(vec![(meta, Value { params, body })])
+        Step::Bind(SmallVec::<_, 0, Global>::from_iter([(meta, Value {
+            params,
+            body,
+        })]))
     })
 }

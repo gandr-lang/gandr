@@ -9,7 +9,11 @@
 //!
 //! The sharing-format conformance and rejection suite.
 
+use alloc::alloc::Global;
+
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::ArtifactImage;
 use gandr_kernel_term::BaseType;
@@ -66,10 +70,10 @@ fn recursive_code_preserves_its_element_across_wire()
     let unit = arena.value_type_unit();
     let boolean = arena.value_type_sum(&[unit, unit]);
     let list = arena.value_type_list(boolean);
-    let declarations = vec![MarkedDeclaration::new(
+    let declarations = SmallVec::<_, 0, Global>::from_iter([MarkedDeclaration::new(
         AdmissionMark::Checked,
         DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), list),
-    )];
+    )]);
     let bytes = encode(&arena, &declarations);
     let decoded = decode(bytes.as_image()).expect("list code decodes");
     let ty = decoded_declared(&decoded, Position(0)).expect("declaration");
@@ -87,8 +91,8 @@ fn recursive_code_preserves_its_element_across_wire()
     assert_eq!(decoded.arena().value_type(left), Some(&ValueType::unit()));
     assert_eq!(left, right);
     assert_eq!(
-        Vec::from(bytes),
-        Vec::from(encode(decoded.arena(), decoded.declarations()))
+        SmallVec::<u8, 0, Global>::from(bytes),
+        SmallVec::<u8, 0, Global>::from(encode(decoded.arena(), decoded.declarations()))
     );
 }
 
@@ -121,7 +125,7 @@ fn recursive_code_preserves_its_element_across_wire()
 /// - witness: `tests::sharing_format::a_self_or_forward_child_reference_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct Bytes(Vec<u8>);
+struct Bytes(SmallVec<u8, 0, Global>);
 
 impl AsRef<[u8]> for Bytes
 {
@@ -573,9 +577,9 @@ struct RawDeclaration
     kind: RawByte,
     /// The structured name's segments, each as the raw bytes its text
     /// field carries.
-    name: Vec<Bytes>,
+    name: SmallVec<Bytes, 0, Global>,
     /// The entries this segment introduces, already encoded.
-    entries: Vec<Bytes>,
+    entries: SmallVec<Bytes, 0, Global>,
     /// The imports, already encoded: their count, then each one's position
     /// and offset.
     imports: Bytes,
@@ -630,7 +634,7 @@ impl RawDeclaration
                 |total, bytes| total.saturating_add(bytes.0.len())) == entry.1,
         )]
     fn definition(
-        entries: Vec<Bytes>,
+        entries: SmallVec<Bytes, 0, Global>,
         root_declared: TableIndex,
         root_body: TableIndex,
     ) -> Self
@@ -638,9 +642,9 @@ impl RawDeclaration
         Self {
             mark: RawByte(0),
             kind: RawByte(0),
-            name: Vec::new(),
+            name: SmallVec::<_, 0, Global>::new(),
             entries,
-            imports: Bytes(vec![0]),
+            imports: Bytes(SmallVec::<_, 0, Global>::from_iter([0])),
             root_declared,
             root_body: Some(root_body),
             modes: WireValue(0),
@@ -686,16 +690,16 @@ impl RawDeclaration
                 |total, bytes| total.saturating_add(bytes.0.len())) == entry.1,
         )]
     fn axiom(
-        entries: Vec<Bytes>,
+        entries: SmallVec<Bytes, 0, Global>,
         root_declared: TableIndex,
     ) -> Self
     {
         Self {
             mark: RawByte(0),
             kind: RawByte(1),
-            name: Vec::new(),
+            name: SmallVec::<_, 0, Global>::new(),
             entries,
-            imports: Bytes(vec![0]),
+            imports: Bytes(SmallVec::<_, 0, Global>::from_iter([0])),
             root_declared,
             root_body: None,
             modes: WireValue(0),
@@ -1689,14 +1693,14 @@ fn sharing_round_trips_with_sharing_at_the_shared_nodes()
     let second_body = arena.value_unit();
     let second = definition_over(&mut arena, second_declared, second_body);
 
-    let declarations = vec![first, second];
+    let declarations = SmallVec::<_, 0, Global>::from_iter([first, second]);
     let bytes = encode(&arena, &declarations);
     let artifact = decode(bytes.as_image()).expect("a well-formed artifact decodes");
 
     let re_encoded = encode(artifact.arena(), artifact.declarations());
     assert_eq!(
-        Vec::from(bytes),
-        Vec::from(re_encoded),
+        SmallVec::<u8, 0, Global>::from(bytes),
+        SmallVec::<u8, 0, Global>::from(re_encoded),
         "the decoded artifact re-encodes to the bytes it came from"
     );
 
@@ -1753,15 +1757,15 @@ fn each_declaration_measures_the_entries_its_segment_adds_and_its_roots_work()
     let (artifact, measures) =
         decode_measured(bytes.as_image(), &gandr_kernel_term::Names::default())
             .expect("a well-formed artifact decodes measured");
-    let read: Vec<(TableEntryCount, ExpandedWork)> = measures
+    let read: SmallVec<(TableEntryCount, ExpandedWork), 0, Global> = measures
         .iter()
         .map(|measure| (measure.entries(), measure.expanded_work()))
         .collect();
     assert_eq!(
-        vec![
+        SmallVec::<_, 0, Global>::from_iter([
             (TableEntryCount::from(3), ExpandedWork::from(4)),
             (TableEntryCount::from(0), ExpandedWork::from(2)),
-        ],
+        ]),
         read,
         "a declaration counts the entries its own segment adds, and every node of its roots' \
          trees"
@@ -1782,7 +1786,7 @@ fn each_declaration_measures_the_entries_its_segment_adds_and_its_roots_work()
         "measuring decodes the artifact decode does"
     );
 
-    let image = Vec::from(bytes);
+    let image = SmallVec::<u8, 0, Global>::from(bytes);
     let short = image
         .get(.. image.len().saturating_sub(1))
         .unwrap_or_default();
@@ -1801,8 +1805,9 @@ fn differently_shared_equal_inputs_write_identical_bytes()
         let declared = arena.value_type_unit();
         let unit = arena.value_unit();
         let body = arena.value_tuple(&[unit, unit]);
-        let declarations = vec![definition_over(&mut arena, declared, body)];
-        Vec::from(encode(&arena, &declarations))
+        let declarations =
+            SmallVec::<_, 0, Global>::from_iter([definition_over(&mut arena, declared, body)]);
+        SmallVec::<u8, 0, Global>::from(encode(&arena, &declarations))
     };
     let unshared_bytes = {
         let mut arena = TermArena::new();
@@ -1810,8 +1815,9 @@ fn differently_shared_equal_inputs_write_identical_bytes()
         let left = arena.value_unit();
         let right = arena.value_unit();
         let body = arena.value_tuple(&[left, right]);
-        let declarations = vec![definition_over(&mut arena, declared, body)];
-        Vec::from(encode(&arena, &declarations))
+        let declarations =
+            SmallVec::<_, 0, Global>::from_iter([definition_over(&mut arena, declared, body)]);
+        SmallVec::<u8, 0, Global>::from(encode(&arena, &declarations))
     };
     assert_eq!(
         shared_bytes, unshared_bytes,
@@ -1837,17 +1843,17 @@ fn a_dependent_arrow_round_trips_and_stays_distinct_from_the_arrow()
     let dependent_declared = arena.value_type_thunk(dependent);
     let plain_declared = arena.value_type_thunk(plain);
     let body = arena.value_unit();
-    let declarations = vec![
+    let declarations = SmallVec::<_, 0, Global>::from_iter([
         definition_over(&mut arena, dependent_declared, body),
         definition_over(&mut arena, plain_declared, body),
-    ];
+    ]);
 
     let bytes = encode(&arena, &declarations);
     let artifact = decode(bytes.as_image()).expect("the dependent artifact decodes");
     let re_encoded = encode(artifact.arena(), artifact.declarations());
     assert_eq!(
-        Vec::from(bytes),
-        Vec::from(re_encoded),
+        SmallVec::<u8, 0, Global>::from(bytes),
+        SmallVec::<u8, 0, Global>::from(re_encoded),
         "the decoded dependent arrow re-encodes to the bytes it came from"
     );
 
@@ -1900,11 +1906,11 @@ fn a_dependent_arrow_round_trips_and_stays_distinct_from_the_arrow()
 fn a_dependent_arrow_refuses_a_mis_polarized_codomain()
 {
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
-        vec![
+        SmallVec::<_, 0, Global>::from_iter([
             entry_unit_type(),
             entry_pi(TableIndex(0), TableIndex(0)),
             entry_unit_type(),
-        ],
+        ]),
         TableIndex(4),
     )]);
     assert_eq!(
@@ -1938,13 +1944,14 @@ fn a_type_mentioning_a_code_round_trips()
     let inner = arena.computation_return(body_value);
     let lambda = arena.computation_lambda(inner);
     let body = arena.value_thunk(lambda);
-    let declarations = vec![definition_over(&mut arena, declared, body)];
+    let declarations =
+        SmallVec::<_, 0, Global>::from_iter([definition_over(&mut arena, declared, body)]);
 
     let bytes = encode(&arena, &declarations);
     let artifact = decode(bytes.as_image()).expect("the code-carrying artifact decodes");
     assert_eq!(
-        Vec::from(bytes),
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(bytes),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
         "the decoded artifact re-encodes to the bytes it came from"
     );
 
@@ -2005,8 +2012,8 @@ fn native_path_evidence_preserves_framing_and_refuses_malformed_words()
     use gandr_kernel_term::PathEvidence;
 
     let expected = PathEvidence {
-        source: vec![
-            vec![
+        source: SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([
                 Decision::ReduceLeft { redex: () },
                 Decision::ReduceRight { redex: () },
                 Decision::ConstShortcut { constant: () },
@@ -2046,16 +2053,18 @@ fn native_path_evidence_preserves_framing_and_refuses_malformed_words()
                 Decision::Reassociate {
                     side: ConversionSide::Right,
                 },
-            ],
-            vec![],
-        ],
-        target: vec![vec![Decision::NegativeSubgoal {
-            position: u32::MAX.into(),
-        }]],
+            ]),
+            SmallVec::<_, 0, Global>::new(),
+        ]),
+        target: SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([
+            Decision::NegativeSubgoal {
+                position: u32::MAX.into(),
+            },
+        ])]),
     };
     // Inline evidence precedes classifier #2, forward #6 and backward #6.
     // Two source dialogues (sixteen decisions and empty), one target.
-    let mut certificate = Bytes(vec![0x2C, 2, 16]);
+    let mut certificate = Bytes(SmallVec::<_, 0, Global>::from_iter([0x2C, 2, 16]));
     for word in (0_u8 .. 12_u8).chain(13_u8 ..= 16_u8) {
         certificate.byte(RawByte(word));
     }
@@ -2064,16 +2073,16 @@ fn native_path_evidence_preserves_framing_and_refuses_malformed_words()
     certificate.varint(WireValue(0x00FF_FFFF_FF0C));
     certificate.0.extend_from_slice(&[4, 12, 12]);
     let mut declaration = RawDeclaration::definition(
-        vec![
+        SmallVec::<_, 0, Global>::from_iter([
             entry_unit_type(),
-            Bytes(vec![0x1C, 0]),    // quote Unit
-            Bytes(vec![0x2A, 2, 2]), // Path_U(Unit, Unit)
+            Bytes(SmallVec::<_, 0, Global>::from_iter([0x1C, 0])), // quote Unit
+            Bytes(SmallVec::<_, 0, Global>::from_iter([0x2A, 2, 2])), // Path_U(Unit, Unit)
             entry_variable(WireValue(0)),
-            Bytes(vec![0x13, 6]),  // return variable
-            Bytes(vec![0x11, 8]),  // lambda
-            Bytes(vec![0x0F, 10]), // thunk
+            Bytes(SmallVec::<_, 0, Global>::from_iter([0x13, 6])), // return variable
+            Bytes(SmallVec::<_, 0, Global>::from_iter([0x11, 8])), // lambda
+            Bytes(SmallVec::<_, 0, Global>::from_iter([0x0F, 10])), // thunk
             certificate,
-        ],
+        ]),
         TableIndex(4),
         TableIndex(14),
     );
@@ -2100,7 +2109,7 @@ fn native_path_evidence_preserves_framing_and_refuses_malformed_words()
     }
     for invalid in [0x7F_u64, 0x0100_0000_000C_u64] {
         let entry = declaration.entries.last_mut().expect("certificate entry");
-        entry.0.truncate(premise_offset);
+        entry.0.truncate(Count::from(premise_offset));
         entry.varint(WireValue(invalid));
         entry.0.extend_from_slice(&[2, 6, 6]);
         let malformed = raw_artifact(current_version(), &[], core::slice::from_ref(&declaration));
@@ -2132,7 +2141,7 @@ fn a_static_family_round_trips_in_wire_order()
     let instance = arena.value_static_application(head, argument);
     let decoded_instance = arena.comp_type_element(instance, level);
     let declared = arena.value_type_thunk(decoded_instance);
-    let declarations = vec![
+    let declarations = SmallVec::<_, 0, Global>::from_iter([
         MarkedDeclaration::new(
             AdmissionMark::Checked,
             DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), family),
@@ -2141,13 +2150,13 @@ fn a_static_family_round_trips_in_wire_order()
             AdmissionMark::Checked,
             DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), declared),
         ),
-    ];
+    ]);
 
     let bytes = encode(&arena, &declarations);
     let artifact = decode(bytes.as_image()).expect("the static family decodes");
     assert_eq!(
-        Vec::from(bytes),
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(bytes),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
         "the decoded artifact re-encodes to the bytes it came from"
     );
     let decoded = artifact.arena();
@@ -2202,20 +2211,33 @@ fn a_static_family_round_trips_in_wire_order()
 fn a_constructor_keeps_its_family_across_the_wire()
 {
     let mut arena = TermArena::new();
-    let declared = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let declared = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
-    let own = arena.value_constructor(ConstantIndex::from(0_usize), declared, tag, vec![]);
-    let namesake = arena.value_constructor(ConstantIndex::from(1_usize), declared, tag, vec![]);
-    let declarations = vec![
+    let own = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        declared,
+        tag,
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let namesake = arena.value_constructor(
+        ConstantIndex::from(1_usize),
+        declared,
+        tag,
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let declarations = SmallVec::<_, 0, Global>::from_iter([
         definition_over(&mut arena, declared, own),
         definition_over(&mut arena, declared, namesake),
-    ];
+    ]);
 
     let bytes = encode(&arena, &declarations);
     let artifact = decode(bytes.as_image()).expect("the constructors decode");
     assert_eq!(
-        Vec::from(bytes),
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(bytes),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
         "the decoded artifact re-encodes to the bytes it came from"
     );
     let family = |position| {
@@ -2243,8 +2265,8 @@ fn the_empty_sequence_encodes_to_a_bare_header()
     // two-byte field, the width of a key as one varint eight, the empty atom
     // table as one varint zero and the declaration count as one varint zero.
     assert_eq!(
-        vec![b'G', b'K', b'X', b'1', 0x0C, 0x00, 0x08, 0x00, 0x00],
-        Vec::from(bytes.clone()),
+        SmallVec::<_, 0, Global>::from_iter([b'G', b'K', b'X', b'1', 0x0C, 0x00, 0x08, 0x00, 0x00]),
+        SmallVec::<u8, 0, Global>::from(bytes.clone()),
         "the empty artifact is the magic, the version, the key width, an empty atom table and \
          a zero count"
     );
@@ -2291,12 +2313,12 @@ fn each_segment_ends_where_its_bytes_end()
     // segment introduces no entry and reads that entry through its one import:
     // the definition's place, written bare, and offset zero.
     let definition = RawDeclaration::definition(
-        vec![entry_unit_type(), entry_unit()],
+        SmallVec::<_, 0, Global>::from_iter([entry_unit_type(), entry_unit()]),
         TableIndex(0),
         TableIndex(2),
     );
-    let mut axiom = RawDeclaration::axiom(Vec::new(), TableIndex(1));
-    axiom.imports = Bytes(vec![1, 1, 0]);
+    let mut axiom = RawDeclaration::axiom(SmallVec::<_, 0, Global>::new(), TableIndex(1));
+    axiom.imports = Bytes(SmallVec::<_, 0, Global>::from_iter([1, 1, 0]));
     let first_end = header.0.len().saturating_add(definition.bytes().0.len());
     let second_end = first_end.saturating_add(axiom.bytes().0.len());
     let bytes = raw_artifact(current_version(), &[], &[definition, axiom]);
@@ -2350,10 +2372,10 @@ fn a_bypass_admission_mark_survives_the_round_trip()
     let body = arena.value_unit();
     let builder = DeclarationBuilder::new(&mut arena);
     let declaration = builder.def(LevelSignature::monomorphic(), declared, body);
-    let declarations = vec![MarkedDeclaration::new(
+    let declarations = SmallVec::<_, 0, Global>::from_iter([MarkedDeclaration::new(
         AdmissionMark::UncheckedBypass,
         declaration,
-    )];
+    )]);
     let bytes = encode(&arena, &declarations);
     let artifact = decode(bytes.as_image()).expect("the bypass artifact decodes");
     assert_eq!(
@@ -2385,12 +2407,12 @@ fn non_canonical() -> DecodeError
 #[test]
 fn a_duplicate_entry_is_refused_as_non_canonical()
 {
-    let entries = vec![
+    let entries = SmallVec::<_, 0, Global>::from_iter([
         entry_unit_type(),
         entry_unit(),
         entry_unit(),
         entry_pair(TableIndex(2), TableIndex(4)),
-    ];
+    ]);
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
         entries,
         TableIndex(0),
@@ -2408,11 +2430,11 @@ fn a_mis_ordered_table_is_refused_as_non_canonical()
 {
     // Every child reference is still strictly earlier, so this is a genuine
     // ordering violation rather than a child-order one.
-    let entries = vec![
+    let entries = SmallVec::<_, 0, Global>::from_iter([
         entry_unit(),
         entry_unit_type(),
         entry_pair(TableIndex(0), TableIndex(0)),
-    ];
+    ]);
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
         entries,
         TableIndex(2),
@@ -2428,12 +2450,12 @@ fn a_mis_ordered_table_is_refused_as_non_canonical()
 #[test]
 fn a_dead_entry_is_refused_as_non_canonical()
 {
-    let entries = vec![
+    let entries = SmallVec::<_, 0, Global>::from_iter([
         entry_unit_type(),
         entry_unit(),
         entry_pair(TableIndex(2), TableIndex(2)),
         entry_variable(WireValue(7)),
-    ];
+    ]);
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
         entries,
         TableIndex(0),
@@ -2461,7 +2483,7 @@ fn a_decode_of_a_quote_is_refused_as_non_canonical()
     element.varint(WireValue(0));
     element.varint(WireValue(0));
     element.varint(WireValue(2));
-    let entries = vec![entry_unit_type(), quote, element];
+    let entries = SmallVec::<_, 0, Global>::from_iter([entry_unit_type(), quote, element]);
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
         entries,
         TableIndex(4),
@@ -2480,7 +2502,7 @@ fn a_self_or_forward_child_reference_is_refused()
         site: MalformedSite::ChildOrder,
     };
     let self_reference = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
-        vec![entry_pair(TableIndex(0), TableIndex(0))],
+        SmallVec::<_, 0, Global>::from_iter([entry_pair(TableIndex(0), TableIndex(0))]),
         TableIndex(0),
         TableIndex(0),
     )]);
@@ -2491,7 +2513,10 @@ fn a_self_or_forward_child_reference_is_refused()
     );
 
     let forward_reference = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
-        vec![entry_pair(TableIndex(2), TableIndex(2)), entry_unit()],
+        SmallVec::<_, 0, Global>::from_iter([
+            entry_pair(TableIndex(2), TableIndex(2)),
+            entry_unit(),
+        ]),
         TableIndex(0),
         TableIndex(0),
     )]);
@@ -2513,11 +2538,12 @@ fn a_repeated_diamond_is_refused_before_any_consumer()
     let mut arena = TermArena::new();
     let declared = arena.value_type_unit();
     let body = diamond(&mut arena, depth);
-    let declarations = vec![definition_over(&mut arena, declared, body)];
+    let declarations =
+        SmallVec::<_, 0, Global>::from_iter([definition_over(&mut arena, declared, body)]);
     let bytes = encode(&arena, &declarations);
 
     assert!(
-        Vec::from(bytes.clone()).len() < 200,
+        SmallVec::<u8, 0, Global>::from(bytes.clone()).len() < 200,
         "the artifact is a few dozen bytes: the amplification is in its expansion, not its size"
     );
     assert!(
@@ -2546,13 +2572,14 @@ fn many_cheap_segments_sharing_one_root_are_refused()
         let mut arena = TermArena::new();
         let declared = arena.value_type_unit();
         let body = diamond(&mut arena, depth);
-        let mut declarations: Vec<MarkedDeclaration> = Vec::new();
+        let mut declarations: SmallVec<MarkedDeclaration, 0, Global> =
+            SmallVec::<_, 0, Global>::new();
         let mut remaining = count;
         while remaining > 0 {
             declarations.push(definition_over(&mut arena, declared, body));
             remaining = remaining.saturating_sub(1);
         }
-        Vec::from(encode(&arena, &declarations))
+        SmallVec::<u8, 0, Global>::from(encode(&arena, &declarations))
     };
 
     let under = build(accepted);
@@ -2592,8 +2619,9 @@ fn the_declaration_work_boundary_accepts_under_and_refuses_over()
         let mut arena = TermArena::new();
         let declared = arena.value_type_unit();
         let body = diamond(&mut arena, depth);
-        let declarations = vec![definition_over(&mut arena, declared, body)];
-        Vec::from(encode(&arena, &declarations))
+        let declarations =
+            SmallVec::<_, 0, Global>::from_iter([definition_over(&mut arena, declared, body)]);
+        SmallVec::<u8, 0, Global>::from(encode(&arena, &declarations))
     };
 
     let accepted = build(under);
@@ -2637,8 +2665,9 @@ fn the_table_entry_boundary_accepts_under_and_refuses_over()
         else {
             unit
         };
-        let declarations = vec![definition_over(&mut arena, declared, body)];
-        Vec::from(encode(&arena, &declarations))
+        let declarations =
+            SmallVec::<_, 0, Global>::from_iter([definition_over(&mut arena, declared, body)]);
+        SmallVec::<u8, 0, Global>::from(encode(&arena, &declarations))
     };
 
     let accepted = build(false);
@@ -2679,7 +2708,10 @@ fn the_level_offset_boundary_accepts_under_and_refuses_over()
     let declared = arena.value_type_universe(GroundSort::Value, level);
     let builder = DeclarationBuilder::new(&mut arena);
     let declaration = builder.axiom(LevelSignature::monomorphic(), declared);
-    let declarations = vec![MarkedDeclaration::new(AdmissionMark::Checked, declaration)];
+    let declarations = SmallVec::<_, 0, Global>::from_iter([MarkedDeclaration::new(
+        AdmissionMark::Checked,
+        declaration,
+    )]);
     let accepted = encode(&arena, &declarations);
     let artifact =
         decode(accepted.as_image()).expect("an atom offset just under the cap is accepted");
@@ -2690,7 +2722,7 @@ fn the_level_offset_boundary_accepts_under_and_refuses_over()
     );
 
     let refused = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
-        vec![entry_universe_atom(WireValue(0), WireValue(cap))],
+        SmallVec::<_, 0, Global>::from_iter([entry_universe_atom(WireValue(0), WireValue(cap))]),
         TableIndex(0),
     )]);
     assert_eq!(
@@ -2825,7 +2857,8 @@ fn a_predecessor_version_is_refused_by_name()
 #[test]
 fn a_foreign_magic_is_refused_at_the_header()
 {
-    let bytes = vec![b'N', b'O', b'P', b'E', 0x02, 0x00, 0x00, 0x00];
+    let bytes =
+        SmallVec::<_, 0, Global>::from_iter([b'N', b'O', b'P', b'E', 0x02, 0x00, 0x00, 0x00]);
     assert_eq!(
         Err(DecodeError::Malformed {
             site: MalformedSite::Header,
@@ -2842,8 +2875,9 @@ fn truncation_at_every_prefix_is_refused_without_panicking()
     let declared = arena.value_type_unit();
     let unit = arena.value_unit();
     let body = arena.value_tuple(&[unit, unit]);
-    let declarations = vec![definition_over(&mut arena, declared, body)];
-    let bytes = Vec::from(encode(&arena, &declarations));
+    let declarations =
+        SmallVec::<_, 0, Global>::from_iter([definition_over(&mut arena, declared, body)]);
+    let bytes = SmallVec::<u8, 0, Global>::from(encode(&arena, &declarations));
 
     let mut length = 0_usize;
     while length < bytes.len() {
@@ -2876,7 +2910,8 @@ fn arbitrary_bytes_never_panic()
 
     let mut state = 0x2545_f491_4f6c_dd1d_u64;
     let mut trial = 0_u32;
-    let mut bytes: Vec<u8> = Vec::with_capacity(28);
+    let mut bytes: SmallVec<u8, 0, Global> =
+        SmallVec::<_, 0, Global>::with_capacity(Count::from(28));
     while trial < 512 {
         bytes.clear();
         bytes.extend_from_slice(b"GKX1");
@@ -2897,7 +2932,7 @@ fn arbitrary_bytes_never_panic()
 fn trailing_bytes_are_refused()
 {
     let arena = TermArena::new();
-    let mut bytes = Vec::from(encode(&arena, &[]));
+    let mut bytes = SmallVec::<u8, 0, Global>::from(encode(&arena, &[]));
     bytes.push(0x00);
     assert_eq!(
         Err(DecodeError::Malformed {
@@ -2928,7 +2963,7 @@ fn an_unassigned_node_tag_is_refused_by_name()
         }
         let tag = RawByte(byte);
         let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
-            vec![entry_unassigned_tag(tag)],
+            SmallVec::<_, 0, Global>::from_iter([entry_unassigned_tag(tag)]),
             TableIndex(0),
         )]);
         assert_eq!(
@@ -2951,7 +2986,10 @@ fn a_reserved_declaration_kind_is_refused_distinctly()
         (RawByte(5), ReservedKind::FunctorDef),
     ];
     for (byte, kind) in reserved {
-        let mut declaration = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
+        let mut declaration = RawDeclaration::axiom(
+            SmallVec::<_, 0, Global>::from_iter([entry_unit_type()]),
+            TableIndex(0),
+        );
         declaration.kind = byte;
         let bytes = raw_artifact(current_version(), &[], &[declaration]);
         assert_eq!(
@@ -2961,7 +2999,10 @@ fn a_reserved_declaration_kind_is_refused_distinctly()
         );
     }
 
-    let mut unknown = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
+    let mut unknown = RawDeclaration::axiom(
+        SmallVec::<_, 0, Global>::from_iter([entry_unit_type()]),
+        TableIndex(0),
+    );
     unknown.kind = RawByte(0xFF);
     let bytes = raw_artifact(current_version(), &[], &[unknown]);
     assert_eq!(
@@ -2977,7 +3018,10 @@ fn a_reserved_declaration_kind_is_refused_distinctly()
 #[test]
 fn an_unknown_admission_mark_is_refused()
 {
-    let mut declaration = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
+    let mut declaration = RawDeclaration::axiom(
+        SmallVec::<_, 0, Global>::from_iter([entry_unit_type()]),
+        TableIndex(0),
+    );
     declaration.mark = RawByte(7);
     let bytes = raw_artifact(current_version(), &[], &[declaration]);
     assert_eq!(
@@ -3064,9 +3108,9 @@ fn segment_text() -> impl Strategy<Value = String>
 fn referencing_sequence(
     arena: &mut TermArena,
     count: Position,
-) -> Vec<MarkedDeclaration>
+) -> SmallVec<MarkedDeclaration, 0, Global>
 {
-    let mut declarations = Vec::new();
+    let mut declarations = SmallVec::<_, 0, Global>::new();
     for position in 0 .. count.0 {
         let previous = position.checked_sub(1).map(ConstantIndex::from);
         let mut builder = DeclarationBuilder::new(arena);
@@ -3106,7 +3150,7 @@ proptest! {
     ) {
         let mut arena = TermArena::new();
         let unnamed = referencing_sequence(&mut arena, Position(names.len()));
-        let named: Vec<MarkedDeclaration> = unnamed
+        let named: SmallVec<MarkedDeclaration, 0, Global> = unnamed
             .iter()
             .zip(&names)
             .map(|(marked, segments)| {
@@ -3114,7 +3158,7 @@ proptest! {
                     segments
                         .iter()
                         .map(|text| NameSegment::from_text(text.clone()))
-                        .collect::<Option<Vec<NameSegment>>>()
+                        .collect::<Option<SmallVec<NameSegment, 0, Global>>>()
                         .expect("generated text holds no separator"),
                 );
                 MarkedDeclaration::new(marked.mark(), marked.declaration().clone().named(name))
@@ -3126,14 +3170,14 @@ proptest! {
         let decoded_unnamed =
             decode(encode(&arena, &unnamed).as_image()).expect("an unnamed artifact decodes");
 
-        let decoded_names: Vec<Vec<&str>> = decoded_named
+        let decoded_names: SmallVec<SmallVec<&str, 0, Global>, 0, Global> = decoded_named
             .declarations()
             .iter()
             .map(|marked| {
                 marked.declaration().name().segments().iter().map(AsRef::as_ref).collect()
             })
             .collect();
-        let written_names: Vec<Vec<&str>> = names
+        let written_names: SmallVec<SmallVec<&str, 0, Global>, 0, Global> = names
             .iter()
             .map(|segments| segments.iter().map(String::as_str).collect())
             .collect();
@@ -3167,8 +3211,13 @@ fn a_segment_holding_a_separator_is_refused()
 
     // At decode: the same spelling written by hand into the name record.
     let named = |segment: &[u8]| {
-        let mut declaration = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
-        declaration.name = vec![Bytes(segment.to_vec())];
+        let mut declaration = RawDeclaration::axiom(
+            SmallVec::<_, 0, Global>::from_iter([entry_unit_type()]),
+            TableIndex(0),
+        );
+        declaration.name = SmallVec::<_, 0, Global>::from_iter([Bytes(
+            SmallVec::<_, 0, Global>::from_iter(segment.iter().copied()),
+        )]);
         raw_artifact(current_version(), &[], &[declaration])
     };
     let refused = Err(DecodeError::Malformed {
@@ -3186,7 +3235,7 @@ fn a_segment_holding_a_separator_is_refused()
     );
     let decoded =
         decode(ArtifactImage::from(named(b"middle").as_ref())).expect("the bare segment decodes");
-    let segments: Vec<&str> = decoded
+    let segments: SmallVec<&str, 0, Global> = decoded
         .declarations()
         .first()
         .expect("the declaration decodes")
@@ -3196,14 +3245,14 @@ fn a_segment_holding_a_separator_is_refused()
         .iter()
         .map(AsRef::as_ref)
         .collect();
-    assert_eq!(vec!["middle"], segments);
+    assert_eq!(SmallVec::<_, 0, Global>::from_iter(["middle"]), segments);
 }
 
 #[test]
 fn an_occupied_reserved_slot_is_refused_by_name()
 {
     let mut graded = RawDeclaration::definition(
-        vec![entry_unit_type(), entry_unit()],
+        SmallVec::<_, 0, Global>::from_iter([entry_unit_type(), entry_unit()]),
         TableIndex(0),
         TableIndex(2),
     );
@@ -3222,7 +3271,10 @@ fn an_occupied_reserved_slot_is_refused_by_name()
 fn a_child_of_the_wrong_polarity_is_refused()
 {
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
-        vec![entry_unit_type(), entry_pair(TableIndex(0), TableIndex(0))],
+        SmallVec::<_, 0, Global>::from_iter([
+            entry_unit_type(),
+            entry_pair(TableIndex(0), TableIndex(0)),
+        ]),
         TableIndex(0),
         TableIndex(2),
     )]);
@@ -3277,10 +3329,10 @@ fn sealed_artifact() -> EncodedArtifact
     let declared = arena.value_type_unit();
     let body = arena.value_unit();
     let definition = definition_over(&mut arena, declared, body);
-    let declarations = vec![
+    let declarations = SmallVec::<_, 0, Global>::from_iter([
         MarkedDeclaration::new(AdmissionMark::Checked, atom),
         definition,
-    ];
+    ]);
     encode(&arena, &declarations)
 }
 
@@ -3334,7 +3386,7 @@ fn sealed_artifact() -> EncodedArtifact
     )]
 fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
 {
-    let original = Bytes(Vec::from(sealed_artifact()));
+    let original = Bytes(SmallVec::<u8, 0, Global>::from(sealed_artifact()));
     let mut bytes = Bytes::new();
     bytes.magic();
     bytes.version(current_version());
@@ -3389,8 +3441,8 @@ fn a_sealed_artifact_round_trips_with_its_atom_table()
         "and the admission that minted it holds the one member after it"
     );
     assert_eq!(
-        Vec::from(bytes),
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(bytes),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
         "the sealed artifact re-encodes to the bytes it came from"
     );
 }
@@ -3403,7 +3455,7 @@ fn a_seal_reaching_past_the_artifact_is_refused()
     // names, the declaration count, then the segment's empty table of names,
     // its empty imports, mark, kind, name, levels, entry count, the universe
     // and integer entries, and its two roots.
-    let mut bytes = Vec::from(sealed_artifact());
+    let mut bytes = SmallVec::<u8, 0, Global>::from(sealed_artifact());
     let extent = bytes.get_mut(26).expect("the atom's extent byte");
     assert_eq!(*extent, 1, "the fixture's atom holds its one member");
     *extent = 2;
@@ -3474,7 +3526,7 @@ fn a_non_canonical_inline_level_is_refused()
     // keeps one atom per variable, so re-encoding writes one atom where the
     // artifact carried two.
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
-        vec![entry_universe_repeated_atom()],
+        SmallVec::<_, 0, Global>::from_iter([entry_universe_repeated_atom()]),
         TableIndex(0),
     )]);
     assert_eq!(
@@ -3488,7 +3540,7 @@ fn a_non_canonical_inline_level_is_refused()
 fn an_overlong_varint_inside_an_entry_is_refused()
 {
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
-        vec![entry_universe_overlong_constant()],
+        SmallVec::<_, 0, Global>::from_iter([entry_universe_overlong_constant()]),
         TableIndex(0),
     )]);
     assert_eq!(
@@ -3507,24 +3559,27 @@ fn a_universe_artifact_round_trips_byte_identically()
     let declared = arena.value_type_universe(GroundSort::Value, gandr_kernel_strata::Level::zero());
     let builder = DeclarationBuilder::new(&mut arena);
     let declaration = builder.axiom(LevelSignature::monomorphic(), declared);
-    let declarations = vec![MarkedDeclaration::new(AdmissionMark::Checked, declaration)];
+    let declarations = SmallVec::<_, 0, Global>::from_iter([MarkedDeclaration::new(
+        AdmissionMark::Checked,
+        declaration,
+    )]);
     let bytes = encode(&arena, &declarations);
     let artifact = decode(bytes.as_image()).expect("the universe artifact decodes");
     assert_eq!(
-        Vec::from(bytes),
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(bytes),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
         "a decoded universe re-encodes identically"
     );
     // The entry shape the raw builders use must agree with what the encoder
     // writes, or every hand-built golden above would be testing a format the
     // encoder does not produce.
     let expected = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
-        vec![entry_universe(WireValue(0))],
+        SmallVec::<_, 0, Global>::from_iter([entry_universe(WireValue(0))]),
         TableIndex(0),
     )]);
     assert_eq!(
         expected.0,
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
         "the hand-built segment shape is the shape the encoder produces"
     );
 }

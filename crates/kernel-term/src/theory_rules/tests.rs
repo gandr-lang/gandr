@@ -1,7 +1,8 @@
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::string::String;
-use alloc::vec;
-use alloc::vec::Vec;
+
+use gandr_kernel_data::SmallVec;
 
 use super::BinderDistance;
 use super::CriticalPeak;
@@ -101,13 +102,19 @@ fn the_presentation_code_is_recognised_by_its_table()
     let mut arena = TermArena::new();
     let own = ConstantIndex::from(3_usize);
     let string = arena.value_type_base(BaseType::String);
-    let recursion = arena.value_type_data(own, Vec::new());
-    let elsewhere = arena.value_type_data(ConstantIndex::from(2_usize), Vec::new());
-    let table = |string: ValueTypeId, recursion: ValueTypeId| -> Vec<Vec<ValueTypeId>> {
+    let recursion = arena.value_type_data(own, SmallVec::<_, 0, Global>::new());
+    let elsewhere = arena.value_type_data(
+        ConstantIndex::from(2_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let table = |string: ValueTypeId,
+                 recursion: ValueTypeId|
+     -> SmallVec<SmallVec<ValueTypeId, 0, Global>, 0, Global> {
         PRESENTATION_CODE
             .iter()
             .map(|&(strings, recursions)| {
-                let mut fields = vec![string; strings];
+                let mut fields =
+                    SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(string, strings));
                 fields.extend(core::iter::repeat_n(recursion, recursions));
                 fields
             })
@@ -135,11 +142,17 @@ fn the_presentation_code_is_recognised_by_its_table()
 fn a_unit_law_converges_and_a_second_unit_parts_from_it()
 {
     // mul = 0, e = 1.
-    let symbols = vec![operation!(1, 2), operation!(1, 0)];
+    let symbols = SmallVec::<_, 0, Global>::from_iter([operation!(1, 2), operation!(1, 0)]);
     let unit = rule(&[s!(0), s!(1), v!(0)], &[v!(0)]);
-    let rules = TheoryRules::new(symbols.clone(), vec![unit.clone()]);
+    let rules = TheoryRules::new(
+        symbols.clone(),
+        SmallVec::<_, 0, Global>::from_iter([unit.clone()]),
+    );
     assert_eq!(rules.decide(&mut fuel()), Ok(()));
-    let twin = TheoryRules::new(symbols, vec![unit, rule(&[s!(0), s!(1), v!(0)], &[s!(1)])]);
+    let twin = TheoryRules::new(
+        symbols,
+        SmallVec::<_, 0, Global>::from_iter([unit, rule(&[s!(0), s!(1), v!(0)], &[s!(1)])]),
+    );
     assert_eq!(
         twin.decide(&mut fuel()),
         refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
@@ -151,10 +164,14 @@ fn a_unit_law_converges_and_a_second_unit_parts_from_it()
 fn a_groups_completion_replays_from_its_peaks()
 {
     // mul = 0, inv = 1, e = 2.
-    let symbols = vec![operation!(1, 2), operation!(1, 1), operation!(0, 0)];
+    let symbols =
+        SmallVec::<_, 0, Global>::from_iter([operation!(1, 2), operation!(1, 1), operation!(0, 0)]);
     let inverse = rule(&[s!(0), s!(1), v!(0), v!(0)], &[s!(2)]);
     let involution = rule(&[s!(1), s!(1), v!(0)], &[v!(0)]);
-    let written = TheoryRules::new(symbols, vec![inverse, involution]);
+    let written = TheoryRules::new(
+        symbols,
+        SmallVec::<_, 0, Global>::from_iter([inverse, involution]),
+    );
     assert_eq!(
         written.decide(&mut fuel()),
         refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
@@ -205,14 +222,18 @@ fn a_groups_completion_replays_from_its_peaks()
 fn a_rule_the_ranks_do_not_decrease_is_unoriented()
 {
     let calls = rule(&[s!(0), v!(0)], &[s!(1), v!(0)]);
-    let level = TheoryRules::new(vec![operation!(1, 1), operation!(1, 1)], vec![
-        calls.clone(),
-    ]);
+    let level = TheoryRules::new(
+        SmallVec::<_, 0, Global>::from_iter([operation!(1, 1), operation!(1, 1)]),
+        SmallVec::<_, 0, Global>::from_iter([calls.clone()]),
+    );
     assert_eq!(
         level.decide(&mut fuel()),
         refused!(0, TheoryRuleFault::Unoriented)
     );
-    let ranked = TheoryRules::new(vec![operation!(2, 1), operation!(1, 1)], vec![calls]);
+    let ranked = TheoryRules::new(
+        SmallVec::<_, 0, Global>::from_iter([operation!(2, 1), operation!(1, 1)]),
+        SmallVec::<_, 0, Global>::from_iter([calls]),
+    );
     assert_eq!(ranked.decide(&mut fuel()), Ok(()));
     let associativity = rule(&[s!(0), s!(0), v!(0), v!(1), v!(2)], &[
         s!(0),
@@ -221,19 +242,26 @@ fn a_rule_the_ranks_do_not_decrease_is_unoriented()
         v!(1),
         v!(2),
     ]);
-    let product = TheoryRules::new(vec![operation!(1, 2)], vec![associativity]);
+    let product = TheoryRules::new(
+        SmallVec::<_, 0, Global>::from_iter([operation!(1, 2)]),
+        SmallVec::<_, 0, Global>::from_iter([associativity]),
+    );
     assert_eq!(product.decide(&mut fuel()), Ok(()), "associativity orients");
 }
 
 #[test]
 fn a_malformed_rule_is_refused_by_its_fault()
 {
-    let symbols = vec![
+    let symbols = SmallVec::<_, 0, Global>::from_iter([
         operation!(1, 1),
         (SymbolKind::Constructor, FieldCount::from(1_usize)),
-    ];
+    ]);
     let decided = |left: &[TheoryNode], right: &[TheoryNode]| {
-        TheoryRules::new(symbols.clone(), vec![rule(left, right)]).decide(&mut fuel())
+        TheoryRules::new(
+            symbols.clone(),
+            SmallVec::<_, 0, Global>::from_iter([rule(left, right)]),
+        )
+        .decide(&mut fuel())
     };
     let malformed = refused!(0, TheoryRuleFault::Malformed);
     assert_eq!(decided(&[v!(0)], &[v!(0)]), malformed, "a variable head");
@@ -263,52 +291,62 @@ fn a_malformed_rule_is_refused_by_its_fault()
 fn a_let_rule_converges_and_beta_is_unoriented()
 {
     // let = 0, app = 1, lam = 2, zero = 3.
-    let symbols = vec![
+    let symbols = SmallVec::<_, 0, Global>::from_iter([
         operation!(1, 2),
         operation!(1, 2),
         operation!(1, 1),
         operation!(0, 0),
-    ];
-    let decided =
-        |rules: Vec<TheoryRule>| TheoryRules::new(symbols.clone(), rules).decide(&mut fuel());
+    ]);
+    let decided = |rules: SmallVec<TheoryRule, 0, Global>| {
+        TheoryRules::new(symbols.clone(), rules).decide(&mut fuel())
+    };
     // let(u, t) ==> t(u)
     let zeta = rule(&[s!(0), v!(0), v!(1)], &[i!(1, 1), v!(0)]);
-    assert_eq!(decided(vec![zeta.clone()]), Ok(()));
+    assert_eq!(
+        decided(SmallVec::<_, 0, Global>::from_iter([zeta.clone()])),
+        Ok(())
+    );
     // app(zero, u) ==> u
     let apart = rule(&[s!(1), s!(3), v!(0)], &[v!(0)]);
     assert_eq!(
-        decided(vec![zeta.clone(), apart]),
+        decided(SmallVec::<_, 0, Global>::from_iter([zeta.clone(), apart])),
         Ok(()),
         "a first-order rule overlapping no left side of `let` converges beside it"
     );
     // app(lam(t), u) ==> t(u)
     let beta = rule(&[s!(1), s!(2), v!(0), v!(1)], &[i!(0, 1), v!(1)]);
     assert_eq!(
-        decided(vec![beta]),
+        decided(SmallVec::<_, 0, Global>::from_iter([beta])),
         refused!(0, TheoryRuleFault::Unoriented),
         "β's variable stands under `lam`, not as an argument of `app`"
     );
     // let(zero, t) ==> t(zero)
     let at_zero = rule(&[s!(0), s!(3), v!(0)], &[i!(0, 1), s!(3)]);
     assert_eq!(
-        decided(vec![zeta.clone(), at_zero]),
+        decided(SmallVec::<_, 0, Global>::from_iter([zeta.clone(), at_zero])),
         Ok(()),
         "a second-order rule's critical pair joins: both reducts are `t(zero)`"
     );
     // let(zero, t) ==> zero
     let to_zero = rule(&[s!(0), s!(3), v!(0)], &[s!(3)]);
     assert_eq!(
-        decided(vec![zeta, to_zero]),
+        decided(SmallVec::<_, 0, Global>::from_iter([zeta, to_zero])),
         refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
         "`t(zero)` and `zero` part"
     );
     assert_eq!(
-        decided(vec![rule(&[s!(0), v!(0), i!(1, 1), s!(3)], &[v!(0)])]),
+        decided(SmallVec::<_, 0, Global>::from_iter([rule(
+            &[s!(0), v!(0), i!(1, 1), s!(3)],
+            &[v!(0)]
+        )])),
         refused!(0, TheoryRuleFault::Malformed),
         "an instantiation on a left side at anything but bound names"
     );
     assert_eq!(
-        decided(vec![rule(&[s!(0), v!(0), v!(1)], &[i!(2, 1), v!(0)])]),
+        decided(SmallVec::<_, 0, Global>::from_iter([rule(
+            &[s!(0), v!(0), v!(1)],
+            &[i!(2, 1), v!(0)]
+        )])),
         refused!(0, TheoryRuleFault::Unbound),
         "an instantiation of a variable the left side does not bind"
     );
@@ -322,7 +360,7 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
 {
     // run = 0, get = 1, the binding field = 2, the bound occurrences counting
     // none and one binder = 3 and 4, zero = 5.
-    let symbols = vec![
+    let symbols = SmallVec::<_, 0, Global>::from_iter([
         operation!(1, 2),
         operation!(1, 1),
         (SymbolKind::Field, FieldCount::from(1_usize)),
@@ -335,13 +373,14 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
             FieldCount::from(0_usize),
         ),
         (SymbolKind::Constructor, FieldCount::from(0_usize)),
-    ];
-    let decided =
-        |rules: Vec<TheoryRule>| TheoryRules::new(symbols.clone(), rules).decide(&mut fuel());
+    ]);
+    let decided = |rules: SmallVec<TheoryRule, 0, Global>| {
+        TheoryRules::new(symbols.clone(), rules).decide(&mut fuel())
+    };
     // run(bind x . k(x), u) ==> k(u)
     let applied = rule(&[s!(0), s!(2), i!(0, 1), s!(3), v!(1)], &[i!(0, 1), v!(1)]);
     assert_eq!(
-        decided(vec![applied]),
+        decided(SmallVec::<_, 0, Global>::from_iter([applied])),
         Ok(()),
         "`run` holds `k` under the abstraction it applies it in, and overlaps nothing"
     );
@@ -354,25 +393,25 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
         s!(3),
     ]);
     assert_eq!(
-        decided(vec![get_get]),
+        decided(SmallVec::<_, 0, Global>::from_iter([get_get])),
         Ok(()),
         "get-get's inner `get` is an instance of its own left side through the pattern, and the \
          pair joins at `get(bind s . k(s, s, s))`"
     );
     let malformed = refused!(0, TheoryRuleFault::Malformed);
     assert_eq!(
-        decided(vec![rule(&[s!(0), s!(2), i!(0, 1), s!(5), v!(1)], &[
-            i!(0, 1),
-            v!(1)
-        ])]),
+        decided(SmallVec::<_, 0, Global>::from_iter([rule(
+            &[s!(0), s!(2), i!(0, 1), s!(5), v!(1)],
+            &[i!(0, 1), v!(1)]
+        )])),
         malformed,
         "a metavariable applied to a constructor is no pattern"
     );
     assert_eq!(
-        decided(vec![rule(
+        decided(SmallVec::<_, 0, Global>::from_iter([rule(
             &[s!(1), s!(2), s!(1), s!(2), i!(0, 2), s!(3), s!(3)],
             &[s!(1), s!(2), i!(0, 2), s!(3), s!(3)]
-        )]),
+        )])),
         malformed,
         "nor one applied to one name twice"
     );
@@ -387,24 +426,30 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
         let left = code.app(literal("ext"), &[m, over]);
         let leak = code.text(literal("leak"));
         let (sorts, operations) = code.monad(literal(unit));
-        let presentation =
-            code.presenting(sorts, operations, vec![(rule_tag, vec![leak, left, n])]);
+        let presentation = code.presenting(
+            sorts,
+            operations,
+            SmallVec::<_, 0, Global>::from_iter([(
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([leak, left, n]),
+            )]),
+        );
         TheoryRules::read(&code.arena, presentation).map(|read| {
             read.rules()
                 .iter()
                 .map(|rule| rule.conditioned)
-                .collect::<Vec<_>>()
+                .collect::<SmallVec<_, 0, Global>>()
         })
     };
     assert_eq!(
         conditioned("V"),
-        Ok(vec![true]),
+        Ok(SmallVec::<_, 0, Global>::from_iter([true])),
         "`ret` takes a value at the sort `ext`'s continuation binds, so a term names a bound \
          variable and `n` leaving `bind x .` fires only where its instance names no `x`"
     );
     assert_eq!(
         conditioned("C"),
-        Ok(vec![false]),
+        Ok(SmallVec::<_, 0, Global>::from_iter([false])),
         "where no port takes a bound variable no term names one"
     );
 }
@@ -416,7 +461,7 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
 fn a_relative_monads_laws_join_their_overlaps_2328()
 {
     // ext = 0, ret = 1, the binding field = 2, the bound occurrence = 3.
-    let symbols = vec![
+    let symbols = SmallVec::<_, 0, Global>::from_iter([
         operation!(1, 2),
         operation!(0, 1),
         (SymbolKind::Field, FieldCount::from(1_usize)),
@@ -424,9 +469,10 @@ fn a_relative_monads_laws_join_their_overlaps_2328()
             SymbolKind::Bound(BinderDistance::from(0_usize)),
             FieldCount::from(0_usize),
         ),
-    ];
-    let decided =
-        |rules: Vec<TheoryRule>| TheoryRules::new(symbols.clone(), rules).decide(&mut fuel());
+    ]);
+    let decided = |rules: SmallVec<TheoryRule, 0, Global>| {
+        TheoryRules::new(symbols.clone(), rules).decide(&mut fuel())
+    };
     // ext(ret(a), k) ==> k(a)
     let unit_left = rule(&[s!(0), s!(1), v!(0), v!(1)], &[i!(1, 1), v!(0)]);
     // ext(m, bind x . ret(x)) ==> m
@@ -442,20 +488,26 @@ fn a_relative_monads_laws_join_their_overlaps_2328()
         v!(2),
     ]);
     assert_eq!(
-        decided(vec![assoc.clone()]),
+        decided(SmallVec::<_, 0, Global>::from_iter([assoc.clone()])),
         Ok(()),
         "associativity overlaps itself at its inner `ext`, both reducts normalizing to \
          `ext(m, bind x . ext(k(x), bind y . ext(l(y), n)))`"
     );
     assert_eq!(
-        decided(vec![unit_left.clone(), unit_right.clone(), assoc]),
+        decided(SmallVec::<_, 0, Global>::from_iter([
+            unit_left.clone(),
+            unit_right.clone(),
+            assoc
+        ])),
         Ok(()),
         "with the unit laws, every pair joins"
     );
     // ext(ext(m, k), l) ==> ext(m, l), dropping `k`
     let lossy = rule(&[s!(0), s!(0), v!(0), v!(1), v!(2)], &[s!(0), v!(0), v!(2)]);
     assert_eq!(
-        decided(vec![unit_left, unit_right, lossy]),
+        decided(SmallVec::<_, 0, Global>::from_iter([
+            unit_left, unit_right, lossy
+        ])),
         refused!(2, TheoryRuleFault::Diverges(RuleIndex::from(0_usize))),
         "the lossy rule, overlapping the left unit law at its inner `ext`, parts in the \
          second-order reading: `l(a)` against `ext(k(a), l)`"
@@ -475,7 +527,7 @@ fn an_instantiating_rule_fires_by_substitution_2966()
 
     // app = 0, post = 1, z = 2, the binding field = 3, the bound occurrence
     // = 4, w = 5, lit = 6, int = 7.
-    let symbols = vec![
+    let symbols = SmallVec::<_, 0, Global>::from_iter([
         operation!(1, 2),
         operation!(0, 1),
         operation!(0, 0),
@@ -487,25 +539,28 @@ fn an_instantiating_rule_fires_by_substitution_2966()
         operation!(1, 2),
         operation!(0, 1),
         operation!(0, 1),
-    ];
+    ]);
     // app(k, a) ==> k(a)
     let beta = rule(&[s!(0), v!(0), v!(1)], &[i!(0, 1), v!(1)]);
     // w(lit(n), k) ==> k(int(n))
     let literal = rule(&[s!(5), s!(6), v!(0), v!(1)], &[i!(1, 1), s!(7), v!(0)]);
-    let rules = TheoryRules::new(symbols.clone(), vec![beta.clone(), literal]);
+    let rules = TheoryRules::new(
+        symbols.clone(),
+        SmallVec::<_, 0, Global>::from_iter([beta.clone(), literal]),
+    );
     assert_eq!(rules.decide(&mut fuel()), Ok(()));
     let normal = |rules: &TheoryRules, term: &[TheoryNode]| {
         rules
             .second_order_normal_form(term, &mut fuel())
             .expect("the term normalizes within its fuel")
-            .map(Vec::from)
+            .map(SmallVec::<_, 0, Global>::from_iter)
     };
     let symbol = |at: usize| NormalNode::Symbol(TheorySymbol::from(at));
     // app(bind v . post(v), z)
     let applied = [s!(0), s!(3), s!(1), s!(4), s!(2)];
     assert_eq!(
         normal(&rules, &applied),
-        Some(vec![symbol(1), symbol(2)]),
+        Some(SmallVec::<_, 0, Global>::from_iter([symbol(1), symbol(2)])),
         "β substitutes `z` for the field's variable: `post(z)`, not `k(z)`"
     );
     // app(bind v . w(lit(v), bind u . post(u)), z)
@@ -522,22 +577,29 @@ fn an_instantiating_rule_fires_by_substitution_2966()
     ];
     assert_eq!(
         normal(&rules, &nested),
-        Some(vec![symbol(1), symbol(7), symbol(2)]),
+        Some(SmallVec::<_, 0, Global>::from_iter([
+            symbol(1),
+            symbol(7),
+            symbol(2)
+        ])),
         "the literal rule fires below `app` under `v`, then β: `post(int(z))`"
     );
-    let under = TheoryRules::new(symbols, vec![beta.under(RuleRow::new(
-        vec![RowLabel::from(0_u32)],
-        RowExtent::AtLeast,
-    ))]);
+    let under = TheoryRules::new(
+        symbols,
+        SmallVec::<_, 0, Global>::from_iter([beta.under(RuleRow::new(
+            SmallVec::<_, 0, Global>::from_iter([RowLabel::from(0_u32)]),
+            RowExtent::AtLeast,
+        ))]),
+    );
     assert_eq!(
         normal(&under, &applied),
-        Some(vec![
+        Some(SmallVec::<_, 0, Global>::from_iter([
             symbol(0),
             symbol(3),
             symbol(1),
             NormalNode::Bound(BinderDistance::from(0_usize)),
             symbol(2),
-        ]),
+        ])),
         "a rule under a row fires in no row a program naming no theory stands in"
     );
     assert_eq!(
@@ -561,87 +623,107 @@ fn an_instantiation_at_a_value_selects_a_branch_2272()
 {
     let literal = |text: &str| StringLiteral::new(String::from(text));
     let tag = ConstructorTag::from;
-    let state = |reads: bool| -> Result<Vec<Box<[RuleVariable]>>, TheoryRuleRefusal> {
-        let mut code = Code::new();
-        let [
-            values,
-            computations,
-            get,
-            put,
-            read,
-            stored,
-            branch,
-            observed,
-            answer,
-            put_get,
-        ] = ["S", "C", "get", "put", "read", "s", "t", "c", "y", "putGet"]
-            .map(|text| code.text(literal(text)));
-        let continuation = code.text(literal("k"));
-        let end = code.end();
-        let computation_sort = code.node(tag(super::tag::SORT), vec![computations, end, end]);
-        let sorts = code.node(tag(super::tag::SORT), vec![values, end, computation_sort]);
-        let returns =
-            |code: &mut Code, sort| code.node(tag(super::tag::PORT), vec![answer, sort, end, end]);
-        let binder = code.node(tag(super::tag::PORT), vec![branch, values, end, end]);
-        let branches = code.node(tag(super::tag::BOUND), vec![
-            continuation,
-            computations,
-            end,
-            binder,
-            end,
-        ]);
-        let resumed = code.node(tag(super::tag::PORT), vec![
-            continuation,
-            computations,
-            end,
-            end,
-        ]);
-        let stores = code.node(tag(super::tag::PORT), vec![stored, values, end, resumed]);
-        let observes = code.node(tag(super::tag::PORT), vec![
-            observed,
-            computations,
-            end,
-            end,
-        ]);
-        let mut operations = end;
-        if reads {
-            let reply = returns(&mut code, values);
-            operations = code.node(tag(super::tag::OPER), vec![
-                read, observes, reply, operations,
-            ]);
-        }
-        let returned = returns(&mut code, computations);
-        operations = code.node(tag(super::tag::OPER), vec![
-            put, stores, returned, operations,
-        ]);
-        let returned = returns(&mut code, computations);
-        operations = code.node(tag(super::tag::OPER), vec![
-            get, branches, returned, operations,
-        ]);
-        // put(s, get(bind t . k(t))) ==> put(s, k(s))
-        let value = code.var(literal("s"));
-        let named = code.bvar(literal("t"));
-        let pattern = code.inst(literal("k"), &[named]);
-        let held = code.lam(literal("t"), pattern);
-        let got = code.app(literal("get"), &[held]);
-        let left = code.app(literal("put"), &[value, got]);
-        let selected = code.inst(literal("k"), &[value]);
-        let right = code.app(literal("put"), &[value, selected]);
-        let presentation = code.presenting(sorts, operations, vec![(tag(super::tag::RULE), vec![
-            put_get, left, right,
-        ])]);
-        let read = TheoryRules::read(&code.arena, presentation)?;
-        let read_values = read
-            .rules()
-            .iter()
-            .map(|rule| rule.values.clone())
-            .collect::<Vec<_>>();
-        read.decide(&mut fuel())?;
-        Ok(read_values)
-    };
+    let state =
+        |reads: bool| -> Result<SmallVec<Box<[RuleVariable]>, 0, Global>, TheoryRuleRefusal> {
+            let mut code = Code::new();
+            let [
+                values,
+                computations,
+                get,
+                put,
+                read,
+                stored,
+                branch,
+                observed,
+                answer,
+                put_get,
+            ] = ["S", "C", "get", "put", "read", "s", "t", "c", "y", "putGet"]
+                .map(|text| code.text(literal(text)));
+            let continuation = code.text(literal("k"));
+            let end = code.end();
+            let computation_sort = code.node(
+                tag(super::tag::SORT),
+                SmallVec::<_, 0, Global>::from_iter([computations, end, end]),
+            );
+            let sorts = code.node(
+                tag(super::tag::SORT),
+                SmallVec::<_, 0, Global>::from_iter([values, end, computation_sort]),
+            );
+            let returns = |code: &mut Code, sort| {
+                code.node(
+                    tag(super::tag::PORT),
+                    SmallVec::<_, 0, Global>::from_iter([answer, sort, end, end]),
+                )
+            };
+            let binder = code.node(
+                tag(super::tag::PORT),
+                SmallVec::<_, 0, Global>::from_iter([branch, values, end, end]),
+            );
+            let branches = code.node(
+                tag(super::tag::BOUND),
+                SmallVec::<_, 0, Global>::from_iter([continuation, computations, end, binder, end]),
+            );
+            let resumed = code.node(
+                tag(super::tag::PORT),
+                SmallVec::<_, 0, Global>::from_iter([continuation, computations, end, end]),
+            );
+            let stores = code.node(
+                tag(super::tag::PORT),
+                SmallVec::<_, 0, Global>::from_iter([stored, values, end, resumed]),
+            );
+            let observes = code.node(
+                tag(super::tag::PORT),
+                SmallVec::<_, 0, Global>::from_iter([observed, computations, end, end]),
+            );
+            let mut operations = end;
+            if reads {
+                let reply = returns(&mut code, values);
+                operations = code.node(
+                    tag(super::tag::OPER),
+                    SmallVec::<_, 0, Global>::from_iter([read, observes, reply, operations]),
+                );
+            }
+            let returned = returns(&mut code, computations);
+            operations = code.node(
+                tag(super::tag::OPER),
+                SmallVec::<_, 0, Global>::from_iter([put, stores, returned, operations]),
+            );
+            let returned = returns(&mut code, computations);
+            operations = code.node(
+                tag(super::tag::OPER),
+                SmallVec::<_, 0, Global>::from_iter([get, branches, returned, operations]),
+            );
+            // put(s, get(bind t . k(t))) ==> put(s, k(s))
+            let value = code.var(literal("s"));
+            let named = code.bvar(literal("t"));
+            let pattern = code.inst(literal("k"), &[named]);
+            let held = code.lam(literal("t"), pattern);
+            let got = code.app(literal("get"), &[held]);
+            let left = code.app(literal("put"), &[value, got]);
+            let selected = code.inst(literal("k"), &[value]);
+            let right = code.app(literal("put"), &[value, selected]);
+            let presentation = code.presenting(
+                sorts,
+                operations,
+                SmallVec::<_, 0, Global>::from_iter([(
+                    tag(super::tag::RULE),
+                    SmallVec::<_, 0, Global>::from_iter([put_get, left, right]),
+                )]),
+            );
+            let read = TheoryRules::read(&code.arena, presentation)?;
+            let read_values = read
+                .rules()
+                .iter()
+                .map(|rule| rule.values.clone())
+                .collect::<SmallVec<_, 0, Global>>();
+            read.decide(&mut fuel())?;
+            Ok(read_values)
+        };
     assert_eq!(
         state(false),
-        Ok(vec![Box::from([RuleVariable::from(0_u32)])]),
+        Ok(SmallVec::<_, 0, Global>::from_iter([Box::from([
+            RuleVariable::from(0_u32)
+        ])])),
         "`s` stands only at `put`'s port of `S`, which no operation returns, so `k(s)` selects \
          the branch `get` holds"
     );
@@ -670,7 +752,10 @@ impl Code
     fn new() -> Self
     {
         let mut arena = TermArena::new();
-        let theory = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let theory = arena.value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         Self { arena, theory }
     }
 
@@ -693,7 +778,7 @@ impl Code
     fn node(
         &mut self,
         tag: ConstructorTag,
-        fields: Vec<ValueId>,
+        fields: SmallVec<ValueId, 0, Global>,
     ) -> ValueId
     {
         self.arena
@@ -706,7 +791,10 @@ impl Code
     /// trivial.
     fn end(&mut self) -> ValueId
     {
-        self.node(ConstructorTag::from(super::tag::END), Vec::new())
+        self.node(
+            ConstructorTag::from(super::tag::END),
+            SmallVec::<_, 0, Global>::new(),
+        )
     }
 
     /// The variable `name`.
@@ -719,7 +807,10 @@ impl Code
     ) -> ValueId
     {
         let name = self.text(name);
-        self.node(ConstructorTag::from(super::tag::VAR), vec![name])
+        self.node(
+            ConstructorTag::from(super::tag::VAR),
+            SmallVec::<_, 0, Global>::from_iter([name]),
+        )
     }
 
     /// The operation `name` applied to `arguments`.
@@ -734,10 +825,16 @@ impl Code
     {
         let mut chain = self.end();
         for &argument in arguments.iter().rev() {
-            chain = self.node(ConstructorTag::from(super::tag::ARG), vec![argument, chain]);
+            chain = self.node(
+                ConstructorTag::from(super::tag::ARG),
+                SmallVec::<_, 0, Global>::from_iter([argument, chain]),
+            );
         }
         let name = self.text(name);
-        self.node(ConstructorTag::from(super::tag::APP), vec![name, chain])
+        self.node(
+            ConstructorTag::from(super::tag::APP),
+            SmallVec::<_, 0, Global>::from_iter([name, chain]),
+        )
     }
 
     /// The variable `name` instantiated at `arguments`.
@@ -752,10 +849,16 @@ impl Code
     {
         let mut chain = self.end();
         for &argument in arguments.iter().rev() {
-            chain = self.node(ConstructorTag::from(super::tag::ARG), vec![argument, chain]);
+            chain = self.node(
+                ConstructorTag::from(super::tag::ARG),
+                SmallVec::<_, 0, Global>::from_iter([argument, chain]),
+            );
         }
         let name = self.text(name);
-        self.node(ConstructorTag::from(super::tag::INST), vec![name, chain])
+        self.node(
+            ConstructorTag::from(super::tag::INST),
+            SmallVec::<_, 0, Global>::from_iter([name, chain]),
+        )
     }
 
     /// The abstraction of the atom `atom` over `body`.
@@ -769,9 +872,15 @@ impl Code
     ) -> ValueId
     {
         let end = self.end();
-        let chain = self.node(ConstructorTag::from(super::tag::ARG), vec![body, end]);
+        let chain = self.node(
+            ConstructorTag::from(super::tag::ARG),
+            SmallVec::<_, 0, Global>::from_iter([body, end]),
+        );
         let atom = self.text(atom);
-        self.node(ConstructorTag::from(super::tag::ABS), vec![atom, chain])
+        self.node(
+            ConstructorTag::from(super::tag::ABS),
+            SmallVec::<_, 0, Global>::from_iter([atom, chain]),
+        )
     }
 
     /// The atom `atom`, named inside an abstraction of it.
@@ -784,7 +893,10 @@ impl Code
     ) -> ValueId
     {
         let atom = self.text(atom);
-        self.node(ConstructorTag::from(super::tag::OCC), vec![atom])
+        self.node(
+            ConstructorTag::from(super::tag::OCC),
+            SmallVec::<_, 0, Global>::from_iter([atom]),
+        )
     }
 
     /// The binding field of the variable `var` over `body`.
@@ -798,9 +910,15 @@ impl Code
     ) -> ValueId
     {
         let end = self.end();
-        let chain = self.node(ConstructorTag::from(super::tag::ARG), vec![body, end]);
+        let chain = self.node(
+            ConstructorTag::from(super::tag::ARG),
+            SmallVec::<_, 0, Global>::from_iter([body, end]),
+        );
         let var = self.text(var);
-        self.node(ConstructorTag::from(super::tag::BIND), vec![var, chain])
+        self.node(
+            ConstructorTag::from(super::tag::BIND),
+            SmallVec::<_, 0, Global>::from_iter([var, chain]),
+        )
     }
 
     /// The variable `var`, named inside a binding field of it.
@@ -813,7 +931,10 @@ impl Code
     ) -> ValueId
     {
         let var = self.text(var);
-        self.node(ConstructorTag::from(super::tag::BVAR), vec![var])
+        self.node(
+            ConstructorTag::from(super::tag::BVAR),
+            SmallVec::<_, 0, Global>::from_iter([var]),
+        )
     }
 
     /// The presentation whose rule chain is `members`, each a tag and its
@@ -823,7 +944,7 @@ impl Code
     /// trivial.
     fn presents(
         &mut self,
-        members: Vec<(ConstructorTag, Vec<ValueId>)>,
+        members: SmallVec<(ConstructorTag, SmallVec<ValueId, 0, Global>), 0, Global>,
     ) -> ValueId
     {
         let (sorts, operations) = (self.end(), self.end());
@@ -839,7 +960,7 @@ impl Code
         &mut self,
         sorts: ValueId,
         operations: ValueId,
-        members: Vec<(ConstructorTag, Vec<ValueId>)>,
+        members: SmallVec<(ConstructorTag, SmallVec<ValueId, 0, Global>), 0, Global>,
     ) -> ValueId
     {
         let mut chain = self.end();
@@ -847,9 +968,10 @@ impl Code
             fields.push(chain);
             chain = self.node(tag, fields);
         }
-        self.node(ConstructorTag::from(super::tag::PRESENTS), vec![
-            sorts, operations, chain,
-        ])
+        self.node(
+            ConstructorTag::from(super::tag::PRESENTS),
+            SmallVec::<_, 0, Global>::from_iter([sorts, operations, chain]),
+        )
     }
 
     /// The sort chain declaring the atom sort `Name` and the operation chain
@@ -868,15 +990,30 @@ impl Code
         let [name, process, out, c, p] =
             ["Name", "Proc", "out", "c", "p"].map(|text| self.text(literal(text)));
         let end = self.end();
-        let ordinary = self.node(tag(super::tag::SORT), vec![process, end, end]);
-        let sorts = self.node(tag(super::tag::ATOM), vec![name, end, ordinary]);
-        let rest = self.node(tag(super::tag::PORT), vec![p, process, end, end]);
+        let ordinary = self.node(
+            tag(super::tag::SORT),
+            SmallVec::<_, 0, Global>::from_iter([process, end, end]),
+        );
+        let sorts = self.node(
+            tag(super::tag::ATOM),
+            SmallVec::<_, 0, Global>::from_iter([name, end, ordinary]),
+        );
+        let rest = self.node(
+            tag(super::tag::PORT),
+            SmallVec::<_, 0, Global>::from_iter([p, process, end, end]),
+        );
         let channel = match naming {
             super::Naming::Named => name,
             super::Naming::Unnamed => process,
         };
-        let inputs = self.node(tag(super::tag::PORT), vec![c, channel, end, rest]);
-        let operations = self.node(tag(super::tag::OPER), vec![out, inputs, end, end]);
+        let inputs = self.node(
+            tag(super::tag::PORT),
+            SmallVec::<_, 0, Global>::from_iter([c, channel, end, rest]),
+        );
+        let operations = self.node(
+            tag(super::tag::OPER),
+            SmallVec::<_, 0, Global>::from_iter([out, inputs, end, end]),
+        );
         (sorts, operations)
     }
 
@@ -905,29 +1042,44 @@ impl Code
         ] = ["V", "C", "ret", "ext", "a", "m", "k", "x"].map(|text| self.text(literal(text)));
         let unit = self.text(unit);
         let end = self.end();
-        let computations = self.node(tag(super::tag::SORT), vec![computations_name, end, end]);
-        let sorts = self.node(tag(super::tag::REPRESENTABLE), vec![
-            values,
-            end,
-            computations,
-        ]);
-        let binder = self.node(tag(super::tag::PORT), vec![bound, values, end, end]);
-        let continuation = self.node(tag(super::tag::BOUND), vec![
-            continuation_name,
-            computations_name,
-            end,
-            binder,
-            end,
-        ]);
-        let extended = self.node(tag(super::tag::PORT), vec![
-            monadic,
-            computations_name,
-            end,
-            continuation,
-        ]);
-        let returned = self.node(tag(super::tag::PORT), vec![argument, unit, end, end]);
-        let extend = self.node(tag(super::tag::OPER), vec![ext, extended, end, end]);
-        let operations = self.node(tag(super::tag::OPER), vec![ret, returned, end, extend]);
+        let computations = self.node(
+            tag(super::tag::SORT),
+            SmallVec::<_, 0, Global>::from_iter([computations_name, end, end]),
+        );
+        let sorts = self.node(
+            tag(super::tag::REPRESENTABLE),
+            SmallVec::<_, 0, Global>::from_iter([values, end, computations]),
+        );
+        let binder = self.node(
+            tag(super::tag::PORT),
+            SmallVec::<_, 0, Global>::from_iter([bound, values, end, end]),
+        );
+        let continuation = self.node(
+            tag(super::tag::BOUND),
+            SmallVec::<_, 0, Global>::from_iter([
+                continuation_name,
+                computations_name,
+                end,
+                binder,
+                end,
+            ]),
+        );
+        let extended = self.node(
+            tag(super::tag::PORT),
+            SmallVec::<_, 0, Global>::from_iter([monadic, computations_name, end, continuation]),
+        );
+        let returned = self.node(
+            tag(super::tag::PORT),
+            SmallVec::<_, 0, Global>::from_iter([argument, unit, end, end]),
+        );
+        let extend = self.node(
+            tag(super::tag::OPER),
+            SmallVec::<_, 0, Global>::from_iter([ext, extended, end, end]),
+        );
+        let operations = self.node(
+            tag(super::tag::OPER),
+            SmallVec::<_, 0, Global>::from_iter([ret, returned, end, extend]),
+        );
         (sorts, operations)
     }
 }
@@ -952,17 +1104,29 @@ fn a_presentation_value_reads_as_its_oriented_rules()
     let names =
         ["unitL", "back", "0", "1", "mul", "2", "e", "01"].map(|name| code.text(literal(name)));
     let [unit_name, back, zero, one, mul, two, e_name, padded] = names;
-    let rule_member = (rule_tag, vec![unit_name, unit, x]);
-    let turned_member = (turned, vec![back, e, doubled]);
-    let derived_member = (derived_tag, vec![zero, one, zero, derived, y]);
-    let (mul_rank, e_rank) = ((rank, vec![mul, two]), (rank, vec![e_name, one]));
-    let presentation = code.presents(vec![
+    let rule_member = (
+        rule_tag,
+        SmallVec::<_, 0, Global>::from_iter([unit_name, unit, x]),
+    );
+    let turned_member = (
+        turned,
+        SmallVec::<_, 0, Global>::from_iter([back, e, doubled]),
+    );
+    let derived_member = (
+        derived_tag,
+        SmallVec::<_, 0, Global>::from_iter([zero, one, zero, derived, y]),
+    );
+    let (mul_rank, e_rank) = (
+        (rank, SmallVec::<_, 0, Global>::from_iter([mul, two])),
+        (rank, SmallVec::<_, 0, Global>::from_iter([e_name, one])),
+    );
+    let presentation = code.presents(SmallVec::<_, 0, Global>::from_iter([
         rule_member.clone(),
         turned_member,
         derived_member.clone(),
         mul_rank.clone(),
         e_rank,
-    ]);
+    ]));
     let read = TheoryRules::read(&code.arena, presentation).expect("the chain reads");
     assert_eq!(read.symbols(), [operation!(2, 2), operation!(1, 0)]);
     assert_eq!(read.rules(), [
@@ -981,25 +1145,38 @@ fn a_presentation_value_reads_as_its_oriented_rules()
             fault: TheoryRuleFault::Unreadable,
         })
     };
-    let rank_first = code.presents(vec![mul_rank.clone(), rule_member.clone()]);
+    let rank_first = code.presents(SmallVec::<_, 0, Global>::from_iter([
+        mul_rank.clone(),
+        rule_member.clone(),
+    ]));
     assert_eq!(
         TheoryRules::read(&code.arena, rank_first),
         unreadable(0),
         "a rank before a rule"
     );
-    let derived_first = code.presents(vec![derived_member, rule_member.clone()]);
+    let derived_first = code.presents(SmallVec::<_, 0, Global>::from_iter([
+        derived_member,
+        rule_member.clone(),
+    ]));
     assert_eq!(
         TheoryRules::read(&code.arena, derived_first),
         unreadable(1),
         "a written rule after a derived one"
     );
-    let padded_rank = code.presents(vec![rule_member.clone(), (rank, vec![mul, padded])]);
+    let padded_rank = code.presents(SmallVec::<_, 0, Global>::from_iter([
+        rule_member.clone(),
+        (rank, SmallVec::<_, 0, Global>::from_iter([mul, padded])),
+    ]));
     assert_eq!(
         TheoryRules::read(&code.arena, padded_rank),
         unreadable(1),
         "a padded numeral"
     );
-    let ranked_twice = code.presents(vec![rule_member, mul_rank.clone(), mul_rank]);
+    let ranked_twice = code.presents(SmallVec::<_, 0, Global>::from_iter([
+        rule_member,
+        mul_rank.clone(),
+        mul_rank,
+    ]));
     assert_eq!(
         TheoryRules::read(&code.arena, ranked_twice),
         unreadable(1),
@@ -1021,10 +1198,16 @@ fn an_abstraction_reads_as_one_symbol_whatever_its_atom()
     );
     let [gc, halt] = ["gc", "halt"].map(|name| code.text(literal(name)));
     let rule_tag = ConstructorTag::from(super::tag::RULE);
-    let presentation = code.presents(vec![
-        (rule_tag, vec![gc, left_a, nil]),
-        (rule_tag, vec![halt, left_b, stop]),
-    ]);
+    let presentation = code.presents(SmallVec::<_, 0, Global>::from_iter([
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([gc, left_a, nil]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([halt, left_b, stop]),
+        ),
+    ]));
     let read = TheoryRules::read(&code.arena, presentation).expect("the chain reads");
     assert_eq!(
         read.rules(),
@@ -1058,20 +1241,29 @@ fn a_freshness_condition_reads_after_its_written_rule()
         ConstructorTag::from(super::tag::RULE),
         ConstructorTag::from(super::tag::FRESH),
     );
-    let unconditioned = code.presents(vec![(rule_tag, vec![scope, left, right])]);
-    let conditioned = code.presents(vec![
-        (rule_tag, vec![scope, left, right]),
-        (fresh_tag, vec![a, q_name]),
-    ]);
+    let unconditioned = code.presents(SmallVec::<_, 0, Global>::from_iter([(
+        rule_tag,
+        SmallVec::<_, 0, Global>::from_iter([scope, left, right]),
+    )]));
+    let conditioned = code.presents(SmallVec::<_, 0, Global>::from_iter([
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([scope, left, right]),
+        ),
+        (fresh_tag, SmallVec::<_, 0, Global>::from_iter([a, q_name])),
+    ]));
     assert_eq!(
         TheoryRules::read(&code.arena, conditioned).map(|read| read.rules().to_vec()),
         TheoryRules::read(&code.arena, unconditioned).map(|read| read.rules().to_vec()),
         "a condition holds of every instance while no term names an atom"
     );
-    let fresh_first = code.presents(vec![
-        (fresh_tag, vec![a, q_name]),
-        (rule_tag, vec![scope, left, right]),
-    ]);
+    let fresh_first = code.presents(SmallVec::<_, 0, Global>::from_iter([
+        (fresh_tag, SmallVec::<_, 0, Global>::from_iter([a, q_name])),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([scope, left, right]),
+        ),
+    ]));
     assert_eq!(
         TheoryRules::read(&code.arena, fresh_first),
         Err(TheoryRuleRefusal {
@@ -1105,10 +1297,20 @@ fn an_occurrence_counts_to_its_abstraction()
     let on_b = sends(&mut code, "b");
     let left_a = restricted(&mut code, "a", on_a);
     let left_b = restricted(&mut code, "b", on_b);
-    let renamed = code.presenting(sorts, operations, vec![
-        (rule_tag, vec![unheard, left_a, nil]),
-        (rule_tag, vec![deaf, left_b, stop]),
-    ]);
+    let renamed = code.presenting(
+        sorts,
+        operations,
+        SmallVec::<_, 0, Global>::from_iter([
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([unheard, left_a, nil]),
+            ),
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([deaf, left_b, stop]),
+            ),
+        ]),
+    );
     let read = TheoryRules::read(&code.arena, renamed).expect("the chain reads");
     assert_eq!(
         read.rules(),
@@ -1130,10 +1332,20 @@ fn an_occurrence_counts_to_its_abstraction()
     let skipping = restricted(&mut code, "a", under_b);
     let shadowed_inner = restricted(&mut code, "a", on_a);
     let shadowing = restricted(&mut code, "a", shadowed_inner);
-    let nested = code.presenting(sorts, operations, vec![
-        (rule_tag, vec![outer, skipping, nil]),
-        (rule_tag, vec![inner, shadowing, nil]),
-    ]);
+    let nested = code.presenting(
+        sorts,
+        operations,
+        SmallVec::<_, 0, Global>::from_iter([
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([outer, skipping, nil]),
+            ),
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([inner, shadowing, nil]),
+            ),
+        ]),
+    );
     let read = TheoryRules::read(&code.arena, nested).expect("the chain reads");
     assert_eq!(
         read.rules(),
@@ -1143,7 +1355,14 @@ fn an_occurrence_counts_to_its_abstraction()
         ],
         "`a` past `bind b .` counts one abstraction, `a` shadowed by `bind a .` none"
     );
-    let free = code.presenting(sorts, operations, vec![(rule_tag, vec![leak, on_a, nil])]);
+    let free = code.presenting(
+        sorts,
+        operations,
+        SmallVec::<_, 0, Global>::from_iter([(
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([leak, on_a, nil]),
+        )]),
+    );
     assert_eq!(
         TheoryRules::read(&code.arena, free),
         Err(TheoryRuleRefusal {
@@ -1156,31 +1375,48 @@ fn an_occurrence_counts_to_its_abstraction()
     let hiding = restricted(&mut code, "a", p);
     let conditioned = |code: &mut Code, naming: super::Naming| {
         let (sorts, operations) = code.channels(naming);
-        let presentation = code.presenting(sorts, operations, vec![
-            (rule_tag, vec![unheard, left_a, nil]),
-            (rule_tag, vec![leak, hiding, p]),
-        ]);
+        let presentation = code.presenting(
+            sorts,
+            operations,
+            SmallVec::<_, 0, Global>::from_iter([
+                (
+                    rule_tag,
+                    SmallVec::<_, 0, Global>::from_iter([unheard, left_a, nil]),
+                ),
+                (
+                    rule_tag,
+                    SmallVec::<_, 0, Global>::from_iter([leak, hiding, p]),
+                ),
+            ]),
+        );
         TheoryRules::read(&code.arena, presentation).map(|read| {
             read.rules()
                 .iter()
                 .map(|rule| rule.conditioned)
-                .collect::<Vec<_>>()
+                .collect::<SmallVec<_, 0, Global>>()
         })
     };
     assert_eq!(
         conditioned(&mut code, super::Naming::Named),
-        Ok(vec![false, true]),
+        Ok(SmallVec::<_, 0, Global>::from_iter([false, true])),
         "`p` leaves `bind a .` where `out` takes a channel: the rule fires only where its \
          instance names no `a`"
     );
     assert_eq!(
         conditioned(&mut code, super::Naming::Unnamed),
-        Ok(vec![false, false]),
+        Ok(SmallVec::<_, 0, Global>::from_iter([false, false])),
         "where no port takes a channel no term names one, and the move holds of every instance"
     );
     let beside = code.app(literal("out"), &[p, hiding]);
     let (sorts, operations) = code.channels(super::Naming::Named);
-    let split = code.presenting(sorts, operations, vec![(rule_tag, vec![leak, beside, p])]);
+    let split = code.presenting(
+        sorts,
+        operations,
+        SmallVec::<_, 0, Global>::from_iter([(
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([leak, beside, p]),
+        )]),
+    );
     assert_eq!(
         TheoryRules::read(&code.arena, split),
         Err(TheoryRuleRefusal {
@@ -1220,47 +1456,75 @@ fn a_variables_atoms_are_read_off_its_abstractions_2448()
     let [scope, gc, keep, swap, a, p_name, q_name] =
         ["scope", "gc", "keep", "swap", "a", "p", "q"].map(|name| code.text(literal(name)));
     let (sorts, operations) = code.channels(super::Naming::Named);
-    let presentation = code.presenting(sorts, operations, vec![
-        (rule_tag, vec![scope, scoped, extruded]),
-        (fresh_tag, vec![a, q_name]),
-        (rule_tag, vec![gc, hidden, p]),
-        (fresh_tag, vec![a, p_name]),
-        (rule_tag, vec![keep, kept, hidden]),
-        (rule_tag, vec![swap, swapped_from, swapped_to]),
-    ]);
+    let presentation = code.presenting(
+        sorts,
+        operations,
+        SmallVec::<_, 0, Global>::from_iter([
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([scope, scoped, extruded]),
+            ),
+            (fresh_tag, SmallVec::<_, 0, Global>::from_iter([a, q_name])),
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([gc, hidden, p]),
+            ),
+            (fresh_tag, SmallVec::<_, 0, Global>::from_iter([a, p_name])),
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([keep, kept, hidden]),
+            ),
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([swap, swapped_from, swapped_to]),
+            ),
+        ]),
+    );
     let read = TheoryRules::read(&code.arena, presentation).expect("the chain reads");
     let holes = |rule: usize, occurrences: usize| {
         read.rules().get(rule).map(|rule| {
             (0 .. occurrences)
-                .map(|at| rule.holes(super::Occurrence(at)).to_vec())
-                .collect::<Vec<_>>()
+                .map(|at| {
+                    SmallVec::<_, 0, Global>::from_iter(
+                        rule.holes(super::Occurrence(at)).iter().copied(),
+                    )
+                })
+                .collect::<SmallVec<_, 0, Global>>()
         })
     };
     let at = |distances: &[usize]| {
         distances
             .iter()
             .map(|&distance| BinderDistance::from(distance))
-            .collect::<Vec<_>>()
+            .collect::<SmallVec<_, 0, Global>>()
     };
     assert_eq!(
         holes(0, 4),
-        Some(vec![at(&[0]), at(&[]), at(&[0]), at(&[])]),
+        Some(SmallVec::<_, 0, Global>::from_iter([
+            at(&[0]),
+            at(&[]),
+            at(&[0]),
+            at(&[])
+        ])),
         "scope extrusion keeps `p` naming its restriction's atom and moves `q`, fresh for it, \
          in naming none"
     );
     assert_eq!(
         holes(1, 2),
-        Some(vec![at(&[]), at(&[])]),
+        Some(SmallVec::<_, 0, Global>::from_iter([at(&[]), at(&[])])),
         "garbage collection's `p`, fresh for `a`, names no atom"
     );
     assert_eq!(
         holes(2, 2),
-        Some(vec![at(&[0]), at(&[0])]),
+        Some(SmallVec::<_, 0, Global>::from_iter([at(&[0]), at(&[0])])),
         "a law under one abstraction on both sides names its atom on both"
     );
     assert_eq!(
         holes(3, 2),
-        Some(vec![at(&[1, 0]), at(&[0, 1])]),
+        Some(SmallVec::<_, 0, Global>::from_iter([
+            at(&[1, 0]),
+            at(&[0, 1])
+        ])),
         "swapping two abstractions swaps the distances the variable names them at"
     );
 }
@@ -1308,23 +1572,35 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
     ]
     .map(|name| code.text(literal(name)));
     let extrusion = [
-        (rule_tag, vec![scope, scoped, extruded]),
-        (fresh_tag, vec![a, q_name]),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([scope, scoped, extruded]),
+        ),
+        (fresh_tag, SmallVec::<_, 0, Global>::from_iter([a, q_name])),
     ];
     let collection = [
-        (rule_tag, vec![gc, restricted, p]),
-        (fresh_tag, vec![a, p_name]),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([gc, restricted, p]),
+        ),
+        (fresh_tag, SmallVec::<_, 0, Global>::from_iter([a, p_name])),
     ];
-    let dropping = [(rule_tag, vec![drop, empty, nil])];
-    let silenced = [(rule_tag, vec![quiet, unheard, nil])];
+    let dropping = [(
+        rule_tag,
+        SmallVec::<_, 0, Global>::from_iter([drop, empty, nil]),
+    )];
+    let silenced = [(
+        rule_tag,
+        SmallVec::<_, 0, Global>::from_iter([quiet, unheard, nil]),
+    )];
     let ranks = [
-        (rank, vec![par, two]),
-        (rank, vec![nu, one]),
-        (rank, vec![out, one]),
+        (rank, SmallVec::<_, 0, Global>::from_iter([par, two])),
+        (rank, SmallVec::<_, 0, Global>::from_iter([nu, one])),
+        (rank, SmallVec::<_, 0, Global>::from_iter([out, one])),
     ];
     let decided = |code: &mut Code,
                    naming: super::Naming,
-                   rules: &[&[(ConstructorTag, Vec<ValueId>)]]|
+                   rules: &[&[(ConstructorTag, SmallVec<ValueId, 0, Global>)]]|
      -> Result<(), TheoryRuleRefusal> {
         let (sorts, operations) = code.channels(naming);
         let members = rules
@@ -1449,9 +1725,9 @@ fn rows_meet_as_a_semilattice_2448()
     use super::row::RowLabel;
     use super::row::RuleRow;
 
-    let rows: Vec<RuleRow> = (0_u32 .. 8)
+    let rows: SmallVec<RuleRow, 0, Global> = (0_u32 .. 8)
         .flat_map(|set| {
-            let labels: Vec<RowLabel> = (0_u32 .. 3)
+            let labels: SmallVec<RowLabel, 0, Global> = (0_u32 .. 3)
                 .filter(|label| set & (1 << label) != 0)
                 .map(RowLabel::from)
                 .collect();
@@ -1512,27 +1788,35 @@ fn rules_under_rows_join_under_the_row_their_overlap_composes_2448()
     let [f_name, g_name, h_name, one, two] =
         ["f", "g", "h", "1", "2"].map(|name| code.text(literal(name)));
     let ranks = [
-        (rank, vec![f_name, two]),
-        (rank, vec![g_name, one]),
-        (rank, vec![h_name, one]),
+        (rank, SmallVec::<_, 0, Global>::from_iter([f_name, two])),
+        (rank, SmallVec::<_, 0, Global>::from_iter([g_name, one])),
+        (rank, SmallVec::<_, 0, Global>::from_iter([h_name, one])),
     ];
     let stated = |name: ValueId,
                   sides: [ValueId; 2],
                   theories: &[ValueId],
                   extent: RowExtent|
-     -> Vec<(ConstructorTag, Vec<ValueId>)> {
+     -> SmallVec<(ConstructorTag, SmallVec<ValueId, 0, Global>), 0, Global> {
         let [left, right] = sides;
-        let mut members = vec![(rule_tag, vec![name, left, right])];
-        members.extend(theories.iter().map(|&theory| (under, vec![theory])));
+        let mut members = SmallVec::<_, 0, Global>::from_iter([(
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([name, left, right]),
+        )]);
+        members.extend(
+            theories
+                .iter()
+                .map(|&theory| (under, SmallVec::<_, 0, Global>::from_iter([theory]))),
+        );
         if extent == RowExtent::AtLeast {
-            members.push((open, Vec::new()));
+            members.push((open, SmallVec::<_, 0, Global>::new()));
         }
         members
     };
     let decided = |code: &mut Code,
-                   rules: &[&[(ConstructorTag, Vec<ValueId>)]]|
+                   rules: &[&[(ConstructorTag, SmallVec<ValueId, 0, Global>)]]|
      -> Result<(), TheoryRuleRefusal> {
-        let mut members = rules.concat();
+        let mut members =
+            SmallVec::<_, 0, Global>::from_iter(rules.iter().flat_map(|rule| rule.iter().cloned()));
         members.extend(ranks.iter().cloned());
         let presentation = code.presents(members);
         TheoryRules::read(&code.arena, presentation)?.decide(&mut fuel())
@@ -1540,13 +1824,15 @@ fn rules_under_rows_join_under_the_row_their_overlap_composes_2448()
     let r1 = stated(first, [fgx, hx], &[state], RowExtent::AtLeast);
     let r2 = stated(second, [fgx, variable], &[console], RowExtent::AtLeast);
     let r3 = stated(third, [hx, variable], &[state, console], RowExtent::AtLeast);
-    let rowed = code.presents([r1.as_slice(), r3.as_slice()].concat());
+    let rowed = code.presents(SmallVec::<_, 0, Global>::from_iter(
+        r1.iter().chain(&r3).cloned(),
+    ));
     let read = TheoryRules::read(&code.arena, rowed).expect("the rows read");
     assert_eq!(
         read.rules()
             .iter()
             .map(|rule| rule.row.clone())
-            .collect::<Vec<_>>(),
+            .collect::<SmallVec<_, 0, Global>>(),
         [
             RuleRow::new([RowLabel::from(0_u32)], RowExtent::AtLeast),
             RuleRow::new([0_u32, 1].map(RowLabel::from), RowExtent::AtLeast),
@@ -1583,13 +1869,22 @@ fn rules_under_rows_join_under_the_row_their_overlap_composes_2448()
         "a row holding exactly `State` is never one holding exactly `Console`: the overlap is \
          vacuous"
     );
-    let malformed: [&[(ConstructorTag, Vec<ValueId>)]; 3] = [
-        &[(open, Vec::new())],
-        &[(rule_tag, vec![first, fgx, hx]), (open, Vec::new())],
+    let malformed: [&[(ConstructorTag, SmallVec<ValueId, 0, Global>)]; 3] = [
+        &[(open, SmallVec::<_, 0, Global>::new())],
         &[
-            (rule_tag, vec![first, fgx, hx]),
-            (under, vec![state]),
-            (fresh, vec![atom, first]),
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([first, fgx, hx]),
+            ),
+            (open, SmallVec::<_, 0, Global>::new()),
+        ],
+        &[
+            (
+                rule_tag,
+                SmallVec::<_, 0, Global>::from_iter([first, fgx, hx]),
+            ),
+            (under, SmallVec::<_, 0, Global>::from_iter([state])),
+            (fresh, SmallVec::<_, 0, Global>::from_iter([atom, first])),
         ],
     ];
     for (members, case) in malformed.into_iter().zip([
@@ -1597,7 +1892,8 @@ fn rules_under_rows_join_under_the_row_their_overlap_composes_2448()
         "an open tail after no theory",
         "a freshness condition after the row",
     ]) {
-        let presentation = code.presents(members.to_vec());
+        let presentation =
+            code.presents(SmallVec::<_, 0, Global>::from_iter(members.iter().cloned()));
         assert!(
             matches!(
                 TheoryRules::read(&code.arena, presentation),
@@ -1622,7 +1918,10 @@ fn chain(
 {
     let mut chain = code.end();
     for &term in terms.iter().rev() {
-        chain = code.node(ConstructorTag::from(super::tag::ARG), vec![term, chain]);
+        chain = code.node(
+            ConstructorTag::from(super::tag::ARG),
+            SmallVec::<_, 0, Global>::from_iter([term, chain]),
+        );
     }
     chain
 }
@@ -1670,22 +1969,55 @@ fn a_categorys_laws_join_over_their_objects_1510()
     // The signature: `id : (a : Ob) --> Hom(a, a)` and `comp : (f : Hom(a,
     // b), g : Hom(b, c)) --> Hom(a, c)`, over `Hom` indexed or not.
     let signature = |code: &mut Code, indexed: bool| {
-        let cod_port = code.node(port, vec![cod, ob, end, end]);
-        let dom_port = code.node(port, vec![dom, ob, end, cod_port]);
+        let cod_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([cod, ob, end, end]),
+        );
+        let dom_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([dom, ob, end, cod_port]),
+        );
         let indices = if indexed { dom_port } else { end };
-        let hom_sort = code.node(sort, vec![hom, indices, end]);
-        let sorts = code.node(sort, vec![ob, end, hom_sort]);
+        let hom_sort = code.node(
+            sort,
+            SmallVec::<_, 0, Global>::from_iter([hom, indices, end]),
+        );
+        let sorts = code.node(
+            sort,
+            SmallVec::<_, 0, Global>::from_iter([ob, end, hom_sort]),
+        );
         let [aa, ab, bc, ac] = [[source, source], [source, middle], [middle, target], [
             source, target,
         ]]
         .map(|terms| chain(code, &terms));
-        let comp_output = code.node(port, vec![unnamed, hom, ac, end]);
-        let g_port = code.node(port, vec![g_name, hom, bc, end]);
-        let f_port = code.node(port, vec![f_name, hom, ab, g_port]);
-        let composition = code.node(oper, vec![comp, f_port, comp_output, end]);
-        let id_output = code.node(port, vec![unnamed, hom, aa, end]);
-        let a_port = code.node(port, vec![a_name, ob, end, end]);
-        let operations = code.node(oper, vec![id, a_port, id_output, composition]);
+        let comp_output = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([unnamed, hom, ac, end]),
+        );
+        let g_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([g_name, hom, bc, end]),
+        );
+        let f_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([f_name, hom, ab, g_port]),
+        );
+        let composition = code.node(
+            oper,
+            SmallVec::<_, 0, Global>::from_iter([comp, f_port, comp_output, end]),
+        );
+        let id_output = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([unnamed, hom, aa, end]),
+        );
+        let a_port = code.node(
+            port,
+            SmallVec::<_, 0, Global>::from_iter([a_name, ob, end, end]),
+        );
+        let operations = code.node(
+            oper,
+            SmallVec::<_, 0, Global>::from_iter([id, a_port, id_output, composition]),
+        );
         (sorts, operations)
     };
     let (at_source, at_middle) = (
@@ -1698,11 +2030,20 @@ fn a_categorys_laws_join_over_their_objects_1510()
     let second_third = code.app(literal("comp"), &[second, third]);
     let left_nested = code.app(literal("comp"), &[first_second, third]);
     let right_nested = code.app(literal("comp"), &[first, second_third]);
-    let members = vec![
-        (rule_tag, vec![unit_left, left_unit, first]),
-        (rule_tag, vec![unit_right, right_unit, first]),
-        (rule_tag, vec![assoc, left_nested, right_nested]),
-    ];
+    let members = SmallVec::<_, 0, Global>::from_iter([
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([unit_left, left_unit, first]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([unit_right, right_unit, first]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([assoc, left_nested, right_nested]),
+        ),
+    ]);
     let (sorts, operations) = signature(&mut code, true);
     let category = code.presenting(sorts, operations, members.clone());
     let read = TheoryRules::read(&code.arena, category).expect("the category reads");
@@ -1725,17 +2066,38 @@ fn a_categorys_laws_join_over_their_objects_1510()
     // c)) --> Two(comp(f, h), comp(g, h))`.
     let [two, src, tgt, whisker, s_name, h_name] =
         ["Two", "src", "tgt", "whiskerR", "s", "h"].map(|name| code.text(literal(name)));
-    let tgt_port = code.node(port, vec![tgt, hom, end, end]);
-    let src_port = code.node(port, vec![src, hom, end, tgt_port]);
-    let whiskered_sorts = code.node(sort, vec![two, src_port, sorts]);
+    let tgt_port = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([tgt, hom, end, end]),
+    );
+    let src_port = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([src, hom, end, tgt_port]),
+    );
+    let whiskered_sorts = code.node(
+        sort,
+        SmallVec::<_, 0, Global>::from_iter([two, src_port, sorts]),
+    );
     let h_var = code.var(literal("h"));
     let composites = [first, second].map(|cell| code.app(literal("comp"), &[cell, h_var]));
     let [cells, composed, objects] = [&[first, second][..], &composites[..], &[middle, target][..]]
         .map(|terms| chain(&mut code, terms));
-    let whisker_output = code.node(port, vec![unnamed, two, composed, end]);
-    let h_port = code.node(port, vec![h_name, hom, objects, end]);
-    let s_port = code.node(port, vec![s_name, two, cells, h_port]);
-    let whiskered_operations = code.node(oper, vec![whisker, s_port, whisker_output, operations]);
+    let whisker_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, two, composed, end]),
+    );
+    let h_port = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([h_name, hom, objects, end]),
+    );
+    let s_port = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([s_name, two, cells, h_port]),
+    );
+    let whiskered_operations = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([whisker, s_port, whisker_output, operations]),
+    );
     let whiskered = code.presenting(whiskered_sorts, whiskered_operations, members.clone());
     let read = TheoryRules::read(&code.arena, whiskered).expect("the whiskered category reads");
     assert_ne!(
@@ -1755,25 +2117,43 @@ fn a_categorys_laws_join_over_their_objects_1510()
     let [vertical, t_name, distribute] =
         ["vcomp", "t", "whiskerDist"].map(|name| code.text(literal(name)));
     let [later, outer] = [[second, other], [first, other]].map(|terms| chain(&mut code, &terms));
-    let vertical_output = code.node(port, vec![unnamed, two, outer, end]);
-    let t_port = code.node(port, vec![t_name, two, later, end]);
-    let first_port = code.node(port, vec![s_name, two, cells, t_port]);
-    let distributing_operations = code.node(oper, vec![
-        vertical,
-        first_port,
-        vertical_output,
-        whiskered_operations,
-    ]);
+    let vertical_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, two, outer, end]),
+    );
+    let t_port = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([t_name, two, later, end]),
+    );
+    let first_port = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([s_name, two, cells, t_port]),
+    );
+    let distributing_operations = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([
+            vertical,
+            first_port,
+            vertical_output,
+            whiskered_operations,
+        ]),
+    );
     let composed_cells = code.app(literal("vcomp"), &[cell, next]);
     let whiskered_composite = code.app(literal("whiskerR"), &[composed_cells, third]);
     let [left_whisker, right_whisker] =
         [cell, next].map(|each| code.app(literal("whiskerR"), &[each, third]));
     let distributed = code.app(literal("vcomp"), &[left_whisker, right_whisker]);
     let mut distributing = members.clone();
-    distributing.push((rule_tag, vec![distribute, whiskered_composite, distributed]));
+    distributing.push((
+        rule_tag,
+        SmallVec::<_, 0, Global>::from_iter([distribute, whiskered_composite, distributed]),
+    ));
     // The whisker ranks above vertical composition, so the law is oriented.
     let one = code.text(literal("1"));
-    distributing.push((ConstructorTag::from(super::tag::RANK), vec![whisker, one]));
+    distributing.push((
+        ConstructorTag::from(super::tag::RANK),
+        SmallVec::<_, 0, Global>::from_iter([whisker, one]),
+    ));
     let nested = code.presenting(whiskered_sorts, distributing_operations, distributing);
     let read = TheoryRules::read(&code.arena, nested).expect("the whisker law reads");
     assert_ne!(
@@ -1828,12 +2208,30 @@ fn a_cwfs_laws_join_over_every_index_5016()
     let [target, middle, origin] = ["g", "d", "e"].map(|name| code.var(literal(name)));
     let end = code.end();
     // `Con`, `Sub(d : Con, g : Con)` and `Ty(g : Con)`.
-    let ty_index = code.node(port, vec![g_name, con, end, end]);
-    let g_index = code.node(port, vec![g_name, con, end, end]);
-    let sub_indices = code.node(port, vec![d_name, con, end, g_index]);
-    let ty_sort = code.node(sort, vec![ty, ty_index, end]);
-    let sub_sort = code.node(sort, vec![sub, sub_indices, ty_sort]);
-    let sorts = code.node(sort, vec![con, end, sub_sort]);
+    let ty_index = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, end]),
+    );
+    let g_index = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, end]),
+    );
+    let sub_indices = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([d_name, con, end, g_index]),
+    );
+    let ty_sort = code.node(
+        sort,
+        SmallVec::<_, 0, Global>::from_iter([ty, ty_index, end]),
+    );
+    let sub_sort = code.node(
+        sort,
+        SmallVec::<_, 0, Global>::from_iter([sub, sub_indices, ty_sort]),
+    );
+    let sorts = code.node(
+        sort,
+        SmallVec::<_, 0, Global>::from_iter([con, end, sub_sort]),
+    );
     let [gg, dg, ed, eg, at_g, at_d] = [
         &[target, target][..],
         &[middle, target][..],
@@ -1844,24 +2242,69 @@ fn a_cwfs_laws_join_over_every_index_5016()
     ]
     .map(|terms| chain(&mut code, terms));
     // `subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d)`.
-    let sub_ty_output = code.node(port, vec![unnamed, ty, at_d, end]);
-    let sub_ty_s = code.node(port, vec![s_name, sub, dg, end]);
-    let sub_ty_a = code.node(port, vec![a_name, ty, at_g, sub_ty_s]);
-    let substitution = code.node(oper, vec![sub_ty, sub_ty_a, sub_ty_output, end]);
+    let sub_ty_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, ty, at_d, end]),
+    );
+    let sub_ty_s = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([s_name, sub, dg, end]),
+    );
+    let sub_ty_a = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([a_name, ty, at_g, sub_ty_s]),
+    );
+    let substitution = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([sub_ty, sub_ty_a, sub_ty_output, end]),
+    );
     // `ext : (g : Con, a : Ty(g)) --> Con`.
-    let ext_output = code.node(port, vec![unnamed, con, end, end]);
-    let ext_a = code.node(port, vec![a_name, ty, at_g, end]);
-    let ext_g = code.node(port, vec![g_name, con, end, ext_a]);
-    let extension = code.node(oper, vec![ext, ext_g, ext_output, substitution]);
+    let ext_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, con, end, end]),
+    );
+    let ext_a = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([a_name, ty, at_g, end]),
+    );
+    let ext_g = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, ext_a]),
+    );
+    let extension = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([ext, ext_g, ext_output, substitution]),
+    );
     // `comp : (s : Sub(d, g), t : Sub(e, d)) --> Sub(e, g)`.
-    let comp_output = code.node(port, vec![unnamed, sub, eg, end]);
-    let comp_t = code.node(port, vec![t_name, sub, ed, end]);
-    let comp_s = code.node(port, vec![s_name, sub, dg, comp_t]);
-    let composition = code.node(oper, vec![comp, comp_s, comp_output, extension]);
+    let comp_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, sub, eg, end]),
+    );
+    let comp_t = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([t_name, sub, ed, end]),
+    );
+    let comp_s = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([s_name, sub, dg, comp_t]),
+    );
+    let composition = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([comp, comp_s, comp_output, extension]),
+    );
     // `id : (g : Con) --> Sub(g, g)`.
-    let id_output = code.node(port, vec![unnamed, sub, gg, end]);
-    let id_g = code.node(port, vec![g_name, con, end, end]);
-    let operations = code.node(oper, vec![id, id_g, id_output, composition]);
+    let id_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, sub, gg, end]),
+    );
+    let id_g = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, end]),
+    );
+    let operations = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([id, id_g, id_output, composition]),
+    );
     let [first, second, third, family] = ["s", "t", "u", "a"].map(|name| code.var(literal(name)));
     let [at_g_id, at_d_id] = [target, middle].map(|object| code.app(literal("id"), &[object]));
     let left_unit = code.app(literal("comp"), &[at_g_id, first]);
@@ -1876,14 +2319,29 @@ fn a_cwfs_laws_join_over_every_index_5016()
     let once = code.app(literal("subTy"), &[family, first_second]);
     let [unit_left, unit_right, assoc, ty_id, ty_comp, one] =
         ["idl", "idr", "assoc", "tyId", "tyComp", "1"].map(|name| code.text(literal(name)));
-    let members = vec![
-        (rule_tag, vec![unit_left, left_unit, first]),
-        (rule_tag, vec![unit_right, right_unit, first]),
-        (rule_tag, vec![assoc, left_nested, right_nested]),
-        (rule_tag, vec![ty_id, along_id, family]),
-        (rule_tag, vec![ty_comp, twice, once]),
-        (rank_tag, vec![sub_ty, one]),
-    ];
+    let members = SmallVec::<_, 0, Global>::from_iter([
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([unit_left, left_unit, first]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([unit_right, right_unit, first]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([assoc, left_nested, right_nested]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([ty_id, along_id, family]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([ty_comp, twice, once]),
+        ),
+        (rank_tag, SmallVec::<_, 0, Global>::from_iter([sub_ty, one])),
+    ]);
     let cwf = code.presenting(sorts, operations, members);
     let read = TheoryRules::read(&code.arena, cwf).expect("the CwF's laws read");
     assert_ne!(
@@ -1943,15 +2401,42 @@ fn a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042()
     // `Con`, `Sub(d : Con, g : Con)`, `Ty(g : Con)` and `Tm(g : Con, a :
     // Ty(g))`.
     let at_g = chain(&mut code, &[target]);
-    let tm_a = code.node(port, vec![a_name, ty, at_g, end]);
-    let tm_indices = code.node(port, vec![g_name, con, end, tm_a]);
-    let tm_sort = code.node(sort, vec![tm, tm_indices, end]);
-    let ty_index = code.node(port, vec![g_name, con, end, end]);
-    let g_index = code.node(port, vec![g_name, con, end, end]);
-    let sub_indices = code.node(port, vec![d_name, con, end, g_index]);
-    let ty_sort = code.node(sort, vec![ty, ty_index, tm_sort]);
-    let sub_sort = code.node(sort, vec![sub, sub_indices, ty_sort]);
-    let sorts = code.node(sort, vec![con, end, sub_sort]);
+    let tm_a = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([a_name, ty, at_g, end]),
+    );
+    let tm_indices = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, tm_a]),
+    );
+    let tm_sort = code.node(
+        sort,
+        SmallVec::<_, 0, Global>::from_iter([tm, tm_indices, end]),
+    );
+    let ty_index = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, end]),
+    );
+    let g_index = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, end]),
+    );
+    let sub_indices = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([d_name, con, end, g_index]),
+    );
+    let ty_sort = code.node(
+        sort,
+        SmallVec::<_, 0, Global>::from_iter([ty, ty_index, tm_sort]),
+    );
+    let sub_sort = code.node(
+        sort,
+        SmallVec::<_, 0, Global>::from_iter([sub, sub_indices, ty_sort]),
+    );
+    let sorts = code.node(
+        sort,
+        SmallVec::<_, 0, Global>::from_iter([con, end, sub_sort]),
+    );
     let [gg, dg, ed, eg, at_d, ga] = [
         &[target, target][..],
         &[middle, target][..],
@@ -1964,34 +2449,86 @@ fn a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042()
     // `subTm : (t : Tm(g, a), s : Sub(d, g)) --> Tm(d, subTy(a, s))`.
     let moved = code.app(literal("subTy"), &[family, first]);
     let moved_at = chain(&mut code, &[middle, moved]);
-    let sub_tm_output = code.node(port, vec![unnamed, tm, moved_at, end]);
-    let sub_tm_s = code.node(port, vec![s_name, sub, dg, end]);
-    let sub_tm_t = code.node(port, vec![t_name, tm, ga, sub_tm_s]);
-    let term_substitution = code.node(oper, vec![sub_tm, sub_tm_t, sub_tm_output, end]);
+    let sub_tm_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, tm, moved_at, end]),
+    );
+    let sub_tm_s = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([s_name, sub, dg, end]),
+    );
+    let sub_tm_t = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([t_name, tm, ga, sub_tm_s]),
+    );
+    let term_substitution = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([sub_tm, sub_tm_t, sub_tm_output, end]),
+    );
     // `subTy : (a : Ty(g), s : Sub(d, g)) --> Ty(d)`.
-    let sub_ty_output = code.node(port, vec![unnamed, ty, at_d, end]);
-    let sub_ty_s = code.node(port, vec![s_name, sub, dg, end]);
-    let sub_ty_a = code.node(port, vec![a_name, ty, at_g, sub_ty_s]);
-    let substitution = code.node(oper, vec![
-        sub_ty,
-        sub_ty_a,
-        sub_ty_output,
-        term_substitution,
-    ]);
+    let sub_ty_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, ty, at_d, end]),
+    );
+    let sub_ty_s = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([s_name, sub, dg, end]),
+    );
+    let sub_ty_a = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([a_name, ty, at_g, sub_ty_s]),
+    );
+    let substitution = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([sub_ty, sub_ty_a, sub_ty_output, term_substitution]),
+    );
     // `ext : (g : Con, a : Ty(g)) --> Con`.
-    let ext_output = code.node(port, vec![unnamed, con, end, end]);
-    let ext_a = code.node(port, vec![a_name, ty, at_g, end]);
-    let ext_g = code.node(port, vec![g_name, con, end, ext_a]);
-    let extension = code.node(oper, vec![ext, ext_g, ext_output, substitution]);
+    let ext_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, con, end, end]),
+    );
+    let ext_a = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([a_name, ty, at_g, end]),
+    );
+    let ext_g = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, ext_a]),
+    );
+    let extension = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([ext, ext_g, ext_output, substitution]),
+    );
     // `comp : (s : Sub(d, g), t : Sub(e, d)) --> Sub(e, g)`.
-    let comp_output = code.node(port, vec![unnamed, sub, eg, end]);
-    let comp_t = code.node(port, vec![t_name, sub, ed, end]);
-    let comp_s = code.node(port, vec![s_name, sub, dg, comp_t]);
-    let composition = code.node(oper, vec![comp, comp_s, comp_output, extension]);
+    let comp_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, sub, eg, end]),
+    );
+    let comp_t = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([t_name, sub, ed, end]),
+    );
+    let comp_s = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([s_name, sub, dg, comp_t]),
+    );
+    let composition = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([comp, comp_s, comp_output, extension]),
+    );
     // `id : (g : Con) --> Sub(g, g)`.
-    let id_output = code.node(port, vec![unnamed, sub, gg, end]);
-    let id_g = code.node(port, vec![g_name, con, end, end]);
-    let operations = code.node(oper, vec![id, id_g, id_output, composition]);
+    let id_output = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([unnamed, sub, gg, end]),
+    );
+    let id_g = code.node(
+        port,
+        SmallVec::<_, 0, Global>::from_iter([g_name, con, end, end]),
+    );
+    let operations = code.node(
+        oper,
+        SmallVec::<_, 0, Global>::from_iter([id, id_g, id_output, composition]),
+    );
     let [at_g_id, at_d_id] = [target, middle].map(|object| code.app(literal("id"), &[object]));
     let left_unit = code.app(literal("comp"), &[at_g_id, first]);
     let right_unit = code.app(literal("comp"), &[first, at_d_id]);
@@ -2007,18 +2544,36 @@ fn a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042()
     let [unit_left, unit_right, assoc, ty_id, ty_comp, tm_id, one] =
         ["idl", "idr", "assoc", "tyId", "tyComp", "tmId", "1"].map(|name| code.text(literal(name)));
     let category = [
-        (rule_tag, vec![unit_left, left_unit, first]),
-        (rule_tag, vec![unit_right, right_unit, first]),
-        (rule_tag, vec![assoc, left_nested, right_nested]),
-        (rule_tag, vec![ty_comp, twice, once]),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([unit_left, left_unit, first]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([unit_right, right_unit, first]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([assoc, left_nested, right_nested]),
+        ),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([ty_comp, twice, once]),
+        ),
     ];
     let on_terms = [
-        (rule_tag, vec![tm_id, term_along_id, term]),
-        (rank_tag, vec![sub_ty, one]),
-        (rank_tag, vec![sub_tm, one]),
+        (
+            rule_tag,
+            SmallVec::<_, 0, Global>::from_iter([tm_id, term_along_id, term]),
+        ),
+        (rank_tag, SmallVec::<_, 0, Global>::from_iter([sub_ty, one])),
+        (rank_tag, SmallVec::<_, 0, Global>::from_iter([sub_tm, one])),
     ];
-    let mut members = Vec::from(category.clone());
-    members.push((rule_tag, vec![ty_id, along_id, family]));
+    let mut members = SmallVec::<_, 0, Global>::from_iter(category.clone());
+    members.push((
+        rule_tag,
+        SmallVec::<_, 0, Global>::from_iter([ty_id, along_id, family]),
+    ));
     members.extend(on_terms.clone());
     let cwf = code.presenting(sorts, operations, members);
     let read = TheoryRules::read(&code.arena, cwf).expect("the CwF's laws read");
@@ -2032,7 +2587,7 @@ fn a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042()
         Ok(()),
         "it joins beside the category's laws and the laws on types"
     );
-    let mut members = Vec::from(category);
+    let mut members = SmallVec::<_, 0, Global>::from_iter(category);
     members.extend(on_terms);
     let without = code.presenting(sorts, operations, members);
     let read = TheoryRules::read(&code.arena, without).expect("the laws read");

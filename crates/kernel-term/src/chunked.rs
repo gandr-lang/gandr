@@ -8,12 +8,14 @@
 //! The kernel keeps the indexes of an environment so, and a readmission that
 //! keeps an environment of its record copies only the chunks that it writes.
 
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 use core::ops::Bound;
 use core::ops::RangeBounds;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 
 /// How many entries a chunk holds at most: a write to one entry copies at most
 /// this many entries.
@@ -85,11 +87,7 @@ struct ChunkAt(usize);
 pub struct ChunkedMap<Key, Value>
 {
     /// The chunks in key order, shared with each clone by reference.
-    #[expect(
-        clippy::rc_buffer,
-        reason = "a write inserts and removes chunks in place while no clone shares the list"
-    )]
-    chunks: Option<Arc<Vec<Chunk<Key, Value>>>>,
+    chunks: Option<Shared<Chunks<Key, Value>, Global>>,
     /// How many entries the chunks hold.
     len: usize,
 }
@@ -102,12 +100,11 @@ struct Chunk<Key, Value>
     /// The least key of the chunk's entries.
     first: Key,
     /// The entries, at least one and at most [`CHUNK`], in key order.
-    #[expect(
-        clippy::rc_buffer,
-        reason = "a write inserts and removes entries in place while no clone shares the chunk"
-    )]
-    entries: Arc<Vec<(Key, Value)>>,
+    entries: Shared<SmallVec<(Key, Value), 0, Global>, Global>,
 }
+
+/// The list of chunks of a [`ChunkedMap`], in key order.
+type Chunks<Key, Value> = SmallVec<Chunk<Key, Value>, 0, Global>;
 
 impl<Key, Value> Default for ChunkedMap<Key, Value>
 {
@@ -135,7 +132,8 @@ impl<Key: PartialEq, Value: PartialEq> PartialEq for ChunkedMap<Key, Value>
     ) -> bool
     {
         self.len == other.len
-            && (self.chunks.as_ref().map(Arc::as_ptr) == other.chunks.as_ref().map(Arc::as_ptr)
+            && (self.chunks.as_ref().map(Shared::as_ptr)
+                == other.chunks.as_ref().map(Shared::as_ptr)
                 || self
                     .entries()
                     .zip(other.entries())
@@ -181,7 +179,7 @@ impl<Key, Value> ChunkedMap<Key, Value>
     #[inline]
     fn chunks(&self) -> &[Chunk<Key, Value>]
     {
-        self.chunks.as_deref().map_or(&[], Vec::as_slice)
+        self.chunks.as_deref().map_or(&[], SmallVec::as_slice)
     }
 
     /// Every entry, in key order.
@@ -406,19 +404,19 @@ impl<Key: Ord, Value> ChunkedMap<Key, Value>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the map's own list of chunks, a copy when a clone shares it,
+///   growth within the map's chunks
 #[inline]
-#[expect(
-    clippy::rc_buffer,
-    reason = "a write inserts and removes chunks in place while no clone shares the list"
-)]
 fn owned<Key, Value>(
-    chunks: &mut Option<Arc<Vec<Chunk<Key, Value>>>>
-) -> &mut Vec<Chunk<Key, Value>>
+    chunks: &mut Option<Shared<Chunks<Key, Value>, Global>>
+) -> &mut Chunks<Key, Value>
 where
     Key: Clone,
     Value: Clone,
 {
-    Arc::make_mut(chunks.get_or_insert_with(Arc::default))
+    Shared::make_mut(chunks.get_or_insert_with(Shared::default))
 }
 
 impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
@@ -430,6 +428,10 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the chunk that holds the key while a clone
+    ///   shares it, growth within the chunk's entries
     #[inline]
     pub fn get_mut(
         &mut self,
@@ -438,7 +440,7 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     {
         let Place { chunk, within } = self.held(key)?;
         let chunk = owned(&mut self.chunks).get_mut(chunk)?;
-        Arc::make_mut(&mut chunk.entries)
+        Shared::make_mut(&mut chunk.entries)
             .get_mut(within)
             .map(|&mut (_, ref mut value)| value)
     }
@@ -476,6 +478,10 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: a new chunk, a split chunk, or a copy of a chunk that a
+    ///   clone shares, growth within the map's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
     /// - witness: `chunked::tests::a_chunked_map_answers_as_an_ordered_map_beside_its_clone`
@@ -494,17 +500,17 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
         let ChunkAt(at) = Self::chunk_of(chunks, &key);
         let Some(chunk) = chunks.get_mut(at)
         else {
-            let mut entries = Vec::with_capacity(CHUNK);
+            let mut entries = SmallVec::<_, 0, Global>::with_capacity(Count::from(CHUNK));
             let first = key.clone();
             entries.push((key, value));
             chunks.push(Chunk {
                 first,
-                entries: Arc::new(entries),
+                entries: Shared::new(entries),
             });
             self.len = 1;
             return None;
         };
-        let entries = Arc::make_mut(&mut chunk.entries);
+        let entries = Shared::make_mut(&mut chunk.entries);
         let within = match entries.binary_search_by(|&(ref held, _)| held.cmp(&key)) {
             Ok(within) => {
                 return entries
@@ -516,15 +522,15 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
         if within == 0 {
             chunk.first = key.clone();
         }
-        entries.insert(within, (key, value));
-        let upper = (entries.len() > CHUNK).then(|| entries.split_off(CHUNK >> 1));
+        entries.insert(Count::from(within), (key, value));
+        let upper = (entries.len() > CHUNK).then(|| entries.split_off(Count::from(CHUNK >> 1_u32)));
         if let Some(upper) = upper
             && let Some(&(ref first, _)) = upper.first()
         {
             let first = first.clone();
-            chunks.insert(at.saturating_add(1), Chunk {
+            chunks.insert(Count::from(at.saturating_add(1)), Chunk {
                 first,
-                entries: Arc::new(upper),
+                entries: Shared::new(upper),
             });
         }
         self.len = self.len.saturating_add(1);
@@ -541,6 +547,10 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     ///   was; one entry fewer when it held `key`.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the chunk list and of a chunk that a clone
+    ///   shares, growth within the map's entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
@@ -559,14 +569,14 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
         let Place { chunk: at, within } = self.held(key)?;
         let chunks = owned(&mut self.chunks);
         let chunk = chunks.get_mut(at)?;
-        let entries = Arc::make_mut(&mut chunk.entries);
-        let (_, value) = entries.remove(within);
+        let entries = Shared::make_mut(&mut chunk.entries);
+        let (_, value) = entries.remove(Count::from(within));
         let left = entries.len();
         if let Some(&(ref first, _)) = entries.first() {
             chunk.first = first.clone();
         }
         if left == 0 {
-            let _empty = chunks.remove(at);
+            let _empty = chunks.remove(Count::from(at));
         }
         else if left < SPARSE {
             Self::merge(chunks, ChunkAt(at));
@@ -579,9 +589,13 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the merged chunk's entries, and a copy of them when a
+    ///   clone shares the chunk, growth within the chunk's capacity
     #[inline]
     fn merge(
-        chunks: &mut Vec<Chunk<Key, Value>>,
+        chunks: &mut Chunks<Key, Value>,
         ChunkAt(at): ChunkAt,
     )
     {
@@ -595,9 +609,9 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
         if !fits {
             return;
         }
-        let after = chunks.remove(next);
+        let after = chunks.remove(Count::from(next));
         if let Some(chunk) = chunks.get_mut(at) {
-            Arc::make_mut(&mut chunk.entries).extend(after.entries.iter().cloned());
+            Shared::make_mut(&mut chunk.entries).extend(after.entries.iter().cloned());
         }
     }
 
@@ -610,6 +624,12 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     /// - ensures: the map holds exactly its entries that `keep` holds.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the list of chunks that lose an entry, growth within the
+    ///   map's chunks
+    /// - allocation: a copy of a chunk that a clone shares, growth within the
+    ///   chunk's entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
@@ -625,7 +645,7 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     ) where
         Keep: FnMut(&Key, &Value) -> bool,
     {
-        let losing: Vec<usize> = self
+        let losing: SmallVec<usize, 0, Global> = self
             .chunks()
             .iter()
             .enumerate()
@@ -647,7 +667,7 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
             else {
                 continue;
             };
-            let entries = Arc::make_mut(&mut chunk.entries);
+            let entries = Shared::make_mut(&mut chunk.entries);
             let before = entries.len();
             entries.retain(|&(ref key, ref value)| keep(key, value));
             self.len = self
@@ -657,7 +677,7 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
                 chunk.first = first.clone();
             }
             else {
-                let _empty = chunks.remove(at);
+                let _empty = chunks.remove(Count::from(at));
             }
         }
     }
@@ -672,6 +692,10 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
     ///   at or above it.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the upper chunk list and a copy of the chunk that `key`
+    ///   cuts, growth within the map's chunks
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
@@ -694,31 +718,31 @@ impl<Key: Ord + Clone, Value: Clone> ChunkedMap<Key, Value>
             return Self::new();
         }
         let chunks = owned(&mut self.chunks);
-        let mut upper = chunks.split_off(at);
+        let mut upper = chunks.split_off(Count::from(at));
         if within > 0
             && let Some(cut) = upper.first_mut()
         {
-            let entries = Arc::make_mut(&mut cut.entries);
-            let above = entries.split_off(within);
+            let entries = Shared::make_mut(&mut cut.entries);
+            let above = entries.split_off(Count::from(within));
             chunks.push(Chunk {
                 first: cut.first.clone(),
-                entries: Arc::new(core::mem::take(entries)),
+                entries: Shared::new(core::mem::take(entries)),
             });
             if let Some(&(ref first, _)) = above.first() {
                 cut.first = first.clone();
             }
-            cut.entries = Arc::new(above);
+            cut.entries = Shared::new(above);
         }
         let moved: usize = upper.iter().map(|chunk| chunk.entries.len()).sum();
         self.len = self.len.saturating_sub(moved);
         Self {
-            chunks: Some(Arc::new(upper)),
+            chunks: Some(Shared::new(upper)),
             len: moved,
         }
     }
 }
 
-impl<Key: Ord + Clone, Item: Clone> ChunkedMap<Key, Vec<Item>>
+impl<Key: Ord + Clone, Item: Clone> ChunkedMap<Key, SmallVec<Item, 0, Global>>
 {
     /// Keep the items of each value that `keep` holds, in their order, and
     /// the keys whose values keep an item. A chunk whose values `keep` holds
@@ -730,6 +754,10 @@ impl<Key: Ord + Clone, Item: Clone> ChunkedMap<Key, Vec<Item>>
     ///   map holds exactly the keys whose values hold an item after.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the keys that lose an item and a copy of a chunk that a
+    ///   clone shares, growth within the map's keys
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ChunkedMap`].
@@ -745,7 +773,7 @@ impl<Key: Ord + Clone, Item: Clone> ChunkedMap<Key, Vec<Item>>
     ) where
         Keep: FnMut(&Item) -> bool,
     {
-        let losing: Vec<Key> = self
+        let losing: SmallVec<Key, 0, Global> = self
             .iter()
             .filter(|&(_, items)| items.iter().any(|item| !keep(item)))
             .map(|(key, _)| key.clone())
@@ -791,9 +819,12 @@ impl<Key: Ord + Clone, Value: Clone> FromIterator<(Key, Value)> for ChunkedMap<K
 )]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::collections::BTreeMap;
-    use alloc::vec::Vec;
 
+    use gandr_kernel_data::Identity;
+    use gandr_kernel_data::Shared;
+    use gandr_kernel_data::SmallVec;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseError;
 
@@ -948,11 +979,11 @@ mod tests
             *value = 7;
         }
         let _absent = map.remove(&(length + 1));
-        let shared: Vec<bool> = map
+        let shared: SmallVec<bool, 0, Global> = map
             .chunks()
             .iter()
             .zip(clone.chunks())
-            .map(|(mine, theirs)| alloc::sync::Arc::ptr_eq(&mine.entries, &theirs.entries))
+            .map(|(mine, theirs)| Shared::ptr_eq(&mine.entries, &theirs.entries) == Identity::Same)
             .collect();
         assert_eq!(shared.iter().filter(|&&shared| !shared).count(), 1);
         assert_eq!(shared.first(), Some(&false));
@@ -966,9 +997,13 @@ mod tests
     #[test]
     fn kept_items_answer_as_an_ordered_map_beside_its_clone()
     {
-        let items = |key: u32| alloc::vec![key, key.saturating_add(1), key.saturating_mul(3)];
-        let mut map: ChunkedMap<u32, Vec<u32>> = (0 .. 600).map(|key| (key, items(key))).collect();
-        let mut oracle: BTreeMap<u32, Vec<u32>> = (0 .. 600).map(|key| (key, items(key))).collect();
+        let items = |key: u32| {
+            SmallVec::<_, 0, Global>::from_iter([key, key.saturating_add(1), key.saturating_mul(3)])
+        };
+        let mut map: ChunkedMap<u32, SmallVec<u32, 0, Global>> =
+            (0 .. 600).map(|key| (key, items(key))).collect();
+        let mut oracle: BTreeMap<u32, SmallVec<u32, 0, Global>> =
+            (0 .. 600).map(|key| (key, items(key))).collect();
         let clone = map.clone();
         let keep = |item: &u32| item.checked_rem(4) != Some(0) || *item > 1_000;
         map.retain_items(keep);
