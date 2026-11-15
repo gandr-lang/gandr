@@ -274,6 +274,10 @@ pub mod test
         use super::*;
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn new()
         {
             let ring = IoUring::new().unwrap();
@@ -285,6 +289,10 @@ pub mod test
             use super::*;
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             #[should_panic(expected = r#"called `Option::unwrap()` on a `None` value"#)]
             fn none()
             {
@@ -293,6 +301,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn some()
             {
                 let builder = IoUring::builder();
@@ -305,6 +317,10 @@ pub mod test
             use super::*;
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             #[should_panic(expected = r#"called `Option::unwrap()` on a `None` value"#)]
             fn none()
             {
@@ -313,6 +329,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn some_one()
             {
                 let builder = IoUring::builder();
@@ -320,6 +340,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn some_many()
             {
                 let builder = IoUring::builder();
@@ -328,6 +352,10 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn submit_and_wait()
         {
             let mut ring = IoUring::new().unwrap();
@@ -349,6 +377,10 @@ pub mod test
         use super::*;
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn new()
         {
             let ring = IoUring::new().unwrap();
@@ -360,6 +392,10 @@ pub mod test
             use super::*;
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             #[should_panic(expected = r#"called `Option::unwrap()` on a `None` value"#)]
             fn none()
             {
@@ -368,6 +404,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn some()
             {
                 let builder = IoUring::builder().setup_sqe128();
@@ -380,6 +420,10 @@ pub mod test
             use super::*;
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             #[should_panic(expected = r#"called `Option::unwrap()` on a `None` value"#)]
             fn none()
             {
@@ -388,6 +432,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn some_one()
             {
                 let builder = IoUring::builder().setup_sqe128();
@@ -395,6 +443,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn some_many()
             {
                 let builder = IoUring::builder().setup_sqe128();

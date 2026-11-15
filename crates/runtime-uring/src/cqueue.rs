@@ -103,6 +103,10 @@ pub mod test
     use crate::ring::IoUring;
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn new()
     {
         let ring = IoUring::new().unwrap();
@@ -118,6 +122,10 @@ pub mod test
             use super::*;
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn zero()
             {
                 let mut ring = IoUring::new().unwrap();
@@ -128,6 +136,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn one()
             {
                 let mut ring = IoUring::new().unwrap();
@@ -146,6 +158,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn two()
             {
                 let mut ring = IoUring::new().unwrap();
@@ -175,6 +191,10 @@ pub mod test
             use super::*;
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn zero()
             {
                 let mut ring = IoUring::new().unwrap();
@@ -185,6 +205,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn one()
             {
                 let mut ring = IoUring::new().unwrap();
@@ -203,6 +227,10 @@ pub mod test
             }
 
             #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
             fn two()
             {
                 let mut ring = IoUring::new().unwrap();

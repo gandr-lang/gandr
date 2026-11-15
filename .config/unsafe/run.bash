@@ -14,7 +14,8 @@
 # `#[cfg_attr(miri, ignore = "<reason>")]`. So nextest reports its name and its
 # reason, and `careful` runs it natively. The list holds one skip for each such
 # attribute, with the same reason, and the check refuses a crate whose skips
-# and list differ.
+# and list differ. rustfmt puts an attribute with a long reason on four lines,
+# so the check reads the attribute across lines.
 set -euo pipefail
 check=${1:?the check: miri-tree, miri-stacked or careful}
 shift
@@ -33,7 +34,7 @@ for crate in "${crates[@]}"; do
     exit 2
   fi
   stated=$(jq -r --arg crate "$crate" '.crates[] | select(.package == $crate) | .skips[].why' "$list" | sort)
-  found=$({ grep -rhoE 'cfg_attr\(miri, ignore = "[^"]*"\)' "$root/$path" || true; } | sed -E 's/^cfg_attr\(miri, ignore = "(.*)"\)$/\1/' | sort)
+  found=$({ grep -rhzoP 'cfg_attr\(\s*miri,\s*ignore = "[^"]*",?\s*\)' "$root/$path" || true; } | tr '\0' '\n' | sed -nE 's/^.*ignore = "(.*)".*$/\1/p' | sort)
   if [[ $stated != "$found" ]]; then
     echo "unsafe:$check: the skips of \`$crate\` under Miri differ from $list; each skip in the crate is a row of its list, with the same reason (< the list, > the crate):" >&2
     diff <(printf '%s\n' "$stated") <(printf '%s\n' "$found") >&2 || true

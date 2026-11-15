@@ -465,18 +465,30 @@ pub mod test
         use super::*;
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_entries()
         {
             IoUring::builder().entries(1024).build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_iopoll()
         {
             IoUring::builder().setup_iopoll().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_hybrid_iopoll()
         {
             IoUring::builder()
@@ -487,12 +499,20 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_sqpoll()
         {
             IoUring::builder().setup_sqpoll().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_sq_aff()
         {
             // NOTE: tarpaulin runs cause `::num_cpus::get()` to return 1.
@@ -507,6 +527,10 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_cqsize()
         {
             IoUring::builder()
@@ -517,12 +541,20 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_clamp()
         {
             IoUring::builder().setup_clamp().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_attach_wq()
         {
             let ring = IoUring::builder().build().unwrap();
@@ -531,24 +563,40 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_r_disabled()
         {
             IoUring::builder().setup_r_disabled().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_submit_all()
         {
             IoUring::builder().setup_submit_all().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_coop_taskrun()
         {
             IoUring::builder().setup_coop_taskrun().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_taskrun_flag()
         {
             IoUring::builder()
@@ -559,24 +607,40 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_sqe128()
         {
             IoUring::builder().setup_sqe128().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_cqe32()
         {
             IoUring::builder().setup_cqe32().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_single_issuer()
         {
             IoUring::builder().setup_single_issuer().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_defer_taskrun()
         {
             IoUring::builder()
@@ -590,6 +654,10 @@ pub mod test
         // caller gives no memory for the rings, and the owner's test gives
         // none. #7645 owes the mend that gives it.
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         #[should_panic(expected = "Cannot allocate memory")]
         fn with_setup_no_mmap()
         {
@@ -599,6 +667,10 @@ pub mod test
         // `IORING_SETUP_REGISTERED_FD_ONLY` needs `IORING_SETUP_NO_MMAP`, so
         // the kernel refuses it with `ENOMEM` as above. #7645 owes the mend.
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         #[should_panic(expected = "Cannot allocate memory")]
         fn with_setup_registered_fd_only()
         {
@@ -610,12 +682,20 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_setup_no_sqarray()
         {
             IoUring::builder().setup_no_sqarray().build().unwrap();
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_sq_thread_cpu()
         {
             // NOTE: tarpaulin runs cause `::num_cpus::get()` to return 1.
@@ -630,6 +710,10 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_sq_thread_idle()
         {
             let sq_thread_idle = 250u32;
@@ -641,6 +725,10 @@ pub mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring through liburing, which Miri cannot run"
+        )]
         fn with_dontfork()
         {
             IoUring::builder().dontfork(true).build().unwrap();
@@ -648,12 +736,20 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn new()
     {
         IoUring::new().unwrap();
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn cqueue()
     {
         let mut ring = IoUring::new().unwrap();
@@ -661,6 +757,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn squeue()
     {
         let mut ring = IoUring::new().unwrap();
@@ -668,6 +768,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn queues()
     {
         let mut ring = IoUring::new().unwrap();
@@ -675,6 +779,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn registrar()
     {
         let ring = IoUring::new().unwrap();

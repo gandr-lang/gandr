@@ -296,6 +296,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn socket()
     {
         let slots = None;
@@ -310,6 +314,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn socket_direct()
     {
         let slots = Some(1);
@@ -324,6 +332,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn socket_direct_cqe_skip()
     {
         let slots = Some(1);

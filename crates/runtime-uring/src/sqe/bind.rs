@@ -214,6 +214,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn bind()
     {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
@@ -242,6 +246,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn bind_direct()
     {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
@@ -270,6 +278,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring through liburing, which Miri cannot run"
+    )]
     fn bind_direct_cqe_skip()
     {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
