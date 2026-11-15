@@ -47,72 +47,87 @@ pub use crate::base::sys::linux::uapi::io_uring::io_uring_register_with;
 pub use crate::base::sys::linux::uapi::io_uring::io_uring_setup;
 
 #[repr(transparent)]
-pub struct Sqe64 {
+pub struct Sqe64
+{
     sqe: self::arch::io_uring_sqe,
 }
 
 #[repr(C)]
-pub struct Sqe128 {
+pub struct Sqe128
+{
     sqe: self::arch::io_uring_sqe,
     pad: [u8; 64],
 }
 
 #[repr(transparent)]
 #[non_exhaustive]
-pub struct Cqe16 {
+pub struct Cqe16
+{
     cqe: self::arch::io_uring_cqe,
 }
 
 #[repr(C)]
 #[non_exhaustive]
-pub struct Cqe32 {
+pub struct Cqe32
+{
     cqe: self::arch::io_uring_cqe,
     pad: [u8; 16],
 }
 
 #[cfg(test)]
-mod test {
+mod test
+{
     use super::*;
 
-    mod sqe {
+    mod sqe
+    {
         use super::*;
 
-        mod sqe64 {
+        mod sqe64
+        {
             use super::*;
 
             #[test]
-            fn size_of() {
+            fn size_of()
+            {
                 ::static_assertions_next::assert_size_eq!(Sqe64, [u8; 64]);
             }
         }
 
-        mod sqe128 {
+        mod sqe128
+        {
             use super::*;
 
             #[test]
-            fn size_of() {
+            fn size_of()
+            {
                 ::static_assertions_next::assert_size_eq!(Sqe128, [u8; 128]);
             }
         }
     }
 
-    mod cqe {
+    mod cqe
+    {
         use super::*;
 
-        mod cqe16 {
+        mod cqe16
+        {
             use super::*;
 
             #[test]
-            fn size_of() {
+            fn size_of()
+            {
                 ::static_assertions_next::assert_size_eq!(Cqe16, [u8; 16]);
             }
         }
 
-        mod cqe32 {
+        mod cqe32
+        {
             use super::*;
 
             #[test]
-            fn size_of() {
+            fn size_of()
+            {
                 ::static_assertions_next::assert_size_eq!(Cqe32, [u8; 32]);
             }
         }

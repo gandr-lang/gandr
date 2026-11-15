@@ -92,7 +92,9 @@ pub(crate) unsafe fn ret_owned_fd(raw: RetReg<R0>) -> crate::base::io::Result<Ow
 }
 
 #[inline]
-pub(crate) fn try_decode_c_uint<Num>(raw: RetReg<Num>) -> crate::base::io::Result<::core::ffi::c_uint>
+pub(crate) fn try_decode_c_uint<Num>(
+    raw: RetReg<Num>
+) -> crate::base::io::Result<::core::ffi::c_uint>
 where
     Num: RetNumber,
 {
