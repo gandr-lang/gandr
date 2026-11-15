@@ -199,6 +199,9 @@ impl From<PastQuota> for Undistributed
 /// - witness: `distribution::tests::the_paths_sum_by_outcome_into_one_distribution`
 /// - witness: `distribution::tests::a_path_past_the_quota_gives_no_distribution`
 /// - witness: `distribution::tests::a_declined_draw_names_its_task_or_world_5712`
+///
+/// # Cost
+/// - allocation: the weights and the spelling, growth within the paths
 #[inline]
 #[spec(ensures: |ref ret| ["\"", "PastQuota: ", "Unanswered: ", "no distribution: ", "a path of "].iter().any(|&head| ret.as_ref().starts_with(head)))]
 pub fn distributed<Run>(
@@ -477,7 +480,7 @@ mod tests
             &mut self,
             _constant: ConstantIndex,
             _quota: Bits,
-            path: &mut dyn FnMut(RunSpelling, Bits),
+            path: &mut impl FnMut(RunSpelling, Bits),
         ) -> Result<(), Undistributed>
         {
             let paths = self.0.clone()?;

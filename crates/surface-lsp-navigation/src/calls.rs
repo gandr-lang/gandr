@@ -117,13 +117,16 @@ pub fn callable(
 /// - hypothesis: L3 — an item of the document and one of a sibling are each
 ///   placed in their own text.
 /// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
+///
+/// # Cost
+/// - allocation: the item's name and its line index, growth within the text
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|placed| placed.kind == SymbolKind::FUNCTION
     && (site.source() != read.hovering.table().own_source() || placed.uri == *read.uri)))]
 fn item(
     read: Read<'_>,
     own: &LineIndex<'_>,
     site: Referent,
-    locate: &dyn Fn(&Path) -> Option<DocumentUri>,
+    locate: &impl Fn(&Path) -> Option<DocumentUri>,
 ) -> Option<CallHierarchyItem>
 {
     let table = read.hovering.table();
@@ -162,14 +165,19 @@ fn item(
 /// - hypothesis: L3 — a call of a sibling's function and a function's own name
 ///   each prepare it; a constructor prepares nothing.
 /// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
+///
+/// # Cost
+/// - allocation: the line index and the item, growth within the text
 #[spec(ensures: |ret| ret.len() <= 1_usize)]
 #[must_use]
 #[inline]
-pub fn items(
+pub fn items<Locate>(
     read: Read<'_>,
     position: Position,
-    locate: &dyn Fn(&Path) -> Option<DocumentUri>,
+    locate: &Locate,
 ) -> Vec<CallHierarchyItem>
+where
+    Locate: Fn(&Path) -> Option<DocumentUri>,
 {
     let table = read.hovering.table();
     let index = LineIndex::new(<&str>::from(read.text).into());
@@ -200,16 +208,21 @@ pub fn items(
 /// - hypothesis: L3 — an importer's calls of a sibling's function are grouped
 ///   by the definition making them, a recursive call by its own definition.
 /// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
+///
+/// # Cost
+/// - allocation: the holders, groups and calls, growth within the uses
 #[spec(ensures: |ret| ret.iter().all(|call| !call.from_ranges.is_empty()))]
 #[must_use]
 #[inline]
-pub fn callers(
+pub fn callers<Locate>(
     read: Read<'_>,
     path: &Path,
     named: ByteSpan,
     skipped: Option<Range>,
-    locate: &dyn Fn(&Path) -> Option<DocumentUri>,
+    locate: &Locate,
 ) -> Vec<IncomingCall>
+where
+    Locate: Fn(&Path) -> Option<DocumentUri>,
 {
     let table = read.hovering.table();
     let own = table.own_source();
@@ -275,14 +288,19 @@ pub fn callers(
 /// - hypothesis: L3 — a definition calling a sibling's function and itself
 ///   answers both, each with its uses; a constructor it applies is no call.
 /// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
+///
+/// # Cost
+/// - allocation: the groups and calls, growth within the uses
 #[spec(ensures: |ret| ret.iter().all(|call| !call.from_ranges.is_empty()))]
 #[must_use]
 #[inline]
-pub fn callees(
+pub fn callees<Locate>(
     read: Read<'_>,
     position: Position,
-    locate: &dyn Fn(&Path) -> Option<DocumentUri>,
+    locate: &Locate,
 ) -> Vec<OutgoingCall>
+where
+    Locate: Fn(&Path) -> Option<DocumentUri>,
 {
     let table = read.hovering.table();
     let index = LineIndex::new(<&str>::from(read.text).into());

@@ -292,14 +292,19 @@ impl Sweep
     ///   answered as stated.
     /// - witness: `gandr-surface-lsp::server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
     /// - witness: `sweep::tests::a_pass_looks_again_at_a_source_written_behind_it_1824`
+    ///
+    /// # Cost
+    /// - allocation: the answered path, growth within the listed sources
     #[spec(ensures: |ret| ret.is_none() || matches!(self.pass, Pass::Running { .. }))]
     #[inline]
-    pub fn next(
+    pub fn next<List>(
         &mut self,
-        list: &dyn Fn() -> Vec<PathBuf>,
+        list: &List,
         rendering: (Verbosity, Spelling),
         shadows: &dyn Shadows,
     ) -> Option<PathBuf>
+    where
+        List: Fn() -> Vec<PathBuf>,
     {
         let (sources, from) = match core::mem::replace(&mut self.pass, Pass::Idle) {
             Pass::Idle => (list(), 0_usize),

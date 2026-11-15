@@ -77,6 +77,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::elsewhere::Elsewhere;
+use crate::elsewhere::ImportEdit;
 use crate::elsewhere::unimported_as;
 use crate::hover::Hovering;
 use crate::inline::Category;
@@ -375,6 +376,9 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 /// - witness: `gandr-surface-lsp::tests::session::a_completion_offers_what_a_sibling_declares_806`
 /// - witness: `complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
 ///
+/// # Cost
+/// - allocation: the offers and the line index, growth within the names
+///
 /// [`Signatures`]: crate::signature::Signatures
 /// [`KeywordForm::snippet`]: crate::inline::KeywordForm::snippet
 /// [`Signature::called`]: gandr_surface_lsp_base::signature::Signature::called
@@ -385,15 +389,17 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
     && (item.insert_text_format.is_some() || item.text_edit.new_text == item.label)))]
 #[must_use]
 #[inline]
-pub fn completions(
+pub fn completions<Import>(
     grammar: &Pbg,
     forms: &Forms,
     text: SourceText<'_>,
     hovering: &Hovering,
     (uri, position): (&DocumentUri, Position),
     (printer, labels, snippets): (Style, LabelsDetailed, TakesSnippets),
-    elsewhere: Elsewhere<'_>,
+    elsewhere: &Elsewhere<'_, Import>,
 ) -> CompletionList
+where
+    Import: ImportEdit,
 {
     let index = LineIndex::new(<&str>::from(text).into());
     let at = position.byte(&index);
@@ -767,9 +773,9 @@ mod tests
                 labels,
                 snippets,
             ),
-            Elsewhere {
+            &Elsewhere {
                 sources: &[],
-                import: &|_| Vec::new(),
+                import: &|_: &Path| Vec::new(),
             },
         )
         .items
@@ -975,12 +981,12 @@ mod tests
                     LabelsDetailed(false),
                     TakesSnippets(false),
                 ),
-                Elsewhere {
+                &Elsewhere {
                     sources: &[Unimported {
                         path: Path::new("/folder/far.gandr"),
                         names: &far,
                     }],
-                    import: &|_| import.to_vec(),
+                    import: &|_: &Path| import.to_vec(),
                 },
             )
             .items

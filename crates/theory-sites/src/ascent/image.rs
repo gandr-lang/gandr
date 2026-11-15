@@ -174,6 +174,9 @@ impl<Below: Certificate> WreathStratum<Below>
     /// # Errors
     /// [`Unreplayed`] — as above.
     ///
+    /// # Cost
+    /// - allocation: the cocone vectors, growth within the image's counts
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — level two's own image replays, and an image damaged
     ///   at its leading byte, its object count, its degree, its cocones'

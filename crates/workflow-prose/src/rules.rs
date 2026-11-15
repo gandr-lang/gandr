@@ -493,6 +493,9 @@ fn words(
 /// - panics: none.
 /// - executable: none — the walk is the clause.
 ///
+/// # Cost
+/// - allocation: the rules the sentence breaks, growth within the sentence
+///
 /// # Adequacy
 /// - hypothesis: L3 — each rule's sentence and a twin it must pass: 26 words
 ///   and 25 words with a code span, two instructions joined by `and` and two
@@ -507,7 +510,6 @@ fn clauses(
     sentence: &Sentence,
 ) -> Vec<Rule>
 {
-    let prose = |token: &Token| read(readings, token) == Reading::Prose;
     let worded = |token: &Token| !UNWORDED.contains(&token.pos.as_str());
     let mut rules = Vec::new();
     let count = words(readings, sentence).0;
@@ -531,23 +533,46 @@ fn clauses(
     if instructions(readings, sentence) == Agrees::Agrees {
         rules.push(Rule::Instructions);
     }
-    let after = |mark: &dyn Fn(&Token) -> bool, follows: &dyn Fn(&Token) -> bool| {
-        sentence
-            .tokens
-            .iter()
-            .skip_while(|token| !(prose(token) && mark(token)))
-            .skip(1)
-            .any(|token| prose(token) && follows(token))
-    };
-    if after(&|token| token.text == ";", &worded) {
+    if after(readings, sentence, |token| token.text == ";", worded) == Agrees::Agrees {
         rules.push(Rule::Semicolon);
     }
-    if after(&|token| DASHES.contains(&token.text.as_str()), &|token| {
-        token.pos == "VERB" || token.pos == "AUX"
-    }) {
+    if after(
+        readings,
+        sentence,
+        |token| DASHES.contains(&token.text.as_str()),
+        |token| token.pos == "VERB" || token.pos == "AUX",
+    ) == Agrees::Agrees
+    {
         rules.push(Rule::Dash);
     }
     rules
+}
+
+/// [`Agrees::Agrees`] when a prose token that `follows` matches comes after
+/// the first prose token that `mark` matches in `sentence`.
+///
+/// # Specification
+/// trivial.
+fn after(
+    readings: &[Reading],
+    sentence: &Sentence,
+    mark: impl Fn(&Token) -> bool,
+    follows: impl Fn(&Token) -> bool,
+) -> Agrees
+{
+    let prose = |token: &Token| read(readings, token) == Reading::Prose;
+    let found = sentence
+        .tokens
+        .iter()
+        .skip_while(|token| !(prose(token) && mark(token)))
+        .skip(1)
+        .any(|token| prose(token) && follows(token));
+    if found {
+        Agrees::Agrees
+    }
+    else {
+        Agrees::Differs
+    }
 }
 
 /// The rules `sentence` breaks, each at most once.

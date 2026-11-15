@@ -525,6 +525,13 @@ impl Opened<'_>
 
 /// What opens a context: given the arena and how the pass opens it, the
 /// context.
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        trait_object,
+        reason = "#7614 gives the opener data in place of a closure"
+    )
+)]
 type Open = dyn for<'arena> Fn(&'arena mut CoreArena, Opened<'_>) -> gandr_core_checker::CheckingContext<'arena>
     + Send
     + Sync;

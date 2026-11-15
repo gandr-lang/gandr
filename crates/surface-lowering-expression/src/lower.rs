@@ -19081,6 +19081,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   link to a missing name refusing the source's first declaration at the
     ///   link.
     /// - witness: `gandr-surface-lowering::lower::tests::a_source_s_documentation_is_filed_under_the_source_1365`
+    ///
+    /// # Cost
+    /// - allocation: the files' documentation, growth within the sources
     #[spec(
         captures: before = self.cx().fuel.remaining(),
         ensures: self.cx().fuel.remaining() <= before,
@@ -19169,6 +19172,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   under its member, and a module's link to a missing name refusing its
     ///   first member at the link.
     /// - witness: `gandr-surface-lowering::lower::tests::a_module_s_documentation_is_filed_under_its_key_1135`
+    ///
+    /// # Cost
+    /// - allocation: the module index and the filings, growth within the docs
     #[spec(
         captures: before = self.cx().fuel.remaining(),
         ensures: self.cx().fuel.remaining() <= before,
@@ -19280,6 +19286,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   a link to a declaration, plain or by a module path, keeps it.
     /// - witness: `gandr-surface-lowering::lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
     /// - witness: `gandr-surface-lowering::lower::tests::a_link_keeps_the_declaration_it_resolves_to_4963`
+    ///
+    /// # Cost
+    /// - allocation: the kept names and the paths, growth within the links
     #[spec(
         captures: written = documentation.links().len(),
         ensures: documentation.links().len() == written,
@@ -19289,7 +19298,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         documentation: &mut Documentation<'source>,
         (before, names): (LinkCount, &OnceCell<LinkNames<'source>>),
         container: Container,
-        refuse: &mut dyn FnMut(LoweringRefusal<'source>),
+        refuse: &mut impl FnMut(LoweringRefusal<'source>),
     )
     {
         let fresh = documentation.links_from(before).len();
@@ -19429,6 +19438,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::documentation_is_filed_under_the_declaration_key`
     /// - witness: `gandr-surface-lowering::lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
     /// - witness: `gandr-surface-lowering::lower::tests::a_link_resolves_to_a_module_its_member_or_a_constructor`
+    ///
+    /// # Cost
+    /// - allocation: the filed documentation, growth within the slots' docs
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

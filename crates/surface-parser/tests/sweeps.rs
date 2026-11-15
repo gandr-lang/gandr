@@ -769,7 +769,8 @@ fn tables_agree(sweep: &Sweep) -> Result<(), Failure>
     let mut molder = Molder::with_verdicts(pbg, MoldVerdicts::Differential);
     let mut molded = 0_usize;
     let mut disagreeing: Vec<String> = Vec::new();
-    let mut differential = |name: &dyn Fn() -> String, text: &str| {
+    // Mold `text` by the tables and by the dry runs; whether the two disagree.
+    let mut differential = |text: &str| {
         let before = molder.disagreements();
         let source = SourceText::from(text);
         let mut state = MeldState::new(pbg);
@@ -779,19 +780,21 @@ fn tables_agree(sweep: &Sweep) -> Result<(), Failure>
             let _unit = split.mold(&mut molder, run);
         }
         molded = molded.saturating_add(1);
-        if molder.disagreements() != before {
-            disagreeing.push(name());
-        }
+        molder.disagreements() != before
     };
     for stray in STRAYS {
-        differential(&|| format!("stray {stray:?}"), stray);
+        if differential(stray) {
+            disagreeing.push(format!("stray {stray:?}"));
+        }
     }
     let mut dropped = String::new();
     for source in visited {
         let rel = source.name.as_ref();
         let src = std::fs::read_to_string(&source.path)
             .map_err(|error| format!("{}: {error}", source.path.display()))?;
-        differential(&|| format!("{rel} whole"), &src);
+        if differential(&src) {
+            disagreeing.push(format!("{rel} whole"));
+        }
         let labelled = label(SourceFragment::from(src.as_str()));
         let significant = || {
             labelled
@@ -809,14 +812,15 @@ fn tables_agree(sweep: &Sweep) -> Result<(), Failure>
             }
             let start = usize::try_from(token.start)?;
             let end = usize::try_from(token.end)?;
-            differential(
-                &|| format!("{rel} cut after token {index}"),
-                src.get(.. end).unwrap_or_default(),
-            );
+            if differential(src.get(.. end).unwrap_or_default()) {
+                disagreeing.push(format!("{rel} cut after token {index}"));
+            }
             dropped.clear();
             dropped.push_str(src.get(.. start).unwrap_or_default());
             dropped.push_str(src.get(end ..).unwrap_or_default());
-            differential(&|| format!("{rel} drop {index}"), &dropped);
+            if differential(&dropped) {
+                disagreeing.push(format!("{rel} drop {index}"));
+            }
         }
     }
     assert!(

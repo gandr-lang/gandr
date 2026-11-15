@@ -1382,8 +1382,34 @@ fn record_width_depth_projection_and_absent_fields()
 #[repr(transparent)]
 struct Digits(&'static str);
 
-/// A builder of the value that a fixture restricts.
-type Restricted<'built> = dyn Fn(&mut TermArena) -> ValueId + 'built;
+/// The value that a fixture restricts: an admitted record, or the record
+/// literal that [`endpoint`] builds.
+#[derive(Clone, Copy, Debug)]
+enum Restricted
+{
+    /// The record admitted at this constant.
+    Named(ConstantIndex),
+    /// The record literal.
+    Literal,
+}
+
+impl Restricted
+{
+    /// The value, built in `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn built(
+        self,
+        arena: &mut TermArena,
+    ) -> ValueId
+    {
+        match self {
+            Self::Named(base) => arena.value_constant(base),
+            Self::Literal => endpoint(arena),
+        }
+    }
+}
 
 /// The integer literal that `digits` spell.
 ///
@@ -1457,7 +1483,7 @@ fn admit_endpoint(
         .position()
 }
 
-/// Admit the restriction of the value `restricted` builds, fixing each label
+/// Admit the restriction of the value `restricted` names, fixing each label
 /// of `fixed` at the integer its digits spell, at the record of the integer
 /// fields `free`.
 ///
@@ -1465,7 +1491,7 @@ fn admit_endpoint(
 /// trivial.
 fn admit_restriction(
     environment: &mut Environment,
-    restricted: &Restricted<'_>,
+    restricted: Restricted,
     fixed: &[(&FieldLabel, &Digits)],
     free: &[&FieldLabel],
 ) -> Result<(), KernelError>
@@ -1473,7 +1499,7 @@ fn admit_restriction(
     let mut staging = environment.stage();
     let arena = staging.arena();
     let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
-    let value = restricted(arena);
+    let value = restricted.built(arena);
     let fixed = fixed
         .iter()
         .map(|&(label, digits)| (label.clone(), integer_literal(arena, digits)))
@@ -1494,10 +1520,9 @@ fn a_restriction_checks_at_the_record_of_its_free_fields_5613()
     let mut environment = Environment::new();
     let [host, port, tls] = endpoint_labels();
     let base = admit_endpoint(&mut environment, &mut Vec::new());
-    let named = |arena: &mut TermArena| arena.value_constant(base);
-    let restricted: [(&Restricted<'_>, &str); 2] = [
-        (&named, "an admitted record"),
-        (&endpoint, "a record literal"),
+    let restricted: [(Restricted, &str); 2] = [
+        (Restricted::Named(base), "an admitted record"),
+        (Restricted::Literal, "a record literal"),
     ];
     for (restricted, why) in restricted {
         assert_eq!(
@@ -1544,7 +1569,7 @@ fn a_restriction_is_refused_by_the_label_it_gets_wrong_5613()
     let [host, port, tls] = endpoint_labels();
     let mtu = FieldLabel::from(String::from("mtu"));
     let base = admit_endpoint(&mut environment, &mut Vec::new());
-    let named = |arena: &mut TermArena| arena.value_constant(base);
+    let named = Restricted::Named(base);
     for (fixed, free, refusal, why) in [
         (
             &[(&port, &Digits("80"))][..],
@@ -1576,7 +1601,7 @@ fn a_restriction_is_refused_by_the_label_it_gets_wrong_5613()
         ),
     ] {
         assert_eq!(
-            admit_restriction(&mut environment, &named, fixed, free),
+            admit_restriction(&mut environment, named, fixed, free),
             Err(refusal),
             "{why}"
         );
@@ -3685,8 +3710,16 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
         /// call `⟨force inner⟩`, which returns reflexivity.
         HeldTransport,
     }
-    let mut environment = one_loop();
-    let mut define = |body: &dyn Fn(&mut TermArena, ValueTypeId) -> ValueId| {
+    /// Admit the definition whose body `body` builds at the path of `Base`
+    /// to itself, returned, and answer its constant.
+    ///
+    /// # Specification
+    /// trivial.
+    fn define(
+        environment: &mut Environment,
+        body: impl Fn(&mut TermArena, ValueTypeId) -> ValueId,
+    ) -> ConstantIndex
+    {
         let mut staging = environment.stage();
         let arena = staging.arena();
         let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
@@ -3698,16 +3731,17 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
         let staged = staging.def(LevelSignature::monomorphic(), declared, body);
         environment
             .add_decl(staged)
-            .map(gandr_kernel_core::CheckedId::position)
+            .map(CheckedId::position)
             .expect("the definition checks")
-    };
+    }
+    let mut environment = one_loop();
     // `zero = thunk (return ε)` and `zero2 = thunk (force zero)`.
-    let zero = define(&|arena, _at_point| {
+    let zero = define(&mut environment, |arena, _at_point| {
         let empty = build(arena, Built::Empty);
         let returned = arena.computation_return(empty);
         arena.value_thunk(returned)
     });
-    let zero2 = define(&|arena, _at_point| {
+    let zero2 = define(&mut environment, |arena, _at_point| {
         let function = arena.value_constant(zero);
         let forced = arena.computation_force(function);
         arena.value_thunk(forced)
@@ -3716,13 +3750,13 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
     // S](v, v), ⟨force inner⟩, ε))`: both ends of the motive move, so no
     // append row reads the transport, and it reduces only once the run goes
     // on through `inner`.
-    let inner = define(&|arena, _at_point| {
+    let inner = define(&mut environment, |arena, _at_point| {
         let point = build(arena, Built::Point);
         let reflexive = arena.value_here(point);
         let returned = arena.computation_return(reflexive);
         arena.value_thunk(returned)
     });
-    let outer = define(&|arena, _at_point| {
+    let outer = define(&mut environment, |arena, _at_point| {
         let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
         let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
         let motive = arena.value_type_path(carrier, moving, moving);

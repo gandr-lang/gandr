@@ -88,6 +88,7 @@ use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::Retirement;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::TypeTable;
+use gandr_surface_dispatcher::Wake;
 use gandr_surface_dispatcher::forget;
 use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::laid;
@@ -1300,22 +1301,44 @@ impl fmt::Display for Logged
 pub struct Admissions
 {
     /// The running judgements, one generation per document.
-    judgements: Generations<DocumentUri, Submission, Rechecked>,
+    judgements: Generations<DocumentUri, Submission, Rechecked, Admitted>,
     /// The version each running judgement judges.
     judging: BTreeMap<DocumentUri, DocumentVersion>,
     /// Progress ends to write once no judgement they wait for runs.
     ending: Vec<(BTreeSet<DocumentUri>, Vec<Outgoing>)>,
     /// The running admissions, one generation per document.
-    generations: Generations<DocumentUri, Submission, Finished>,
+    generations: Generations<DocumentUri, Submission, Finished, Admitted>,
     /// The line of each document's synchronisation whose admission runs.
     waiting: BTreeMap<DocumentUri, Logged>,
     /// The running runs, one slot for each.
-    runs: Generations<Submission, (), Result<(MessageType, String), Unran>>,
+    runs: Generations<Submission, (), Result<(MessageType, String), Unran>, Admitted>,
     /// How many judgements, admissions and runs were submitted; the next is
     /// numbered after them.
     submitted: Submission,
     /// The source judged for the workspace's diagnostics, while one is.
     sweeping: Option<Sweeping>,
+}
+
+/// What the end of a judgement, an admission or a run wakes: the connection's
+/// loop hears that an admission it started ended.
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+struct Admitted(Changes);
+
+impl Wake for Admitted
+{
+    /// Tell the loop that an admission ended.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the channel's internals, growth within the ended jobs
+    #[inline]
+    fn wake(&self)
+    {
+        self.0.admitted();
+    }
 }
 
 /// One judgement's, admission's or run's place among those a connection
@@ -1346,6 +1369,9 @@ impl Admissions
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the generations' channels, setup
     #[inline]
     #[must_use]
     pub fn new(
@@ -1353,18 +1379,13 @@ impl Admissions
         waking: Changes,
     ) -> Self
     {
-        let judged = waking.clone();
-        let ran = waking.clone();
         Self {
-            judgements: Generations::waking(Arc::clone(&pool), Arc::new(move || judged.admitted())),
+            judgements: Generations::waking(Arc::clone(&pool), Admitted(waking.clone())),
             judging: BTreeMap::new(),
             ending: Vec::new(),
-            generations: Generations::waking(
-                Arc::clone(&pool),
-                Arc::new(move || waking.admitted()),
-            ),
+            generations: Generations::waking(Arc::clone(&pool), Admitted(waking.clone())),
             waiting: BTreeMap::new(),
-            runs: Generations::waking(pool, Arc::new(move || ran.admitted())),
+            runs: Generations::waking(pool, Admitted(waking)),
             submitted: Submission(0_u64),
             sweeping: None,
         }
@@ -3982,6 +4003,9 @@ impl Server
     /// - hypothesis: L3 — as [`Server::pulled_workspace`]; a source an editor
     ///   opens while it is swept is judged as the copy.
     /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    ///
+    /// # Cost
+    /// - allocation: the source's text and its job, growth within the sources
     #[spec(ensures: admissions.sweeping.is_none() || !self.sweep.waiting().is_empty())]
     fn sweep_next(
         &mut self,
@@ -4182,6 +4206,9 @@ impl Server
     ///   during an admission retires it, its line logged as retired.
     /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
     /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
+    ///
+    /// # Cost
+    /// - allocation: the logged lines and the jobs, growth within the copies
     #[spec(
         captures: copies = workspace.documents.len(),
         ensures: |ret| ret.len() <= copies && self.runs.due.is_empty(),
@@ -4346,6 +4373,9 @@ impl Server
     /// - witness: `server::tests::a_pulled_report_is_named_by_its_digest_and_answered_unchanged`
     /// - witness: `server::tests::a_pulling_client_is_sent_no_publication_and_asked_to_pull_again`
     /// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+    ///
+    /// # Cost
+    /// - allocation: the settled messages, growth within the ended jobs
     #[spec(ensures: |ret| (self.pulled.0 || !self.notebooks.is_empty()
             || ret.judged.len() <= ret.messages.len())
         && (awaiting == Awaiting::Ended || (admissions.judging.is_empty()
@@ -7482,6 +7512,9 @@ impl Workspace
     ///   `null`.
     /// - witness: `server::tests::completion_answers_the_names_a_word_may_complete_to_806`
     /// - witness: `server::tests::completion_offers_a_folder_name_with_its_import`
+    ///
+    /// # Cost
+    /// - allocation: the completion list, growth within the names
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Completions(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn completion(
@@ -7522,7 +7555,7 @@ impl Workspace
             hovering,
             (uri, position),
             presented,
-            Elsewhere {
+            &Elsewhere {
                 sources: &sources,
                 import: &import,
             },
@@ -7550,6 +7583,9 @@ impl Workspace
     /// - hypothesis: L3 — as [`additions`], through the request, the edit
     ///   leaving a document that checks.
     /// - witness: `server::tests::an_unresolved_name_is_offered_the_import_declaring_it_1116`
+    ///
+    /// # Cost
+    /// - allocation: the actions, growth within the refusals
     #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_empty())]
     fn import_additions(
         &self,
@@ -7596,7 +7632,7 @@ impl Workspace
             grammar,
             (published, text),
             (asked, diagnostics),
-            Elsewhere {
+            &Elsewhere {
                 sources: &sources,
                 import: &import,
             },
@@ -8234,6 +8270,9 @@ impl Workspace
     /// - hypothesis: L3 — as [`Self::references`].
     /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
     /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+    ///
+    /// # Cost
+    /// - allocation: the locations, growth within the open documents
     #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_none())]
     fn referring(
         &self,
@@ -8309,6 +8348,9 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — as [`items`]; an unknown document answers `null`.
     /// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+    ///
+    /// # Cost
+    /// - allocation: the shadows and the item, growth within the text
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing)
         || matches!(ret, Answer::Callables(ref items) if items.len() == 1_usize))]
     fn prepare_calls(
@@ -8461,12 +8503,15 @@ impl Workspace
     /// - hypothesis: L3 — an open document and a sibling no editor holds are
     ///   each read.
     /// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+    ///
+    /// # Cost
+    /// - allocation: the path and the file's text, growth within the file
     fn reading<Out>(
         &self,
         uri: &DocumentUri,
         peer: Peer,
         shadows: &Shadowing<'_>,
-        read: &mut dyn FnMut(Read<'_>) -> Out,
+        read: &mut impl FnMut(Read<'_>) -> Out,
     ) -> Option<Out>
     {
         let path = named_path(&uri.path());
@@ -8738,12 +8783,15 @@ impl Workspace
     ///   an unopened importer are each visited once, and a source importing
     ///   nothing is not.
     /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the copies, paths and text, growth within the importers
     fn writers<Failure>(
         &self,
         written: &Written,
         peer: Peer,
         shadows: &Shadowing<'_>,
-        visit: &mut dyn FnMut(Writer<'_>) -> Result<(), Failure>,
+        visit: &mut impl FnMut(Writer<'_>) -> Result<(), Failure>,
     ) -> Result<(), Failure>
     {
         for held in self.documents.keys() {
@@ -8914,6 +8962,9 @@ impl Workspace
     ///   binder renames in its document alone; a keyword, a name already
     ///   declared and a position on nothing are refused.
     /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the changes and the refusal, growth within the writers
     fn rename(
         &self,
         uri: &DocumentUri,

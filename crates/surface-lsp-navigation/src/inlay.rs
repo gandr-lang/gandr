@@ -326,7 +326,7 @@ mod tests
         path: &std::path::Path,
         text: SourceText<'_>,
         window: ByteSpan,
-        keep: &dyn Fn(&InlayHint) -> bool,
+        keep: &impl Fn(&InlayHint) -> bool,
     ) -> Vec<String>
     {
         let written: &str = text.into();
@@ -377,40 +377,38 @@ mod tests
     #[test]
     fn each_binder_that_writes_no_type_is_hinted()
     {
-        // The hints over the zero-based lines `window` finds in the corpus
-        // source at `file`.
-        let hinted =
-            |file: &str, window: &dyn Fn(&str) -> core::ops::Range<usize>| -> Vec<String> {
-                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../..")
-                    .join("corpus")
-                    .join(file);
-                let written = std::fs::read_to_string(&path).expect("the corpus source is read");
-                let offset = |line: usize| {
-                    ByteOffset::from(
-                        written
-                            .split_inclusive('\n')
-                            .take(line)
-                            .map(str::len)
-                            .sum::<usize>(),
-                    )
-                };
-                let lines = window(&written);
-                let window = ByteSpan::new(offset(lines.start), offset(lines.end))
-                    .expect("an ordered window");
-                // The type hints alone: the shifts are the next test's.
-                hinted_in(&path, SourceText::from(written.as_str()), window, &|hint| {
-                    hint.kind.is_some()
-                })
-            };
-        let whole = |_: &str| 0 .. usize::MAX;
         let line_of = |text: &str, held: &str| {
             let crate::anchor::Row(at) =
                 crate::anchor::line_of(crate::anchor::Source(text), crate::anchor::Held(held));
             usize::try_from(at).unwrap_or(usize::MAX)
         };
+        // The hints over `count` zero-based lines in the corpus source at
+        // `file`, from the line that holds `anchor`, or from the first line.
+        let hinted = |file: &str, anchor: Option<&str>, count: usize| -> Vec<String> {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("corpus")
+                .join(file);
+            let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+            let offset = |line: usize| {
+                ByteOffset::from(
+                    written
+                        .split_inclusive('\n')
+                        .take(line)
+                        .map(str::len)
+                        .sum::<usize>(),
+                )
+            };
+            let start = anchor.map_or(0, |held| line_of(&written, held));
+            let window = ByteSpan::new(offset(start), offset(start.saturating_add(count)))
+                .expect("an ordered window");
+            // The type hints alone: the shifts are the next test's.
+            hinted_in(&path, SourceText::from(written.as_str()), window, &|hint| {
+                hint.kind.is_some()
+            })
+        };
         assert_eq!(
-            hinted("surface/control-flow.gandr", &whole),
+            hinted("surface/control-flow.gandr", None, usize::MAX),
             [
                 "def first+1:8 : Nat",
                 "def pick+1:8 : Nat",
@@ -431,22 +429,25 @@ mod tests
              no parameter, use or constructor"
         );
         assert_eq!(
-            hinted("surface/typed-bind.gandr", &whole),
+            hinted("surface/typed-bind.gandr", None, usize::MAX),
             ["def apply+1:30 : Nat"],
             "the lambda's binder, and no annotated `let`"
         );
         assert_eq!(
-            hinted("surface/control-flow.gandr", &|text| {
-                let at = line_of(text, "for x in xs { tick x; }");
-                at .. at.saturating_add(1)
-            }),
+            hinted(
+                "surface/control-flow.gandr",
+                Some("for x in xs { tick x; }"),
+                1
+            ),
             ["def for_each+1:8 : Nat"],
             "a window holds the hints inside it alone"
         );
         assert_eq!(
-            hinted("surface/typed-bind.gandr", &|text| {
-                line_of(text, "def mistyped(") .. usize::MAX
-            }),
+            hinted(
+                "surface/typed-bind.gandr",
+                Some("def mistyped("),
+                usize::MAX
+            ),
             [""; 0],
             "a window past every unannotated binder holds none"
         );

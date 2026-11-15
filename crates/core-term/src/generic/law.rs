@@ -98,7 +98,13 @@ pub enum Statement
 /// The law the host asserts of its equality at an integer or a string field,
 /// as a value of the law's type: the prelude's admitted law, or none where it
 /// states none.
-pub type Hosted<'lookup> = dyn Fn(BaseType, Statement) -> Option<ValueId> + 'lookup;
+pub trait Hosted: Fn(BaseType, Statement) -> Option<ValueId>
+{
+}
+
+impl<Host> Hosted for Host where Host: Fn(BaseType, Statement) -> Option<ValueId>
+{
+}
 
 /// Which way a comparison reads its two sides.
 ///
@@ -157,12 +163,12 @@ enum Target
 
 /// One law's derivation: the equalities derived, each covered declaration's
 /// fields, and each proof derived so far.
-struct Proving<'deriving, 'run, 'lookup, 'hosted>
+struct Proving<'deriving, 'run, Table, Host>
 {
     /// The equalities the law is about, and the arena.
-    deriving: &'deriving mut Deriving<'run, 'lookup>,
+    deriving: &'deriving mut Deriving<'run, Table>,
     /// The host's laws.
-    hosted: &'deriving Hosted<'hosted>,
+    hosted: &'deriving Host,
     /// The law proved.
     statement: Statement,
     /// Each covered declaration's fields, constructor by constructor.
@@ -200,15 +206,21 @@ struct Proving<'deriving, 'run, 'lookup, 'hosted>
 ///   recursive-data tests.
 /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
 /// - witness: `generic::law::tests::an_uncovered_field_refuses_its_law_at_its_site_2302`
+///
+/// # Cost
+/// - allocation: the derivation and the proofs' tables, setup
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |derived| arena.value_type(derived.declared).is_some() && arena.value(derived.body).is_some()))]
 #[inline]
-pub fn law(
+pub fn law<'lookup, Table, Host>(
     arena: &mut CoreArena,
     position: ConstantIndex,
-    signatures: &Signatures<'_>,
+    signatures: &Table,
     statement: Statement,
-    hosted: &Hosted<'_>,
+    hosted: &Host,
 ) -> Result<Derived, Uncovered>
+where
+    Table: Signatures<'lookup>,
+    Host: Hosted,
 {
     let (mut deriving, order) = Deriving::start(arena, signatures, position)?;
     let mut proving = Proving {
@@ -241,7 +253,10 @@ pub fn law(
     })
 }
 
-impl Proving<'_, '_, '_, '_>
+impl<'lookup, Table, Host> Proving<'_, '_, Table, Host>
+where
+    Table: Signatures<'lookup>,
+    Host: Hosted,
 {
     /// Read the fields of `position` and of every declaration they reach.
     ///
@@ -261,6 +276,9 @@ impl Proving<'_, '_, '_, '_>
     /// - hypothesis: L3 — a line files its point, and a flag refuses.
     /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
     /// - witness: `generic::law::tests::an_uncovered_field_refuses_its_law_at_its_site_2302`
+    ///
+    /// # Cost
+    /// - allocation: the filed fields, growth within the reached declarations
     #[spec(ensures: |ret| ret.is_err() || self.fields.contains_key(&position))]
     fn cover(
         &mut self,
@@ -748,6 +766,9 @@ impl Proving<'_, '_, '_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`law`].
     /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
+    ///
+    /// # Cost
+    /// - allocation: the comparisons, growth within the fields
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |compared| compared.len() == fields.len()))]
     fn compared(
         fields: &[Field],
@@ -779,6 +800,9 @@ impl Proving<'_, '_, '_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`law`].
     /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
+    ///
+    /// # Cost
+    /// - allocation: the case's branches, growth within the constructors
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(body, declared)| self.deriving.arena.value(body).is_some() && self.deriving.arena.value_type(declared).is_some()))]
     fn reflexivity(
         &mut self,
@@ -835,6 +859,9 @@ impl Proving<'_, '_, '_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`law`].
     /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
+    ///
+    /// # Cost
+    /// - allocation: the case's branches, growth within the constructors
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(body, declared)| self.deriving.arena.value(body).is_some() && self.deriving.arena.value_type(declared).is_some()))]
     fn symmetry(
         &mut self,

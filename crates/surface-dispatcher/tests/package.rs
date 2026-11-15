@@ -2498,7 +2498,7 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
 fn exported_walk(
     root: &Path,
     sources: &Path,
-    alter: &dyn Fn(&Path, EncodedArtifact) -> EncodedArtifact,
+    alter: &impl Fn(&Path, EncodedArtifact) -> EncodedArtifact,
 ) -> (
     Result<Export, Unexported>,
     BTreeMap<PathBuf, EncodedArtifact>,

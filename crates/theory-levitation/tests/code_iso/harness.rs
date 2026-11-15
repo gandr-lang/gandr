@@ -13,7 +13,6 @@
 //! construction, and it declines only on a boundary mismatch, which is a
 //! domain error rather than a refusal.
 
-use alloc::sync::Arc;
 use std::collections::HashMap;
 
 use anodized::spec;
@@ -31,12 +30,82 @@ use crate::support::ReplayEquivalence;
 use crate::support::RoundTripSampleCount;
 use crate::support::RoundTripStatus;
 
-/// One direction of a [`CodeIso`]: maps a value of the source description to
-/// a value of the target description.
+/// One map of a [`Translate`].
+#[derive(Clone)]
+pub enum Map
+{
+    /// A map that a fixture names by its function.
+    Function(fn(&DescValue) -> DescValue),
+    /// The map to this value, whatever value it reads.
+    Constant(DescValue),
+}
+
+/// One direction of a [`CodeIso`]: the maps it applies in order, each from a
+/// value of one description to a value of the next. With no map, it is the
+/// identity.
 ///
-/// Shared, so the groupoid operations re-wrap the maps without re-deriving
-/// them.
-pub type Translate = Arc<dyn Fn(&DescValue) -> DescValue + Send + Sync>;
+/// The maps are data, so the groupoid operations join the lists and read no
+/// trait object.
+#[derive(Clone, Default)]
+#[repr(transparent)]
+pub struct Translate(Vec<Map>);
+
+impl Translate
+{
+    /// The identity: no map.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn identity() -> Self
+    {
+        Self::default()
+    }
+
+    /// The translation that applies `map` alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn of(map: fn(&DescValue) -> DescValue) -> Self
+    {
+        Self(vec![Map::Function(map)])
+    }
+
+    /// The translation to `value`, whatever value it reads.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn constant(value: DescValue) -> Self
+    {
+        Self(vec![Map::Constant(value)])
+    }
+
+    /// This translation, then `next`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn then(
+        &self,
+        next: &Self,
+    ) -> Self
+    {
+        Self(self.0.iter().chain(&next.0).cloned().collect())
+    }
+
+    /// The image of `value`: each map applied in order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn apply(
+        &self,
+        value: &DescValue,
+    ) -> DescValue
+    {
+        self.0.iter().fold(value.clone(), |held, map| match *map {
+            Map::Function(function) => function(&held),
+            Map::Constant(ref constant) => constant.clone(),
+        })
+    }
+}
 
 /// A certificate: two description-driven value translators between two
 /// monomorphic descriptions, whose evidence is the replay of its round trips.
@@ -103,9 +172,13 @@ impl CodeIso
     where
         L: Into<Name>,
     {
-        let forward: Translate = Arc::new(DescValue::clone);
-        let backward: Translate = Arc::new(DescValue::clone);
-        Self::new(label, desc.clone(), desc, forward, backward)
+        Self::new(
+            label,
+            desc.clone(),
+            desc,
+            Translate::identity(),
+            Translate::identity(),
+        )
     }
 
     /// The certificate's provenance label.
@@ -153,7 +226,7 @@ impl CodeIso
         value: &DescValue,
     ) -> DescValue
     {
-        (self.forward)(value)
+        self.forward.apply(value)
     }
 
     /// The backward translator applied to a target value.
@@ -165,7 +238,7 @@ impl CodeIso
         value: &DescValue,
     ) -> DescValue
     {
-        (self.backward)(value)
+        self.backward.apply(value)
     }
 
     /// The inverse certificate: the two translators and the two boundaries
@@ -179,8 +252,8 @@ impl CodeIso
             label: Name::from(format!("{}⁻¹", self.label)),
             source: self.target.clone(),
             target: self.source.clone(),
-            forward: Arc::clone(&self.backward),
-            backward: Arc::clone(&self.forward),
+            forward: self.backward.clone(),
+            backward: self.forward.clone(),
         }
     }
 
@@ -216,12 +289,8 @@ impl CodeIso
         if self.target != next.source {
             return Maybe::Absent(composition::Absent::BoundaryMismatch);
         }
-        let self_forward = Arc::clone(&self.forward);
-        let next_forward = Arc::clone(&next.forward);
-        let self_backward = Arc::clone(&self.backward);
-        let next_backward = Arc::clone(&next.backward);
-        let forward: Translate = Arc::new(move |value| next_forward(&self_forward(value)));
-        let backward: Translate = Arc::new(move |value| self_backward(&next_backward(value)));
+        let forward = self.forward.then(&next.forward);
+        let backward = next.backward.then(&self.backward);
         Maybe::Present(Self {
             label: Name::from(format!("{} ⨟ {}", self.label, next.label)),
             source: self.source.clone(),
@@ -544,7 +613,7 @@ mod tests
     #[test]
     fn composition_preserves_noncommuting_order()
     {
-        let swap: Translate = Arc::new(|value| {
+        let swap = Translate::of(|value| {
             DescValue::new(
                 ConstructorTag::from(match usize::from(value.ctor) {
                     0 => 1_usize,
@@ -554,13 +623,7 @@ mod tests
                 value.payload.clone(),
             )
         });
-        let reflection = CodeIso::new(
-            "swap",
-            fixtures::rgb(),
-            fixtures::rgb(),
-            Arc::clone(&swap),
-            swap,
-        );
+        let reflection = CodeIso::new("swap", fixtures::rgb(), fixtures::rgb(), swap.clone(), swap);
         let Maybe::Present(composed) = fixtures::rgb_rotate().compose_invertible(&reflection)
         else {
             panic!("matching boundaries");
@@ -583,8 +646,8 @@ mod tests
             "constant",
             fixtures::bool_two_ctor(),
             fixtures::bool_two_ctor(),
-            Arc::new(move |_| forward_value.clone()),
-            Arc::new(move |_| backward_value.clone()),
+            Translate::constant(forward_value),
+            Translate::constant(backward_value),
         );
         let source = [zero.clone(), one.clone(), zero.clone()];
         let target = [one.clone(), zero.clone(), one.clone()];
@@ -626,8 +689,8 @@ mod tests
             "backward-only",
             fixtures::bool_two_ctor(),
             fixtures::bool_two_ctor(),
-            Arc::new(DescValue::clone),
-            Arc::new(move |value| negation.backward_value(value)),
+            Translate::identity(),
+            negation.backward,
         );
         let source = fixtures::bool_two_ctor_values();
         let [zero, one] = <[DescValue; 2]>::try_from(source.clone()).expect("two Boolean values");

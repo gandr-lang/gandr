@@ -79,6 +79,7 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Retired;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Wake;
 use gandr_surface_dispatcher::Watch;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::DocumentVersion;
@@ -302,7 +303,7 @@ struct Awaited
 struct Jobs
 {
     /// The jobs on the pool, one slot for each call.
-    generations: Generations<Row, (), Outcome>,
+    generations: Generations<Row, (), Outcome, Ended>,
     /// The hub's pool.
     pool: Arc<Pool>,
     /// The jobs on the pool, by the row of their call.
@@ -313,11 +314,36 @@ struct Jobs
     documents: BTreeMap<DocumentUri, BTreeSet<Row>>,
 }
 
+/// What a job of the pool wakes when it ends: the thread of the jobs hears
+/// [`Command::Finished`].
+#[derive(Clone)]
+#[repr(transparent)]
+struct Ended(Sender<Command>);
+
+impl Wake for Ended
+{
+    /// Tell the thread of the jobs that a job ended; nothing once it stopped.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the channel's internals, growth within the ended jobs
+    #[inline]
+    fn wake(&self)
+    {
+        drop(self.0.send(Command::Finished));
+    }
+}
+
 /// Run each job that `commands` starts, and answer it when it ends, until
 /// the toolset stops. Each job of the pool sends its end on `finished`.
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the jobs' tables and channel, setup
 pub(super) fn run<Log>(
     commands: Receiver<Command>,
     finished: Sender<Command>,
@@ -327,10 +353,7 @@ pub(super) fn run<Log>(
 {
     let pool = Arc::clone(lock(held.workspace).pool());
     let mut jobs = Jobs {
-        generations: Generations::waking(
-            Arc::clone(&pool),
-            Arc::new(move || drop(finished.send(Command::Finished))),
-        ),
+        generations: Generations::waking(Arc::clone(&pool), Ended(finished)),
         pool,
         running: BTreeMap::new(),
         awaited: BTreeMap::new(),
@@ -355,6 +378,9 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the row and the running entry, growth within the calls
     fn start<Log>(
         &mut self,
         pending: Pending,
@@ -417,6 +443,9 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the running entry and the job, growth within the calls
     fn walk<Log>(
         &mut self,
         row: Row,
@@ -619,6 +648,9 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the channel's internals, growth within the ended jobs
     fn finished<Log>(
         &mut self,
         held: &Held<'_, Log>,
@@ -635,6 +667,9 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the call's document list, growth within its documents
     fn close<Log>(
         &mut self,
         row: &Row,

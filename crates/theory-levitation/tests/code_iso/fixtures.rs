@@ -7,8 +7,6 @@
 //! two-constructor `Boolean` (the crate's retrofit) against the inline `1 + 1`
 //! sum form `BoolSum`.
 
-use alloc::sync::Arc;
-
 use anodized::spec;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::Code;
@@ -186,7 +184,7 @@ pub fn identity_bool() -> CodeIso
 /// trivial.
 pub fn negation_bool() -> CodeIso
 {
-    let flip: Translate = Arc::new(|value: &DescValue| match usize::from(value.ctor) {
+    let flip = Translate::of(|value: &DescValue| match usize::from(value.ctor) {
         0 => nullary_value(ConstructorTag::from(1_usize)),
         _ => nullary_value(ConstructorTag::from(0_usize)),
     });
@@ -194,7 +192,7 @@ pub fn negation_bool() -> CodeIso
         "negation",
         bool_two_ctor(),
         bool_two_ctor(),
-        Arc::clone(&flip),
+        flip.clone(),
         flip,
     )
 }
@@ -207,11 +205,11 @@ pub fn negation_bool() -> CodeIso
 /// trivial.
 pub fn bool_bridge() -> CodeIso
 {
-    let forward: Translate = Arc::new(|value: &DescValue| match usize::from(value.ctor) {
+    let forward = Translate::of(|value: &DescValue| match usize::from(value.ctor) {
         0 => DescValue::new(ConstructorTag::from(0_usize), inl(Payload::unit())),
         _ => DescValue::new(ConstructorTag::from(0_usize), inr(Payload::unit())),
     });
-    let backward: Translate = Arc::new(|value: &DescValue| {
+    let backward = Translate::of(|value: &DescValue| {
         if matches!(value.payload.view(), PayloadView::Inj {
             side: Side::Right,
             ..
@@ -238,7 +236,7 @@ pub fn bool_bridge() -> CodeIso
 /// trivial.
 pub fn rgb_rotate() -> CodeIso
 {
-    let forward: Translate = Arc::new(|value: &DescValue| {
+    let forward = Translate::of(|value: &DescValue| {
         let next = match usize::from(value.ctor) {
             0 => 1_usize,
             1 => 2_usize,
@@ -246,7 +244,7 @@ pub fn rgb_rotate() -> CodeIso
         };
         nullary_value(ConstructorTag::from(next))
     });
-    let backward: Translate = Arc::new(|value: &DescValue| {
+    let backward = Translate::of(|value: &DescValue| {
         let previous = match usize::from(value.ctor) {
             0 => 2_usize,
             1 => 0_usize,
@@ -455,10 +453,8 @@ pub fn int_box_identity() -> CodeIso
 /// trivial.
 pub fn leaf_shift() -> CodeIso
 {
-    let forward: Translate =
-        Arc::new(|value: &DescValue| int_leaf(read_int_leaf(value).successor()));
-    let backward: Translate =
-        Arc::new(|value: &DescValue| int_leaf(read_int_leaf(value).predecessor()));
+    let forward = Translate::of(|value: &DescValue| int_leaf(read_int_leaf(value).successor()));
+    let backward = Translate::of(|value: &DescValue| int_leaf(read_int_leaf(value).predecessor()));
     CodeIso::new("leaf-shift", int_box(), int_box(), forward, backward)
 }
 

@@ -245,7 +245,6 @@ use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Declined;
 use gandr_surface_corpus::Produced;
 use gandr_surface_corpus::Rooted;
-use gandr_surface_corpus::Runner;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
@@ -3502,6 +3501,9 @@ type JudgedUnit<'source> = (
 /// - witness: `tests::compose::each_source_of_a_component_reports_its_own_share`
 /// - witness: `tests::compose::a_retired_member_judgement_keeps_nothing_1663`
 /// - witness: `tests::compose::a_revision_moving_no_lowered_node_is_not_judged_again_2102`
+///
+/// # Cost
+/// - allocation: the unit's tables and reports, growth within its declarations
 #[spec(ensures: |ref ret| if let Polled::Whole(ref whole) = *ret {
     whole.0.earlier.len() == earlier.len()
 } else {
@@ -3650,17 +3652,30 @@ where
         },
     );
     let laid = Laid { earlier, last };
-    let settle_with = |runner: &mut dyn Runner| match after {
-        Some(closure) => {
-            let earlier = closure.settled.as_ref().map_err(|&fault| fault)?;
-            settle_after(laid, &arena, &module, &verdicts, runner, earlier)
-        },
-        None => settle(laid, &arena, &module, &verdicts, runner),
-    };
-    let settled_report = match scheduling {
-        Scheduling::Sequential => settle_with(&mut E::runs(&mut program)),
-        Scheduling::Concurrent(pool) => settle_with(&mut E::scheduled(&mut program, pool)),
-    };
+    // The reports a closure settled lead the module's; without a closure, none
+    // lead. Each arm settles with its own runner, so the runner is a generic.
+    let settled_report = after
+        .map_or(Ok(&[][..]), |closure| {
+            closure.settled.as_deref().map_err(|&fault| fault)
+        })
+        .and_then(|earlier| match scheduling {
+            Scheduling::Sequential => settle_after(
+                laid,
+                &arena,
+                &module,
+                &verdicts,
+                &mut E::runs(&mut program),
+                earlier,
+            ),
+            Scheduling::Concurrent(pool) => settle_after(
+                laid,
+                &arena,
+                &module,
+                &verdicts,
+                &mut E::scheduled(&mut program, pool),
+                earlier,
+            ),
+        });
     let projected = match settled_report {
         Ok(report) => {
             let failures = Failures::of(&verdicts);

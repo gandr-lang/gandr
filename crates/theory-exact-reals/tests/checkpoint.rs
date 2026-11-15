@@ -111,23 +111,20 @@ fn nodes(plan: &ValidatedPlan) -> [NodeId; 4]
         Node::Real(real) => Some(real),
         Node::Open(_) | Node::Domain(_) => None,
     };
-    let find = |wanted: &dyn Fn(NodeId) -> bool| {
-        (0 .. count)
-            .map(|index| NodeId::try_from(index).unwrap())
-            .find(|&id| wanted(id))
+    let ids = || (0 .. count).map(|index| NodeId::try_from(index).unwrap());
+    let cut = ids()
+        .find(|&id| matches!(real(id), Some(Real::Cut(_))))
+        .unwrap();
+    let is_cut: fn(Option<Real>) -> bool = |held| matches!(held, Some(Real::Cut(_)));
+    let is_constant: fn(Option<Real>) -> bool = |held| matches!(held, Some(Real::Constant(_)));
+    let less = |first: fn(Option<Real>) -> bool, second: fn(Option<Real>) -> bool| {
+        ids()
+            .find(|&id| matches!(node(id), Node::Open(Open::Less(left, right)) if first(real(left.node())) && second(real(right.node()))))
             .unwrap()
     };
-    let cut = find(&|id| matches!(real(id), Some(Real::Cut(_))));
-    let less = |first: &dyn Fn(Option<Real>) -> bool, second: &dyn Fn(Option<Real>) -> bool| {
-        find(
-            &|id| matches!(node(id), Node::Open(Open::Less(left, right)) if first(real(left.node())) && second(real(right.node()))),
-        )
-    };
-    let is_cut = |held: Option<Real>| matches!(held, Some(Real::Cut(_)));
-    let is_constant = |held: Option<Real>| matches!(held, Some(Real::Constant(_)));
-    let settles = less(&is_constant, &is_cut);
-    let never = less(&is_cut, &is_cut);
-    let constants = less(&is_constant, &is_constant);
+    let settles = less(is_constant, is_cut);
+    let never = less(is_cut, is_cut);
+    let constants = less(is_constant, is_constant);
     return [cut, settles, never, constants];
 }
 

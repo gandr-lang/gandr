@@ -1477,15 +1477,16 @@ impl Error for SettleFault
 },
 )]
 #[inline]
-pub fn settle<'source, Roots>(
+pub fn settle<'source, Roots, Run>(
     roots: Roots,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
-    runner: &mut dyn Runner,
+    runner: &mut Run,
 ) -> Result<SettleReport<'source>, SettleFault>
 where
     Roots: Rooted + Copy,
+    Run: Runner,
 {
     settle_after(roots, arena, module, verdicts, runner, &[])
 }
@@ -1522,19 +1523,23 @@ where
 /// - witness: `settle::tests::a_function_that_checks_keeps_the_default_beside_its_refused_witness_3840`
 /// - witness: `settle::tests::a_declaration_refused_at_refused_terms_states_their_cause_4143`
 /// - witness: `settle::tests::a_data_refusal_covers_its_rules_6063`
+///
+/// # Cost
+/// - allocation: the reports and refusals, growth within the declarations
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
-pub fn settle_after<'source, Roots>(
+pub fn settle_after<'source, Roots, Run>(
     roots: Roots,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
-    runner: &mut dyn Runner,
+    runner: &mut Run,
     earlier: &[DeclarationReport<'source>],
 ) -> Result<SettleReport<'source>, SettleFault>
 where
     Roots: Rooted + Copy,
+    Run: Runner,
 {
     // The declarations the earlier report settled lead the module's, the
     // closure's; the rest are settled here.
@@ -3511,7 +3516,7 @@ mod tests
             &mut self,
             constant: ConstantIndex,
             _quota: crate::distribution::Bits,
-            path: &mut dyn FnMut(RunSpelling, crate::distribution::Bits),
+            path: &mut impl FnMut(RunSpelling, crate::distribution::Bits),
         ) -> Result<(), crate::distribution::Undistributed>
         {
             self.0.push(("distributes", usize::from(constant)));

@@ -28,6 +28,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::iter;
+use std::path::Path;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
@@ -228,6 +229,9 @@ pub struct Hole
 ///   the parameter and the declared names, and a range meeting no hole is
 ///   offered no fill.
 /// - witness: `gandr-surface-lsp::server::tests::a_hole_is_offered_the_names_that_settle_it`
+///
+/// # Cost
+/// - allocation: the holes and their names, growth within the spans
 #[spec(ensures: |ret| ret.iter().all(|hole| (1 ..= MOST_FILLS).contains(&hole.names.len())))]
 #[must_use]
 #[inline]
@@ -261,9 +265,9 @@ pub fn holes(
             hovering,
             (uri, range.start),
             (printer, LabelsDetailed(false), TakesSnippets(false)),
-            Elsewhere {
+            &Elsewhere {
                 sources: &[],
-                import: &|_| Vec::new(),
+                import: &|_: &Path| Vec::new(),
             },
         )
         .items

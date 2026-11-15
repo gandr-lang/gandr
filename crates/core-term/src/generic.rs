@@ -177,8 +177,15 @@ impl Derived
 /// The constructor table a derivation reads of each data declaration, by
 /// admission position: the signature the declaration's levitated code decodes
 /// to, or why it has none.
-pub type Signatures<'lookup> =
-    dyn Fn(ConstantIndex) -> Result<&'lookup DataSignature, Uncovered> + 'lookup;
+pub trait Signatures<'lookup>:
+    Fn(ConstantIndex) -> Result<&'lookup DataSignature, Uncovered>
+{
+}
+
+impl<'lookup, Table> Signatures<'lookup> for Table where
+    Table: Fn(ConstantIndex) -> Result<&'lookup DataSignature, Uncovered>
+{
+}
 
 /// Derive the equality of the closed, free data declaration at `position`.
 ///
@@ -210,11 +217,13 @@ pub type Signatures<'lookup> =
 /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|derived| arena.value_type(derived.declared).is_some() && arena.value(derived.body).is_some()))]
 #[inline]
-pub fn equality(
+pub fn equality<'lookup, Table>(
     arena: &mut CoreArena,
     position: ConstantIndex,
-    signatures: &Signatures<'_>,
+    signatures: &Table,
 ) -> Result<Derived, Uncovered>
+where
+    Table: Signatures<'lookup>,
 {
     let (mut deriving, _order) = Deriving::start(arena, signatures, position)?;
     let body = deriving
@@ -232,12 +241,12 @@ pub fn equality(
 
 /// One derivation's state: the arena it mints into, the signatures it reads,
 /// and the declarations read and derived so far.
-struct Deriving<'run, 'lookup>
+struct Deriving<'run, Table>
 {
     /// Where every node is minted.
     arena: &'run mut CoreArena,
     /// The signatures by position.
-    signatures: &'run Signatures<'lookup>,
+    signatures: &'run Table,
     /// Each reached declaration's fields, constructor by constructor, each
     /// read outside the fields before it.
     rows: BTreeMap<ConstantIndex, Vec<Vec<ValueTypeId>>>,
@@ -372,7 +381,9 @@ fn count<T>(items: &[T]) -> Result<Binders, Uncovered>
         .map_err(|_cause| Uncovered::BinderCeiling)
 }
 
-impl<'run, 'lookup> Deriving<'run, 'lookup>
+impl<'run, 'lookup, Table> Deriving<'run, Table>
+where
+    Table: Signatures<'lookup>,
 {
     /// The derivation of `position`'s equality over `signatures`, with every
     /// declaration it reaches derived, and the order they were derived in.
@@ -387,10 +398,13 @@ impl<'run, 'lookup> Deriving<'run, 'lookup>
     /// # Adequacy
     /// - hypothesis: L3 — as [`equality`].
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
+    ///
+    /// # Cost
+    /// - allocation: the derivation's tables and its order, setup
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref deriving, ref order)| order.iter().all(|at| deriving.derived.contains_key(at))))]
     fn start(
         arena: &'run mut CoreArena,
-        signatures: &'run Signatures<'lookup>,
+        signatures: &'run Table,
         position: ConstantIndex,
     ) -> Result<(Self, Vec<ConstantIndex>), Uncovered>
     {
@@ -431,7 +445,9 @@ impl<'run, 'lookup> Deriving<'run, 'lookup>
     }
 }
 
-impl Deriving<'_, '_>
+impl<'lookup, Table> Deriving<'_, Table>
+where
+    Table: Signatures<'lookup>,
 {
     /// The variable at de Bruijn `level`, read `depth` binders deep.
     ///
@@ -516,6 +532,9 @@ impl Deriving<'_, '_>
     /// - hypothesis: L3 — a point's two fields are compared in order, each
     ///   against its own counterpart.
     /// - witness: `generic::tests::a_point_derives_a_closed_equality_of_two_points`
+    ///
+    /// # Cost
+    /// - allocation: the comparisons, growth within the types
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |comparisons| comparisons.len() == types.len()))]
     fn pairwise(
         site: impl Fn(FieldPosition) -> OccurrenceSite,
@@ -552,6 +571,9 @@ impl Deriving<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — each refusal names its declaration and field.
     /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
+    ///
+    /// # Cost
+    /// - allocation: the declaration's rows, growth within its constructors
     #[spec(ensures: |ret| ret.is_err() || self.rows.contains_key(&position))]
     fn read(
         &mut self,
@@ -603,6 +625,9 @@ impl Deriving<'_, '_>
     ///   declarations is.
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
     /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
+    ///
+    /// # Cost
+    /// - allocation: the reached declarations, growth within the fields
     #[spec(ensures: |ret| ret.iter().all(|reached| reached.0 != position))]
     fn reached(
         &self,
@@ -659,6 +684,9 @@ impl Deriving<'_, '_>
     ///   declarations refuses at the second's field.
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
     /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
+    ///
+    /// # Cost
+    /// - allocation: the order and its stacks, growth within the declarations
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |order| order.last() == Some(&position)))]
     fn order(
         &mut self,
@@ -708,6 +736,9 @@ impl Deriving<'_, '_>
     /// - hypothesis: L3 — as [`equality`].
     /// - witness: `generic::tests::a_point_derives_a_closed_equality_of_two_points`
     /// - witness: `generic::tests::a_recursive_declaration_derives_a_structural_fixpoint`
+    ///
+    /// # Cost
+    /// - allocation: the case tables, growth within the constructors
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&body| self.arena.value(body).is_some()))]
     fn derive(
         &mut self,
@@ -790,6 +821,9 @@ impl Deriving<'_, '_>
     /// - hypothesis: L3 — a point's two fields conjoin and a constructor with
     ///   none answers true.
     /// - witness: `generic::tests::a_point_derives_a_closed_equality_of_two_points`
+    ///
+    /// # Cost
+    /// - allocation: the steps and the terms, growth within the comparisons
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&term| self.arena.computation(term).is_some()))]
     fn conjunction(
         &mut self,
@@ -961,6 +995,9 @@ impl Deriving<'_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — a line's flag is compared by its injections.
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
+    ///
+    /// # Cost
+    /// - allocation: the summands' case tables, growth within the summands
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1008,6 +1045,9 @@ impl Deriving<'_, '_>
     /// - witness: `generic::tests::a_point_derives_a_closed_equality_of_two_points`
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
     /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
+    ///
+    /// # Cost
+    /// - allocation: the components and the steps, growth within the type
     #[spec(
         captures: [ready = built.len(), pending = steps.len()],
         ensures: |ret| ret.is_err() || built.len() == ready.saturating_add(1) || steps.len() > pending,

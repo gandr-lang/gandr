@@ -2088,14 +2088,13 @@ fn a_scope_names_a_model_of_its_theory_2272()
                 if matches!(arena.value(ascribed), Some(&Value::Ascribe { .. }))
         )
     };
-    // The continuation at `index` resumed with `pure` of the value `replied`
-    // reads.
-    let resumed = |id: ComputationId, index: u32, replied: &dyn Fn(Option<&Value>) -> bool| {
+    // The continuation at `index` resumed with `pure` of `replied`.
+    let resumed = |id: ComputationId, index: u32, replied: Option<&Value>| {
         matches!(
             arena.computation(id),
             Some(&Computation::Resume(continuation, reply))
                 if arena.value(continuation) == at(index).as_ref()
-                    && matches!(arena.computation(reply), Some(&Computation::Return(value)) if replied(arena.value(value)))
+                    && matches!(arena.computation(reply), Some(&Computation::Return(value)) if arena.value(value) == replied)
         )
     };
     let bodies: Vec<(&str, ComputationId)> = clauses
@@ -2112,9 +2111,7 @@ fn a_scope_names_a_model_of_its_theory_2272()
             forced(head)
                 && match arena.value(argument) {
                     Some(&Value::Thunk(function)) => match arena.computation(function) {
-                        Some(&Computation::Lambda(body)) => {
-                            resumed(body, 1, &|value| value == at(0).as_ref())
-                        },
+                        Some(&Computation::Lambda(body)) => resumed(body, 1, at(0).as_ref()),
                         _ => false,
                     },
                     _ => false,
@@ -2129,7 +2126,7 @@ fn a_scope_names_a_model_of_its_theory_2272()
     // `put`: `r ← resume(k, pure unit); component(s, r)`.
     let put_holds = match arena.computation(put) {
         Some(&Computation::Bind(bound, body)) => {
-            resumed(bound, 0, &|value| value == Some(&Value::unit()))
+            resumed(bound, 0, Some(&Value::unit()))
                 && match arena.computation(body) {
                     Some(&Computation::Application(applied, answer)) => {
                         arena.value(answer) == at(0).as_ref()

@@ -2891,7 +2891,7 @@ fn every_refusal() -> Vec<Refusal>
 ///
 /// # Specification
 /// trivial.
-fn every_refusal_holding(ty: &dyn Fn() -> TypeContent) -> Vec<Refusal>
+fn every_refusal_holding(ty: &impl Fn() -> TypeContent) -> Vec<Refusal>
 {
     use gandr_core_checker::ComponentOrdinal;
     use gandr_core_checker::LoopRespect;

@@ -306,7 +306,7 @@ pub trait Runner
         &mut self,
         constant: ConstantIndex,
         quota: Bits,
-        path: &mut dyn FnMut(RunSpelling, Bits),
+        path: &mut impl FnMut(RunSpelling, Bits),
     ) -> Result<(), Undistributed>;
 }
 
@@ -395,7 +395,7 @@ where
         &mut self,
         constant: ConstantIndex,
         _quota: Bits,
-        path: &mut dyn FnMut(RunSpelling, Bits),
+        path: &mut impl FnMut(RunSpelling, Bits),
     ) -> Result<(), Undistributed>
     {
         path(self(constant), Bits::default());

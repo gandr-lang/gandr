@@ -1073,7 +1073,7 @@ impl<'source> Machine<'_, 'source>
         &mut self,
         constant: ConstantIndex,
         (quota, order): (Bits, TaskOrder),
-        path: &mut dyn FnMut(RunSpelling, Bits),
+        path: &mut impl FnMut(RunSpelling, Bits),
     ) -> Result<(), Undistributed>
     {
         let mut captured = Captured::default();
@@ -2022,7 +2022,7 @@ impl Runner for Machine<'_, '_>
         &mut self,
         constant: ConstantIndex,
         quota: Bits,
-        path: &mut dyn FnMut(RunSpelling, Bits),
+        path: &mut impl FnMut(RunSpelling, Bits),
     ) -> Result<(), Undistributed>
     {
         self.distributed_in(constant, (quota, TaskOrder::Oldest), path)
@@ -2143,7 +2143,7 @@ impl Runner for ScheduledRuns<'_, '_, '_>
         &mut self,
         constant: ConstantIndex,
         quota: Bits,
-        path: &mut dyn FnMut(RunSpelling, Bits),
+        path: &mut impl FnMut(RunSpelling, Bits),
     ) -> Result<(), Undistributed>
     {
         self.program.run_distributed(constant, quota, path)
