@@ -67,6 +67,7 @@ use super::host::FifoName;
 use super::host::Host;
 use super::host::Wanting;
 use super::host::fifo_name;
+#[cfg(unix)]
 use super::host::runtime_directory;
 
 quenchant_shape::reason_enum! {
@@ -132,10 +133,11 @@ impl Grant
     /// - requires: nothing.
     /// - ensures: the counter's tokens, taken as `class`, when the named FIFO
     ///   is a holder's and the process joins its counter; else the tokens of
-    ///   the named jobserver, when it opens; else the tokens of the hub's
-    ///   counter in the runtime directory, taken as `class`; else no grant, so
-    ///   the process runs as with no jobserver. A jobserver that a parent names
-    ///   stands before the hub's counter, since the parent bounds the process.
+    ///   the named jobserver, when it opens; else, on `unix`, the tokens of the
+    ///   hub's counter in the runtime directory, taken as `class`; else no
+    ///   grant, so the process runs as with no jobserver. A jobserver that a
+    ///   parent names stands before the hub's counter, since the parent bounds
+    ///   the process.
     /// - panics: none.
     /// - executable: none — the answer is the environment's and the host's.
     ///
@@ -167,7 +169,7 @@ impl Grant
                 return Self(opened(named, class));
             }
         }
-        Self(hosted(&runtime_directory(), class))
+        Self(hub(class))
     }
 
     /// The grant of the jobserver that a FIFO at `path` holds.
@@ -922,6 +924,28 @@ fn hosted(
         Maybe::Present(host) => Maybe::Present(Tokens::Host(host)),
         Maybe::Absent(_) => Maybe::Absent(ungranted::Absent::Unnamed),
     }
+}
+
+/// The tokens of the hub's counter in the runtime directory, taken as
+/// `class`, while a hub owns it.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn hub(class: Class) -> Maybe<Tokens, ungranted::Absent>
+{
+    hosted(&runtime_directory(), class)
+}
+
+/// No hub runs where no `unix` host is, and WASI names no temporary
+/// directory to find one in: the process runs as with no jobserver.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(unix))]
+fn hub(_class: Class) -> Maybe<Tokens, ungranted::Absent>
+{
+    Maybe::Absent(ungranted::Absent::Unnamed)
 }
 
 #[cfg(test)]

@@ -155,6 +155,7 @@ use alloc::collections::BTreeSet;
 use core::cell::OnceCell;
 use core::fmt;
 use core::num::NonZeroU64;
+#[cfg(unix)]
 use core::num::NonZeroUsize;
 #[cfg(unix)]
 use core::time::Duration;
@@ -173,6 +174,7 @@ use gandr_surface_agentic::Retries;
 use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::PresentationFault;
 use gandr_surface_dispatcher::RealsProfile;
+#[cfg(unix)]
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::presented;
 
@@ -968,6 +970,7 @@ impl Configuration
     /// # Cost
     /// - allocation: the read of the CPUs that the process may run on, setup
     /// - allocation: the path and the words of a fault, diagnostic
+    #[cfg(unix)]
     pub fn compile_width(&self) -> Result<Option<Threads>, TableFault>
     {
         match *self.read() {
@@ -1347,6 +1350,7 @@ fn seal_parsed(
 ///
 /// # Cost
 /// - allocation: the path and the words of a fault, diagnostic
+#[cfg(unix)]
 fn compile_width_parsed(
     path: &Path,
     read: Result<&toml::Table, &toml::de::Error>,
@@ -1483,6 +1487,7 @@ mod tests
 
     use super::Kernel;
     use super::checkpointed;
+    #[cfg(unix)]
     use super::compile_width_parsed;
     #[cfg(unix)]
     use super::deliveries_parsed;
@@ -1805,6 +1810,7 @@ mod tests
     /// #7706: the width of the host's counter reads as the `[host]` table
     /// names it, none with no table or no key, and a width that is no count
     /// from 1 to the logical CPUs is refused by name.
+    #[cfg(unix)]
     #[test]
     fn a_counter_width_is_read_and_a_bad_one_refused_7706()
     {

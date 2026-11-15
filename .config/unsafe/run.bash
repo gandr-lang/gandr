@@ -3,6 +3,10 @@
 #
 #   .config/unsafe/run.bash <check> [<package>...]
 #
+# `skips` compares each crate's skips with its list and runs no test. The
+# landing's gate runs it (`check:unsafe-skips`), so a skip with no row fails
+# before the landing and not at night.
+#
 # `miri-tree` and `miri-stacked` interpret each test under Miri, each with one
 # aliasing model, with strict provenance and with the host's clock and files.
 # `careful` runs each test natively against a standard library built with its
@@ -16,8 +20,9 @@
 # attribute, with the same reason, and the check refuses a crate whose skips
 # and list differ. rustfmt puts an attribute with a long reason on four lines,
 # so the check reads the attribute across lines.
+# - see: `.config/unsafe/skips.jq`
 set -euo pipefail
-check=${1:?the check: miri-tree, miri-stacked or careful}
+check=${1:?the check: skips, miri-tree, miri-stacked or careful}
 shift
 root=$(git rev-parse --show-toplevel)
 list=$root/.config/unsafe/crates.json
@@ -33,16 +38,19 @@ for crate in "${crates[@]}"; do
     echo "unsafe:$check: \`$crate\` is no crate of $list" >&2
     exit 2
   fi
-  stated=$(jq -r --arg crate "$crate" '.crates[] | select(.package == $crate) | .skips[].why' "$list" | sort)
-  found=$({ grep -rhzoP 'cfg_attr\(\s*miri,\s*ignore = "[^"]*",?\s*\)' "$root/$path" || true; } | tr '\0' '\n' | sed -nE 's/^.*ignore = "(.*)".*$/\1/p' | sort)
-  if [[ $stated != "$found" ]]; then
-    echo "unsafe:$check: the skips of \`$crate\` under Miri differ from $list; each skip in the crate is a row of its list, with the same reason (< the list, > the crate):" >&2
-    diff <(printf '%s\n' "$stated") <(printf '%s\n' "$found") >&2 || true
+  if ! jq -n --arg crate "$crate" --arg list "$list" \
+    --slurpfile stated <(jq -c --arg crate "$crate" '[.crates[] | select(.package == $crate) | .skips[].why]' "$list") \
+    --slurpfile found <({ grep -rhzoP 'cfg_attr\(\s*miri,\s*ignore = "[^"]*",?\s*\)' "$root/$path" || true; } | tr '\0' '\n' | sed -nE 's/^.*ignore = "(.*)".*$/\1/p' | jq -Rsc 'split("\n") | map(select(. != ""))') \
+    '{crate: $crate, list: $list, stated: $stated[0], found: $found[0]}' | jq -r -f "$root/.config/unsafe/skips.jq"; then
+    echo "unsafe:$check: refused" >&2
     exit 1
   fi
   packages+=(--package "$crate")
 done
 case $check in
+  skips)
+    exit 0
+    ;;
   miri-tree | miri-stacked)
     rustup component add miri rust-src
     flags=(-Zmiri-strict-provenance -Zmiri-disable-isolation)
@@ -64,7 +72,7 @@ case $check in
       exec "$root/.config/mise/scope" cargo careful nextest run --locked --no-fail-fast "${packages[@]}"
     ;;
   *)
-    echo "unsafe: no check \`$check\`: miri-tree, miri-stacked or careful" >&2
+    echo "unsafe: no check \`$check\`: skips, miri-tree, miri-stacked or careful" >&2
     exit 2
     ;;
 esac

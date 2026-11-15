@@ -104,11 +104,19 @@
           "why": "it sets up a ring through liburing, which Miri cannot run"
         },
         {
+          "test": "cqueue::test::cqes::wait::two_of_32_bytes",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
           "test": "cqueue::test::cqes::wait::zero",
           "why": "it sets up a ring through liburing, which Miri cannot run"
         },
         {
           "test": "cqueue::test::new",
+          "why": "it sets up a ring through liburing, which Miri cannot run"
+        },
+        {
+          "test": "registrar::test::register_files",
           "why": "it sets up a ring through liburing, which Miri cannot run"
         },
         {

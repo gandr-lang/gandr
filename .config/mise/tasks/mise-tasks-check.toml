@@ -3950,6 +3950,27 @@ set -euo pipefail
 echo "stall check OK: $(jq length .config/stall/cases.json) cases read as recorded"
 '''
 
+# The skips under Miri of each crate that holds `unsafe`. Each Miri skip in a
+# crate of the list is a row of the crate's list, with the same reason. The
+# night refuses a crate whose skips and list differ, before it runs Miri.
+#
+# This check reads the list and the crates alone and runs no test. So a skip
+# with no row fails before the landing. Each case holds a crate's reasons and
+# the verdict that `skips.jq` must give.
+# - see: #7777
+# - see: `.config/unsafe/crates.json`
+# - see: `.config/unsafe/skips.json`
+["check:unsafe-skips"]
+description = "Each skip under Miri of a crate that holds unsafe is a row of its list, with the same reason"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+.config/cases/run.bash unsafe-skips .config/unsafe/skips.json --program .config/unsafe/skips.jq --mode r
+.config/unsafe/run.bash skips
+echo "unsafe-skips check OK: $(jq length .config/unsafe/skips.json) cases read as recorded, and each crate's skips are rows of its list"
+'''
+
 # The host service that keeps a task running (#4167): `service.jq` writes the
 # `systemd --user` unit or the `launchd` agent that `stall:watch --install`
 # and `toolchain:follow --install` install. Each case in
