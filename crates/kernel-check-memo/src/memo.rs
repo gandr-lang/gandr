@@ -14,10 +14,11 @@
 //!   matched against the context that asks (§ successor-synthesized-context).
 
 use alloc::alloc::Global;
-use alloc::vec::Vec;
 use core::cell::Cell;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 
 use crate::accounting::EntryCensus;
 use crate::accounting::MemoBucketCount;
@@ -569,7 +570,7 @@ where
     Support: MemoKey,
 {
     /// The recorded answers, in recording order.
-    entries: Vec<MemoEntry<Support, Outcome>>,
+    entries: SmallVec<MemoEntry<Support, Outcome>, 0, Global>,
     /// Each entry's position, filed under its support's digest.
     index: HashIndex<Global>,
     /// How many distinct digests the entries carry.
@@ -604,7 +605,7 @@ where
     pub fn new() -> Self
     {
         Self {
-            entries: Vec::new(),
+            entries: SmallVec::<_, 0, Global>::new(),
             index: HashIndex::new_in(Global),
             buckets: MemoBucketCount::zero(),
             census: EntryCensus::empty(),
@@ -819,7 +820,7 @@ where
             self.index.remove(moved, from);
             self.index.file(moved, place);
         }
-        let _removed = self.entries.swap_remove(at);
+        let _removed = self.entries.swap_remove(Count::from(at));
         self.census.forget(plane);
         let carried = self.index.filed(hash).any(|position| {
             self.entries
@@ -921,6 +922,10 @@ where
     /// # Errors
     /// [`MemoError::EntryCountOverflow`] when the entry accounting cannot admit
     /// another entry; the memo then holds what it held before.
+    ///
+    /// # Cost
+    /// - allocation: the entry's place and its bucket, growth within the memo's
+    ///   entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — on valid memo states, fresh versus agreeing supports

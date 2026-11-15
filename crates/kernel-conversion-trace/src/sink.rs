@@ -1,8 +1,9 @@
 //! The sink: one interface, a null implementation and a recording one.
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 use crate::decision::ConversionDecision;
 
@@ -288,7 +289,7 @@ impl<Id> TraceSink<Id> for NullSink
 pub struct TraceLog<Id>
 {
     /// The decisions, in the order they were recorded.
-    decisions: Vec<ConversionDecision<Id>>,
+    decisions: SmallVec<ConversionDecision<Id>, 0, Global>,
 }
 
 impl<Id> TraceLog<Id>
@@ -299,10 +300,10 @@ impl<Id> TraceLog<Id>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new() -> Self
+    pub fn new() -> Self
     {
         Self {
-            decisions: Vec::new(),
+            decisions: SmallVec::<_, 0, Global>::new(),
         }
     }
 
@@ -360,6 +361,10 @@ impl<Id> TraceSink<Id> for TraceLog<Id>
     /// - provides: the recording path a differential counts its exercised route
     ///   through.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the log's room for one more decision, growth within the
+    ///   recorded decisions
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the decision surfaces are retention and position; a

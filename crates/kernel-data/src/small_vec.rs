@@ -401,6 +401,17 @@ where
         unsafe { slice::from_raw_parts(self.as_ptr(), self.count().0) }
     }
 
+    /// The allocator of the vector's block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn allocator(&self) -> &A
+    {
+        &self.alloc
+    }
+
     /// The items, as a slice to write through.
     ///
     /// # Specification
@@ -614,6 +625,107 @@ where
         // SAFETY: the slot past `last` items holds an item, and the length
         // counts it no more.
         Some(unsafe { self.take(last) })
+    }
+
+    /// Removes the last item when `predicate` answers `true` for it.
+    ///
+    /// # Specification
+    /// - ensures: the last item, and the length one less, when the vector holds
+    ///   an item and `predicate` answers `true` for it; `None` otherwise, and
+    ///   the length does not change.
+    /// - panics: when `predicate` panics; the vector keeps each item.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test pops the last item below a bound after
+    ///   each kind of operation, against `Vec::pop_if`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(
+        captures: before = self.count(),
+        ensures: |ret| self.count().0.checked_add(usize::from(ret.is_some())) == Some(before.0),
+    )]
+    #[inline]
+    pub fn pop_if<F>(
+        &mut self,
+        predicate: F,
+    ) -> Option<T>
+    where
+        F: FnOnce(&mut T) -> bool,
+    {
+        let last = self.as_mut_slice().last_mut()?;
+        if predicate(last) { self.pop() } else { None }
+    }
+
+    /// Removes the item at `index`, and moves the last item into its place.
+    ///
+    /// # Specification
+    /// - ensures: the item that stood at `index`, and the length one less; the
+    ///   item that stood last stands at `index` when `index` is not the last.
+    /// - panics: when `index` is not below the length.
+    ///
+    /// # Panics
+    /// When `index` is not below the length, as `Vec::swap_remove` panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test removes an item at each index in range
+    ///   after each kind of operation, against `Vec::swap_remove`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = self.count(), ensures: self.count().0.checked_add(1) == Some(before.0))]
+    #[inline]
+    pub fn swap_remove(
+        &mut self,
+        index: Count,
+    ) -> T
+    {
+        let len = self.count().0;
+        assert!(
+            index.0 < len,
+            "the index {} of `swap_remove` is not below the length {len}",
+            index.0
+        );
+        let last = Count(len.wrapping_sub(1));
+        self.as_mut_slice().swap(index.0, last.0);
+        self.set_len(last);
+        // SAFETY: the slot past `last` items holds an item, and the length
+        // counts it no more.
+        unsafe { self.take(last) }
+    }
+
+    /// Removes the item at `index`, and moves each item past it down by one.
+    ///
+    /// # Specification
+    /// - ensures: the item that stood at `index`, and the length one less; the
+    ///   other items keep their order.
+    /// - panics: when `index` is not below the length.
+    /// - intension: one move of each item past `index`.
+    ///
+    /// # Panics
+    /// When `index` is not below the length, as `Vec::remove` panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test removes an item at each index in range
+    ///   after each kind of operation, against `Vec::remove`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = self.count(), ensures: self.count().0.checked_add(1) == Some(before.0))]
+    #[inline]
+    pub fn remove(
+        &mut self,
+        index: Count,
+    ) -> T
+    {
+        let len = self.count().0;
+        assert!(
+            index.0 < len,
+            "the index {} of `remove` is not below the length {len}",
+            index.0
+        );
+        let last = Count(len.wrapping_sub(1));
+        if let Some(tail) = self.as_mut_slice().get_mut(index.0 ..) {
+            tail.rotate_left(1);
+        }
+        self.set_len(last);
+        // SAFETY: the slot past `last` items holds the item that stood at
+        // `index`, and the length counts it no more.
+        unsafe { self.take(last) }
     }
 
     /// Drops each item past the first `len`.

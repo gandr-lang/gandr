@@ -1,6 +1,7 @@
 # The structures that the sharing ledger rows (#7339): each field whose type
-# holds an `Arc`, alone or in an `Option`, a `Maybe` or a `Vec`, in a struct or
-# an enum of a kernel crate or of the fork crate, outside its tests. A freeze,
+# holds an `Arc`, or a `Shared` or a `ThinShared` of `gandr-kernel-data`, alone
+# or in an `Option`, a `Maybe`, a `Vec` or a `SmallVec`, in a struct or an enum
+# of a kernel crate or of the fork crate, outside its tests. A freeze,
 # a fork or an `open_scope` clones such a field by a count, so a write after it
 # either copies what the field shares or adds beside it.
 #
@@ -22,7 +23,7 @@ def parsed:
   capture("^(?<file>[^:]+):(?<line>[0-9]+):(?<text>.*)$") | .line |= tonumber;
 
 def visibility: "(?:pub(?:\\([a-z]+\\))?\\s+)?";
-def holds: "(?:(?:Option|Maybe|Vec|alloc::vec::Vec)<)?(?:alloc::sync::|std::sync::|core::sync::)?Arc<";
+def holds: "(?:(?:Option|Maybe|Vec|alloc::vec::Vec|SmallVec)<)?(?:(?:alloc::sync::|std::sync::|core::sync::)?Arc|(?:gandr_kernel_data::)?(?:Shared|ThinShared))<";
 
 def type_name:
   first(.text | capture("^\\s*" + visibility + "(?:struct|enum|union)\\s+(?<name>[A-Z]\\w*)") | .name)
