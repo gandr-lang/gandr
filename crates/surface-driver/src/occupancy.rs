@@ -172,7 +172,7 @@ impl Occupied
     /// - witness: `tests::cli::check_prints_each_thread_s_occupancy_6298`
     pub fn print(
         &self,
-        stderr: &mut dyn io::Write,
+        stderr: &mut impl io::Write,
     ) -> io::Result<()>
     {
         let wall = u64::from(self.wall);

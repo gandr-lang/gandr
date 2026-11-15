@@ -141,7 +141,7 @@ pub trait Engine
         program: &mut Program<'source>,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>;
 
@@ -166,6 +166,6 @@ pub trait Engine
         worlds: Worlds<'_>,
         net: &mut Net,
         hosting: (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted;
 }

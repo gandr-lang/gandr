@@ -150,7 +150,7 @@ impl fmt::Display for Declined
     ensures: |ret| ret.is_none() != random,
 )]
 pub(super) fn served<Abort>(
-    console: &mut dyn Console,
+    console: &mut Streams<'_>,
     request: HostRequest<'_>,
     values: &mut HostValues<'_>,
 ) -> Option<HostReply<Abort>>

@@ -3410,7 +3410,7 @@ impl HubVerbs
         self,
         (verb, paths): (Verb, Vec<PathBuf>),
         (pool, rings): (&Pool, Rings<'_>),
-        (printed, faulted): (&mut dyn std::io::Write, &mut dyn std::io::Write),
+        (printed, faulted): (&mut impl std::io::Write, &mut impl std::io::Write),
     ) -> std::io::Result<()>
     {
         let (paths, reached, gathered) = match packaged::<Evaluator>(paths, Path::new(".")) {
@@ -3493,7 +3493,7 @@ impl gandr_surface_agentic::Verbs for HubVerbs
         verb: Verb,
         paths: Vec<PathBuf>,
         pool: &Pool,
-        streams: (&mut dyn std::io::Write, &mut dyn std::io::Write),
+        streams: (&mut impl std::io::Write, &mut impl std::io::Write),
     ) -> std::io::Result<()>
     {
         self.walked((verb, paths), (pool, Rings::default()), streams)
@@ -3510,7 +3510,7 @@ impl gandr_surface_agentic::Verbs for HubVerbs
         verb: Verb,
         paths: Vec<PathBuf>,
         (pool, rings): (&Pool, &gandr_core_fork::activity::Activity),
-        streams: (&mut dyn std::io::Write, &mut dyn std::io::Write),
+        streams: (&mut impl std::io::Write, &mut impl std::io::Write),
     ) -> std::io::Result<()>
     {
         self.walked((verb, paths), (pool, Some(rings)), streams)
@@ -3993,8 +3993,8 @@ fn render(
     reached: (&[Package], &[Gathered]),
     hosting: Hosting,
     store: Option<&mut Opened>,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
     match outcome {
@@ -4110,8 +4110,8 @@ fn render(
 fn fmt(
     formatting: Formatting,
     pool: &Pool,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
     let rewrite = formatting.rewrite();
@@ -4149,7 +4149,7 @@ fn fmt(
 /// # Specification
 /// trivial.
 fn kept(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut impl std::io::Write,
     path: &std::path::Path,
     withdrawn: &[Kept],
 ) -> std::io::Result<()>
@@ -4190,8 +4190,8 @@ fn kept(
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)))]
 fn cells(
     mut census: Census,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
     let mut faulted = false;
@@ -4260,8 +4260,8 @@ fn cells(
 fn stage(
     staging: Staging,
     pool: &Pool,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
     let run = match staging.run(pool) {
@@ -4376,8 +4376,8 @@ fn run(
     walk: Walk,
     pool: &Pool,
     printing: Printing,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
     let Pass {
@@ -4660,8 +4660,8 @@ fn run(
 /// - witness: `tests::cli::check_measures_the_speculation_each_width_runs_under_3476`
 fn measured(
     step: &Step<'_>,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<()>
 {
     let Step::Source {
@@ -4769,7 +4769,7 @@ fn measured(
 /// - witness: `tests::cli::check_reports_each_cell_a_source_discharges_4112`
 fn discharged_cells(
     step: &Step<'_>,
-    stdout: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
 ) -> std::io::Result<()>
 {
     let Step::Source {
@@ -4822,8 +4822,8 @@ fn discharged_cells(
 fn locked<'packaged>(
     packaged: &'packaged Packaged<'_>,
     verbosity: Verbosity,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<(
     RunVerdict,
     Option<&'packaged Result<PackageAddress, Unaddressed>>,
@@ -4913,8 +4913,8 @@ fn manifested(
     manifest: Result<Manifest, Unmanifested>,
     address: Option<&Result<PackageAddress, Unaddressed>>,
     verbosity: Verbosity,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<RunVerdict>
 {
     let manifest = match manifest {
@@ -5021,8 +5021,8 @@ fn manifested(
 fn gathered_manifest(
     gathered: &Gathered,
     verbosity: Verbosity,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<RunVerdict>
 {
     let manifest = match gathered.manifest {
@@ -5231,7 +5231,7 @@ fn read_manifold(
 /// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
 fn deployed(
     file: &Path,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<RunVerdict>
 {
     let refused = match Manifold::read::<Evaluator>(file) {
@@ -5312,7 +5312,7 @@ fn exported(
     exporting: Exporting,
     address: &PackageAddress,
     held: &mut Opened,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<RunVerdict>
 {
     let root = package.root().display();
@@ -5373,8 +5373,8 @@ fn depended(
     lock: &Lock,
     store: &Store,
     verbosity: Verbosity,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<RunVerdict>
 {
     let root = package.root().display();
@@ -5511,8 +5511,8 @@ const fn worse(
 fn script(
     runnable: &mut Script,
     spelling: Spelling,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stdout: &mut impl std::io::Write,
+    stderr: &mut impl std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
     let ran = runnable.run::<Evaluator>(&mut Lines {

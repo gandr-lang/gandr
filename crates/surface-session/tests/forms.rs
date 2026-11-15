@@ -84,7 +84,7 @@ fn agree(
     incremental: &mut Session<MemoryCheckpointStore, InMemoryBlockStore>,
     root: SourceRoot,
     text: Text<'_>,
-    context: &dyn core::fmt::Display,
+    context: &impl core::fmt::Display,
 ) -> FormCensus
 {
     let source = SourceText::from(text.0);
@@ -184,7 +184,7 @@ fn agree(
 fn commits_whole(
     store: &mut FormStore,
     text: Text<'_>,
-    context: &dyn core::fmt::Display,
+    context: &impl core::fmt::Display,
 ) -> FormCensus
 {
     let source = SourceText::from(text.0);

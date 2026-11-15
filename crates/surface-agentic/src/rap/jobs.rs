@@ -118,7 +118,7 @@ pub trait Verbs: Send + Sync
         verb: Verb,
         paths: Vec<PathBuf>,
         pool: &Pool,
-        streams: (&mut dyn Write, &mut dyn Write),
+        streams: (&mut impl Write, &mut impl Write),
     ) -> io::Result<()>;
 
     /// Walk as [`Verbs::walk`] walks, and mark each job of the walk on
@@ -137,7 +137,7 @@ pub trait Verbs: Send + Sync
         verb: Verb,
         paths: Vec<PathBuf>,
         (pool, _rings): (&Pool, &Activity),
-        streams: (&mut dyn Write, &mut dyn Write),
+        streams: (&mut impl Write, &mut impl Write),
     ) -> io::Result<()>
     {
         self.walk(verb, paths, pool, streams)
@@ -847,7 +847,7 @@ impl Walking
         &self,
         verbs: &dyn Verbs,
         (verb, paths): (Verb, Vec<PathBuf>),
-        streams: (&mut dyn Write, &mut dyn Write),
+        streams: (&mut impl Write, &mut impl Write),
     ) -> io::Result<()>
     {
         #[cfg(feature = "instrument")]

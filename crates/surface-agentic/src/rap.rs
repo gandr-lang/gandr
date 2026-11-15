@@ -2143,7 +2143,7 @@ fn ended<Log>(
 /// trivial.
 fn refuse(
     stream: &mut TcpStream,
-    reason: &dyn core::fmt::Display,
+    reason: &impl core::fmt::Display,
 ) -> io::Result<()>
 {
     let reason = alloc::format!("{reason}");
@@ -4297,7 +4297,7 @@ mod tests
             _verb: Verb,
             paths: Vec<PathBuf>,
             _pool: &Pool,
-            (printed, _faulted): (&mut dyn std::io::Write, &mut dyn std::io::Write),
+            (printed, _faulted): (&mut impl std::io::Write, &mut impl std::io::Write),
         ) -> std::io::Result<()>
         {
             for path in &paths {

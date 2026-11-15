@@ -184,7 +184,7 @@ impl Ran<'_>
 pub fn execute<'source, E>(
     composed: &mut Composed<'source>,
     arguments: &[String],
-    console: &mut dyn Console,
+    console: &mut Streams<'_>,
     (net, worlds, profile): (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
 ) -> Ran<'source>
 where
@@ -246,7 +246,7 @@ pub fn host<'source, E>(
     composed: &mut Composed<'source>,
     (net, worlds, profile): (&mut Net, Worlds<'_>, RealsProfile),
     migrations: MigrationCount,
-    console: &mut dyn Console,
+    console: &mut Streams<'_>,
 ) -> Ran<'source>
 where
     E: Engine,
@@ -311,7 +311,7 @@ pub fn run_source<'source, E>(
     grammar: &Pbg,
     source: SourceText<'source>,
     lowerings: &mut LoweringCount,
-    console: &mut dyn Console,
+    console: &mut Streams<'_>,
 ) -> Result<(Composed<'source>, Ran<'source>), ComposeFault<'source>>
 where
     E: Engine,
@@ -627,7 +627,7 @@ impl Script
     )]
     pub fn run<E>(
         &mut self,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> ScriptRun<'_>
     where
         E: Engine,

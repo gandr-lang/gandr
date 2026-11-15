@@ -483,7 +483,7 @@ impl fmt::Display for Declined
 )]
 pub(super) fn served<Abort>(
     reals: &mut Reals,
-    console: &mut dyn Console,
+    console: &mut Streams<'_>,
     request: HostRequest<'_>,
     values: &mut HostValues<'_>,
 ) -> Option<HostReply<Abort>>

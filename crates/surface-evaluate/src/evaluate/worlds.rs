@@ -203,7 +203,7 @@ impl Machine<'_, '_>
         worlds: Worlds<'_>,
         net: &mut Net,
         (migrations, profile): (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted
     {
         let mut held: Vec<ValueManifest> = Vec::new();
@@ -255,7 +255,7 @@ impl Machine<'_, '_>
         (worlds, net): (Worlds<'_>, &mut Net),
         arrival: &Arrival,
         (held, fetched): (&mut Vec<ValueManifest>, &mut ChunkCount),
-        (console, profile): (&mut dyn Console, RealsProfile),
+        (console, profile): (&mut Streams<'_>, RealsProfile),
     ) -> Answer
     {
         let configuration = &arrival.configuration;

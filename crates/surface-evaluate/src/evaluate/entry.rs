@@ -83,7 +83,7 @@ impl<'host> EntryHost<'host>
     /// # Specification
     /// trivial.
     pub(super) fn new(
-        console: &'host mut dyn Console,
+        console: &'host mut Streams<'_>,
         net: Option<&'host mut Net>,
         profile: RealsProfile,
         worlds: Option<(Worlds<'host>, &'host [String])>,
@@ -215,7 +215,7 @@ impl<'source> Machine<'_, 'source>
         &mut self,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         (net, worlds, profile): (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>
     {

@@ -546,7 +546,7 @@ impl<'source> Machine<'_, 'source>
     pub fn evaluate_printing(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Evaluation<'source>
     {
         let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
@@ -637,7 +637,7 @@ impl<'source> Machine<'_, 'source>
     pub fn evaluate_traced(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         trace: &mut Trace,
     ) -> Evaluation<'source>
     {
@@ -792,7 +792,7 @@ impl<'source> Machine<'_, 'source>
         &mut self,
         constant: ConstantIndex,
         engine: Engine,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Result<Evaluation<'source>, Declined>
     {
         let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
@@ -2186,7 +2186,7 @@ pub trait Runs<'source>
     fn evaluate_printing(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Evaluation<'source>;
 
     /// As [`Machine::evaluate_traced`].
@@ -2203,7 +2203,7 @@ pub trait Runs<'source>
     fn evaluate_traced(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         trace: &mut Trace,
     ) -> Evaluation<'source>;
 
@@ -2279,7 +2279,7 @@ pub trait Runs<'source>
         &mut self,
         constant: ConstantIndex,
         engine: Engine,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Result<Evaluation<'source>, Declined>;
 
     /// As [`Machine::read_on`].
@@ -2341,7 +2341,7 @@ pub trait Runs<'source>
         &mut self,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>;
 
@@ -2360,7 +2360,7 @@ pub trait Runs<'source>
         worlds: Worlds<'_>,
         net: &mut Net,
         hosting: (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted;
 }
 
@@ -2387,7 +2387,7 @@ impl<'source> Runs<'source> for Program<'source>
     fn evaluate_printing(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Evaluation<'source>
     {
         Machine::new(self).evaluate_printing(constant, console)
@@ -2401,7 +2401,7 @@ impl<'source> Runs<'source> for Program<'source>
     fn evaluate_traced(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         trace: &mut Trace,
     ) -> Evaluation<'source>
     {
@@ -2457,7 +2457,7 @@ impl<'source> Runs<'source> for Program<'source>
         &mut self,
         constant: ConstantIndex,
         engine: Engine,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Result<Evaluation<'source>, Declined>
     {
         Machine::new(self).evaluate_printing_on(constant, engine, console)
@@ -2505,7 +2505,7 @@ impl<'source> Runs<'source> for Program<'source>
         &mut self,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>
     {
@@ -2522,7 +2522,7 @@ impl<'source> Runs<'source> for Program<'source>
         worlds: Worlds<'_>,
         net: &mut Net,
         hosting: (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted
     {
         Machine::new(self).host(worlds, net, hosting, console)
@@ -2602,7 +2602,7 @@ impl gandr_surface_dispatcher::Engine for Evaluator
         program: &mut Program<'source>,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>
     {
@@ -2619,7 +2619,7 @@ impl gandr_surface_dispatcher::Engine for Evaluator
         worlds: Worlds<'_>,
         net: &mut Net,
         hosting: (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted
     {
         Machine::new(program).host(worlds, net, hosting, console)
@@ -4484,8 +4484,8 @@ mod tests
     /// trivial.
     fn record(
         walked: &mut Walked,
-        item: &dyn core::fmt::Display,
-        name: &dyn core::fmt::Display,
+        item: &impl core::fmt::Display,
+        name: &impl core::fmt::Display,
         run: &Swept<'_>,
     )
     {

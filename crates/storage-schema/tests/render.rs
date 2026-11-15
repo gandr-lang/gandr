@@ -38,7 +38,7 @@ fn assert_distinct(rendered: &[&dyn Display])
 /// # Specification
 /// trivial.
 fn assert_names(
-    refusal: &dyn Display,
+    refusal: &impl Display,
     parts: &[&dyn Display],
 )
 {
