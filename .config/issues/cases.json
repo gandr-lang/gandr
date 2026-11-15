@@ -1,0 +1,73 @@
+[
+  {
+    "name": "a full set needs nothing",
+    "input": {
+      "labels": ["kind:gap", "area:workflow", "priority:high", "effort:medium", "status:claimed"]
+    },
+    "output": ""
+  },
+  {
+    "name": "a defect missing priority and effort takes high and easy, the owner's default for now",
+    "input": {
+      "labels": ["kind:defect", "area:kernel"]
+    },
+    "output": "add\tpriority:high\nadd\teffort:easy"
+  },
+  {
+    "name": "a label given wins over the kind's default",
+    "input": {
+      "labels": ["kind:defect", "area:kernel", "priority:backlog"]
+    },
+    "output": "add\teffort:easy"
+  },
+  {
+    "name": "an epic takes medium and hard",
+    "input": {
+      "labels": ["kind:epic", "area:workflow"]
+    },
+    "output": "add\tpriority:medium\nadd\teffort:hard"
+  },
+  {
+    "name": "an issue may span several areas",
+    "input": {
+      "labels": ["kind:gap", "area:surface", "area:core", "priority:medium", "effort:unknown"]
+    },
+    "output": ""
+  },
+  {
+    "name": "an epic keeps kind:epic alone, its other kind removed and its defaults the epic's",
+    "input": {
+      "labels": ["kind:feature", "kind:epic", "area:core"]
+    },
+    "output": "remove\tkind:feature\nadd\tpriority:medium\nadd\teffort:hard"
+  },
+  {
+    "name": "ci, documentation and specification take medium and unknown",
+    "input": {
+      "labels": ["kind:ci", "area:ci"]
+    },
+    "output": "add\tpriority:medium\nadd\teffort:unknown"
+  },
+  {
+    "name": "no kind and no area are refused, and no kind leaves priority and effort refused",
+    "input": {
+      "labels": ["status:claimed"]
+    },
+    "output": "refuse\tno `kind:` label: give one\nrefuse\tno `area:` label: give one\nrefuse\tno `priority:` label, and no single `kind:` to take its default from: give one\nrefuse\tno `effort:` label, and no single `kind:` to take its default from: give one"
+  },
+  {
+    "name": "two kinds without an epic, two priorities and two efforts are each refused",
+    "input": {
+      "labels": [
+        "kind:gap",
+        "kind:defect",
+        "area:core",
+        "priority:high",
+        "priority:medium",
+        "effort:easy",
+        "effort:hard"
+      ]
+    },
+    "output": "refuse\tlabels `kind:gap`, `kind:defect` give more than one `kind:`: keep one\nrefuse\tlabels `priority:high`, `priority:medium` give more than one `priority:`: keep one\nrefuse\tlabels `effort:easy`, `effort:hard` give more than one `effort:`: keep one"
+  }
+]

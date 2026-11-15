@@ -1,0 +1,10 @@
+module Zero : Model(State) with sort S = Integer where {
+  type C = Integer -> Integer;
+  def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer { k 0 }
+  def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer { pure k }
+}
+module One : Model(State) with sort S = Integer where {
+  type C = Integer -> Integer;
+  def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer { k 1 }
+  def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer { pure k }
+}

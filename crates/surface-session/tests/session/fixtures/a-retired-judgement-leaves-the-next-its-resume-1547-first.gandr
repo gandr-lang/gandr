@@ -1,0 +1,3 @@
+def kept = 40;
+def edited = 1;
+def after = kept;

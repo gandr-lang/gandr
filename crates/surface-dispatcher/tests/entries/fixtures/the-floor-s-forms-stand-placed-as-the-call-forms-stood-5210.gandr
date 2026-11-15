@@ -1,0 +1,20 @@
+theory Counter.Eff where
+  sort C : Type;
+  oper bump : (k : C) --> C;
+
+def tallied() -> [n : Counter.Eff] Integer =
+  n.bump ()
+  pure 0
+
+theory Monad where
+  sort V : Type+;
+  sort C : Type;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
+
+def heard : Run(Ask.Coded) = recorded (received One) closed;
+
+def whisker = Path.ap (fun (q) { Path.step q g }) a;
+
+flow scaling : Current ~~> Scaling where
+  def answer = reply;

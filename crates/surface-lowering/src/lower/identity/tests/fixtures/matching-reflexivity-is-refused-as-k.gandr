@@ -1,0 +1,3 @@
+def uip(n : Integer, p : Path[.A = Integer](n, n)) -> -F Integer {
+  match p { | here => return 0 }
+}

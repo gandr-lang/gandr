@@ -1,0 +1,102 @@
+# The tools of `mise.toml` whose releases publish no binary for a target that
+# a host of ours runs, and how a builder of another target builds each one
+# (#7008). `mise run tools:build <target>` reads this file through the
+# `host-tools` binary of `crates/workflow-host-tools`.
+#
+# A tool's version is the one `mise.lock` locks for its key. The version of
+# mise itself is the pin, the `version` of the mise step of
+# `.github/actions/install-tools/action.yml`.
+#
+# Each tool names its key in `mise.toml`, the targets it builds for, and one
+# way to build it:
+# - `crate`: `cargo install` of a crate of crates.io at the version, with
+#   `features` and `default-features` as the crate takes them.
+# - `cargo`: a clone of `repository` at `tag`, then `cargo install --path` of
+#   the package at `path` in the clone.
+# - `go`: a clone of `repository` at `tag`, then `go build` of `package`.
+# In `tag`, `ldflags` and the stamp, `{version}` stands for the version.
+# `stamp` writes the version over the placeholder of the clone's files, as
+# the tool's release does before its build. `ldflags` stamps a Go build.
+# `needs` names a program that the build runs and that the host's
+# configuration supplies.
+
+[[tool]]
+key = "github:cli/cli"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "go"
+repository = "https://github.com/cli/cli"
+tag = "v{version}"
+package = "./cmd/gh"
+binary = "gh"
+ldflags = "-X github.com/cli/cli/v2/internal/build.Version={version}"
+
+[[tool]]
+key = "github:numtide/treefmt"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "go"
+repository = "https://github.com/numtide/treefmt"
+tag = "v{version}"
+package = "."
+binary = "treefmt"
+ldflags = "-X github.com/numtide/treefmt/v2/build.Version=v{version}"
+
+[[tool]]
+key = "github:crate-ci/typos"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "typos-cli"
+
+[[tool]]
+key = "github:j178/prek"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "prek"
+
+[[tool]]
+key = "github:max-sixty/worktrunk"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "worktrunk"
+
+[[tool]]
+key = "github:orhun/git-cliff"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "git-cliff"
+
+[[tool]]
+key = "github:rvben/rumdl"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "rumdl"
+
+[[tool]]
+key = "github:zizmorcore/zizmor"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "zizmor"
+
+[[tool]]
+key = "github:aubepkg/aube"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "aube"
+needs = ["cmake"]
+
+[[tool]]
+key = "github:tombi-toml/tombi"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "cargo"
+repository = "https://github.com/tombi-toml/tombi"
+tag = "v{version}"
+path = "rust/tombi-cli"
+stamp = { files = ["Cargo.toml", "Cargo.lock"], placeholder = "0.0.0-dev" }
+
+[[tool]]
+key = "mise"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "mise"
+default-features = false
+features = ["rustls", "vfox/vendored-lua", "self_update"]
+needs = ["cmake"]

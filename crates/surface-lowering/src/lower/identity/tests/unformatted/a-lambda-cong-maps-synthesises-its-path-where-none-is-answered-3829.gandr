@@ -1,0 +1,6 @@
+def underThen{telescope} -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {{
+  Path.step ({whisker}) (Path.here (Path.step f2 g))
+}}
+def asEndpoint{telescope} -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g)]({whisker}, {whisker}) {{
+  Path.here ({whisker})
+}}

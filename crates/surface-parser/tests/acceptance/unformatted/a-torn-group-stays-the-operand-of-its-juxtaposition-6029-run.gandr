@@ -1,0 +1,2 @@
+def run_over_binder(served : Run (?(Seat.Dispatch). end)) -> Run ((Seat.Dispatch). end) =
+  Path.walk (fun (X) { Run (type(?X. end)) }) (Path.here Seat.Dispatch) served
