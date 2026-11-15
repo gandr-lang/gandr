@@ -5951,6 +5951,80 @@ fn the_configured_spelling_prints_and_the_flag_outranks_it_782()
     );
 }
 
+/// Each file below `from` copied to the same path below `to` (#7685).
+///
+/// # Specification
+/// trivial.
+fn copied(
+    from: &Path,
+    to: &Path,
+)
+{
+    let mut pending = vec![(from.to_path_buf(), to.to_path_buf())];
+    while let Some((from, to)) = pending.pop() {
+        std::fs::create_dir_all(&to).expect("the directory is made");
+        for entry in std::fs::read_dir(&from).expect("the directory reads") {
+            let entry = entry.expect("the entry reads").path();
+            let target = to.join(entry.file_name().expect("an entry has a name"));
+            if entry.is_dir() {
+                pending.push((entry, target));
+            }
+            else {
+                let _bytes = std::fs::copy(&entry, &target).expect("the file is copied");
+            }
+        }
+    }
+}
+
+/// #7685: `library.std` in the user's configuration file names the standard
+/// library that a source outside it reads first. A copy of `library/std` with
+/// a module the checkout lacks stands apart from the source, with no
+/// workspace above either. With no file, the source reads the last place,
+/// which lacks the module, and the check refuses it. Once the file names the
+/// copy, the check settles.
+#[test]
+fn a_profile_names_the_standard_library_7685()
+{
+    let scratch = Scratch::new(Path::new("profiled-standard"));
+    let copy = scratch.0.join("vendor/std");
+    copied(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../library/std"),
+        &copy,
+    );
+    let _marked = scratch.file(
+        Path::new("vendor/std/src/marked.gandr"),
+        Text::from("/// The mark that only the copy holds.\npub def mark : Integer = 7;\n"),
+    );
+    let source = scratch.file(
+        Path::new("app/seen.gandr"),
+        Text::from("import std.marked (mark);\n\ndef seen : Integer = mark;\n"),
+    );
+    let home = scratch.0.join("configuration");
+    let check = || {
+        let mut command = gandr(&[Path::new("check"), &source]);
+        command.env("XDG_CONFIG_HOME", &home);
+        ran(command)
+    };
+    let unprofiled = check();
+    assert_ne!(
+        code(&unprofiled),
+        Code(0_i32),
+        "with no profile, the last place lacks the copy's module:\n{}",
+        stdout(&unprofiled)
+    );
+    let _file = scratch.file(
+        Path::new("configuration/gandr/config.toml"),
+        Text::from(format!("[library]\nstd = \"{}\"\n", copy.display()).as_str()),
+    );
+    let profiled = check();
+    assert_eq!(
+        code(&profiled),
+        Code(0_i32),
+        "the profile's place is the standard library the source reads:\n{}",
+        stdout(&profiled)
+    );
+}
+
 #[test]
 fn an_unreadable_or_malformed_configuration_stops_the_run()
 {

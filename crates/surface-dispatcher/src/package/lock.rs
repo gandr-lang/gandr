@@ -64,6 +64,7 @@ use core::fmt::Write as _;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_fork::Fork;
@@ -96,6 +97,7 @@ use super::Identity;
 use super::Library;
 use super::Manifested;
 use super::Opening;
+use super::PACKAGE;
 use super::Package;
 use super::PackageAddress;
 use super::Reconciled;
@@ -111,6 +113,8 @@ use crate::component::ImportBase;
 use crate::component::ImportPath;
 use crate::component::Unshadowed;
 use crate::component::path_imports;
+use crate::workspace::MEMBERS;
+use crate::workspace::WORKSPACE_MANIFEST;
 use crate::workspace::Workspace;
 
 /// The file name of the lock that the checker writes beside the source of a
@@ -140,8 +144,27 @@ const MEMBER: &str = "[dependencies.";
 pub const STANDARD: &str = "std";
 
 /// The standard library's package root in the tree this build was built
-/// from.
+/// from: the last place a source outside the standard library reads, after
+/// the profile and the walk. #7704 removes it.
 const STANDARD_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../library/std");
+
+/// The place of the standard library that the host's profile names, set once
+/// by the driver from `[library] std` in its configuration (#7685).
+static PROFILED: OnceLock<PathBuf> = OnceLock::new();
+
+/// Where a source outside the standard library finds it (#7685).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StandardPlace
+{
+    /// The place that the host's profile names.
+    Profile,
+    /// A package named `std` at a directory above the source, or a member of
+    /// the workspace of such a directory.
+    Walk,
+    /// `library/std` of the tree that the build of the driver read: the last
+    /// place, which #7704 removes.
+    Last,
+}
 
 /// Where a dependency is found, as an import writes it: never part of what
 /// it is.
@@ -1629,29 +1652,183 @@ fn source_of(directory: &Path) -> Option<PathBuf>
     Some(dependency.source().to_path_buf())
 }
 
-/// The file an import through [`STANDARD`] names from a source outside the
-/// standard library when no lock records it, the path below it `rest`: the
-/// standard library's package source for `std` alone, and the file under its
-/// sources otherwise; none when the tree this build was built from holds no
-/// standard library. A source inside the standard library reads its own
-/// package instead (#7635).
+/// Names `place` as the standard library that the host's profile states.
 ///
-/// **Choice.** The standard library such an import reads is `library/std` of
-/// the tree the driver was built from. **Reversal.** #7685 replaces this place
-/// with the place the host's profile names, else the first package named
-/// `std` that a workspace above the source names.
+/// The place holds for each later [`standard_from`] of the process, unless a
+/// place is named already, which stays. The driver calls it once, before the
+/// first check, with the place that `[library] std` of its configuration
+/// names.
 ///
 /// # Specification
 /// trivial.
+///
+/// # Errors
+/// `place`, when a place is named already.
+///
+/// # Cost
+/// - allocation: the cell of the process takes the place once, setup
 #[inline]
-#[must_use]
-pub fn standard(rest: Option<&Path>) -> Option<PathBuf>
+pub fn profile_standard(place: PathBuf) -> Result<(), PathBuf>
 {
-    let Maybe::Present(library) = Package::discover(Path::new(STANDARD_ROOT))
-    else {
+    PROFILED.set(place)
+}
+
+/// The standard library that a source in `directory`, outside the standard
+/// library, reads, and the place that gave it: `standard_among` at the place
+/// that [`profile_standard`] names. A source inside the standard library
+/// reads its own package instead.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the canonical path of `directory` and each manifest's members,
+///   setup
+#[must_use]
+pub fn standard_from(directory: &Path) -> Option<(Package, StandardPlace)>
+{
+    let found = standard_among(PROFILED.get().map(PathBuf::as_path), directory);
+    #[cfg(feature = "tracing")]
+    if let Some((ref library, place)) = found {
+        tracing::info!(
+            ?place,
+            root = %library.root().display(),
+            from = %directory.display(),
+            "the standard library"
+        );
+    }
+    found
+}
+
+/// The standard library that a source in `directory` reads when `profile` is
+/// the place that the host's profile names, and the place that gave it.
+///
+/// **Choice.** The walk finds nothing for a source with no profile and no
+/// workspace above it, so such a source reads `library/std` of the tree that
+/// the driver was built from. **Reversal.** #7704 refuses its import instead,
+/// with the places that the walk read.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the package at `profile`, when its model names it `std`; else the
+///   first such package that roots a directory from `directory` up, or that a
+///   member of the written manifest of such a directory roots; else
+///   `library/std` of the tree this build was built from; none when that holds
+///   no standard library. The place says which of the three gave it.
+/// - provides: the one search an import of `std` from outside the standard
+///   library reads.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause reads the file system again.
+///
+/// # Cost
+/// - allocation: the canonical path of `directory` and each manifest's members,
+///   setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — the profile's place, a workspace above a source and the
+///   last place each give the standard library, in that order, and a profile's
+///   place that holds none is passed over.
+/// - witness: `package::lock::tests::a_profile_comes_before_the_walk_and_the_last_place_7685`
+/// - witness: `tests::package::a_workspace_above_a_source_names_its_standard_library_7685`
+fn standard_among(
+    profile: Option<&Path>,
+    directory: &Path,
+) -> Option<(Package, StandardPlace)>
+{
+    profile
+        .and_then(rooted_standard)
+        .map(|library| (library, StandardPlace::Profile))
+        .or_else(|| walked_standard(directory).map(|library| (library, StandardPlace::Walk)))
+        .or_else(|| {
+            rooted_standard(Path::new(STANDARD_ROOT)).map(|library| (library, StandardPlace::Last))
+        })
+}
+
+/// The package that `root` roots, when its model names it `std`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the path of the package source and the package, setup
+fn rooted_standard(root: &Path) -> Option<Package>
+{
+    if !root.join(PACKAGE).is_file() {
         return None;
+    }
+    match Package::discover(root) {
+        Maybe::Present(package) if package.library() == Library::Standard => Some(package),
+        Maybe::Present(_) | Maybe::Absent(_) => None,
+    }
+}
+
+/// The first standard library from `directory` up: a package that a
+/// directory roots, else one that a member of the directory's written
+/// workspace manifest roots.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the canonical path and each member's path, setup
+fn walked_standard(directory: &Path) -> Option<Package>
+{
+    // economy: each import of `std` walks again and reads each manifest
+    // again; one walk for each importer directory in a check, #7713.
+    let canonical = directory.canonicalize().ok()?;
+    canonical.ancestors().find_map(|above| {
+        rooted_standard(above).or_else(|| {
+            written_members(above)
+                .iter()
+                .find_map(|member| rooted_standard(&above.join(member)))
+        })
+    })
+}
+
+/// The members that the manifest of the workspace at `root` names, as the
+/// checker wrote them from `members` when it last worked on the workspace
+/// (#7685). The walk reads them so, and never runs `std` to find `std`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each string of `workspace.members` in [`WORKSPACE_MANIFEST`] at
+///   `root`, in order; none for a manifest that is absent, unreadable or not
+///   TOML, or that names no members.
+/// - provides: the members the walk for the standard library reads.
+/// - fails: never; a manifest that does not read names no member.
+/// - panics: none.
+/// - executable: none — the clause reads the file system again.
+///
+/// # Cost
+/// - allocation: the text of the manifest, its table and each member, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — a workspace whose manifest names a copy of the standard
+///   library gives that copy to a source below it.
+/// - witness: `tests::package::a_workspace_above_a_source_names_its_standard_library_7685`
+fn written_members(root: &Path) -> Vec<String>
+{
+    let Ok(text) = std::fs::read_to_string(root.join(WORKSPACE_MANIFEST))
+    else {
+        return Vec::new();
     };
-    Some(within(&library, rest))
+    let Ok(table) = toml::from_str::<toml::Table>(&text)
+    else {
+        return Vec::new();
+    };
+    table
+        .get("workspace")
+        .and_then(toml::Value::as_table)
+        .and_then(|workspace| workspace.get(MEMBERS))
+        .and_then(toml::Value::as_array)
+        .map_or_default(|members| {
+            members
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .map(String::from)
+                .collect()
+        })
 }
 
 /// The module path of the standard library's source at `path`, `std.io` for
@@ -1738,4 +1915,43 @@ pub fn within(
         || dependency.source().to_path_buf(),
         |rest| dependency.sources().join(rest),
     )
+}
+
+#[cfg(test)]
+mod tests
+{
+    use std::path::Path;
+    use std::path::PathBuf;
+
+    use super::StandardPlace;
+    use super::standard_among;
+    use crate::fixture::Scratch;
+
+    /// #7685: the profile's place comes before a workspace above the source,
+    /// even where the walk finds the checkout's root workspace. A profile's
+    /// place that holds no standard library is passed over, and the walk
+    /// gives it. A source with no profile and no workspace above it reads the
+    /// last place.
+    #[test]
+    fn a_profile_comes_before_the_walk_and_the_last_place_7685()
+    {
+        let checkout = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let library = checkout.join("../../library/std");
+        let scratch = Scratch::new(Path::new("standard-places"));
+        let place = |profile: Option<&Path>, directory: &Path| {
+            standard_among(profile, directory).map(|(_, place)| place)
+        };
+        assert_eq!(
+            [
+                place(Some(&library), &checkout),
+                place(Some(scratch.root()), &checkout),
+                place(None, scratch.root()),
+            ],
+            [
+                Some(StandardPlace::Profile),
+                Some(StandardPlace::Walk),
+                Some(StandardPlace::Last),
+            ],
+        );
+    }
 }

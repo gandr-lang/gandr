@@ -78,8 +78,9 @@ pub const WORKSPACE: &str = "workspace.gandr";
 /// a workspace.
 pub const WORKSPACE_MANIFEST: &str = "workspace.gandr.toml";
 
-/// The declaration of a workspace's source that names its members.
-const MEMBERS: &str = "members";
+/// The declaration of a workspace's source that names its members, and the
+/// key under which its written manifest records them.
+pub const MEMBERS: &str = "members";
 
 /// The fields of the `Workspace` model that the manifest of a workspace
 /// records, in the order in which the checker reads them.

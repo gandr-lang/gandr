@@ -981,6 +981,69 @@ fn a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635()
     );
 }
 
+/// #7685: a source outside the standard library reads the standard library
+/// that a workspace above it names. A copy of `library/std` with a module the
+/// checkout lacks is a member of a workspace outside the tree. With no
+/// manifest, the walk finds nothing, and the last place lacks the module. So
+/// a source of the workspace that imports the module is refused. Once the
+/// written manifest names the copy, the source reads the copy and settles.
+#[test]
+fn a_workspace_above_a_source_names_its_standard_library_7685()
+{
+    let library = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library/std");
+    let workspace = scratch(Path::new("std-workspace"), &[]);
+    let copy = workspace.join("vendor/std");
+    std::fs::create_dir_all(&copy).expect("the copy's directory is made");
+    copied_in_reverse(&library, &copy);
+    std::fs::write(
+        copy.join("src/marked.gandr"),
+        "/// The mark that only the copy holds.\npub def mark : Integer = 7;\n",
+    )
+    .expect("the copy's own module is written");
+    let source = workspace.join("app/seen.gandr");
+    std::fs::create_dir_all(workspace.join("app")).expect("the app's directory is made");
+    std::fs::write(
+        &source,
+        "import std.marked (mark);\n\ndef seen : Integer = mark;\n",
+    )
+    .expect("the source is written");
+    let walked = |path: &Path| {
+        let ControlFlow::Continue(report) = Walk::new(vec![path.to_path_buf()])
+            .visit::<Evaluator, _, _>(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    if let Step::Fault { path, fault } = step {
+                        panic!("{}: {fault}", path.display());
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
+        let declarations = report.tally().declarations();
+        (
+            usize::from(declarations.settled()),
+            usize::from(declarations.unsettled()),
+            report.verdict(Verb::Check(Goals::Gated)),
+            report.to_string(),
+        )
+    };
+    let (_, unsettled, _, shown) = walked(&source);
+    assert!(
+        unsettled > 0_usize,
+        "with no manifest, the last place lacks the copy's module:\n{shown}"
+    );
+    std::fs::write(
+        workspace.join("workspace.gandr.toml"),
+        "[workspace]\nversion = \"0.1.0\"\nmembers = [\n  \"vendor/std\",\n]\n",
+    )
+    .expect("the manifest is written");
+    let (settled, unsettled, verdict, shown) = walked(&source);
+    assert_eq!(
+        (settled, unsettled, verdict),
+        (1_usize, 0_usize, RunVerdict::Settled),
+        "the manifest's member is the standard library the source reads:\n{shown}"
+    );
+}
+
 /// #2687: a manifest renders its header, the digest of its body and its
 /// table, the same bytes each time, an empty module list as `[]` the way the
 /// tree's TOML formatter writes it, and escapes what TOML's basic strings
