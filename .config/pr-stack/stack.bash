@@ -1804,7 +1804,9 @@ land_prefix() {
   decision=$(jq -rn --argjson server "$server" --argjson queued "$queued" --argjson carried "$carried" --argjson cap "$cap" \
     --argjson states "$(jq -cn '$ARGS.positional as $p | [range(0; $p | length; 2) | {key: $p[.], value: $p[. + 1]}] | from_entries' --args "${states[@]}")" \
     '{server: $server, queued: $queued, carried: $carried, states: $states, cap: $cap}' | jq -r -f "$pr_stack_dir/prefix.jq")
-  prefix_decision=$decision prefix_server=$server prefix_queued=$queued
+  # `prefix_auto` holds the lone pull request that the hold sets to
+  # auto-merge. It stays empty in each other case.
+  prefix_decision=$decision prefix_server=$server prefix_queued=$queued prefix_auto=
   verdict= upto= stop= state=
   IFS=$'\t' read -r verdict upto stop state <<< "$decision"
   case "$verdict" in
@@ -1817,7 +1819,22 @@ land_prefix() {
       echo "#$upto is queued; the stack's next unit lands once it merges" >&2
       return 3
       ;;
-    hold) echo "nothing lands: $(cut_reason "$upto" "$stop"), and the stack lands from it once it is ready" >&2 ;;
+    hold)
+      # The hold sets auto-merge on a lone pull request in no server stack
+      # whose checks still run. GitHub queues it once they pass, and no
+      # watcher must live until then. A longer stack waits for `pr:watch`.
+      # - see: #7801
+      if [[ "$stop" == pending && $(jq length <<< "$server") == 1 && $(stack_of "$upto") == null ]]; then
+        hold_landing "[$upto]"
+        queue_stack "$server" "$queued" "$upto" || status=$?
+        release_landing
+        (( status == 0 )) || return "$status"
+        prefix_auto=$upto
+        echo "#$upto is set to auto-merge: GitHub queues it once its required checks pass" >&2
+      else
+        echo "nothing lands: $(cut_reason "$upto" "$stop"), and the stack lands from it once it is ready" >&2
+      fi
+      ;;
     land)
       hold_landing "$(jq -c --argjson queued "$queued" --argjson upto "$upto" \
         '[.[].number | select(IN($queued[]) | not)] | .[: index($upto) + 1]' <<< "$server")"
