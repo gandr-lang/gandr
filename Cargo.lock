@@ -1590,6 +1590,7 @@ dependencies = [
  "gandr-surface-render-terminal",
  "gandr-surface-repl",
  "gandr-surface-tui",
+ "gandr-workflow-sweep",
  "getrandom 0.4.3",
  "hotpath",
  "nix",
@@ -1663,6 +1664,7 @@ dependencies = [
  "gandr-surface-dispatcher",
  "gandr-surface-evaluate",
  "gandr-theory-cell-complexes",
+ "gandr-workflow-sweep",
  "quenchant-shape",
 ]
 
@@ -1799,6 +1801,7 @@ dependencies = [
  "gandr-theory-cellular-sheaves",
  "gandr-theory-probability",
  "gandr-workflow-debt-ledger",
+ "gandr-workflow-sweep",
  "quenchant-anodized",
  "quenchant-shape",
 ]
@@ -1911,6 +1914,7 @@ dependencies = [
  "gandr-surface-pretty",
  "gandr-surface-syntax",
  "gandr-theory-exact-reals",
+ "gandr-workflow-sweep",
  "getrandom 0.4.3",
  "hotpath",
  "quenchant-anodized",
@@ -1999,6 +2003,7 @@ dependencies = [
  "gandr-theory-shapes",
  "gandr-theory-sites",
  "gandr-theory-stone-duality",
+ "gandr-workflow-sweep",
  "hotpath",
  "quenchant-anodized",
  "quenchant-shape",

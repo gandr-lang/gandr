@@ -37,20 +37,30 @@ use gandr_theory_ordered_algebras::Distance;
 use gandr_theory_ordered_algebras::Lawvere;
 use gandr_theory_ordered_algebras::OrderedSemiring as _;
 use gandr_theory_ordered_algebras::check;
+use gandr_workflow_sweep::Portion;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::SampleName;
+use gandr_workflow_sweep::SampleSize;
+use gandr_workflow_sweep::Sweep;
 use quenchant_shape::shape::Maybe;
 
-/// The fusion rows of every corpus source, each with the source that writes
-/// its block, in path order and then in the census's order. The sources do
-/// not depend on each other, so each part of them has its own census on a
-/// thread of the dispatcher's pool. Each thread takes the next part that no
-/// thread took, and a part is a quarter of one thread's share, so a part of
-/// slow sources leaves the other threads busy.
+use super::coincide::Kept;
+
+/// The fusion rows of the corpus sources that `sweep` asks for, each with
+/// the source that writes its block, in path order and then in the census's
+/// order. The sources do not depend on each other, so each part of them has
+/// its own census on a thread of the dispatcher's pool. Each thread takes the
+/// next part that no thread took, and a part is a quarter of one thread's
+/// share, so a part of slow sources leaves the other threads busy.
 ///
 /// # Specification
 /// trivial.
-fn census() -> Vec<(PathBuf, FusionRow)>
+fn census(sweep: &Sweep) -> Vec<(PathBuf, FusionRow)>
 {
-    let sources: Vec<PathBuf> = super::coincide::sources().into_iter().collect();
+    let sources = super::coincide::swept(sweep, FUSIONS, &[CIRCUIT, SHRUBS]);
+    if sources.is_empty() {
+        return Vec::new();
+    }
     let pool = Pool::new(Width::PerformanceCores);
     let threads = NonZeroUsize::from(pool.width().threads()).get();
     let size = sources.len().div_ceil(threads.saturating_mul(4)).max(1);
@@ -122,10 +132,31 @@ fn ticks(count: HoleCount) -> Distance
     .expect("a count is not negative")
 }
 
-#[test]
-fn each_fusion_cell_s_composed_bound_is_its_census_reading()
+/// The source whose circuit rule `cong1` fuses with itself.
+const CIRCUIT: Kept = Kept("model/circuit/circuit-rule-block.gandr");
+
+/// The source whose shrubs `thrice` and `twice` fuse.
+const SHRUBS: Kept = Kept("model/desc/occurrence-count.gandr");
+
+/// The sample of the fusion census: thirty-two sources, ranked by their
+/// BLAKE3 digest under this name, at least one of each corpus class.
+/// - see: #7809
+const FUSIONS: Sample = Sample {
+    name: SampleName("each_fusion_cell_s_composed_bound_is_its_census_reading"),
+    size: SampleSize(32),
+};
+
+/// Each fusion of the sources that `sweep` asks for replays, and has a
+/// composed bound equal to the census reading of its cell.
+///
+/// # Specification
+/// trivial.
+fn bounds_are_readings(sweep: &Sweep)
 {
-    let rows = census();
+    let rows = census(sweep);
+    if rows.is_empty() {
+        return;
+    }
     let quantale = Lawvere::default();
     // Each fusion replays, and has a composed bound equal to the census
     // reading of its cell.
@@ -143,6 +174,9 @@ fn each_fusion_cell_s_composed_bound_is_its_census_reading()
                 panic!("{}:{row}: reads {other:?}", path.display())
             },
         }
+    }
+    if sweep.portion() == Portion::Changed {
+        return;
     }
     // The circuit rule `cong1`, cell 0, wires `x′` between its two nodes, and
     // its left side does not bind `x′`. Fused with itself, it replays.
@@ -193,4 +227,27 @@ fn each_fusion_cell_s_composed_bound_is_its_census_reading()
         check(&Lawvere::generated(distances.into_iter().collect())).is_ok(),
         "the Lawvere laws hold on the bounds' distances"
     );
+}
+
+/// A pull request reads the sample, and the nightly reads the corpus whole.
+/// - see: #7809
+mod sweeps
+{
+    use gandr_workflow_sweep::Sweep;
+
+    use super::bounds_are_readings;
+
+    #[test]
+    fn each_fusion_cell_s_composed_bound_is_its_census_reading()
+    {
+        bounds_are_readings(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn each_fusion_cell_s_composed_bound_is_its_census_reading_changed()
+    {
+        bounds_are_readings(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
 }

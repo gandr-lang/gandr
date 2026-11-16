@@ -64,6 +64,7 @@ gandr-theory-discrete-morse.workspace = true
 gandr-theory-e-graphs.workspace = true
 gandr-theory-sites.workspace = true
 gandr-theory-stone-duality.workspace = true
+gandr-workflow-sweep.workspace = true
 
 [features]
 default = []

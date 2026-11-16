@@ -56,6 +56,7 @@ quenchant-shape.workspace = true
 allocation-counter.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-surface-dispatcher = { workspace = true, features = ["fixture"] }
+gandr-workflow-sweep.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

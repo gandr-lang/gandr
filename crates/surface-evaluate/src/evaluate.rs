@@ -471,7 +471,7 @@ impl<'source> Machine<'_, 'source>
     /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
     /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
     /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
-    /// - witness: `gandr-surface-dispatcher::tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
     /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -713,7 +713,7 @@ impl<'source> Machine<'_, 'source>
     /// - hypothesis: L3 — the corpus's series-parallel dialogue and the one
     ///   leaving a prime node settle only when this spells the webs `decompose`
     ///   returns for them.
-    /// - witness: `gandr-surface-dispatcher::tests::corpus::the_fixture_root_settles_every_fixture`
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::the_fixture_root_settles_every_fixture`
     #[inline]
     pub fn evaluate_decomposed(
         &mut self,
@@ -834,7 +834,7 @@ impl<'source> Machine<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L2 — every `runs` item of the corpus reads back on the
     ///   executor to the normaliser's answer.
-    /// - witness: `gandr-surface-dispatcher::tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    /// - witness: `gandr-surface-dispatcher::tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
     #[inline]
     pub fn read_on(
         &mut self,
@@ -1431,7 +1431,7 @@ impl<'source> Machine<'_, 'source>
     /// - hypothesis: L3 — a function whose body applies a member its module's
     ///   signature hides, and runs naming only exported members of a sealed
     ///   module.
-    /// - witness: `gandr-surface-dispatcher::tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
     #[spec(ensures: |ret| !self.hidden.is_empty() || matches!(ret, Maybe::Absent(carried::Absent::Carried)))]
     fn hidden_in(
         &self,
@@ -2250,7 +2250,7 @@ pub trait Runs<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Machine::evaluate_decomposed`].
-    /// - witness: `gandr-surface-dispatcher::tests::corpus::the_fixture_root_settles_every_fixture`
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::the_fixture_root_settles_every_fixture`
     fn evaluate_decomposed(
         &mut self,
         constant: ConstantIndex,
@@ -2312,7 +2312,7 @@ pub trait Runs<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Machine::read_on`].
-    /// - witness: `gandr-surface-dispatcher::tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    /// - witness: `gandr-surface-dispatcher::tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
     fn read_on(
         &mut self,
         constant: ConstantIndex,
@@ -2711,6 +2711,11 @@ mod tests
     use gandr_surface_lowering::SurfaceName;
     use gandr_surface_pretty::Spelling;
     use gandr_surface_syntax::SourceText;
+    use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Portion;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
     use quenchant_shape::shape::Maybe;
 
     use super::Captured;
@@ -4437,8 +4442,8 @@ mod tests
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as the witnesses.
-    /// - witness: `evaluate::tests::the_corpus_runs_items_run_converted_as_written`
-    /// - witness: `evaluate::tests::the_corpus_runs_items_run_entered_as_written_3635`
+    /// - witness: `evaluate::tests::sweeps::the_corpus_runs_items_run_converted_as_written`
+    /// - witness: `evaluate::tests::sweeps::the_corpus_runs_items_run_entered_as_written_3635`
     fn run_swept<'source>(
         program: &mut Program<'source>,
         constant: ConstantIndex,
@@ -4531,27 +4536,50 @@ mod tests
         }
     }
 
-    /// Run every `runs` item of the corpus on the portable executor as written
-    /// and with its program swept by each sweep, in one walk the tests of a
-    /// nextest run share. Each sweep puts the written definitions back, so
-    /// the second starts from the program as written.
+    /// Run every `runs` item that `sweep` asks for on the portable executor as
+    /// written and with its program swept by each sweep, in one walk the tests
+    /// of a nextest run share. Each sweep puts the written definitions back,
+    /// so the second starts from the program as written.
     ///
     /// # Specification
     /// trivial.
-    fn runs_swept() -> Sweeps
+    fn runs_swept(sweep: &gandr_workflow_sweep::Sweep) -> Sweeps
     {
-        crate::digest::shared(std::path::Path::new("runs-swept"), walk_swept)
+        let key = match (sweep.coverage(), sweep.portion()) {
+            (Coverage::Full, Portion::Fixed) => "runs-swept",
+            (Coverage::Full, Portion::Changed) => "runs-swept-none",
+            (Coverage::Sampled, Portion::Fixed) => "runs-swept-sample",
+            (Coverage::Sampled, Portion::Changed) => "runs-swept-changed",
+        };
+        crate::digest::shared(std::path::Path::new(key), || walk_swept(sweep))
     }
 
-    /// The walk [`runs_swept`] shares.
+    /// The sample of the `runs` sweep: thirty-two sources, ranked by their
+    /// BLAKE3 digest under this name, at least one of each corpus class.
+    /// - see: #7809
+    const RUNS: Sample = Sample {
+        name: SampleName("the_corpus_runs_items_run_as_written"),
+        size: SampleSize(32),
+    };
+
+    /// The exemplars whose programs a sweep must rewrite. A sample of the
+    /// fixed set always holds them, so the fixed set reads the rewrites.
+    const EXEMPLARS: [&str; 2] = [
+        "corpus/ledger/features/abstract-closures.gandr",
+        "corpus/model/data/recursive-addition.gandr",
+    ];
+
+    /// The paths from the workspace root that `sweep` walks: the corpus roots
+    /// whole in a full run, nothing for the change's portion of a full run,
+    /// and otherwise each sampled source, beside the exemplars for the fixed
+    /// set.
     ///
     /// # Specification
     /// trivial.
-    fn walk_swept() -> Sweeps
+    fn swept_roots(sweep: &gandr_workflow_sweep::Sweep) -> alloc::vec::Vec<alloc::string::String>
     {
-        let corpus = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let walk = Walk::new(
-            [
+        match (sweep.coverage(), sweep.portion()) {
+            (Coverage::Full, Portion::Fixed) => [
                 "crates/surface-corpus/strict",
                 "corpus/classifier",
                 "corpus/fragment",
@@ -4561,9 +4589,49 @@ mod tests
                 "corpus/pending",
                 "corpus/surface",
             ]
-            .into_iter()
-            .map(|root| corpus.join(root))
-            .collect(),
+            .map(alloc::string::String::from)
+            .to_vec(),
+            (Coverage::Full, Portion::Changed) => alloc::vec::Vec::new(),
+            (Coverage::Sampled, portion) => {
+                let mut roots: alloc::vec::Vec<alloc::string::String> = sweep
+                    .visit(
+                        RUNS,
+                        &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                    )
+                    .into_iter()
+                    .map(|source| {
+                        let name = source.name.as_ref();
+                        match name.split_once('/') {
+                            Some(("strict", below)) => {
+                                alloc::format!("crates/surface-corpus/strict/{below}")
+                            },
+                            Some(("fixture", below)) => alloc::format!("corpus/{below}"),
+                            _ => panic!("{name}: a source names its root"),
+                        }
+                    })
+                    .collect();
+                if portion == Portion::Fixed {
+                    roots.extend(EXEMPLARS.map(alloc::string::String::from));
+                }
+                roots.sort();
+                roots.dedup();
+                roots
+            },
+        }
+    }
+
+    /// The walk [`runs_swept`] shares.
+    ///
+    /// # Specification
+    /// trivial.
+    fn walk_swept(sweep: &gandr_workflow_sweep::Sweep) -> Sweeps
+    {
+        let corpus = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let walk = Walk::new(
+            swept_roots(sweep)
+                .into_iter()
+                .map(|root| corpus.join(root))
+                .collect(),
         );
         let mut converted = Walked {
             differing: alloc::string::String::new(),
@@ -4617,17 +4685,22 @@ mod tests
     /// evaluation it runs to as written; conversion rewrites the programs of
     /// the `abstract-closures` exemplar, a closure a call returns and a thunk
     /// over two arguments.
-    #[test]
-    fn the_corpus_runs_items_run_converted_as_written()
+    ///
+    /// # Specification
+    /// trivial.
+    fn converted_as_written(sweep: &gandr_workflow_sweep::Sweep)
     {
         let Walked {
             differing,
             rewritten,
-        } = runs_swept().converted;
+        } = runs_swept(sweep).converted;
         assert!(
             differing.is_empty(),
             "converted programs ran apart from their written forms:\n{differing}"
         );
+        if sweep.portion() == Portion::Changed {
+            return;
+        }
         for name in ["applied", "forced"] {
             let exemplar = alloc::format!("corpus/ledger/features/abstract-closures.gandr {name}");
             assert!(
@@ -4641,21 +4714,64 @@ mod tests
     /// closure redex of its program entered, to the evaluation it runs to as
     /// written; entering rewrites the program of an item that applies a
     /// recursive function.
-    #[test]
-    fn the_corpus_runs_items_run_entered_as_written_3635()
+    ///
+    /// # Specification
+    /// trivial.
+    fn entered_as_written(sweep: &gandr_workflow_sweep::Sweep)
     {
         let Walked {
             differing,
             rewritten,
-        } = runs_swept().entered;
+        } = runs_swept(sweep).entered;
         assert!(
             differing.is_empty(),
             "entered programs ran apart from their written forms:\n{differing}"
         );
+        if sweep.portion() == Portion::Changed {
+            return;
+        }
         let recursive = "corpus/model/data/recursive-addition.gandr five";
         assert!(
             rewritten.iter().any(|item| item == recursive),
             "entering rewrote the program of `{recursive}`"
         );
+    }
+
+    /// A pull request walks the sample, and the nightly walks the corpus whole.
+    /// - see: #7809
+    mod sweeps
+    {
+        use gandr_workflow_sweep::Sweep;
+
+        use super::converted_as_written;
+        use super::entered_as_written;
+
+        #[test]
+        fn the_corpus_runs_items_run_converted_as_written()
+        {
+            converted_as_written(&Sweep::asked().expect("the run's sweep resolves"));
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn the_corpus_runs_items_run_converted_as_written_changed()
+        {
+            converted_as_written(&Sweep::asked().expect("the run's sweep resolves").changed());
+        }
+
+        #[test]
+        fn the_corpus_runs_items_run_entered_as_written_3635()
+        {
+            entered_as_written(&Sweep::asked().expect("the run's sweep resolves"));
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn the_corpus_runs_items_run_entered_as_written_3635_changed()
+        {
+            entered_as_written(&Sweep::asked().expect("the run's sweep resolves").changed());
+        }
     }
 }

@@ -36,6 +36,7 @@ gandr-surface-corpus.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-evaluate.workspace = true
 gandr-theory-cell-complexes.workspace = true
+gandr-workflow-sweep.workspace = true
 quenchant-shape.workspace = true
 
 [lints]

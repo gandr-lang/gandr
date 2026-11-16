@@ -99,6 +99,7 @@ gandr-core-checker.workspace = true
 gandr-core-fork.workspace = true
 gandr-lang = { workspace = true, features = ["counts", "instrument"] }
 gandr-surface-lsp = { workspace = true, features = ["client"] }
+gandr-workflow-sweep.workspace = true
 
 # The terminal face draws through crossterm, which has no WASI 0.3 terminal,
 # so `gandr tui` is absent from a `wasm32-wasip3` build.

@@ -60,6 +60,15 @@ use gandr_theory_coherent_resolutions::overlaps_between;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
+use gandr_workflow_sweep::Class;
+use gandr_workflow_sweep::CorpusName;
+use gandr_workflow_sweep::Coverage;
+use gandr_workflow_sweep::Portion;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::SampleName;
+use gandr_workflow_sweep::SampleSize;
+use gandr_workflow_sweep::Source;
+use gandr_workflow_sweep::Sweep;
 use quenchant_shape::shape::Maybe;
 
 /// Every corpus source under the strict and fixture roots, the pending
@@ -75,7 +84,7 @@ use quenchant_shape::shape::Maybe;
 /// - hypothesis: L3 — the differential reaches the described sources of both
 ///   roots; a walk that missed a root reads no run through a described
 ///   operation and fails the non-vacuity assertion.
-/// - witness: `tests::coincide::every_run_through_a_described_operation_is_its_calls_normal_form`
+/// - witness: `tests::coincide::sweeps::every_run_through_a_described_operation_is_its_calls_normal_form`
 #[spec(ensures: |ref ret| ret.iter().all(|path|
         path.extension().is_some_and(|extension| extension == "gandr")))]
 pub fn sources() -> BTreeSet<PathBuf>
@@ -105,6 +114,73 @@ pub fn sources() -> BTreeSet<PathBuf>
     found
 }
 
+/// The sources of [`sources`] that `sweep` asks for, in path order: each one
+/// in a full run, none for the change's portion of a full run, and otherwise
+/// the sources that `sample` visits. The fixed set of a sampled run also
+/// holds `kept`, each a path below the fixture root, so the claims that name
+/// a source read it on each run.
+///
+/// # Specification
+/// trivial.
+pub fn swept(
+    sweep: &Sweep,
+    sample: Sample,
+    kept: &[Kept],
+) -> Vec<PathBuf>
+{
+    let every = sources();
+    match (sweep.coverage(), sweep.portion()) {
+        (Coverage::Full, Portion::Fixed) => every.into_iter().collect(),
+        (Coverage::Full, Portion::Changed) => Vec::new(),
+        (Coverage::Sampled, portion) => {
+            let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+            let strict = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/strict");
+            let candidates: Vec<Source> = every
+                .into_iter()
+                .filter_map(|path| {
+                    let (prefix, below) = match path.strip_prefix(&strict) {
+                        Ok(below) => ("strict", below.to_path_buf()),
+                        Err(_) => ("fixture", path.strip_prefix(&fixture).ok()?.to_path_buf()),
+                    };
+                    let mut name = String::from(prefix);
+                    for part in below.components() {
+                        name.push('/');
+                        name.push_str(&part.as_os_str().to_string_lossy());
+                    }
+                    let name = CorpusName::from(name.as_str());
+                    let class = Class::of(&name);
+                    Some(Source { path, name, class })
+                })
+                .collect();
+            let mut paths: Vec<PathBuf> = sweep
+                .visit(sample, &candidates)
+                .into_iter()
+                .map(|source| source.path)
+                .collect();
+            if portion == Portion::Fixed {
+                paths.extend(kept.iter().map(|&Kept(below)| fixture.join(below)));
+            }
+            paths.sort();
+            paths.dedup();
+            paths
+        },
+    }
+}
+
+/// A source that the fixed set of a sampled sweep holds, by its path below
+/// the fixture root.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Kept(pub &'static str);
+
+/// The sample of the described operations: thirty-two sources, ranked by
+/// their BLAKE3 digest under this name, at least one of each corpus class.
+/// - see: #7809
+const DESCRIBED: Sample = Sample {
+    name: SampleName("every_run_through_a_described_operation_is_its_calls_normal_form"),
+    size: SampleSize(32),
+};
+
 /// The body of the thunk `name` is defined as in `text`: the bytes between
 /// `def name = thunk {`, or the `{` opening the function form of no
 /// parameter `def name() -> C {`, and the brace that closes it; or the lines
@@ -119,7 +195,7 @@ pub fn sources() -> BTreeSet<PathBuf>
 /// # Adequacy
 /// - hypothesis: L3 — as the differential: a body cut short reads no call and
 ///   the run is reported as no direct call.
-/// - witness: `tests::coincide::every_run_through_a_described_operation_is_its_calls_normal_form`
+/// - witness: `tests::coincide::sweeps::every_run_through_a_described_operation_is_its_calls_normal_form`
 #[spec(ensures: |ret| ret.as_deref().is_none_or(|body| body.lines().all(|line| text.as_ref().contains(line))))]
 fn thunk_body(
     text: SourceText<'_>,
@@ -193,7 +269,7 @@ fn thunk_body(
 /// - hypothesis: L3 — the corpus's direct calls read, every shape among them; a
 ///   body that does more than deliver its call or one output reads none and
 ///   fails the differential by name.
-/// - witness: `tests::coincide::every_run_through_a_described_operation_is_its_calls_normal_form`
+/// - witness: `tests::coincide::sweeps::every_run_through_a_described_operation_is_its_calls_normal_form`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref call, _)| call.ends_with(')')))]
 fn direct_call(body: SourceFragment<'_>) -> Option<(String, Option<String>)>
 {
@@ -333,7 +409,7 @@ struct Frame
 /// # Adequacy
 /// - hypothesis: L3 — as the differential's calls: a nested call keeps its
 ///   nesting, and a mismatched parenthesis reads no call.
-/// - witness: `tests::coincide::every_run_through_a_described_operation_is_its_calls_normal_form`
+/// - witness: `tests::coincide::sweeps::every_run_through_a_described_operation_is_its_calls_normal_form`
 fn inspected(spine: SourceFragment<'_>) -> Option<String>
 {
     let call = |operands: &[String]| {
@@ -411,8 +487,12 @@ fn inspected(spine: SourceFragment<'_>) -> Option<String>
     }
 }
 
-#[test]
-fn every_run_through_a_described_operation_is_its_calls_normal_form()
+/// Each run through an operation that a family describes, among the sources
+/// that `sweep` asks for, is the normal form of the call it delivers.
+///
+/// # Specification
+/// trivial.
+fn described_runs_normalise(sweep: &Sweep)
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let mut lowerings = LoweringCount::default();
@@ -440,7 +520,7 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
         outputs.push(inner.get(start ..)?.trim());
         outputs.get(index).map(|output| String::from(*output))
     };
-    for path in sources() {
+    for path in swept(sweep, DESCRIBED, &[]) {
         let text = std::fs::read_to_string(&path).expect("the source reads");
         let shown = path.display();
         let Lowered::Module { module, arena } =
@@ -570,10 +650,37 @@ fn every_run_through_a_described_operation_is_its_calls_normal_form()
             compared = compared.saturating_add(1);
         }
     }
-    assert!(
-        compared > 0_usize,
-        "the corpus holds a run through a described operation: {compared}"
-    );
+    // A sample may hold no run through a described operation, so only the
+    // whole corpus counts them.
+    if sweep.coverage() == Coverage::Full && sweep.portion() == Portion::Fixed {
+        assert!(
+            compared > 0_usize,
+            "the corpus holds a run through a described operation: {compared}"
+        );
+    }
+}
+
+/// A pull request reads the sample, and the nightly reads the corpus whole.
+/// - see: #7809
+mod sweeps
+{
+    use gandr_workflow_sweep::Sweep;
+
+    use super::described_runs_normalise;
+
+    #[test]
+    fn every_run_through_a_described_operation_is_its_calls_normal_form()
+    {
+        described_runs_normalise(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn every_run_through_a_described_operation_is_its_calls_normal_form_changed()
+    {
+        described_runs_normalise(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
 }
 
 /// An embedding of `term` into `glued` when the two are one diagram up to

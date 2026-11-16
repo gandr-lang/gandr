@@ -769,7 +769,7 @@ impl Runtime
     /// # Adequacy
     /// - hypothesis: L2 — the corpus's handlers capture and resume; a top left
     ///   where the call found it resumes the captured frames twice.
-    /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+    /// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
     #[inline]
     pub const fn set_frame_top(
         &mut self,
@@ -805,7 +805,7 @@ impl Runtime
     /// - hypothesis: L2 — an operation's clause and an aborted view's unwind
     ///   are entered this way; a jump ignored runs the instruction after the
     ///   call, which takes the stuck exit.
-    /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+    /// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
     #[inline]
     pub const fn jump(
         &mut self,
@@ -897,7 +897,7 @@ impl Runtime
     ///   region's top where it found it, and every corpus program runs its
     ///   entries in the region.
     /// - witness: `tests::count::a_returned_body_gives_its_window_back`
-    /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+    /// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
     #[inline]
     pub const fn set_windows(
         &mut self,
@@ -996,7 +996,7 @@ impl Runtime
     /// - hypothesis: L2 — the corpus's handlers replay captured stacks, each
     ///   window copied here; a window overlapping a live object changes the
     ///   answer.
-    /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+    /// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
     ///
     /// # Errors
     /// [`Refusal::Heap`] when the words would pass the heap's committed end

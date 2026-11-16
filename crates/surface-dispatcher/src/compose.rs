@@ -3518,7 +3518,7 @@ type JudgedUnit<'source> = (
 /// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
 /// - witness: `tests::compose::a_module_settles_every_declaration_once`
 /// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
-/// - witness: `tests::corpus::the_fixture_root_settles_every_fixture`
+/// - witness: `tests::corpus::sweeps::the_fixture_root_settles_every_fixture`
 /// - witness: `tests::compose::a_closure_judged_otherwise_is_not_continued`
 /// - witness: `tests::compose::each_source_of_a_component_reports_its_own_share`
 /// - witness: `tests::compose::a_retired_member_judgement_keeps_nothing_1663`
@@ -4267,7 +4267,7 @@ fn settled<'source>(
 /// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
 /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
 /// - witness: `tests::corpus::the_identity_base_is_spelled_once_for_its_importers_595`
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 #[spec(ensures: |ref ret| ret.0.len() == members.len() && match ret.1 {
     Maybe::Present(_) | Maybe::Absent(kept::Absent::Unjudged) => keeping == Keeping::Admission,
     Maybe::Absent(kept::Absent::Unasked) => keeping == Keeping::Composed,

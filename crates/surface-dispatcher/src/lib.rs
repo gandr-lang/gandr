@@ -98,21 +98,26 @@
 //!
 //! # The corpus runs through the walk
 //!
-//! The corpus's two roots are run through the walk:
+//! The walk runs the corpus's two roots. Each root settles:
 //! `tests::corpus::the_strict_root_checks_owing_nothing`,
-//! `tests::corpus::the_fixture_root_settles_every_fixture`,
-//! `tests::corpus::the_two_roots_exercise_every_row`,
-//! `tests::corpus::the_std_root_adds_one_lowering_per_module`; the identity
-//! subject's base is lowered once in its importers' component:
-//! `tests::corpus::the_identity_base_is_lowered_once_for_its_importers`; every
-//! run outcome they state, and the focusing of every declaration they accept:
-//! `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`,
-//! `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`,
-//! `tests::corpus::focusing_is_total_on_the_model_corpus`,
-//! `tests::corpus::focusing_is_total_on_the_pathological_corpus`; and the
-//! registration witness (`gandr-surface-corpus`'s `root` module, § One walk
-//! registers every source): `tests::corpus::every_corpus_source_is_registered`,
+//! `tests::corpus::sweeps::the_fixture_root_settles_every_fixture`,
+//! `tests::corpus::sweeps::the_two_roots_exercise_every_row`,
+//! `tests::corpus::sweeps::the_std_root_adds_one_lowering_per_module`.
+//! The identity subject's base is lowered once in the component of its
+//! importers:
+//! `tests::corpus::the_identity_base_is_lowered_once_for_its_importers`.
+//! Each run outcome that a source states settles, and each declaration that a
+//! source accepts focuses:
+//! `tests::corpus::sweeps::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`,
+//! `tests::corpus::sweeps::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`,
+//! `tests::corpus::sweeps::focusing_is_total_on_the_model_corpus`,
+//! `tests::corpus::sweeps::focusing_is_total_on_the_pathological_corpus`.
+//! A pull request runs these sweeps over a sample of the corpus, and the
+//! nightly runs them over the whole corpus. The walk registers every source:
+//! `tests::corpus::every_corpus_source_is_registered`,
 //! `tests::corpus::a_planted_orphan_is_not_registered`.
+//! - see: `gandr-surface-corpus`'s `root` module, § One walk registers every
+//!   source, #7809
 //!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in the module that owns it.

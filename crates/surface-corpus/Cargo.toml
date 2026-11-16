@@ -62,6 +62,7 @@ gandr-storage-records.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-parser.workspace = true
 gandr-workflow-debt-ledger.workspace = true
+gandr-workflow-sweep.workspace = true
 
 [lints]
 workspace = true

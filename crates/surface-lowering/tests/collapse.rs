@@ -46,6 +46,12 @@ use gandr_theory_discrete_morse::Budget;
 use gandr_theory_discrete_morse::Class;
 use gandr_theory_discrete_morse::Faults;
 use gandr_theory_discrete_morse::Scheme as _;
+use gandr_workflow_sweep::Coverage;
+use gandr_workflow_sweep::Portion;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::SampleName;
+use gandr_workflow_sweep::SampleSize;
+use gandr_workflow_sweep::Sweep;
 use quenchant_shape::shape::Maybe;
 
 use crate::lawvere::Count;
@@ -54,14 +60,15 @@ use crate::lawvere::Unpresented;
 use crate::lawvere::bound;
 use crate::lawvere::presented;
 use crate::lawvere::read;
+use crate::squier::Kept;
 use crate::squier::Presentation;
 use crate::squier::Reading;
 use crate::squier::certified;
-use crate::squier::corpus;
 use crate::squier::each_block;
 use crate::squier::readings;
 use crate::squier::rules_of;
 use crate::squier::spelled;
+use crate::squier::swept;
 
 /// The most redundant cells the cycle check visits before the probe gives up.
 const CLOSURE: usize = 100_000;
@@ -821,8 +828,23 @@ fn the_blocks_of_5258_collapse_onto_their_rules_and_certified_pairs()
     ]);
 }
 
-#[test]
-fn every_decided_corpus_reading_collapses_onto_its_rules_and_certified_pairs_but_one()
+/// The source whose commands reading fails.
+const ETA: &str = "model/desc/desc-eta-cell.gandr";
+
+/// The sample of the decided readings: thirty-two sources, ranked by their
+/// BLAKE3 digest under this name, at least one of each corpus class.
+/// - see: #7809
+const DECIDED: Sample = Sample {
+    name: SampleName("every_decided_corpus_reading_collapses"),
+    size: SampleSize(32),
+};
+
+/// Each reading of the sources that `sweep` asks for that the probe decides
+/// collapses onto its rules and its certified pairs, but for one.
+///
+/// # Specification
+/// trivial.
+fn decided_readings_collapse(sweep: &Sweep)
 {
     // Each reading that the probe decides has the rules as its essential cells
     // of degree two and the certified pairs as those of degree three. Its
@@ -840,7 +862,11 @@ fn every_decided_corpus_reading_collapses_onto_its_rules_and_certified_pairs_but
     let mut decided = 0_usize;
     let mut bounded: Vec<String> = Vec::new();
     let mut failing: Vec<String> = Vec::new();
-    for path in corpus() {
+    let paths = swept(sweep, DECIDED, &[Kept(ETA)]);
+    if paths.is_empty() {
+        return;
+    }
+    for path in paths {
         let text = std::fs::read_to_string(&path).expect("a corpus source reads");
         let source = SourceText::from(text.as_str());
         let named = path.strip_prefix(&root).expect("a corpus path");
@@ -878,10 +904,44 @@ fn every_decided_corpus_reading_collapses_onto_its_rules_and_certified_pairs_but
             }
         });
     }
-    assert!(decided > 1, "the corpus holds first-order blocks");
     assert!(
         bounded.is_empty(),
         "no reading passes the bound: {bounded:?}"
     );
-    assert_eq!(failing, ["model/desc/desc-eta-cell.gandr: Commands"]);
+    let eta = format!("{ETA}: Commands");
+    if sweep.portion() == Portion::Changed {
+        assert!(
+            failing.iter().all(|reading| *reading == eta),
+            "only {eta} fails: {failing:?}"
+        );
+        return;
+    }
+    // A sample holds few rule blocks, so only the whole corpus counts them.
+    if sweep.coverage() == Coverage::Full {
+        assert!(decided > 1, "the corpus holds first-order blocks");
+    }
+    assert_eq!(failing, [eta]);
+}
+
+/// A pull request reads the sample, and the nightly reads the corpus whole.
+/// - see: #7809
+mod sweeps
+{
+    use gandr_workflow_sweep::Sweep;
+
+    use super::decided_readings_collapse;
+
+    #[test]
+    fn every_decided_corpus_reading_collapses_onto_its_rules_and_certified_pairs_but_one()
+    {
+        decided_readings_collapse(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn every_decided_corpus_reading_collapses_onto_its_rules_and_certified_pairs_but_one_changed()
+    {
+        decided_readings_collapse(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
 }
