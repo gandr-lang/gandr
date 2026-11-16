@@ -20,6 +20,10 @@ inputs:
   cache:
     description: "Restore and save the rustup toolchain and the dependency cache"
     default: "true"
+  # Off for a job whose compiles must not come from a cache.
+  kache:
+    description: "Build through kache, with its shared cache on ghcr.io"
+    default: "true"
 runs:
   using: composite
   steps:
@@ -94,3 +98,51 @@ runs:
         cache-targets: false
         cache-on-failure: false
         save-if: ${{ inputs.cache-save == 'true' }}
+    # kache caches each compile by its content and shares it across jobs,
+    # runners and worktrees. Its remote is an OCI repository on ghcr.io. A
+    # self-hosted runner keeps kache's local store in its own home from one
+    # job to the next, and reads it before the remote. A container job keeps
+    # the store on the workspace's mount, where it can hardlink into
+    # `target/`.
+    #
+    # A trusted run publishes: a merge group, or a push, a schedule or a
+    # dispatch on `main`, `landing` or `integration`. Each runs code that
+    # landed or waits in the queue. Every job gets the token, so the package
+    # can stay private. A pull request's token reads it, and kache publishes
+    # nothing from it.
+    #
+    # Under GitHub Actions, kache publishes only from a push to a protected
+    # branch, and our pushes compile almost nothing. So a trusted run gives
+    # kache, and kache alone, `GITHUB_ACTIONS=false` through a wrapper, and
+    # restarts kache's daemon under the same setting.
+    # - see: #7789
+    - name: "point kache at the shared cache"
+      if: ${{ inputs.kache == 'true' }}
+      run: | # zizmor: ignore[github-env]
+        config=$RUNNER_TEMP/kache.toml
+        printf '[cache]\ncache_executables = true\n\n[cache.remote]\ntype = "oci"\nrepository = "ghcr.io/gandr-lang/gandr-kache"\nprefix = "gandr"\n' > "$config"
+        printf 'KACHE_CONFIG=%s\n' "$config" >> "$GITHUB_ENV"
+      shell: bash
+    - name: "install kache"
+      if: ${{ inputs.kache == 'true' }}
+      uses: kunobi-ninja/kache-action@ad7317540dcdd71c904f7a60a87b620a0c0e67ed # v1
+      env: &kache-credentials
+        KACHE_OCI_USERNAME: ${{ github.actor }}
+        KACHE_OCI_PASSWORD: ${{ github.token }}
+      with:
+        version: v2.1.1
+        github-cache: "false"
+        cache-executables: "true"
+        cache-c-cpp: "true"
+        pr-comment: "false"
+    - name: "let kache publish from a trusted run"
+      if: ${{ inputs.kache == 'true' && (github.event_name == 'merge_group' || contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name) && contains(fromJSON('["refs/heads/main", "refs/heads/landing", "refs/heads/integration"]'), github.ref)) }}
+      env: *kache-credentials
+      run: | # zizmor: ignore[github-env]
+        wrapper=$RUNNER_TEMP/kache-trusted
+        printf '#!/bin/sh\nGITHUB_ACTIONS=false exec kache "$@"\n' > "$wrapper"
+        chmod +x "$wrapper"
+        printf 'RUSTC_WRAPPER=%s\n' "$wrapper" >> "$GITHUB_ENV"
+        GITHUB_ACTIONS=false kache daemon restart
+        GITHUB_ACTIONS=false kache doctor
+      shell: bash

@@ -55,7 +55,7 @@ jobs:
     runs-on: &linux ubuntu-24.04-arm
     permissions: &image-read-permissions
       contents: read
-      packages: read
+      packages: write
     steps:
       - &git-checkout
         name: git checkout
@@ -316,7 +316,7 @@ jobs:
     runs-on: *linux
     permissions:
       contents: write
-      packages: read
+      packages: write
       actions: read
       issues: write
     container: *ci-image # zizmor: ignore[unpinned-images]
