@@ -2290,5 +2290,47 @@
       "issues": [{ "number": 6873, "body": "Text.\n" }]
     },
     "output": ""
+  },
+  {
+    "name": "a short change states its verification, and its issue's unit sections ask nothing of it",
+    "input": {
+      "branch": "coordinator-7720-ci",
+      "short": true,
+      "body": "Advances #7720\n\nThe ring builds again.\n\n## Verification\n\n- the plain baseline passes on the dispatched run\n",
+      "issues": [
+        {
+          "number": 7720,
+          "body": "## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `units.md` § units-pr | primary | the vocabulary |\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `descent` | yes — one job a lane |\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| latency | 15 min a night |\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "a short change without `## Verification` is refused",
+    "input": {
+      "branch": "coordinator-7720-ci",
+      "short": true,
+      "body": "Advances #7720\n\nThe ring builds again.\n"
+    },
+    "output": "the body lacks `## Verification`: state what was run and what it showed, then run `pr:open` again"
+  },
+  {
+    "name": "a short change with an empty `## Verification` is refused",
+    "input": {
+      "branch": "coordinator-7720-ci",
+      "short": true,
+      "body": "Advances #7720\n\n## Verification\n\n<!-- what was run -->\n"
+    },
+    "output": "the body's `## Verification` is empty: state what was run and what it showed, then run `pr:open` again"
+  },
+  {
+    "name": "a short change still names its branch's issue",
+    "input": {
+      "branch": "coordinator-7720-ci",
+      "short": true,
+      "body": "The ring builds again.\n\n## Verification\n\n- the plain baseline passes\n"
+    },
+    "output": "the body names no `Advances` or `Closes` line for #7720, the issue `coordinator-7720-ci` names: add `Advances #7720` for a slice, or `Closes #7720` if it finishes the issue, then run `pr:open` again"
   }
 ]

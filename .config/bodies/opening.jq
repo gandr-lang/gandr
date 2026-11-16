@@ -655,4 +655,18 @@ def speedups:
   | select($lacks | length > 0)
   | "the body's line `\(gsub("^\\s+|\\s+$"; ""))` claims a speedup without \($lacks | join(" and ")): name both on the claim's line (#3479, the algorithm-first ruling of #320), then run `pr:open` again";
 
-claim, sources, citations, readings, concerns, defects, surface, keywords, viewed, refactorings, collectors, engineering_answers, curve_answers, ceilings, api_budget, facts_kept, speedups
+# A change that touches no language code answers the short shape: no crate,
+# no corpus source, no library source and no ledger row. Its body names its
+# issue. It states the commands that ran under `## Verification`, and it
+# gives a defect's observation. The unit sections stay with the full shape.
+# - see: `crates/`, `corpus/`, `library/`, `ledger/`
+def verification:
+  (.body | section("Verification")) as $section
+  | if $section == null then "the body lacks `## Verification`: state what was run and what it showed, then run `pr:open` again"
+    elif $section | filled | not then "the body's `## Verification` is empty: state what was run and what it showed, then run `pr:open` again"
+    else empty
+    end;
+
+if .short then claim, defects, keywords, collectors, verification, ceilings, api_budget, speedups
+else claim, sources, citations, readings, concerns, defects, surface, keywords, viewed, refactorings, collectors, engineering_answers, curve_answers, ceilings, api_budget, facts_kept, speedups
+end
