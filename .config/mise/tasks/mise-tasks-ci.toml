@@ -356,7 +356,9 @@ for index in "${!crates[@]}"; do
   if [[ ${usage_all:-false} == true ]] || ((index == night % nights)); then packages+=(--package "${crates[index]}"); fi
 done
 echo "night $night, crate $((night % nights + 1)) of $nights: ${packages[*]}"
-.config/mise/scope cargo nextest run --locked --profile "${NEXTEST_PROFILE:-default}" --all-features "${packages[@]}"
+# A crate can declare a feature and hold no test. Then its night builds the
+# crate with every feature enabled, and the night passes.
+.config/mise/scope cargo nextest run --locked --profile "${NEXTEST_PROFILE:-default}" --all-features --no-tests=pass "${packages[@]}"
 '''
 
 # The enforcing suite, instrumented into target/coverage so it never shares
