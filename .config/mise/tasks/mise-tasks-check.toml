@@ -2671,6 +2671,7 @@ fi
 .config/pr-stack/behind-top.bash || failed=1
 .config/pr-stack/replays.bash || failed=1
 .config/pr-stack/queue.bash || failed=1
+.config/pr-stack/lone.bash || failed=1
 .config/pr-stack/await.bash || failed=1
 .config/pr-stack/sweep-subjects.bash || failed=1
 .config/pr-stack/sweep-pulls.bash || failed=1

@@ -5357,6 +5357,9 @@ if [[ "$verdict" == hold && "$stop" == red && "$prefix_queued" == '[]' ]]; then
     fi
   fi
 fi
+# A lone pull request set to auto-merge needs no watch. GitHub queues it.
+# - see: #7801
+[[ -z ${prefix_auto:-} ]] || exit 0
 # The seat's wake-up: run as a deferred job, `pr:watch` exits with one line
 # the moment the pull request needs a hand or has landed, and lands its
 # stack the moment it goes green.
