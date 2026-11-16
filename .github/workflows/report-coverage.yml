@@ -110,7 +110,8 @@ jobs:
       # driver resolves another target offline. It reads every package of the
       # lock, so the part fetches all of them first.
       # - see: `crates/surface-driver/tests/wasi.rs`, #7402
-      - name: fetch locked dependencies
+      - &fetch-dependencies
+        name: fetch locked dependencies
         run: cargo fetch --locked
       - &measure-coverage
         name: measure this part's coverage
@@ -250,6 +251,7 @@ jobs:
       - *setup-rust
       - *identify-coverage-state
       - *restore-coverage-state
+      - *fetch-dependencies
       - *measure-coverage
       - *save-coverage-state
       - name: keep this part's report
