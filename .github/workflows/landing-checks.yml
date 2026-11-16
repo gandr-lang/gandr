@@ -179,11 +179,13 @@ jobs:
     # on the self-hosted runner. A pull request, a merge group and a push
     # set no input.
     runs-on: &linux ${{ inputs.cycle && inputs.runner == 'integration' && github.ref == 'refs/heads/integration' && fromJSON('["self-hosted", "integration"]') || 'ubuntu-24.04-arm' }}
-    # Private-GHCR consumers need package reads on the job; the workflow floor
-    # stays `contents: read` for every job that pulls no image.
+    # Private-GHCR consumers need package reads on the job. The workflow floor
+    # stays `contents: read` for every job that pulls no image. A job that
+    # builds Rust also writes kache's package on a trusted run.
+    # - see: #7789
     permissions: &image-read-permissions
       contents: read
-      packages: read
+      packages: write
     steps:
       # Checkout stays shallow except where a gate needs history. A job that
       # must build the pull request's own head, not GitHub's merge commit,
@@ -929,7 +931,7 @@ jobs:
     runs-on: *linux
     permissions: &build-state-read-permissions
       contents: read
-      packages: read
+      packages: write
       actions: read
     container: &ci-image ${{ needs.prepare.outputs.image }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
@@ -1286,7 +1288,7 @@ jobs:
     # The join deletes the state it supersedes on main, as promotion does.
     permissions:
       contents: read
-      packages: read
+      packages: write
       actions: write
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
@@ -1408,6 +1410,7 @@ jobs:
     runs-on: [self-hosted, macos-arm64]
     permissions:
       contents: read
+      packages: write
     timeout-minutes: 45
     strategy: *enforcing-shards
     env:
@@ -1599,7 +1602,7 @@ jobs:
     # A landing's push deletes the Clippy state it superseded.
     permissions:
       contents: read
-      packages: read
+      packages: write
       actions: write
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
@@ -1883,7 +1886,7 @@ jobs:
     runs-on: *linux
     permissions:
       contents: read
-      packages: read
+      packages: write
       actions: read
       checks: read
       pull-requests: read
@@ -2032,7 +2035,7 @@ jobs:
     runs-on: *linux
     permissions:
       contents: read
-      packages: read
+      packages: write
       actions: read
     container: *ci-test-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 15
@@ -2137,7 +2140,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      packages: read
+      packages: write
       actions: read
     container: *ci-test-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 14
@@ -2223,7 +2226,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-      packages: read
+      packages: write
       id-token: write
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
@@ -2326,7 +2329,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-      packages: read
+      packages: write
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
@@ -2694,7 +2697,7 @@ jobs:
     runs-on: *linux
     permissions:
       contents: read
-      packages: read
+      packages: write
       # `check:tracking` reads the state of each issue a refusal names.
       issues: read
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -2828,7 +2831,7 @@ jobs:
     runs-on: *linux
     permissions:
       contents: read
-      packages: read
+      packages: write
       # The bodies of the pull requests the change lands, and the comments
       # that sign an override.
       pull-requests: read
@@ -2961,7 +2964,7 @@ jobs:
     # Promotion deletes the state its landing superseded.
     permissions: &promote-permissions
       contents: read
-      packages: read
+      packages: write
       actions: write
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:

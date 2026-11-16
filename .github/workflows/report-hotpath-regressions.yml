@@ -68,6 +68,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      packages: write
       checks: read
       issues: write
       pull-requests: read
