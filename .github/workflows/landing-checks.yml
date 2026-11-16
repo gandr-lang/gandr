@@ -1361,17 +1361,18 @@ jobs:
       - *delete-superseded-state
       - *lane-state
 
-  # The plain baseline: every workspace test without enforcement, timed daily
-  # on main and when a dispatch asks, so the enforcing lane can report what
-  # each test's specifications cost it. It starts from the plain lane's state
-  # and saves none of its own.
+  # The plain baseline runs every workspace test without enforcement. It runs
+  # daily on main and on a dispatch that asks for it. The enforcing lane reads
+  # its times and reports the cost of each test's specifications. The job
+  # starts from the plain lane's state and saves no state. It runs the ring's
+  # tests, so its container drops the seccomp filter, as the shards' does.
   cargo-test-plain-baseline:
     name: time the plain baseline (linux)
     needs: *rust-needs
     if: ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || inputs.plain-baseline) }}
     runs-on: *linux
     permissions: *build-state-read-permissions
-    container: *ci-image # zizmor: ignore[unpinned-images]
+    container: *ci-test-image
     timeout-minutes: 45
     env:
       CI_BUILD_STATE: cargo-test-plain-only
@@ -1484,6 +1485,7 @@ jobs:
         uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
         with:
           cache: "false"
+      - *fetch-dependencies
       - *select-shard
       - *build-workspace
       - *test-workspace
