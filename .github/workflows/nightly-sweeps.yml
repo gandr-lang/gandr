@@ -489,6 +489,16 @@ jobs:
       CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
     steps:
       - *git-checkout
+      # On riscv64 the ring's liburing crate makes its bindings with the
+      # bindgen command. `BINDGEN_PATH` names the command. The host holds
+      # clang and no mise. So the job installs the command into the runner's
+      # cargo home one time, and each later night finds it there.
+      # - see: #7720
+      - name: install the bindgen command
+        run: |
+          bin=$HOME/.cargo/bin/bindgen
+          [[ $("$bin" --version 2> /dev/null) == "bindgen 0.72.1" ]] || cargo install --locked --version 0.72.1 bindgen-cli
+          echo "BINDGEN_PATH=$bin" >> "$GITHUB_ENV"
       - *chain-build
       - *chain-upload
 
