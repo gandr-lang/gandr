@@ -93,6 +93,12 @@ path = "rust/tombi-cli"
 stamp = { files = ["Cargo.toml", "Cargo.lock"], placeholder = "0.0.0-dev" }
 
 [[tool]]
+key = "cargo:bindgen-cli"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "bindgen-cli"
+
+[[tool]]
 key = "mise"
 targets = ["riscv64gc-unknown-linux-gnu"]
 build = "crate"

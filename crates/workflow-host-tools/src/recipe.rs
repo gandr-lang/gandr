@@ -177,6 +177,7 @@ mod tests
             "github:zizmorcore/zizmor",
             "github:aubepkg/aube",
             "github:tombi-toml/tombi",
+            "cargo:bindgen-cli",
             "mise",
         ]);
         let mise = builds.tool.last().unwrap();
