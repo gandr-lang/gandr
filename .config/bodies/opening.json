@@ -211,7 +211,7 @@
     "output": "the `## Sources read` item `- supersedes: `Girard-1993-lu` —` gives no confirmation: write `- supersedes: `<old key>` — <confirmation>`, then run `pr:open` again"
   },
   {
-    "name": "an axis with no row, a blank, `not selected`, a bare form or `none:` is refused, naming the axis and its question, as is a row naming no axis (#2955)",
+    "name": "a blank, `not selected`, a bare form or `none:` is refused, naming the axis and its question, as is a row naming no axis (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
       "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` |  |\n| Locality | `descent` | not selected |\n| Place | `located` | trivial: |\n| Place | `resident` | none: no representation moves |\n| Identity | `univalence` | answered: `transport.rs` |\n\n## Refactoring\n\nno\n",
@@ -222,7 +222,7 @@
         }
       ]
     },
-    "output": "the `## Readings` row `| Identity | `univalence` | answered: `transport.rs` |` names no axis: its second cell is one of `univalent`, `oracle`, `descent`, `located`, `resident`, `rewriting`, `zero-cost`, `bounded`, `nominal`, `general`, then run `pr:open` again\nthe body's `## Readings` leaves an axis unanswered: give each one `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `oracle`, blank: which part is decided by certificate replay and which is computed; which modality or dominance classifies it\n  - `descent`, `not selected`: the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left\n  - `located`, `trivial:`: at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer)\n  - `resident`, `none: no representation moves`: representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides\n  - `rewriting`, no row: rules and normal forms; rewrites between rewrites; which coherence tier settles them\n  - `zero-cost`, no row: what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it\n  - `bounded`, no row: whether the unit's path runs under a device's bound: a fixed peak memory, a fixed count of cores, no `std` and no engine at run time; what it needs of each; the issue's row is `yes — bounded: <peak memory, cores>` or `no — <what of std or of the engine the path needs>`; the PR reports the path's peak memory and time at the device's bound on the riscv64 host at one core, or `n/a` with the reason (`compiled-runtime-programme/device-profile.md`)\n  - `nominal`, no row: what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization\n  - `general`, no row: the level where the unit's result holds: up to homotopy with its coherences, or a shadow of it — homology or another linear form, an analytic or pointwise form, a bounded order or dimension; for a shadow, the general form, the source key that states it and the issue that owes it"
+    "output": "the `## Readings` row `| Identity | `univalence` | answered: `transport.rs` |` names no axis: its second cell is one of `univalent`, `oracle`, `descent`, `located`, `resident`, `rewriting`, `zero-cost`, `bounded`, `nominal`, `general`, then run `pr:open` again\nthe body's `## Readings` leaves an axis unanswered: give each axis that an issue selects, and each row the body writes, `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `oracle`, blank: which part is decided by certificate replay and which is computed; which modality or dominance classifies it\n  - `descent`, `not selected`: the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left\n  - `located`, `trivial:`: at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer)\n  - `resident`, `none: no representation moves`: representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides"
   },
   {
     "name": "every axis answered in one of the four forms opens, and a subsection's table is not read as axes (#2955)",
@@ -281,20 +281,6 @@
     "output": ""
   },
   {
-    "name": "#3246: a body answering six axes and not `zero-cost` is refused, the seventh's question quoted",
-    "input": {
-      "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n\n## Refactoring\n\nno\n",
-      "issues": [
-        {
-          "number": 2522,
-          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — nothing is replayed |\n| Place | `resident` | yes — the layout is a representation |\n"
-        }
-      ]
-    },
-    "output": "the body's `## Readings` leaves an axis unanswered: give each one `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `zero-cost`, no row: what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it\n  - `bounded`, no row: whether the unit's path runs under a device's bound: a fixed peak memory, a fixed count of cores, no `std` and no engine at run time; what it needs of each; the issue's row is `yes — bounded: <peak memory, cores>` or `no — <what of std or of the engine the path needs>`; the PR reports the path's peak memory and time at the device's bound on the riscv64 host at one core, or `n/a` with the reason (`compiled-runtime-programme/device-profile.md`)\n  - `nominal`, no row: what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization\n  - `general`, no row: the level where the unit's result holds: up to homotopy with its coherences, or a shadow of it — homology or another linear form, an analytic or pointwise form, a bounded order or dimension; for a shadow, the general form, the source key that states it and the issue that owes it"
-  },
-  {
     "name": "an axis the issue selects answered other than `answered:` is refused until `## Sources read` departs from it (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
@@ -351,7 +337,7 @@
     "output": "an axis the issue selects is answered other than `answered:`: add `- `<axis>` — departed: <the recorded design, the change, why>` to `## Sources read` for each, then run `pr:open` again:\n  - `descent` (#2522's `## Readings`)"
   },
   {
-    "name": "a unit's body with no `## Readings` is refused every axis (#2955)",
+    "name": "#7792: a unit's body with no `## Readings` owes no axis that its issue does not select",
     "input": {
       "branch": "workflow-2522-readings",
       "body": "Closes #2522\n\n## Refactoring\n\nno\n",
@@ -362,7 +348,21 @@
         }
       ]
     },
-    "output": "the body's `## Readings` leaves an axis unanswered: give each one `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `univalent`, no row: what univalence and the rewriting core give the construction: an equation, a transported rule, a replayed cell, representation independence\n  - `oracle`, no row: which part is decided by certificate replay and which is computed; which modality or dominance classifies it\n  - `descent`, no row: the local data, the interface, the assembly; what a change invalidates and reuses; the parallel width left\n  - `located`, no row: at which world a judgement or value is meaningful; what crosses worlds or sessions, and by what: by location inside one world (a LAM: region, index, never recycled) or by content across worlds (the CAM: `cam_commit` at the source, `cam_deref` at the destination); whether what crosses is `mobile` (authority) and `Open` (no location pointer)\n  - `resident`, no row: representation, sharing, persistence; which memory holds the value — a location-addressable store (the runtime's heaps, `core-sequent`'s store) or the content-addressable store (`storage-values`, chunk and content pointer) — and what the crossing between them costs (the boundary and alias classification, the locality bound); where integrity stops and replay decides\n  - `rewriting`, no row: rules and normal forms; rewrites between rewrites; which coherence tier settles them\n  - `zero-cost`, no row: what the change adds at run time and what demands it: a grade above zero, a crossing a located mode names or a branch a session type carries (then it is the program, not overhead), or a recipe policy off by default (then the artifact built without it carries none of its bytes and the checker refuses the forms that need it); what the grade erases; what a hand-written form would cost against it\n  - `bounded`, no row: whether the unit's path runs under a device's bound: a fixed peak memory, a fixed count of cores, no `std` and no engine at run time; what it needs of each; the issue's row is `yes — bounded: <peak memory, cores>` or `no — <what of std or of the engine the path needs>`; the PR reports the path's peak memory and time at the device's bound on the riscv64 host at one core, or `n/a` with the reason (`compiled-runtime-programme/device-profile.md`)\n  - `nominal`, no row: what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization\n  - `general`, no row: the level where the unit's result holds: up to homotopy with its coherences, or a shadow of it — homology or another linear form, an analytic or pointwise form, a bounded order or dimension; for a shadow, the general form, the source key that states it and the issue that owes it"
+    "output": ""
+  },
+  {
+    "name": "#7792: an axis the issue selects and the body leaves out is refused, quoting its question",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Locality | `oracle` | yes — a memo hit is replayed from its certificate |\n"
+        }
+      ]
+    },
+    "output": "the body's `## Readings` leaves an axis unanswered: give each axis that an issue selects, and each row the body writes, `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `oracle`, no row: which part is decided by certificate replay and which is computed; which modality or dominance classifies it"
   },
   {
     "name": "a body working an issue with no readings table, and with none of its own, is asked for none",
@@ -1717,20 +1717,6 @@
     "output": ""
   },
   {
-    "name": "#4181: a body answering seven axes and not `nominal` is refused, the eighth's question quoted",
-    "input": {
-      "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n| Cost | `zero-cost` | not applicable: nothing is added at run time |\n| Cost | `bounded` | not applicable: not this case's |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n\n## Refactoring\n\nno\n",
-      "issues": [
-        {
-          "number": 2522,
-          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — nothing is replayed |\n| Place | `resident` | yes — the layout is a representation |\n"
-        }
-      ]
-    },
-    "output": "the body's `## Readings` leaves an axis unanswered: give each one `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `nominal`, no row: what names, freshness, support and renaming give the unit, stated in `theory-nominal-automata`'s terms: which names it binds, allocates, uses or releases and whose identity they keep; its behaviour as a language over an alphabet of allocations, uses and releases, a word or tree automaton with name allocation and deallocation; and which decision it needs of that language: membership, inclusion, emptiness or determinization\n  - `general`, no row: the level where the unit's result holds: up to homotopy with its coherences, or a shadow of it — homology or another linear form, an analytic or pointwise form, a bounded order or dimension; for a shadow, the general form, the source key that states it and the issue that owes it"
-  },
-  {
     "name": "#5039: a body answering each bounded row with its number, and the `n/a` row with `n/a`, opens",
     "input": {
       "branch": "triage-9999-engineering",
@@ -2061,20 +2047,6 @@
       ]
     },
     "output": ""
-  },
-  {
-    "name": "#5951: a body answering eight axes and not `general` is refused, the ninth's question quoted",
-    "input": {
-      "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n| Cost | `zero-cost` | not applicable: nothing is added at run time |\n| Cost | `bounded` | not applicable: not this case's |\n| Names | `nominal` | not applicable: no name is bound, allocated or released |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n\n## Refactoring\n\nno\n",
-      "issues": [
-        {
-          "number": 2522,
-          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — nothing is replayed |\n| Place | `resident` | yes — the layout is a representation |\n"
-        }
-      ]
-    },
-    "output": "the body's `## Readings` leaves an axis unanswered: give each one `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not applicable: <what the change lacks that the axis asks about>` or `deferred: #n`, the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n  - `general`, no row: the level where the unit's result holds: up to homotopy with its coherences, or a shadow of it — homology or another linear form, an analytic or pointwise form, a bounded order or dimension; for a shadow, the general form, the source key that states it and the issue that owes it"
   },
   {
     "name": "#6004: a change that drops 91 comment lines with no `## Facts kept` is refused, its sources named",

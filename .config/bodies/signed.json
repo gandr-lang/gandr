@@ -13,7 +13,7 @@
     "output": ""
   },
   {
-    "name": "#4164: a sectioned issue without `shape:signed` waits on the coordinator's sign-off, arming `pr:await` on the issue",
+    "name": "#7792: a sectioned issue lands without the coordinator's sign-off",
     "input": {
       "issues": [
         {
@@ -23,7 +23,7 @@
         }
       ]
     },
-    "output": "wait: #4's sections wait for the coordinator's `shape:signed`: page `sections #4: <the shape's first line>` if not yet paged; `pr:await 4` wakes the seat once the label stands, and `pr:open` runs again then\narm: /bin/bash -c 'mise run pr:await 4' timer-await-4"
+    "output": ""
   },
   {
     "name": "#3134: a new-territory body missing `## Try first` is refused with the finding named, signed or not",
@@ -36,10 +36,10 @@
         }
       ]
     },
-    "output": "#5 still lacks what a unit issue carries: write each on the issue, pass `unit:check 5`, page the coordinator `sections #5: <the shape's first line>` for `shape:signed`, then run `pr:open` again:\n  - `## Try first` is missing"
+    "output": "#5 still lacks what a unit issue carries: write each on the issue, pass `unit:check 5`, then run `pr:open` again:\n  - `## Try first` is missing"
   },
   {
-    "name": "#3134: an issue still unsectioned is refused with each section it lacks, ahead of any sign-off",
+    "name": "#3134: an issue still unsectioned is refused with each section it lacks",
     "input": {
       "issues": [
         {
@@ -49,7 +49,7 @@
         }
       ]
     },
-    "output": "#6 still lacks what a unit issue carries: write each on the issue, pass `unit:check 6`, page the coordinator `sections #6: <the shape's first line>` for `shape:signed`, then run `pr:open` again:\n  - `## Readings` is missing\n  - `## Concerns` is missing\n  - `## Ledger` is missing\n  - `## Not in this slice` is missing\n  - `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n  - `## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory`, `failure` and `streaming`, each a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)"
+    "output": "#6 still lacks what a unit issue carries: write each on the issue, pass `unit:check 6`, then run `pr:open` again:\n  - `## Readings` is missing: write a row `yes — <what it gives this unit>` for each axis that reaches the unit, or `none`\n  - `## Concerns` is missing: name the concerns of `ledger/concerns.sql` that the unit touches, or write `none`\n  - `## Ledger` is missing\n  - `## Not in this slice` is missing\n  - `## After` is missing: write `none`, or one `- #n — <what it waits for>` per issue the unit waits on\n  - `## Engineering` is missing: write a row for `change` and a row for `failure`, and a row for each of `complexity`, `latency`, `parallelism`, `memory` and `streaming` that the unit's path has, each a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)"
   },
   {
     "name": "#3134: an epic or a `collector` the body advances is not read; each other issue is",
@@ -72,7 +72,7 @@
         }
       ]
     },
-    "output": "wait: #3's sections wait for the coordinator's `shape:signed`: page `sections #3: <the shape's first line>` if not yet paged; `pr:await 3` wakes the seat once the label stands, and `pr:open` runs again then\narm: /bin/bash -c 'mise run pr:await 3' timer-await-3"
+    "output": ""
   },
   {
     "name": "#4637: a feature in `area:surface` signed before the `## Surface` rule lands without the section",
@@ -98,6 +98,6 @@
         }
       ]
     },
-    "output": "#4 still lacks what a unit issue carries: write each on the issue, pass `unit:check 4`, page the coordinator `sections #4: <the shape's first line>` for `shape:signed`, then run `pr:open` again:\n  - `## Surface` is missing: a feature in `area:surface` or `area:theory` states the tier it proposes, `tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)"
+    "output": "#4 still lacks what a unit issue carries: write each on the issue, pass `unit:check 4`, then run `pr:open` again:\n  - `## Surface` is missing: a feature in `area:surface` or `area:theory` states the tier it proposes, `tier <0–4> — <why the tier below does not read well enough>`, or `none — <why the feature has no surface>` (`units.md` § units-issue)"
   }
 ]
