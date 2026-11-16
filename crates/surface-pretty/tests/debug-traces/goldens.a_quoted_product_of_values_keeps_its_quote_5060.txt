@@ -1,0 +1,58 @@
+test: goldens::a_quoted_product_of_values_keeps_its_quote_5060
+package: gandr-surface-pretty
+command: mise run debug:test gandr-surface-pretty goldens::a_quoted_product_of_values_keeps_its_quote_5060
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-pretty/4e1bbf1034afd120/out/tests-4e1bbf1034afd120"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-pretty/4e1bbf1034afd120/out/tests-4e1bbf1034afd120' (x86_64).
+(lldb) settings set -- target.run-args  "goldens::a_quoted_product_of_values_keeps_its_quote_5060" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-4e1bbf1034afd120`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000001466788
+(lldb) run
+
+running 1 test
+test goldens::a_quoted_product_of_values_keeps_its_quote_5060 ... 
+thread 'goldens::a_quoted_product_of_values_keeps_its_quote_5060' (2039667) panicked at crates/surface-pretty/tests/goldens.rs:3549:9:
+assertion `left == right` failed: the returned product in the Explicit form
+  left: ("fun (a) { pure #{a, a} }", Faithful)
+ right: ("fun (a) { pure type(#{a, a}) }", Faithful)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2039606 launched: 'target/debug-trace/debug/build/gandr-surface-pretty/4e1bbf1034afd120/out/tests-4e1bbf1034afd120' (x86_64)
+Process 2039606 stopped
+* thread #2, name = 'goldens::a_quot', stop reason = breakpoint 1.1
+       frame #0: 0x00005555569ba788 tests-4e1bbf1034afd120`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'goldens::a_quot', stop reason = breakpoint 1.1
+   * frame #0: 0x00005555569ba788 tests-4e1bbf1034afd120`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x00005555569d63d5 tests-4e1bbf1034afd120`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x00005555569b9da2 tests-4e1bbf1034afd120`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x00005555569b2989 tests-4e1bbf1034afd120`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x00005555569ba96d tests-4e1bbf1034afd120`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x00005555569f3b2c tests-4e1bbf1034afd120`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x00005555569f3a23 tests-4e1bbf1034afd120`core::panicking::assert_failed_inner at panicking.rs:447:23
+     frame #7: 0x0000555555bd12f4 tests-4e1bbf1034afd120`core::panicking::assert_failed::<(&str, gandr_surface_pretty::Fidelity), (&str, gandr_surface_pretty::Fidelity)>(kind=Eq, left=("fun (a) { pure #{a, a} }", Faithful), right=("fun (a) { pure type(#{a, a}) }", Faithful), args=Some({template:{pointer:"\U0000001cthe returned product in the \xc0\U00000005 form"}, args:{pointer:{ty:Placeholder{value:{…}, formatter:{…}, _lifetime:{…}}}}})) at panicking.rs:407:5
+     frame #8: 0x0000555555ae4f6b tests-4e1bbf1034afd120`tests::goldens::a_quoted_product_of_values_keeps_its_quote_5060 at goldens.rs:3549:9
+     frame #9: 0x0000555555abbec7 tests-4e1bbf1034afd120`tests::goldens::a_quoted_product_of_values_keeps_its_quote_5060::{closure#0}((null)={}) at goldens.rs:3530:53
+     frame #10: 0x0000555555b602e6 tests-4e1bbf1034afd120`<tests::goldens::a_quoted_product_of_values_keeps_its_quote_5060::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x0000555555c4e3ab tests-4e1bbf1034afd120`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x0000555555c4e3a9 tests-4e1bbf1034afd120`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #13: 0x0000555555c5b8f5 tests-4e1bbf1034afd120`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #14: 0x0000555555c5b8f0 tests-4e1bbf1034afd120`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x0000555555c5b8f0 tests-4e1bbf1034afd120`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #16: 0x0000555555c5b8db tests-4e1bbf1034afd120`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #17: 0x0000555555c5b8db tests-4e1bbf1034afd120`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x0000555555c5b8db tests-4e1bbf1034afd120`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #19: 0x0000555555c5b8c6 tests-4e1bbf1034afd120`test::run_test::{closure#0} at lib.rs:677:43
+     frame #20: 0x0000555555c562b4 tests-4e1bbf1034afd120`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #21: 0x0000555555c56239 tests-4e1bbf1034afd120`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x0000555555c5ea52 tests-4e1bbf1034afd120`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x0000555555c5ea43 tests-4e1bbf1034afd120`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

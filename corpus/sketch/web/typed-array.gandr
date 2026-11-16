@@ -1,0 +1,42 @@
+// A `Uint8Array` view over a gandr buffer, which Web Crypto fills in place.
+//
+// A copy of each byte across the boundary costs as much as the work itself.
+// So a numeric sequence crosses by layout: JavaScript reads and writes
+// gandr's memory through a view. The view is sound only when its layout
+// matches the buffer's, and when no gandr alias reads the buffer during the
+// call.
+//
+// The buffer is `Bytes n` in linear memory, and its row states the view's
+// layout: element `U8`, length `n`, at the buffer's address. The boundary
+// check admits the operation against that row, as it admits a niche row for
+// a C caller. The buffer crosses at grade one and returns as a second
+// output, so no gandr name holds it while the host writes. A `Float32Array`
+// over `f32` elements has the same form with element `F32`.
+//
+// - see: #4883 — the web boundary sketch, its shape in the issue body
+// - see: `../../model/interop/boundary/by-layout.gandr` — a row read by layout
+// - see: `../abi-and-boundaries/computed-row.gandr` — a row the importer computes
+
+// The row vocabulary of the boundary check.
+import std.boundary (Arg, NoCode, Row, View);
+
+// The scalar that codes an element.
+import std.layout (U8);
+
+// The bytes a buffer holds.
+import std.buffer (Bytes);
+
+/// The row of `getRandomValues`. It takes a view of `n` `U8` elements and
+/// answers the same view.
+pub def randomRow (n : Nat) -> Row = Row (Arg (View U8 n) NoCode) (View U8 n)
+
+/// The Web Crypto operation that fills a view with random bytes.
+@[boundary(randomRow)]
+extern JavaScript from "webidl:webcrypto" as Crypto where
+  /// The buffer, filled in place and handed back.
+  def getRandomValues [n : Nat] (buffer[1] : Bytes n) -> (buffer[1] : Bytes n)
+
+/// A fresh key of 32 random bytes.
+pub def key () -> [Crypto] Bytes 32 =
+  let buffer = Bytes.zeroed 32
+  Crypto.getRandomValues buffer
