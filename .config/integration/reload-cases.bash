@@ -13,6 +13,8 @@
 # - The detector's checkout takes a landing outside `.config/` and
 #   `mise.toml`, and the detector reads on. It takes a landing of a new
 #   script, and the detector starts again from it.
+# - The detector's restart ends the watch with exit 0, and runs no new
+#   `mise` under it (#7814).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/../cases/scratch.bash"
@@ -91,5 +93,19 @@ land 3 > /dev/null
 service_home_sync "$stall_home" || fail "#7002: the detector's checkout does not take a landing" "exit $?"
 stall_scripts_moved "$before" || fail "#7002: a landing of a new script does not start the detector again" "unmoved from ${before::9}"
 
+# The restart ends the watch with exit 0 and runs no new `mise`. A `mise` on
+# `PATH` that marks its run replaces the real one.
+# - see: #7814
+mkdir -p "$work/bin"
+cat > "$work/bin/mise" << EOF
+#!/usr/bin/env bash
+touch "$work/mise-ran"
+EOF
+chmod +x "$work/bin/mise"
+status=0
+got=$(unset -f mise; PATH="$work/bin:$PATH"; stall_restart "$before" 2> /dev/null; echo "the watch reads on") || status=$?
+[[ $status == 0 && -z $got ]] || fail "#7814: the restart does not end the watch with exit 0" "exit $status: $got"
+[[ ! -e "$work/mise-ran" ]] || fail "#7814: the restart runs mise again under the watch" "$work/mise-ran"
+
 (( failed == 0 )) || exit 1
-echo "watch-reload check OK: the service's checkout stands after a sweep of a lane's worktree, and a reading after a new watch.bash on landing runs the new script; the detector's checkout reads on over a landing outside its scripts and starts again over a new script"
+echo "watch-reload check OK: the service's checkout stands after a sweep of a lane's worktree, and a reading after a new watch.bash on landing runs the new script; the detector's checkout reads on over a landing outside its scripts, starts again over a new script, and ends with exit 0 for its service to start again"

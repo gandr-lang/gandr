@@ -128,3 +128,14 @@ stall_service() {
 stall_scripts_moved() {
   ! git -C "$stall_home" diff --quiet "$1" HEAD -- .config mise.toml
 }
+
+# End the watch, so that its service starts it again from the new scripts.
+# The unit and the agent start the watch again 20 seconds after any exit.
+# The `mise run` that starts the task waits for the task. So an `exec` of a
+# new `mise run` keeps the old one, and each landing nests one more process.
+# `$1` is the commit the checkout held before the move.
+# - see: #7002, #7814
+stall_restart() {
+  echo "stall:watch: landing moves the scripts from ${1::9} to $(git -C "$stall_home" rev-parse --short=9 HEAD); the watch ends, and its service starts it again from them" >&2
+  exit 0
+}
