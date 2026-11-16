@@ -67,6 +67,12 @@ use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
 use gandr_surface_pretty::present_computation_line;
+use gandr_workflow_sweep::Coverage;
+use gandr_workflow_sweep::Portion;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::SampleName;
+use gandr_workflow_sweep::SampleSize;
+use gandr_workflow_sweep::Sweep;
 use quenchant_shape::shape::Maybe;
 
 /// The evaluation budget each round of normalisation runs under.
@@ -138,7 +144,7 @@ enum Compared
 /// # Adequacy
 /// - hypothesis: L3 — the corpus's declines are counted under names such as
 ///   `MemoryForm` and `RuntimeControl(Reset)`.
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn variant(fault: &dyn core::fmt::Debug) -> String
 {
     let spelled = format!("{fault:?}");
@@ -171,7 +177,7 @@ fn variant(fault: &dyn core::fmt::Debug) -> String
 /// # Adequacy
 /// - hypothesis: L2 — every `runs` item of the corpus normalises in it to what
 ///   its run reads.
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn definitions_of(verdicts: &ModuleReport) -> CodeDefinitions
 {
     let mut definitions = CodeDefinitions::new();
@@ -204,7 +210,7 @@ fn definitions_of(verdicts: &ModuleReport) -> CodeDefinitions
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as the witness.
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn same(
     core: &mut CoreArena,
     left: ComputationId,
@@ -235,7 +241,7 @@ fn same(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as the witness.
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn normal_form(
     core: &mut CoreArena,
     definitions: Definitions<'_>,
@@ -278,7 +284,7 @@ fn normal_form(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as the witness.
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn normalised(
     core: &mut CoreArena,
     definitions: Definitions<'_>,
@@ -326,7 +332,7 @@ enum Apart
 ///   a run computes it, a reflexive path a run realises as its maps and a
 ///   recorded run whose payloads a run evaluates are each counted, and no other
 ///   disagreement passes.
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn apart(
     core: &CoreArena,
     definitions: Definitions<'_>,
@@ -417,7 +423,7 @@ fn apart(
 /// # Adequacy
 /// - hypothesis: L2 — a list of a parameterised family the source ascribes
 ///   reads as the run reads it.
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn erased(
     core: &mut CoreArena,
     value: ValueId,
@@ -464,7 +470,7 @@ enum Visit
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`erased`].
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn push_parts(
     core: &CoreArena,
     node: ValueId,
@@ -501,7 +507,7 @@ fn push_parts(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`erased`].
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn rebuilt(
     core: &mut CoreArena,
     erasure: &BTreeMap<ValueId, ValueId>,
@@ -560,7 +566,7 @@ fn rebuilt(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`erased`].
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn erased_answer(
     core: &mut CoreArena,
     term: ComputationId,
@@ -610,7 +616,7 @@ fn spelled(
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as the witness.
-/// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn compared(
     program: &mut Program<'_>,
     core: &mut CoreArena,
@@ -649,30 +655,64 @@ fn compared(
     }
 }
 
-/// Every declaration of the model corpus that states a `runs` outcome,
-/// outside the pathological twins, normalises to what its run on the executor
-/// reads, node for node — each constructor's family read without the
-/// arguments a run erases — or once the run's reading is normalised too. The
-/// agreements are counted, the items the normaliser cannot take by reason,
-/// and printed.
-#[test]
-fn the_corpus_runs_items_agree_with_normalisation_by_evaluation()
+/// The roots the comparison walks, each a path from the workspace root.
+const ROOTS: [&str; 7] = [
+    "crates/surface-corpus/strict",
+    "corpus/classifier",
+    "corpus/fragment",
+    "corpus/model",
+    "corpus/pathological",
+    "corpus/pending",
+    "corpus/surface",
+];
+
+/// The sample of the comparison: thirty-two sources, ranked by their BLAKE3
+/// digest under this name, at least one of each corpus class.
+/// - see: #7809
+const COMPARED: Sample = Sample {
+    name: SampleName("the_corpus_runs_items_agree_with_normalisation_by_evaluation"),
+    size: SampleSize(32),
+};
+
+/// The paths that `sweep` walks: [`ROOTS`] whole in a full run, nothing for
+/// the change's portion of a full run, and otherwise each sampled source.
+///
+/// # Specification
+/// trivial.
+fn walked(sweep: &Sweep) -> Vec<PathBuf>
 {
     let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let walk = Walk::new(
-        [
-            "crates/surface-corpus/strict",
-            "corpus/classifier",
-            "corpus/fragment",
-            "corpus/model",
-            "corpus/pathological",
-            "corpus/pending",
-            "corpus/surface",
-        ]
-        .into_iter()
-        .map(|root| corpus.join(root))
-        .collect(),
-    );
+    match (sweep.coverage(), sweep.portion()) {
+        (Coverage::Full, Portion::Fixed) => ROOTS.iter().map(|root| corpus.join(root)).collect(),
+        (Coverage::Full, Portion::Changed) => Vec::new(),
+        (Coverage::Sampled, _) => sweep
+            .visit(
+                COMPARED,
+                &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+            )
+            .into_iter()
+            .map(|source| source.path)
+            .collect(),
+    }
+}
+
+/// Every declaration of the corpus that `sweep` asks for that states a
+/// `runs` outcome, outside the pathological twins, normalises to what its run
+/// on the executor reads, node for node — each constructor's family read
+/// without the arguments a run erases — or once the run's reading is
+/// normalised too. The agreements are counted, the items the normaliser
+/// cannot take by reason, and printed.
+///
+/// # Specification
+/// trivial.
+fn runs_agree(sweep: &Sweep)
+{
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let paths = walked(sweep);
+    if paths.is_empty() {
+        return;
+    }
+    let walk = Walk::new(paths);
     let mut counted: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut differing = String::new();
     let ControlFlow::Continue(_report) = walk.visit_admitting::<Evaluator, _, _>(
@@ -773,12 +813,37 @@ fn the_corpus_runs_items_agree_with_normalisation_by_evaluation()
         differing.is_empty(),
         "the normaliser and the run read apart:\n{differing}"
     );
-    assert!(
-        counted
-            .get("agree exactly")
-            .is_some_and(|items| !items.is_empty()),
-        "the corpus states runs the normaliser agrees with"
-    );
+    if sweep.portion() == Portion::Fixed {
+        assert!(
+            counted
+                .get("agree exactly")
+                .is_some_and(|items| !items.is_empty()),
+            "the corpus states runs the normaliser agrees with"
+        );
+    }
+}
+
+/// A pull request walks the sample, and the nightly walks the corpus whole.
+/// - see: #7809
+mod sweeps
+{
+    use gandr_workflow_sweep::Sweep;
+
+    use super::runs_agree;
+
+    #[test]
+    fn the_corpus_runs_items_agree_with_normalisation_by_evaluation()
+    {
+        runs_agree(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn the_corpus_runs_items_agree_with_normalisation_by_evaluation_changed()
+    {
+        runs_agree(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
 }
 
 /// #1677: a transport along an equivalence written in a function body,

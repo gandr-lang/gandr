@@ -1872,7 +1872,7 @@ enum Width
 /// # Adequacy
 /// - hypothesis: L2 — the corpus and a faulting path list run at each width
 ///   print byte-identical streams and exits to the serial run.
-/// - witness: `tests::cli::every_width_prints_the_serial_run_of_model_share_0_3400`
+/// - witness: `tests::cli::sweeps::every_width_prints_the_serial_run_of_the_model_corpus`
 /// - witness: `tests::cli::every_width_prints_the_serial_check`
 #[spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 255)))]
 fn at(
@@ -1915,7 +1915,7 @@ fn at(
 /// - hypothesis: L2 — every corpus root runs serially and at one wider width,
 ///   and the scratch check at three, so a width that reorders, drops or
 ///   duplicates a source's output, or exits otherwise, fails.
-/// - witness: `tests::cli::every_width_prints_the_serial_run_of_model_share_0_3400`
+/// - witness: `tests::cli::sweeps::every_width_prints_the_serial_run_of_the_model_corpus`
 /// - witness: `tests::cli::every_width_prints_the_serial_check`
 fn agrees(
     arguments: &[PathBuf],
@@ -1939,7 +1939,7 @@ fn agrees(
 }
 
 /// A `gandr test` over the corpus roots `roots`, each a path from the
-/// workspace root.
+/// workspace root or an absolute path.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1949,9 +1949,9 @@ fn agrees(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — each share names its roots, and a root that does not
+/// - hypothesis: L3 — each sweep names its roots, and a root that does not
 ///   resolve faults the serial run, which the assertion reports.
-/// - witness: `tests::cli::every_width_prints_the_serial_run_of_model_share_0_3400`
+/// - witness: `tests::cli::sweeps::every_width_prints_the_serial_run_of_the_model_corpus`
 #[spec(ensures: |ref ret| ret.first() == Some(&PathBuf::from("test"))
         && ret.len().checked_sub(1) == Some(roots.len()))]
 fn share(roots: &[&Path]) -> Vec<PathBuf>
@@ -1962,139 +1962,175 @@ fn share(roots: &[&Path]) -> Vec<PathBuf>
     run
 }
 
-/// How many tests the model corpus shares out over. Whole, its serial run and
-/// its run at four outgrew the 30 s each test is held to (#3400); an eighth
-/// stays well inside it under load.
-const MODEL_SHARES: usize = 8;
-
-/// Every source under `root`, a folder from the workspace root, each a path
-/// from the workspace root, in path order.
-///
-/// # Specification
-/// trivial.
-fn sources(root: &Path) -> Vec<PathBuf>
+// The corpus runs serially and once more at a wider width, one sweep for each
+// width: each width is observed over enough sources to interleave. Each source
+// is a root of its own, and one source settles alone as it does within its
+// folder. A pull request runs the sample, and the nightly runs each source over
+// its nights.
+// - see: #3400, #7809
+mod sweeps
 {
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let mut folders = vec![root.to_path_buf()];
-    let mut found = Vec::new();
-    while let Some(folder) = folders.pop() {
-        for entry in std::fs::read_dir(workspace.join(&folder)).expect("the folder lists") {
-            let path = folder.join(entry.expect("the entry reads").file_name());
-            if workspace.join(&path).is_dir() {
-                folders.push(path);
-            }
-            else if path
-                .extension()
-                .is_some_and(|extension| extension == "gandr")
-            {
-                found.push(path);
-            }
-        }
-    }
-    found.sort();
-    found
-}
+    use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use gandr_workflow_sweep::Sweep;
 
-/// One of the [`MODEL_SHARES`] tests the model corpus shares out over.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct ModelShare(usize);
+    use super::Path;
+    use super::Width;
+    use super::agrees;
+    use super::share;
 
-impl ModelShare
-{
-    /// A `gandr test` over this share: every [`MODEL_SHARES`]-th source of
-    /// the model corpus, starting at the share's own index.
+    /// The nights the nightly profile takes to run each source at its width.
+    /// The serial run and the run at four of the model corpus whole outgrow
+    /// the nightly's limit for one test.
+    /// - see: #3400
+    const NIGHTS: Nights = Nights(4);
+
+    /// The corpus classes a width sweep draws from, as the sampler names them.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    struct Classes(&'static [&'static str]);
+
+    /// The sweep `sweep` of the sources of the classes `classes`: the sources
+    /// run serially and at `width`, which must print the serial run.
     ///
     /// # Specification
     /// trivial.
-    fn run(self) -> Vec<PathBuf>
+    fn widths(
+        sweep: &Sweep,
+        sample: Sample,
+        Classes(classes): Classes,
+        width: Width,
+    )
     {
-        let sources = sources(Path::new("corpus/model"));
-        let taken: Vec<&Path> = sources
-            .iter()
-            .skip(self.0)
-            .step_by(MODEL_SHARES)
-            .map(PathBuf::as_path)
+        let candidates: Vec<_> = gandr_workflow_sweep::corpus::sources()
+            .expect("the corpus reads")
+            .into_iter()
+            .filter(|source| {
+                classes.iter().any(|class| {
+                    source
+                        .name
+                        .as_ref()
+                        .strip_prefix(class)
+                        .is_some_and(|rest| rest.starts_with('/'))
+                })
+            })
             .collect();
-        share(&taken)
+        std::eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(sample, NIGHTS, &candidates);
+        if visited.is_empty() {
+            return;
+        }
+        let roots: Vec<&Path> = visited.iter().map(|source| source.path.as_path()).collect();
+        agrees(&share(&roots), &[width]);
     }
-}
 
-// The corpus roots share out over the three wider widths, one test each: every
-// source runs once serially and once off the serial schedule, and each width
-// is observed over enough sources to interleave. Each root settles on its own,
-// so a share prints what its roots print within a whole run. The model corpus
-// is shared out by source over `MODEL_SHARES` tests, each source a root of its
-// own: one source settles alone as it does within its folder.
+    /// The model corpus's sample: sixteen sources, ranked by their BLAKE3
+    /// digest under this name.
+    const MODEL: Sample = Sample {
+        name: SampleName("every_width_prints_the_serial_run_of_the_model_corpus"),
+        size: SampleSize(16),
+    };
 
-#[test]
-fn every_width_prints_the_serial_run_of_model_share_0_3400()
-{
-    agrees(&ModelShare(0).run(), &[Width::FourByFlag]);
-}
+    /// The pathological corpus's sample: eight sources.
+    const PATHOLOGICAL: Sample = Sample {
+        name: SampleName("every_width_prints_the_serial_run_of_the_pathological_corpus"),
+        size: SampleSize(8),
+    };
 
-#[test]
-fn every_width_prints_the_serial_run_of_model_share_1_3400()
-{
-    agrees(&ModelShare(1).run(), &[Width::FourByFlag]);
-}
+    /// The other roots' sample: sixteen sources, at least one of each root.
+    const OTHER: Sample = Sample {
+        name: SampleName("every_width_prints_the_serial_run_of_the_other_roots"),
+        size: SampleSize(16),
+    };
 
-#[test]
-fn every_width_prints_the_serial_run_of_model_share_2_3400()
-{
-    agrees(&ModelShare(2).run(), &[Width::FourByFlag]);
-}
+    /// The model corpus's class.
+    const MODEL_CLASSES: Classes = Classes(&["fixture/model"]);
 
-#[test]
-fn every_width_prints_the_serial_run_of_model_share_3_3400()
-{
-    agrees(&ModelShare(3).run(), &[Width::FourByFlag]);
-}
+    /// The pathological corpus's class.
+    const PATHOLOGICAL_CLASSES: Classes = Classes(&["fixture/pathological"]);
 
-#[test]
-fn every_width_prints_the_serial_run_of_model_share_4_3400()
-{
-    agrees(&ModelShare(4).run(), &[Width::FourByFlag]);
-}
-
-#[test]
-fn every_width_prints_the_serial_run_of_model_share_5_3400()
-{
-    agrees(&ModelShare(5).run(), &[Width::FourByFlag]);
-}
-
-#[test]
-fn every_width_prints_the_serial_run_of_model_share_6_3400()
-{
-    agrees(&ModelShare(6).run(), &[Width::FourByFlag]);
-}
-
-#[test]
-fn every_width_prints_the_serial_run_of_model_share_7_3400()
-{
-    agrees(&ModelShare(7).run(), &[Width::FourByFlag]);
-}
-
-#[test]
-fn every_width_prints_the_serial_run_of_the_pathological_corpus()
-{
-    agrees(&share(&[Path::new("corpus/pathological")]), &[
-        Width::ThreeByEnvironment,
+    /// The classes of the other roots.
+    const OTHER_CLASSES: Classes = Classes(&[
+        "strict",
+        "fixture/classifier",
+        "fixture/fragment",
+        "fixture/pending",
+        "fixture/surface",
     ]);
-}
 
-#[test]
-fn every_width_prints_the_serial_run_of_the_other_roots()
-{
-    let roots = [
-        "crates/surface-corpus/strict",
-        "corpus/classifier",
-        "corpus/fragment",
-        "corpus/pending",
-        "corpus/surface",
-    ]
-    .map(Path::new);
-    agrees(&share(&roots), &[Width::Host]);
+    #[test]
+    fn every_width_prints_the_serial_run_of_the_model_corpus()
+    {
+        widths(
+            &Sweep::asked().expect("the run's sweep resolves"),
+            MODEL,
+            MODEL_CLASSES,
+            Width::FourByFlag,
+        );
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn every_width_prints_the_serial_run_of_the_model_corpus_changed()
+    {
+        widths(
+            &Sweep::asked().expect("the run's sweep resolves").changed(),
+            MODEL,
+            MODEL_CLASSES,
+            Width::FourByFlag,
+        );
+    }
+
+    #[test]
+    fn every_width_prints_the_serial_run_of_the_pathological_corpus()
+    {
+        widths(
+            &Sweep::asked().expect("the run's sweep resolves"),
+            PATHOLOGICAL,
+            PATHOLOGICAL_CLASSES,
+            Width::ThreeByEnvironment,
+        );
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn every_width_prints_the_serial_run_of_the_pathological_corpus_changed()
+    {
+        widths(
+            &Sweep::asked().expect("the run's sweep resolves").changed(),
+            PATHOLOGICAL,
+            PATHOLOGICAL_CLASSES,
+            Width::ThreeByEnvironment,
+        );
+    }
+
+    #[test]
+    fn every_width_prints_the_serial_run_of_the_other_roots()
+    {
+        widths(
+            &Sweep::asked().expect("the run's sweep resolves"),
+            OTHER,
+            OTHER_CLASSES,
+            Width::Host,
+        );
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn every_width_prints_the_serial_run_of_the_other_roots_changed()
+    {
+        widths(
+            &Sweep::asked().expect("the run's sweep resolves").changed(),
+            OTHER,
+            OTHER_CLASSES,
+            Width::Host,
+        );
+    }
 }
 
 /// The other roots at the host's width under 8 GiB of address space print

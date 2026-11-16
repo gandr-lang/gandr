@@ -38,8 +38,8 @@ const STALE: Duration = Duration::from_hours(24);
 /// # Adequacy
 /// - hypothesis: L3 — the corpus tests read one digest each run; a test that
 ///   finds it reads the same verdicts the builder asserted.
-/// - witness: `tests::corpus::focusing_is_total_on_the_model_corpus`
-/// - witness: `tests::corpus::every_corpus_source_is_registered`
+/// - witness: `tests::corpus::sweeps::focusing_is_total_on_the_model_corpus`
+/// - witness: `tests::corpus::sweeps::the_fixture_root_settles_every_fixture`
 pub fn shared<T>(
     name: &Path,
     build: impl FnOnce() -> T,

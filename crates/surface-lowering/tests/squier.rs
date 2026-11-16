@@ -86,6 +86,15 @@ use gandr_theory_discrete_morse::equivalence;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
+use gandr_workflow_sweep::Class;
+use gandr_workflow_sweep::CorpusName;
+use gandr_workflow_sweep::Coverage;
+use gandr_workflow_sweep::Portion;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::SampleName;
+use gandr_workflow_sweep::SampleSize;
+use gandr_workflow_sweep::Source;
+use gandr_workflow_sweep::Sweep;
 use quenchant_shape::shape::Maybe;
 
 /// The longest word the bar complex of a unary block holds, in letters.
@@ -986,6 +995,64 @@ pub fn corpus() -> Vec<PathBuf>
     found
 }
 
+/// The corpus sources that `sweep` asks for, by path, in path order: every
+/// source of [`corpus`] in a full run, none for the change's portion of a full
+/// run, and otherwise the sources that `sample` visits. The fixed set of a
+/// sampled run also holds `kept`, each a path below the fixture root, so the
+/// claims that name a source read it on each run.
+///
+/// # Specification
+/// trivial.
+pub fn swept(
+    sweep: &Sweep,
+    sample: Sample,
+    kept: &[Kept],
+) -> Vec<PathBuf>
+{
+    let every = corpus();
+    match (sweep.coverage(), sweep.portion()) {
+        (Coverage::Full, Portion::Fixed) => every,
+        (Coverage::Full, Portion::Changed) => Vec::new(),
+        (Coverage::Sampled, portion) => {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+            let candidates: Vec<Source> = every
+                .into_iter()
+                .map(|path| {
+                    let mut name = String::from("fixture");
+                    for part in path
+                        .strip_prefix(&root)
+                        .expect("a corpus path")
+                        .components()
+                    {
+                        name.push('/');
+                        name.push_str(&part.as_os_str().to_string_lossy());
+                    }
+                    let name = CorpusName::from(name.as_str());
+                    let class = Class::of(&name);
+                    Source { path, name, class }
+                })
+                .collect();
+            let mut paths: Vec<PathBuf> = sweep
+                .visit(sample, &candidates)
+                .into_iter()
+                .map(|source| source.path)
+                .collect();
+            if portion == Portion::Fixed {
+                paths.extend(kept.iter().map(|&Kept(below)| root.join(below)));
+            }
+            paths.sort();
+            paths.dedup();
+            paths
+        },
+    }
+}
+
+/// A source that the fixed set of a sampled sweep holds, by its path below
+/// the fixture root.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Kept(pub &'static str);
+
 /// The circle presented by its two cancellations.
 const CIRCLE: &str = include_str!("squier/fixtures/circle.gandr");
 
@@ -1053,8 +1120,13 @@ fn the_circles_bar_complex_collapses_onto_its_two_rules_pairs_and_triples()
     assert_eq!(block.triples, triples, "the critical triples of the cells");
 }
 
-#[test]
-fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one()
+/// Each unary block of the sources that `sweep` asks for collapses onto its
+/// rules, pairs and triples, but for the one block whose rules a letter's
+/// definition shortens.
+///
+/// # Specification
+/// trivial.
+fn unary_blocks_collapse(sweep: &Sweep)
 {
     // Each unary corpus block's essential cells of dimension three are the
     // pairs completion certifies, and those of dimension four are the critical
@@ -1069,7 +1141,11 @@ fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one()
     let mut apart: Vec<String> = Vec::new();
     let mut undecided: Vec<String> = Vec::new();
     let mut lefts: BTreeSet<Word> = BTreeSet::new();
-    for path in corpus() {
+    let paths = swept(sweep, UNARY, &[Kept(ARROWS)]);
+    if paths.is_empty() {
+        return;
+    }
+    for path in paths {
         let text = std::fs::read_to_string(&path).expect("a corpus source reads");
         let source = SourceText::from(text.as_str());
         let named = path.strip_prefix(&root).expect("a corpus path");
@@ -1081,7 +1157,7 @@ fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one()
             if block.strings.rules.is_empty() {
                 return;
             }
-            blocks += 1;
+            blocks = blocks.saturating_add(1);
             let collapse = collapse(&block.strings, block.letters);
             assert_eq!(
                 collapse.pairs,
@@ -1126,16 +1202,132 @@ fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one()
             }
         });
     }
-    assert!(blocks > 1, "the corpus holds unary blocks");
-    assert_eq!(
-        apart,
-        ["model/data/arrows.gandr"],
-        "the blocks whose rules a letter's definition shortens"
-    );
     assert!(
         undecided.is_empty(),
         "every block decides dimension four within the truncation: {undecided:?}"
     );
+    if sweep.portion() == Portion::Changed {
+        assert!(
+            apart.iter().all(|named| named == ARROWS),
+            "only {ARROWS} holds a block whose rules a letter's definition shortens: {apart:?}"
+        );
+        return;
+    }
+    // A sample holds few rule blocks, so only the whole corpus counts them.
+    if sweep.coverage() == Coverage::Full {
+        assert!(blocks > 1, "the corpus holds unary blocks");
+    }
+    assert_eq!(
+        apart,
+        [ARROWS],
+        "the blocks whose rules a letter's definition shortens"
+    );
+}
+
+/// The source whose `IntOp` block a letter's definition shortens.
+const ARROWS: &str = "model/data/arrows.gandr";
+
+/// The sample of the unary blocks: thirty-two sources, ranked by their BLAKE3
+/// digest under this name, at least one of each corpus class.
+/// - see: #7809
+const UNARY: Sample = Sample {
+    name: SampleName("every_unary_corpus_block_collapses"),
+    size: SampleSize(32),
+};
+
+/// The sample of the closing complexes: thirty-two sources.
+/// - see: #7809
+const CLOSING: Sample = Sample {
+    name: SampleName("squier_homology_closes_on_every_corpus_block"),
+    size: SampleSize(32),
+};
+
+/// The small complex closes on every block whose rules keep their variables,
+/// over the sources that `sweep` asks for.
+///
+/// # Specification
+/// trivial.
+fn homology_closes(sweep: &Sweep)
+{
+    // A rule that erases or copies a variable changes the symbols of what the
+    // variable stands for, which the abelianised boundary does not see. On
+    // every other block the two joining paths of each pair change the symbols
+    // alike, so the small complex is a complex.
+    let grammar = built_in().expect("the built-in grammar builds");
+    let mut closed = 0_usize;
+    let paths = swept(sweep, CLOSING, &[]);
+    if paths.is_empty() {
+        return;
+    }
+    for path in paths {
+        let text = std::fs::read_to_string(&path).expect("a corpus source reads");
+        let source = SourceText::from(text.as_str());
+        let named = path.display();
+        let _lowering = each_block(&grammar, source, |cells| {
+            for (reading, complex) in small_complexes(cells) {
+                let Some(complex) = complex
+                else {
+                    continue;
+                };
+                if complex.closed() == Reducibility::Irreducible {
+                    closed = closed.saturating_add(1);
+                    assert!(complex.homology().is_some(), "{named} {reading:?}");
+                }
+                else {
+                    let rules = rules_of(cells, reading);
+                    assert_eq!(
+                        balanced(&rules),
+                        Reducibility::Reducible,
+                        "{named} {reading:?}: a block whose rules keep their variables closes"
+                    );
+                }
+            }
+        });
+    }
+    if sweep.coverage() == Coverage::Full && sweep.portion() == Portion::Fixed {
+        assert!(
+            closed > 1,
+            "the corpus holds blocks whose small complex closes"
+        );
+    }
+}
+
+/// A pull request reads the sample, and the nightly reads the corpus whole.
+/// - see: #7809
+mod sweeps
+{
+    use gandr_workflow_sweep::Sweep;
+
+    use super::homology_closes;
+    use super::unary_blocks_collapse;
+
+    #[test]
+    fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one()
+    {
+        unary_blocks_collapse(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn every_unary_corpus_block_collapses_onto_its_rules_pairs_and_triples_but_one_changed()
+    {
+        unary_blocks_collapse(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    #[test]
+    fn squier_homology_closes_on_every_corpus_block_whose_rules_keep_their_variables()
+    {
+        homology_closes(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn squier_homology_closes_on_every_corpus_block_whose_rules_keep_their_variables_changed()
+    {
+        homology_closes(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
 }
 
 /// A cell of a unary block's written presentation.
@@ -1436,46 +1628,6 @@ fn balanced(rules: &[(FreeTerm, FreeTerm)]) -> Reducibility
     else {
         Reducibility::Reducible
     }
-}
-
-#[test]
-fn squier_homology_closes_on_every_corpus_block_whose_rules_keep_their_variables()
-{
-    // A rule that erases or copies a variable changes the symbols of what the
-    // variable stands for, which the abelianised boundary does not see. On
-    // every other block the two joining paths of each pair change the symbols
-    // alike, so the small complex is a complex.
-    let grammar = built_in().expect("the built-in grammar builds");
-    let mut closed = 0_usize;
-    for path in corpus() {
-        let text = std::fs::read_to_string(&path).expect("a corpus source reads");
-        let source = SourceText::from(text.as_str());
-        let named = path.display();
-        let _lowering = each_block(&grammar, source, |cells| {
-            for (reading, complex) in small_complexes(cells) {
-                let Some(complex) = complex
-                else {
-                    continue;
-                };
-                if complex.closed() == Reducibility::Irreducible {
-                    closed += 1;
-                    assert!(complex.homology().is_some(), "{named} {reading:?}");
-                }
-                else {
-                    let rules = rules_of(cells, reading);
-                    assert_eq!(
-                        balanced(&rules),
-                        Reducibility::Reducible,
-                        "{named} {reading:?}: a block whose rules keep their variables closes"
-                    );
-                }
-            }
-        });
-    }
-    assert!(
-        closed > 1,
-        "the corpus holds blocks whose small complex closes"
-    );
 }
 
 /// The rules of one reading of `cells`, as `small_complexes` reads them.

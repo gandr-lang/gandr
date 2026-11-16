@@ -327,7 +327,7 @@ impl Exercised
     /// - witness: `tests::exercised::a_module_carries_exactly_its_rows`
     /// - witness: `tests::exercised::an_unsettled_declaration_carries_no_row`
     /// - witness: `tests::exercised::a_near_miss_carries_no_refusal_row`
-    /// - witness: `tests::corpus::the_two_roots_exercise_every_row`
+    /// - witness: `tests::corpus::sweeps::the_two_roots_exercise_every_row`
     #[spec(
         captures: [settled = report.declarations().iter()
             .filter(|declaration| declaration.settlement() == Settlement::Settled).count()],

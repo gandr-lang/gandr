@@ -86,7 +86,7 @@ pub extern "rust-preserve-none" fn stencil_const(
 ///   changes the stated answer of a named program binding two variables, and of
 ///   the corpus programs that do.
 /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_var(
     runtime: *mut Runtime,
@@ -256,7 +256,7 @@ macro_rules! constructor {
         ///   two- and three-field constructors; a reordered field or a wrong header
         ///   changes the value read back.
         /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
-        /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+        /// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
         #[unsafe(no_mangle)]
         pub extern "rust-preserve-none" fn $name(
             runtime: *mut Runtime,
@@ -316,7 +316,7 @@ constructor!(stencil_ctor3, 3_usize);
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs building
 ///   constructors of four fields or more.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_ctor_n(
     runtime: *mut Runtime,
@@ -483,7 +483,7 @@ pub extern "rust-preserve-none" fn stencil_match(
 /// - hypothesis: L2 — the agreement differential over tuple splits of two
 ///   fields; binding the wrong field swaps them in the answer.
 /// - witness: `tests::agreement::the_generated_programs_agree_on_both_executors`
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_field(
     runtime: *mut Runtime,
@@ -565,7 +565,7 @@ pub extern "rust-preserve-none" fn stencil_pushk(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs whose `μ`
 ///   aliases an outer covariable.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_alias(
     runtime: *mut Runtime,
@@ -679,7 +679,7 @@ pub extern "rust-preserve-none" fn stencil_ret(
 ///   returning through this stencil, where a window given back while a frame
 ///   still resumes in it changes the answer.
 /// - witness: `tests::count::a_returned_body_gives_its_window_back`
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_leave(
     runtime: *mut Runtime,
@@ -769,7 +769,7 @@ pub extern "rust-preserve-none" fn stencil_returned(
 ///   the corpus's recursions and loops, where a window given back early changes
 ///   the answer.
 /// - witness: `tests::count::a_tail_call_gives_its_window_back_before_the_callee_enters`
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_release(
     runtime: *mut Runtime,
@@ -809,7 +809,7 @@ pub extern "rust-preserve-none" fn stencil_release(
 /// - hypothesis: L2 — the agreement differential over corpus programs with
 ///   thunks, fixpoints and functions; a lost capture changes a variable the
 ///   body reads, structurally compared at readback.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_closure(
     runtime: *mut Runtime,
@@ -882,7 +882,7 @@ macro_rules! entry {
         ///   corpus programs applying functions, forcing thunks and recursing
         ///   through fixpoints; a capture or binder in the wrong slot changes
         ///   the answer read back.
-        /// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+        /// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
         #[unsafe(no_mangle)]
         pub extern "rust-preserve-none" fn $name(
             runtime: *mut Runtime,
@@ -1078,7 +1078,7 @@ macro_rules! project {
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs applying
 ///   functions to arguments.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_invoke_apply(
     runtime: *mut Runtime,
@@ -1110,7 +1110,7 @@ pub extern "rust-preserve-none" fn stencil_invoke_apply(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs forcing
 ///   thunks they bound.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_invoke_force(
     runtime: *mut Runtime,
@@ -1139,7 +1139,7 @@ pub extern "rust-preserve-none" fn stencil_invoke_force(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs with
 ///   nominal matches, whose branches are forced here.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_invoke_force_value(
     runtime: *mut Runtime,
@@ -1165,7 +1165,7 @@ pub extern "rust-preserve-none" fn stencil_invoke_force_value(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs applying
 ///   a returned function and matching nominally.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_apply_frame(
     runtime: *mut Runtime,
@@ -1198,7 +1198,7 @@ pub extern "rust-preserve-none" fn stencil_apply_frame(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs folding
 ///   native lists of more than one cell.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_argument_frame(
     runtime: *mut Runtime,
@@ -1664,7 +1664,7 @@ macro_rules! push_frame {
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs binding a
 ///   function's result.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_pushf(
     runtime: *mut Runtime,
@@ -1697,7 +1697,7 @@ pub extern "rust-preserve-none" fn stencil_pushf(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs applying
 ///   curried functions.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_push_apply(
     runtime: *mut Runtime,
@@ -1731,7 +1731,7 @@ pub extern "rust-preserve-none" fn stencil_push_apply(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs forcing a
 ///   returned thunk.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_push_force(
     runtime: *mut Runtime,
@@ -1799,7 +1799,7 @@ pub extern "rust-preserve-none" fn stencil_push_project(
 /// - hypothesis: L2 — the agreement differential over corpus programs matching
 ///   constructors of several fields; a reversed order swaps the branch's
 ///   arguments.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_push_fields(
     runtime: *mut Runtime,
@@ -1852,7 +1852,7 @@ pub extern "rust-preserve-none" fn stencil_push_fields(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs whose
 ///   function body tail-calls another.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_shrink(
     runtime: *mut Runtime,
@@ -1878,7 +1878,7 @@ pub extern "rust-preserve-none" fn stencil_shrink(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over the forced entries of
 ///   corpus declarations, whose observation's continuation is `★`.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_shrink_top(
     runtime: *mut Runtime,
@@ -1906,7 +1906,7 @@ pub extern "rust-preserve-none" fn stencil_shrink_top(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs recursing
 ///   over Nat and lists; a wrong ordinal takes the wrong branch.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_match_tag(
     runtime: *mut Runtime,
@@ -1937,7 +1937,7 @@ pub extern "rust-preserve-none" fn stencil_match_tag(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs whose `μ`
 ///   meets a destructor frame.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_mark(
     runtime: *mut Runtime,
@@ -1973,7 +1973,7 @@ pub extern "rust-preserve-none" fn stencil_mark(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs selecting
 ///   record fields; a wrong position selects the wrong field.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_select_field(
     runtime: *mut Runtime,
@@ -2011,7 +2011,7 @@ pub extern "rust-preserve-none" fn stencil_select_field(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs folding
 ///   native lists; a fold that never steps back answers its first cell alone.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_jump(
     runtime: *mut Runtime,
@@ -2038,7 +2038,7 @@ pub extern "rust-preserve-none" fn stencil_jump(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs
 ///   projecting tuple components; a wrong offset selects a neighbour.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_select_component(
     runtime: *mut Runtime,
@@ -2076,7 +2076,7 @@ pub extern "rust-preserve-none" fn stencil_select_component(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs whose
 ///   selection meets a loaded continuation.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_pop(
     runtime: *mut Runtime,
@@ -2118,7 +2118,7 @@ pub extern "rust-preserve-none" fn stencil_pop(
 /// - hypothesis: L2 — the agreement differential over corpus programs calling
 ///   primitives, unary and binary, booleans and integers past 64 bits among the
 ///   answers, and performing operations their handlers answer.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_call(
     runtime: *mut Runtime,
@@ -2245,7 +2245,7 @@ pub extern "rust-preserve-none" fn stencil_dup(
 /// - hypothesis: L2 — the agreement differential over counted corpus programs
 ///   matching constructors whose scrutinee dies in the arm: a field left
 ///   uncounted is freed with its scrutinee and read after.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_dup_fields(
     runtime: *mut Runtime,
@@ -2439,7 +2439,7 @@ pub extern "rust-preserve-none" fn stencil_reuse(
 /// # Adequacy
 /// - hypothesis: L2 — the agreement differential over corpus programs aborting
 ///   a view; an answer frame passing the unit on answers the unit.
-/// - witness: `tests::agreement::the_corpus_runs_items_agree_on_both_executors`
+/// - witness: `tests::agreement::sweeps::the_corpus_runs_items_agree_on_both_executors`
 #[unsafe(no_mangle)]
 pub extern "rust-preserve-none" fn stencil_answer_frame(
     runtime: *mut Runtime,

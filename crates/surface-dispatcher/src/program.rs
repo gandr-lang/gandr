@@ -1148,7 +1148,7 @@ fn kept_members(
 /// # Adequacy
 /// - hypothesis: L3 — as [`hidden_members`]: a model's interface operations
 ///   reach its helpers through their bodies.
-/// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+/// - witness: `tests::corpus::sweeps::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
 #[spec(ensures: |ref ret| hidden.keys().all(|constant| ret.contains(constant)))]
 fn reaching(
     declarations: &BTreeMap<ConstantIndex, DeclaredRun<'_>>,

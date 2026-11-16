@@ -955,7 +955,7 @@ impl Walk
     /// # Adequacy
     /// - hypothesis: L2 — every `runs` item of the corpus is read from the
     ///   admission handed beside its source.
-    /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    /// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
     #[inline]
     pub fn visit_admitting<E, Stop, Visitor>(
         self,
@@ -1022,7 +1022,7 @@ impl Walk
     ///   [`Keeping::Admission`].
     /// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
     /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
-    /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    /// - witness: `tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
     fn visiting<E, Stop, Visitor, Jobs>(
         mut self,
         pool: &Jobs,

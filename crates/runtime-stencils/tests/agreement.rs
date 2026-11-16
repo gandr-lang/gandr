@@ -8,6 +8,7 @@ use core::convert::Infallible;
 use core::fmt::Write as _;
 use core::ops::ControlFlow;
 use std::path::Path;
+use std::path::PathBuf;
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -57,6 +58,12 @@ use gandr_surface_evaluate::Engine;
 use gandr_surface_evaluate::Evaluator;
 use gandr_surface_evaluate::Runs as _;
 use gandr_theory_cell_complexes::Polarity;
+use gandr_workflow_sweep::Coverage;
+use gandr_workflow_sweep::Portion;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::SampleName;
+use gandr_workflow_sweep::SampleSize;
+use gandr_workflow_sweep::Sweep;
 
 use crate::generate::Generator;
 use crate::generate::Shape;
@@ -240,28 +247,71 @@ fn a_fused_program_answers_what_its_unfused_lowering_answers()
     assert!(fusions > 0, "the programs fuse a constant bound");
 }
 
-/// Every declaration of the model corpus that states a `runs` outcome,
-/// outside the pathological twins, evaluates on the executor to the run it
-/// states and on native code as on the executor, or both decline alike. The
-/// answers are counted, the declines by reason, and printed.
-#[test]
-fn the_corpus_runs_items_agree_on_both_executors()
+/// The roots the agreement walks, each a path from the workspace root.
+const ROOTS: [&str; 7] = [
+    "crates/surface-corpus/strict",
+    "corpus/classifier",
+    "corpus/fragment",
+    "corpus/model",
+    "corpus/pathological",
+    "corpus/pending",
+    "corpus/surface",
+];
+
+/// The sample of the agreement: thirty-two sources, ranked by their BLAKE3
+/// digest under this name, at least one of each corpus class.
+/// - see: #7809
+const AGREEMENT: Sample = Sample {
+    name: SampleName("the_corpus_runs_items_agree_on_both_executors"),
+    size: SampleSize(32),
+};
+
+/// The paths that `sweep` walks: [`ROOTS`] whole in a full run, nothing for
+/// the change's portion of a full run, and otherwise each sampled source
+/// under them.
+///
+/// # Specification
+/// trivial.
+fn walked(sweep: &Sweep) -> Vec<PathBuf>
 {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let walk = Walk::new(
-        [
-            "crates/surface-corpus/strict",
-            "corpus/classifier",
-            "corpus/fragment",
-            "corpus/model",
-            "corpus/pathological",
-            "corpus/pending",
-            "corpus/surface",
-        ]
-        .into_iter()
-        .map(|root| corpus.join(root))
-        .collect(),
-    );
+    let roots: Vec<PathBuf> = ROOTS.iter().map(|root| corpus.join(root)).collect();
+    match (sweep.coverage(), sweep.portion()) {
+        (Coverage::Full, Portion::Fixed) => roots,
+        (Coverage::Full, Portion::Changed) => Vec::new(),
+        (Coverage::Sampled, _) => {
+            let roots: Vec<PathBuf> = roots
+                .iter()
+                .map(|root| root.canonicalize().expect("a corpus root resolves"))
+                .collect();
+            sweep
+                .visit(
+                    AGREEMENT,
+                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                )
+                .into_iter()
+                .filter(|source| roots.iter().any(|root| source.path.starts_with(root)))
+                .map(|source| source.path)
+                .collect()
+        },
+    }
+}
+
+/// Every declaration of the corpus that `sweep` asks for that states a
+/// `runs` outcome, outside the pathological twins, evaluates on the executor
+/// to the run it states and on native code as on the executor, or both
+/// decline alike. The answers are counted, the declines by reason, and
+/// printed.
+///
+/// # Specification
+/// trivial.
+fn runs_agree(sweep: &Sweep)
+{
+    let paths = walked(sweep);
+    if paths.is_empty() {
+        return;
+    }
+    let walk = Walk::new(paths);
     let mut stated = 0_usize;
     let mut answered = 0_usize;
     let mut declined: BTreeMap<String, usize> = BTreeMap::new();
@@ -335,14 +385,42 @@ fn the_corpus_runs_items_agree_on_both_executors()
                         );
                         answered = answered.saturating_add(1);
                     },
-                    Err(reason) => *declined.entry(format!("{reason:?}")).or_default() += 1,
+                    Err(reason) => {
+                        let count = declined.entry(format!("{reason:?}")).or_default();
+                        *count = count.saturating_add(1);
+                    },
                 }
             }
             ControlFlow::Continue(())
         },
     );
     println!("runs items {stated}, answered {answered}, declined {declined:?}");
-    assert!(answered > 0, "the corpus states runs the tiers answer");
+    if sweep.portion() == Portion::Fixed {
+        assert!(answered > 0, "the corpus states runs the tiers answer");
+    }
+}
+
+/// A pull request walks the sample, and the nightly walks the corpus whole.
+/// - see: #7809
+mod sweeps
+{
+    use gandr_workflow_sweep::Sweep;
+
+    use super::runs_agree;
+
+    #[test]
+    fn the_corpus_runs_items_agree_on_both_executors()
+    {
+        runs_agree(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set.
+    /// - see: #4654
+    #[test]
+    fn the_corpus_runs_items_agree_on_both_executors_changed()
+    {
+        runs_agree(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
 }
 
 /// The literal `value` focused into `commands`.

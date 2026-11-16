@@ -12,17 +12,18 @@
 //! # The kernel export suite
 //!
 //! `kernel_export` takes each readable source through parse, lower, check,
-//! readmission and export. Each sweep runs as eight tests, `_in_shard_0` to
-//! `_in_shard_7`, each over every eighth source of each root.
-//! `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
+//! readmission and export. Each sweep visits a sample of the corpus on a pull
+//! request, and the nightly visits every source over eight nights.
+//! `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
 //! checks repeat-sweep byte and identity determinism, decoder/re-encoder
 //! agreement, record-plane readback and admission from each root.
-//! `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
-//! checks that withheld dependencies did not cross, the manifest contains one
-//! record per crossed declaration beside its header, and the decoded
-//! declarations are exactly the admitted names in order. These are L3 witnesses
-//! over the current corpus; repeating the same pipeline is not an independent
-//! semantic oracle.
+//! `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+//! checks that withheld dependencies do not cross. It also checks that the
+//! manifest holds one record for each crossed declaration beside its header,
+//! and that the decoded declarations are the admitted names in order. These
+//! are L3 witnesses over the current corpus. A repeat of the same pipeline is
+//! not an independent semantic oracle.
+//! - see: #7809
 //!
 //! `kernel_export::kernel_generative_distinctness::the_generative_distinctness_golden`
 //! pins what generativity leaves in an artifact: the classic functor pair
@@ -133,7 +134,6 @@
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 use std::fs;
 use std::path::Path;
@@ -175,6 +175,12 @@ use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
+use gandr_workflow_sweep::Class as SourceClass;
+use gandr_workflow_sweep::CorpusName;
+use gandr_workflow_sweep::Nights;
+use gandr_workflow_sweep::Sample;
+use gandr_workflow_sweep::Source;
+use gandr_workflow_sweep::Sweep;
 use quenchant_shape::shape::Maybe;
 
 use crate::fixture::declarations;
@@ -190,7 +196,7 @@ use crate::refusal::RefusalName;
 ///   obtained a source.
 /// - panics: none.
 /// - executable: none — The enum has no path or filesystem observation;
-///   `sources` and `corpus` supply those relationships.
+///   `visited` and `corpus` supply those relationships.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the current strict and fixture sources are observed
@@ -198,8 +204,8 @@ use crate::refusal::RefusalName;
 ///   Exact admitted names and withheld dependencies distinguish changed
 ///   inclusion and lost provenance; repeated exports show determinism rather
 ///   than an independent oracle.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Root
 {
@@ -228,8 +234,8 @@ enum Root
 ///   Exact admitted names and withheld dependencies distinguish changed
 ///   inclusion and lost provenance; repeated exports show determinism rather
 ///   than an independent oracle.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Class
 {
@@ -291,8 +297,8 @@ enum Class
 ///   Exact admitted names and withheld dependencies distinguish changed
 ///   inclusion and lost provenance; repeated exports show determinism rather
 ///   than an independent oracle.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
 struct Exported
 {
     /// Where the source sits.
@@ -349,8 +355,8 @@ impl Exported
 ///   Exact admitted names and withheld dependencies distinguish changed
 ///   inclusion and lost provenance; repeated exports show determinism rather
 ///   than an independent oracle.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
 #[expect(
     clippy::large_enum_variant,
     reason = "each value lives only until its source's sweep unwraps it, so a box would add an allocation for each source and save nothing"
@@ -372,71 +378,120 @@ enum Swept
 /// - see: #5797 — the decoder refuses such an artifact as malformed.
 const PAST_THE_WORK_CAP: [&str; 1] = ["model/records/iterated-pair.gandr"];
 
-/// Every `.gandr` source under `root`, sorted, symbolic links not followed.
+/// The nights the nightly profile takes to visit every source in each sweep
+/// of this suite. Each night visits about an eighth of the corpus, the share
+/// of one of the eight shards that this suite ran as on every pull request
+/// before its sample.
+/// - see: #2547, #7809
+const NIGHTS: Nights = Nights(8);
+
+/// Every `.gandr` file under the strict and fixture roots, each named and
+/// classed as the sampler names and classes its own. The export reads the
+/// fixture root's ledgers and sketch set too, which the sampler holds out.
 ///
 /// # Specification
-/// - requires: the committed corpus roots remain readable and unchanged during
-///   the sweep.
-/// - ensures: returns the `.gandr` paths under the selected root, uniquely in
-///   lexical order, without following symbolic links.
-/// - panics: when a corpus directory, entry or file type cannot be read.
+/// - requires: the committed corpus remains readable during the sweep.
+/// - ensures: one source per `.gandr` file under the two roots, reached without
+///   following a symbolic link, each path canonical and sorted by name.
+/// - panics: when a root, one of its directories or one of their entries cannot
+///   be read.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the checked-in strict and fixture trees feed the export
-///   and record-plane witnesses. The predicate observes root membership,
-///   extension, uniqueness and ordering without a second filesystem walk. The
-///   witnesses cover the current corpus; they do not model concurrent
-///   filesystem mutation.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
-#[spec(
-    ensures: |ret| {
-    let directory = match root {
-        Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
-        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus"),
-    };
-    ret
-        .iter()
-        .all(|path| {
-            path.starts_with(directory)
-                && path.extension().is_some_and(|extension| extension == "gandr")
-        })
-        && ret.iter().zip(ret.iter().skip(1_usize)).all(|(first, second)| first < second)
-},
-)]
-fn sources(root: Root) -> Vec<PathBuf>
+/// - hypothesis: L3 — the sample is stratified by class, so it holds a ledger
+///   source and a sketch source beside each family.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+#[spec(ensures: |ret| ret.is_sorted_by(|left, right| left.name < right.name))]
+fn candidates() -> Vec<Source>
 {
-    let directory = match root {
-        Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
-        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus"),
-    };
-    let mut pending = vec![PathBuf::from(directory)];
     let mut found = Vec::new();
-    while let Some(directory) = pending.pop() {
-        let entries = fs::read_dir(&directory).unwrap_or_else(|error| {
-            panic!(
-                "{}: the corpus directory lists: {error}",
-                directory.display()
-            )
-        });
-        for entry in entries {
-            let entry = entry.expect("a corpus entry reads");
-            let kind = entry.file_type().expect("a corpus entry has a type");
-            let path = entry.path();
-            if kind.is_dir() {
-                pending.push(path);
-            }
-            else if !kind.is_symlink()
-                && path
-                    .extension()
-                    .is_some_and(|extension| extension == "gandr")
-            {
-                found.push(path);
+    for (prefix, directory) in [
+        ("strict", concat!(env!("CARGO_MANIFEST_DIR"), "/strict")),
+        (
+            "fixture",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus"),
+        ),
+    ] {
+        let base = Path::new(directory)
+            .canonicalize()
+            .unwrap_or_else(|error| panic!("{directory}: the corpus root resolves: {error}"));
+        let mut pending = alloc::vec![base.clone()];
+        while let Some(at) = pending.pop() {
+            let entries = fs::read_dir(&at).unwrap_or_else(|error| {
+                panic!("{}: the corpus directory lists: {error}", at.display())
+            });
+            for entry in entries {
+                let entry = entry.expect("a corpus entry reads");
+                let kind = entry.file_type().expect("a corpus entry has a type");
+                let path = entry.path();
+                if kind.is_dir() {
+                    pending.push(path);
+                }
+                else if !kind.is_symlink()
+                    && path
+                        .extension()
+                        .is_some_and(|extension| extension == "gandr")
+                {
+                    let mut name = alloc::string::String::from(prefix);
+                    for part in path
+                        .strip_prefix(&base)
+                        .expect("under its root")
+                        .components()
+                    {
+                        name.push('/');
+                        name.push_str(&part.as_os_str().to_string_lossy());
+                    }
+                    let name = CorpusName::from(name.as_str());
+                    let class = SourceClass::of(&name);
+                    found.push(Source { path, name, class });
+                }
             }
         }
     }
-    found.sort();
+    found.sort_by(|left, right| left.name.cmp(&right.name));
     found
+}
+
+/// The sources a sweep of this suite visits, each beside the root it sits
+/// under, in root and then path order. On a pull request, a sweep visits its
+/// sample's fixed set, or the change's sources beside that set. In the
+/// nightly, it visits the night's slice of every source, and the nights
+/// cover the corpus whole.
+///
+/// # Specification
+/// - requires: the committed corpus remains readable during the sweep.
+/// - ensures: each path is a source of [`candidates`] that the sweep visits,
+///   under the root its name names, in root and then path order without a
+///   duplicate.
+/// - panics: when the corpus cannot be listed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sample is stratified, so it holds a source of the
+///   strict root and of each fixture family.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+#[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1_usize)).all(|(first, second)| first < second))]
+fn visited(
+    sweep: &Sweep,
+    sample: Sample,
+) -> Vec<(Root, PathBuf)>
+{
+    let candidates = candidates();
+    std::eprintln!("{}", sweep.rotation());
+    let mut visited: Vec<(Root, PathBuf)> = sweep
+        .visit_rotating(sample, NIGHTS, &candidates)
+        .into_iter()
+        .map(|source| {
+            let root = if source.name.as_ref().starts_with("strict/") {
+                Root::Strict
+            }
+            else {
+                Root::Fixture
+            };
+            (root, source.path)
+        })
+        .collect();
+    visited.sort();
+    visited
 }
 
 /// What became of the declaration whose verdict is `verdict` and whose
@@ -460,8 +515,8 @@ fn sources(root: Root) -> Vec<PathBuf>
 ///   membership distinguishes admitting excluded declarations or losing
 ///   admitted names; the predicate additionally states pair compatibility and
 ///   exact class selection.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
 #[spec(
     requires: match (verdict, outcome) {
     (
@@ -596,8 +651,8 @@ fn class_of(
 ///   inclusion/exclusion mistakes and lost dependencies. Repeat sweeps
 ///   establish determinism, not an independent semantic oracle; the predicate
 ///   does not reread source files.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
 #[spec(
     ensures: |ret| match ret {
     Swept::RefusedWhole | Swept::PastTheWorkCap => true,
@@ -809,8 +864,8 @@ struct Checked<'source>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`export`].
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_kept_export::a_source_whose_last_form_retires_exports_its_cut_text_in_shard_0`
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_kept_export::sweeps::a_source_whose_last_form_retires_exports_its_cut_text`
 fn check<'source>(
     pbg: &Pbg,
     path: &Path,
@@ -853,75 +908,48 @@ fn check<'source>(
     })
 }
 
-/// How many tests share each corpus sweep, each taking every eighth source of
-/// each root. The export gate sweeps each source twice: four shards took
-/// 22.7–24.1 s each on the queue's enforcing runner (`ci:timing`, #2547), and
-/// 19–20 s alone on a local machine, where every gate at once pushed all four
-/// past the 30 s per-test limit. An eighth stays well inside it under load.
-const SHARDS: usize = 8;
-
-/// Which of the `SHARDS` tests of a sweep a corpus source is exported in.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Shard(usize);
-
-/// The sources of both roots in `shard` that the lowering reads, exported, in
-/// root and then path order: every `SHARDS`-th source of each root's listing,
-/// starting at the shard's own index. Each readmission runs its checks and
-/// their obligations on `pool`, or serially when `pool` is none.
+/// The sources of `visited` that the lowering reads, exported, in root and
+/// then path order. Each readmission runs its checks and their obligations on
+/// `pool`, or serially when `pool` is none.
 ///
 /// # Specification
-/// - requires: `shard` is below `SHARDS`; both committed corpus trees remain
-///   readable and unchanged during the sweep.
-/// - ensures: exports every source of `shard` that lowers, omitting
-///   whole-source refusals, in strict-root then fixture-root path order without
-///   duplicate paths.
+/// - requires: `visited` is in root and then path order without a duplicate;
+///   both committed corpus trees remain readable and unchanged during the
+///   sweep.
+/// - ensures: exports every source of `visited` that lowers, omitting
+///   whole-source refusals, in root and then path order without duplicate
+///   paths.
 /// - panics: on an invalid fixture or failed export precondition.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the checked-in roots are swept twice and each resulting
+/// - hypothesis: L3 — the sampled sources are swept twice and each resulting
 ///   artifact is decoded and read through its records. Root/path order and
 ///   unique membership are executable invariants; byte identity across sweeps
 ///   is determinism evidence, while the partition witness compares admitted
-///   names to the reconstructed artifact. The `SHARDS` shards together take
-///   every source of each root, each in one shard.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_3`
+///   names to the reconstructed artifact. The nightly's nights together take
+///   every source of each root.
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
 #[spec(
-    requires: shard.0 < SHARDS,
     ensures: |ret| {
     ret
         .iter()
-        .all(|exported| {
-            exported
-                .path
-                .starts_with(
-                    match exported.root {
-                        Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
-                        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus"),
-                    },
-                )
+        .zip(ret.iter().skip(1_usize))
+        .all(|(first, second)| {
+            (first.root, &first.path) < (second.root, &second.path)
         })
-        && ret
-            .iter()
-            .zip(ret.iter().skip(1_usize))
-            .all(|(first, second)| {
-                (first.root, &first.path) < (second.root, &second.path)
-            })
 },
 )]
 fn corpus(
-    shard: Shard,
+    visited: &[(Root, PathBuf)],
     pool: Option<&Arc<Pool>>,
 ) -> Vec<Exported>
 {
     let pbg = built_in().expect("the built-in grammar builds");
     let mut exported = Vec::new();
-    for root in [Root::Strict, Root::Fixture] {
-        for path in sources(root).into_iter().skip(shard.0).step_by(SHARDS) {
-            if let Swept::Exported(source) = export_through(&pbg, path, root, pool) {
-                exported.push(source);
-            }
+    for &(root, ref path) in visited {
+        if let Swept::Exported(source) = export_through(&pbg, path.clone(), root, pool) {
+            exported.push(source);
         }
     }
     exported
@@ -945,8 +973,8 @@ fn corpus(
 ///   also match the independently observed admitted declarations. The predicate
 ///   verifies the returned manifest/store root association without another
 ///   whole-artifact reconstruction.
-/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
+/// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
 #[spec(
     ensures: |ret| {
     gandr_storage_records::BlockStore::load(&ret.1, ret.0.root_node())
@@ -971,96 +999,91 @@ mod kernel_export_gate
     use alloc::sync::Arc;
     use core::num::NonZeroUsize;
 
-    use anodized::spec;
     use gandr_storage_records::TreeParams;
     use gandr_surface_dispatcher::Pool;
     use gandr_surface_dispatcher::Threads;
     use gandr_surface_dispatcher::Width;
+    use gandr_workflow_sweep::Portion;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::Sweep;
 
     use super::Class;
     use super::Root;
-    use super::SHARDS;
-    use super::Shard;
     use super::commit;
     use super::corpus;
-    use super::sources;
+    use super::visited;
 
-    #[test]
-    fn the_kernel_export_exit_gate_holds_in_shard_0()
+    /// The export gate's sweeps: the sample's fixed set, and the change's
+    /// sources beside it.
+    mod sweeps
     {
-        gate(Shard(0));
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::gate;
+
+        /// The sample: thirty-two sources, ranked by their BLAKE3 digest
+        /// under this name, at least one of each corpus class.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("the_kernel_export_exit_gate_holds"),
+            size: SampleSize(32),
+        };
+
+        #[test]
+        fn the_kernel_export_exit_gate_holds()
+        {
+            gate(&Sweep::asked().expect("the run's sweep resolves"), SAMPLE);
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn the_kernel_export_exit_gate_holds_changed()
+        {
+            gate(
+                &Sweep::asked().expect("the run's sweep resolves").changed(),
+                SAMPLE,
+            );
+        }
     }
 
-    #[test]
-    fn the_kernel_export_exit_gate_holds_in_shard_1()
-    {
-        gate(Shard(1));
-    }
-
-    #[test]
-    fn the_kernel_export_exit_gate_holds_in_shard_2()
-    {
-        gate(Shard(2));
-    }
-
-    #[test]
-    fn the_kernel_export_exit_gate_holds_in_shard_3()
-    {
-        gate(Shard(3));
-    }
-
-    #[test]
-    fn the_kernel_export_exit_gate_holds_in_shard_4()
-    {
-        gate(Shard(4));
-    }
-
-    #[test]
-    fn the_kernel_export_exit_gate_holds_in_shard_5()
-    {
-        gate(Shard(5));
-    }
-
-    #[test]
-    fn the_kernel_export_exit_gate_holds_in_shard_6()
-    {
-        gate(Shard(6));
-    }
-
-    #[test]
-    fn the_kernel_export_exit_gate_holds_in_shard_7()
-    {
-        gate(Shard(7));
-    }
-
-    /// The sources of `shard` exported twice, the second time with the checks
-    /// of each readmission and the obligations of each check run on four
-    /// threads: each artifact is a function of its text and not of the pool,
-    /// and reads back through the record plane and the decoder as itself.
+    /// The sources that `sweep` visits under `sample`, exported twice, the
+    /// second time with the checks of each readmission and the obligations of
+    /// each check run on four threads: each artifact is a function of its text
+    /// and not of the pool, and reads back through the record plane and the
+    /// decoder as itself.
     ///
     /// # Specification
-    /// - requires: `shard` is below `SHARDS`.
-    /// - ensures: both sweeps of `shard` export the same sources to the same
-    ///   bytes, identities and classes; each artifact decodes, re-encodes byte
-    ///   for byte and reads back through its records; and the sources of
-    ///   `shard` export a definition or an assumption from each root that has a
-    ///   source in `shard` (the strict root's few sources fill only the first
-    ///   shards).
+    /// - requires: nothing.
+    /// - ensures: both exports of the visited sources give the same sources the
+    ///   same bytes, identities and classes; each artifact decodes, re-encodes
+    ///   byte for byte and reads back through its records; and the fixed set
+    ///   exports a definition or an assumption from each root it holds a source
+    ///   of.
     /// - panics: when any of those fails.
+    /// - executable: none — the assertions of the sweep are the check.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the `SHARDS` shards together take every source of
-    ///   each root, each in one shard; a shard past `SHARDS` would take none.
-    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_7`
-    #[spec(requires: shard.0 < SHARDS)]
-    fn gate(shard: Shard)
+    /// - hypothesis: L3 — the stratified sample holds a source of each root,
+    ///   and the nightly's nights together take every source of each root.
+    /// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
+    /// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds_changed`
+    fn gate(
+        sweep: &Sweep,
+        sample: Sample,
+    )
     {
+        let visited = visited(sweep, sample);
+        if visited.is_empty() {
+            return;
+        }
         let pool = Arc::new(Pool::new(Width::Threads(Threads::from(
             NonZeroUsize::new(4_usize).expect("four threads"),
         ))));
-        let first = corpus(shard, None);
-        let second = corpus(shard, Some(&pool));
+        let first = corpus(&visited, None);
+        let second = corpus(&visited, Some(&pool));
         assert_eq!(
             first.len(),
             second.len(),
@@ -1110,15 +1133,15 @@ mod kernel_export_gate
                 exporting.insert(one.root);
             }
         }
-        let held: BTreeSet<Root> = [Root::Strict, Root::Fixture]
-            .into_iter()
-            .filter(|&root| sources(root).len() > shard.0)
-            .collect();
-        assert_eq!(
-            held, exporting,
-            "the sources of shard {} export a declaration from each root it holds a source of",
-            shard.0
-        );
+        // A change can touch only sources that export nothing, as the
+        // pending set, so only the fixed set holds each root to an export.
+        if sweep.portion() == Portion::Fixed {
+            let held: BTreeSet<Root> = visited.iter().map(|&(root, _)| root).collect();
+            assert_eq!(
+                held, exporting,
+                "the visited sources export a declaration from each root they hold a source of"
+            );
+        }
     }
 }
 
@@ -1130,7 +1153,6 @@ mod kernel_kept_export
     use std::fs;
     use std::path::Path;
 
-    use anodized::spec;
     use gandr_core_checker::bridge;
     use gandr_kernel_core::Environment;
     use gandr_kernel_term::AdmissionMark;
@@ -1143,61 +1165,49 @@ mod kernel_kept_export
     use gandr_surface_grammar::built_in;
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::SourceText;
+    use gandr_workflow_sweep::Portion;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::Sweep;
     use quenchant_shape::shape::Maybe;
 
     use super::Checked;
-    use super::Root;
-    use super::SHARDS;
-    use super::Shard;
     use super::check;
-    use super::sources;
+    use super::visited;
 
-    #[test]
-    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_0()
+    /// The kept export's sweeps: the sample's fixed set, and the change's
+    /// sources beside it.
+    mod sweeps
     {
-        sweep(Shard(0));
-    }
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
 
-    #[test]
-    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_1()
-    {
-        sweep(Shard(1));
-    }
+        use super::sweep;
 
-    #[test]
-    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_2()
-    {
-        sweep(Shard(2));
-    }
+        /// The sample: thirty-two sources, ranked by their BLAKE3 digest
+        /// under this name, at least one of each corpus class.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("a_source_whose_last_form_retires_exports_its_cut_text"),
+            size: SampleSize(32),
+        };
 
-    #[test]
-    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_3()
-    {
-        sweep(Shard(3));
-    }
+        #[test]
+        fn a_source_whose_last_form_retires_exports_its_cut_text()
+        {
+            sweep(&Sweep::asked().expect("the run's sweep resolves"), SAMPLE);
+        }
 
-    #[test]
-    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_4()
-    {
-        sweep(Shard(4));
-    }
-
-    #[test]
-    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_5()
-    {
-        sweep(Shard(5));
-    }
-
-    #[test]
-    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_6()
-    {
-        sweep(Shard(6));
-    }
-
-    #[test]
-    fn a_source_whose_last_form_retires_exports_its_cut_text_in_shard_7()
-    {
-        sweep(Shard(7));
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn a_source_whose_last_form_retires_exports_its_cut_text_changed()
+        {
+            sweep(
+                &Sweep::asked().expect("the run's sweep resolves").changed(),
+                SAMPLE,
+            );
+        }
     }
 
     /// What cutting a source's last form did to its kernel entries.
@@ -1219,48 +1229,51 @@ mod kernel_kept_export
         Unretired,
     }
 
-    /// The sources of `shard`, each with its last form retired: each kept
-    /// export is the export of the text without that form.
+    /// The sources that `sweep` visits under `sample`, each with its last form
+    /// retired: each kept export is the export of the text without that form.
     ///
     /// # Specification
-    /// - requires: `shard` is below `SHARDS`.
-    /// - ensures: each source of `shard` whose last form crosses into the
-    ///   kernel, kept with the entries of that form retired, exports the bytes
-    ///   that a fresh check of its text without the form exports.
-    /// - panics: when an export differs, or when no source of `shard` retires
-    ///   an entry.
+    /// - requires: nothing.
+    /// - ensures: each visited source whose last form crosses into the kernel,
+    ///   kept with the entries of that form retired, exports the bytes that a
+    ///   fresh check of its text without the form exports.
+    /// - panics: when an export differs, or when no source of the fixed set
+    ///   retires an entry.
+    /// - executable: none — the assertions of the sweep are the check.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the `SHARDS` shards together take every source of
-    ///   each root, each in one shard.
-    /// - witness: `kernel_export::kernel_kept_export::a_source_whose_last_form_retires_exports_its_cut_text_in_shard_0`
-    /// - witness: `kernel_export::kernel_kept_export::a_source_whose_last_form_retires_exports_its_cut_text_in_shard_7`
-    #[spec(requires: shard.0 < SHARDS)]
-    fn sweep(shard: Shard)
+    /// - hypothesis: L3 — the stratified sample holds sources of each class,
+    ///   and the nightly's nights together take every source of each root.
+    /// - witness: `kernel_export::kernel_kept_export::sweeps::a_source_whose_last_form_retires_exports_its_cut_text`
+    /// - witness: `kernel_export::kernel_kept_export::sweeps::a_source_whose_last_form_retires_exports_its_cut_text_changed`
+    fn sweep(
+        sweep: &Sweep,
+        sample: Sample,
+    )
     {
         let pbg = built_in().expect("the built-in grammar builds");
         let mut retired = Vec::new();
         let mut completing = Vec::new();
-        for root in [Root::Strict, Root::Fixture] {
-            for path in sources(root).into_iter().skip(shard.0).step_by(SHARDS) {
-                match cut(&pbg, &path) {
-                    Cut::Retired => retired.push(path),
-                    Cut::Completing => completing.push(path),
-                    Cut::Unretired => {},
-                }
+        for (_root, path) in visited(sweep, sample) {
+            match cut(&pbg, &path) {
+                Cut::Retired => retired.push(path),
+                Cut::Completing => completing.push(path),
+                Cut::Unretired => {},
             }
         }
         std::eprintln!(
-            "shard {}: {} sources export their cut text with the last form retired; the cut of {} changes an earlier declaration",
-            shard.0,
+            "{} sources export their cut text with the last form retired; the cut of {} changes an earlier declaration",
             retired.len(),
             completing.len()
         );
-        assert!(
-            !retired.is_empty(),
-            "a source of shard {} retires its last form",
-            shard.0
-        );
+        // A change can touch only sources whose last form crosses nothing,
+        // so only the fixed set holds the sweep to a retired form.
+        if sweep.portion() == Portion::Fixed {
+            assert!(
+                !retired.is_empty(),
+                "a visited source retires its last form"
+            );
+        }
     }
 
     /// The source at `path`, checked whole and without its last form. The
@@ -1279,7 +1292,7 @@ mod kernel_kept_export
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`sweep`].
-    /// - witness: `kernel_export::kernel_kept_export::a_source_whose_last_form_retires_exports_its_cut_text_in_shard_0`
+    /// - witness: `kernel_export::kernel_kept_export::sweeps::a_source_whose_last_form_retires_exports_its_cut_text`
     fn cut(
         pbg: &Pbg,
         path: &Path,
@@ -1397,71 +1410,59 @@ mod kernel_corpus_partition
     use alloc::collections::BTreeSet;
     use alloc::vec::Vec;
 
-    use anodized::spec;
     use gandr_kernel_term::StructuredName;
     use gandr_storage_records::RecordCount;
     use gandr_storage_records::TreeParams;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::Sweep;
 
     use super::Class;
-    use super::SHARDS;
-    use super::Shard;
     use super::commit;
     use super::corpus;
+    use super::visited;
 
-    #[test]
-    fn corpus_partition_matches_the_manifest_in_shard_0()
+    /// The partition's sweeps: the sample's fixed set, and the change's
+    /// sources beside it.
+    mod sweeps
     {
-        partition(Shard(0));
+        use gandr_workflow_sweep::Sample;
+        use gandr_workflow_sweep::SampleName;
+        use gandr_workflow_sweep::SampleSize;
+        use gandr_workflow_sweep::Sweep;
+
+        use super::partition;
+
+        /// The sample: thirty-two sources, ranked by their BLAKE3 digest
+        /// under this name, at least one of each corpus class.
+        const SAMPLE: Sample = Sample {
+            name: SampleName("corpus_partition_matches_the_manifest"),
+            size: SampleSize(32),
+        };
+
+        #[test]
+        fn corpus_partition_matches_the_manifest()
+        {
+            partition(&Sweep::asked().expect("the run's sweep resolves"), SAMPLE);
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn corpus_partition_matches_the_manifest_changed()
+        {
+            partition(
+                &Sweep::asked().expect("the run's sweep resolves").changed(),
+                SAMPLE,
+            );
+        }
     }
 
-    #[test]
-    fn corpus_partition_matches_the_manifest_in_shard_1()
-    {
-        partition(Shard(1));
-    }
-
-    #[test]
-    fn corpus_partition_matches_the_manifest_in_shard_2()
-    {
-        partition(Shard(2));
-    }
-
-    #[test]
-    fn corpus_partition_matches_the_manifest_in_shard_3()
-    {
-        partition(Shard(3));
-    }
-
-    #[test]
-    fn corpus_partition_matches_the_manifest_in_shard_4()
-    {
-        partition(Shard(4));
-    }
-
-    #[test]
-    fn corpus_partition_matches_the_manifest_in_shard_5()
-    {
-        partition(Shard(5));
-    }
-
-    #[test]
-    fn corpus_partition_matches_the_manifest_in_shard_6()
-    {
-        partition(Shard(6));
-    }
-
-    #[test]
-    fn corpus_partition_matches_the_manifest_in_shard_7()
-    {
-        partition(Shard(7));
-    }
-
-    /// The sources of `shard` exported once, each declaration classified by
-    /// what became of it at the kernel boundary and held against the artifact
-    /// that holds what crossed.
+    /// The sources that `sweep` visits under `sample`, exported once, each
+    /// declaration classified by what became of it at the kernel boundary and
+    /// held against the artifact that holds what crossed.
     ///
     /// # Specification
-    /// - requires: `shard` is below `SHARDS`.
+    /// - requires: nothing.
     /// - ensures: no withheld declaration names one that crossed; each order
     ///   holds one place for every native signature, session assumption, free
     ///   model and declaration that crossed, and each manifest counts no more
@@ -1471,19 +1472,22 @@ mod kernel_corpus_partition
     ///   under their names, and between them only distinct natives the source
     ///   uses.
     /// - panics: when any of those fails.
+    /// - executable: none — the assertions of the sweep are the check.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the `SHARDS` shards together take every source of
-    ///   each root, each in one shard; a shard past `SHARDS` would take none.
-    /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
-    /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_7`
-    #[spec(requires: shard.0 < SHARDS)]
-    fn partition(shard: Shard)
+    /// - hypothesis: L3 — the stratified sample holds sources of each class,
+    ///   and the nightly's nights together take every source of each root.
+    /// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
+    /// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest_changed`
+    fn partition(
+        sweep: &Sweep,
+        sample: Sample,
+    )
     {
         let mut classes = BTreeMap::new();
         let mut seeded: BTreeSet<StructuredName> = BTreeSet::new();
         let mut keys: BTreeSet<alloc::string::String> = BTreeSet::new();
-        for exported in corpus(shard, None) {
+        for exported in corpus(&visited(sweep, sample), None) {
             let path = exported.path.display();
             classes.clear();
             seeded.clear();

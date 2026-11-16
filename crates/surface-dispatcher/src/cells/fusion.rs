@@ -372,7 +372,7 @@ impl core::fmt::Display for Written<'_>
 /// # Adequacy
 /// - hypothesis: L3 — the corpus's fusions read 1,778 `exact` and three fusions
 ///   of a cell with itself that do not replay.
-/// - witness: `tests::distances::each_fusion_cell_s_composed_bound_is_its_census_reading`
+/// - witness: `tests::distances::sweeps::each_fusion_cell_s_composed_bound_is_its_census_reading`
 pub(super) fn fuse(
     store: &CellStore,
     (own, at): (SourceText<'_>, ByteOffset),

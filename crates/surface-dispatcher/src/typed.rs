@@ -1241,7 +1241,7 @@ fn own(
 /// # Adequacy
 /// - hypothesis: L3 — a model whose helpers stand outside its signature, and
 ///   sealed modules whose runs name only their exports.
-/// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+/// - witness: `tests::corpus::sweeps::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
 /// - witness: `gandr-surface-evaluate::evaluate::tests::a_run_naming_a_declaration_outside_every_sealed_module_is_spelled`
 #[spec(ensures: |ref ret| ret.keys().all(|constant| module.declarations().iter().any(|declaration| declaration.constant() == *constant)))]
 #[inline]
