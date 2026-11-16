@@ -4,8 +4,14 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["github>gandr-lang/quenchant//.github/renovate/default.json5"],
-  // `collector` keeps the dashboard out of the unit check.
-  dependencyDashboardLabels: ["kind:ci", "area:workflow", "collector"],
+  // `collector` keeps the dashboard out of the unit check. The object
+  // repeats the preset's other settings, so it reads the same whether
+  // Renovate merges it with the preset's or takes it in place of that one.
+  dependencyDashboard: {
+    enabled: true,
+    title: "Dependency updates",
+    labels: ["kind:ci", "area:workflow", "collector"],
+  },
   packageRules: [
     {
       matchFileNames: [".config/mise/tasks/**"],
@@ -15,6 +21,12 @@
       description: "jq 1.8.2 stops `findings.jq` at an assertion (the `pr:open` task).",
       matchDepNames: ["jqlang/jq"],
       allowedVersions: "!/^1\\.8\\.2$/",
+    },
+    {
+      description: "mise's conda backend reads conda-forge, and Renovate's conda lookup needs the channel in the name.",
+      matchDatasources: ["conda"],
+      matchPackageNames: ["sqlite"],
+      overridePackageName: "conda-forge/sqlite",
     },
   ],
   customManagers: [
