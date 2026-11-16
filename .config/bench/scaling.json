@@ -1,0 +1,952 @@
+[
+  {
+    "name": "#6879: the curve of one head gives its commit, its load and each point with its walls, median and speed-up",
+    "program": "curve.jq",
+    "input": "measure: building gandr at ddc3bf3821aea986ceae541666b8724cba2a9ed3\nmeasure: commit ddc3bf3821aea986ceae541666b8724cba2a9ed3, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|5.75 6.06 7.02|6.06|1.00|\n|16|0|5.64 6.48 8.36|6.48|0.94|\n|32|0-1|5.34 7.22 7.83|7.22|0.84|\n|64|0-3|5.29 5.35 5.81|5.35|1.13|\n",
+    "args": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ]
+    },
+    "output": {
+      "commit": "ddc3bf3821aea986ceae541666b8724cba2a9ed3",
+      "load": "idle",
+      "points": [
+        {
+          "threads": 1,
+          "nodes": "0",
+          "walls": [5.75, 6.06, 7.02],
+          "median": 6.06,
+          "speedup": 1
+        },
+        {
+          "threads": 16,
+          "nodes": "0",
+          "walls": [5.64, 6.48, 8.36],
+          "median": 6.48,
+          "speedup": 0.94
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1",
+          "walls": [5.34, 7.22, 7.83],
+          "median": 7.22,
+          "speedup": 0.84
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3",
+          "walls": [5.29, 5.35, 5.81],
+          "median": 5.35,
+          "speedup": 1.13
+        }
+      ]
+    }
+  },
+  {
+    "name": "#6879: a mutation run that holds the host reads as held",
+    "program": "curve.jq",
+    "input": "measure: building gandr at ddc3bf3821aea986ceae541666b8724cba2a9ed3\nmeasure: commit ddc3bf3821aea986ceae541666b8724cba2a9ed3, NUMA nodes all, mutation run held (lane x)\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|5.75 6.06 7.02|6.06|1.00|\n|16|0|5.64 6.48 8.36|6.48|0.94|\n|32|0-1|5.34 7.22 7.83|7.22|0.84|\n|64|0-3|5.29 5.35 5.81|5.35|1.13|\n",
+    "args": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ]
+    },
+    "output": {
+      "commit": "ddc3bf3821aea986ceae541666b8724cba2a9ed3",
+      "load": "held",
+      "points": [
+        {
+          "threads": 1,
+          "nodes": "0",
+          "walls": [5.75, 6.06, 7.02],
+          "median": 6.06,
+          "speedup": 1
+        },
+        {
+          "threads": 16,
+          "nodes": "0",
+          "walls": [5.64, 6.48, 8.36],
+          "median": 6.48,
+          "speedup": 0.94
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1",
+          "walls": [5.34, 7.22, 7.83],
+          "median": 7.22,
+          "speedup": 0.84
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3",
+          "walls": [5.29, 5.35, 5.81],
+          "median": 5.35,
+          "speedup": 1.13
+        }
+      ]
+    }
+  },
+  {
+    "name": "#6879: a curve whose points differ from the configured widths refuses, so a row never mixes two layouts",
+    "program": "curve.jq",
+    "input": "measure: building gandr at ddc3bf3821aea986ceae541666b8724cba2a9ed3\nmeasure: commit ddc3bf3821aea986ceae541666b8724cba2a9ed3, NUMA nodes all, mutation run idle\n|Threads|Nodes|Wall times (s)|Median (s)|Speed-up|\n|---|---|---|---|---|\n|1|0|5.75 6.06 7.02|6.06|1.00|\n|16|0|5.64 6.48 8.36|6.48|0.94|\n|32|0-1|5.34 7.22 7.83|7.22|0.84|\n|64|0-3|5.29 5.35 5.81|5.35|1.13|\n",
+    "args": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        }
+      ]
+    },
+    "fails": true
+  },
+  {
+    "name": "#6879: a measure that names no commit refuses",
+    "program": "curve.jq",
+    "input": "measure: building gandr at x\n",
+    "args": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ]
+    },
+    "fails": true
+  },
+  {
+    "name": "#6879: one run gives its last exit and wall time, a wall under one second with its leading zero",
+    "program": "run.jq",
+    "input": "error: something\nmeasure: commit x\nmeasure: exit 0, wall .98 s\n",
+    "output": {
+      "status": 0,
+      "wall": 0.98,
+      "bound": false
+    }
+  },
+  {
+    "name": "#6879: a run past the host's memory bound reads as bound",
+    "program": "run.jq",
+    "input": "measure: past bound (8 GiB)\nmeasure: exit 137, wall 41.2 s\n",
+    "output": {
+      "status": 137,
+      "wall": 41.2,
+      "bound": true
+    }
+  },
+  {
+    "name": "#6879: a run with no exit line refuses: the measure ended first",
+    "program": "run.jq",
+    "input": "measure: building gandr at x\n",
+    "fails": true
+  },
+  {
+    "name": "#6879: the first row opens the account with its prose, its table and an accepted row",
+    "program": "account.jq",
+    "input": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ],
+      "placement": {
+        "threads": 16,
+        "nodes": "0-1"
+      },
+      "paths": ["crates/surface-corpus/strict", "library/std"],
+      "share": 0.2,
+      "limit": 60000,
+      "closed": [],
+      "body": null,
+      "row": {
+        "head": "1111111aaaaaaaa",
+        "date": "2026-11-12",
+        "load": "idle",
+        "points": [
+          {
+            "threads": 1,
+            "nodes": "0",
+            "walls": [5.75, 6.06, 7.02],
+            "median": 6.06,
+            "speedup": 1
+          },
+          {
+            "threads": 16,
+            "nodes": "0",
+            "walls": [5.64, 6.48, 8.36],
+            "median": 6.48,
+            "speedup": 0.94
+          },
+          {
+            "threads": 32,
+            "nodes": "0-1",
+            "walls": [5.34, 7.22, 7.83],
+            "median": 7.22,
+            "speedup": 0.84
+          },
+          {
+            "threads": 64,
+            "nodes": "0-3",
+            "walls": [5.29, 5.35, 5.81],
+            "median": 5.35,
+            "speedup": 1.13
+          }
+        ],
+        "placement": {
+          "median": 6.1
+        },
+        "hotpath": [
+          {
+            "wall": 40.1
+          },
+          {
+            "wall": 39.0
+          },
+          {
+            "wall": 38.25
+          },
+          {
+            "wall": 37.5
+          }
+        ],
+        "defect": null
+      }
+    },
+    "output": {
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "moved": null,
+      "fall": null
+    }
+  },
+  {
+    "name": "#6879: an idle row whose widest speed-up falls by the share against the row before is a fall",
+    "program": "account.jq",
+    "input": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ],
+      "placement": {
+        "threads": 16,
+        "nodes": "0-1"
+      },
+      "paths": ["crates/surface-corpus/strict", "library/std"],
+      "share": 0.2,
+      "limit": 60000,
+      "closed": [],
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "row": {
+        "head": "2222222bbbbbbbb",
+        "date": "2026-11-12",
+        "load": "idle",
+        "points": [
+          {
+            "threads": 1,
+            "nodes": "0",
+            "walls": [5.75, 6.06, 7.02],
+            "median": 6.06,
+            "speedup": 1
+          },
+          {
+            "threads": 16,
+            "nodes": "0",
+            "walls": [5.64, 6.48, 8.36],
+            "median": 6.48,
+            "speedup": 0.94
+          },
+          {
+            "threads": 32,
+            "nodes": "0-1",
+            "walls": [5.34, 7.22, 7.83],
+            "median": 7.22,
+            "speedup": 0.84
+          },
+          {
+            "threads": 64,
+            "nodes": "0-3",
+            "walls": [5.29, 5.35, 5.81],
+            "median": 5.35,
+            "speedup": 0.85
+          }
+        ],
+        "placement": {
+          "median": 6.1
+        },
+        "hotpath": [
+          {
+            "wall": 40.1
+          },
+          {
+            "wall": 39.0
+          },
+          {
+            "wall": 38.25
+          },
+          {
+            "wall": 37.5
+          }
+        ],
+        "defect": null
+      }
+    },
+    "output": {
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `2222222bb` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.85× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "moved": null,
+      "fall": {
+        "head": "2222222bb",
+        "previous": "1111111aa",
+        "before": "1.13",
+        "now": "0.85",
+        "drop": "25",
+        "share": "20",
+        "threads": "64",
+        "nodes": "0-3",
+        "table": "| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `2222222bb` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.85× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |"
+      }
+    }
+  },
+  {
+    "name": "#6879: a fall with its defect filed names the defect in its verdict",
+    "program": "account.jq",
+    "input": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ],
+      "placement": {
+        "threads": 16,
+        "nodes": "0-1"
+      },
+      "paths": ["crates/surface-corpus/strict", "library/std"],
+      "share": 0.2,
+      "limit": 60000,
+      "closed": [],
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "row": {
+        "head": "2222222bbbbbbbb",
+        "date": "2026-11-12",
+        "load": "idle",
+        "points": [
+          {
+            "threads": 1,
+            "nodes": "0",
+            "walls": [5.75, 6.06, 7.02],
+            "median": 6.06,
+            "speedup": 1
+          },
+          {
+            "threads": 16,
+            "nodes": "0",
+            "walls": [5.64, 6.48, 8.36],
+            "median": 6.48,
+            "speedup": 0.94
+          },
+          {
+            "threads": 32,
+            "nodes": "0-1",
+            "walls": [5.34, 7.22, 7.83],
+            "median": 7.22,
+            "speedup": 0.84
+          },
+          {
+            "threads": 64,
+            "nodes": "0-3",
+            "walls": [5.29, 5.35, 5.81],
+            "median": 5.35,
+            "speedup": 0.85
+          }
+        ],
+        "placement": {
+          "median": 6.1
+        },
+        "hotpath": [
+          {
+            "wall": 40.1
+          },
+          {
+            "wall": 39.0
+          },
+          {
+            "wall": 38.25
+          },
+          {
+            "wall": 37.5
+          }
+        ],
+        "defect": 7001
+      }
+    },
+    "output": {
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `2222222bb` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.85× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall: #7001 |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "moved": null,
+      "fall": {
+        "head": "2222222bb",
+        "previous": "1111111aa",
+        "before": "1.13",
+        "now": "0.85",
+        "drop": "25",
+        "share": "20",
+        "threads": "64",
+        "nodes": "0-3",
+        "table": "| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `2222222bb` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.85× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall: #7001 |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |"
+      }
+    }
+  },
+  {
+    "name": "#6879: a held row is kept and never compared, however low",
+    "program": "account.jq",
+    "input": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ],
+      "placement": {
+        "threads": 16,
+        "nodes": "0-1"
+      },
+      "paths": ["crates/surface-corpus/strict", "library/std"],
+      "share": 0.2,
+      "limit": 60000,
+      "closed": [],
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "row": {
+        "head": "3333333cccccccc",
+        "date": "2026-11-12",
+        "load": "held",
+        "points": [
+          {
+            "threads": 1,
+            "nodes": "0",
+            "walls": [5.75, 6.06, 7.02],
+            "median": 6.06,
+            "speedup": 1
+          },
+          {
+            "threads": 16,
+            "nodes": "0",
+            "walls": [5.64, 6.48, 8.36],
+            "median": 6.48,
+            "speedup": 0.94
+          },
+          {
+            "threads": 32,
+            "nodes": "0-1",
+            "walls": [5.34, 7.22, 7.83],
+            "median": 7.22,
+            "speedup": 0.84
+          },
+          {
+            "threads": 64,
+            "nodes": "0-3",
+            "walls": [5.29, 5.35, 5.81],
+            "median": 5.35,
+            "speedup": 0.5
+          }
+        ],
+        "placement": {
+          "median": 6.1
+        },
+        "hotpath": [
+          {
+            "wall": 40.1
+          },
+          {
+            "wall": 39.0
+          },
+          {
+            "wall": 38.25
+          },
+          {
+            "wall": 37.5
+          }
+        ],
+        "defect": null
+      }
+    },
+    "output": {
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `3333333cc` | 2026-11-12 | held | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.50× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "moved": null,
+      "fall": null
+    }
+  },
+  {
+    "name": "#6879: the comparison skips a held row and reads the newest idle row before it",
+    "program": "account.jq",
+    "input": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ],
+      "placement": {
+        "threads": 16,
+        "nodes": "0-1"
+      },
+      "paths": ["crates/surface-corpus/strict", "library/std"],
+      "share": 0.2,
+      "limit": 60000,
+      "closed": [],
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `3333333cc` | 2026-11-12 | held | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.50× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "row": {
+        "head": "4444444dddddddd",
+        "date": "2026-11-12",
+        "load": "idle",
+        "points": [
+          {
+            "threads": 1,
+            "nodes": "0",
+            "walls": [5.75, 6.06, 7.02],
+            "median": 6.06,
+            "speedup": 1
+          },
+          {
+            "threads": 16,
+            "nodes": "0",
+            "walls": [5.64, 6.48, 8.36],
+            "median": 6.48,
+            "speedup": 0.94
+          },
+          {
+            "threads": 32,
+            "nodes": "0-1",
+            "walls": [5.34, 7.22, 7.83],
+            "median": 7.22,
+            "speedup": 0.84
+          },
+          {
+            "threads": 64,
+            "nodes": "0-3",
+            "walls": [5.29, 5.35, 5.81],
+            "median": 5.35,
+            "speedup": 0.9
+          }
+        ],
+        "placement": {
+          "median": 6.1
+        },
+        "hotpath": [
+          {
+            "wall": 40.1
+          },
+          {
+            "wall": 39.0
+          },
+          {
+            "wall": 38.25
+          },
+          {
+            "wall": 37.5
+          }
+        ],
+        "defect": null
+      }
+    },
+    "output": {
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `4444444dd` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.90× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall |\n| `3333333cc` | 2026-11-12 | held | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.50× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "moved": null,
+      "fall": {
+        "head": "4444444dd",
+        "previous": "1111111aa",
+        "before": "1.13",
+        "now": "0.90",
+        "drop": "20",
+        "share": "20",
+        "threads": "64",
+        "nodes": "0-3",
+        "table": "| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `4444444dd` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.90× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |"
+      }
+    }
+  },
+  {
+    "name": "#6879: a fall whose defect closed reads fixed, and a row above the fall row compares with it",
+    "program": "account.jq",
+    "input": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ],
+      "placement": {
+        "threads": 16,
+        "nodes": "0-1"
+      },
+      "paths": ["crates/surface-corpus/strict", "library/std"],
+      "share": 0.2,
+      "limit": 60000,
+      "closed": [7001],
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `2222222bb` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.85× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall: #7001 |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "row": {
+        "head": "5555555eeeeeeee",
+        "date": "2026-11-12",
+        "load": "idle",
+        "points": [
+          {
+            "threads": 1,
+            "nodes": "0",
+            "walls": [5.75, 6.06, 7.02],
+            "median": 6.06,
+            "speedup": 1
+          },
+          {
+            "threads": 16,
+            "nodes": "0",
+            "walls": [5.64, 6.48, 8.36],
+            "median": 6.48,
+            "speedup": 0.94
+          },
+          {
+            "threads": 32,
+            "nodes": "0-1",
+            "walls": [5.34, 7.22, 7.83],
+            "median": 7.22,
+            "speedup": 0.84
+          },
+          {
+            "threads": 64,
+            "nodes": "0-3",
+            "walls": [5.29, 5.35, 5.81],
+            "median": 5.35,
+            "speedup": 0.86
+          }
+        ],
+        "placement": {
+          "median": 6.1
+        },
+        "hotpath": [
+          {
+            "wall": 40.1
+          },
+          {
+            "wall": 39.0
+          },
+          {
+            "wall": 38.25
+          },
+          {
+            "wall": 37.5
+          }
+        ],
+        "defect": null
+      }
+    },
+    "output": {
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `5555555ee` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.86× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n| `2222222bb` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.85× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fixed: #7001 |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "moved": null,
+      "fall": null
+    }
+  },
+  {
+    "name": "#6879: a head measured again replaces its row, so a pass run twice writes one row",
+    "program": "account.jq",
+    "input": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ],
+      "placement": {
+        "threads": 16,
+        "nodes": "0-1"
+      },
+      "paths": ["crates/surface-corpus/strict", "library/std"],
+      "share": 0.2,
+      "limit": 60000,
+      "closed": [],
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "row": {
+        "head": "1111111aaaaaaaa",
+        "date": "2026-11-12",
+        "load": "idle",
+        "points": [
+          {
+            "threads": 1,
+            "nodes": "0",
+            "walls": [5.75, 6.06, 7.02],
+            "median": 6.06,
+            "speedup": 1
+          },
+          {
+            "threads": 16,
+            "nodes": "0",
+            "walls": [5.64, 6.48, 8.36],
+            "median": 6.48,
+            "speedup": 0.94
+          },
+          {
+            "threads": 32,
+            "nodes": "0-1",
+            "walls": [5.34, 7.22, 7.83],
+            "median": 7.22,
+            "speedup": 0.84
+          },
+          {
+            "threads": 64,
+            "nodes": "0-3",
+            "walls": [5.29, 5.35, 5.81],
+            "median": 5.35,
+            "speedup": 1.2
+          }
+        ],
+        "placement": {
+          "median": 6.1
+        },
+        "hotpath": [
+          {
+            "wall": 40.1
+          },
+          {
+            "wall": 39.0
+          },
+          {
+            "wall": 38.25
+          },
+          {
+            "wall": 37.5
+          }
+        ],
+        "defect": null
+      }
+    },
+    "output": {
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.20× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "moved": null,
+      "fall": null
+    }
+  },
+  {
+    "name": "#6879: a body past its limit moves its oldest rows into one comment and keeps three quarters of the limit",
+    "program": "account.jq",
+    "input": {
+      "widths": [
+        {
+          "threads": 1,
+          "nodes": "0"
+        },
+        {
+          "threads": 16,
+          "nodes": "0"
+        },
+        {
+          "threads": 32,
+          "nodes": "0-1"
+        },
+        {
+          "threads": 64,
+          "nodes": "0-3"
+        }
+      ],
+      "placement": {
+        "threads": 16,
+        "nodes": "0-1"
+      },
+      "paths": ["crates/surface-corpus/strict", "library/std"],
+      "share": 0.2,
+      "limit": 1504,
+      "closed": [],
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `2222222bb` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.85× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall: #7001 |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "row": {
+        "head": "6666666ffffffff",
+        "date": "2026-11-12",
+        "load": "idle",
+        "points": [
+          {
+            "threads": 1,
+            "nodes": "0",
+            "walls": [5.75, 6.06, 7.02],
+            "median": 6.06,
+            "speedup": 1
+          },
+          {
+            "threads": 16,
+            "nodes": "0",
+            "walls": [5.64, 6.48, 8.36],
+            "median": 6.48,
+            "speedup": 0.94
+          },
+          {
+            "threads": 32,
+            "nodes": "0-1",
+            "walls": [5.34, 7.22, 7.83],
+            "median": 7.22,
+            "speedup": 0.84
+          },
+          {
+            "threads": 64,
+            "nodes": "0-3",
+            "walls": [5.29, 5.35, 5.81],
+            "median": 5.35,
+            "speedup": 0.86
+          }
+        ],
+        "placement": {
+          "median": 6.1
+        },
+        "hotpath": [
+          {
+            "wall": 40.1
+          },
+          {
+            "wall": 39.0
+          },
+          {
+            "wall": 38.25
+          },
+          {
+            "wall": 37.5
+          }
+        ],
+        "defect": null
+      }
+    },
+    "output": {
+      "body": "This issue is the scaling account of `gandr check` on the wide host (#6879). `mise run bench:scaling` adds one row for each head of `main` that it measures, the newest first.\n\n- A cell of the curve gives the median wall time of three runs of `gandr check --recheck crates/surface-corpus/strict library/std`, and the speed-up against one thread. Its column names the threads and the NUMA nodes of the point.\n- The placement column gives the median of three runs at 16 threads on the nodes that it names. Compare it with the cell of the same width on fewer nodes.\n- The hotpath column gives the wall time of one run of the `gandr` hotpath series at each width of the curve, on the same nodes.\n- The host reads `held` while a mutation run holds the wide host. The account never compares such a row.\n- A row whose speed-up at 64 threads is 20 % or more below that of the newest `idle` row before it is a fall. A fall opens a defect, and its row reads `fixed` once the defect closes.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `6666666ff` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.86× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "moved": "The account moves these rows out of its body, the newest first.\n\n| Head | Date | Host | 1 on 0 | 16 on 0 | 32 on 0-1 | 64 on 0-3 | 16 on 0-1 | Hotpath at 1, 16, 32, 64 | Verdict |\n| --- | --- | --- | --: | --: | --: | --: | --: | --: | --- |\n| `2222222bb` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 0.85× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | fall: #7001 |\n| `1111111aa` | 2026-11-12 | idle | 6.06 s | 6.48 s, 0.94× | 7.22 s, 0.84× | 5.35 s, 1.13× | 6.10 s | 40.10 · 39.00 · 38.25 · 37.50 s | accepted |\n",
+      "fall": null
+    }
+  }
+]

@@ -1,0 +1,6 @@
+def named : Path[.A = Integer](4, 4);
+def bound : (A : Type, x : A) -> Path[.A = A](x, x);
+def punned : (A : Type, x : A) -> Path[.A](x, x);
+def bridged : Bridge[.A = Integer](4, 4);
+def flowed : Flow[.A = Integer](4, 4);
+def stray : Path[.B = Integer](4, 4);

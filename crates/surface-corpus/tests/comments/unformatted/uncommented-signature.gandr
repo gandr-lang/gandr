@@ -1,0 +1,4 @@
+// file
+
+def counted : Integer ;
+def counted = 1 ;

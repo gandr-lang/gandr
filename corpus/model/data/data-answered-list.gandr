@@ -1,0 +1,32 @@
+// Lists infer their element type from a function answer.
+//
+// A constructor at a list's tail gets that answer type.
+// `Maybe` supplies the optional values.
+//
+// A result with no returner, `-> List(T)`, answers its element type as
+// `-> -F List(T)` does.
+// The function signature still states the element type.
+//
+// - see: #2255
+// - see: #1602 — a constructor among a list's elements
+
+/// Optional values, `None` and `Some(x)`.
+import "./data-maybe.gandr";
+// The native finite lists.
+import std.list (List);
+
+/// This list has a present value and an absent value.
+def around(n : Integer) -> List (Maybe Integer) =
+  #[Some n, None]
+
+/// This thunk returns the same list.
+def suspended() -> List (Maybe Integer) { #[None, Some 2] }
+
+/// Each inner list gets the outer list's element type.
+/// Its constructors get their list's element type.
+def grouped() -> List (List (Maybe Integer)) =
+  #[#[Some 3], #[], #[None]]
+
+/// The parameter `a` determines the type `Maybe(a)`.
+def wrapped(a : Type, x : a) -> List (Maybe a) =
+  #[Some x, None]

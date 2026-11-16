@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Run a command bounded to 8 GiB of memory, never unbounded.
+#
+# A process that allocates without end takes the host's memory and every
+# process beside it (#3823). Where a user systemd manager runs, the bound is a
+# scope of its own with that `MemoryMax` and no swap: it holds the command and
+# every process it starts, and the kernel kills inside it alone. Elsewhere the
+# bound is `ulimit -v`, or a tighter one already set, and where neither takes,
+# the command is refused. macOS has no systemd, and its kernel refuses to lower
+# `ulimit -v`, so there every command is refused (#3863).
+#
+# The debugger (`.config/debug/lldb.bash`) and Catt's runs (`bench:catt`) share
+# this bound.
+#
+# Usage: bounded <who> <program> [args]... `who` names the caller in the
+# refusal. Exits 2 when no bound takes, and otherwise as the command does.
+set -euo pipefail
+usage='bounded <who> <program> [args]...'
+who=${1:?$usage}
+program=${2:?$usage}
+shift
+bound_kib=$((8 * 1024 * 1024))
+scope=(systemd-run --user --scope --quiet -p "MemoryMax=${bound_kib}K" -p MemorySwapMax=0 --)
+if command -v systemd-run > /dev/null && "${scope[@]}" true 2> /dev/null; then
+  exec "${scope[@]}" "$@"
+fi
+limit=$(ulimit -v)
+if [[ $limit == unlimited ]] || ((limit > bound_kib)) && ! ulimit -v "$bound_kib" 2> /dev/null; then
+  echo "$who: neither a systemd scope nor \`ulimit -v\` bounds ${program##*/}'s memory here; it never runs unbounded (#3823)" >&2
+  exit 2
+fi
+exec "$@"
