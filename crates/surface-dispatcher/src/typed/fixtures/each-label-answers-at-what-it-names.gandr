@@ -1,0 +1,5 @@
+def point : *{n : Integer, s : String};
+def point = *{n = 3, s = "x"};
+def tag : +{ok : Integer, err : String};
+def dependent : (a : Type, x : a) -> a;
+def lazy() -> &{get : -F Integer, put : -F String} { &{.put => return "s", .get => return 1} }
