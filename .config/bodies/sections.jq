@@ -228,9 +228,6 @@ def concern_marks:
 # #5038, #6884), in the order the section states them.
 def engineering_rows: ["change", "complexity", "latency", "parallelism", "memory", "failure", "streaming"];
 
-# The question of the `streaming` row (#6884), which `unit:check` quotes.
-def streaming_question: "what a consumer gets before the whole input arrives: the first result, the order of the results, what a later part can still revoke; each result that waits on a part far from it";
-
 # The rows of an `## Engineering` table, from the section's lines and read
 # before its subsections: per row whose first cell names one of the seven,
 # {row, answer}, the answer the row's last cell with its HTML comments

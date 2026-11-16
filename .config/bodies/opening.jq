@@ -268,10 +268,11 @@ def citations:
   | select(any($read_in[]; any(.under[]; . == $page.name or . == "vault:\($page.mint)") and any(.crates[]; . == $crate)) | not)
   | "`crates/\($crate)` cites no `vault:\($page.mint)` (`\($page.name)`), a primary source of #\($page.n), and the change touches its sources: add `- `vault:\($page.mint)` — <newest|dependency|anchor|exemplar>: <what it decides>` to the `# References` of the module it decides something for, or name the crate under the page's `## Sources read` item as `  - read in: crates/\($crate) — <what the change does there>` if the page decided nothing there, or mark the page `read: <what it informed>` if it decided nothing in the code, then run `pr:open` again";
 
-# The refusals of `## Readings`: every axis answered in one of the four forms
-# once a unit is worked, and a selected axis left unanswered departed from.
-# A unit is worked when an issue the body works has a `## Readings` row
-# naming an axis, or the body has a `## Readings` of its own.
+# The refusals of `## Readings`. The body answers each axis that an issue
+# selects, and each row that it writes, in one of the four forms. A selected
+# axis without an `answered:` form takes a `departed:` item. An axis with no
+# selection and no row is `no`.
+# - see: #7792
 def readings:
   [(.issues // [])[] | .number as $n | .body | selected[] | {n: $n, axis: .}] as $asked
   | (any((.issues // [])[]; .body // "" | marks)
@@ -281,16 +282,16 @@ def readings:
   | ($rows[]
       | select(.cells[1] // "" | IN(axes[]) | not)
       | "the `## Readings` row `\(.line)` names no axis: its second cell is one of `\(axes | join("`, `"))`, then run `pr:open` again"),
-    (select($unit)
-      | [axes[]
-          | . as $axis
-          | [$rows[] | select(.cells[1] == $axis)] as $mine
-          | if ($mine | length) == 0 then "  - `\($axis)`, no row: \(questions[$axis])"
-            elif ([$mine[] | select(.cells[2] // "" | answered)] | length) == 0 then "  - `\($axis)`, \($mine[0].cells[2] // "" | if . == "" then "blank" else "`\(.)`" end): \(questions[$axis])"
-            else empty
-            end]
+    ([axes[]
+        | . as $axis
+        | [$rows[] | select(.cells[1] == $axis)] as $mine
+        | select(any($asked[]; .axis == $axis) or ($mine | length) > 0)
+        | if ($mine | length) == 0 then "  - `\($axis)`, no row: \(questions[$axis])"
+          elif ([$mine[] | select(.cells[2] // "" | answered)] | length) == 0 then "  - `\($axis)`, \($mine[0].cells[2] // "" | if . == "" then "blank" else "`\(.)`" end): \(questions[$axis])"
+          else empty
+          end]
       | if length == 0 then empty
-        else "the body's `## Readings` leaves an axis unanswered: give each one \(statuses), the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n" + join("\n")
+        else "the body's `## Readings` leaves an axis unanswered: give each axis that an issue selects, and each row the body writes, \(statuses), the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n" + join("\n")
         end),
     ($rows[]
       | select(.cells[1] == "bounded" and (.cells[2] // "" | test("^answered:")))

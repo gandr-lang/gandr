@@ -87,8 +87,8 @@ body:
     attributes:
       label: Readings
       description: >-
-        Answer every axis with a reason on both marks: `yes — <what the axis gives this unit>` or
-        `no — <why it does not reach it>`. A bare `yes` or `no` is refused.
+        Mark each axis that reaches the unit `yes — <what the axis gives this unit>`. Leave the other rows
+        empty: an empty row reads as `no`. A `no` you write keeps its reason, `no — <why>`.
       value: |
         | Family | Axis | Question | Selected |
         | ------ | ---- | -------- | -------- |
@@ -108,7 +108,7 @@ body:
     id: concerns
     attributes:
       label: Concerns
-      description: "Mark each concern of `ledger/concerns.sql` yes or no; a yes carries how: `yes — <how>`."
+      description: "Mark each concern of `ledger/concerns.sql` that the unit touches `yes — <how>`, and leave the others empty; or write `none`."
       value: |
         | Concern | Touched |
         | ------- | ------- |
@@ -126,10 +126,10 @@ body:
       label: Engineering
       description: >-
         Design as for a durable, mission-critical, latency-critical system (`units.md` § units-engineering). Answer
-        every row in its last cell with a bound, a budget or a measured number, or `n/a — <reason>` where the change
-        has no such path. An empty row and a bare `n/a` are refused. The `change` row has two parts,
-        `unchanged: <the work when no input of the result changes>; edit: <the work an edit costs>`, or reads
-        `n/a — <reason>`. The `streaming` row reads `n/a — <reason>` where a result has no use before it is whole.
+        the `change` and `failure` rows, and each other row whose path the change has, in the last cell: a bound,
+        a budget or a measured number, or `n/a — <reason>`. Leave a row empty when the change has no such path.
+        The `change` row has two parts, `unchanged: <the work when no input of the result changes>; edit: <the
+        work an edit costs>`, or reads `n/a — <reason>`.
       value: |
         | Row | The issue states | Bound |
         | --- | ---------------- | ----- |

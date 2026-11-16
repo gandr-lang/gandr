@@ -17,22 +17,16 @@
 # - `## Embedding owes`, on a unit with an `oracle` row (#3964): one
 #   `- #n — <the operation>` per operation the oracle has and gandr lacks,
 #   each its own issue, or `none — <why nothing is owed>`;
-# - `## Readings`: a table answering each of the ten axes `yes — <what it
-#   gives this unit>` or `no — <why it does not reach it>`, a reason on both
-#   (#2955); a refused row quotes the axis's question. The `general` row
-#   (#5951) names the level of the unit's result, `yes — general: <level>`,
-#   or a shadow of it, `yes — shadow: <what>, general form in `<key>`, owed
-#   by #<n>`, or says `no — <reason>`. A `yes` in another form, or a shadow
-#   with no backquoted source key or no issue, is refused. A signed issue is
-#   read so too, at the frame now (#7018): a unit signed before the axis
-#   meets the refusal at its next `pr:open`. A signed issue with no row for
-#   an axis of `noted_axes` gets a `note:` line instead (#7350);
-# - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
-#   `yes` or `no` (#2795). A concern that the ledger gains after the issue
-#   asks no row of it (#5308): the issue's number is at or below the
-#   concern's issue, or the coordinator signed the issue. A body read with no
-#   number, as a template is, owes a row for every concern. A row the issue
-#   writes is judged whatever its concern's age;
+# - `## Readings`: the axes that reach the unit, one row each, `yes — <what
+#   it gives this unit>`. An axis with no row, or with a row that has no
+#   mark, is `no`. A row that says `no` keeps its reason. A marked row with
+#   no reason is refused and quotes the axis's question. The `general` row
+#   names the level of the unit's result, `yes — general: <level>`, or a
+#   shadow of it, `yes — shadow: <what>, general form in `<key>`, owed by
+#   #<n>`. A `yes` in another form is refused. A shadow with no backquoted
+#   source key or no issue is refused too;
+# - `## Concerns`: the concerns of `ledger/concerns.sql` that the unit
+#   touches, on one line, or `none`. A table of marks reads too;
 # - `## Ledger` and `## Not in this slice`;
 # - `## After`: `none`, or one `- #n — <what it waits for>` per issue the
 #   unit waits on (#2902). The section is the record; `unit:check` sets each
@@ -45,17 +39,16 @@
 #   scale: 0 names and combinators, 1 a user notation, 2 a reader
 #   `#name{ … }`, 3 an attribute `@[…]`, 4 a clause position bound to a `std`
 #   interface;
-# - `## Engineering` (#5038): a table with one row for each of `change`,
-#   `complexity`, `latency`, `parallelism`, `memory`, `failure` and
-#   `streaming` (#6884), the row's name in its first cell and its answer in
-#   its last: a bound, a budget or a measured number, or `n/a — <reason>`
-#   where the change has no such path (`units.md` § units-engineering). An
-#   empty answer and a bare `n/a` are refused, and a message on `streaming`
-#   quotes its question. A `change` answer other than `n/a — <reason>` holds
-#   two parts (#5850): `unchanged:`, the work when no input of the result
-#   changes, and `edit:`, the work an edit costs. One that lacks either is
-#   refused, by the part it lacks. An issue the coordinator signed is not
-#   judged, so no unit signed before the rule becomes unclaimable;
+# - `## Engineering`: a table with a row for `change` and a row for
+#   `failure`, and a row for each of `complexity`, `latency`, `parallelism`,
+#   `memory` and `streaming` that the unit's path has. The row's name is in
+#   its first cell and its answer in its last: a bound, a budget or a
+#   measured number, or `n/a — <reason>`. Another row may be empty. An empty
+#   `change` or `failure` and a bare `n/a` are refused. A `change` answer
+#   other than `n/a — <reason>` holds `unchanged:`, the work when no input of
+#   the result changes, and `edit:`, the work an edit costs. One that lacks
+#   either is refused, by the part it lacks. The coordinator's signature
+#   exempts an issue from this check;
 # - `## The shape` and `## Try first`, when the body says it is new
 #   territory;
 # - `## Observed at`, on an issue labelled `view` (#6873): the table
@@ -110,22 +103,22 @@ def surface($labels):
       end
   end;
 
-# What `## Engineering` lacks (#5038), on an issue the coordinator has not
-# signed: the section, a row of the seven, a row's answer, or a reason beside
-# an `n/a`. A message on the `streaming` row quotes its question (#6884).
+# What `## Engineering` lacks: the section, an answer to the `change` or the
+# `failure` row, or a reason beside an `n/a`. The coordinator's signature
+# exempts an issue.
+# - see: #5038, #6884, #7792
 def engineering_findings($labels):
   if ($labels | index("shape:signed")) != null then empty
   else
     "a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)" as $form
     | (section("Engineering") // null) as $lines
     | if $lines == null then
-        "`## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory`, `failure` and `streaming`, each \($form)"
+        "`## Engineering` is missing: write a row for `change` and a row for `failure`, and a row for each of `complexity`, `latency`, `parallelism`, `memory` and `streaming` that the unit's path has, each \($form)"
       else [$lines | engineering] as $rows
       | engineering_rows[] as $row
-      | (if $row == "streaming" then "; the row asks \(streaming_question)" else "" end) as $asks
       | [$rows[] | select(.row == $row) | .answer] as $answers
-      | if ($answers | length) == 0 then "`## Engineering` has no row for `\($row)`: write \($form)\($asks)"
-        elif all($answers[]; . == "") then "`## Engineering` leaves `\($row)` empty: write \($form)\($asks)"
+      | if ($answers | length) == 0 or all($answers[]; . == "") then
+          (if IN($row; "change", "failure") then "`## Engineering` \(if ($answers | length) == 0 then "has no row for" else "leaves" end) `\($row)`\(if ($answers | length) == 0 then "" else " empty" end): write \($form)" else empty end)
         elif all($answers[]; test("^n/?a\\.?$"; "i")) then "`## Engineering` answers `\($row)` with a bare `n/a`: write `n/a — <reason>`"
         elif $row == "change"
           and all($answers[]; (test("^n/?a\\b"; "i") | not)
@@ -166,17 +159,7 @@ def window($labels):
     | "`## Sources` row `\($row.line)` cites `\(.)` from \($year), before the citation window opens in \($cutoff): read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from \($cutoff) on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`"
     end;
 
-# Whether an issue owes a `## Concerns` row for a concern of the ledger
-# (#5308). The sign-off checked every row the ledger held then, so an issue
-# the coordinator signed owes no row it lacks. An issue numbered at or below
-# the concern's issue was filed before the concern, and owes no row for it.
-# So a unit that passed before a concern lands stays passing. A body read
-# with no number owes every row.
-def owes_row($row; $labels; $number):
-  ($labels | index("shape:signed")) == null
-  and ($number == null or $row.issue == null or $number > ($row.issue | ltrimstr("#") | tonumber));
-
-def findings($labels; $number):
+def findings($labels):
   . as $body
   | need("Sources"),
     # A refactor states what it takes out of the tree, which the architect
@@ -204,16 +187,14 @@ def findings($labels; $number):
            (if $owes.none and ($owes.numbers | length) > 0 then "`## Embedding owes` says `none` and lists issues: keep the issues, or `none` and its reason alone" else empty end)
          end
      else empty end),
-    (if section("Readings") == null then "`## Readings` is missing"
+    (if section("Readings") == null then "`## Readings` is missing: write a row `yes — <what it gives this unit>` for each axis that reaches the unit, or `none`"
+     elif section("Readings") | filled | not then "`## Readings` is empty: write a row `yes — <what it gives this unit>` for each axis that reaches the unit, or `none`"
      else [marks] as $marks
      | (axes[] | . as $axis
-         | [$marks[] | select(.axis == $axis)] as $rows
-         | if ($rows | length) == 0 then
-             "`## Readings` has no row for `\($axis)`; the axis asks \(questions[$axis])"
-             | if IN($axis; noted_axes[]) and ($labels | index("shape:signed")) != null then "note: \(.); the issue was signed before the axis landed, so it is not refused" else . end
-           elif ([$rows[] | select(.mark != null)] | length) == 0 then "`## Readings` marks `\($axis)` neither `yes` nor `no`; the axis asks \(questions[$axis])"
-           elif ([$rows[] | select(.mark != null and .reason != null)] | length) == 0 then
-             "`## Readings` marks `\($axis)` `\(first($rows[] | select(.mark != null)).mark)` without a reason: write `yes — <what it gives this unit>` or `no — <why it does not reach it>`; the axis asks \(questions[$axis])"
+         | [$marks[] | select(.axis == $axis and .mark != null)] as $rows
+         | if ($rows | length) == 0 then empty
+           elif ([$rows[] | select(.reason != null)] | length) == 0 then
+             "`## Readings` marks `\($axis)` `\($rows[0].mark)` without a reason: write `yes — <what it gives this unit>` or `no — <why it does not reach it>`; the axis asks \(questions[$axis])"
            else empty
            end),
        ($marks[]
@@ -226,15 +207,9 @@ def findings($labels; $number):
            else "`## Readings` answers `general` `yes` in neither form: write `yes — general: <the form>`, or `yes — shadow: <what>, general form in `<source key>`, owed by #<n>`; the axis asks \(questions.general)"
            end)
      end),
-    (if section("Concerns") == null then "`## Concerns` is missing"
-     else [concern_marks] as $marks
-     | (concern_rows[] | . as $row | .id as $concern
-         | if ([$marks[] | select(.concern == $concern)] | length) == 0 then
-             (if owes_row($row; $labels; $number) then "`## Concerns` has no row for `\($concern)`" else empty end)
-           elif ([$marks[] | select(.concern == $concern and .mark != null)] | length) == 0 then "`## Concerns` marks `\($concern)` neither `yes` nor `no`"
-           else empty
-           end)
-     end),
+    (if section("Concerns") == null then "`## Concerns` is missing: name the concerns of `ledger/concerns.sql` that the unit touches, or write `none`"
+     elif section("Concerns") | filled | not then "`## Concerns` is empty: name the concerns of `ledger/concerns.sql` that the unit touches, or write `none`"
+     else empty end),
     need("Ledger"),
     need("Not in this slice"),
     (after as $after

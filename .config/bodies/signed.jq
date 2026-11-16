@@ -1,25 +1,17 @@
-# Whether the issues a body works are sectioned and signed (#3134): one
-# refusal line per issue `pr:open` must not land yet, a wait per issue it
-# lands once signed, or nothing.
+# The refusals for the issues that a body works: one line for each issue
+# that `pr:open` must not land yet, or nothing.
 #
-# Input: `{issues: [{number, labels: [name], body}]}`, the issues the body
-# works, as `opening.jq` reads them. The concerns `findings` checks against
-# come as the named argument `concerns`.
+# Input: `{issues: [{number, labels: [name], body}]}`, the issues that the
+# body works, as `opening.jq` reads them. The named argument `concerns` gives
+# the concerns that `findings` checks against.
 #
-# Sectioning is the claim's first obligation (`units.md` § units-claim): an
-# issue still failing `unit:check` (`findings.jq`) is refused with each
-# finding. A sectioned issue then needs `shape:signed`, the coordinator's
-# sign-off on its shape: the seat that sectioned it pages `sections #n:
-# <the shape's first line>` and works on meanwhile, but the landing waits for
-# the label. The label is a future event, never a refusal (#4164): its
-# `wait:` line says so, and its `arm:` line arms `pr:await` on the issue
-# (`.config/pr-stack/await.jq`), whose exit wakes the seat to run `pr:open`
-# again. An issue sectioned before its claim is signed by construction:
-# `issue:file` labels it once the filed issue passes `unit:check` (#7545).
-# An epic or a `collector` keeps its own shape and is not read.
+# The claim's first obligation is the issue's sections. An issue that fails
+# `unit:check` is refused with each finding. An issue that passes needs no
+# sign-off. The task does not read an epic or a `collector`, which keeps its
+# own shape.
+# - see: #3134, #7792, `findings.jq`, `units.md` § units-claim
 
 include "findings";
-include "await" {search: "../pr-stack"};
 
 def has($label): .labels | index($label) != null;
 
@@ -27,12 +19,7 @@ def has($label): .labels | index($label) != null;
 | select((has("kind:epic") or has("collector")) | not)
 | .number as $n
 | .labels as $labels
-| [.body // "" | findings($labels; $n) | select(startswith("note: ") | not)] as $owed
-| if ($owed | length) > 0 then
-    "#\($n) still lacks what a unit issue carries: write each on the issue, pass `unit:check \($n)`, page the coordinator `sections #\($n): <the shape's first line>` for `shape:signed`, then run `pr:open` again:\n"
-    + ($owed | map("  - \(.)") | join("\n"))
-  elif has("shape:signed") | not then
-    "wait: #\($n)'s sections wait for the coordinator's `shape:signed`: page `sections #\($n): <the shape's first line>` if not yet paged; `pr:await \($n)` wakes the seat once the label stands, and `pr:open` runs again then\n"
-    + arm($n)
-  else empty
-  end
+| [.body // "" | findings($labels)] as $owed
+| select($owed | length > 0)
+| "#\($n) still lacks what a unit issue carries: write each on the issue, pass `unit:check \($n)`, then run `pr:open` again:\n"
+  + ($owed | map("  - \(.)") | join("\n"))
