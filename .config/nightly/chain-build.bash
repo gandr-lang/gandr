@@ -30,7 +30,11 @@ logs=${CARGO_HOME:-$HOME/.cargo}/log
 mkdir -p "$logs"
 rm -rf "$out/target"
 touch "$out/started"
-CARGO_TARGET_DIR=$out/target cargo build --timings --locked --package gandr-lang \
+# A cold build compiles each unit. `setup-rust` sets `RUSTC_WRAPPER` to the
+# kache wrapper, and kache answers a unit from its cache. The log then times
+# a lookup in place of a compile. So the build runs with no wrapper.
+# - see: #7789
+env -u RUSTC_WRAPPER CARGO_TARGET_DIR="$out/target" cargo build --timings --locked --package gandr-lang \
   -Zbuild-analysis -Zsection-timings --config build.analysis.enabled=true >&2
 # The log of this build is the newest one since the start that names this
 # checkout as its directory. Cargo writes no `/` escaped in the JSON.
