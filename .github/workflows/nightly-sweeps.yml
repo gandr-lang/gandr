@@ -190,6 +190,11 @@ jobs:
   # App's token that holds `Administration: read`. No pull request reaches
   # our runner. A fork has no App, so its night runs on the hosted runner,
   # and so does a night whose read fails.
+  #
+  # The same read decides whether the riscv64 jobs run. Their host is not
+  # online every night, so `chain-riscv64` runs only while a runner with the
+  # label `RISCV64` is online. Otherwise the night skips it and says so.
+  # - see: `.config/integration/riscv64.jq`
   freshness:
     name: choose the night's commit and whether it moved
     runs-on: *linux
@@ -201,6 +206,7 @@ jobs:
       plain: ${{ steps.states.outputs.plain }}
       stale: ${{ steps.compare.outputs.stale }}
       runner: ${{ steps.runner.outputs.runner || 'hosted' }}
+      riscv64: ${{ steps.runner.outputs.riscv64 || 'false' }}
       waiting: ${{ steps.waiting.outputs.waiting }}
       unsafe: ${{ steps.unsafe.outputs.crates }}
     env:
@@ -230,6 +236,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             .config/integration/runner.jq
+            .config/integration/riscv64.jq
             .config/unsafe
             .config/gh/budget.bash
           sparse-checkout-cone-mode: false
@@ -243,16 +250,20 @@ jobs:
           private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
           permission-administration: read
       - id: runner
-        name: choose the night's runner
+        name: choose the night's runner and whether the riscv64 jobs run
         if: ${{ steps.runners.outputs.token != '' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.runners.outputs.token }}
-        run: gh api "repos/$GH_REPO/actions/runners?per_page=100" --jq '{runners}' | jq -c -f .config/integration/runner.jq | jq -r '"runner=\(.runner)", "line=\(.line)"' >> "$GITHUB_OUTPUT"
-      - name: say the night's runner
+        run: |
+          gh api "repos/$GH_REPO/actions/runners?per_page=100" --jq '{runners}' > "$RUNNER_TEMP/runners.json"
+          jq -c -f .config/integration/runner.jq "$RUNNER_TEMP/runners.json" | jq -r '"runner=\(.runner)", "line=\(.line)"' >> "$GITHUB_OUTPUT"
+          jq -c -f .config/integration/riscv64.jq "$RUNNER_TEMP/runners.json" | jq -r '"riscv64=\(.online)", "riscv64_line=\(.line)"' >> "$GITHUB_OUTPUT"
+      - name: say the night's runner and whether the riscv64 jobs run
         env:
           LINE: ${{ steps.runner.outputs.line || 'The night runs on the hosted runner, since it reads no self-hosted runner.' }}
-        run: printf '%s\n' "$LINE" >> "$GITHUB_STEP_SUMMARY"
+          RISCV64_LINE: ${{ steps.runner.outputs.riscv64_line || 'The riscv64 jobs skip, since the night reads no self-hosted runner.' }}
+        run: printf '%s\n' "$LINE" "$RISCV64_LINE" >> "$GITHUB_STEP_SUMMARY"
       - id: waiting
         name: name the saved states the night waits for
         shell: bash
@@ -469,18 +480,21 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # The riscv64 build runs on a runner of our own, whose host holds the
-  # toolchain, mold and jq, and no mise, so the job runs the build's script
-  # alone. The build holds the host lock `par` that the host's measures hold
-  # (#6945), so a measure and the build do not load each other. It can first
-  # wait for one measure: 27 minutes at the most in the record. Only the
-  # schedule and a dispatch of `main` in gandr-lang/gandr reach the runner,
-  # so no fork and no branch runs code on it. Its time counts in no hosted
-  # sum.
+  # The riscv64 build runs on a runner of our own. The runner's account holds
+  # the toolchain, mold and jq, and no mise. So the job runs the build's
+  # script alone. The build holds the host lock `par` that the host's
+  # measures hold, so a measure and the build do not load each other. It can
+  # first wait for one measure: 27 minutes at the most in the record.
+  # - see: #6945
+  #
+  # Only the schedule and a dispatch of `main` in gandr-lang/gandr reach the
+  # runner, so no fork and no branch runs code on it. Its time counts in no
+  # hosted sum. The job runs only while a runner with the label `RISCV64` is
+  # online, as `freshness` reads it. A night with no such runner skips it.
   chain-riscv64:
     name: build the driver cold and keep its chain (riscv64)
     needs: freshness
-    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' }}
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && needs.freshness.outputs.riscv64 == 'true' && github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' }}
     runs-on: [self-hosted, Linux, RISCV64] # zizmor: ignore[self-hosted-runner]
     timeout-minutes: 90
     env:

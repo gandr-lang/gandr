@@ -1537,6 +1537,99 @@
     }
   },
   {
+    "name": "an online runner with the label RISCV64 runs the riscv64 jobs, busy or not",
+    "program": "riscv64.jq",
+    "input": {
+      "runners": [
+        {
+          "id": 1,
+          "name": "integration-runner",
+          "os": "Linux",
+          "status": "online",
+          "busy": false,
+          "labels": [
+            { "id": 1, "name": "self-hosted", "type": "read-only" },
+            { "id": 2, "name": "integration", "type": "custom" }
+          ]
+        },
+        {
+          "id": 2,
+          "name": "riscv64-runner-1",
+          "os": "Linux",
+          "status": "online",
+          "busy": true,
+          "labels": [
+            { "id": 1, "name": "self-hosted", "type": "read-only" },
+            { "id": 2, "name": "Linux", "type": "read-only" },
+            { "id": 3, "name": "RISCV64", "type": "read-only" }
+          ]
+        },
+        {
+          "id": 3,
+          "name": "riscv64-runner-2",
+          "os": "Linux",
+          "status": "offline",
+          "busy": false,
+          "labels": [
+            { "id": 1, "name": "self-hosted", "type": "read-only" },
+            { "id": 2, "name": "Linux", "type": "read-only" },
+            { "id": 3, "name": "RISCV64", "type": "read-only" }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "online": true,
+      "line": "The riscv64 jobs run: 1 runner(s) online with the label RISCV64."
+    }
+  },
+  {
+    "name": "riscv64 runners that are all offline skip the riscv64 jobs",
+    "program": "riscv64.jq",
+    "input": {
+      "runners": [
+        {
+          "id": 1,
+          "name": "integration-runner",
+          "os": "Linux",
+          "status": "online",
+          "busy": false,
+          "labels": [
+            { "id": 1, "name": "self-hosted", "type": "read-only" },
+            { "id": 2, "name": "integration", "type": "custom" }
+          ]
+        },
+        {
+          "id": 2,
+          "name": "riscv64-runner-1",
+          "os": "Linux",
+          "status": "offline",
+          "busy": false,
+          "labels": [
+            { "id": 1, "name": "self-hosted", "type": "read-only" },
+            { "id": 2, "name": "Linux", "type": "read-only" },
+            { "id": 3, "name": "RISCV64", "type": "read-only" }
+          ]
+        }
+      ]
+    },
+    "output": {
+      "online": false,
+      "line": "The riscv64 jobs skip: no runner with the label RISCV64 is online."
+    }
+  },
+  {
+    "name": "a runner list the night cannot read skips the riscv64 jobs",
+    "program": "riscv64.jq",
+    "input": {
+      "runners": null
+    },
+    "output": {
+      "online": false,
+      "line": "The riscv64 jobs skip: the night cannot read the self-hosted runners."
+    }
+  },
+  {
     "name": "#6587: one commit after the green head is the culprit, with no probe",
     "program": "search.jq",
     "input": {
