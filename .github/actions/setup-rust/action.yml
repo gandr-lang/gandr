@@ -116,6 +116,10 @@ runs:
     # `GITHUB_ACTIONS=false`. A pull request's run reads the cache and
     # publishes nothing.
     #
+    # The wrapper is a bash script. dash, the `sh` of the CI image, drops each
+    # variable whose name is no shell name, such as `CARGO_BIN_EXE_host-tools`.
+    # A test that reads such a variable then fails to compile.
+    #
     # `kache drain` stops kache's daemon at the end of the job, and the daemon
     # sends its queued uploads first.
     # - see: `.github/actions/kache-drain`, #7789
@@ -134,7 +138,7 @@ runs:
         trusted=
         if [[ $KACHE_TRUSTED == true ]]; then trusted='export GITHUB_ACTIONS=false'; fi
         cat > "$wrapper" <<EOF
-        #!/bin/sh
+        #!/usr/bin/env bash
         command -v kache > /dev/null 2>&1 || exec "\$@"
         export KACHE_CONFIG='$config' KACHE_OCI_USERNAME='$KACHE_USER'
         KACHE_OCI_PASSWORD=\$(cat '$token'); export KACHE_OCI_PASSWORD
