@@ -1,0 +1,4 @@
+{COLOR}{NESTED}def shapes(m : Outer) -> -F Integer {{ match m {{ | None => return 0 | Some(Yes(y)) => return 1 | ? => return 2 | ?named => return 3 | x => return 4 | _ => return 5 }} }}
+def literal(n : Integer) -> -F Integer {{ match n {{ | 7 => return 0 | _ => return 1 }} }}
+def flag(b : Bool) -> -F Integer {{ match b {{ | true => return 0 | false => return 1 }} }}
+def either(c : Color) -> -F Integer {{ match c {{ | Red | Green => return 0 | Blue => return 1 }} }}

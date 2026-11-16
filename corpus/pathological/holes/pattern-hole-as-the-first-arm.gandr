@@ -1,0 +1,21 @@
+// A named pattern hole as a match's only arm leaves every colour to the hole,
+// so which arm runs is undecided and the checker refuses the match.
+// `pattern-hole-arms.gandr` refuses the same leaf beside written arms.
+//
+// - see: #391 — `classify`
+
+/// Three colours, one arm each.
+data Color : Type where
+  | Red : Color
+  | Green : Color
+  | Blue : Color
+
+/// Every colour reaches the hole.
+@[refuses("UndecidedCoverage")]
+def classify(c : Color) -> Integer =
+  match c where
+    | ?branch => 1
+
+/// The function, named again: it checks against `classify`'s signature, whose
+/// body is refused above, so it is not run.
+def named = classify;

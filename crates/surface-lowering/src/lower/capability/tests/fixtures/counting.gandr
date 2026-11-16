@@ -1,0 +1,26 @@
+module Counting : Model(Cost) with sort N = Integer -> Integer where {
+  type C = (Integer -> Integer) -> Integer;
+  def charge(
+    c : Integer -> Integer,
+    k : (Integer -> Integer) -> Integer
+  ) -> (Integer -> Integer) -> Integer {
+    thunk { fun (before) { k (thunk { fun (n) { let m = c n; before m } }) } }
+  }
+  def zero : Integer -> Integer = thunk { fun (n) { pure n } };
+  def plus(a : Integer -> Integer, b : Integer -> Integer) -> Integer -> Integer {
+    thunk { fun (n) { let m = b n; a m } }
+  }
+  def chargeZero(k : (Integer -> Integer) -> Integer) -> Path[.A = (Integer -> Integer) -> Integer](
+    charge zero k,
+    k
+  ) {
+    Path.here k
+  }
+  def chargeTwice(
+    a : Integer -> Integer,
+    b : Integer -> Integer,
+    k : (Integer -> Integer) -> Integer
+  ) -> Path[.A = (Integer -> Integer) -> Integer](charge a (charge b k), charge (plus a b) k) {
+    Path.here (charge (plus a b) k)
+  }
+}

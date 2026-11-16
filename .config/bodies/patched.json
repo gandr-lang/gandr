@@ -1,0 +1,14 @@
+[
+  {
+    "name": "#2671: a features table past the argument limit reaches the reading, each row it adds refused as unnamed",
+    "padding": 4000,
+    "exit": 1,
+    "lines": 4000
+  },
+  {
+    "name": "a features table the change leaves as it was reads clean",
+    "padding": 0,
+    "exit": 0,
+    "lines": 0
+  }
+]
