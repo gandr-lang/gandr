@@ -126,7 +126,7 @@ runs:
     - name: "install kache"
       if: ${{ inputs.kache == 'true' }}
       uses: kunobi-ninja/kache-action@ad7317540dcdd71c904f7a60a87b620a0c0e67ed # v1
-      env: &kache-credentials
+      env:
         KACHE_OCI_USERNAME: ${{ github.actor }}
         KACHE_OCI_PASSWORD: ${{ github.token }}
       with:
@@ -137,7 +137,9 @@ runs:
         pr-comment: "false"
     - name: "let kache publish from a trusted run"
       if: ${{ inputs.kache == 'true' && (github.event_name == 'merge_group' || contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event_name) && contains(fromJSON('["refs/heads/main", "refs/heads/landing", "refs/heads/integration"]'), github.ref)) }}
-      env: *kache-credentials
+      env:
+        KACHE_OCI_USERNAME: ${{ github.actor }}
+        KACHE_OCI_PASSWORD: ${{ github.token }}
       run: | # zizmor: ignore[github-env]
         wrapper=$RUNNER_TEMP/kache-trusted
         printf '#!/bin/sh\nGITHUB_ACTIONS=false exec kache "$@"\n' > "$wrapper"
