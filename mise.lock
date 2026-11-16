@@ -166,11 +166,6 @@ checksum = "sha256:4e4cb599cdc41bf2109d1464c127b5bcbddf548ce3e322e612afb691338b4
 url = "https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda"
 checksum = "sha256:731e043390c9457299484d39e427221fc868a9249540a498a5a4f6456c7744d1"
 
-[[tools."cargo:bindgen-cli"]]
-version = "0.72.1"
-backend = "cargo:bindgen-cli"
-specifiers = ["0.72.1"]
-
 [[tools."cargo:cargo-careful"]]
 version = "0.4.10"
 backend = "cargo:cargo-careful"
@@ -758,6 +753,53 @@ url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/2790
 checksum = "sha256:8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.zip"
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/279056944"
+
+[[tools."github:kunobi-ninja/kache"]]
+version = "2.1.1"
+backend = "github:kunobi-ninja/kache"
+specifiers = ["2.1.1"]
+
+[tools."github:kunobi-ninja/kache"."platforms.linux-arm64"]
+checksum = "sha256:466f0aef4885f5291359b3c1bc0c9976824634194c5b67e1cee2a4fe3035155a"
+url = "https://github.com/kunobi-ninja/kache/releases/download/v2.1.1/kache-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/kunobi-ninja/kache/releases/assets/740154350"
+provenance = "github-attestations"
+
+[tools."github:kunobi-ninja/kache"."platforms.linux-arm64-musl"]
+checksum = "sha256:466f0aef4885f5291359b3c1bc0c9976824634194c5b67e1cee2a4fe3035155a"
+url = "https://github.com/kunobi-ninja/kache/releases/download/v2.1.1/kache-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/kunobi-ninja/kache/releases/assets/740154350"
+provenance = "github-attestations"
+
+[tools."github:kunobi-ninja/kache"."platforms.linux-x64"]
+checksum = "sha256:7603022ee78b48a9afde9055b0df27e5c2cef1351a54fa2de6b4fde0f37ae22c"
+url = "https://github.com/kunobi-ninja/kache/releases/download/v2.1.1/kache-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/kunobi-ninja/kache/releases/assets/740154939"
+provenance = "github-attestations"
+
+[tools."github:kunobi-ninja/kache"."platforms.linux-x64-musl"]
+checksum = "sha256:7603022ee78b48a9afde9055b0df27e5c2cef1351a54fa2de6b4fde0f37ae22c"
+url = "https://github.com/kunobi-ninja/kache/releases/download/v2.1.1/kache-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/kunobi-ninja/kache/releases/assets/740154939"
+provenance = "github-attestations"
+
+[tools."github:kunobi-ninja/kache"."platforms.macos-arm64"]
+checksum = "sha256:d4533baa3c57be51d5f2390b70551ca9d6c2a83a1933266fa0a57053774e08f6"
+url = "https://github.com/kunobi-ninja/kache/releases/download/v2.1.1/kache-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/kunobi-ninja/kache/releases/assets/740154349"
+provenance = "github-attestations"
+
+[tools."github:kunobi-ninja/kache"."platforms.macos-x64"]
+checksum = "sha256:69627cfec3017aa521d06a84afc6c5e74734468678bd6659d92afd57d9a4f457"
+url = "https://github.com/kunobi-ninja/kache/releases/download/v2.1.1/kache-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/kunobi-ninja/kache/releases/assets/740154835"
+provenance = "github-attestations"
+
+[tools."github:kunobi-ninja/kache"."platforms.windows-x64"]
+checksum = "sha256:8a30c6d8777b989338e58d72df2c0037607578869471b225943a0b1ef9fdff0a"
+url = "https://github.com/kunobi-ninja/kache/releases/download/v2.1.1/kache-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/kunobi-ninja/kache/releases/assets/740154896"
+provenance = "github-attestations"
 
 [[tools."github:max-sixty/worktrunk"]]
 version = "0.81.0"
