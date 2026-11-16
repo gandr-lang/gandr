@@ -110,9 +110,10 @@ def surface($labels):
       end
   end;
 
-# What `## Engineering` lacks (#5038), on an issue the coordinator has not
-# signed: the section, a row of the seven, a row's answer, or a reason beside
-# an `n/a`. A message on the `streaming` row quotes its question (#6884).
+# What `## Engineering` lacks: the section, a row of the seven, a row's
+# answer, or a reason beside an `n/a`. The check skips an issue that the
+# coordinator signs. A message on the `streaming` row quotes its question.
+# - see: #5038, #6884
 def engineering_findings($labels):
   if ($labels | index("shape:signed")) != null then empty
   else
@@ -166,12 +167,14 @@ def window($labels):
     | "`## Sources` row `\($row.line)` cites `\(.)` from \($year), before the citation window opens in \($cutoff): read the newest work stating what the unit takes from it and cite that, name it beside this one in What it gives as `superseded by `<key from \($cutoff) on>``, or open What it gives `exemplar: <why no newer work states what the unit builds>`"
     end;
 
-# Whether an issue owes a `## Concerns` row for a concern of the ledger
-# (#5308). The sign-off checked every row the ledger held then, so an issue
-# the coordinator signed owes no row it lacks. An issue numbered at or below
-# the concern's issue was filed before the concern, and owes no row for it.
-# So a unit that passed before a concern lands stays passing. A body read
-# with no number owes every row.
+# Whether an issue owes a `## Concerns` row for a concern of the ledger. The
+# sign-off reads every row that the ledger holds at that time. Thus a signed
+# issue owes no row that it lacks. An issue with a number at or below the
+# concern's issue comes before the concern, and owes no row for it. Thus a new
+# concern does not refuse a unit that passes.
+#
+# A body with no number owes every row.
+# - see: #5308
 def owes_row($row; $labels; $number):
   ($labels | index("shape:signed")) == null
   and ($number == null or $row.issue == null or $number > ($row.issue | ltrimstr("#") | tonumber));

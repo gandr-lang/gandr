@@ -1,22 +1,29 @@
-# Whether the issues a body works are sectioned and signed (#3134): one
-# refusal line per issue `pr:open` must not land yet, a wait per issue it
-# lands once signed, or nothing.
+# Whether the issues of a body have their sections and their sign-off. The
+# result holds one refusal line for each issue that `pr:open` must not land
+# yet. It holds a wait for each issue that `pr:open` lands after the
+# sign-off. Otherwise it is empty.
+# - see: #3134
 #
 # Input: `{issues: [{number, labels: [name], body}]}`, the issues the body
 # works, as `opening.jq` reads them. The concerns `findings` checks against
 # come as the named argument `concerns`.
 #
-# Sectioning is the claim's first obligation (`units.md` § units-claim): an
-# issue still failing `unit:check` (`findings.jq`) is refused with each
-# finding. A sectioned issue then needs `shape:signed`, the coordinator's
-# sign-off on its shape: the seat that sectioned it pages `sections #n:
-# <the shape's first line>` and works on meanwhile, but the landing waits for
-# the label. The label is a future event, never a refusal (#4164): its
-# `wait:` line says so, and its `arm:` line arms `pr:await` on the issue
-# (`.config/pr-stack/await.jq`), whose exit wakes the seat to run `pr:open`
-# again. An issue sectioned before its claim is signed by construction:
-# `issue:file` labels it once the filed issue passes `unit:check` (#7545).
-# An epic or a `collector` keeps its own shape and is not read.
+# The sections are the claim's first obligation. An issue that fails
+# `unit:check` is refused with each finding. An issue with its sections then
+# needs `shape:signed`, the coordinator's sign-off on its shape. Its seat
+# pages `sections #n: <the shape's first line>` and continues the work, and
+# the landing waits for the label.
+# - see: `units.md` § units-claim, `findings.jq`
+#
+# The label is a future event, never a refusal. Its `wait:` line says so.
+# Its `arm:` line starts `pr:await` on the issue. The exit of `pr:await`
+# wakes the seat, and the seat runs `pr:open` again.
+# - see: #4164, `.config/pr-stack/await.jq`
+#
+# `issue:file` labels a filed issue when it passes `unit:check`. Thus an
+# issue with its sections before its claim has its sign-off already. The
+# task skips an epic and a `collector`, which keep their own shape.
+# - see: #7545
 
 include "findings";
 include "await" {search: "../pr-stack"};

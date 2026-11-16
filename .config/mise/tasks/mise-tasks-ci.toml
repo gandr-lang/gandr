@@ -4658,50 +4658,76 @@ fi
 # merges, `pr:land` from the red stack restacks it onto main. Every
 # other second bottom is refused.
 #
-# The body must work the branch's issue: a branch `<lane>-<n>-<slug>` is
-# refused unless the body says `Advances #n` or closes #n, and a branch with
-# no number unless the body works some issue, so the merge takes the claim
-# off what it worked (`tracker-release-claims.yml`, #2462). It answers the sources the issues
-# it works request (#2499): every key an issue's `## Sources` names has an
-# item in the body's `## Sources read` with a disposition and its evidence,
-# and a `supersedes` item is refused while a tracked line still names the old
-# key without marking it demoted. It answers every reading axis once it works
-# a unit (#2522, #2955): each axis's row in the body's `## Readings` reads
-# `answered: <exemplar or site>`, `trivial: <what it reduces to>`,
-# `not applicable: <what the change lacks that the axis asks about>` or
-# `deferred: #n`, never `not selected` or a bare form, and an axis an issue
-# selects answered other than `answered:` takes a `departed:` item keyed by
-# the axis in `## Sources read`; an issue it works whose reading is still the
-# migration's `unstated` placeholder is refused until the seat restates it
-# on the issue. It names each concern it touches
-# (#2523): each `## Concerns` item names a concern of `ledger/concerns.sql`
-# with `within`, `consolidated: <what merged>` or `new concern: <why none
-# fits>`, the last for a row the change adds, and a module or crate the change
-# adds (since `evidence:base`) under a concern whose sites all lie in other
-# crates is refused unless the body declares it `consolidated` or a
-# `new concern`. A change to the parser, its grammar or its syntax tree
-# states its surface form (#2527): a `### Surface form` subsection with a
-# `cost:` line and a `demand: <site>` line; the goldens `corpus:goldens`
-# records there ask for none (#2756). A closing keyword closes only from the
-# head's `Closes #n` lines (#2980): one anywhere else is refused, since
-# GitHub closes the issue it names on merge. Every body answers
-# `## Refactoring` (#2884): `yes`, `maybe` or `no`, and for the first two a
-# table `| Kind | Where | Observation |`, each `Where` resolved by
-# `check:refactoring` against the rustdoc JSON, which it builds when a
-# `Where` needs it. A body answers its issues' `## Engineering` with measured
-# numbers, and a `spec_clause_traversal` waiver or an `economy:` ceiling the
-# change adds cites the open issue that removes it (#5039,
-# `.config/bodies/ceilings.bash`). The rule is
-# `.config/bodies/opening.jq`, reading the sections through `sections.jq`, its
-# cases held by `check:claims`; a `note:` line it prints does not refuse.
-# Each issue the body works, an epic or a `collector` aside, passes
-# `unit:check` and carries the coordinator's `shape:signed` (#3134,
-# `.config/bodies/signed.jq`): the seat that sections an issue on its claim
-# pages for the label and works on, and the landing waits for it. A missing
-# label is a wait (#4164): with nothing else refused, the task prints its
-# `wait:` line and an `arm:` line for `pr:await` on the issue, and exits 0. A
-# body working a `collector` (#3326) `Advances` it, never closes it, and lists the
-# rows it clears under `## Rows`, each an open row as the collector keys it.
+# The body works the branch's issue. A branch `<lane>-<n>-<slug>` is refused
+# unless the body says `Advances #n` or `Closes #n`. A branch with no number
+# is refused unless the body works some issue. Thus the merge takes the claim
+# off the work.
+# - see: `tracker-release-claims.yml`, #2462
+#
+# The body answers the sources that its issues request. Each key of an
+# issue's `## Sources` has an item in the body's `## Sources read`, with a
+# disposition and its evidence. A `supersedes` item is refused while a
+# tracked line names the old key and does not mark it demoted.
+# - see: #2499
+#
+# When the body works a unit, it answers every reading axis. A row reads
+# `answered: <exemplar or site>`, `trivial: <what it reduces to>`, `not
+# applicable: <what the change lacks>` or `deferred: #n`. The rule refuses
+# `not selected` and a bare form. A selected axis with another answer takes a
+# `departed:` item in `## Sources read`.
+# - see: #2522, #2955
+#
+# An issue whose reading keeps the `unstated` placeholder is refused until
+# the seat restates it.
+#
+# The body names each concern that it touches in `## Concerns`, with
+# `within`, `consolidated: <what merged>` or `new concern: <why none fits>`.
+# A `new concern` is a row that the change adds. A module that the change
+# adds under a concern of other crates is refused, unless the body declares
+# it `consolidated` or a `new concern`.
+# - see: #2523, `ledger/concerns.sql`
+#
+# A change to the parser, its grammar or its syntax tree writes a `### Surface
+# form` subsection. The subsection holds a `cost:` line and a `demand: <site>`
+# line. The goldens of `corpus:goldens` ask for none.
+# - see: #2527, #2756
+#
+# A closing keyword closes an issue only from the head's `Closes #n` lines.
+# The task refuses one anywhere else, because GitHub closes the issue on
+# merge.
+# - see: #2980
+#
+# Each body answers `## Refactoring` with `yes`, `maybe` or `no`. A `yes` or a
+# `maybe` holds the table `| Kind | Where | Observation |`. `check:refactoring`
+# resolves each `Where` against the rustdoc JSON, and builds that JSON when a
+# `Where` needs it.
+# - see: #2884
+#
+# A body answers its issues' `## Engineering` with measured numbers. A
+# `spec_clause_traversal` waiver or an `economy:` ceiling that the change adds
+# cites the open issue that removes it.
+# - see: #5039, `.config/bodies/ceilings.bash`
+#
+# The rule is `opening.jq`, and it reads the sections through `sections.jq`.
+# `check:claims` holds its cases. A `note:` line that it prints does not
+# refuse.
+# - see: `.config/bodies/opening.jq`
+#
+# Each issue that the body works passes `unit:check` and carries the
+# coordinator's `shape:signed`, an epic or a `collector` aside. The seat that
+# writes an issue's sections pages for the label and continues the work. The
+# landing waits for the label.
+# - see: #3134, `.config/bodies/signed.jq`
+#
+# A missing label is a wait. When nothing else refuses, the task prints its
+# `wait:` line and an `arm:` line for `pr:await` on the issue. Then it exits
+# 0.
+# - see: #4164
+#
+# A body that works a `collector` says `Advances` and never closes it. It
+# lists the rows that it clears under `## Rows`, each an open row as the
+# collector keys it.
+# - see: #3326
 #
 # Vault pages are cited by their mint (#2793). With the vault checkout
 # `$XDG_CONFIG_HOME/gandr/references` names, the task writes each page's
@@ -4839,7 +4865,8 @@ for reading in "${opening_readings[@]}"; do
   if [[ $reading != vault ]]; then printf '%s\n' "${!reading}" > "$vaultdir/$reading.json"; fi
 done
 findings=$(opening_input "$vaultdir" "$own" "$body" | jq -r -L "$config_dir/bodies" -L "$config_dir/bench" -f "$config_dir/bodies/opening.jq")
-# Each issue the body works is sectioned and signed (#3134, `signed.jq`).
+# Each issue that the body works has its sections and its sign-off.
+# - see: #3134, `signed.jq`
 signed=$(jq -n --slurpfile issues <(printf '%s\n' "$issues") '{issues: $issues[0]}' \
   | jq -r -L "$config_dir/bodies" --argjson concerns "$(jq -c .rows <<< "$concerns")" --argjson cutoff "$(jq -R -s -f "$config_dir/bodies/cutoff.jq" "$config_dir/references/window.toml")" -f "$config_dir/bodies/signed.jq")
 if [[ -n $signed ]]; then findings=${findings:+$findings$'\n'}$signed; fi
@@ -4849,9 +4876,10 @@ absorbing=$(jq -n --rawfile body "$body" --slurpfile issues <(printf '%s\n' "$is
   '{body: $body, issues: $issues[0], absorption: $absorption[0]}' | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/absorbing.jq")
 if [[ -n $absorbing ]]; then findings=${findings:+$findings$'\n'}$absorbing; fi
 rm -rf "$vaultdir"
-# A `wait:` line names a future event, never a refusal (#4164): with nothing
-# else refused, the task prints it and its `arm:` line and exits 0, the seat
-# arms `pr:await`, and its exit wakes the seat to run `pr:open` again.
+# A `wait:` line names a future event, never a refusal. When nothing else
+# refuses, the task prints it and its `arm:` line and exits 0. The seat
+# starts `pr:await`, and its exit wakes the seat to run `pr:open` again.
+# - see: #4164
 if [[ -n "$findings" ]]; then
   if grep -qvE '^(note|wait|arm): ' <<< "$findings"; then echo "$findings" >&2; exit 2; fi
   if grep -q '^arm: ' <<< "$findings"; then echo "$findings"; exit 0; fi
@@ -5561,10 +5589,10 @@ if [[ "$draft" == true ]]; then gh pr ready "$number" -R "$repo" > /dev/null; fi
 echo "#$number released: its next \`pr:watch\` lands it once green"
 '''
 
-# The wake-up a seat arms when `pr:open` waits on a future event (#4164),
-# from the `arm:` line `pr:open` prints. It polls the issue or the top pull
-# request it names every 30 seconds, and exits the moment its event happens,
-# printing one line and nothing else on stdout (`.config/pr-stack/await.jq`):
+# The wake-up that a seat arms from the `arm:` line of `pr:open`, when
+# `pr:open` waits for a future event. It polls the issue or the top pull
+# request every 30 seconds. It exits when its event occurs, and it prints one
+# line on stdout:
 #   signed #n         the issue carries `shape:signed` (exit 0)
 #   top-merged #n     the top merged (exit 0)
 #   top-current #n    the top holds every change of the trunk the branch
@@ -5574,9 +5602,11 @@ echo "#$number released: its next \`pr:watch\` lands it once green"
 #   issue-closed #n   the issue closed (exit 1)
 #   top-closed #n     the top closed without merging (exit 1)
 #   await-timeout #n  the deadline passed (exit 2)
-# On an exit 0 the seat runs `pr:open` again; any other needs a hand. A
-# reading that fails, a rate-limited one among them, is tried again at the
-# next poll. It runs in the branch's worktree, which `top-current` reads.
+# - see: #4164, `.config/pr-stack/await.jq`
+#
+# On an exit 0 the seat runs `pr:open` again. Each other exit needs a hand.
+# A failed read, a rate-limited one among them, gets a new try at the next
+# poll. The task runs in the branch's worktree, which `top-current` reads.
 ["pr:await"]
 description = "Wait for the future event pr:open waits on: an issue's sign-off, or a top that merged, is current or conflicts"
 quiet = true
@@ -5596,9 +5626,10 @@ source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
 deadline=$((SECONDS + timeout))
-# The lock's key: one wait a number on a host (#4268), so a second
+# The lock's key gives one wait for each number on a host. A second
 # `pr:await` on the same issue or pull request is refused while the first
 # runs.
+# - see: #4268
 subject=#$number
 key=$number
 await_lock=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch/$key.await
@@ -5609,14 +5640,17 @@ if [[ -f $await_lock ]] && kill -0 "$(< "$await_lock")" 2> /dev/null; then
 fi
 echo $$ > "$await_lock"
 trap 'rm -f "$await_lock"' EXIT
-# One poll's reading, as `awaited` reads it: an issue's state and labels; or
-# a pull request's state, merge state and whether it still lacks a trunk
-# change the branch builds on. An open pull request is
-# read from the host's one shared reading of the open pull requests
-# (`pulls_reading`), so the 30 s polls of every wait on the host cost one
-# query between them (#5061). Only an issue, or a pull request no longer
-# open, is read alone. The poll calls it as a condition, where `set -e` does
-# not hold, so each step that can fail fails the reading itself (#4803).
+# One poll gives the reading that `awaited` reads. For an issue, the reading
+# holds its state and its labels. For a pull request, it holds the state, the
+# merge state and a flag for a missing trunk change. The host shares one
+# reading of its open pull requests between all its waits. Thus one query
+# serves all the polls on a host.
+# - see: #5061, `pulls_reading`
+#
+# The poll reads an issue alone, and a pull request that is not open. It
+# calls the reading as a condition, where `set -e` does not hold. Thus each
+# step that can fail fails the reading itself.
+# - see: #4803
 reading() {
   local all issue pull head lacked lacks=false
   all=$(pulls_reading) || return 1

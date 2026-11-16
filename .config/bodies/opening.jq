@@ -268,10 +268,11 @@ def citations:
   | select(any($read_in[]; any(.under[]; . == $page.name or . == "vault:\($page.mint)") and any(.crates[]; . == $crate)) | not)
   | "`crates/\($crate)` cites no `vault:\($page.mint)` (`\($page.name)`), a primary source of #\($page.n), and the change touches its sources: add `- `vault:\($page.mint)` — <newest|dependency|anchor|exemplar>: <what it decides>` to the `# References` of the module it decides something for, or name the crate under the page's `## Sources read` item as `  - read in: crates/\($crate) — <what the change does there>` if the page decided nothing there, or mark the page `read: <what it informed>` if it decided nothing in the code, then run `pr:open` again";
 
-# The refusals of `## Readings`: every axis answered in one of the four forms
-# once a unit is worked, and a selected axis left unanswered departed from.
-# A unit is worked when an issue the body works has a `## Readings` row
-# naming an axis, or the body has a `## Readings` of its own.
+# The refusals of `## Readings`. When the body works a unit, it answers each
+# axis in one of the four forms. A selected axis without an `answered:` form
+# takes a `departed:` item. The body works a unit when an issue of the body
+# has a `## Readings` row that names an axis. A `## Readings` of the body's
+# own also makes it a unit.
 def readings:
   [(.issues // [])[] | .number as $n | .body | selected[] | {n: $n, axis: .}] as $asked
   | (any((.issues // [])[]; .body // "" | marks)
