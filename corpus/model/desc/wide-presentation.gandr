@@ -1,0 +1,354 @@
+// This source holds two presentations wider than one round of the checker's
+// unfolding fuel. `Named` has 64 constants at `String`. `Flags` has 48
+// constants at `Bool`. The entries of each model check at the type that its
+// presentation computes.
+//
+// `std.build`'s `modelType` computes the type of a presentation's entries,
+// one entry for each constant. A wide presentation unfolds in many steps. A
+// small budget for each round of the reading cannot unfold it.
+//
+// The checker reads a computed type with one budget for the whole reading.
+// It fills the solved holes of the type in one walk. So one round unfolds
+// the whole presentation.
+//
+// - see: #6046 — `modelType`
+// - see: #6181
+import std.build (modelType, Entry, Ended);
+
+/// A theory of 64 names.
+theory Named where {
+  /// Constant 0.
+  oper n0 : String;
+  /// Constant 1.
+  oper n1 : String;
+  /// Constant 2.
+  oper n2 : String;
+  /// Constant 3.
+  oper n3 : String;
+  /// Constant 4.
+  oper n4 : String;
+  /// Constant 5.
+  oper n5 : String;
+  /// Constant 6.
+  oper n6 : String;
+  /// Constant 7.
+  oper n7 : String;
+  /// Constant 8.
+  oper n8 : String;
+  /// Constant 9.
+  oper n9 : String;
+  /// Constant 10.
+  oper n10 : String;
+  /// Constant 11.
+  oper n11 : String;
+  /// Constant 12.
+  oper n12 : String;
+  /// Constant 13.
+  oper n13 : String;
+  /// Constant 14.
+  oper n14 : String;
+  /// Constant 15.
+  oper n15 : String;
+  /// Constant 16.
+  oper n16 : String;
+  /// Constant 17.
+  oper n17 : String;
+  /// Constant 18.
+  oper n18 : String;
+  /// Constant 19.
+  oper n19 : String;
+  /// Constant 20.
+  oper n20 : String;
+  /// Constant 21.
+  oper n21 : String;
+  /// Constant 22.
+  oper n22 : String;
+  /// Constant 23.
+  oper n23 : String;
+  /// Constant 24.
+  oper n24 : String;
+  /// Constant 25.
+  oper n25 : String;
+  /// Constant 26.
+  oper n26 : String;
+  /// Constant 27.
+  oper n27 : String;
+  /// Constant 28.
+  oper n28 : String;
+  /// Constant 29.
+  oper n29 : String;
+  /// Constant 30.
+  oper n30 : String;
+  /// Constant 31.
+  oper n31 : String;
+  /// Constant 32.
+  oper n32 : String;
+  /// Constant 33.
+  oper n33 : String;
+  /// Constant 34.
+  oper n34 : String;
+  /// Constant 35.
+  oper n35 : String;
+  /// Constant 36.
+  oper n36 : String;
+  /// Constant 37.
+  oper n37 : String;
+  /// Constant 38.
+  oper n38 : String;
+  /// Constant 39.
+  oper n39 : String;
+  /// Constant 40.
+  oper n40 : String;
+  /// Constant 41.
+  oper n41 : String;
+  /// Constant 42.
+  oper n42 : String;
+  /// Constant 43.
+  oper n43 : String;
+  /// Constant 44.
+  oper n44 : String;
+  /// Constant 45.
+  oper n45 : String;
+  /// Constant 46.
+  oper n46 : String;
+  /// Constant 47.
+  oper n47 : String;
+  /// Constant 48.
+  oper n48 : String;
+  /// Constant 49.
+  oper n49 : String;
+  /// Constant 50.
+  oper n50 : String;
+  /// Constant 51.
+  oper n51 : String;
+  /// Constant 52.
+  oper n52 : String;
+  /// Constant 53.
+  oper n53 : String;
+  /// Constant 54.
+  oper n54 : String;
+  /// Constant 55.
+  oper n55 : String;
+  /// Constant 56.
+  oper n56 : String;
+  /// Constant 57.
+  oper n57 : String;
+  /// Constant 58.
+  oper n58 : String;
+  /// Constant 59.
+  oper n59 : String;
+  /// Constant 60.
+  oper n60 : String;
+  /// Constant 61.
+  oper n61 : String;
+  /// Constant 62.
+  oper n62 : String;
+  /// Constant 63.
+  oper n63 : String;
+}
+
+/// A theory of 48 flags.
+theory Flags where {
+  /// Constant 0.
+  oper f0 : Bool;
+  /// Constant 1.
+  oper f1 : Bool;
+  /// Constant 2.
+  oper f2 : Bool;
+  /// Constant 3.
+  oper f3 : Bool;
+  /// Constant 4.
+  oper f4 : Bool;
+  /// Constant 5.
+  oper f5 : Bool;
+  /// Constant 6.
+  oper f6 : Bool;
+  /// Constant 7.
+  oper f7 : Bool;
+  /// Constant 8.
+  oper f8 : Bool;
+  /// Constant 9.
+  oper f9 : Bool;
+  /// Constant 10.
+  oper f10 : Bool;
+  /// Constant 11.
+  oper f11 : Bool;
+  /// Constant 12.
+  oper f12 : Bool;
+  /// Constant 13.
+  oper f13 : Bool;
+  /// Constant 14.
+  oper f14 : Bool;
+  /// Constant 15.
+  oper f15 : Bool;
+  /// Constant 16.
+  oper f16 : Bool;
+  /// Constant 17.
+  oper f17 : Bool;
+  /// Constant 18.
+  oper f18 : Bool;
+  /// Constant 19.
+  oper f19 : Bool;
+  /// Constant 20.
+  oper f20 : Bool;
+  /// Constant 21.
+  oper f21 : Bool;
+  /// Constant 22.
+  oper f22 : Bool;
+  /// Constant 23.
+  oper f23 : Bool;
+  /// Constant 24.
+  oper f24 : Bool;
+  /// Constant 25.
+  oper f25 : Bool;
+  /// Constant 26.
+  oper f26 : Bool;
+  /// Constant 27.
+  oper f27 : Bool;
+  /// Constant 28.
+  oper f28 : Bool;
+  /// Constant 29.
+  oper f29 : Bool;
+  /// Constant 30.
+  oper f30 : Bool;
+  /// Constant 31.
+  oper f31 : Bool;
+  /// Constant 32.
+  oper f32 : Bool;
+  /// Constant 33.
+  oper f33 : Bool;
+  /// Constant 34.
+  oper f34 : Bool;
+  /// Constant 35.
+  oper f35 : Bool;
+  /// Constant 36.
+  oper f36 : Bool;
+  /// Constant 37.
+  oper f37 : Bool;
+  /// Constant 38.
+  oper f38 : Bool;
+  /// Constant 39.
+  oper f39 : Bool;
+  /// Constant 40.
+  oper f40 : Bool;
+  /// Constant 41.
+  oper f41 : Bool;
+  /// Constant 42.
+  oper f42 : Bool;
+  /// Constant 43.
+  oper f43 : Bool;
+  /// Constant 44.
+  oper f44 : Bool;
+  /// Constant 45.
+  oper f45 : Bool;
+  /// Constant 46.
+  oper f46 : Bool;
+  /// Constant 47.
+  oper f47 : Bool;
+}
+
+/// The entries of a model of `Named`.
+def namedEntries(m : Model Named) -> modelType(Named) {
+  Entry m.n0 (Entry m.n1 (Entry m.n2 (Entry m.n3 (Entry m.n4 (Entry m.n5 (Entry m.n6 (Entry m.n7 (Entry m.n8 (Entry m.n9 (Entry m.n10 (Entry m.n11 (Entry m.n12 (Entry m.n13 (Entry m.n14 (Entry m.n15 (Entry m.n16 (Entry m.n17 (Entry m.n18 (Entry m.n19 (Entry m.n20 (Entry m.n21 (Entry m.n22 (Entry m.n23 (Entry m.n24 (Entry m.n25 (Entry m.n26 (Entry m.n27 (Entry m.n28 (Entry m.n29 (Entry m.n30 (Entry m.n31 (Entry m.n32 (Entry m.n33 (Entry m.n34 (Entry m.n35 (Entry m.n36 (Entry m.n37 (Entry m.n38 (Entry m.n39 (Entry m.n40 (Entry m.n41 (Entry m.n42 (Entry m.n43 (Entry m.n44 (Entry m.n45 (Entry m.n46 (Entry m.n47 (Entry m.n48 (Entry m.n49 (Entry m.n50 (Entry m.n51 (Entry m.n52 (Entry m.n53 (Entry m.n54 (Entry m.n55 (Entry m.n56 (Entry m.n57 (Entry m.n58 (Entry m.n59 (Entry m.n60 (Entry m.n61 (Entry m.n62 (Entry m.n63 Ended)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+}
+
+/// The entries of a model of `Flags`.
+def flagEntries(m : Model Flags) -> modelType(Flags) {
+  Entry
+    m.f0
+    (Entry
+      m.f1
+      (Entry
+        m.f2
+        (Entry
+          m.f3
+          (Entry
+            m.f4
+            (Entry
+              m.f5
+              (Entry
+                m.f6
+                (Entry
+                  m.f7
+                  (Entry
+                    m.f8
+                    (Entry
+                      m.f9
+                      (Entry
+                        m.f10
+                        (Entry
+                          m.f11
+                          (Entry
+                            m.f12
+                            (Entry
+                              m.f13
+                              (Entry
+                                m.f14
+                                (Entry
+                                  m.f15
+                                  (Entry
+                                    m.f16
+                                    (Entry
+                                      m.f17
+                                      (Entry
+                                        m.f18
+                                        (Entry
+                                          m.f19
+                                          (Entry
+                                            m.f20
+                                            (Entry
+                                              m.f21
+                                              (Entry
+                                                m.f22
+                                                (Entry
+                                                  m.f23
+                                                  (Entry
+                                                    m.f24
+                                                    (Entry
+                                                      m.f25
+                                                      (Entry
+                                                        m.f26
+                                                        (Entry
+                                                          m.f27
+                                                          (Entry
+                                                            m.f28
+                                                            (Entry
+                                                              m.f29
+                                                              (Entry
+                                                                m.f30
+                                                                (Entry
+                                                                  m.f31
+                                                                  (Entry
+                                                                    m.f32
+                                                                    (Entry
+                                                                      m.f33
+                                                                      (Entry
+                                                                        m.f34
+                                                                        (Entry
+                                                                          m.f35
+                                                                          (Entry
+                                                                            m.f36
+                                                                            (Entry
+                                                                              m.f37
+                                                                              (Entry
+                                                                                m.f38
+                                                                                (Entry
+                                                                                  m.f39
+                                                                                  (Entry
+                                                                                    m.f40
+                                                                                    (Entry
+                                                                                      m.f41
+                                                                                      (Entry
+                                                                                        m.f42
+                                                                                        (Entry
+                                                                                          m.f43
+                                                                                          (Entry
+                                                                                            m.f44
+                                                                                            (Entry
+                                                                                              m.f45
+                                                                                              (Entry
+                                                                                                m.f46
+                                                                                                (Entry
+                                                                                                  m.f47
+                                                                                                  Ended)))))))))))))))))))))))))))))))))))))))))))))))
+}

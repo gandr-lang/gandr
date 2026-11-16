@@ -1,0 +1,2 @@
+def today = #!{ echo $!{ date }}; } ;
+def kept = 1 ;

@@ -1,0 +1,4 @@
+module P :> *{
+  type Spent = Cap[1] { write },
+  type Moving = ?Spent. end
+} where {}

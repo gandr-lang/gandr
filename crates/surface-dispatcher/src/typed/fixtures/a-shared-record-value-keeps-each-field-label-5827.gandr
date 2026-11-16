@@ -1,0 +1,5 @@
+def pair() -> -F *{l : Unit, r : Unit} {
+  let a = pure *{};
+  let b = pure *{};
+  pure *{l = a, r = a}
+}
