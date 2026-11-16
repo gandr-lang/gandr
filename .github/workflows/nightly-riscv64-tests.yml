@@ -10,6 +10,12 @@ name: nightly-riscv64-tests
 # runner compiles the tests for riscv64 and packs them in a nextest archive.
 # The riscv64 runner runs the archive on its own instruction set. The lane
 # starts only from the schedule or a dispatch, so it runs no fork code.
+#
+# The riscv64 host is not online every night. The compile runs each night,
+# so the cross build of the tests stays checked. The test job runs only while
+# a runner with the label `RISCV64` is online. A night with no such runner
+# skips it and says so.
+# - see: `.config/integration/riscv64.jq`
 on:
   schedule:
     - cron: "0 5 * * *"
@@ -58,6 +64,45 @@ jobs:
         name: link the checkout at the source path of the archive
         run: ln -sfn "$GITHUB_WORKSPACE" "$GANDR_RISCV64_SOURCE"
 
+  # Whether a riscv64 runner is online. The read needs the App's token that
+  # holds `Administration: read`, so a fork or a refused read skips the test.
+  runners:
+    name: read whether a riscv64 runner is online
+    if: ${{ github.repository_owner == 'gandr-lang' }}
+    runs-on: ubuntu-24.04
+    permissions: *contents-read
+    timeout-minutes: 5
+    outputs:
+      online: ${{ steps.read.outputs.online || 'false' }}
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: check out the rule
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .config/integration/riscv64.jq
+          sparse-checkout-cone-mode: false
+      - name: mint the token that reads the runners
+        id: token
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
+          permission-administration: read
+      - name: read the runners
+        id: read
+        if: ${{ steps.token.outputs.token != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh api "repos/$GH_REPO/actions/runners?per_page=100" --jq '{runners}' | jq -c -f .config/integration/riscv64.jq | jq -r '"online=\(.online)", "line=\(.line)"' >> "$GITHUB_OUTPUT"
+      - name: say whether the test runs
+        env:
+          LINE: ${{ steps.read.outputs.line || 'The riscv64 jobs skip, since the lane reads no self-hosted runner.' }}
+        run: printf '%s\n' "$LINE" >> "$GITHUB_STEP_SUMMARY"
+
   # The compile runs on the 32 cores of an x86-64 host of ours. The host's
   # path holds the cross linker and its riscv64 C library. The host's runners
   # share one kept target directory under the runner user's cache, so the
@@ -99,7 +144,8 @@ jobs:
 
   test:
     name: test (riscv64)
-    needs: archive
+    needs: [archive, runners]
+    if: ${{ needs.runners.outputs.online == 'true' }}
     runs-on: *riscv64
     permissions: *contents-read
     # The run takes about 15 minutes. It can first wait for one measure that
