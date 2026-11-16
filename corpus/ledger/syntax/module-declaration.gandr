@@ -1,0 +1,5 @@
+/// `module_declaration`: a module: a named body of definitions.
+module Counter where {
+  @[checks]
+  def zero = 0;
+}
