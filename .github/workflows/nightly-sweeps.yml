@@ -69,7 +69,7 @@ jobs:
     runs-on: &linux ubuntu-24.04-arm
     permissions: &image-read-permissions
       contents: read
-      packages: read
+      packages: write
     steps:
       # A lane sets `CI_COMMIT` to the commit of the test state it restores.
       # Every other job checks out the run's own commit.
@@ -677,7 +677,7 @@ jobs:
     runs-on: *linux
     permissions:
       contents: read
-      packages: read
+      packages: write
       actions: read
       issues: write
       pull-requests: read
