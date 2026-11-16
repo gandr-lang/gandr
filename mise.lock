@@ -176,6 +176,11 @@ version = "6.3.2"
 backend = "cargo:cargo-dylint"
 specifiers = ["6.3.2"]
 
+[[tools."cargo:bindgen-cli"]]
+version = "0.72.1"
+backend = "cargo:bindgen-cli"
+specifiers = ["0.72.1"]
+
 [[tools."cargo:cargo-mutants"]]
 version = "27.1.0"
 backend = "cargo:cargo-mutants"

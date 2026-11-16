@@ -49,7 +49,7 @@ env:
   MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
   MISE_CARGO_BINSTALL_NATIVE: "true"
   # Must match landing-checks.yml and the image. The image checks the list at build time.
-  MISE_DISABLE_TOOLS: "cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
+  MISE_DISABLE_TOOLS: "cargo:bindgen-cli,cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
   # Must match landing-checks.yml: a job's mise writes no line of `mise.lock` (#6976).
   MISE_LOCKFILE_MODE: merge
   # Empty selects the bare runner. A set value selects the pin-file tag,
@@ -480,12 +480,13 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-  # The riscv64 build runs on a runner of our own. The runner's account holds
-  # the toolchain, mold and jq, and no mise. So the job runs the build's
-  # script alone. The build holds the host lock `par` that the host's
-  # measures hold, so a measure and the build do not load each other. It can
-  # first wait for one measure: 27 minutes at the most in the record.
-  # - see: #6945
+  # The riscv64 build runs on a runner of our own. The runner's account reads
+  # the builder's tools, the bindgen command among them, through the host's
+  # mise install directory, and installs none. The build holds the host lock
+  # `par` that the host's measures hold, so a measure and the build do not
+  # load each other. It can first wait for one measure: 27 minutes at the
+  # most in the record.
+  # - see: #6945, #7008
   #
   # Only the schedule and a dispatch of `main` in gandr-lang/gandr reach the
   # runner, so no fork and no branch runs code on it. Its time counts in no
@@ -504,14 +505,17 @@ jobs:
     steps:
       - *git-checkout
       # On riscv64 the ring's liburing crate makes its bindings with the
-      # bindgen command. `BINDGEN_PATH` names the command. The host holds
-      # clang and no mise. So the job installs the command into the runner's
-      # cargo home one time, and each later night finds it there.
+      # bindgen command, and `BINDGEN_PATH` names it. `mise.toml` pins the
+      # command, and the builder pushes its riscv64 build to the host. mise
+      # finds the pinned install also where the workflow disables the tool.
+      # The runner's account trusts the checkout's `mise.toml` for this step.
       # - see: #7720
-      - name: install the bindgen command
+      - name: find the bindgen command
+        env:
+          MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
         run: |
-          bin=$HOME/.cargo/bin/bindgen
-          [[ $("$bin" --version 2> /dev/null) == "bindgen 0.72.1" ]] || cargo install --locked --version 0.72.1 bindgen-cli
+          bin=$(mise where cargo:bindgen-cli)/bin/bindgen
+          "$bin" --version
           echo "BINDGEN_PATH=$bin" >> "$GITHUB_ENV"
       - *chain-build
       - *chain-upload
