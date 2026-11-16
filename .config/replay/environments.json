@@ -1,0 +1,24 @@
+[
+  {
+    "name": "#7485: the tree pins its own toolchain and the caller carries another, so the check reads the tree's",
+    "pin": "nightly-case",
+    "check": "[ \"$RUSTUP_TOOLCHAIN\" = nightly-case ] || exit 101",
+    "status": 0,
+    "says": null
+  },
+  {
+    "name": "#7485: a variable that the tree's mise configuration sets reaches the check, not the caller's value",
+    "pin": "nightly-case",
+    "env": "GANDR_REPLAY_CASE = \"tree\"",
+    "check": "[ \"$GANDR_REPLAY_CASE\" = tree ] || exit 101",
+    "status": 0,
+    "says": null
+  },
+  {
+    "name": "#7485: a tree that pins no toolchain is refused by name, and its check does not run under the caller's",
+    "pin": null,
+    "check": "touch \"$GANDR_REPLAY_RAN\"",
+    "status": 2,
+    "says": "pins no toolchain in rust-toolchain.toml"
+  }
+]

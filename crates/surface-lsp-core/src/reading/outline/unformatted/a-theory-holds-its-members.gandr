@@ -1,0 +1,18 @@
+theory Shapes where {
+  sort M : Type;
+  data Unit : M;
+  oper mul : (x : M, y : M) --> M;
+  obs size : (m : M) --> M;
+  rule assoc : mul (mul x y) z ==> mul x (mul y z);
+  boundary Square { tl, tr, bl, br };
+  face left = { tl, bl };
+  ext Cell = M on left is zero;
+}
+theory Monoid where {
+  include Shapes;
+  oper one : () --> M;
+}
+codata Stream : Type where {
+  head : M;
+  tail : Stream;
+}
