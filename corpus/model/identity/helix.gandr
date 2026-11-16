@@ -1,0 +1,44 @@
+/// This source states the winding number of a loop by transport in the
+/// helix over the circle. It follows cctt's `tests/bench/s1.cctt`, the first
+/// rung of the Brunerie ladder, and the HoTT book's § 8.1.
+///
+/// The successor of the presented integers is an equivalence, since its rules
+/// cancel a successor with a predecessor. So `ua` makes it a path from `Int`
+/// to itself. The helix is `Int` at the point, and that path along the loop.
+/// The winding number of a loop is the transport of zero along it in the
+/// helix.
+///
+/// The checker computes the transport along the empty word. A transport along
+/// the loop does not compute yet.
+///
+/// - see: #6268
+// The circle, the presented integers and their successor.
+import "./circle-base.gandr";
+
+/// The predecessor undoes the successor, by the rule `P (S x) <=> x`.
+def downUp(x : Int) -> Path[.A = Int](down (up x), x) = Path.here x
+
+/// The successor undoes the predecessor, by the rule `S (P x) <=> x`.
+def upDown(x : Int) -> Path[.A = Int](up (down x), x) = Path.here x
+
+/// The successor is a bi-invertible map with the predecessor as both inverses.
+def upEquiv : Int ≃ Int = *{up, *{*{down, downUp}, *{down, upDown}}};
+
+/// The `upPath` path is cctt's `sucPathℤ`, the successor as a path in the
+/// universe.
+def upPath : Path[.A = Type](Int, Int) = ua upEquiv;
+
+/// The helix is the integers at the point and the successor path along the
+/// loop.
+def helix(x : Circle) -> Type =
+  match x where
+    | Base => return Int
+    | loop => upPath
+
+/// The `encode` function is cctt's `winding`: the transport of zero along a
+/// loop in the helix.
+def encode(p : Path[.A = Circle](Base, Base)) -> Int =
+  Path.walk (fun (x) { helix x }) p Z
+
+/// The empty word winds zero times.
+def encodeHere : Path[.A = Int](encode (Path.here Base), Z) = Path.here Z;
