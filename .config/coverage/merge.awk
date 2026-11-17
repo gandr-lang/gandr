@@ -1,6 +1,6 @@
 # One LCOV report from many: each line keeps its highest valid count across
-# every input. Each file stays once in first input order. It sorts line
-# records by number.
+# every input. Each file stays once in first input order. It orders its lines
+# from the lowest line number to the highest.
 #
 # A concurrent counter can read below zero. It can report
 # `18446744073709551616`, which is 2^64. A count of 2^63 or more is false.
