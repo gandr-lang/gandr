@@ -1,6 +1,6 @@
 // A record type's faces refused: one face holds a label the record lacks, and
-// one face is named twice. A reader `.#{` refused: it names a field or a face
-// that the record type lacks. Another reader fixes a field at a value of
+// one face is named twice. An extension type is refused when it names a field
+// or a face that the record type lacks. Another fixes a field at a value of
 // another type. A record literal at a patched type states a fixed field at
 // another value, and so does a configuration coerced in to a patched type. A
 // system of faces names one face twice, and another system's faces disagree
