@@ -16,11 +16,11 @@ data Two : Type where
 
 /// A box of a computation that is no function.
 @[refuses("ShapeMismatch")]
-def no_function() -> +U (-F Two) =
+def no_function() -> () -> Two =
   fun (u) {
-    return u
+    u
   }
 
 /// No type is stated.
 @[refuses("NotSynthesisable")]
-def unstated = fun (u) { return u };
+def unstated = fun (u) { u };

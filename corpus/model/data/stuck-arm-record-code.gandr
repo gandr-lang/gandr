@@ -57,5 +57,5 @@ def twoReads(u : Unit) -> read(Emp, read(Emp, Unit)) =
   *{Zero, *{Zero, u}}
 
 /// `foldedReads` converts a two-read fold with explicit reads.
-def foldedReads(_u : Unit) -> (read(Emp, read(Emp, Unit))) -> fold(Succ(Succ(Zero)), Emp) =
-  return fun (h) { h }
+def foldedReads(_u : Unit) -> read(Emp, read(Emp, Unit)) -> fold(Succ (Succ Zero), Emp) =
+  fun (h) { h }

@@ -27,10 +27,10 @@ module Passing : Model(State.Eff) with sort S = Integer where
   type C = Integer -> Integer;
   /// `get` gives the current state to its continuation.
   def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
-    thunk { fun (s) { let after = k s; after s } }
+    fun (s) { let after = k s; after s }
   /// `put` runs its continuation at the stored state.
   def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
-    thunk { fun (_old) { k s } }
+    fun (_old) { k s }
 
 /// `putThenGet` stores four and reads it twice.
 @[runs("44")]
@@ -46,10 +46,10 @@ module Overwriting : Model(StatePutPut) with sort S = Integer where
   type C = Integer -> Integer;
   /// `get` gives the current state to its continuation.
   def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer =
-    thunk { fun (s) { let after = k s; after s } }
+    fun (s) { let after = k s; after s }
   /// `put` runs its continuation at the stored state.
   def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
-    thunk { fun (_old) { k s } }
+    fun (_old) { k s }
   /// `putPut` keeps the second stored value.
   def putPut(s : Integer, u : Integer, k : Integer -> Integer) -> Path(
     put s (put u k),

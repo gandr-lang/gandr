@@ -31,9 +31,10 @@ def natOr(n : Nat) -> Type =
     | Succ(_m) => return Two
 
 /// The identity at `g`, its lambda returned as written.
+@[explicit_exits]
 def idA(g : Type) -> g -> g =
   return fun (x) {
-    x
+    return x
   }
 
 /// The identity at `g`, its lambda bare: the same core as `idA`.
@@ -58,7 +59,8 @@ def block_tail() -> Two -> Two =
   }
 
 /// Each arm ends in a lambda, one bare and one returned.
-def arms(choice : Two) -> +U ((u : Two) -> -F Two) =
+@[explicit_exits]
+def arms(choice : Two) -> Two -> Two =
   match choice where
     | Left => fun (u) {
       return u
@@ -68,7 +70,8 @@ def arms(choice : Two) -> +U ((u : Two) -> -F Two) =
     }
 
 /// The later arm ends in a bare lambda, after an arm that returns one.
-def right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
+@[explicit_exits]
+def right_arm(choice : Two) -> Two -> Two =
   match choice where
     | Left => return fun (u) {
       return u
@@ -78,7 +81,8 @@ def right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
     }
 
 /// The arm at `Zero` ends in a bare lambda under a refined parameter.
-def refined_arm(n : Nat, _x : natOr(n)) -> +U ((u : Nat) -> -F Nat) =
+@[explicit_exits]
+def refined_arm(n : Nat, _x : natOr(n)) -> Nat -> Nat =
   match n where
     | Zero => fun (u) {
       return u

@@ -192,19 +192,19 @@ pub def exampleSpec(b : Value, post : Value -> Type) -> Type =
 
 /// `example` meets its specification at every value and postcondition, given
 /// `identity`'s: Fig. 2's lemma.
-pub def exampleMeets(b : Value, post : Value -> Type) -> (exampleSpec(
+pub def exampleMeets(b : Value, post : Value -> Type) -> exampleSpec(
   b,
   post
-)) -> wpFn(identitySpec, exampleBody, b, post) =
+) -> wpFn(identitySpec, exampleBody, b, post) =
   match b where
-    | True => return fun (h) { h }
-    | False => return fun (h) { h }
-    | Int(_n) => return fun (h) { h }
+    | True => fun (h) { h }
+    | False => fun (h) { h }
+    | Int(_n) => fun (h) { h }
 
 /// At false the early return answers zero under every table: the call of
 /// `identity` is never reached.
 pub def exampleReturnsPast(
   spec : (Item, Value, Value -> Type) -> Type,
   post : Value -> Type
-) -> (post(Int(0))) -> wpFn(spec, exampleBody, False, post) =
-  return fun (h) { h }
+) -> post(Int 0) -> wpFn(spec, exampleBody, False, post) =
+  fun (h) { h }

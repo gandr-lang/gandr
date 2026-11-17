@@ -78,7 +78,7 @@ pub module Standard : Model(CwF) where
   /// A type in a context is a family over it.
   type Ty(g : Con) = g -> Type;
   /// A term is a section: at each point, a value of the family there.
-  type Tm(g : Con, a : Ty(g)) = (x : g) -> a(x);
+  type Tm(g : Con, a : Ty g) = (x : g) -> a(x);
 
   /// The empty context has one point.
   def empty() -> Type { return Unit }
@@ -87,34 +87,34 @@ pub module Standard : Model(CwF) where
   def ext(g : Type, a : g -> Type) -> Type { return type(*{x : g, y : a(x)}) }
 
   /// The identity function.
-  def id(g : Type) -> g -> g { return fun (x) { x } }
+  def id(g : Type) -> g -> g { fun (x) { x } }
 
   /// Composition of two functions.
   def comp(d : Type, g : Type, e : Type, s : d -> g, t : e -> d) -> e -> g =
-    return fun (x) { s (t x) }
+    fun (x) { s (t x) }
 
   /// Every point goes to the one point.
-  def eps(g : Type) -> g -> Unit { return fun (_x) { *{} } }
+  def eps(g : Type) -> g -> Unit { fun (_x) { *{} } }
 
   /// A family after a function: it reads the family at the function's result.
   def subTy(g : Type, d : Type, a : g -> Type, s : d -> g) -> d -> Type =
-    return fun (x) { a (s x) }
+    fun (x) { a (s x) }
 
   /// A section read after a function.
   def subTm(g : Type, a : g -> Type, d : Type, t : (x : g) -> a(x), s : d -> g) -> (
     x : d
   ) -> a(s(x)) =
-    return fun (x) { t (s x) }
+    fun (x) { t (s x) }
 
   /// The first projection.
-  def p(g : Type, a : g -> Type) -> *{x : g, y : a(x)} -> g { return fun (z) { z.0 } }
+  def p(g : Type, a : g -> Type) -> *{x : g, y : a(x)} -> g { fun (z) { z.0 } }
 
   /// The point a pair holds first.
   def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }
 
   /// The second projection, at the family read at the first.
   def q(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =
-    return fun (z) { z.1 }
+    fun (z) { z.1 }
 
   /// The pair of a function and a section: each point goes to its image and
   /// to the section's value there.
@@ -125,7 +125,7 @@ pub module Standard : Model(CwF) where
     s : d -> g,
     t : (x : d) -> a(s(x))
   ) -> d -> *{x : g, y : a(x)} =
-    return fun (z) { *{s z, t z} }
+    fun (z) { *{s z, t z} }
 
 /// A family over the integers that is `Bool` at every point.
 def flags(_n : Integer) -> Type { return Bool }

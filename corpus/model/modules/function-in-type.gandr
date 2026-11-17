@@ -19,10 +19,10 @@ module Standard where
   def unit() -> Type { return Unit }
 
   /// The type its argument names.
-  def same(a : Type) -> Type { return a }
+  def same(a : Type) -> Type { a }
 
   /// A family that ignores its index.
-  def after(a : Type) -> Integer -> Type { return fun (x) { a } }
+  def after(a : Type) -> Integer -> Type { fun (x) { a } }
 
 /// The point, at the type a function of no arguments names.
 def point() -> Standard.unit() { *{} }

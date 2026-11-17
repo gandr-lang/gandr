@@ -24,10 +24,10 @@ pub def isVoid(n : Nat) -> Type =
 
 /// A function from the family at `n` to the naturals, whose arm at zero cases
 /// on no value.
-pub def absurdArm(n : Nat) -> (isVoid(n)) -> Nat =
+pub def absurdArm(n : Nat) -> isVoid(n) -> Nat =
   match n where
-    | Zero => return fun (u) { match u {} }
-    | Succ(_m) => return fun (_u) { return Zero }
+    | Zero => fun (u) { match u {} }
+    | Succ(_m) => fun (_u) { Zero }
 
 /// Past zero, the family is `Unit`, and the arm answers zero.
 @[runs("Zero")]
