@@ -769,7 +769,7 @@ pub fn every_former(noise: Noise) -> Program
 /// trivial.
 pub fn type_content(raw: &[crate::content::ContentNode]) -> crate::content::TypeContent
 {
-    crate::content::TypeContent::tabulated(raw, crate::boundary::NodeIndex::from(0_usize))
+    crate::content::TypeContent::tabulated(raw, gandr_core_content::NodeIndex::from(0_usize))
 }
 
 /// The unlocated content of an item whose roots `declaration` index the de

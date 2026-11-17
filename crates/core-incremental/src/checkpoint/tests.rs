@@ -211,7 +211,7 @@ fn a_take_past_another_answer_than_the_judgement_read_panics_6727()
     );
     let ordinal = ItemOrdinal::from(1_usize);
     let item = encode_item(program.arena(), program.layout(), ordinal);
-    let types = crate::content::TypeMemo::default();
+    let types = gandr_core_content::TypeMemo::default();
     let _taken = judgement.take(&mut context, &super::Taking {
         item: &item,
         declaration: program.items()[1].declaration(),
@@ -513,7 +513,7 @@ fn a_node_s_key_moves_only_with_its_content_7403()
                     body,
                     super::node_key(
                         (program.arena(), program.layout()),
-                        crate::content::ArenaNode::Value(body),
+                        gandr_core_content::ArenaNode::Value(body),
                     ),
                 ),
                 gandr_core_checker::DeclarationContent::Value { .. }
@@ -583,7 +583,7 @@ fn a_staged_type_keys_as_its_base_7403()
     let staged_thunk = arena.value_type_thunk(returns_staged);
     let key = |node| match super::node_key(
         (&arena, program.layout()),
-        crate::content::ArenaNode::ValueType(node),
+        gandr_core_content::ArenaNode::ValueType(node),
     ) {
         Maybe::Present(key) => key,
         Maybe::Absent(absent) => panic!("each type here has a key: {absent:?}"),

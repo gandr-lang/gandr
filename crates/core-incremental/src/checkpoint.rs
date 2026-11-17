@@ -312,7 +312,7 @@ pub enum Answer
     Located
     {
         /// The world the declaration is homed at.
-        home: crate::content::WorldContent,
+        home: gandr_core_content::WorldContent,
         /// Whether a run of it spent a capability.
         spending: gandr_core_checker::worlds::Spending,
     },
@@ -374,7 +374,7 @@ impl Answer
     /// - hypothesis: L3 — persisted typed and data answers are written from
     ///   this table.
     /// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
-    pub(crate) fn nodes(&self) -> &[crate::support::SupportedNode]
+    pub(crate) fn nodes(&self) -> &[gandr_core_content::SupportedNode]
     {
         match *(self) {
             Self::Untyped
@@ -3002,7 +3002,7 @@ struct Taking<'input>
     /// The edited program.
     layout: &'input Layout,
     /// The types encoded from the judgement's arena.
-    types: &'input crate::content::TypeMemo,
+    types: &'input gandr_core_content::TypeMemo,
     /// The answers of the items passed so far.
     supplied: &'input Supplied<'input>,
     /// The item's ordinal.
@@ -3748,8 +3748,8 @@ where
     let mut waiting: BTreeMap<ConstantIndex, Suspension> = BTreeMap::new();
     // The arena only grows within the pass, so each type it answers or
     // projects is encoded once; the judgement's arena has a memo of its own.
-    let types = crate::content::TypeMemo::default();
-    let judged_types = crate::content::TypeMemo::default();
+    let types = gandr_core_content::TypeMemo::default();
+    let judged_types = gandr_core_content::TypeMemo::default();
     #[cfg(feature = "instrument")]
     if let Maybe::Present(buffer) = observer.lend() {
         context.trace_into(buffer);
@@ -4034,7 +4034,7 @@ fn decided(
     context: &mut CheckingContext<'_>,
     item: &Encoded,
     declaration: &gandr_core_checker::Declaration,
-    (layout, types): (&Layout, &crate::content::TypeMemo),
+    (layout, types): (&Layout, &gandr_core_content::TypeMemo),
     waiting: &mut BTreeMap<ConstantIndex, Suspension>,
 ) -> (Decided, Supported)
 {
@@ -4119,7 +4119,7 @@ fn answer_in(
     context: &CheckingContext<'_>,
     declaration: &gandr_core_checker::Declaration,
     layout: &Layout,
-    types: &crate::content::TypeMemo,
+    types: &gandr_core_content::TypeMemo,
 ) -> Answer
 {
     let arena = context.arena();
@@ -5078,7 +5078,7 @@ fn located_stands(
             };
             match recorded(&answered.reference, Consultation::Located) {
                 Some(&Answer::Located { ref home, spending }) => current.is_some_and(|located| {
-                    crate::content::WorldContent::of(reader.layout, located.home()) == *home
+                    gandr_core_content::WorldContent::of(reader.layout, located.home()) == *home
                         && located.spending() == spending
                 }),
                 Some(_) | None => current.is_none_or(|located| {
@@ -5183,7 +5183,7 @@ fn answered(
     (support, own): (&Support, Option<Answered>),
     arena: &CoreArena,
     layout: &Layout,
-    types: &crate::content::TypeMemo,
+    types: &gandr_core_content::TypeMemo,
 ) -> Vec<Answered>
 {
     let mut answers: Vec<Answered> = Vec::with_capacity(
@@ -5201,7 +5201,7 @@ fn answered(
             answers.push(Answered {
                 reference: reference.clone(),
                 answer: Answer::Located {
-                    home: crate::content::WorldContent::of(layout, located.home()),
+                    home: gandr_core_content::WorldContent::of(layout, located.home()),
                     spending: located.spending(),
                 },
             });
@@ -5337,7 +5337,7 @@ fn canonical_support(mut support: Vec<Answered>) -> Vec<Answered>
                 && ty
                     .nodes()
                     .first()
-                    .is_some_and(|node| node.sort() == crate::content::Sort::ValueType)
+                    .is_some_and(|node| node.sort() == gandr_core_content::Sort::ValueType)
         },
         | Answer::Untyped => !present,
         Answer::Data(_) | Answer::Codata | Answer::Located { .. } | Answer::Entered { .. } => false,
@@ -5347,7 +5347,7 @@ fn answer_of(
     answer: Maybe<FormedValueType, signature_table::Absent>,
     arena: &CoreArena,
     layout: &Layout,
-    types: &crate::content::TypeMemo,
+    types: &gandr_core_content::TypeMemo,
 ) -> Answer
 {
     match answer {

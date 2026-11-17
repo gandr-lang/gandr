@@ -350,10 +350,12 @@ impl Placing<'_, '_, '_, '_, '_, '_>
                     .types
                     .content(self.projection.arena, self.projection.layout, node);
             let rooted = self.rooted(node);
-            let unresolved = content
-                .nodes()
-                .iter()
-                .any(|node| matches!(*node.former(), crate::content::ContentNode::Unresolved(_)));
+            let unresolved = content.nodes().iter().any(|node| {
+                matches!(
+                    *node.former(),
+                    gandr_core_content::ContentNode::Unresolved(_)
+                )
+            });
             let (content, anchors) = if unresolved {
                 (Maybe::Absent(seating::Absent::Unresolved), Vec::new())
             }

@@ -802,7 +802,7 @@ impl TableContent
             }
             funexts.push((at, steps));
         }
-        let (outside, places) = crate::content::tabled_roots(arena, layout, &placing.roots);
+        let (outside, places) = gandr_core_content::tabled_roots(arena, layout, &placing.roots);
         let (roots, remap) = merged(places);
         let mut content = Self {
             rows,
@@ -1504,7 +1504,7 @@ impl ReportContent
                         .collect(),
                 })
             });
-        let (outside, places) = crate::content::tabled_roots(arena, layout, &placing.roots);
+        let (outside, places) = gandr_core_content::tabled_roots(arena, layout, &placing.roots);
         let (roots, remap) = merged(places);
         let mut content = Self {
             elaboration,

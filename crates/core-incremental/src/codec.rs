@@ -1104,14 +1104,14 @@ fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
 /// - witness: `codec::tests::world_formers_round_trip_under_their_own_tags_3381`
 fn write_world<Out>(
     writer: &mut Writer<'_, Out>,
-    world: &crate::content::WorldContent,
+    world: &gandr_core_content::WorldContent,
 ) -> Result<(), CodecError>
 where
     Out: Sink,
 {
     match *world {
-        crate::content::WorldContent::Host => writer.tag(Tag(0)),
-        crate::content::WorldContent::Declared(ref reference) => {
+        gandr_core_content::WorldContent::Host => writer.tag(Tag(0)),
+        gandr_core_content::WorldContent::Declared(ref reference) => {
             writer.tag(Tag(1));
             write_reference(writer, reference)?;
         },
@@ -1133,11 +1133,11 @@ where
 /// - hypothesis: L3 — as [`write_world`].
 /// - witness: `codec::tests::world_formers_round_trip_under_their_own_tags_3381`
 #[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
-fn read_world(reader: &mut Reader<'_>) -> Result<crate::content::WorldContent, CodecError>
+fn read_world(reader: &mut Reader<'_>) -> Result<gandr_core_content::WorldContent, CodecError>
 {
     match reader.tag()?.0 {
-        0 => Ok(crate::content::WorldContent::Host),
-        1 => read_reference(reader).map(crate::content::WorldContent::Declared),
+        0 => Ok(gandr_core_content::WorldContent::Host),
+        1 => read_reference(reader).map(gandr_core_content::WorldContent::Declared),
         _ => Err(CodecError::Corrupt),
     }
 }
@@ -2339,7 +2339,7 @@ impl Places<'_>
     ) -> Result<ReportPlace, CodecError>
     {
         match reader.tag()?.0 {
-            0 => Ok(ReportPlace::Written(crate::boundary::Discovery::from(
+            0 => Ok(ReportPlace::Written(gandr_core_content::Discovery::from(
                 reader.count()?.0,
             ))),
             1 => {
@@ -5230,7 +5230,7 @@ fn read_located(reader: &mut Reader<'_>) -> Result<Located, CodecError>
 /// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
 fn write_data_roots<Out>(
     writer: &mut Writer<'_, Out>,
-    roots: &crate::content::DataRoots,
+    roots: &gandr_core_content::DataRoots,
 ) -> Result<(), CodecError>
 where
     Out: Sink,
@@ -5328,7 +5328,7 @@ where
 /// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
 /// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(32))]
-fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots, CodecError>
+fn read_data_roots(reader: &mut Reader<'_>) -> Result<gandr_core_content::DataRoots, CodecError>
 {
     let parameters = read_indices(reader)?;
     let count = reader.count()?;
@@ -5346,7 +5346,7 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
     }
     let (cells, indices, results) = match reader.tag()?.0 {
         0 => (
-            Maybe::Absent(crate::content::words::Absent::Unworded),
+            Maybe::Absent(gandr_core_content::words::Absent::Unworded),
             Vec::new(),
             Vec::new(),
         ),
@@ -5366,7 +5366,7 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
                 cells.push(gandr_kernel_term::FreeCell::new(source, target));
             }
             (
-                Maybe::Present(crate::content::CellsRoots {
+                Maybe::Present(gandr_core_content::CellsRoots {
                     sort,
                     reflexivities: gandr_kernel_term::Reflexivities::from(reflexivities),
                     cells,
@@ -5383,20 +5383,20 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots,
                 results.push(read_indices(reader)?);
             }
             (
-                Maybe::Absent(crate::content::words::Absent::Unworded),
+                Maybe::Absent(gandr_core_content::words::Absent::Unworded),
                 indices,
                 results,
             )
         },
         _ => return Err(CodecError::Corrupt),
     };
-    Ok(crate::content::DataRoots {
+    Ok(gandr_core_content::DataRoots {
         parameters,
         indices,
         constructors,
         results,
         kind,
-        presentation: crate::content::PresentationRoots { rules, cells },
+        presentation: gandr_core_content::PresentationRoots { rules, cells },
     })
 }
 
@@ -6927,17 +6927,17 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<SupportedNode>, CodecError>
             let width = *scopes.get(usize::from(child)).ok_or(CodecError::Corrupt)?;
             cover.push(read_selection(reader, width)?);
         }
-        parts.push(crate::support::NodeParts {
+        parts.push(gandr_core_content::NodeParts {
             former,
             cover,
             scope,
         });
     }
-    crate::support::assemble(parts).map_err(|fault| match fault {
-        crate::support::TableFault::Duplicate => CodecError::NonCanonical,
-        crate::support::TableFault::Child
-        | crate::support::TableFault::Cycle
-        | crate::support::TableFault::Cover(_) => CodecError::Corrupt,
+    gandr_core_content::assemble(parts).map_err(|fault| match fault {
+        gandr_core_content::TableFault::Duplicate => CodecError::NonCanonical,
+        gandr_core_content::TableFault::Child
+        | gandr_core_content::TableFault::Cycle
+        | gandr_core_content::TableFault::Cover(_) => CodecError::Corrupt,
     })
 }
 
@@ -10028,7 +10028,7 @@ where
         | Ok(Answer::Codata) => reader.bytes.get(before) == Some(&4),
         | Ok(Answer::Located { ref home, spending }) => {
             reader.bytes.get(before) == Some(&5)
-                && (*home != crate::content::WorldContent::Host
+                && (*home != gandr_core_content::WorldContent::Host
                     || spending == gandr_core_checker::worlds::Spending::Spent)
         },
         | Ok(Answer::Entered { .. }) => reader.bytes.get(before) == Some(&6),
@@ -10062,7 +10062,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
             let home = read_world(reader)?;
             let spending = read_spending(reader)?;
             // The host's world, unspent, is what no located answer states.
-            if home == crate::content::WorldContent::Host
+            if home == gandr_core_content::WorldContent::Host
                 && spending == gandr_core_checker::worlds::Spending::Unspent
             {
                 return Err(CodecError::NonCanonical);
@@ -10080,7 +10080,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
             // entered answer states.
             if spending == gandr_core_checker::worlds::Spending::Unspent
                 && entry.as_ref().is_some_and(|entry| {
-                    entry.home == crate::content::WorldContent::Host
+                    entry.home == gandr_core_content::WorldContent::Host
                         && entry.capabilities.is_empty()
                 })
             {
@@ -10423,7 +10423,7 @@ fn read_rooted(
         1 => {
             let item = read_reference(reader)?;
             let root = crate::boundary::RootOrdinal::from(reader.count()?.0);
-            let at = crate::boundary::Discovery::from(reader.count()?.0);
+            let at = gandr_core_content::Discovery::from(reader.count()?.0);
             Ok(Maybe::Present(Rooted { item, root, at }))
         },
         0 => Ok(Maybe::Absent(read_listed(reader, &ROOTINGS)?)),
@@ -10482,11 +10482,11 @@ fn read_anchors(reader: &mut Reader<'_>) -> Result<Vec<crate::content::Anchor>, 
     let count = reader.count()?;
     let mut anchors = Vec::new();
     for _ in 0 .. count.0 {
-        let at = crate::boundary::Discovery::from(reader.count()?.0);
+        let at = gandr_core_content::Discovery::from(reader.count()?.0);
         let length = reader.count()?;
         let mut path = Vec::new();
         for _ in 0 .. length.0 {
-            path.push(crate::boundary::ChildPosition::from(reader.count()?.0));
+            path.push(gandr_core_content::ChildPosition::from(reader.count()?.0));
         }
         anchors.push(crate::content::Anchor { path, at });
     }
@@ -10522,7 +10522,7 @@ fn read_placed(reader: &mut Reader<'_>) -> Result<Placed, CodecError>
     let tag = reader.tag()?;
     let index = reader.count()?.0;
     match tag.0 {
-        0 => Ok(Placed::At(crate::boundary::Discovery::from(index))),
+        0 => Ok(Placed::At(gandr_core_content::Discovery::from(index))),
         1 => Ok(Placed::Outside(crate::boundary::OutsideIndex::from(index))),
         _ => Err(CodecError::Corrupt),
     }

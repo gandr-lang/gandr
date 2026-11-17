@@ -35,7 +35,9 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::Declaration;
+use gandr_core_content::ItemKey;
 use gandr_core_content::Occurrence;
+use gandr_core_content::Reference;
 use gandr_core_term::CoreArena;
 use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;

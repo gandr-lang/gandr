@@ -292,39 +292,24 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::ArenaNode;
 use gandr_core_content::ChildPosition;
+use gandr_core_content::ContentNode;
+use gandr_core_content::DataRoots;
 use gandr_core_content::Discovery;
+use gandr_core_content::Encoder;
 use gandr_core_content::NodeIndex;
+use gandr_core_content::Opacity;
 use gandr_core_content::Reference;
+use gandr_core_content::Sort;
 use gandr_core_content::SupportedNode;
-use gandr_core_term::BinderDepth;
-use gandr_core_term::CompType;
-use gandr_core_term::CompTypeId;
-use gandr_core_term::Computation;
-use gandr_core_term::ComputationId;
+use gandr_core_content::TypeContent;
+use gandr_core_content::WorldContent;
+use gandr_core_content::seating;
+use gandr_core_content::tabled;
 use gandr_core_term::CoreArena;
-use gandr_core_term::Value;
-use gandr_core_term::ValueId;
-use gandr_core_term::ValueType;
-use gandr_core_term::ValueTypeId;
-use gandr_core_term::Zone;
-use gandr_core_term::hole::HoleId;
-use gandr_core_term::hole::HoleOrigin;
-use gandr_core_term::hole::MarkIndex;
-use gandr_core_term::hole::NominationIndex;
-use gandr_core_term::memory::AccessMode;
-use gandr_core_term::memory::MemoryForm;
-use gandr_core_term::memory::Place;
-use gandr_core_term::session::SessionAction;
-use gandr_core_term::support::Crossing;
 use gandr_core_term::support::PlacementError;
 use gandr_core_term::support::Thinning;
-use gandr_kernel_strata::Level;
-use gandr_kernel_term::BaseType;
-use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::FixpointEvidence;
-use gandr_kernel_term::Literal;
-use gandr_kernel_term::Summand;
 use quenchant_shape::shape::Maybe;
 
 use crate::region::Layout;
@@ -1132,7 +1117,7 @@ impl ItemContent
     ) -> Result<Vec<ContentNode>, PlacementError>
     {
         let empty = Thinning::empty();
-        crate::support::expand(&self.nodes, root, self.placement_of(root).unwrap_or(&empty))
+        gandr_core_content::expand(&self.nodes, root, self.placement_of(root).unwrap_or(&empty))
     }
 
     /// The support of the first declaration root naming the entry `root`.
@@ -1179,7 +1164,7 @@ impl ItemContent
     /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
     /// - witness: `content::tests::a_root_names_its_holes_by_their_place_under_it`
     #[spec(ensures: |ret| self.nodes.get(usize::from(root)).is_none_or(|node|
-        ret.nodes.first().map(SupportedNode::sort) == Some(node.sort())))]
+        ret.nodes().first().map(SupportedNode::sort) == Some(node.sort())))]
     #[inline]
     #[must_use]
     pub fn rooted(
@@ -1187,13 +1172,14 @@ impl ItemContent
         root: NodeIndex,
     ) -> TypeContent
     {
-        let numbered = crate::support::number(NodeIndex::from(self.nodes.len()), [root], |old| {
-            self.nodes.get(usize::from(old)).cloned()
-        });
-        TypeContent {
-            nodes: named_holes(numbered.nodes),
-            root: self.placement_of(root).cloned().unwrap_or_default(),
-        }
+        let numbered =
+            gandr_core_content::number(NodeIndex::from(self.nodes.len()), [root], |old| {
+                self.nodes.get(usize::from(old)).cloned()
+            });
+        TypeContent::from_parts(
+            gandr_core_content::named_holes(numbered.nodes),
+            self.placement_of(root).cloned().unwrap_or_default(),
+        )
     }
 
     /// The content of these parts, as the decoder reassembles it.
@@ -1265,7 +1251,7 @@ impl ItemContent
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     #[spec(ensures: |ret| match (&self.declaration, ret.as_ref()) {
         (&DeclarationRoots::Value { signature: Maybe::Present(root), .. }, Some(content)) =>
-            content.nodes.first().map(SupportedNode::sort) == self.nodes.get(usize::from(root)).map(SupportedNode::sort),
+            content.nodes().first().map(SupportedNode::sort) == self.nodes.get(usize::from(root)).map(SupportedNode::sort),
         (&DeclarationRoots::Value { signature: Maybe::Present(_), .. }, None) => false,
         (&(DeclarationRoots::Value { signature: Maybe::Absent(_), .. } | DeclarationRoots::Data(_) | DeclarationRoots::Abstract(_) | DeclarationRoots::World(_) | DeclarationRoots::Codata), found) => found.is_none(),
     })]
@@ -1762,16 +1748,16 @@ pub fn anchors(
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
-#[spec(ensures: |ret| ret.nodes.first().is_some_and(|node| node.sort() == root.sort()
+#[spec(ensures: |ret| ret.nodes().first().is_some_and(|node| node.sort() == root.sort()
         && (root.held(program.arena()).is_some() || *node.former() == ContentNode::Unresolved(root.sort()))))]
 #[inline]
 #[must_use]
 pub fn of_node(
     program: &Program,
     root: ArenaNode,
-) -> Self
+) -> TypeContent
 {
-    Self::of(program.arena(), program.layout(), root)
+    TypeContent::of(program.arena(), program.layout(), root)
 }
 
 /// Mint the content into `program`'s arena under its layout.
@@ -1791,12 +1777,12 @@ pub fn of_node(
     })]
 #[inline]
 pub fn mint_in(
-    &self,
+    content: &TypeContent,
     program: &mut Program,
 ) -> Maybe<ArenaNode, seating::Absent>
 {
     let (arena, layout) = program.parts_mut();
-    self.mint(arena, layout)
+    content.mint(arena, layout)
 }
 /// The admission position the item `reference` names takes in `layout`.
 ///

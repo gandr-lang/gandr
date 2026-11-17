@@ -105,7 +105,7 @@ fn judged(
         arena: context.arena(),
         layout,
         sites: &encoded.sites,
-        types: &crate::content::TypeMemo::default(),
+        types: &gandr_core_content::TypeMemo::default(),
         read: core::cell::RefCell::new(None),
     };
     let typing = projection.typing(&verdict);
@@ -339,7 +339,7 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
         arena: program.arena(),
         layout: program.layout(),
         sites: &encoded.sites,
-        types: &crate::content::TypeMemo::default(),
+        types: &gandr_core_content::TypeMemo::default(),
         read: core::cell::RefCell::new(None),
     };
     // The specified breadth-first walk is pair, quote, thunk, thunk type,
@@ -436,7 +436,7 @@ fn refusal_payloads_use_item_coordinates_and_type_content()
                 at: value_site,
                 constant: Reference::Item {
                     key: ItemKey::from("it"),
-                    occurrence: crate::boundary::Occurrence::from(0_usize),
+                    occurrence: gandr_core_content::Occurrence::from(0_usize),
                 },
             },
         ),
@@ -771,7 +771,7 @@ fn a_located_refusal_projects_its_worlds_and_types()
                 arena: context.arena(),
                 layout,
                 sites: &encoded.sites,
-                types: &crate::content::TypeMemo::default(),
+                types: &gandr_core_content::TypeMemo::default(),
                 read: core::cell::RefCell::new(None),
             }
             .typing(&verdict)

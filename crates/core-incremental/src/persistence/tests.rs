@@ -255,7 +255,7 @@ fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
             }
         })
         .collect();
-    let nodes = crate::support::assemble(parts).expect("a closed acyclic table");
+    let nodes = gandr_core_content::assemble(parts).expect("a closed acyclic table");
     let content = crate::content::ItemContent::from_parts(
         Reference::Item {
             key: ItemKey::from("hand"),
@@ -738,7 +738,7 @@ fn universe_sorts_and_levels_round_trip()
                 .content()
                 .nodes()
                 .iter()
-                .map(crate::support::SupportedNode::former)
+                .map(gandr_core_content::SupportedNode::former)
                 .cloned()
                 .collect()
         })

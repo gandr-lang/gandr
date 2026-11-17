@@ -448,7 +448,7 @@ impl ArenaNode
     ///
     /// # Specification
     /// trivial.
-    const fn sort(self) -> Sort
+    pub const fn sort(self) -> Sort
     {
         match self {
             Self::Value(_) => Sort::Value,
@@ -462,7 +462,7 @@ impl ArenaNode
     ///
     /// # Specification
     /// trivial.
-    fn held(
+    pub fn held(
         self,
         arena: &CoreArena,
     ) -> Option<Self>
@@ -6802,7 +6802,7 @@ pub fn tabled(
 ///
 /// # Specification
 /// trivial.
-fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
+pub fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
 {
     let mut holes = BTreeMap::new();
     nodes

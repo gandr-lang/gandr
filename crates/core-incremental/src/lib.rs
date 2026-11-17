@@ -236,6 +236,8 @@ pub use crate::content::EntryRoots;
 pub use crate::content::InterfaceRoots;
 pub use crate::content::ItemContent;
 pub use crate::content::WorldRoots;
+pub use crate::content::mint_in;
+pub use crate::content::of_node;
 pub use crate::content::site;
 pub use crate::entry::EntryContent;
 pub use crate::entry::SeatedEntry;

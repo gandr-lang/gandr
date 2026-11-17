@@ -102,7 +102,7 @@ fn a_failure_seats_at_the_nodes_it_names()
         arena: &arena,
         layout: fresh.layout(),
         sites: &encoded.sites,
-        types: &crate::content::TypeMemo::default(),
+        types: &gandr_core_content::TypeMemo::default(),
         read: core::cell::RefCell::new(None),
     };
     assert_eq!(

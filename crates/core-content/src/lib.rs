@@ -50,6 +50,7 @@ pub use crate::content::TypeContent;
 pub use crate::content::TypeMemo;
 pub use crate::content::WorldContent;
 pub use crate::content::map_children;
+pub use crate::content::named_holes;
 pub use crate::content::occurring;
 pub use crate::content::referencing;
 pub use crate::content::seating;

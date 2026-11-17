@@ -41,7 +41,7 @@ fn formers(nodes: &[crate::support::SupportedNode]) -> Vec<ContentNode>
 {
     nodes
         .iter()
-        .map(crate::support::SupportedNode::former)
+        .map(gandr_core_content::SupportedNode::former)
         .cloned()
         .collect()
 }
@@ -792,7 +792,7 @@ fn effect_rows_round_trip_without_losing_operation_types()
     }) = content
         .nodes()
         .get(1)
-        .map(crate::support::SupportedNode::former)
+        .map(gandr_core_content::SupportedNode::former)
     else {
         panic!("thunk's returner");
     };
@@ -1190,7 +1190,7 @@ fn a_signature_renumbers_to_its_own_type_content()
     let interleaved: Vec<&ContentNode> = content
         .nodes()
         .iter()
-        .map(crate::support::SupportedNode::former)
+        .map(gandr_core_content::SupportedNode::former)
         .collect();
     assert!(
         matches!(interleaved.get(1), Some(&&ContentNode::Thunk(_))),

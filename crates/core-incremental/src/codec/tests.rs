@@ -2882,7 +2882,7 @@ fn a_type_of_words_round_trips_its_cells()
         "the sort the cells' endpoints are terms of is content, by its reference"
     );
     let bare = encode_checkpoints(&checkpoints(PresentationRoots {
-        cells: Maybe::Absent(crate::content::words::Absent::Unworded),
+        cells: Maybe::Absent(gandr_core_content::words::Absent::Unworded),
         ..words(0, sort("Circle"))
     }))
     .expect("the same rules with no cell encode");
@@ -2916,7 +2916,7 @@ fn an_indexed_family_round_trips_its_indices()
                 constructors: vec![Vec::new(), vec![NodeIndex::from(0_usize)]],
                 results,
                 kind: NodeIndex::from(0_usize),
-                presentation: crate::content::PresentationRoots::free(),
+                presentation: gandr_core_content::PresentationRoots::free(),
             }),
             &[
                 ContentNode::Product(Vec::new()),
@@ -3652,7 +3652,7 @@ fn supported_tables_round_trip_and_reject_forged_support()
             results: Vec::new(),
             constructors: vec![vec![index(2_usize)]],
             kind: index(4_usize),
-            presentation: crate::content::PresentationRoots::free(),
+            presentation: gandr_core_content::PresentationRoots::free(),
         },
         &[
             ContentNode::Base(BaseType::String),

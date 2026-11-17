@@ -277,7 +277,7 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
     let key = ItemKey::from("reachable");
     let filled = crate::content::DeclarationRoots::Value {
         signature: Maybe::Absent(signature::Absent::Unsigned),
-        body: Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
+        body: Maybe::Present(gandr_core_content::NodeIndex::from(0_usize)),
         laws: Vec::new(),
         rules: Vec::new(),
         stages: Vec::new(),
@@ -286,12 +286,12 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
         entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
     };
     let cyclic = crate::fixture::item_content(Reference::Unoccupied, &filled, &[
-        crate::content::ContentNode::Tuple(vec![
+        gandr_core_content::ContentNode::Tuple(vec![
             crate::boundary::NodeIndex::from(0_usize),
             crate::boundary::NodeIndex::from(1_usize),
         ]),
-        crate::content::ContentNode::Constant(named(&key)),
-        crate::content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),
+        gandr_core_content::ContentNode::Constant(named(&key)),
+        gandr_core_content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),
     ]);
     let footprint = footprint_of(&cyclic);
     assert_eq!(
