@@ -243,7 +243,7 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 10 spellings
+## Superseded — 11 spellings
 
 An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
 
@@ -257,6 +257,7 @@ An old spelling and the spelling that replaces it. A spelling the grammar still 
 | `type_application` | `glued_type_application` | `type_application.juxtaposed` | removed by #5330 | the glued head `T(a, b)` stays read until the sources move to `T a b` |
 | `extension_type` | `bracket_fields` | `T.#{.l = v}` | refused as [`RetiredSpelling.bracket_fields`](../corpus/ledger/syntax/superseded/bracket-fields.gandr) | the static bracket that fixes a record type's fields by label, `T[.l = v]`, is refused by name; a stage `T[i]` and a supply by name `f[.a = A]` keep the bracket |
 | `extension_type` | `bracket_faces` | `T.#{f ↦ v}` | refused as [`RetiredSpelling.bracket_faces`](../corpus/ledger/syntax/superseded/bracket-faces.gandr) | the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name |
+| `parenthesized_type` | `parenthesized_product` | `*{A, B}` | refused as [`RetiredSpelling.parenthesized_product`](../corpus/ledger/syntax/superseded/parenthesized-product.gandr) | a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product |
 | `telescope_type` | `view_telescope` | `*{ … }` | refused as [`RetiredSpelling.view_telescope`](../corpus/ledger/syntax/superseded/view-telescope.gandr) | the glued token `#{` is refused by name: `*{` opens the telescope and the record |
 | `theory_declaration` | `shape_member` | `boundary` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells |
 

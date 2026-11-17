@@ -14227,10 +14227,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - provides: grouping in type position, a function's outputs, and the
     ///   annotated argument of a type-valued call.
     /// - fails: yields the empty-list refusal for `()` where no result is read,
-    ///   which is never the unit type, the hole's own refusal, a misplaced-tile
-    ///   fault at the first comma of a list, which only a value function
-    ///   space's domain and a result read, and at a `:` where no value is read,
-    ///   and the annotation's own refusals.
+    ///   which is never the unit type, the hole's own refusal, the retired
+    ///   spelling [`RetiredForm::ParenthesizedProduct`] at the first comma of a
+    ///   list, which only a value function space's domain and a result read, a
+    ///   misplaced-tile fault at a `:` where no value is read, and the
+    ///   annotation's own refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -14242,6 +14243,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   constructor; empty parentheses are refused by name; a result's group
     ///   of outputs lowers to the many-value returner.
     /// - witness: `gandr-surface-lowering::lower::tests::an_arrow_lowers_under_a_thunk_type`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_is_refused_by_name_5192`
     /// - witness: `gandr-surface-lowering::lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `gandr-surface-lowering::lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
@@ -14284,6 +14286,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             return Native::new(self.host()).annotated(site, run, cursor);
         }
         let inner = site.one(run)?;
+        // A list in parentheses outside a domain and a result is the old
+        // spelling of a product: `*{A, B}` replaces `(A, B)`.
+        if let Maybe::Present(comma) = cursor.at(TileName::COMMA) {
+            return Err(site.fault(
+                comma.span,
+                FormFault::Retired(RetiredForm::ParenthesizedProduct),
+            ));
+        }
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         self.group(site, inner);
         self.read(inner.node, site.reading);

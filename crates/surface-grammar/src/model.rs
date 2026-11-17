@@ -863,12 +863,15 @@ pub enum RetiredForm
     /// A record type's faces in a static bracket, `T[f ↦ v]`, which
     /// `T.#{f ↦ v}` replaces.
     BracketFaces,
+    /// A product type written as a list in parentheses, `(A, B)`, outside the
+    /// domain of an arrow and a function's outputs, which `*{A, B}` replaces.
+    ParenthesizedProduct,
 }
 
 impl RetiredForm
 {
     /// Every retired spelling, in the order of the enum.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::ShapeMember,
         Self::UnitValue,
         Self::PositionalPathCarrier,
@@ -878,6 +881,7 @@ impl RetiredForm
         Self::FatArrowBox,
         Self::BracketFields,
         Self::BracketFaces,
+        Self::ParenthesizedProduct,
     ];
 
     /// The surface name of the spelling: the row's surface and the tag of its
@@ -899,6 +903,7 @@ impl RetiredForm
             Self::FatArrowBox => "fat_arrow_box",
             Self::BracketFields => "bracket_fields",
             Self::BracketFaces => "bracket_faces",
+            Self::ParenthesizedProduct => "parenthesized_product",
         })
     }
 
@@ -921,6 +926,7 @@ impl RetiredForm
             Self::FatArrowBox => "A -> B",
             Self::BracketFields => "T.#{.l = v}",
             Self::BracketFaces => "T.#{f ↦ v}",
+            Self::ParenthesizedProduct => "*{A, B}",
         })
     }
 
@@ -943,6 +949,7 @@ impl RetiredForm
             Self::FatArrowBox => "=>",
             Self::BracketFields => "[.",
             Self::BracketFaces => "↦",
+            Self::ParenthesizedProduct => "(A, B)",
         })
     }
 }

@@ -7431,6 +7431,59 @@ mod tests
         );
     }
 
+    /// #5192: a list in parentheses outside the domain of an arrow and a
+    /// function's outputs is the old spelling of a product. The lowering
+    /// refuses it by its name at the first comma, in a signature and in a
+    /// record field. The domain `(A, B) -> C` and the outputs `-> (A, B)`
+    /// keep their readings.
+    #[test]
+    fn a_parenthesized_product_is_refused_by_name_5192()
+    {
+        let pbg = grammar();
+        let lowered = |source: &'static str| {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("parses")
+                .into_tree();
+            let mut arena = CoreArena::new();
+            let module = lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .expect("lowers");
+            outcomes(&module)
+        };
+        let product = FormFault::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProduct);
+        for (source, comma) in [
+            ("def p : (Integer, String);\n", 16),
+            ("def r : *{ x : (Integer, Integer) };\n", 23),
+        ] {
+            assert_eq!(
+                lowered(source),
+                [DeclarationOutcome::Refused(
+                    LoweringRefusal::MalformedForm {
+                        span: span(ByteOffset::from(comma), ByteOffset::from(comma + 1)),
+                        form: FormName::from(NamedKind("parenthesized_type")),
+                        fault: product,
+                    }
+                )],
+                "{source}"
+            );
+        }
+        let domain = lowered("def f : (Integer, Integer) -> Integer;\n");
+        assert!(
+            matches!(domain.as_slice(), [DeclarationOutcome::Uncompleted { .. }]),
+            "a domain keeps its reading: {domain:?}"
+        );
+        let outputs = lowered("def d(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }\n");
+        assert!(
+            matches!(outputs.as_slice(), [DeclarationOutcome::Completed { .. }]),
+            "a group of outputs keeps its reading: {outputs:?}"
+        );
+    }
+
     /// #7879: the glued `#{` is the retired opener of a telescope and a
     /// record. A declaration that holds it reports that refusal at the
     /// token's bytes and no other fault; another declaration keeps its own
