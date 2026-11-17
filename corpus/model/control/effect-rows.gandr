@@ -1,0 +1,40 @@
+//! This source shows returner rows.
+//!
+//! A row holds each interface once.
+//! Interface order does not change row equality.
+//!
+//! A sequence joins computation rows.
+//! The checker reads a computation at a row with more interfaces.
+//! These are the set operations of a row
+//! [Hillerström-2016-liberating_effects_rows_handlers], § 2.
+//!
+//! - see: #2269
+//! - see: ../../pathological/control/effect-rows.gandr
+//! - cites: [Hillerström-2016-liberating_effects_rows_handlers]
+//!
+//! [Hillerström-2016-liberating_effects_rows_handlers]: https://doi.org/10.1145/2976022.2976033 "Hillerström and Lindley, Liberating Effects with Rows and Handlers"
+
+// `peek` reads through `std.fs.Eff`.
+// `once` states `Partial`.
+import "./capability-attenuate.gandr";
+import "./divergence.gandr";
+// The filesystem's host interface.
+import std.fs;
+
+/// `performsBoth` reads a file and then runs a loop.
+/// Its row joins the filesystem interface and `Partial`.
+def performsBoth(c : Cap { read }) -> [std.fs.Eff, Partial] Integer =
+  let _ = peek c
+  once 1
+
+/// The same interfaces listed the other way round are the same row:
+/// `performsBoth`'s call stands at it unchanged.
+def listedSwapped(c : Cap { read }) -> [Partial, std.fs.Eff] Integer { performsBoth c }
+
+/// `forcedAcross` forces a computation at an equivalent row order.
+def forcedAcross(t : +U (-F [Partial, std.fs.Eff] Integer)) -> [std.fs.Eff, Partial] Integer =
+  force t
+
+/// `widenedRow` runs `Partial` where its row also holds `std.fs.Eff`.
+@[runs("3")]
+def widenedRow() -> [std.fs.Eff, Partial] Integer { once 3 }

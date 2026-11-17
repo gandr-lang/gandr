@@ -1,0 +1,11 @@
+{MAYBE}data Repr : Type where {{ | Inline : (s : Maybe(Integer)) --> Repr }}
+data Box(a : Type) : Type where {{ | Wrap : (m : Maybe(a)) --> Box(a) }}
+data Dep : Type[+, 1] where {{ | Dee : (a : Type, m : Maybe(a)) --> Dep }}
+def closed : Repr ;
+def closed = Inline (Some 3) ;
+def annotated : Repr ;
+def annotated = Inline (Some 3 : Maybe(Integer)) ;
+def opened : Box(Integer) ;
+def opened = Wrap (Some 3) ;
+def dependent : Dep ;
+def dependent = Dee (Integer) (Some 3) ;

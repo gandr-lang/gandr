@@ -1,0 +1,55 @@
+//! `natural` refuses invalid region-polymorphism squares.
+//!
+//! A reversed widening changes the required type. Two different functions have
+//! unequal endpoints. The checker reports `TypeMismatch` or `EndpointMismatch`.
+//!
+//! The source applies model `pass` and `touch`. It imports the early exit host
+//! interface.
+//!
+//! - see: corpus/model/regions/natural.gandr — valid widening squares
+import "../../model/regions/passed.gandr";
+import "../../model/regions/natural.gandr";
+// The source imports the early exit host interface.
+import std.process;
+
+/// `backwards` reverses the valid outer-to-inner widening.
+@[refuses("TypeMismatch")]
+def backwards() -> Integer =
+  var s = 5
+  handle outer : std.process.Exit.Eff {
+    let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+    handle inner : std.process.Exit.Eff {
+      let _ : Path[.A = (() -> Integer) at inner -> (() -> Integer) at outer](
+        thunk { fun (x) { let z : (() -> Integer) at outer = x; pass z } },
+        thunk { fun (x) { let y : (() -> Integer) at inner = pass x; pure y } }
+      ) = Path.here (thunk { fun (x) { let z : (() -> Integer) at outer = x; pass z } });
+      force k
+    } with {
+      | pure(y) => pure y
+      | oper exit(code, rest) => pure 0
+    }
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, rest) => pure 0
+  }
+
+/// `unequal` compares `pass` and `touch` as path endpoints.
+@[refuses("EndpointMismatch")]
+def unequal() -> Integer =
+  var s = 5
+  handle outer : std.process.Exit.Eff {
+    let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+    handle inner : std.process.Exit.Eff {
+      let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner](
+        thunk { fun (x) { let y : (() -> Integer) at outer = pass x; pure y } },
+        thunk { fun (x) { let z : (() -> Integer) at inner = x; touch z } }
+      ) = Path.here (thunk { fun (x) { let y : (() -> Integer) at outer = pass x; pure y } });
+      force k
+    } with {
+      | pure(y) => pure y
+      | oper exit(code, rest) => pure 0
+    }
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, rest) => pure 0
+  }
