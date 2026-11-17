@@ -4456,7 +4456,7 @@ pub fn repair_at(
         && found.nested == Maybe::Absent(nested::Absent::Own),
     | Maybe::Absent(_) => true,
 })]
-#[must_use]
+#[inline]
 pub fn retired_within(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -4511,6 +4511,7 @@ pub fn retired_within(
 ///   Integer`; `rec X => S` holds no such operand.
 /// - witness: `gandr-surface-lowering::lower::tests::the_fat_arrow_box_is_refused_by_name_7879`
 #[spec(ensures: |ret| ret == RetiredBox(false) || extra.start() < extra.end())]
+#[inline]
 #[must_use]
 pub fn boxed_extra(
     pbg: &Pbg,
