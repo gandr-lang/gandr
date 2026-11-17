@@ -1208,7 +1208,7 @@ fn owned(directory: &Path) -> Owned
     }
 }
 
-/// Let the lock on `file` go before the file closes (#7687).
+/// Let the lock on `file` go before the file closes.
 ///
 /// A close lets a lock go only when no other descriptor of the open file
 /// lives. A child that a spawn forks holds a copy of each descriptor until
