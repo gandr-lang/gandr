@@ -33,4 +33,4 @@ def reflField : Held(
 ) = MkHeld *{} (Path.here Z);
 
 /// The written path type holds the same reflexivity.
-def reflWritten : Path[.A = Count](twofold Z, Z) = Path.here Z;
+def reflWritten : Path[.A = Count] (twofold Z) Z = Path.here Z;

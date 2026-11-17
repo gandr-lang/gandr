@@ -66,14 +66,12 @@ def retiringLater : Dialogue Seat.SeatEnd = dialogue
 
 /// `commuted` proves that both logs share their moves and receipts.
 /// Reflexivity proves the path.
-def commuted : Path[.A = Dialogue Seat.SeatEnd](retiring, retiringLater) = Path.here retiring;
+def commuted : Path[.A = Dialogue Seat.SeatEnd] retiring retiringLater = Path.here retiring;
 
 /// `sameWeb` proves that both logs decompose to one web.
 /// `decompose` reads each dialogue.
-def sameWeb : Path[.A = Web](
-  decompose retiring,
-  decompose retiringLater
-) = Path.here (decompose retiring);
+def sameWeb : Path[.A = Web] (decompose retiring) (decompose retiringLater) = Path.here
+  (decompose retiring);
 
 /// `handedOff` records a handoff with a prime web node.
 /// `N` forms a factor with the operator's receipt and close.

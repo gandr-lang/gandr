@@ -28,5 +28,5 @@ def rec calls(n : Nat) -> Bool =
       | false => false
 
 /// Every call answers true.
-def callsAnswerTrue() -> Path(calls twelve, true) =
+def callsAnswerTrue() -> Path (calls twelve) true =
   Path.here true

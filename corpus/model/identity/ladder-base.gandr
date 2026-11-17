@@ -55,7 +55,7 @@ pub def rec forceInt(n : Int) -> Top =
     | P(x) => forceInt[<] x
 
 /// The loop word of `n` letters puts each new loop before the others.
-pub def rec loops(n : Nat) -> Path[.A = Circle](Base, Base) =
+pub def rec loops(n : Nat) -> Path[.A = Circle] Base Base =
   match n where
     | Zero => Path.here Base
     | Succ(k) => loop ∷ loops[<] k

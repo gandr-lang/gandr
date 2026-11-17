@@ -57,20 +57,20 @@ pub def rec untag(l : Tagged) -> Ints =
     | TagCons(x, rest) => Cons x (untag[<] rest)
 
 /// Reading a tagged list back undoes laying it out, cell by cell.
-pub def rec untagged(l : Ints) -> Path(untag (tag l), l) =
+pub def rec untagged(l : Ints) -> Path (untag (tag l)) l =
   match l where
     | Nil => Path.here Nil
     | Cons(x, rest) => Path.walk
-      (fun (z) { type(Path[.A = Ints](Cons x (untag (tag rest)), Cons x z)) })
+      (fun (z) { type(Path[.A = Ints] (Cons x (untag (tag rest))) (Cons x z)) })
       (untagged[<] rest)
       (Path.here (Cons x (untag (tag rest))))
 
 /// Laying a list out tagged undoes reading it back, cell by cell.
-pub def rec tagged(l : Tagged) -> Path(tag (untag l), l) =
+pub def rec tagged(l : Tagged) -> Path (tag (untag l)) l =
   match l where
     | TagNil => Path.here TagNil
     | TagCons(x, rest) => Path.walk
-      (fun (z) { type(Path[.A = Tagged](TagCons x (tag (untag rest)), TagCons x z)) })
+      (fun (z) { type(Path[.A = Tagged] (TagCons x (tag (untag rest))) (TagCons x z)) })
       (tagged[<] rest)
       (Path.here (TagCons x (tag (untag rest))))
 
@@ -90,24 +90,24 @@ pub def rec unpack(p : Packed) -> Ints =
     | Many(x, y, rest) => Cons x (Cons y (unpack[<] rest))
 
 /// Reading a packed list back undoes packing it, two elements at a time.
-pub def rec unpacked(l : Ints) -> Path(unpack (packInts l), l) =
+pub def rec unpacked(l : Ints) -> Path (unpack (packInts l)) l =
   match l where
     | Nil => Path.here Nil
     | Cons(x, Nil) => Path.here (Cons x Nil)
     | Cons(x, Cons(y, rest)) => Path.walk
       (fun (z) {
-        type(Path[.A = Ints](Cons x (Cons y (unpack (packInts rest))), Cons x (Cons y z)))
+        type(Path[.A = Ints] (Cons x (Cons y (unpack (packInts rest)))) (Cons x (Cons y z)))
       })
       (unpacked[<] rest)
       (Path.here (Cons x (Cons y (unpack (packInts rest)))))
 
 /// Packing a list undoes reading it back, two elements at a time.
-pub def rec packed(p : Packed) -> Path(packInts (unpack p), p) =
+pub def rec packed(p : Packed) -> Path (packInts (unpack p)) p =
   match p where
     | Empty => Path.here Empty
     | One(x) => Path.here (One x)
     | Many(x, y, rest) => Path.walk
-      (fun (z) { type(Path[.A = Packed](Many x y (packInts (unpack rest)), Many x y z)) })
+      (fun (z) { type(Path[.A = Packed] (Many x y (packInts (unpack rest))) (Many x y z)) })
       (packed[<] rest)
       (Path.here (Many x y (packInts (unpack rest))))
 

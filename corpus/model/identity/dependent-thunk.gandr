@@ -9,13 +9,10 @@
 /// - see: corpus/model/identity/transport-dependent-element.gandr
 
 /// The `reflFamily` function gives reflexivity for each path in a family.
-def reflFamily(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](q, q) =
-  fun (q : Path[.A = A](x, y)) { Path.here q }
+def reflFamily(A : Type, x : A, y : A) -> (q : Path x y) -> Path[.A = Path[.A = A] x y] q q =
+  fun (q : Path[.A = A] x y) { Path.here q }
 
 /// The `reflFamilyApart` function uses a parameter name apart from
 /// the type binder.
-def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
-  q,
-  q
-) =
-  fun (r : Path[.A = A](x, y)) { Path.here r }
+def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path x y) -> Path[.A = Path[.A = A] x y] q q =
+  fun (r : Path[.A = A] x y) { Path.here r }

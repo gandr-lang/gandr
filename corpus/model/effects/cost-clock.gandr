@@ -44,17 +44,15 @@ def countedPasses(clock : Fuel) -> (Nat -> Nat) -> Nat =
   } with Counting
 
 /// The unfolding at clock three counts three.
-def prefixThree : Path(
-  countOf (countedPasses (Tick (Tick (Tick Stop)))),
-  (3 : Nat)
-) = Path.here (3 : Nat);
+def prefixThree : Path (countOf (countedPasses (Tick (Tick (Tick Stop))))) (3 : Nat) = Path.here
+  (3 : Nat);
 
 /// Whether the unfolding at clock three is within `n`.
 def withinThree(n : Nat) -> Bool =
   Count.le (countOf (countedPasses (Tick (Tick (Tick Stop))))) n
 
 /// The bound three holds at clock three: conversion decides it.
-def boundThree : Path(withinThree (3 : Nat), true) = Path.here true;
+def boundThree : Path (withinThree (3 : Nat)) true = Path.here true;
 
 /// A loop that never ends charges one on each pass.
 def spin() -> [Partial, cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =

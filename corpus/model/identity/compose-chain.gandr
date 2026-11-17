@@ -44,13 +44,10 @@ def agrees(
   y : A,
   z : A,
   w : A,
-  p : Path(x, y),
-  q : Path(y, z),
-  r : Path(z, w)
-) -> Path[.A = Path[.A = A](x, w)](
-  composed A x y z w p q r,
-  folded A x y z w p q r
-) =
+  p : Path x y,
+  q : Path y z,
+  r : Path z w
+) -> Path[.A = Path[.A = A] x w] (composed A x y z w p q r) (folded A x y z w p q r) =
   Path.here (folded A x y z w p q r)
 
 /// One cell is its own composite and needs no stratum.
@@ -62,7 +59,7 @@ def reflexivities(A : Type, x : A) -> Path(x, x) =
   compose[5, 7] (chain 3) (Path.here x, Path.here x, Path.here x)
 
 /// A composite of reflexivities reduces to reflexivity.
-def decided(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](reflexivities A x, Path.here x) =
+def decided(A : Type, x : A) -> Path[.A = Path[.A = A] x x] (reflexivities A x) (Path.here x) =
   Path.here (Path.here x)
 
 /// A called cell runs before the composite reads its returned path.
@@ -79,7 +76,6 @@ def called(
   compose[3, 5] (chain 2) (folded A x y z w p q r, Path.here w)
 
 /// A word cell is the path it denotes at the circle point.
-def wound : Path[.A = Path[.A = Circle](Base, Base)](
-  compose[3, 5] (chain 2) (loop, Path.here Base),
-  loop
-) = Path.here loop;
+def wound : Path[.A = Path[.A = Circle] Base Base] (compose[3, 5]
+  (chain 2)
+  (loop, Path.here Base)) loop = Path.here loop;

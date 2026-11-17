@@ -23,7 +23,7 @@ def unwrap_or_zero() -> Integer =
 
 /// `kept` matches an optional integer to a path.
 /// Each arm returns its scrutinee.
-def kept(m : Maybe Integer) -> Path(m, m) =
+def kept(m : Maybe Integer) -> Path m m =
   match m where
     | None => Path.here m
     | Some(x) => Path.here m

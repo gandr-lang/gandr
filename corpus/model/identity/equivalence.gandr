@@ -36,5 +36,5 @@ def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b =
     }
 
 /// The `equivHere` proof checks reflexivity under the bi-invertible map type.
-def equivHere(a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b](e, e) =
+def equivHere(a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b] e e =
   Path.here e

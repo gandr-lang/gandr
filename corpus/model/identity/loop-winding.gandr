@@ -37,10 +37,10 @@ def twice_wound() -> Int = windWords (Loop (Loop Nil));
 def wound_letterwise() -> Int = windWords (Loop (Unloop Nil));
 
 /// Conversion maps two loops to two successors.
-def wound_twice : Path[.A = Int](windWords (Loop (Loop Nil)), S (S Z)) = Path.here (S (S Z));
+def wound_twice : Path[.A = Int] (windWords (Loop (Loop Nil))) (S (S Z)) = Path.here (S (S Z));
 
 /// Conversion maps a cancelled word to zero.
-def wound_never : Path[.A = Int](windWords (Loop (Unloop Nil)), Z) = Path.here Z;
+def wound_never : Path[.A = Int] (windWords (Loop (Unloop Nil))) Z = Path.here Z;
 
 /// The `native_wind` function maps words through the native model.
 @[respects(*{NativeWinding.turnUnturn, NativeWinding.unturnTurn}), owes(2)]

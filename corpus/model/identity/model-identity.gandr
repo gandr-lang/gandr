@@ -30,7 +30,7 @@ def plainModel : Model Toggle = plainToggle;
 def flippedModel : Model Toggle = flippedToggle;
 
 /// The model path carries each carrier and operation along negation.
-def oneModel : Path(plainModel, flippedModel) = *{
+def oneModel : Path plainModel flippedModel = *{
   negation,
   *{Path.here (+{.1 = *{}}), *{stepped, reread}}
 };
@@ -38,7 +38,7 @@ def oneModel : Path(plainModel, flippedModel) = *{
 /// The `startUnmoved` path keeps the start at false.
 /// Negation maps that start to true.
 @[refuses("EndpointMismatch")]
-def startUnmoved : Path(plainModel, flippedModel) = *{
+def startUnmoved : Path plainModel flippedModel = *{
   negation,
   *{Path.here (+{.0 = *{}}), *{stepped, reread}}
 };

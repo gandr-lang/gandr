@@ -16,10 +16,10 @@
 import "./circle-base.gandr";
 
 /// The predecessor undoes the successor, by the rule `P (S x) <=> x`.
-def downUp(x : Int) -> Path[.A = Int](down (up x), x) = Path.here x
+def downUp(x : Int) -> Path[.A = Int] (down (up x)) x = Path.here x
 
 /// The successor undoes the predecessor, by the rule `S (P x) <=> x`.
-def upDown(x : Int) -> Path[.A = Int](up (down x), x) = Path.here x
+def upDown(x : Int) -> Path[.A = Int] (up (down x)) x = Path.here x
 
 /// The successor is a bi-invertible map with the predecessor as both inverses.
 def upEquiv : Int ≃ Int = *{up, *{*{down, downUp}, *{down, upDown}}};
@@ -37,8 +37,8 @@ def helix(x : Circle) -> Type =
 
 /// The `encode` function is cctt's `winding`: the transport of zero along a
 /// loop in the helix.
-def encode(p : Path[.A = Circle](Base, Base)) -> Int =
+def encode(p : Path[.A = Circle] Base Base) -> Int =
   Path.walk (fun (x) { helix x }) p Z
 
 /// The empty word winds zero times.
-def encodeHere : Path[.A = Int](encode (Path.here Base), Z) = Path.here Z;
+def encodeHere : Path[.A = Int] (encode (Path.here Base)) Z = Path.here Z;

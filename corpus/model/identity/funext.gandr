@@ -23,8 +23,8 @@ pub def same(b : Unit + Unit) -> Unit + Unit =
   b
 
 /// The `involution` path proves that double negation is the identity.
-def involution : Path(not_not, same) = Path.funext not_not same;
+def involution : Path not_not same = Path.funext not_not same;
 
 /// The `not_identity` declaration refuses unequal functions.
 @[refuses("PointwiseDistinct")]
-def not_identity : Path(not, same) = Path.funext not same;
+def not_identity : Path not same = Path.funext not same;

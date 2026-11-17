@@ -31,8 +31,5 @@ def rec fibFrom(n : Nat, a : Nat, b : Nat) -> Nat =
     | Succ(m) => fibFrom[<] m b (plus a b)
 
 /// The two definitions agree at fourteen.
-def fibAgrees() -> Path(
-  fib (Succ (Succ twelve)),
-  fibFrom (Succ (Succ twelve)) Zero (Succ Zero)
-) =
+def fibAgrees() -> Path (fib (Succ (Succ twelve))) (fibFrom (Succ (Succ twelve)) Zero (Succ Zero)) =
   Path.here (fib (Succ (Succ twelve)))

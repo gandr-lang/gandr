@@ -27,24 +27,26 @@ def opposite = ua[
 ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
 
 /// `moves` transports a binary corolla boolean along `opposite`.
-def moves : Path[.A = Unit * (+{Unit} * Bool)](
-  Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
-  *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}
-) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
+def moves : Path[.A = Unit * (+{Unit} * Bool)] (Path.walk
+  (fun (X) { X })
+  opposite
+  (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}})) *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}} = Path.here
+  (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
 /// `stays` refuses the unchanged boolean as the transport result.
 @[refuses("EndpointMismatch")]
-def stays : Path[.A = Unit * (+{Unit} * Bool)](
-  Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
-  *{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}
-) = Path.here (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}});
+def stays : Path[.A = Unit * (+{Unit} * Bool)] (Path.walk
+  (fun (X) { X })
+  opposite
+  (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}})) *{*{}, *{+{.0 = *{}}, +{.0 = *{}}}} = Path.here
+  (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}});
 
 /// `reopposite` applies `flip` at the binary corolla.
 def reopposite = ua[1, 4] Magma Magma (*{.mul = flip, .one = keep}) (*{.mul = flip, .one = keep});
 
 /// `agree` proves that `exchange` and `flip` agree at every boolean.
-def agree : Path[.A = Bool -> Bool](exchange, flip) = Path.funext exchange flip;
+def agree : Path[.A = Bool -> Bool] exchange flip = Path.funext exchange flip;
 
 /// `disagree` refuses `exchange` and `boolId` as pointwise equal.
 @[refuses("PointwiseDistinct")]
-def disagree : Path[.A = Bool -> Bool](exchange, boolId) = Path.funext exchange boolId;
+def disagree : Path[.A = Bool -> Bool] exchange boolId = Path.funext exchange boolId;

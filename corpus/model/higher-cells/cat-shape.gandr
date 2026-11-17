@@ -65,17 +65,11 @@ module SetoidCat : Model(CatShape) where {
     thunk { compose t u v f g }
 
   /// `unitL` proves the left unit law by conversion.
-  def unitL(p : Type, q : Type, f : p -> q) -> Path(
-    comp p p q (id p) f,
-    f
-  ) =
+  def unitL(p : Type, q : Type, f : p -> q) -> Path (comp p p q (id p) f) f =
     Path.here f
 
   /// `unitR` proves the right unit law by conversion.
-  def unitR(p : Type, q : Type, f : p -> q) -> Path(
-    comp p q q f (id q),
-    f
-  ) =
+  def unitR(p : Type, q : Type, f : p -> q) -> Path (comp p q q f (id q)) f =
     Path.here f
 
   /// `assoc` proves associativity by conversion through `compose`.
@@ -87,23 +81,18 @@ module SetoidCat : Model(CatShape) where {
     f : p -> q,
     g : q -> r,
     h : r -> s
-  ) -> Path(
-    comp p r s (comp p q r f g) h,
-    comp p q s f (comp q r s g h)
-  ) =
+  ) -> Path (comp p r s (comp p q r f g) h) (comp p q s f (comp q r s g h)) =
     Path.here (thunk { compose p q s f (thunk { compose q r s g h }) })
 
   /// `unitLFromR` uses the right unit law at a converting type.
-  def unitLFromR : (p : Type, q : Type, f : p -> q) -> Path[.A = (p -> q)](
-    comp p p q (id p) f,
-    f
-  ) = unitR;
+  def unitLFromR : (
+    p : Type,
+    q : Type,
+    f : p -> q
+  ) -> Path[.A = p -> q] (comp p p q (id p) f) f = unitR;
 
   /// `unitLEither` selects either unit proof with a boolean.
-  def unitLEither(p : Type, q : Type, f : p -> q, b : Bool) -> Path(
-    comp p p q (id p) f,
-    f
-  ) =
+  def unitLEither(p : Type, q : Type, f : p -> q, b : Bool) -> Path (comp p p q (id p) f) f =
     match b where
       | true => unitL p q f
       | false => unitR p q f

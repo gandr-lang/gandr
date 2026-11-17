@@ -12,11 +12,11 @@
 
 /// `Path`'s carrier is the implicit `A`, and no implicit `B`.
 @[refuses("UnresolvedName")]
-def strayPath : Path[.B = Integer](4, 4) = Path.here 4;
+def strayPath : Path[.B = Integer] 4 4 = Path.here 4;
 
 /// `Bridge`'s carrier is the implicit `A`, and no implicit `B`.
 @[refuses("UnresolvedName")]
-def strayBridge : Bridge[.B = Integer](4, 4) = *{};
+def strayBridge : Bridge[.B = Integer] 4 4 = *{};
 
 /// `Flow`'s carrier is the implicit `A`, and no implicit `B`.
 @[refuses("UnresolvedName")]

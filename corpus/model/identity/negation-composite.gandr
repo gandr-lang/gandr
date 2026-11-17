@@ -20,7 +20,7 @@ def negBool(b : Bool) -> Bool =
     | false => true
 
 /// Negation undoes itself.
-def negNeg(b : Bool) -> Path[.A = Bool](negBool (negBool b), b) =
+def negNeg(b : Bool) -> Path[.A = Bool] (negBool (negBool b)) b =
   match b where
     | true => Path.here true
     | false => Path.here false
@@ -42,13 +42,12 @@ def rec boolPathN(n : Nat) -> Path[.A = Type](Bool, Bool) =
 pub def negVal(n : Nat) -> Bool = Path.walk (fun (X) { X }) (boolPathN n) true
 
 /// One negation moves `true` to `false`.
-def negOnce : Path[.A = Bool](negVal Zero, false) = Path.here false;
+def negOnce : Path[.A = Bool] (negVal Zero) false = Path.here false;
 
 /// Two negations move `true` back to `true`.
-def negTwice : Path[.A = Bool](negVal (Succ Zero), true) = Path.here true;
+def negTwice : Path[.A = Bool] (negVal (Succ Zero)) true = Path.here true;
 
 /// Eleven negations move `true` to `false`.
-def negEleven : Path[.A = Bool](
-  negVal (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))))))),
-  false
-) = Path.here false;
+def negEleven : Path[.A = Bool] (negVal
+  (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero))))))))))) false = Path.here
+  false;

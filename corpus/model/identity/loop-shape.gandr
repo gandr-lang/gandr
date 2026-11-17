@@ -50,10 +50,10 @@ pub module Winding : Model(CircleShape) where {
 
   def unturn(n : Int) -> Int = P n;
 
-  def turnUnturn(n : Int) -> Path[.A = Int](turn (unturn n), n) =
+  def turnUnturn(n : Int) -> Path[.A = Int] (turn (unturn n)) n =
     Path.here n
 
-  def unturnTurn(n : Int) -> Path[.A = Int](unturn (turn n), n) =
+  def unturnTurn(n : Int) -> Path[.A = Int] (unturn (turn n)) n =
     Path.here n
 
   @[runs("S (S Z)")]
@@ -72,10 +72,10 @@ pub module NativeWinding : Model(CircleShape) where {
   def unturn(n : Integer) -> Integer = n - 1;
 
   @[owes(1)]
-  def turnUnturn : (n : Integer) -> Path[.A = Integer](turn (unturn n), n);
+  def turnUnturn : (n : Integer) -> Path[.A = Integer] (turn (unturn n)) n;
 
   @[owes(1)]
-  def unturnTurn : (n : Integer) -> Path[.A = Integer](unturn (turn n), n);
+  def unturnTurn : (n : Integer) -> Path[.A = Integer] (unturn (turn n)) n;
 
   @[runs("2")]
   def wound() -> Integer =

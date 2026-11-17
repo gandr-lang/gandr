@@ -11,11 +11,11 @@
 // [HoTT-Book]: https://homotopytypetheory.org/book/ "The Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
 
 /// `path_var` forms reflexivity at a type parameter variable.
-def path_var(a : Type, x : a) -> Path(x, x) =
+def path_var(a : Type, x : a) -> Path x x =
   Path.here x
 
 /// `path_fun` forms reflexivity at a function.
-def path_fun(f : Integer -> Integer) -> Path(f, f) =
+def path_fun(f : Integer -> Integer) -> Path f f =
   Path.here f
 
 /// `path_app` forms reflexivity at an application.

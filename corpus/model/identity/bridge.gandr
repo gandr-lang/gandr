@@ -27,10 +27,10 @@ def unitString : Bridge[.A = Type](Unit, String) = thunk {
 };
 
 /// Equal integer lists have a cell-by-cell unit relation.
-def sameDigits : Bridge[.A = List Integer](#[1, 2], #[1, 2]) = *{*{}, *{*{}, *{}}};
+def sameDigits : Bridge[.A = List Integer] #[1, 2] #[1, 2] = *{*{}, *{*{}, *{}}};
 
 /// Equal integers have the unit identity relation.
-def sameFour : Bridge(4, 4) = *{};
+def sameFour : Bridge 4 4 = *{};
 
 /// A signal has two states.
 data Signal : Type where
@@ -54,10 +54,10 @@ def steady(signal : Signal) -> Signal =
   signal
 
 /// The two functions agree at both signal states.
-def toggledTwice : Bridge(toggleTwice, steady) = Path.funext toggleTwice steady;
+def toggledTwice : Bridge toggleTwice steady = Path.funext toggleTwice steady;
 
 /// The sealed atom relation connects the two points.
-def originOtherBridge : Bridge(Point.origin, Point.other) = *{};
+def originOtherBridge : Bridge Point.origin Point.other = *{};
 
 /// The atom reflexivity relates the origin to itself.
-def originHere : Bridge(Point.origin, Point.origin) = Path.here Point.origin;
+def originHere : Bridge Point.origin Point.origin = Path.here Point.origin;

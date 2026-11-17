@@ -51,10 +51,7 @@ module Overwriting : Model(StatePutPut) with sort S = Integer where
   def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer =
     fun (_old) { k s }
   /// `putPut` keeps the second stored value.
-  def putPut(s : Integer, u : Integer, k : Integer -> Integer) -> Path(
-    put s (put u k),
-    put u k
-  ) =
+  def putPut(s : Integer, u : Integer, k : Integer -> Integer) -> Path (put s (put u k)) (put u k) =
     Path.here (put u k)
 
 /// `shown` maps three count values to integers.

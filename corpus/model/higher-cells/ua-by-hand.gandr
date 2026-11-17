@@ -38,21 +38,25 @@ module ByHand where {
 
   /// `same` proves that the derived and hand paths convert.
   @[checks]
-  def same : Path[.A = Path[.A = Type](Tel, Tel)](opposite, opposite_by_hand) = Path.here opposite;
+  def same : Path[.A = Path[.A = Type](Tel, Tel)] opposite opposite_by_hand = Path.here opposite;
 
   /// `moves` transports the binary corolla boolean along the hand path.
   @[checks]
-  def moves : Path[.A = Tel](
-    Path.walk (fun (X) { X }) opposite_by_hand (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
-    *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}
-  ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
+  def moves : Path[.A = Tel] (Path.walk
+    (fun (X) { X })
+    opposite_by_hand
+    (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}})) *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}} = Path.here
+    (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
   /// `alike` gives the same telescope from either path.
   @[checks]
-  def alike : Path[.A = Tel](
-    Path.walk (fun (X) { X }) opposite (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
-    Path.walk (fun (X) { X }) opposite_by_hand (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}})
-  ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
+  def alike : Path[.A = Tel] (Path.walk
+    (fun (X) { X })
+    opposite
+    (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}})) (Path.walk
+    (fun (X) { X })
+    opposite_by_hand
+    (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}})) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
   /// `opposite_dir_by_hand` writes the directed twin by hand.
   @[checks]
@@ -71,10 +75,11 @@ module ByHand where {
 
   /// `rides` equates a directed ride with the transport result.
   @[checks]
-  def rides : Path[.A = Tel](
-    Flow.ride (fun (X) { X }) opposite_dir_by_hand (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}}),
-    *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}}
-  ) = Path.here (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
+  def rides : Path[.A = Tel] (Flow.ride
+    (fun (X) { X })
+    opposite_dir_by_hand
+    (*{*{}, *{+{.0 = *{}}, +{.0 = *{}}}})) *{*{}, *{+{.0 = *{}}, +{.1 = *{}}}} = Path.here
+    (*{*{}, *{+{.0 = *{}}, +{.1 = *{}}}});
 
   /// `reversed` refuses a contravariant directed ride.
   @[refuses("NonCovariantMotive")]

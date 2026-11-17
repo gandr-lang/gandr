@@ -23,11 +23,12 @@ data NatUnits : Type where {
 }
 
 /// The first rule makes zero plus zero zero.
-def zeroPlusZero : Path(add Zero Zero, Zero) = Path.here Zero;
+def zeroPlusZero : Path (add Zero Zero) Zero = Path.here Zero;
 
 /// The call stands at the right endpoint. The point is its value.
-def zeroIsZeroPlusZero : Path(Zero, add Zero Zero) = Path.here Zero;
+def zeroIsZeroPlusZero : Path Zero (add Zero Zero) = Path.here Zero;
 
 /// One plus one is two. The second rule calls the operation again, and the
 /// first rule ends the call.
-def onePlusOne : Path(add (Succ Zero) (Succ Zero), Succ (Succ Zero)) = Path.here (Succ (Succ Zero));
+def onePlusOne : Path (add (Succ Zero) (Succ Zero)) (Succ (Succ Zero)) = Path.here
+  (Succ (Succ Zero));

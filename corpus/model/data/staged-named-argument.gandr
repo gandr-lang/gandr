@@ -24,19 +24,19 @@ def rec le(a : Nat, b : Nat) -> Bool =
       | Succ(q) => le[<] p q
 
 /// Zero is at most one, the second argument through the name.
-def zeroAtMostOne : Path(le Zero oneByName, true) = Path.here true;
+def zeroAtMostOne : Path (le Zero oneByName) true = Path.here true;
 
 /// One is at most one, both arguments through the name.
-def oneAtMostOne : Path(le oneByName oneByName, true) = Path.here true;
+def oneAtMostOne : Path (le oneByName oneByName) true = Path.here true;
 
 /// Zero is at most three, a name reached through the name `two`.
-def zeroAtMostThree : Path(le Zero three, true) = Path.here true;
+def zeroAtMostThree : Path (le Zero three) true = Path.here true;
 
 /// One is at most three, the gate opening on a name at each call.
-def oneAtMostThree : Path(le oneByName three, true) = Path.here true;
+def oneAtMostThree : Path (le oneByName three) true = Path.here true;
 
 /// Three is not at most one.
-def threeAboveOne : Path(le three oneByName, false) = Path.here false;
+def threeAboveOne : Path (le three oneByName) false = Path.here false;
 
 /// `leBoth` checks the first natural against each later natural.
 /// It recurses on the third natural.
@@ -50,7 +50,7 @@ def rec leBoth(a : Nat, b : Nat, c : Nat) -> Bool =
         | Succ(r) => leBoth[<] p q r
 
 /// Zero comes first, and the third reaches its gate through a name.
-def zeroFirst : Path(leBoth Zero oneByName three, true) = Path.here true;
+def zeroFirst : Path (leBoth Zero oneByName three) true = Path.here true;
 
 /// Positive binary numerals, the high bit outermost.
 data Pos : Type where
@@ -90,4 +90,4 @@ def rec cmpPos(a : Pos, b : Pos, k : Cmp) -> Cmp =
       | I(q) => cmpPos[<] p q k
 
 /// One is below two, the second positive through the name.
-def oneBelowTwo : Path(cmpPos H twoPos Eq, Lt) = Path.here Lt;
+def oneBelowTwo : Path (cmpPos H twoPos Eq) Lt = Path.here Lt;

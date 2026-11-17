@@ -30,17 +30,17 @@ pub def around(c : Words) -> Words =
 def built() -> Words = around (Loop Nil);
 
 /// Conversion reduces a cancelled loop word.
-def cancelled_word : Path[.A = Words](Loop (Unloop (Loop Nil)), Loop Nil) = Path.here (Loop Nil);
+def cancelled_word : Path[.A = Words] (Loop (Unloop (Loop Nil))) (Loop Nil) = Path.here (Loop Nil);
 
 /// A path between words compares their normal forms.
-def respelled : Path[.A = Words](Loop Nil, Loop Nil) = cancelled_word;
+def respelled : Path[.A = Words] (Loop Nil) (Loop Nil) = cancelled_word;
 
 /// Two words that reduce to the empty word agree.
-def both_cancel : Path[.A = Words](Unloop (Loop Nil), Loop (Unloop Nil)) = Path.here Nil;
+def both_cancel : Path[.A = Words] (Unloop (Loop Nil)) (Loop (Unloop Nil)) = Path.here Nil;
 
 /// No rule identifies a loop with the empty word.
 @[refuses("EndpointMismatch")]
-def loop_not_nil : Path[.A = Words](Loop Nil, Nil) = Path.here Nil;
+def loop_not_nil : Path[.A = Words] (Loop Nil) Nil = Path.here Nil;
 
 /// The `tell_words` function refuses the cancellation rule.
 @[refuses("RuleNotRespected")]
@@ -70,10 +70,8 @@ def rec mirror(c : Words) -> Words =
 def mirrored() -> Words = mirror (Loop Nil);
 
 /// Conversion gives the same mirror result for the cancelled word.
-def mirror_cancelled : Path[.A = Words](mirror (Loop (Unloop Nil)), Nil) = Path.here Nil;
+def mirror_cancelled : Path[.A = Words] (mirror (Loop (Unloop Nil))) Nil = Path.here Nil;
 
 /// The mirror of a respelled loop is one inverse loop.
-def mirror_respelled : Path[.A = Words](
-  mirror (Loop (Unloop (Loop Nil))),
-  Unloop Nil
-) = Path.here (Unloop Nil);
+def mirror_respelled : Path[.A = Words] (mirror (Loop (Unloop (Loop Nil)))) (Unloop Nil) = Path.here
+  (Unloop Nil);

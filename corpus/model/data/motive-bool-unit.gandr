@@ -53,6 +53,6 @@ def showUnit(u : Unit, x : unitType(u)) -> String =
     | *{} => x
 
 /// The split reads its goal at `*{}`.
-def unitBack(u : Unit) -> Path[.A = Unit](*{}, u) =
+def unitBack(u : Unit) -> Path[.A = Unit] *{} u =
   match u where
     | *{} => Path.here (*{} : Unit)

@@ -45,10 +45,10 @@ def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit =
 def dual = ua[1, 4] Rig Rig (*{.plus = rename}) (*{.plus = rename});
 
 /// `swaps` transports one corolla element along `dual`.
-def swaps : Path(
-  Path.walk (fun (X) { X }) dual (*{*{}, +{.1 = *{}}}),
-  *{*{}, +{.3 = *{}}}
-) = Path.here (*{*{}, +{.3 = *{}}});
+def swaps : Path (Path.walk (fun (X) { X }) dual (*{*{}, +{.1 = *{}}})) *{
+  *{},
+  +{.3 = *{}}
+} = Path.here (*{*{}, +{.3 = *{}}});
 
 /// `crossed` refuses a relabelling that does not commute with corolla symmetry.
 @[refuses("NotNatural")]

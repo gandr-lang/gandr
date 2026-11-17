@@ -30,41 +30,33 @@ pub def rec spinWords(n : Int) -> Words =
 def spun() -> Words = spinWords (S (S Z));
 
 /// Conversion spins two successors to two loops.
-def spun_twice : Path[.A = Words](
-  spinWords (S (S Z)),
-  Loop (Loop Nil)
-) = Path.here (Loop (Loop Nil));
+def spun_twice : Path[.A = Words] (spinWords (S (S Z))) (Loop (Loop Nil)) = Path.here
+  (Loop (Loop Nil));
 
 /// A cancelled count spins to the empty word.
-def spun_back : Path[.A = Words](spinWords (S (P Z)), Nil) = Path.here Nil;
+def spun_back : Path[.A = Words] (spinWords (S (P Z))) Nil = Path.here Nil;
 
 /// A predecessor spins to one inverse loop.
-def spun_under : Path[.A = Words](spinWords (P Z), Unloop Nil) = Path.here (Unloop Nil);
+def spun_under : Path[.A = Words] (spinWords (P Z)) (Unloop Nil) = Path.here (Unloop Nil);
 
 /// The first closed round trip returns a loop word.
-def spun_wound : Path[.A = Words](
-  spinWords (windWords (Loop Nil)),
-  Loop Nil
-) = Path.here (Loop Nil);
+def spun_wound : Path[.A = Words] (spinWords (windWords (Loop Nil))) (Loop Nil) = Path.here
+  (Loop Nil);
 
 /// The second closed round trip returns an integer count.
-def wound_spun : Path[.A = Int](windWords (spinWords (S (S Z))), S (S Z)) = Path.here (S (S Z));
+def wound_spun : Path[.A = Int] (windWords (spinWords (S (S Z)))) (S (S Z)) = Path.here (S (S Z));
 
 /// A closed round trip returns the word normal form.
-def spun_wound_cancelled : Path[.A = Words](
-  spinWords (windWords (Loop (Unloop (Loop Nil)))),
-  Loop Nil
-) = Path.here (Loop Nil);
+def spun_wound_cancelled : Path[.A = Words] (spinWords (windWords (Loop (Unloop (Loop Nil))))) (Loop
+  Nil) = Path.here (Loop Nil);
 
 /// A respelled count returns its integer normal form.
-def wound_spun_respelled : Path[.A = Int](
-  windWords (spinWords (S (P (P Z)))),
-  P Z
-) = Path.here (P Z);
+def wound_spun_respelled : Path[.A = Int] (windWords (spinWords (S (P (P Z))))) (P Z) = Path.here
+  (P Z);
 
 /// The loop round trip does not return the empty word.
 @[refuses("EndpointMismatch")]
-def spun_wound_lost : Path[.A = Words](spinWords (windWords (Loop Nil)), Nil) = Path.here Nil;
+def spun_wound_lost : Path[.A = Words] (spinWords (windWords (Loop Nil))) Nil = Path.here Nil;
 
 /// The `unaround` function adds an inverse loop.
 def unaround(c : Words) -> Words =
@@ -88,6 +80,6 @@ def rec retrWords(n : Int) -> Path[.A = Int](windWords (spinWords n), n) =
 def wordsWinding : *{
   into : Words -> Int,
   from : Int -> Words,
-  sect : (c : Words) -> Path[.A = Words](from (into c), c),
-  retr : (n : Int) -> Path[.A = Int](into (from n), n)
+  sect : (c : Words) -> Path[.A = Words] (from (into c)) c,
+  retr : (n : Int) -> Path[.A = Int] (into (from n)) n
 } = *{windWords, *{spinWords, *{sectWords, retrWords}}};
