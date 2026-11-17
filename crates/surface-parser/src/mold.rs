@@ -1329,13 +1329,14 @@ fn layout_opener(
 {
     let mut ended = 0_usize;
     for token in tokens.get(.. usize::from(index))?.iter().rev() {
-        match token.lexeme {
-            Lexeme::LayoutClose => ended = ended.saturating_add(1),
-            Lexeme::LayoutOpen => match ended.checked_sub(1) {
+        if token.lexeme == Lexeme::LayoutClose {
+            ended = ended.saturating_add(1);
+        }
+        else if token.lexeme == Lexeme::LayoutOpen {
+            match ended.checked_sub(1) {
                 Some(fewer) => ended = fewer,
                 None => return Some(LayoutOpener::from(token.start)),
-            },
-            _ => {},
+            }
         }
     }
     None
