@@ -12,7 +12,7 @@
 # reads the variable before this file. A build that must compile each unit
 # sets `RUSTC_WRAPPER` to the empty string, which gives Cargo no wrapper.
 # - see: #7789, `.cargo/config.toml`, `mise.toml`, `.github/actions/setup-rust/kache-wrapper.bash`
-# macOS removes the Dylint driver library path from this script's environment.
+# macOS removes the library path that Dylint needs.
 # kache's daemon owns the compile environment.
 # - see: #7861
 driver=${1-}
