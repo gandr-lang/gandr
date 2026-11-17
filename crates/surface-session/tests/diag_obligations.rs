@@ -46,9 +46,9 @@ const MALFORMED_THEN_VALID: &str =
 const SEVERITY_AND_SOURCE_ORDER_DISAGREE: &str =
     include_str!("diag_obligations/unformatted/severity-and-source-order-disagree.gandr");
 
-/// A recovering source the lowering refuses as a whole: an unterminated shell
+/// A recovering source the lowering refuses as a whole: an unterminated
 /// block, and no declaration.
-const REFUSED_WHOLE: &str = "#!{echo hello |";
+const REFUSED_WHOLE: &str = "{echo hello |";
 
 /// A source that parses clean.
 const CLEAN: &str = "def good = 2 ;\n";
@@ -177,7 +177,7 @@ fn lowered_carries_the_parse_obligations_verbatim()
     assert_eq!(
         refused.resumed().map(|_| ()),
         Maybe::Absent(resumed::Absent::RefusedWhole),
-        "the shell block refuses the revision whole, so the refused path is the one witnessed"
+        "the block refuses the revision whole, so the refused path is the one witnessed"
     );
 }
 

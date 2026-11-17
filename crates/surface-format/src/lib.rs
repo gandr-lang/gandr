@@ -5,7 +5,7 @@
 //! between them changes. Each top-level form is laid out on its own: its
 //! brackets nest as groups, a group stays on one line when it fits and
 //! breaks one item per line when it does not. A form the parser repaired, a
-//! string, a shell block and a hole are copied byte for byte.
+//! string and a hole are copied byte for byte.
 //!
 //! The formatted text is parsed again before it is returned: its content
 //! digest must equal the source's, its tokens and comments must be the
@@ -18,10 +18,6 @@
 //! included:
 //!
 //! - A string: its fragments are its text.
-//! - A shell block: its line breaks separate commands, so its interior is not
-//!   formatted. Formatting the shell fragment is its own decision, and keeping
-//!   it byte-identical is the conservative one until the fragment states a
-//!   layout.
 //! - A hole: holes are left as written, as error regions are.
 //! - A repaired form: a top-level form holding grout or a minted close, or that
 //!   a parser obligation touches, is copied from its first token to its last,

@@ -20,9 +20,9 @@ use gandr_theory_graphs::Dir;
 use crate::space::Context;
 
 /// The forms the formatter copies byte for byte, by the grammar rule's name
-/// before any sort suffix: a string's fragments are its text, a shell
-/// block's line breaks separate its commands, and a hole is left as written.
-const VERBATIM_RULES: [&str; 3] = ["string", "shell_block", "hole"];
+/// before any sort suffix: a string's fragments are its text, and a hole is
+/// left as written.
+const VERBATIM_RULES: [&str; 2] = ["string", "hole"];
 
 /// The postfix forms of an expression: each takes the operand before it as
 /// its target.
@@ -211,7 +211,7 @@ impl Leaves<'_>
 ///   byte for byte.
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 /// - witness: `tests::format::a_repaired_form_is_copied_as_written`
-/// - witness: `tests::format::strings_shell_blocks_and_holes_are_copied_as_written`
+/// - witness: `tests::format::strings_and_holes_are_copied_as_written`
 #[spec(ensures: |ret| ret.leaves.windows(2).all(|pair| matches!(pair, [left, right] if left.span.end() <= right.span.start()))
     && ret.repaired.windows(2).all(|pair| matches!(pair, [left, right] if left < right)))]
 pub fn flatten<'source>(

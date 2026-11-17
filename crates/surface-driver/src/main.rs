@@ -147,7 +147,7 @@
 //!
 //! `gandr fmt` reaches its paths as `check` does and lays out each source
 //! through `gandr-surface-format`, which keeps every token and comment, copies
-//! strings, shell blocks, holes and repaired forms as written, and refuses any
+//! strings, holes and repaired forms as written, and refuses any
 //! layout whose parse differs from the source's (`gandr-surface-format`). Its
 //! sources are laid out on `--jobs` threads as `check`'s are, and every byte
 //! either stream carries, every source rewritten and the exit are the same at

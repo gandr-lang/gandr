@@ -19,8 +19,8 @@
 //!
 //! A formatting request parses the held text under the process's grammar and
 //! lays it out through `gandr-surface-format` at its default page of 100
-//! columns, which keeps every token and comment, copies strings, shell blocks,
-//! holes and repaired forms as written, and refuses a layout whose parse
+//! columns, which keeps every token and comment, copies strings, holes and
+//! repaired forms as written, and refuses a layout whose parse
 //! differs from the text's. The answer is the edits that turn the held text
 //! into that layout; the server's copy changes only when the client applies
 //! them and synchronises back.

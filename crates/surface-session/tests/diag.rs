@@ -164,7 +164,7 @@ const ERROR_CORPUS: [Case; 13] = [
         name: "refused-whole",
         identifier: "OutOfFragment.WrongSort.declaration",
         source: include_str!("diag/unformatted/error-corpus-8.gandr"),
-        locus: "#!{echo hello |",
+        locus: "{echo hello |",
     },
 ];
 

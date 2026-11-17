@@ -1,2 +1,2 @@
 def answer = 42;
-#!{echo hello |
+{echo hello |

@@ -215,7 +215,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 66_usize] = [
+    pub const ALL: [Self; 65_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -269,7 +269,6 @@ impl FormName
         Self::PACK_MODEL,
         Self::FORGET_MODEL,
         Self::PROJECTION,
-        Self::SHELL_BLOCK,
         Self::TYPED_NUMBER,
         Self::LIST_PATTERN,
         Self::REST_PATTERN,
@@ -331,8 +330,6 @@ impl FormName
     pub const RECV_EXPRESSION: Self = Self("recv_expression");
     /// The source root, which holds a module's declarations.
     pub const ROOT: Self = Self("source_file");
-    /// The shell block `#!{ … }`.
-    pub const SHELL_BLOCK: Self = Self("shell_block");
     /// The signature tail `: T ;`, folded into the declaration.
     pub const SIGNATURE: Self = Self("def_signature");
     /// The tuple `(a, b)`, folded into the parenthesised expression.
