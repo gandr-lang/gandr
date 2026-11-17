@@ -32,9 +32,9 @@
 //!
 //! # References
 //!
-//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — design: the IO direction (§
-//!   io-direction-block): one mechanism for assembly, system calls and foreign
-//!   calls, and LLVM behind a process seam.
+//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — lineage: the IO direction
+//!   (§ io-direction-block) decides one mechanism for assembly, system calls
+//!   and foreign calls, and LLVM behind a process seam.
 
 use alloc::boxed::Box;
 use alloc::string::String;
