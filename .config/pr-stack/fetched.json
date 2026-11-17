@@ -1,0 +1,18 @@
+[
+  {
+    "name": "#3148: a lower merged on the origin since the last fetch is the trunk's, so the upper is measured from the lower's head",
+    "merged": true,
+    "output": "lower"
+  },
+  {
+    "name": "#3148: a lower still open leaves the upper measured from the trunk it forked from",
+    "merged": false,
+    "output": "base"
+  },
+  {
+    "name": "#4064: an upper stacked on a lower that restacked since is measured from the lower's head it carries, not the trunk",
+    "merged": false,
+    "restacked": true,
+    "output": "lower"
+  }
+]
