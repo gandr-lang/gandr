@@ -2836,10 +2836,11 @@ impl OriginTable
         rule: RuleIndex,
     ) -> Maybe<&gandr_theory_levitation::Name, origin::Absent>
     {
-        match self.scope_laws.get(&(scope, rule)) {
-            Some(name) => Maybe::Present(name),
-            None => Maybe::Absent(origin::Absent::Unrecorded),
-        }
+        self.scope_laws
+            .get_key_value(&(scope, rule))
+            .map_or(Maybe::Absent(origin::Absent::Unrecorded), |(_, name)| {
+                Maybe::Present(name)
+            })
     }
 
     /// Record that the block written at `block` lowers to `computation`.
