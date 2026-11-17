@@ -1,0 +1,3 @@
+data A : Type where { | X : A | Y : A }
+data B : Type where { | Z : B | X : B }
+data C : Type where { | W : C | W : C }

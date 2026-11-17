@@ -1,0 +1,4 @@
+def f : Integer ;
+def f = 1 ;
+def g : Integer ;
+def g = f ;

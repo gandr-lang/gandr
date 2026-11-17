@@ -1,0 +1,11 @@
+error[RulesUncompleted]: this rule and an earlier one rewrite `outCellp(inCell(yq))` to two normal forms, `yq` and `zero`, and no rule the order can orient joins them, so the block's rules are refused
+   ╭▸ corpus/pathological/extension/generated.gandr:19:3
+   │
+19 │   ext Cell = Val on left is zero;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
+20 │
+21 │   rule leaked : outCellp (inCell yq) ==> yq;
+   │   ───────────────────────────────────────── the rule it overlaps
+   │
+   ├ note: `Leaked` is refused with RulesUncompleted, as its expectation states
+   ╰ help: add a rule that joins the two normal forms, or remove one of the two rules
