@@ -598,8 +598,9 @@ fn a_type_s_spine_keeps_its_line_in_a_signature_5326()
 fn a_header_s_spine_breaks_its_bracket_above_the_body_7923()
 {
     let grammar = grammar();
-    let source =
-        "def first(p : Pair (Pair Integer Integer) (Pair Integer Integer)) -> Integer =\n  0\n";
+    let source = include_str!(
+        "format/unformatted/a-header-s-spine-breaks-its-bracket-above-the-body-7923.gandr"
+    );
     let expected = "def first(\n  p : Pair (Pair Integer Integer) (Pair Integer Integer)\n) -> Integer =\n  0\n";
     let laid = text(&grammar, source, 60);
     assert_eq!(
