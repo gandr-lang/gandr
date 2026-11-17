@@ -17,9 +17,9 @@ error[FunextUnsupported]: `Path.funext` needs two closed pure functions between 
    │ │   checked; while checking the body of this function; binds f : Two -> Two
 50 │ │   g : Two -> Two,
    │ │   ─ checked against `(g : Two -> Two) -> ((x : Two) -> Path[.A = Two] (f x) (g x)) -> -F Path[.A = Two -> Two] f g`; while checking the body of this function; binds g : Two -> Two
-51 │ │   h : (x : Two) -> Path[.A = Two](f x, g x)
+51 │ │   h : (x : Two) -> Path[.A = Two] (f x) (g x)
    │ │   ─ checked against `((x : Two) -> Path[.A = Two] (f x) (g x)) -> -F Path[.A = Two -> Two] f g`; while checking the body of this function; binds h : (x : Two) -> Path[.A = Two] (f x) (g x)
-52 │ │ ) -> Path[.A = Two -> Two](f, g) =
+52 │ │ ) -> Path[.A = Two -> Two] f g =
 53 │ │   Path.funext f g
    │ │   ┯━━━━━━━━━━━━━│
    │ └───│─────────────┤

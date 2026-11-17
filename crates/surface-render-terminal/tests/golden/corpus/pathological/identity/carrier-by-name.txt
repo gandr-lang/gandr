@@ -1,7 +1,7 @@
 error[UnresolvedName]: `B` is not defined
    ╭▸ corpus/pathological/identity/carrier-by-name.gandr:15:23
    │
-15 │ def strayPath : Path[.B = Integer](4, 4) = Path.here 4;
+15 │ def strayPath : Path[.B = Integer] 4 4 = Path.here 4;
    │                       ━ not found in this scope
    │
    ├ note: `strayPath` is refused with UnresolvedName, as its expectation states
@@ -10,7 +10,7 @@ error[UnresolvedName]: `B` is not defined
 error[UnresolvedName]: `B` is not defined
    ╭▸ corpus/pathological/identity/carrier-by-name.gandr:19:27
    │
-19 │ def strayBridge : Bridge[.B = Integer](4, 4) = *{};
+19 │ def strayBridge : Bridge[.B = Integer] 4 4 = *{};
    │                           ━ not found in this scope
    │
    ├ note: `strayBridge` is refused with UnresolvedName, as its expectation states

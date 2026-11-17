@@ -1,7 +1,7 @@
 error[LoopNotRespected]: this case might tell a loop apart from staying put: carried along the loop, its answer at the loop's point is not that answer
    ╭▸ corpus/pathological/identity/sphere-maps.gandr:27:3
    │
-26 │    def flattenRefl(x : S2) -> Path[.A = S2](flatten x, x) =
+26 │    def flattenRefl(x : S2) -> Path[.A = S2] (flatten x) x =
    │    │               ─ checked against `(x : S2) -> -F (Path[.A = S2] (flatten x) x)`; while checking the body of this function; binds x : S2
    │ ┌──┘
    │ │

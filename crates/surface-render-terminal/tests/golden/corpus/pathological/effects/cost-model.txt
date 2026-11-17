@@ -1,5 +1,5 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/effects/cost-model.gandr:43:5
+   ╭▸ corpus/pathological/effects/cost-model.gandr:40:5
    │
 19 │   module Doubled : Model(Cost.Eff) with sort N = Nat -> Nat where
    │                               ┬──
@@ -15,9 +15,8 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │ │     ─ checked; while checking the body of this function; binds b : Nat -> Nat
 38 │ │     k : (Nat -> Nat) -> Nat
    │ │     ─ checked; while checking the body of this function; binds k : (Nat -> Nat) -> Nat
-   ┆ ┆
-42 │ │   ) =
-43 │ │     Path.here (charge (plus a b) k)
+39 │ │   ) -> Path[.A = (Nat -> Nat) -> Nat] (charge a (charge b k)) (charge (plus a b) k) =
+40 │ │     Path.here (charge (plus a b) k)
    │ │     ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └─────│─────────────────────────────┤
    │       │                             checked; while checking the body of this thunk

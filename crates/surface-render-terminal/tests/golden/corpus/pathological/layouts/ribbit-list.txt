@@ -1,7 +1,7 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/layouts/ribbit-list.gandr:35:24
    │
-32 │    def restored(l : Ints) -> Path(listOf (tagsOf l), l) =
+32 │    def restored(l : Ints) -> Path (listOf (tagsOf l)) l =
    │    │            ─ checked against `(a : Ints) -> -F (Path[.A = Ints] (listOf (tagsOf a)) a)`; while checking the body of this function; binds l : Ints
    │ ┌──┘
    │ │

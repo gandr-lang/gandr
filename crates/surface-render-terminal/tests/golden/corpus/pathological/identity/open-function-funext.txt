@@ -1,15 +1,12 @@
 error[FunextUnsupported]: `Path.funext` needs two closed pure functions between types built from units, integers, strings, pairs, two-way sums and data types that do not hold themselves; an argument may itself be a function between such types
-  ╭▸ corpus/pathological/identity/open-function-funext.gandr:8:3
+  ╭▸ corpus/pathological/identity/open-function-funext.gandr:5:3
   │
-4 │   def open(f : Unit + Unit -> Unit + Unit) -> Path(
+4 │   def open(f : Unit + Unit -> Unit + Unit) -> Path f f =
   │   │        ┬   ────────────────────────── the type it synthesises
   │   │        │
   │ ┌─┘        checked against `(a : Bool -> Bool) -> -F Path[.A = Bool -> Bool] a a`; while checking the body of this function; binds f : Bool -> Bool
   │ │
-5 │ │   f,
-6 │ │   f
-7 │ │ ) =
-8 │ │   Path.funext f f
+5 │ │   Path.funext f f
   │ │   ┯━━━━━━━━━━━━━│
   │ └───│─────────────┤
   │     │             checked against `(a : Bool -> Bool) -> Path[.A = Bool -> Bool] a a`; while checking the body of this thunk
