@@ -1031,45 +1031,16 @@ pub fn candidate_labels<'text>(
         Lexeme::Character => labels.push(CandidateLabel::from("character")),
         Lexeme::Quote => labels.push(CandidateLabel::from("\"")),
         Lexeme::StringFragment => labels.push(CandidateLabel::from("string_fragment")),
-        Lexeme::ShellStringFragment => {
-            labels.push(CandidateLabel::from("double_string_fragment"));
-        },
         Lexeme::EscapeSequence => labels.push(CandidateLabel::from("escape_sequence")),
-        // ONE label: the grammar's single shell-word atom class.
-        // The former `command_name` / `argument` labels rode the
-        // dead composite shell rules; with those folded away, a shell word has
-        // exactly one mold and takes the molder's sole-admissible fast path —
-        // no dry-run, no lookahead, per word.
-        Lexeme::ShellWord => labels.push(CandidateLabel::from("shell_word")),
-        // ONE label, like the shell word: the labeler has already decided the
-        // `NAME=value` shape, so the assignment takes the sole-admissible fast
-        // path too (no dry-run, no lookahead). The mold and its walk-index entry
-        // already existed — only the tile was missing.
-        Lexeme::EnvAssign => labels.push(CandidateLabel::from("environment_assignment")),
-        Lexeme::SingleQuotedContent => {
-            labels.push(CandidateLabel::from("single_quoted_content"));
-        },
-        Lexeme::VariableName => labels.push(CandidateLabel::from("variable_name")),
-        Lexeme::SubshellOpen => labels.push(CandidateLabel::from("subshell_open")),
-        Lexeme::SubshellClose => labels.push(CandidateLabel::from("subshell_close")),
-        Lexeme::FileDescriptor => labels.push(CandidateLabel::from("file_descriptor")),
         Lexeme::ArmBar => labels.push(CandidateLabel::from("arm_bar")),
         Lexeme::LayoutOpen => labels.push(CandidateLabel::from("{")),
         Lexeme::LayoutSemi => labels.push(CandidateLabel::from(";")),
         Lexeme::LayoutClose => labels.push(CandidateLabel::from("}")),
         Lexeme::Punct => {
             labels.push(CandidateLabel::from(text));
-            // A dialect-bearing shell opener (`#!sh{`, `$!py{`) lexes as one
-            // punctuation token; map it to the canonical opener label.
-            if text.starts_with("#!") && text.ends_with('{') {
-                labels.push(CandidateLabel::from("#!{"));
-            }
-            else if text.starts_with("$!") && text.ends_with('{') {
-                labels.push(CandidateLabel::from("command_substitution_start"));
-            }
             // An ASCII spelling the spelling table pairs with a glyph offers
             // the glyph's tile, so the alias molds the glyph's one form.
-            else if let Some(tile) = aliased(LabelText(text)) {
+            if let Some(tile) = aliased(LabelText(text)) {
                 labels.push(CandidateLabel::from(tile.0));
             }
         },
@@ -1278,18 +1249,10 @@ fn ends_declaration(
         | Lexeme::Character
         | Lexeme::Quote
         | Lexeme::StringFragment
-        | Lexeme::ShellStringFragment
         | Lexeme::EscapeSequence
-        | Lexeme::ShellWord
-        | Lexeme::EnvAssign
-        | Lexeme::SingleQuotedContent
-        | Lexeme::VariableName
-        | Lexeme::FileDescriptor
         | Lexeme::ArmBar
         | Lexeme::LayoutOpen
         | Lexeme::LayoutClose
-        | Lexeme::SubshellOpen
-        | Lexeme::SubshellClose
         | Lexeme::Space
         | Lexeme::Unknown => false,
     };

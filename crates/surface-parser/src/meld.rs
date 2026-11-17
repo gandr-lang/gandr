@@ -2419,19 +2419,19 @@ impl<'pbg> MeldState<'pbg>
     ///   is no application, the grammar has an application tile in `sort`,
     ///   `mold` starts an operand by itself, the slope's top is a complete
     ///   operand of `sort` whose source does not end in `}` or opens with a
-    ///   connective's opener `*{`, `+{`, `&{` or `#{`, a form is open, and the
-    ///   open form is no shell form. `None` otherwise.
+    ///   connective's opener `*{`, `+{`, `&{` or `#{`, and a form is open.
+    ///   `None` otherwise.
     /// - panics: none.
-    /// - economy: a few comparisons, three byte reads and one binary search of
-    ///   the shell openers. No string is compared.
+    /// - economy: a few comparisons and three byte reads. No string is
+    ///   compared.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `f x y` applies twice, a shell block's words stay
-    ///   flat, `if c { a } else { b } x` stays two statements, a braced value
-    ///   `*{}` or `+{.l = a}` takes the next argument, a call `f(x)` stays a
-    ///   call, and two stray words at the root stay strays. `Vec A n` in a type
-    ///   applies twice, and `-F Maybe A` returns the application.
-    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    /// - hypothesis: L3 — `f x y` applies twice, `if c { a } else { b } x`
+    ///   stays two statements, a braced value `*{}` or `+{.l = a}` takes the
+    ///   next argument, a call `f(x)` stays a call, and two stray words at the
+    ///   root stay strays. `Vec A n` in a type applies twice, and `-F Maybe A`
+    ///   returns the application.
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
     #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(sort) && application != mold))]
     fn juxtaposed(
@@ -2463,15 +2463,15 @@ impl<'pbg> MeldState<'pbg>
     /// - requires: nothing.
     /// - ensures: the grammar's application mold exactly when the slope's top
     ///   is a complete expression operand whose source does not end in `}` or
-    ///   opens with a connective's opener `*{`, `+{`, `&{` or `#{`, a form is
-    ///   open, and the open form is no shell form. `None` otherwise.
+    ///   opens with a connective's opener `*{`, `+{`, `&{` or `#{`, and a form
+    ///   is open. `None` otherwise.
     /// - provides: the slot a completion reads after an operand and a space.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::juxtaposed`], and a completion after `f p
     ///   ` offers a value slot.
-    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application()))]
@@ -2646,12 +2646,8 @@ impl<'pbg> MeldState<'pbg>
             return None;
         }
         // The root holds declarations alone, so two words side by side there
-        // are strays, never an application. A shell form's words stay flat
-        // side by side.
-        let open = self.open_form_mold()?;
-        if self.pbg.flat_openers().binary_search(&open).is_ok() {
-            return None;
-        }
+        // are strays, never an application.
+        self.open_form_mold()?;
 
         Some(application)
     }

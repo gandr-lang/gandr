@@ -350,23 +350,13 @@ fn class(
             bracketing: Bracketing::Opens(Kind::Block),
             ..Class::default()
         },
-        Lexeme::SubshellOpen => Class {
-            bracketing: Bracketing::Opens(Kind::Opaque),
-            ..Class::default()
-        },
-        Lexeme::LayoutClose | Lexeme::SubshellClose => Class {
+        Lexeme::LayoutClose => Class {
             bracketing: Bracketing::Closes,
             ..Class::default()
         },
         Lexeme::Quote
         | Lexeme::StringFragment
-        | Lexeme::ShellStringFragment
         | Lexeme::EscapeSequence
-        | Lexeme::ShellWord
-        | Lexeme::EnvAssign
-        | Lexeme::SingleQuotedContent
-        | Lexeme::VariableName
-        | Lexeme::FileDescriptor
         | Lexeme::ArmBar
         | Lexeme::LayoutSemi
         | Lexeme::Space
@@ -539,16 +529,8 @@ fn gaps<'text>(
             | Lexeme::Character
             | Lexeme::Quote
             | Lexeme::StringFragment
-            | Lexeme::ShellStringFragment
             | Lexeme::EscapeSequence
             | Lexeme::Punct
-            | Lexeme::ShellWord
-            | Lexeme::EnvAssign
-            | Lexeme::SingleQuotedContent
-            | Lexeme::VariableName
-            | Lexeme::SubshellOpen
-            | Lexeme::SubshellClose
-            | Lexeme::FileDescriptor
             | Lexeme::ArmBar
             | Lexeme::Unknown => {},
         }
@@ -1067,16 +1049,8 @@ fn continued<'text>(
             | Lexeme::Character
             | Lexeme::Quote
             | Lexeme::StringFragment
-            | Lexeme::ShellStringFragment
             | Lexeme::EscapeSequence
             | Lexeme::Punct
-            | Lexeme::ShellWord
-            | Lexeme::EnvAssign
-            | Lexeme::SingleQuotedContent
-            | Lexeme::VariableName
-            | Lexeme::SubshellOpen
-            | Lexeme::SubshellClose
-            | Lexeme::FileDescriptor
             | Lexeme::ArmBar
             | Lexeme::Unknown => {},
         }

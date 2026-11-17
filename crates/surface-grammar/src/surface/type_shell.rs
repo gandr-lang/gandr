@@ -1,4 +1,4 @@
-//! The type, session-type, lexical and shell-context surface forms.
+//! The type, session-type and lexical surface forms.
 //!
 //! # The bridges and the universe are built-in spellings
 //!
@@ -65,12 +65,12 @@ use crate::TileLabel;
 use crate::model::RegexShape;
 use crate::model::Sym;
 
-/// Builds the type, session-type and shell-context rules.
+/// Builds the type and session-type rules.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the type and session-type rules, then the shell-context rules,
-///   each with the provenance of the named kind it realises.
+/// - ensures: the type and session-type rules, each with the provenance of the
+///   named kind it realises.
 /// - fails: a group `precs` does not hold.
 /// - panics: none.
 ///
@@ -86,12 +86,11 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 57 && rules.iter().take(43).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(43).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 43 && rules.iter().all(|rule| rule.sort() == Sort::Type) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "string.type")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
     add_type_rules(&mut rules, precs)?;
-    add_shell_rules(&mut rules, precs)?;
     Ok(rules)
 }
 
@@ -1103,349 +1102,6 @@ fn add_type_rules(
     Ok(())
 }
 
-/// Add shell-context structural rules — the POSIX shell DSL surface.
-///
-/// # Shell-surface coverage
-///
-/// The shell forms below mold in the shell block's interior Expression hole
-/// (`#!{ … }`), where command atoms juxtapose and the operator / separator
-/// forms bind them. This table records what POSIX-shell surface the fragment
-/// **folds in** (parses, zero-obligation) versus what is **deliberately out**.
-/// Parse level only: the semantics are not this crate's.
-///
-/// ## Folded in
-///
-/// | Form                     | Surface                          | Realisation                                             |
-/// | ------------------------ | -------------------------------- | ------------------------------------------------------- |
-/// | simple command           | `cmd arg …`                      | `shell_word` atom juxtaposition (one word class)         |
-/// | environment assignment   | `FOO=bar cmd`                    | `environment_assignment` (whole-token `NAME=` munch)     |
-/// | single-quoted string     | `'…'` (verbatim run)             | `single_quoted_string` (opaque `single_quoted_content`)  |
-/// | double-quoted string     | `"…"` (fragments + escapes)      | `double_quoted_string`                                   |
-/// | simple parameter         | `$name`                          | `variable_expansion` (`$` branch)                        |
-/// | braced parameter         | `${name}`                        | `variable_expansion` (`${` branch; PBG-only)             |
-/// | parameter in a `"…"`      | `"… $name … ${name} …"`          | inline expansion in `double_quoted_string`               |
-/// | pipeline                 | `a \| b`, `a \|& b`              | `pipeline` binary infix                                  |
-/// | logical control          | `a && b`, `a \|\|`               | the `&&` / `\|\|` expression binaries                    |
-/// | list separators          | `a ; b`, `a & b`                 | `list_operator` (`;` / `&`)                              |
-/// | redirection              | `> >> < <& >& <>` + target       | `redirection_operator` + juxtaposed target               |
-/// | file descriptor          | `2>`, `2>&1`                     | `file_descriptor` (a digit run before a redirect)        |
-/// | subshell                 | `[ … ]`                          | `subshell` (distinct shell-context brackets)             |
-/// | host escape              | `$( E )`                         | `host_escape` (a gandr expression interior)              |
-///
-/// ## Deliberately out (the POSIX tail)
-///
-/// Command substitution `$( … )` / `` `…` `` and the `$!{ … }` block form;
-/// arithmetic expansion `$(( … ))`; parameter-expansion operators
-/// (`${name:-word}`, `${#name}`, `${name%pat}`, `${name/a/b}`, …); here-docs
-/// (`<<`, `<<-`) and here-strings (`<<<`); globs and brace / tilde expansion
-/// (`*`, `?`, `[…]`-glob, `{a,b}`, `~`); the `case` / `for` / `while` / `if`
-/// shell control words and shell functions; the environment-assignment prefix
-/// SEMANTICS (`FOO=bar cmd` — the assignment token itself is folded in above);
-/// command negation (`! cmd`); process substitution (`<( … )`); and job
-/// control / history. Each is a later shell-stage widening, and each
-/// parse-and-declines or lexes as an ordinary word today.
-///
-/// The tree-sitter shell composites `shell_list`, `and_expression`,
-/// `or_expression` and `negation` have no rule. A list is the juxtaposition
-/// of commands and `list_operator` separators in the block's hole, `&&` and
-/// `||` mold as the expression binaries, and command negation is out with the
-/// POSIX tail; each kind is recorded as an adaptation.
-///
-/// `environment_assignment` is a rule: the labeler reads `NAME=value` as one
-/// token, and this rule molds it as one Expression atom. Only the prefix
-/// semantics are left out, and they are declined by name after parsing.
-///
-/// `command_substitution` molds on the `command_substitution_start` and `}`
-/// tiles the labeler emits, and is declined by name after parsing.
-///
-/// The `command` / `command_name` / `argument` / `redirection` kinds have no
-/// rule: a composite over placeholder tiles would add fresh-menu molds that
-/// tie every shell word and file descriptor. Their kinds fold as adaptations
-/// onto `shell_word` / `redirection_operator`; grouping the juxtaposed atoms
-/// into name, arguments and redirections is the semantic stage's job.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: appends this group's rules to `rules`, in order.
-/// - fails: a group `precs` does not hold.
-/// - panics: none.
-///
-/// # Errors
-/// [`PbgError::MissingPrec`] naming the absent group.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in groups and missing-band tables, L2 suffix and
-///   prefix observations plus L3 grammar identity catch reordered families,
-///   incorrect sorts, lost prior rules and premature mutation. The predicate
-///   observes returned metadata and the first missing lookup; arbitrary table
-///   aliases and allocation failure are not exhausted.
-/// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 14 && added.iter().all(|rule| rule.sort() == Sort::Expression && ["expression.atom", "expression.postfix"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "list_operator") && added.last().is_some_and(|rule| rule.name().0 == "redirection_operator"))))]
-fn add_shell_rules(
-    rules: &mut Vec<Rule>,
-    precs: &PrecTable,
-) -> Result<(), PbgError>
-{
-    let expr = Sort::Expression;
-    let atom = precs.prec(PrecName("expression.atom"))?;
-    let postfix = precs.prec(PrecName("expression.postfix"))?;
-
-    let mut list_operator = rule(
-        RuleName("list_operator"),
-        expr,
-        atom,
-        Regex::alt([
-            tile(TileLabel(";")),
-            tile(TileLabel("&")),
-            tile(TileLabel("newline")),
-        ]),
-    );
-    list_operator.adaptations.push(Adaptation::new(
-        RuleName("list_operator"),
-        SurfaceForm("shell_list"),
-        AdaptationReason("a shell list is the juxtaposition of commands and `list_operator` separators in the shell block's expression hole, so it has no composite of its own; grouping the commands between separators is the semantic stage's job"),
-    ));
-    list_operator.adaptations.push(Adaptation::new(
-        RuleName("list_operator"),
-        SurfaceForm("or_expression"),
-        AdaptationReason("a shell `a || b` molds as the expression binary `binary_expression.or` between two commands, so the shell has no `||` composite of its own"),
-    ));
-    list_operator.adaptations.push(Adaptation::new(
-        RuleName("list_operator"),
-        SurfaceForm("and_expression"),
-        AdaptationReason("a shell `a && b` molds as the expression binary `binary_expression.and` between two commands, so the shell has no `&&` composite of its own"),
-    ));
-    rules.push(list_operator);
-    // A shell pipeline `cmd | cmd` (and stderr-merging `cmd |& cmd`) is a
-    // binary infix between two command expressions, exactly the shape the
-    // term binaries (`&&`, `||`) take: a single `|` / `|&` tile with a
-    // recursive-sort hole on each side, so the melder classifies it as an
-    // operator (paper Fig. 29's Reduce) admissible in the shell block's
-    // expression hole. The tree-sitter `pipeline` (`_shell_command
-    // (choice("|","|&") optional(_shell_command))+`) chains the operator
-    // with a `repeat`, which the melder reads as a form-mid continuation
-    // tile — inadmissible as an operator between two juxtaposed
-    // command atoms; the binary shape keeps operator status. Both spellings
-    // keep the `pipeline` provenance so the named-kind inventory covers the
-    // kind.
-    rules.push(pipe_rule(
-        RuleName("pipeline.pipe"),
-        expr,
-        postfix,
-        TileLabel("|"),
-    ));
-    rules.push(pipe_rule(
-        RuleName("pipeline.pipe_both"),
-        expr,
-        postfix,
-        TileLabel("|&"),
-    ));
-    let mut environment_assignment = rule(
-        RuleName("environment_assignment"),
-        expr,
-        atom,
-        tile(TileLabel("environment_assignment")),
-    );
-    environment_assignment.adaptations.push(Adaptation::new(
-        RuleName("environment_assignment"),
-        SurfaceForm("negation"),
-        AdaptationReason("command negation `! cmd` is left out with the POSIX tail, so the shell has no negation form; the kind is recorded here, beside the other command-prefix form the surface keeps"),
-    ));
-    rules.push(environment_assignment);
-    // ONE shell-word atom class. The tree-sitter grammar distinguishes
-    // `command_name` / `argument` / `shell_word` — a distinction with no
-    // PBG-parse-level content (all three are the same juxtaposed Expression
-    // atom over the same lexeme class). Realised as composite rules
-    // (`command`, `argument`, `redirection`) over placeholder tiles the
-    // labeler never emits, they would put extra molds on the ShellWord fresh
-    // menu (a `command_name` atom, a `command` form-start, a second
-    // `shell_word` occurrence), so EVERY shell word would tie 3–4 candidates
-    // and fire the molder's dry-run + lookahead machinery per word. A shell
-    // word has exactly ONE mold instead (the molder's sole-admissible fast
-    // path), and the folded kinds are recorded as adaptations below so
-    // named-kind parity covers them. The command / argument STRUCTURE (name +
-    // arguments as one node) is the semantic stage's job over the juxtaposed
-    // atoms.
-    let mut shell_word = rule(
-        RuleName("shell_word"),
-        expr,
-        atom,
-        tile(TileLabel("shell_word")),
-    );
-    shell_word.adaptations.push(Adaptation::new(
-        RuleName("shell_word"),
-        SurfaceForm("command_name"),
-        AdaptationReason("folded into the single shell-word atom class: a command's name is positionally the first word of a juxtaposed command run, not a lexically distinct atom; a dedicated `command_name` mold would tie the shell-word menu and cost a dry-run per word"),
-    ));
-    shell_word.adaptations.push(Adaptation::new(
-        RuleName("shell_word"),
-        SurfaceForm("argument"),
-        AdaptationReason("folded into the single shell-word atom class: the `argument` alternation (shell_word / variable_expansion / command_substitution / host_escape) has no member that is not a standalone atom already; another `shell_word` occurrence would only widen the shell-word menu"),
-    ));
-    shell_word.adaptations.push(Adaptation::new(
-        RuleName("shell_word"),
-        SurfaceForm("command"),
-        AdaptationReason("folded into shell-block juxtaposition: a `command` composite (`negation? env* command_name command_part*`) would rest on placeholder tiles, and its `command_name` form-start mold would tie every shell word; a command is the juxtaposed run of word, string and expansion atoms between separators, grouped at the semantic stage"),
-    ));
-    rules.push(shell_word);
-    rules.push(rule(
-        RuleName("single_quoted_string"),
-        expr,
-        atom,
-        Regex::seq([
-            tile(TileLabel("'")),
-            tile(TileLabel("single_quoted_content")),
-            tile(TileLabel("'")),
-        ]),
-    ));
-    // A shell double-quoted string `"…"`: a `"`-delimited run
-    // of `double_string_fragment` text, `\.` escapes, and parameter expansions
-    // (`$name` / `${name}`). The labeler's shell double-quote mode emits these
-    // constituent tokens, so the string is one atom (interior spaces
-    // preserved), not juxtaposed shell words. The parameter expansion is
-    // INLINED here (the `$ variable_name` / `${ variable_name }` shapes,
-    // matching the labeler's tokens) rather than a `variable_expansion`
-    // composite tile the labeler never emits. The tree-sitter grammar also
-    // admits a `command_substitution` inside the string; this surface does
-    // not (command substitution belongs to the POSIX tail it leaves out)
-    // and records that as an adaptation — the named kind stays covered by
-    // the standalone rule.
-    let mut double_quoted_string = rule(
-        RuleName("double_quoted_string"),
-        expr,
-        atom,
-        Regex::seq([
-            tile(TileLabel("\"")),
-            Regex::repeat(Regex::alt([
-                tile(TileLabel("double_string_fragment")),
-                tile(TileLabel("escape_sequence")),
-                dquote_variable_expansion(),
-            ])),
-            tile(TileLabel("\"")),
-        ]),
-    );
-    double_quoted_string.adaptations.push(Adaptation::new(
-        RuleName("double_quoted_string"),
-        SurfaceForm("command_substitution"),
-        AdaptationReason("the tree-sitter `double_quoted_string` interior admits a `command_substitution` `$!{ … }`; this surface leaves command substitution out, so the interior is fragments, escapes and parameter expansions only. The `command_substitution` named kind stays realised by its standalone rule; the inline `variable_expansion` shapes (`$ variable_name` / `${ variable_name }`) match the tokens the labeler emits."),
-    ));
-    rules.push(double_quoted_string);
-    // A parameter expansion `$name` OR its braced form `${name}`.
-    // The two spellings share ONE `variable_expansion` provenance
-    // and discriminate on the opener tile (`$` vs `${`), so a shell parameter
-    // is one construct with one eventual semantics seam. The braced form is
-    // a divergence from the tree-sitter grammar (whose `variable_expansion`
-    // is `$` `variable_name` alone), recorded as an adaptation. Its
-    // interior is a `variable_name`, NOT a host-expression hole:
-    // the labeler's shell-brace mode keeps the interior a shell parameter name,
-    // DISTINCT from the string-interpolation `${ E }` (whose interior is host
-    // tokens) — a shell parameter is not a gandr binding.
-    let mut variable_expansion = rule(
-        RuleName("variable_expansion"),
-        expr,
-        atom,
-        Regex::alt([
-            Regex::seq([tile(TileLabel("$")), tile(TileLabel("variable_name"))]),
-            Regex::seq([
-                tile(TileLabel("${")),
-                tile(TileLabel("variable_name")),
-                tile(TileLabel("}")),
-            ]),
-        ]),
-    );
-    variable_expansion.adaptations.push(Adaptation::new(
-        RuleName("variable_expansion"),
-        SurfaceForm("braced_variable_expansion"),
-        AdaptationReason("the braced parameter form `${name}` is folded into variable_expansion as a second opener branch discriminating on the `${` tile. The tree-sitter grammar has only `$name`, so the braced form is PBG-only; its interior is a shell `variable_name`, kept distinct from the string-interpolation `${ E }` host-expression mechanism because a shell parameter name is not a host binding. The `${name:-word}` / `${#name}` operator forms belong to the POSIX tail this surface leaves out."),
-    ));
-    rules.push(variable_expansion);
-    rules.push(rule(
-        RuleName("variable_name"),
-        expr,
-        atom,
-        tile(TileLabel("variable_name")),
-    ));
-    rules.push(rule(
-        RuleName("command_substitution"),
-        expr,
-        atom,
-        Regex::seq([
-            tile(TileLabel("command_substitution_start")),
-            tile(TileLabel("}")),
-        ]),
-    ));
-    rules.push(rule(
-        RuleName("host_escape"),
-        expr,
-        atom,
-        Regex::seq([
-            tile(TileLabel("$")),
-            tile(TileLabel("(")),
-            Regex::sort(expr),
-            tile(TileLabel(")")),
-        ]),
-    ));
-    // `subshell` (`[ … ]`): a bracket-delimited shell group whose commands
-    // mold by juxtaposition in the interior Expression hole, exactly like the
-    // shell block. Its brackets are distinct shell-context tiles
-    // (`subshell_open` / `subshell_close`, emitted only inside a shell block),
-    // so the host list literal's `[` menu is untouched. This is a divergence
-    // from POSIX, where `[` is the `test` builtin and `( … )` is the subshell;
-    // the gandr shell dialect spells a subshell `[ … ]`, keeping `( … )` free
-    // for the `$( … )` host escape.
-    let mut subshell = rule(
-        RuleName("subshell"),
-        expr,
-        atom,
-        Regex::seq([
-            tile(TileLabel("subshell_open")),
-            Regex::optional(Regex::sort(expr)),
-            tile(TileLabel("subshell_close")),
-        ]),
-    );
-    subshell.adaptations.push(Adaptation::new(
-        RuleName("subshell"),
-        SurfaceForm("subshell"),
-        AdaptationReason("the gandr shell dialect spells a subshell `[ … ]`, not the POSIX `( … )` (`[` is the POSIX `test` builtin; `( … )` stays free for the `$( … )` host escape). Its brackets are distinct shell-context tiles (`subshell_open` / `subshell_close`) so the host list-literal `[` menu is not widened."),
-    ));
-    rules.push(subshell);
-    rules.push(rule(
-        RuleName("file_descriptor"),
-        expr,
-        atom,
-        tile(TileLabel("file_descriptor")),
-    ));
-    // The redirection operators are single atoms; the `redirection` COMPOSITE
-    // (`fd? op target`) was a dead rule over placeholder tiles (its
-    // `redirection_operator` / `argument` / string tiles never molded — a real
-    // `>` molds through THIS alternation) whose `file_descriptor` form-start
-    // mold tied every fd token. It is folded here as an adaptation:
-    // the fd / operator / target grouping is the semantic
-    // stage's job over the juxtaposed atoms, exactly as it already was.
-    let mut redirection_operator = rule(
-        RuleName("redirection_operator"),
-        expr,
-        atom,
-        Regex::alt([
-            tile(TileLabel("<>")),
-            tile(TileLabel("<&")),
-            tile(TileLabel(">&")),
-            tile(TileLabel(">>")),
-            tile(TileLabel("<")),
-            tile(TileLabel(">")),
-        ]),
-    );
-    redirection_operator.adaptations.push(Adaptation::new(
-        RuleName("redirection_operator"),
-        SurfaceForm("redirection"),
-        AdaptationReason("folded into juxtaposition: a `redirection` composite (`fd? op target`) would rest on placeholder tiles, and its `file_descriptor` form-start mold would tie every fd token; a redirection is the juxtaposed `fd? op target` atom run, grouped at the semantic stage"),
-    ));
-    rules.push(redirection_operator);
-    Ok(())
-}
-
 /// Whether the endpoint list after a supplied carrier is part of the form.
 ///
 /// # Specification
@@ -1481,75 +1137,6 @@ fn rule(
 fn tile(label: TileLabel) -> Regex
 {
     Regex::tile(label)
-}
-
-/// Build a shell pipeline binary infix rule `E op E` under the `pipeline`
-/// provenance, so both `|` and `|&` spellings realise the `pipeline` named
-/// kind.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: preserves the supplied name, sort and band and places one
-///   operator between two recursive holes under the pipeline provenance.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
-///   corpus roles catch changed delimiters, alternatives and sort boundaries.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
-/// - witness: `surface::type_shell::tests::binary_rules_remain_operators_without_repeat_seams`
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.name() == name && ret.sort() == sort && ret.prec() == prec && ret.provenance().0 == "pipeline" && matches!(ret.regex().view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == operator.0)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort))))]
-fn pipe_rule(
-    name: RuleName,
-    sort: Sort,
-    prec: Prec,
-    operator: TileLabel,
-) -> Rule
-{
-    Rule::with_provenance(
-        name,
-        Provenance("pipeline"),
-        sort,
-        prec,
-        Regex::seq([Regex::sort(sort), tile(operator), Regex::sort(sort)]),
-    )
-}
-
-/// Build the inline parameter-expansion shape used inside a shell double-quoted
-/// string: `$ variable_name` or `${ variable_name }`.
-///
-/// Inlined (not a `variable_expansion` composite tile) so it matches the
-/// labeler's constituent tokens; the same two-branch shape the standalone
-/// `variable_expansion` rule carries, keeping the simple and braced spellings
-/// unified.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the simple and braced variable-name expansions, with their
-///   distinct openers and a closer only on the braced branch.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
-///   corpus roles catch changed delimiters, alternatives and sort boundaries.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
-/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
-/// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "$")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "variable_name")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "${")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "variable_name")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))))]
-fn dquote_variable_expansion() -> Regex
-{
-    Regex::alt([
-        Regex::seq([tile(TileLabel("$")), tile(TileLabel("variable_name"))]),
-        Regex::seq([
-            tile(TileLabel("${")),
-            tile(TileLabel("variable_name")),
-            tile(TileLabel("}")),
-        ]),
-    ])
 }
 
 /// Build a binary infix type rule `T op T` at the given precedence band.
@@ -1817,10 +1404,8 @@ mod tests
     use gandr_theory_graphs::PrecDag;
     use gandr_theory_graphs::PrecSpec;
 
-    use super::add_shell_rules;
     use super::add_type_rules;
     use super::binary_infix_rule;
-    use super::pipe_rule;
     use crate::Pbg;
     use crate::PbgError;
     use crate::PrecName;
@@ -1836,12 +1421,7 @@ mod tests
     #[test]
     fn assembly_refusal_and_success_preserve_prior_rules()
     {
-        let add_types: fn(&mut Vec<Rule>, &PrecTable) -> Result<(), PbgError> = add_type_rules;
-        for (missing, assemble) in [
-            ("type.atom", add_types),
-            ("type.arrow", add_type_rules),
-            ("expression.postfix", add_shell_rules),
-        ] {
+        for missing in ["type.atom", "type.arrow"] {
             let complete = built_in_prec_table().expect("built-in bands");
             let mut spec = PrecSpec::new();
             let mut names = Vec::new();
@@ -1864,10 +1444,10 @@ mod tests
             let mut held = before.clone();
             assert_eq!(
                 Err(PbgError::MissingPrec { name: missing }),
-                assemble(&mut held, &partial)
+                add_type_rules(&mut held, &partial)
             );
             assert_eq!(before, held);
-            assemble(&mut held, &complete).expect("complete band table");
+            add_type_rules(&mut held, &complete).expect("complete band table");
             assert_eq!(Some(before.as_slice()), held.get(.. before.len()));
         }
     }
@@ -1875,39 +1455,29 @@ mod tests
     #[test]
     fn binary_rules_remain_operators_without_repeat_seams()
     {
-        for (sort, band, operator, provenance) in [
-            (Sort::Type, "type.sum", "+", "synthetic"),
-            (Sort::Expression, "expression.postfix", "|", "pipeline"),
-        ] {
-            let table = built_in_prec_table().expect("built-in bands");
-            let prec = table.prec(PrecName(band)).expect("operator band");
-            let rule = if sort == Sort::Type {
-                binary_infix_rule(RuleName("synthetic"), sort, prec, TileLabel(operator))
-            }
-            else {
-                pipe_rule(RuleName("synthetic"), sort, prec, TileLabel(operator))
-            };
-            let grammar = Pbg::build(table.into_dag(), vec![rule]).expect("operator form");
-            let &[mold] = grammar.candidates(TileLabel(operator))
-            else {
-                panic!("one operator occurrence");
-            };
-            assert_eq!([mold], grammar.form_first());
-            assert_eq!([mold], grammar.form_last());
-            assert!(
-                grammar.adjacencies().is_empty(),
-                "{:?}",
-                grammar.adjacencies()
-            );
-            assert!(!bool::from(grammar.mold_has_required_tail(mold)));
-            assert_eq!(
-                provenance,
-                grammar
-                    .rule_of(mold)
-                    .expect("operator owner")
-                    .provenance()
-                    .0
-            );
-        }
+        let table = built_in_prec_table().expect("built-in bands");
+        let prec = table.prec(PrecName("type.sum")).expect("operator band");
+        let rule = binary_infix_rule(RuleName("synthetic"), Sort::Type, prec, TileLabel("+"));
+        let grammar = Pbg::build(table.into_dag(), vec![rule]).expect("operator form");
+        let &[mold] = grammar.candidates(TileLabel("+"))
+        else {
+            panic!("one operator occurrence");
+        };
+        assert_eq!([mold], grammar.form_first());
+        assert_eq!([mold], grammar.form_last());
+        assert!(
+            grammar.adjacencies().is_empty(),
+            "{:?}",
+            grammar.adjacencies()
+        );
+        assert!(!bool::from(grammar.mold_has_required_tail(mold)));
+        assert_eq!(
+            "synthetic",
+            grammar
+                .rule_of(mold)
+                .expect("operator owner")
+                .provenance()
+                .0
+        );
     }
 }

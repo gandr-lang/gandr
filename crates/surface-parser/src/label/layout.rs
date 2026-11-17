@@ -395,7 +395,6 @@ impl Plan<'_>
                     || matches!(
                         lexeme,
                         Lexeme::StringFragment
-                            | Lexeme::ShellStringFragment
                             | Lexeme::EscapeSequence
                     )
             },
@@ -541,10 +540,7 @@ pub(super) fn lay_out(
         if let Some(begin) = newline {
             line_begin = u32::try_from(begin).unwrap_or(u32::MAX);
         }
-        let punct = matches!(
-            token.lexeme,
-            Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
-        );
+        let punct = matches!(token.lexeme, Lexeme::Punct);
         // A token inside a line that is no bracket, no punctuation and no
         // opener's keyword, met while no opener waits, only extends the item.
         if !line_start

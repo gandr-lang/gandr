@@ -1848,9 +1848,6 @@ pub struct Pbg
     /// The mold of juxtaposition's tile between two types, `Maybe A`, when
     /// the grammar has one.
     type_application: Option<MoldId>,
-    /// The molds that open a form whose operands stay flat side by side, a
-    /// shell block's words. Ascending.
-    flat: Vec<MoldId>,
 }
 
 impl Pbg
@@ -2025,11 +2022,6 @@ impl Pbg
         };
         let application = application_in(Sort::Expression);
         let type_application = application_in(Sort::Type);
-        let mut flat: Vec<MoldId> = crate::surface::FLAT_OPENERS
-            .iter()
-            .flat_map(|&label| molds.candidates(TileLabel(label)).iter().copied())
-            .collect();
-        flat.sort_unstable();
         Self {
             dag,
             forms,
@@ -2040,7 +2032,6 @@ impl Pbg
             automaton,
             application,
             type_application,
-            flat,
         }
     }
 
@@ -2420,28 +2411,6 @@ impl Pbg
                 None
             },
         }
-    }
-
-    /// The molds that open a shell form, whose words stay flat side by side,
-    /// ascending.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: every mold of a tile in [`crate::surface::FLAT_OPENERS`],
-    ///   ascending, so a caller finds a mold by binary search.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — the built-in inventory holds the molds of each shell
-    ///   opener, so a lost opener shows. The parser's suite witnesses that a
-    ///   shell block's words stay flat.
-    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
-    #[spec(ensures: |ret| ret.is_sorted() && ret.iter().all(|&mold| self.molds.mold(mold).is_ok_and(|def| crate::surface::FLAT_OPENERS.contains(&def.label))))]
-    #[inline]
-    #[must_use]
-    pub fn flat_openers(&self) -> &[MoldId]
-    {
-        &self.flat
     }
 
     /// The molds `label` can take where no form is open: those without a
