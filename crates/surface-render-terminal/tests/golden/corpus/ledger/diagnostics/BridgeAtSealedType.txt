@@ -1,0 +1,4 @@
+error[BridgeAtSealedType]: this bridge reaches an abstract type with no identity attribute, so it has no relation to read
+ ╭▸ corpus/ledger/diagnostics/BridgeAtSealedType.gandr
+ ├ note: `hiddenOne` is refused with BridgeAtSealedType, as its expectation states
+ ╰ help: give the abstract type an `identity` attribute that names its relation, or relate points of a type that is not sealed

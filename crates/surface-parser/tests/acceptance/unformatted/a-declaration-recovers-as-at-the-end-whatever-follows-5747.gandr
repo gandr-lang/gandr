@@ -1,0 +1,4 @@
+def f() -> A
+  admit (D (P {first} p (P {second} q N)) r) s
+
+{follower}

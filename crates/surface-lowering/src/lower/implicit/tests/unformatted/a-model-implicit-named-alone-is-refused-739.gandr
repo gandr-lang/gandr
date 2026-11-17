@@ -1,0 +1,2 @@
+{STEPPED}def observe(m : Model(Counter)) -> -F Integer {{ 0 }}
+def named[s : Model(Counter)] (c : s.C) -> -F Integer {{ observe s }}

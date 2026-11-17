@@ -1,0 +1,4 @@
+codata Stream : Type[-]] {
+  head[ω] : Integer;
+}
+def kept = 1 ;
