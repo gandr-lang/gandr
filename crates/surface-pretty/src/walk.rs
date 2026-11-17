@@ -12647,8 +12647,8 @@ impl Walk<'_, '_>
                 .text(format!("{head}[.A = "))
                 .piece(Binding::ARGUMENT)
                 .text("]")
-                .part(Part::Argument(Argument::Other))
-                .part(Part::Argument(Argument::Other));
+                .part(Part::Argument)
+                .part(Part::Argument);
         };
         let binding = match *former {
             Former::Path { carrier: None, .. } => {
