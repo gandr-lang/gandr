@@ -206,12 +206,10 @@ fn a_block_names_its_stage_binders_in_stage_order_7856()
 {
     // `kept` writes its stage before a type implicit; `boundedAt` writes a
     // stage below another; `twin` writes no stage and answers nothing.
-    let source = format!(
-        "{}def boundedAt[j : Size, k : Size, k < j](n : Integer) -> Integer {{ n }}\n",
-        include_str!("tests/fixtures/a-stage-telescope-merges-nothing.gandr")
-    );
+    let source =
+        include_str!("tests/fixtures/a-block-names-its-stage-binders-in-stage-order-7856.gandr");
     let mut arena = CoreArena::new();
-    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let module = lowered(SourceText::from(source), &mut arena);
     let constant = |name: &str| {
         module
             .declarations()
