@@ -8953,6 +8953,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Errors
     /// The call's refusal.
     ///
+    /// # Cost
+    /// - allocation: the wrong-sort refusal of a type application, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the argument count is separated by none, one and two,
     ///   each asserted as the exact application chain read back out of the
