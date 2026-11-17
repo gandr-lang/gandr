@@ -9,6 +9,9 @@
 # This script runs the first `cargo` on `PATH` past this directory. The
 # command runs with this directory off its `PATH`. So a `cargo` that the
 # command starts draws on the same FIFO.
+#
+# The counter is the host's, so the verb runs under no toolchain selection.
+# The command keeps the selection of its environment.
 set -euo pipefail
 
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
@@ -23,5 +26,8 @@ PATH=$path
 if ! cargo=$(command -v cargo) || [[ ${cargo%/*} == "$here" ]]; then
   echo "gate: no cargo on PATH past $here" >&2
   exit 127
+fi
+if [[ -v GANDR_TOOLCHAIN ]]; then
+  exec env -u GANDR_TOOLCHAIN gandr tokens -- env GANDR_TOOLCHAIN="$GANDR_TOOLCHAIN" "$cargo" "$@"
 fi
 exec gandr tokens -- "$cargo" "$@"
