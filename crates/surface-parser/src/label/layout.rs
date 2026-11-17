@@ -54,11 +54,14 @@
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
 //! next item's head ends. An item already ends at a `;`, a `,`, an opening
 //! brace or an explicit `}`, and a declaration also ends at a block's
-//! virtual close, as a braced declaration ends at its brace. A declaration
-//! body ends only an item a word begins that holds more than that word, so
-//! a stray token stays in its own item. The top level ends only a `def`, the
-//! one top-level form a layout body writes without its `;`, and the end of
-//! the source ends nothing, so a source cut short stays open where it stops.
+//! virtual close, as a braced declaration ends at its brace. A `}` whose `{`
+//! stands right after `=` closes a block expression, and it ends no item, so
+//! `def f() -> T = { … }` takes its `;` as `def f() -> T = e` does. A
+//! declaration body ends only an item a word begins that holds more than that
+//! word, so a stray token stays in its own item. The top level ends only a
+//! `def`, the one top-level form a layout body writes without its `;`, and the
+//! end of the source ends nothing, so a source cut short stays open where it
+//! stops.
 //! No separator is written before a closer or a line-leading `|`, or after an
 //! attribute.
 //!
@@ -175,6 +178,18 @@ impl Head
     }
 }
 
+/// Whether an explicit `}` ends the item that it stands in.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Ending
+{
+    /// It ends the item, as the `}` of a brace body after a head does.
+    #[default]
+    Ends,
+    /// It continues the item, as the `}` of a block expression after `=`
+    /// does.
+    Continues,
+}
+
 /// One open bracket or layout block, and its current item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Frame
@@ -187,6 +202,8 @@ struct Frame
     head: Head,
     /// How many items it has begun.
     items: u32,
+    /// Whether its `}` ends the item that the brace stands in.
+    ending: Ending,
 }
 
 impl Frame
@@ -205,6 +222,7 @@ impl Frame
             sep,
             head: Head::default(),
             items: 0,
+            ending: Ending::Ends,
         }
     }
 }
@@ -316,6 +334,8 @@ struct Plan<'bytes>
     end: u32,
     /// The last significant token met or written.
     prev: Prev<'bytes>,
+    /// Whether the last significant token, when it is a `}`, ends its item.
+    ending: Ending,
 }
 
 impl Plan<'_>
@@ -361,7 +381,9 @@ impl Plan<'_>
                     || (declaration && lexeme == Lexeme::LayoutClose)
             },
             Prev::Written(lexeme, spelled) => {
-                (lexeme == Lexeme::Punct && matches!(spelled, b";" | b"," | b"{" | b"}"))
+                (lexeme == Lexeme::Punct
+                    && (matches!(spelled, b";" | b"," | b"{")
+                        || (spelled == b"}" && self.ending == Ending::Ends)))
                     // A string left open: its interior ends nothing.
                     || matches!(
                         lexeme,
@@ -455,6 +477,7 @@ pub(super) fn lay_out(
         after: 0,
         end: 0,
         prev: Prev::Start,
+        ending: Ending::Ends,
     };
     let mut frames: Vec<Frame> = alloc::vec![Frame::new(Kind::Layout { column: 0 }, Sep::Top)];
     let mut line_start;
@@ -693,6 +716,7 @@ pub(super) fn lay_out(
         // block open, and the melder marks it where it stands. A stray `}` or
         // `]` still closes the blocks: the melder pairs it with a block's
         // virtual brace when the block stays open.
+        let mut ending = Ending::Ends;
         if closer
             && (spelled != b")"
                 || frames
@@ -709,10 +733,11 @@ pub(super) fn lay_out(
             }
             if frames.len() > 1
                 && let Some(frame) = frames.pop()
-                && frame.sep == Sep::Decl
-                && bool::from(plan.unended(&frame))
             {
-                plan.place(Lexeme::LayoutSemi);
+                ending = frame.ending;
+                if frame.sep == Sep::Decl && bool::from(plan.unended(&frame)) {
+                    plan.place(Lexeme::LayoutSemi);
+                }
             }
             if let Pending::Arms { depth, .. } = pending
                 && frames.len() < depth
@@ -725,10 +750,20 @@ pub(super) fn lay_out(
                 attribute = Some(frames.len());
             }
             frames.push(if brace {
-                Frame::new(
-                    Kind::Brace { column: None },
-                    if members { Sep::Decl } else { Sep::Semi },
-                )
+                Frame {
+                    // A `{` right after `=` opens a block expression, and
+                    // its `}` does not end the item.
+                    ending: if before_arrow == b"=" {
+                        Ending::Continues
+                    }
+                    else {
+                        Ending::Ends
+                    },
+                    ..Frame::new(
+                        Kind::Brace { column: None },
+                        if members { Sep::Decl } else { Sep::Semi },
+                    )
+                }
             }
             else {
                 Frame::new(Kind::Plain, Sep::Semi)
@@ -815,6 +850,7 @@ pub(super) fn lay_out(
             attribute = None;
         }
         plan.prev = Prev::Written(token.lexeme, spelled);
+        plan.ending = ending;
         plan.after = index.saturating_add(1);
         plan.end = token.end;
         before_arrow = spelled;
@@ -1373,6 +1409,17 @@ mod tests
                 "def f(x : A) -> A = x\n@[checks]\ndef g(x : A) -> A = x\noper h : A\n§\nrelease x ;\n"
             ),
             "def f(x : A) -> A = x⟪;⟫\n@[checks]\ndef g(x : A) -> A = x⟪;⟫\noper h : A\n§\nrelease x ;\n"
+        );
+        // A `{` right after `=` opens a block expression, whose `}` ends no
+        // item: the `def` takes its `;` at the next item, in a source and in a
+        // statement block. A brace body after a head ends its item.
+        assert_eq!(
+            marked("def f(x : A) -> A = { x }\ndef g(x : A) -> A { x }\ndef h(x : A) -> A = x;\n"),
+            "def f(x : A) -> A = { x }⟪;⟫\ndef g(x : A) -> A { x }\ndef h(x : A) -> A = x;\n"
+        );
+        assert_eq!(
+            marked("def f(x : A) -> A {\n  let y = { x }\n  y\n}\n"),
+            "def f(x : A) -> A {\n  let y = { x }⟪;⟫\n  y\n}\n"
         );
         // The end of the source ends nothing, so a source cut short stays
         // open where it stops.
