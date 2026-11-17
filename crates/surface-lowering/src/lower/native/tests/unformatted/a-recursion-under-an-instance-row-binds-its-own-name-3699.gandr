@@ -1,0 +1,2 @@
+{NAT}theory Tick where {{ sort C : Type; oper tick : (k : C) --> C; }}
+def rec quiet(h : Nat) -> [t : Tick] Integer {{ match h {{ | Zero => pure 0 | Succ(p) => quiet[<] p }} }}
