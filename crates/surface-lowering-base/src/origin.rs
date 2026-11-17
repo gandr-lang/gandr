@@ -774,6 +774,11 @@ pub struct OriginTable
     /// Each element transport with where its motive is written, in the order
     /// lowered; the arena shares a transport written twice alike.
     motives: Vec<(ComputationId, Origin)>,
+    /// Each block with the computation it lowers to, in the order lowered.
+    /// A block is minted as the chain of its statements, and that chain
+    /// carries the origin of its first statement, so the block's own span
+    /// stands here.
+    blocks: Vec<(ComputationId, Origin)>,
     /// Each label written against an entry, with what it labels, in the
     /// order lowered.
     labels: Vec<Label>,
@@ -2224,6 +2229,9 @@ impl OriginTable
     ///   labels are each recorded with what they label.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::each_label_names_what_it_labels`
     /// - witness: `origin::tests::a_rebuilt_action_carries_its_endpoint_and_arm_labels_and_no_other`
+    ///
+    /// # Cost
+    /// - allocation: the label's slot, growth within the module's labels
     #[spec(
         captures: before = self.labels.len(),
         ensures: self.labels.len() == before.saturating_add(1),
@@ -2253,6 +2261,9 @@ impl OriginTable
     ///   in an offer the lowering rebuilds answers at the rebuilt offer.
     /// - witness: `gandr-surface-lowering::lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
     /// - witness: `gandr-surface-lowering::lower::session::tests::each_endpoint_answers_at_its_action`
+    ///
+    /// # Cost
+    /// - allocation: the copied label, growth within the module's labels
     #[spec(
         captures: before = self.labels.len(),
         ensures: self.labels.len() == before,
@@ -2338,6 +2349,10 @@ impl OriginTable
     /// # Adequacy
     /// - hypothesis: L3 — `-5` records the operator span beside the digit span.
     /// - witness: `gandr-surface-lowering::lower::tests::a_negated_natural_literal_is_one_negative_literal_4732`
+    ///
+    /// # Cost
+    /// - allocation: the cover's slot, growth within the module's folded
+    ///   numbers
     #[spec(
         captures: before = self.covers.len(),
         ensures: self.covers.len() == before.saturating_add(1),
@@ -2378,6 +2393,10 @@ impl OriginTable
     ///   parameter and the constructor's fields, and each type before it under
     ///   the binders before that type.
     /// - witness: `gandr-surface-lowering::lower::native::tests::each_data_type_and_stated_index_is_framed_under_its_telescope_931`
+    ///
+    /// # Cost
+    /// - allocation: the span's slot, growth within the data declarations'
+    ///   types
     #[spec(
         captures: before = self.framed.len(),
         ensures: self.framed.len() == before.saturating_add(1),
@@ -2418,6 +2437,10 @@ impl OriginTable
     /// - hypothesis: L3 — a call omitting both implicits of `first` records one
     ///   hole per implicit, each naming it.
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
+    ///
+    /// # Cost
+    /// - allocation: the hole's slot, growth within the module's omitted
+    ///   implicits
     #[spec(
         requires: self.omitted.last().is_none_or(|&(held, _)| held < id),
         captures: before = self.omitted.len(),
@@ -2478,6 +2501,9 @@ impl OriginTable
     /// - hypothesis: L3 — a manifest component named in a later component and
     ///   an instance's type named past its module each answer at their head.
     /// - witness: `gandr-surface-lowering::lower::tests::a_type_head_answers_at_what_it_stands_for`
+    ///
+    /// # Cost
+    /// - allocation: the head's slot, growth within the module's type heads
     #[spec(
         captures: before = self.stand_ins.len(),
         ensures: self.stand_ins.len() == before.saturating_add(1),
@@ -2516,6 +2542,9 @@ impl OriginTable
     /// - hypothesis: L3 — each of the three relations, written infix and as
     ///   `Iso(A, B)`, answers at the type it lowers to.
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
+    ///
+    /// # Cost
+    /// - allocation: the relation's slot, growth within the module's relations
     #[spec(
         captures: before = self.relations.len(),
         ensures: self.relations.len() == before.saturating_add(1),
@@ -2554,6 +2583,9 @@ impl OriginTable
     /// - hypothesis: L3 — a model type and a manifest one, each fixing its
     ///   sorts in the order written, answer at the record they lower to.
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_written_model_type_is_recorded_as_written_2246`
+    ///
+    /// # Cost
+    /// - allocation: the model's slot, growth within the module's model types
     #[spec(
         captures: before = self.models.len(),
         ensures: self.models.len() == before.saturating_add(1),
@@ -2594,6 +2626,9 @@ impl OriginTable
     ///   record it lowers to, and a record written in place answers at none; a
     ///   top-level member's definition answers at the type it mints.
     /// - witness: `gandr-surface-lowering::lower::patched::tests::a_base_named_by_a_type_member_keeps_the_name`
+    ///
+    /// # Cost
+    /// - allocation: the name's slot, growth within the module's named types
     #[spec(
         captures: before = self.members.len(),
         ensures: self.members.len() == before.saturating_add(1),
@@ -2633,6 +2668,9 @@ impl OriginTable
     /// - hypothesis: L3 — a scope over `State` fixed at `Integer` answers at
     ///   the scope with the theory and its one sort as written.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_records_the_theory_and_sorts_it_handles_2382`
+    ///
+    /// # Cost
+    /// - allocation: the scope's slot, growth within the module's scopes
     #[spec(
         captures: before = self.scope_theories.len(),
         ensures: self.scope_theories.len() == before.saturating_add(1),
@@ -2673,6 +2711,9 @@ impl OriginTable
     ///   whole, answers at the returner with the theory, its one sort and the
     ///   instance's region; a host interface beside it records nothing.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_records_the_theory_and_sorts_each_entry_fixes_3230`
+    ///
+    /// # Cost
+    /// - allocation: the entry's slot, growth within the module's rows
     #[spec(
         captures: before = self.row_theories.len(),
         ensures: self.row_theories.len() == before.saturating_add(1),
@@ -2701,6 +2742,9 @@ impl OriginTable
     ///   each answer at the scope as written, and one writing its clauses is
     ///   absent.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_records_the_model_answering_it_3196`
+    ///
+    /// # Cost
+    /// - allocation: the answer's slot, growth within the module's scopes
     #[spec(
         captures: before = self.scope_answers.len(),
         ensures: self.scope_answers.len() == before.saturating_add(1),
@@ -2753,6 +2797,9 @@ impl OriginTable
     /// - hypothesis: L3 — a scope owing a rule and a stated law answers each
     ///   name at its place.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
+    ///
+    /// # Cost
+    /// - allocation: the law's node, growth within the module's scope laws
     #[spec(ensures: self.scope_laws.contains_key(&(scope, rule)))]
     #[inline]
     pub fn record_scope_law(
@@ -2790,8 +2837,53 @@ impl OriginTable
     ) -> Maybe<&gandr_theory_levitation::Name, origin::Absent>
     {
         self.scope_laws
-            .get(&(scope, rule))
-            .map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
+            .get_key_value(&(scope, rule))
+            .map_or(Maybe::Absent(origin::Absent::Unrecorded), |(_, name)| {
+                Maybe::Present(name)
+            })
+    }
+
+    /// Record that the block written at `block` lowers to `computation`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a block whose computation the arena shares with
+    ///   another node is recorded at its own span.
+    /// - ensures: the pair is appended, so [`Self::blocks`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the list's slot for the block, growth within the module's
+    ///   blocks
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block bound by a `let` records its span beside the
+    ///   computation it lowers to.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_block_records_its_span_beside_its_computation_7855`
+    #[spec(
+        captures: before = self.blocks.len(),
+        ensures: self.blocks.len() == before.saturating_add(1)
+            && self.blocks.last() == Some(&(computation, block)),
+    )]
+    #[inline]
+    pub fn record_block(
+        &mut self,
+        computation: ComputationId,
+        block: Origin,
+    )
+    {
+        self.blocks.push((computation, block));
+    }
+
+    /// Each block with the computation it lowers to, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn blocks(&self) -> &[(ComputationId, Origin)]
+    {
+        &self.blocks
     }
 }
 

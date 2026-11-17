@@ -15598,6 +15598,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
     /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_s_abstract_type_answers_at_its_kind_2183`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_block_records_its_span_beside_its_computation_7855`
+    ///
+    /// # Cost
+    /// - allocation: the node's arena slot and its origins, growth within the
+    ///   module's plans
     #[spec(
         captures: promised = (
             match *plan {
@@ -16022,7 +16027,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             Plan::Projected(projected) => {
                 NativeRef::over(self.cx()).mint_projected(projected, sink, origin)
             },
-            Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
+            Plan::Block(block) => self.mint_block(block, sink).map(|id| {
+                sink.origins.record_block(id, origin);
+                Lowered::Computation(id)
+            }),
             Plan::Loop(body) => ExitsRef::new(self.host_ref()).mint_loop(body, sink, origin),
             Plan::While(condition, body) => {
                 ExitsRef::new(self.host_ref()).mint_while(condition, body, sink, origin)

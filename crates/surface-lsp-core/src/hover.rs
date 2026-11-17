@@ -2562,6 +2562,49 @@ mod tests
         shown_at(SourceText::from(text.as_str()), at)
     }
 
+    /// #7855: a hover on a block's `{`, its last `;` or its `}` states the
+    /// computation type of the block, never the declaration that holds it. A
+    /// hover on a tile inside the block still states that tile's own type.
+    #[test]
+    fn a_hover_on_a_block_states_the_block_s_type_7855()
+    {
+        let written =
+            include_str!("hover/unformatted/a-hover-on-a-block-states-the-block-s-type-7855.gandr");
+        let text = SourceText::from(written);
+        let index = LineIndex::new(written.into());
+        let start = written
+            .find("{ pure *{}; }")
+            .expect("the source writes the block");
+        let rows = [
+            ("the block's `{`", start, "-F Unit"),
+            ("the block's last `;`", start.saturating_add(10), "-F Unit"),
+            ("the block's `}`", start.saturating_add(12), "-F Unit"),
+            (
+                "the binder",
+                written.find("u =").expect("the binder"),
+                "u : Unit",
+            ),
+            (
+                "the returner inside the block",
+                start.saturating_add(2),
+                "-F Unit",
+            ),
+        ];
+        let shown: Vec<(&str, Result<String, hovered::Absent>)> = rows
+            .iter()
+            .map(|&(tile, at, _)| {
+                let position = Position::of_byte(&index, RenderOffset::from(at))
+                    .expect("the tile is on a boundary");
+                (tile, shown_at(text, position))
+            })
+            .collect();
+        let expected: Vec<(&str, Result<String, hovered::Absent>)> = rows
+            .iter()
+            .map(|&(tile, _, ty)| (tile, Ok(fenced(SourceText::from(ty)))))
+            .collect();
+        assert_eq!(shown, expected);
+    }
+
     #[test]
     fn a_decode_written_as_a_type_hovers_as_a_type_419()
     {
