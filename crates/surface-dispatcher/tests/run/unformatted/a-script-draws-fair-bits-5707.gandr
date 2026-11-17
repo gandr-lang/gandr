@@ -1,0 +1,4 @@
+import std.rand;
+
+def main() -> [std.rand.Eff] Integer =
+  std.rand.draw {width}

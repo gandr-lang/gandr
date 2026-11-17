@@ -1,0 +1,2 @@
+def add : Integer ;
+def add = 1 ;
