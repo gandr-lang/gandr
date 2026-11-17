@@ -1,0 +1,126 @@
+--- base
++++ theirs
+@@ -264,6 +264,7 @@
+ use gandr_surface_grammar::Pbg;
+ use gandr_surface_syntax::ByteOffset;
+ use gandr_surface_syntax::ByteSpan;
++use gandr_surface_syntax::NodeCount;
+ use gandr_surface_syntax::NodeIndex;
+ use gandr_surface_syntax::NodeLabel;
+ use gandr_surface_syntax::SourceFragment;
+@@ -2218,13 +2219,60 @@
+     })
+ }
+ 
+-/// The root's pieces: every top-level form of every source, in source order.
++impl Collected<'_>
++{
++    /// Widen the collection to a tree of `count` nodes laid out by `unit`,
++    /// whose added roots `described` reads: their descriptions, diagnostics,
++    /// native families and cell stores appended, every added node unowned.
++    ///
++    /// # Specification
++    /// - requires: `count` is no fewer nodes than the collection owns, and
++    ///   `described` is [`crate::description::elaborate_roots`] over the roots
++    ///   the tree adds, numbered after the descriptions held.
++    /// - ensures: as [`begin_collection`] over the whole tree, the slots,
++    ///   structures and every other table kept.
++    /// - fails: never.
++    /// - panics: none.
++    ///
++    /// # Adequacy
++    /// - hypothesis: L3 — a document resumed after its closure collects as the
++    ///   whole unit does.
++    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
++    #[spec(ensures: self.owner.len() >= usize::from(count))]
++    pub(crate) fn widen(
++        &mut self,
++        count: NodeCount,
++        unit: &Unit,
++        described: crate::description::DescriptionReport,
++    )
++    {
++        let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations);
++        self.descriptions.extend(
++            described
++                .declarations
++                .into_iter()
++                .map(|entry| (entry.at.node, entry)),
++        );
++        self.description_diagnostics.extend(described.diagnostics);
++        self.natives.extend(described.natives);
++        self.cells.declarations.extend(cells.declarations);
++        self.cells.diagnostics.extend(cells.diagnostics);
++        let count = usize::from(count);
++        if self.owner.len() < count {
++            self.owner
++                .resize(count, Maybe::Absent(slot_owner::Absent::Unowned));
++        }
++        self.unit = unit.clone();
++    }
++}
++
++/// The roots' pieces: every top-level form of every source, in source order.
+ ///
+ /// # Specification
+ /// - requires: `tree` was molded under `pbg`.
+-/// - ensures: the root's children, layout dropped, in source order.
++/// - ensures: [`pieces_under`] every root of `tree`.
+ /// - provides: what [`source_pieces`] splits by source.
+-/// - fails: [`LoweringRefusal::MalformedForm`] when the root holds a repair;
++/// - fails: [`LoweringRefusal::MalformedForm`] when a root holds a repair;
+ ///   [`LoweringRefusal::UnknownMold`] for a mold the grammar does not hold.
+ /// - panics: none.
+ ///
+@@ -2240,13 +2288,47 @@
+     tree: &SyntaxTree<'source>,
+ ) -> Result<Vec<Piece>, LoweringRefusal<'source>>
+ {
++    pieces_under(pbg, tree, tree.roots())
++}
++
++/// The pieces of `roots`: each root's children, layout dropped, in source
++/// order, the roots in their order.
++///
++/// # Specification
++/// - requires: `tree` was molded under `pbg`, and `roots` are roots of it.
++/// - ensures: every root's children, layout dropped, root after root.
++/// - provides: the top-level forms of a document laid after a closure whose
++///   roots were read before.
++/// - fails: [`LoweringRefusal::MalformedForm`] at the first root holding a
++///   repair; [`LoweringRefusal::UnknownMold`] for a mold the grammar does not
++///   hold.
++/// - panics: none.
++///
++/// # Errors
++/// As the specification's fails clause.
++///
++/// # Adequacy
++/// - hypothesis: L3 — as [`root_pieces`].
++/// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
++/// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
++#[spec(ensures: |ret| ret.is_err() || !roots.is_empty() || ret.as_ref().is_ok_and(Vec::is_empty))]
++pub fn pieces_under<'source>(
++    pbg: &Pbg,
++    tree: &SyntaxTree<'source>,
++    roots: &[NodeIndex],
++) -> Result<Vec<Piece>, LoweringRefusal<'source>>
++{
++    let mut pieces = Vec::new();
+     let mut root = Pieces::new();
+-    read_pieces(pbg, tree, tree.root(), &mut root)?;
+-    if let Maybe::Present(repaired) = root.repair {
+-        return Err(repaired.refusal(FormName::ROOT));
++    for &at in roots {
++        read_pieces(pbg, tree, at, &mut root)?;
++        if let Maybe::Present(repaired) = root.repair {
++            return Err(repaired.refusal(FormName::ROOT));
++        }
++        pieces.append(&mut root.pieces);
+     }
+ 
+-    Ok(root.pieces)
++    Ok(pieces)
+ }
+ 
+ /// The root's pieces split by the source each starts in: one list per source

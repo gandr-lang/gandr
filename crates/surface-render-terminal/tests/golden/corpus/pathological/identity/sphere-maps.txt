@@ -1,0 +1,24 @@
+error[LoopNotRespected]: this case might tell a loop apart from staying put: carried along the loop, its answer at the loop's point is not that answer
+   ╭▸ corpus/pathological/identity/sphere-maps.gandr:27:3
+   │
+26 │    def flattenRefl(x : S2) -> Path[.A = S2](flatten x, x) =
+   │    │               ─ checked against `(x : S2) -> -F Path[.A = S2](flatten x, x)`; while checking the body of this function; binds x : S2
+   │ ┌──┘
+   │ │
+27 │ │┏   match x where
+28 │ │┃     | Base2 => Path.here Base2
+   │ │┃                              ╿
+   │ └┃──────────────────────────────│
+   │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(x : S2) -> Path[.A = S2](flatten x, x)`; while checking the body of this thunk
+   │                                 a case its sort's loops do not admit
+   │
+   ├ note: `flattenRefl` is refused with LoopNotRespected, as its expectation states
+   ├ note: the answer carried along the loop is:
+   │         Path.walk (fun (a) { type(Path[.A = Path[.A = S2](flatten Base2, Base2)](Path.walk (fun (b) {
+   │           type(Path[.A = S2](flatten b, b)) }) a (Path.here Base2), Path.here Base2)) })
+   │           (surf ∷ Path.here (Path.here Base2)) (Path.here (Path.here Base2))
+   ├ note: the answer at the loop's point is:
+   │         Path.walk (fun (a) { type(Path[.A = Path[.A = S2](flatten Base2, Base2)](Path.walk (fun (b) {
+   │           type(Path[.A = S2](flatten b, b)) }) a (Path.here Base2), Path.here Base2)) })
+   │           (Path.here (Path.here Base2)) (Path.here (Path.here Base2))
+   ╰ help: make the case respect each loop of its sort

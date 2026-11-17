@@ -1,0 +1,2 @@
+module M where { def a = 1; module n where { def b = a; } def c = a; }
+def d = M.n.b;

@@ -1,0 +1,14 @@
+#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_GH_LOG"
+case "$FAKE_GH_MODE" in
+  fail) echo 'HTTP 401: Bad credentials' >&2; exit 1 ;;
+  garbage) echo 'abc'; exit 0 ;;
+esac
+case "$1 $2" in
+  'run list') printf '9\n7\n' ;;
+  'run download')
+    for dir; do :; done
+    mkdir -p "$dir/junit-cargo-test-enforcing/ci-enforcing"
+    printf '<testsuites><testsuite name="s"><testcase classname="gandr-a" name="slow::t" time="%s"/></testsuite></testsuites>\n' "$(( $3 * 20 ))" > "$dir/junit-cargo-test-enforcing/ci-enforcing/junit.xml" ;;
+  *) echo "unexpected: $*" >&2; exit 2 ;;
+esac

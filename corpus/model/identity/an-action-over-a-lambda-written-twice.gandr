@@ -1,0 +1,140 @@
+/// This source compares two actions over one lambda written twice.
+///
+/// Both actions unfold to the same path.
+/// Their lambda bodies close over copies of the same variables.
+///
+/// The checker compares the bodies by their free variables and captures.
+/// It aligns the captures when their scopes use different layouts.
+///
+/// - see: #3807 — written lambda calls
+/// - see: #3920 — lambda body comparison
+/// - see: #3976 — capture layouts
+
+/// The `act` function maps a path through `F`.
+def act(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
+  F x,
+  F y
+) =
+  Path.ap F p
+
+/// The `apThen` function maps `fa` by composition with `g`.
+def apThen(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
+    fa
+
+/// The `apThenAgain` function writes the same lambda again.
+def apThenAgain(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
+    fa
+
+/// Reflexivity relates the two actions over the repeated lambda.
+def writtenTwice(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  apThen A x y z fm fp fa g,
+  apThenAgain A x y z fm fp fa g
+) =
+  Path.here (apThen A x y z fm fp fa g)
+
+/// The action scope binds one extra variable after `g`.
+def bindsOneMore(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  _w : A
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
+    fa,
+  apThen A x y z fm fp fa g
+) =
+  Path.here (apThen A x y z fm fp fa g)
+
+/// The action scope binds one extra variable before `fm`.
+def bindsOneBetween(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  _w : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
+    fa,
+  apThen A x y z fm fp fa g
+) =
+  Path.here (apThen A x y z fm fp fa g)
+
+/// The action scope binds `g` before `fm`.
+def bindsGFirst(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  g : Path[.A = A](y, z),
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g)](
+  act
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g })
+    fm
+    fp
+    fa,
+  apThen A x y z fm fp fa g
+) =
+  Path.here (apThen A x y z fm fp fa g)
