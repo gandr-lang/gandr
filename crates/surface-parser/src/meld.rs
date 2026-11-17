@@ -2271,10 +2271,19 @@ impl<'pbg> MeldState<'pbg>
         text: TileText<'_>,
     )
     {
-        if let Ok(def) = self.pbg.mold(mold)
-            && let Some(application) = self.juxtaposed(mold, def.sort)
-        {
-            self.push_molded(application, TileText::from(""));
+        if let Ok(def) = self.pbg.mold(mold) {
+            // An operand of the sort that a type spine's head states, as an
+            // expression after `Path`, takes the type's application tile
+            // (#5750).
+            let spine = if self.spine_operands() == Some(def.sort) {
+                Sort::Type
+            }
+            else {
+                def.sort
+            };
+            if let Some(application) = self.juxtaposed(mold, spine) {
+                self.push_molded(application, TileText::from(""));
+            }
         }
         self.push_molded(mold, text);
     }
@@ -2470,6 +2479,104 @@ impl<'pbg> MeldState<'pbg>
         self.applies_next_in(Sort::Expression)
     }
 
+    /// The sort of the operands that the spine at the slope's top takes, where
+    /// its head's rule states it: `Path[.A = T] a` takes expressions, though
+    /// the spine is a type (#5750).
+    ///
+    /// # Specification
+    /// - ensures: the [`Rule::operands`](gandr_surface_grammar::Rule::operands)
+    ///   of the head of the spine at the slope's top. The spine is the left
+    ///   operand of a pending type application below the top operand, else the
+    ///   top when it is a complete operand of [`Sort::Type`]. The head is read
+    ///   through each type application meld's first child. `None` otherwise.
+    /// - panics: none.
+    /// - economy: one read of the emission log for each application of the
+    ///   spine; a path's spine holds at most two.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Path a b` reads both endpoints as expressions, and
+    ///   `Maybe A` keeps its type argument: reading no head leaves the second
+    ///   endpoint a type, and reading every spine's head reads `A` as a term.
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    fn spine_operands(&self) -> Option<Sort>
+    {
+        let application = self.pbg.application_in(Sort::Type)?;
+        let (top, rest) = self.stack.split_last()?;
+        if top.role != Role::Operand {
+            return None;
+        }
+        // An endpoint that a pending type application holds on its right, as
+        // `a` in `Path a`, reads the spine on the application's left.
+        let spine = match rest {
+            [
+                ..,
+                left,
+                Cell {
+                    role: Role::Operator { mold, .. },
+                    ..
+                },
+            ] if *mold == application => left,
+            _ if top.sort == Sort::Type => top,
+            _ => return None,
+        };
+        self.operands_of(spine)
+    }
+
+    /// The sort of the operands that the type spine `spine` takes, where the
+    /// rule of its head states it (#5750).
+    ///
+    /// # Specification
+    /// - ensures: the [`Rule::operands`](gandr_surface_grammar::Rule::operands)
+    ///   of the head of `spine`, read through each type application meld's
+    ///   first child, when `spine` is an operand. `None` otherwise.
+    /// - panics: none.
+    /// - economy: one read of the emission log for each application of the
+    ///   spine; a path's spine holds at most two.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::spine_operands`].
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    fn operands_of(
+        &self,
+        spine: &Cell,
+    ) -> Option<Sort>
+    {
+        if spine.role != Role::Operand {
+            return None;
+        }
+        let application = self.pbg.application_in(Sort::Type)?;
+        let mut at = spine.emit;
+        let mold = loop {
+            match self.emit.get(usize::try_from(at.0).ok()?)? {
+                EmitOp::Interior {
+                    label: NodeLabel::Meld(mold),
+                    children,
+                    ..
+                } => {
+                    if *mold != application {
+                        break *mold;
+                    }
+                    at = *children.iter().find(|&&child| {
+                        !matches!(
+                            self.emit
+                                .get(usize::try_from(child.0).unwrap_or(usize::MAX)),
+                            Some(EmitOp::Token {
+                                label: NodeLabel::Space,
+                                ..
+                            }) | None
+                        )
+                    })?;
+                },
+                EmitOp::Token {
+                    label: NodeLabel::Tile(mold),
+                    ..
+                } => break *mold,
+                EmitOp::Interior { .. } | EmitOp::Token { .. } => return None,
+            }
+        };
+        self.pbg.rule_of(mold).ok()?.operands()
+    }
+
     /// The application tile an operand of `sort` opening next would take: the
     /// slope's top is the head or an argument of a spine of that sort, `f x` or
     /// `Vec A n` (#5326).
@@ -2493,7 +2600,12 @@ impl<'pbg> MeldState<'pbg>
     {
         let application = self.pbg.application_in(sort)?;
         let top = self.stack.last()?;
-        if top.role != Role::Operand || top.sort != sort {
+        // An endpoint of a spine whose head states its operands' sort, as
+        // `a` in `Path a`, continues the type spine (#5750).
+        if top.role != Role::Operand
+            || (top.sort != sort
+                && !(sort == Sort::Type && self.spine_operands() == Some(top.sort)))
+        {
             return None;
         }
         // A block-like statement ends at its brace, as Rust's does: `if c { a }
@@ -3302,7 +3414,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.open == self.open_form_mold() && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort() && ret.argument == ret.head_sort.filter(|&sort| self.open_slot() == Some(OpenSlot::Tile) && self.applies_next_in(sort).is_some()) && bool::from(ret.boundary) == self.open_slot().is_none())]
+    #[spec(ensures: |ret| ret.open == self.open_form_mold() && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort() && ret.argument == ret.head_sort.filter(|&sort| self.open_slot() == Some(OpenSlot::Tile) && self.applies_next_in(sort).is_some()) && ret.endpoint == self.spine_operands() && bool::from(ret.boundary) == self.open_slot().is_none())]
     pub fn admissibility_frontier(&self) -> Frontier
     {
         let open = self.open_form_mold();
@@ -3316,6 +3428,7 @@ impl<'pbg> MeldState<'pbg>
             argument: head_sort.filter(|&sort| {
                 slot == Some(OpenSlot::Tile) && self.applies_next_in(sort).is_some()
             }),
+            endpoint: self.spine_operands(),
             boundary: BoundarySlot::from(slot.is_none()),
         }
     }
@@ -3940,19 +4053,24 @@ impl<'pbg> MeldState<'pbg>
 
     /// Whether a fresh operand `mold` stands as the argument the head operand
     /// applies by juxtaposition: the head is an operand, its sort has an
-    /// application tile, and `mold` is of that sort (#5326).
+    /// application tile, and `mold` is of that sort (#5326), or of the sort
+    /// that the head's rule states for its operands, as an expression at
+    /// `Path a` (#5750).
     ///
     /// # Specification
     /// - ensures: admitted exactly when `frontier`'s head is an operand whose
-    ///   sort the grammar applies by juxtaposition and `mold` is of that sort.
+    ///   sort the grammar applies by juxtaposition and `mold` is of that sort
+    ///   or of `frontier`'s argument sort.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `-F Maybe A` inside an expression reads `A` as a
     ///   type, and `f x` keeps `x` an expression: dropping the head sort reads
-    ///   `A` as an expression constructor beside the type.
+    ///   `A` as an expression constructor beside the type. `Path (f x) y` reads
+    ///   its endpoints as expressions.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
-    #[spec(ensures: |ret| bool::from(ret) == (bool::from(frontier.head_operand) && frontier.head_sort.is_some_and(|head| self.pbg.application_in(head).is_some() && self.pbg.mold(mold).is_ok_and(|def| def.sort == head))))]
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    #[spec(ensures: |ret| bool::from(ret) == (bool::from(frontier.head_operand) && frontier.head_sort.is_some_and(|head| self.pbg.application_in(head).is_some() && self.pbg.mold(mold).is_ok_and(|def| def.sort == head || frontier.endpoint == Some(def.sort)))))]
     fn juxtaposes_head(
         &self,
         mold: MoldId,
@@ -3963,7 +4081,9 @@ impl<'pbg> MeldState<'pbg>
             bool::from(frontier.head_operand)
                 && frontier.head_sort.is_some_and(|head| {
                     self.pbg.application_in(head).is_some()
-                        && self.pbg.mold(mold).is_ok_and(|def| def.sort == head)
+                        && self.pbg.mold(mold).is_ok_and(|def| {
+                            def.sort == head || frontier.endpoint == Some(def.sort)
+                        })
                 }),
         )
     }
@@ -4780,7 +4900,7 @@ impl<'pbg> MeldState<'pbg>
     ///   source/repair material changes it.
     /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-    /// - witness: `tests::grammar::a_spaced_group_after_a_path_carrier_is_an_endpoint_5750`
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
     #[inline]
     #[spec(captures: before = (self.source.len(), self.obligations.len(), self.frontiers.len()), ensures: |_| self.source.len() == before.0 && self.obligations.len() == before.1 && self.frontiers.len() <= before.2)]
     pub fn settle_shadowing_frontiers(
@@ -5799,6 +5919,18 @@ impl<'pbg> MeldState<'pbg>
                     self.reduce_operator(head_index);
                 },
                 Rel::CrossSort => {
+                    // An endpoint of the sort that the spine's head states
+                    // fills the type application's right hole, as `a` in
+                    // `Path a` (#5750).
+                    if Some(head_mold) == self.pbg.application_in(Sort::Type)
+                        && usize::from(head_index)
+                            .checked_sub(1)
+                            .and_then(|left| self.stack.get(left))
+                            .and_then(|left| self.operands_of(left))
+                            == Some(tau_sort)
+                    {
+                        break;
+                    }
                     // A juxtaposed type application spells the call it
                     // replaces, `Stream a` for `Stream(a)`. The `)` of the
                     // call closes it before the `;` or the item tile that
@@ -8772,6 +8904,11 @@ pub struct Frontier
     /// group as a type where a broken binder leaves the `.` of a type path
     /// open below `Run` (#6102).
     pub argument: Option<Sort>,
+    /// The sort of the operands that the spine at the head takes, where the
+    /// rule of the spine's head states it: an expression after `Path` (#5750).
+    /// It ranks an operand that opens next before the slot sort and the head's
+    /// sort, wherever a hole stands below the head.
+    pub endpoint: Option<Sort>,
     /// Whether no slot is open at the head: the top level, whose slot is an
     /// item, an expression standing there only as an expression statement.
     pub boundary: BoundarySlot,

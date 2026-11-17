@@ -315,27 +315,26 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
     Ok(())
 }
 
-/// #6121: `Path` reads as `Bridge` reads. Before a `(` or a `[` written
-/// straight after it, each keeps its own form, whose endpoints are
-/// expressions, so `Path(Path.walk f p v, w)` reads its endpoint as a
-/// transport. Anywhere else each is a type name that the juxtaposition
-/// applies, `Path a b`, and a spaced `(` opens a group. A carrier supplied in
-/// brackets ends the former's own form, and the juxtaposition applies it,
-/// `Path[.A = Integer] a a`.
+/// #6121: `Path` reads as `Bridge` reads. Each keeps its own form in each
+/// place where a type stands, and its endpoints are expressions, so
+/// `Path(Path.walk f p v, w)` reads its endpoint as a transport. The
+/// juxtaposition applies the own form, `Path a b`, and a spaced `(` opens a
+/// group (#5750). A carrier supplied in brackets ends the former's own form,
+/// and the juxtaposition applies it, `Path[.A = Integer] a a`.
 #[test]
 fn a_called_former_keeps_its_own_opener_6121() -> Result<(), Failure>
 {
     let cases = [
-        ("def x : Path a b;", 0_usize, 2_usize),
-        ("def x : Bridge a b;", 0, 2),
+        ("def x : Path a b;", 1_usize, 2_usize),
+        ("def x : Bridge a b;", 1, 2),
         ("def x : Path(a, b);", 1, 0),
         ("def x : Bridge(a, b);", 1, 0),
         ("def x : Path(Path.walk f p v, w);", 1, 0),
-        ("def x : Path (g(a)) (g(a));", 0, 2),
+        ("def x : Path (g(a)) (g(a));", 1, 2),
         ("def x : Path[.A = Integer] a a;", 1, 2),
         ("def x : Bridge[.A = Integer] a a;", 1, 2),
         ("def x : Path[.A = Integer](a, a);", 1, 0),
-        ("def x : Path a a -> Path a a;", 0, 4),
+        ("def x : Path a a -> Path a a;", 2, 4),
     ];
     let grammar = built();
     for (source, own, applied) in cases {
@@ -372,6 +371,71 @@ fn a_called_former_keeps_its_own_opener_6121() -> Result<(), Failure>
             "`{source}`: the own forms and the type applications it reads"
         );
         assert_parses_clean(CaseName(source), SourceText::from(source))?;
+    }
+    Ok(())
+}
+
+/// #5750: the rule of a path or bridge type states that its operands are
+/// expressions, so the juxtaposition reads each endpoint as a term: an atom,
+/// or a term in its parentheses. A type family keeps its type arguments, and
+/// `Path.here a` stays an expression.
+#[test]
+fn a_path_type_reads_its_endpoints_juxtaposed_5750() -> Result<(), Failure>
+{
+    use gandr_surface_grammar::Sort::Expression;
+    use gandr_surface_grammar::Sort::Type;
+    let cases = [
+        ("def x : Path a b;", &[Expression, Expression][..]),
+        ("def x : Bridge a b;", &[Expression, Expression]),
+        ("def x : Path (f x) (g y);", &[Expression, Expression]),
+        ("def x : Path[.A = Integer] a (b);", &[
+            Expression, Expression,
+        ]),
+        ("def f(p : Path[.A = Type] a b) -> Integer { 0 }", &[
+            Expression, Expression,
+        ]),
+        ("def x : Path a b -> Path (c) d;", &[
+            Expression, Expression, Expression, Expression,
+        ]),
+        ("def x : Maybe A;", &[Type]),
+        ("def x : Vec A n;", &[Type, Type]),
+        ("def x = Path.here a;", &[]),
+    ];
+    let grammar = built();
+    for (source, expected) in cases {
+        assert_parses_clean(CaseName(source), SourceText::from(source))?;
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let mut endpoints = Vec::new();
+        for position in tree.positions() {
+            let applies = tree.node(position).is_some_and(|node| {
+                matches!(node.label(), gandr_surface_syntax::NodeLabel::Meld(mold)
+                    if grammar.rule_of(mold).is_ok_and(|rule| rule.name().0 == "type_application.juxtaposed"))
+            });
+            if !applies {
+                continue;
+            }
+            let operand = tree
+                .children(position)
+                .filter_map(|child| tree.node(child))
+                .last();
+            let sort = operand.and_then(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Meld(mold)
+                | gandr_surface_syntax::NodeLabel::Tile(mold) => {
+                    grammar.mold(mold).ok().map(|def| def.sort)
+                },
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => None,
+            });
+            endpoints.push(sort);
+        }
+        let expected = expected.iter().copied().map(Some).collect::<Vec<_>>();
+        assert_eq!(
+            endpoints, expected,
+            "`{source}`: the sort of each operand that the juxtaposition applies"
+        );
     }
     Ok(())
 }

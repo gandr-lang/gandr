@@ -1676,7 +1676,7 @@ fn spacing(
 /// # Adequacy
 /// - hypothesis: L3 — `Path[.A = T](a, b)` and `Path[.A = T] (a) (b)` tell the
 ///   glued list from the spaced group at the carrier's `]`.
-/// - witness: `tests::grammar::a_spaced_group_after_a_path_carrier_is_an_endpoint_5750`
+/// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
 #[spec(ensures: |ret| bool::from(ret) == tokens.get(.. usize::from(index)).and_then(|run| run.iter().rposition(|token| token.lexeme != Lexeme::Space)).is_some_and(|before| spacing(tokens, TokenIndex::from(before)) == Spacing::Spaced))]
 fn spaced_before(
     tokens: &[Token],
@@ -3020,7 +3020,7 @@ impl<'pbg> Molder<'pbg>
             self.note_declared_menu(state);
         }
         self.gather_reserved_fallback(state, lexeme, text, open);
-        self.keep_called_former(state, lexeme, text, ahead);
+        self.keep_called_former(state, lexeme, text);
         self.drop_stray_keyword(state, lexeme, text);
         self.read_reserved_name(state, lexeme, text, ahead);
     }
@@ -3314,38 +3314,34 @@ impl<'pbg> Molder<'pbg>
     }
 
     /// Keep only the own tile of a **called former**, `Path` or `Bridge`,
-    /// before a token written straight after it, where that tile is
-    /// admissible at the live frontier.
+    /// where that tile is admissible at the live frontier.
     ///
-    /// A called former is a type name only before an operand written after a
-    /// space, so `Path a b` applies it. Before a glued `(` the type name would
-    /// also open the call form of a type, whose arguments are types:
-    /// `Path(Path.walk f p v, w)` would read its endpoint as a type. Before a
-    /// glued `.` in a type, the type name would read `Path.walk` as a type
-    /// path. The former's own form reads its endpoints as expressions, so the
-    /// word keeps its own tile, as a reserved word does. Where that tile is
-    /// not admissible, as in an argument that a value fills or before the
-    /// `.` of `Path.here x`, the type name and the constructor stay.
+    /// The former heads its own form in each place where a type stands, and
+    /// its rule states that its endpoints are expressions: `Path a b`,
+    /// `Path (f x) y` and `Path(Path.walk f p v, w)` read their endpoints as
+    /// terms, so no window weighs a type group against a term group (#5750).
+    /// Where the tile is not admissible, as in an argument that a value fills
+    /// or before the `.` of `Path.here x`, the type name and the constructor
+    /// stay.
     ///
     /// # Specification
     /// - requires: the menu of a token of `lexeme` spelled `text` was already
     ///   gathered into `self.candidates`, sorted and de-duplicated.
     /// - ensures: leaves `self.candidates` sorted and de-duplicated; narrows it
     ///   to the molds labelled `text` exactly when the token is a word of
-    ///   [`CALLED_FORMERS`], `ahead` names a stream in which no space stands
-    ///   after the token, and a mold labelled `text` is admissible at the live
-    ///   frontier; otherwise leaves it unchanged.
+    ///   [`CALLED_FORMERS`] and a mold labelled `text` is admissible at the
+    ///   live frontier; otherwise leaves it unchanged.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `Path(Path.walk f p v, w)` reads its endpoints as
-    ///   expressions, `Path a b` applies the type name, and `Path(a, b)` where
-    ///   a value is read stays the call of the type name; a keep that ignores
-    ///   the space or the frontier changes one of them. The recovery sweep
-    ///   reads the source with each token dropped, where a former before a
-    ///   glued `.` in a type keeps its own tile.
+    /// - hypothesis: L3 — `Path(Path.walk f p v, w)` and `Path (f x) y` read
+    ///   their endpoints as expressions, `Path.here x` stays an expression, and
+    ///   `Path(a, b)` where a value is read stays the call of the type name; a
+    ///   keep that ignores the frontier changes one of them. The recovery sweep
+    ///   reads the source with each token dropped.
     /// - witness: `tests::grammar::a_called_former_keeps_its_own_opener_6121`
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
     /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
     #[spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.len() <= before)]
     fn keep_called_former(
@@ -3353,18 +3349,10 @@ impl<'pbg> Molder<'pbg>
         state: &MeldState<'_>,
         lexeme: Lexeme,
         text: TokenText<'_>,
-        ahead: Ahead<'_, '_>,
     )
     {
         let word = <&str>::from(text);
         if !matches!(lexeme, Lexeme::UpperWord) || !CALLED_FORMERS.contains(&word) {
-            return;
-        }
-        let Ahead::Stream { tokens, index, .. } = ahead
-        else {
-            return;
-        };
-        if spacing(tokens, index) == Spacing::Spaced {
             return;
         }
         let pbg = self.pbg;
@@ -3884,8 +3872,11 @@ impl<'pbg> Molder<'pbg>
             self.pbg.tile_kind(mold),
             Ok(TileKind::Operand | TileKind::Start | TileKind::AbsorbingStart | TileKind::Prefix)
         );
+        // An operand at the head of a spine whose rule states the sort of its
+        // operands, as an expression after `Path`, takes that sort (#5750).
         let expected = frontier
-            .argument
+            .endpoint
+            .or(frontier.argument)
             .filter(|_| opens_operand)
             .unwrap_or(frontier.expected);
         let sort_rank = CandidateRank::from(

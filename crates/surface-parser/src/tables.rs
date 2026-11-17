@@ -163,7 +163,7 @@ pub struct Admission<'pbg>
     open: Option<MoldId>,
     /// The sets every candidate is admitted from by its kind and sort; an
     /// unselected set is empty.
-    sets: [MoldSet<'pbg>; 8],
+    sets: [MoldSet<'pbg>; 9],
     /// The mids and ends, which the open frontier admits by adjacency.
     continuations: MoldSet<'pbg>,
     /// The sort of the operand at the head, if one stands there: a mid or an
@@ -232,6 +232,12 @@ impl<'pbg> Admission<'pbg>
                 selected(TileSet::Absorbs(Sort::Item), head_operand),
                 selected(TileSet::FirstMids, frontier.open.is_none()),
                 applied.map_or_else(MoldSet::default, |sort| pbg.tile_set(TileSet::Fills(sort))),
+                // An endpoint of the sort that the spine's head states, as an
+                // expression after `Path` (#5750).
+                frontier
+                    .endpoint
+                    .filter(|_| applied.is_some())
+                    .map_or_else(MoldSet::default, |sort| pbg.tile_set(TileSet::Fills(sort))),
             ],
             continuations: pbg.tile_set(TileSet::Continuations),
             after_operand: frontier.head_sort.filter(|_| head_operand),
