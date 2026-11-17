@@ -1,0 +1,4 @@
+def add : Integer = 1;
+def f(int : Integer) -> Integer { int }
+def g : Integer;
+def g = missing;

@@ -1,0 +1,5 @@
+import "./bad.gandr" ;
+
+@[ refuses("ImportUnresolved") ]
+def four : Integer ;
+def four = 4 ;

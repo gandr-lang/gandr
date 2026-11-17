@@ -1,0 +1,34 @@
+// A `break` and a `continue` inside a handled subject.
+//
+// A handled scope holds its handler until its subject returns, so no jump
+// leaves it for a loop around it.
+//
+// `broke` breaks and `again` continues out of the scope its handler holds,
+// and the lowering refuses each.
+//
+// - see: corpus/ledger/diagnostics/AcrossHandler.gandr
+
+// Early exit's host interface.
+import std.process;
+
+@[refuses("AcrossHandler")]
+def broke() -> Integer =
+  loop {
+    handle c : std.process.Exit.Eff {
+      break(1)
+    } with {
+      | pure(x) => pure x
+      | oper exit(code, k) => k *{}
+    }
+  }
+
+@[refuses("AcrossHandler")]
+def again() -> Integer =
+  loop {
+    handle c : std.process.Exit.Eff {
+      continue
+    } with {
+      | pure(x) => pure x
+      | oper exit(code, k) => k *{}
+    }
+  }

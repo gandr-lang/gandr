@@ -1,0 +1,48 @@
+// A source constructor can have the name of a `Theory` constructor.
+//
+// A `theory` block still mints its code.
+//
+// An unshadowed `Theory` constructor keeps its ordinary meaning. The source
+// declares `App` before the block and `Sort` after it. A generic program reads
+// the block through `Oper` and `Presents`.
+//
+// - see: #2348
+
+/// `Bruijn` has an application constructor named `App`.
+data Bruijn : Type where
+  | Ix : (n : Integer) --> Bruijn
+  | Abst : (t : Bruijn) --> Bruijn
+  | App : (t : Bruijn, u : Bruijn) --> Bruijn
+
+/// This monoid source already declares `App`.
+theory Mon where
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+
+/// `Kind` has a constructor named `Sort`.
+data Kind : Type where
+  | Sort : Kind
+
+/// This recursion counts `Oper` links.
+def rec opsOf(chain : Theory) -> Integer =
+  match chain where
+    | Oper(name, inputs, outputs, rest) => { let r = opsOf[<] rest; r + 1 }
+    | _ => 0
+
+/// `Presents` reads the two operations of `Mon`.
+@[runs("2")]
+def presentedOps() -> Integer =
+  match Mon where
+    | Presents(sorts, opers, rules) => opsOf opers
+    | _ => 0
+
+/// `App` builds a `Bruijn`.
+@[runs("App (Ix 0) (Ix 1)")]
+def applied() -> Bruijn { App (Ix 0) (Ix 1) }
+
+/// `Sort` matches a `Kind`.
+@[runs("1")]
+def sorted() -> Integer =
+  match Sort where
+    | Sort => 1

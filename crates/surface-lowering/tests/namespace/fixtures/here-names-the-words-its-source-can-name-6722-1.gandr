@@ -1,0 +1,3 @@
+pub data S2 : Type where
+  | Base2 : S2
+  | surf : Path.here Base2 <-> Path.here Base2
