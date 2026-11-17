@@ -1,2 +1,2 @@
 def either : Integer + String ;
-def either = +{0 = 1} ;
+def either = +{0 = 1}

@@ -411,7 +411,7 @@ fn an_unqualified_import_binds_no_alias()
 fn an_import_repaired_inside_a_nested_form_is_refused_by_that_form()
 {
     let pbg = grammar();
-    let tree = parsed(&pbg, SourceText::from("import \"./base.gandr\" def ;"));
+    let tree = parsed(&pbg, SourceText::from("import \"./base.gandr\" def"));
     let refused = |refusal: LoweringRefusal<'_>| {
         matches!(
             refusal,
