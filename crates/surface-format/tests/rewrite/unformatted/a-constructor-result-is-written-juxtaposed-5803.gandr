@@ -8,3 +8,10 @@ data Ctx : Type where
 data Var : (gamma : Ctx, a : ObjTy) --> Type where
   | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
   | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a)
+
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+data Fin : Nat -> Type where
+  | FZ : (n : Nat) --> Fin(Succ(n))

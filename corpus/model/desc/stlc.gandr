@@ -59,9 +59,9 @@ pub data Ctx : Type where
 /// A variable of type `a` in the context `gamma`.
 pub data Var : (gamma : Ctx, a : ObjTy) --> Type where
   /// The variable of the last entry.
-  | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
+  | Here : (gamma : Ctx, a : ObjTy) --> Var (Extend gamma a) a
   /// A variable of `gamma`, past one more entry.
-  | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var gamma a) --> Var(Extend(gamma, b), a)
+  | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var gamma a) --> Var (Extend gamma b) a
 
 /// A term of type `a` in the context `gamma`.
 pub data Tm : (gamma : Ctx, a : ObjTy) --> Type where
@@ -204,10 +204,13 @@ pub data SemEnv : (g : Ctx, d : Ctx) --> Type where
   /// The empty environment.
   | ENil : (d : Ctx) --> SemEnv Empty d
   /// An environment and one more value.
-  | ECons : (g : Ctx, a : ObjTy, d : Ctx, rest : SemEnv g d, v : sem(a, d)) --> SemEnv(
-    Extend(g, a),
-    d
-  )
+  | ECons : (
+    g : Ctx,
+    a : ObjTy,
+    d : Ctx,
+    rest : SemEnv g d,
+    v : sem(a, d)
+  ) --> SemEnv (Extend g a) d
 
 /// The shape of reflection beside reification: two members over a type,
 /// whose later parameters differ, and the first of which reads the type.

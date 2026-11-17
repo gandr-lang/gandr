@@ -2066,19 +2066,17 @@ fn a_type_application_is_written_juxtaposed_5708()
     }
 }
 
-/// A constructor's result whose first argument takes parentheses keeps its
-/// call form in either form, as the source writes it: the type grammar reads
-/// neither `--> Var (Extend gamma a) a` nor `--> (Var (Extend gamma a) a)`.
-/// A field's type is juxtaposed, `v : Var gamma a` (#5708).
+/// A constructor's result is written juxtaposed in either form, also where
+/// its first argument takes parentheses: `--> Var (Extend gamma a) a` and
+/// `--> Fin (Succ n)` read as the call forms they replace (#5803).
 #[test]
-fn a_constructor_result_keeps_a_parenthesised_first_argument_called_5708()
+fn a_constructor_result_is_written_juxtaposed_5803()
 {
     let grammar = grammar();
-    let source = include_str!(
-        "rewrite/unformatted/a-constructor-result-keeps-a-parenthesised-first-argument-called-5708.gandr"
-    );
+    let source =
+        include_str!("rewrite/unformatted/a-constructor-result-is-written-juxtaposed-5803.gandr");
     let formatted = include_str!(
-        "rewrite/unformatted/a-constructor-result-keeps-a-parenthesised-first-argument-called-5708-formatted.gandr"
+        "rewrite/unformatted/a-constructor-result-is-written-juxtaposed-5803-formatted.gandr"
     );
     for form in [Form::Sugared, Form::Explicit] {
         assert_eq!(

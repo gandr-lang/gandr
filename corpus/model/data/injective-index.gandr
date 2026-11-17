@@ -21,7 +21,7 @@ import "./vectors.gandr";
 /// A family that holds the predecessor in its index.
 pub data Pred : (n : Nat) --> Type where
   /// The predecessor `m` of `Succ(m)`.
-  | Pre : (m : Nat) --> Pred(Succ(m))
+  | Pre : (m : Nat) --> Pred (Succ m)
 
 /// A witness at one natural.
 pub data At : (n : Nat) --> Type where
@@ -47,7 +47,7 @@ pub data Span : Type where
 /// A family that holds a span in its index.
 pub data Over : (s : Span) --> Type where
   /// The witness over the span from `lo` to `hi`.
-  | O : (lo : Nat, hi : Nat) --> Over(Mk(lo, hi))
+  | O : (lo : Nat, hi : Nat) --> Over (Mk lo hi)
 
 /// A witness at two naturals.
 pub data At2 : (lo : Nat, hi : Nat) --> Type where
@@ -81,9 +81,9 @@ pub def rec zip(a : Type, b : Type, n : Nat, xs : Vec a n, ys : Vec b n) -> Vec 
 /// The naturals below `n`.
 pub data Finite : Nat -> Type where
   /// Zero, below every successor.
-  | FZero : (n : Nat) --> Finite(Succ(n))
+  | FZero : (n : Nat) --> Finite (Succ n)
   /// One past a bound, below the successor of that bound.
-  | FSucc : (n : Nat, i : Finite n) --> Finite(Succ(n))
+  | FSucc : (n : Nat, i : Finite n) --> Finite (Succ n)
 
 /// A bound read back as the natural it is.
 pub def rec toNat(n : Nat, i : Finite n) -> Nat =
