@@ -1,0 +1,2 @@
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (.r = m, .q = n) }
+def nothing(a : Integer) -> () { () }

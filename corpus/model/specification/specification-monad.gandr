@@ -1,0 +1,30 @@
+//! `SpecificationMonad` states an ordered monad as a theory.
+//!
+//! Its computations have an order. Its extension is monotone in both arguments.
+//! An operation lands in a sort. The order indexes two computations. Its
+//! evidence is a term that the operations build.
+//!
+//! The twin refuses the monad laws beside the indexed sort.
+//!
+//! - see: #4128
+//! - cites: [Maillard-2019-dijkstra_monads_all]
+//! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
+
+/// `SpecificationMonad` has values, computations and an order.
+/// The order is reflexive, transitive and monotone under extension.
+theory SpecificationMonad where
+  sort V : Type+;
+  sort C : Type;
+  sort Below(w : C, v : C) : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  oper refl : (w : C) --> Below w w;
+  oper trans : (u : C, v : C, w : C, p : Below u v, q : Below v w) --> Below u w;
+  oper mono : (
+    m : C,
+    n : C,
+    k : pi+ (x : V). C,
+    l : pi+ (x : V). C,
+    p : Below m n,
+    q : pi+ (x : V). Below k(x) l(x)
+  ) --> Below ext(m, k) ext(n, l);

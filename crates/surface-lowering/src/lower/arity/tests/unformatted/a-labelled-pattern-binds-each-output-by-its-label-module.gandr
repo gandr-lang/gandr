@@ -1,0 +1,3 @@
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
+def punned(a : Integer, b : Integer) -> Integer { let *{.r, .q} = divmod a b; r }
+def renamed(a : Integer, b : Integer) -> Integer { let *{.r = rem, .q = quo} = divmod a b; quo }
