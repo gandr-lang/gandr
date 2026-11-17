@@ -654,7 +654,20 @@ pub struct HostCounter
     /// The directory of the slots' files.
     slots: PathBuf,
     /// The owner's file, which this hub holds a shared lock on.
-    _owner: File,
+    owner: File,
+}
+
+impl Drop for HostCounter
+{
+    /// Let the owner's lock go before the owner's file closes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn drop(&mut self)
+    {
+        let_go(&self.owner);
+    }
 }
 
 impl HostCounter
@@ -714,7 +727,7 @@ impl HostCounter
         let counter = Self {
             mapping,
             slots,
-            _owner: owner,
+            owner,
         };
         counter.reap();
         Ok(counter)
@@ -769,7 +782,7 @@ pub struct Host
     /// its next take takes the token all the same.
     deferred: AtomicBool,
     /// The slot's file, which this process holds an exclusive lock on.
-    _claim: File,
+    claim: File,
 }
 
 impl Host
@@ -792,6 +805,10 @@ impl Host
     ///   tokens come back when it dies.
     /// - witness: `pool::host::tests::a_dead_holder_of_four_tokens_gives_them_back_at_the_reap`
     /// - witness: `pool::host::tests::no_process_joins_a_counter_that_no_hub_owns`
+    ///
+    /// # Cost
+    /// - allocation: the paths of the segment and of the slots' files, setup
+    /// - allocation: the host's error of a map, an open or a lock, error path
     #[inline]
     pub fn join(
         directory: &Path,
@@ -823,7 +840,7 @@ impl Host
                         place: Place(at),
                         class,
                         deferred: AtomicBool::new(false),
-                        _claim: file,
+                        claim: file,
                     });
                 },
                 Err(TryLockError::WouldBlock) => {},
@@ -1169,6 +1186,7 @@ impl Drop for Host
         if reclaim(&self.mapping.segment().counter, self.slot()) == Audit::Due {
             audit(self.mapping.segment());
         }
+        let_go(&self.claim);
     }
 }
 
@@ -1176,6 +1194,10 @@ impl Drop for Host
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the path of the owner's file, setup
+/// - allocation: the host's error of an open or a lock, error path
 fn owned(directory: &Path) -> Owned
 {
     let Ok(owner) = File::open(directory.join(OWNER))
@@ -1183,11 +1205,33 @@ fn owned(directory: &Path) -> Owned
         return Owned::Unowned;
     };
     // An exclusive lock that this process takes means that no hub holds the
-    // shared one; the file's close lets it go.
+    // shared one. The probe lets its lock go before the close.
     match owner.try_lock() {
         Err(TryLockError::WouldBlock) => Owned::Owned,
-        Ok(()) | Err(TryLockError::Error(_)) => Owned::Unowned,
+        Ok(()) => {
+            let_go(&owner);
+            Owned::Unowned
+        },
+        Err(TryLockError::Error(_)) => Owned::Unowned,
     }
+}
+
+/// Let the lock on `file` go before the file closes.
+///
+/// A close lets a lock go only when no other descriptor of the open file
+/// lives. A child that a spawn forks holds a copy of each descriptor until
+/// it execs, so a close in that window keeps the lock past the close. An
+/// unlock lets it go at once, whatever copies live.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the host's error of an unlock, error path
+fn let_go(file: &File)
+{
+    // An unlock that fails leaves the lock to the close.
+    let _unlocked: std::io::Result<()> = file.unlock();
 }
 
 /// The file of the slot at `place`.
@@ -1243,9 +1287,12 @@ fn reap(
             continue;
         };
         // A lock that the reaper takes means that the holder died: the kernel
-        // let its lock go. The file's close lets the reaper's lock go.
-        if file.try_lock().is_ok() && reclaim(&segment.counter, slot) == Audit::Due {
-            audit_due = Audit::Due;
+        // let its lock go. The reaper lets its own lock go before the close.
+        if file.try_lock().is_ok() {
+            if reclaim(&segment.counter, slot) == Audit::Due {
+                audit_due = Audit::Due;
+            }
+            let_go(&file);
         }
     }
     if audit_due == Audit::Due {
@@ -1825,6 +1872,27 @@ mod tests
             ),
             "a counter whose hub let go of the owner's lock takes no joiner"
         );
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// #7687: a child that a spawn forks holds a copy of each descriptor until
+    /// it execs. The copy here stands for that child, and lives past the drop.
+    #[test]
+    fn a_copy_of_the_owner_s_file_keeps_no_lock_past_the_hub_s_drop_7687()
+    {
+        let directory = scratch(Scratch("copied"));
+        let counter =
+            HostCounter::with(&directory, Threads::from(NonZeroUsize::new(2).unwrap())).unwrap();
+        let copy = counter.owner.try_clone().unwrap();
+        drop(counter);
+        assert!(
+            matches!(
+                Host::join(&directory, Class::Batch),
+                Maybe::Absent(unhosted::Absent::Unowned)
+            ),
+            "the hub's drop lets the owner's lock go while a copy lives"
+        );
+        drop(copy);
         drop(std::fs::remove_dir_all(&directory));
     }
 
