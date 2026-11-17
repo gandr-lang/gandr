@@ -307,6 +307,10 @@ struct Group<'source>
 /// - witness: `tests::format::a_type_s_spine_keeps_its_line_in_a_signature_5326`
 /// - witness: `tests::format::a_header_s_spine_breaks_its_bracket_above_the_body_7923`
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
+///
+/// # Cost
+/// - allocation: the groups, the header standings, the documents and the
+///   rendered text, growth within the form's leaves
 #[spec(ensures: |ret| ret.as_ref().is_err() || !leaves.is_empty())]
 pub fn lay_out(
     leaves: &[Leaf<'_>],
@@ -888,6 +892,10 @@ enum Mode
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the group's documents in the builder's arena, growth within
+///   the group's elements
 fn group_doc(
     builder: &mut DocBuilder<'_>,
     (group, header): (&Group<'_>, Header),
@@ -1024,6 +1032,9 @@ fn group_doc(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the lines of each item, growth within the group's items
 fn item_lines(
     builder: &mut DocBuilder<'_>,
     placed: &[Placed<'_>],
@@ -1289,6 +1300,9 @@ fn held(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the parts of the run, growth within the run's elements
 fn run(
     builder: &mut DocBuilder<'_>,
     placed: &[Placed<'_>],
