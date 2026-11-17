@@ -13,9 +13,11 @@ config_dir=$(cd "$here/.." && pwd)
 source "$here/../cases/scratch.bash"
 scratch=$(mktemp -d)
 pids=()
+far_groups=()
 cleanup() {
-  local pid
+  local pid group
   for pid in ${pids[@]+"${pids[@]}"}; do kill -KILL "$pid" 2> /dev/null || true; done
+  for group in ${far_groups[@]+"${far_groups[@]}"}; do kill -KILL -- "-$group" 2> /dev/null || true; done
   rm -rf "$scratch"
 }
 trap cleanup EXIT
@@ -27,10 +29,11 @@ fail() {
   failed=1
 }
 
-# The stand-in `ssh`: its first argument is the host, and the rest is the far
-# command, which runs with that host's home and state directories and the
-# stand-ins first on the path. An ssh session carries no `GH_TOKEN` of this
-# host. It writes its arguments to `ssh-args`.
+# The first argument of the stand-in `ssh` is the host.
+# It runs the far command in a session of its own.
+# It gives that session a separate home, state directory and path.
+# An ssh session carries no `GH_TOKEN` of this host.
+# It writes its arguments to `ssh-args`.
 mkdir -p "$scratch/bin" "$scratch/far-bin" "$scratch/near-bin"
 cat > "$scratch/bin/ssh" << EOF
 #!/usr/bin/env bash
@@ -40,7 +43,15 @@ shift
 unset GH_TOKEN
 export HOME=$scratch/home-\$host XDG_STATE_HOME=$scratch/home-\$host/state PATH=$scratch/far-bin:\$PATH
 mkdir -p "\$HOME"
-exec bash -c "\$*"
+if [[ \${GANDR_REMOTE_SESSION_CASE:-} == 1 ]]; then
+  trap '' TERM HUP
+  perl -MPOSIX=setsid -e 'setsid() or die "setsid\n"; \$SIG{TERM} = "DEFAULT"; \$SIG{HUP} = "DEFAULT"; exec @ARGV' bash -c "\$*" <&0 &
+  child=\$!
+  printf '%s\n' "\$child" > "\$HOME/session-group"
+  wait "\$child"
+  exit \$?
+fi
+exec perl -MPOSIX=setsid -e 'setsid() or die "setsid\n"; exec @ARGV' bash -c "\$*"
 EOF
 # The stand-in `gh` of this host gives the token in `near-token` for the
 # account `reader`, and none when the file is absent.
@@ -172,10 +183,19 @@ rm "$scratch/home-far/lacks"
 # A second far gate waits before it moves the shared lane clone. The first
 # check holds at its first tree until the test releases it.
 far_gate() {
-  local commit=$1
+  local commit=$1 session child status=0
+  session=$(mktemp -d)
+  mkfifo "$session/session"
   env GH_TOKEN=read-token HOME="$scratch/home-far" XDG_STATE_HOME="$scratch/home-far/state" \
     PATH="$scratch/far-bin:$PATH" bash "$here/far.bash" gate "$scratch/far-checkout" \
-    "$scratch/origin.git" landing flex-a-6996-case "$commit" flex-a
+    "$scratch/origin.git" landing flex-a-6996-case "$commit" flex-a < "$session/session" &
+  child=$!
+  exec 7> "$session/session"
+  printf '\n' >&7
+  wait "$child" || status=$?
+  exec 7>&-
+  rm -rf "$session"
+  return "$status"
 }
 touch "$scratch/home-far/hold"
 commit file lane-first lane-first
@@ -208,6 +228,40 @@ wait "$second_gate" || fail "#7758: the second far gate did not finish after the
   || fail "#7758: the second far gate did not move the clone after the first ended" "$(git -C "$clone" rev-parse HEAD)"
 rm -f "$scratch/home-far/held" "$scratch/home-far/hold" "$scratch/home-far/release"
 
+# A far gate stops when the local end closes its SSH session. Its lane lock and
+# host slot return within one second.
+gate_released() {
+  GANDR_HOST_LOCK_DIR=$scratch/locks bash -c '
+    source "$1"
+    host_lock --no-wait --fd 7 gate-lane-work 1 probe
+    host_unlock 7
+    host_lock --no-wait --fd 7 gate 1 probe
+    host_unlock 7
+  ' _ "$config_dir/mise/host-lock.bash" > /dev/null 2>&1
+}
+touch "$scratch/home-far/hold"
+commit file session session
+GANDR_REMOTE_SESSION_CASE=1 perl -MPOSIX=setsid -e 'setsid() or die "setsid\n"; exec @ARGV' \
+  bash "$here/remote.bash" far > "$scratch/session.out" 2>&1 &
+local_gate=$!
+pids+=("$local_gate")
+tries=0
+until [[ -e $scratch/home-far/held ]]; do
+  (( ++tries < 100 )) || { fail "#7714: the far gate never reached its held check" "$(< "$scratch/session.out")"; break; }
+  sleep 0.1
+done
+far_groups+=("$(< "$scratch/home-far/session-group")")
+kill -TERM "$local_gate" || :
+wait "$local_gate" || :
+released=false
+for (( tries = 0; tries < 10; tries++ )); do
+  if gate_released; then released=true; break; fi
+  sleep 0.1
+done
+rm -f "$scratch/home-far/held" "$scratch/home-far/hold"
+[[ $released == true ]] \
+  || fail "#7714: a far gate whose local end stops gives back its lane lock and slot within one second" "$(< "$scratch/session.out")"
+
 # Work that HEAD does not hold is refused before any push.
 printf 'more\n' >> file
 status=0
@@ -237,4 +291,4 @@ held=$(probe other)
   || fail "#6996: the probe counts the free gate slots and reads whether the host gives the reader's token" "free $free, then $held with the slot held and another reader"
 
 (( failed == 0 )) || exit 1
-echo "remote gate OK: a far pass with a reader's token lands here with its host after the push, this host's token goes to the far gate in no argument and no line, a far red records nothing, a far host that lacks a tool stops before its gate, a second far gate waits before it moves a shared clone, work beyond HEAD is refused, and the probe counts the free slots and reads the reader's token"
+echo "remote gate OK: a far pass with a reader's token lands here with its host after the push, this host's token goes to the far gate in no argument and no line, a far red records nothing, a far host that lacks a tool stops before its gate, a second far gate waits before it moves a shared clone, a far gate gives back its locks when its local end stops, work beyond HEAD is refused, and the probe counts the free slots and reads the reader's token"

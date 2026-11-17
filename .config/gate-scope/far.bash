@@ -46,6 +46,22 @@ usage() {
   exit 2
 }
 
+# Ends the far gate's process group when its local SSH session closes.
+session_closed() {
+  local group=$1
+  while IFS= read -r; do :; done
+  kill -TERM -- "-$group"
+}
+
+# Stops the session reader and releases the far caller's lane lock.
+far_exit() {
+  local status=$?
+  kill "$far_session_watcher" 2> /dev/null || :
+  wait "$far_session_watcher" 2> /dev/null || :
+  host_unlock 8 || :
+  return "$status"
+}
+
 case ${1:-} in
   probe)
     (( $# == 2 || $# == 3 )) || usage
@@ -80,11 +96,21 @@ case ${1:-} in
     commit=$6
     lane=$7
     reader=${8:-}
+    session_token=
+    IFS= read -r session_token || exit 1
+    if [[ -n $session_token ]]; then export GH_TOKEN=$session_token; fi
     cd "$HOME" && cd "$2"
     source .config/mise/gate.bash
+    session_group=$(host_group "$$")
+    [[ -n $session_group ]] || exit 2
+    exec 6<&0
+    session_closed "$session_group" <&6 &
+    far_session_watcher=$!
+    exec 6<&-
+    trap 'exit 143' TERM HUP
     host_lock --fd 8 "gate-lane-$lane" 1 "gate:remote of $commit"
     export GANDR_GATE_LANE_LOCKED=$lane
-    trap 'host_unlock 8 || :' EXIT
+    trap far_exit EXIT
     clone=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/gate-remote/$lane
     if [[ ! -d $clone/.git ]]; then
       mkdir -p "${clone%/*}"
