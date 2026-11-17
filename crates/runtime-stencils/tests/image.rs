@@ -192,6 +192,7 @@ fn annotated(item: &Item) -> BTreeSet<Annotated>
 fn each_runs_item_reads_back_and_runs_alike()
 {
     let mut written = 0_usize;
+    let mut heads = 0_usize;
     let mut refused: BTreeMap<Annotated, usize> = BTreeMap::new();
     for item in items() {
         match encode(&item.arena, &item.definitions, item.root) {
@@ -228,19 +229,26 @@ fn each_runs_item_reads_back_and_runs_alike()
                     *count = count.saturating_add(1);
                 }
             },
+            Err(ImageRefusal::Uncodable {
+                form: Uncodable::Head(_),
+                ..
+            }) => {
+                heads = heads.saturating_add(1);
+            },
             Err(refusal) => panic!("{}: the image is refused: {refusal}", item.name),
         }
     }
     assert_eq!(
-        (written, refused),
+        (written, heads, refused),
         (
-            538,
+            514,
+            4,
             BTreeMap::from([
-                (Annotated::Code, 184),
+                (Annotated::Code, 183),
                 (Annotated::Fold, 7),
-                (Annotated::Perform, 61),
-                (Annotated::Handle, 74),
-                (Annotated::Session, 16),
+                (Annotated::Perform, 60),
+                (Annotated::Handle, 73),
+                (Annotated::Session, 15),
             ])
         )
     );
@@ -272,9 +280,9 @@ fn two_focus_runs_give_equal_bytes()
 fn an_annotation_is_refused_by_name()
 {
     let mut arena = CommandArena::new();
-    let mut core = CoreArena::new();
-    let unit = core.value_type_unit();
-    let quoted = arena.annotations_mut().value_code(unit);
+    let annotations = arena.annotations_mut();
+    let unit = annotations.value_type_unit();
+    let quoted = annotations.value_quote(unit);
     let code = arena
         .mint_producer(ProducerNode::Code(quoted))
         .expect("a code mints");
@@ -368,7 +376,7 @@ const HEAD: [Record; 6] = [
 #[test]
 fn each_fault_of_the_bytes_is_refused_by_name()
 {
-    static UNKNOWN: [Record; 8] = [
+    static UNKNOWN: [Record; 9] = [
         HEAD[0],
         HEAD[1],
         HEAD[2],
@@ -376,6 +384,7 @@ fn each_fault_of_the_bytes_is_refused_by_name()
         HEAD[4],
         HEAD[5],
         Record::Open(0x7f),
+        Record::Close,
         Record::Close,
     ];
     assert_eq!(
@@ -434,14 +443,6 @@ fn each_fault_of_the_bytes_is_refused_by_name()
         read_script(&ORDERED),
         Ok(CommandId::from(0_u32)),
         "the unit sent to the top"
-    );
-    assert_eq!(
-        read_script(&FORWARD[.. 18])
-            .err()
-            .map(|refusal| refusal.to_string()),
-        read_script(&FORWARD)
-            .err()
-            .map(|refusal| refusal.to_string()),
     );
     let forward: Vec<Record> = FORWARD
         .iter()
