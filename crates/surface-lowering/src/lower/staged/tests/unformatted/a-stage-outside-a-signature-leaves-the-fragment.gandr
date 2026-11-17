@@ -1,0 +1,6 @@
+{NAT}def inside[i : Size](x : Nat[i]) -> -F Nat {{
+  return (x : Nat[i])
+}}
+def carried[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> -F Nat {{
+  return a
+}}

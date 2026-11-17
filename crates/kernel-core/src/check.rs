@@ -1,0 +1,12994 @@
+//! The **defunctionalized checking machine**: bidirectional type checking that
+//! re-derives every obligation and grants the producer no credence.
+//!
+//! # Bidirectional, annotation-free
+//!
+//! Terms carry no type annotations, so checking is bidirectional. The
+//! introductions — lambda, injection, pair, thunk, return — **check** against
+//! an expected type flowing down from the declaration's declared type; the
+//! eliminators and atoms — variable, constant, application, force, bind, case,
+//! literal, lift — **synthesize** a type flowing up. A synthesizing term used
+//! where a type is expected triggers a conversion at the mode switch. The
+//! empty sum's elimination is checking-only: its value child checks at the
+//! empty sum and the expected computation type supplies its result. A data
+//! type with no constructor, and a path between two apart terms of a data type
+//! ([`crate::presented`] § Apartness), are eliminated by a data case of no
+//! branch, which synthesizes its motive at the scrutinee. Neither needs a
+//! metavariable or inference.
+//!
+//! # Arena-native: ids, never owned types
+//!
+//! Every type the machine touches is a `Copy` id into the environment's arena:
+//! the declared type, a context slot, a synthesized type, an expected type
+//! flowing into a check. Eliminating a type former is a read of its child ids.
+//! Synthesized types are minted into the arena as checker intermediates, which
+//! the admission choke point truncates after the verdict. Node reads borrow
+//! arena storage; frames retain the child ids and levels synthesized types
+//! need, without cloning literal payloads merely to dispatch a rule.
+//!
+//! # Terms live in types, and four rules rest on it
+//!
+//! The universe-decoding former carries a value, so a type can mention a bound
+//! variable. Four consequences are load-bearing here and each is one arm:
+//!
+//! - **A context slot is open.** A slot is recorded against the context prefix
+//!   that precedes it, so a variable synthesis raises it past the binders
+//!   between the slot and the use site before returning it.
+//! - **An application substitutes into the codomain.** At a dependent head the
+//!   codomain is instantiated at the argument rather than produced as it
+//!   stands.
+//! - **The formation walk carries a context.** A dependent arrow's codomain is
+//!   formed under the domain's binder, so the walk pushes and pops slots
+//!   exactly as the checking machine does.
+//! - **The formation walk owes obligations it cannot discharge.** Deciding a
+//!   code's type is the checking machine's job, and having formation call it
+//!   would make the two walks mutually recursive. Formation records what it
+//!   owes; [`drain_code_obligations`] drains the record through the checking
+//!   machine; and a check that owes more codes appends to the same worklist.
+//!   **Neither walk reaches the other**, and the drain is a loop with a ceiling
+//!   rather than an open recursion.
+//!
+//! # Totality by defunctionalization, with no depth budget
+//!
+//! The checker runs as an explicit machine over a goal register, a produced
+//! register, a heap frame stack, and an explicit typing-context stack — never
+//! mutually recursive methods bounded by a depth budget — so it is total on
+//! adversarial depth, which matters because decode can build an arbitrarily
+//! deep term from bytes. Type formation is its own iterative walk the machine
+//! calls directly, as it calls the already-iterative conversion.
+//!
+//! # Correspondence: recursive arm to machine step
+//!
+//! This table is the trusted-base audit artifact. Each arm of the recursive
+//! presentation the machine replaces maps to exactly one goal expansion plus,
+//! for a multi-child arm, one continuation frame. A reviewer confirms the
+//! machine **is** the judgement by walking it.
+//!
+//! | recursive arm                          | goal push                    | frames                                              |
+//! | -------------------------------------- | ---------------------------- | --------------------------------------------------- |
+//! | `value_type_level` Base / Unit / Empty | leaf, level zero             | —                                                   |
+//! | `value_type_level` Universe, any sort  | leaf, scope then successor   | —                                                   |
+//! | `value_type_level` Abstract            | leaf, kind lookup            | —                                                   |
+//! | `value_type_level` Element             | leaf, level read, code owed  | —                                                   |
+//! | `value_type_level` Path                | `ValueLevel(domain)`, closed domain, endpoints owed | —                                  |
+//! | `value_type_level` Product / Sum       | `ValueLevel(first)`          | `MaxSecondValue`, then `MaxWith`                    |
+//! | `value_type_level` Thunk               | `CompLevel(body)`            | — (the level passes through)                        |
+//! | `value_type_level` Lift                | `ValueLevel(inner)`          | `LiftCheck`                                         |
+//! | `comp_type_level` Returner             | `ValueLevel(result)`         | — (the level passes through)                        |
+//! | `comp_type_level` Arrow                | `ValueLevel(domain)`         | `MaxSecondComp`, then `MaxWith`                     |
+//! | `comp_type_level` Pi                   | `ValueLevel(domain)`         | `MaxSecondCompUnder`, `ScopeExit`, then `MaxWith`   |
+//! | `comp_type_level` Element              | leaf, level read, code owed  | —                                                   |
+//! | `comp_type_level` With                 | `CompLevel(first)`, zero for none | `MaxSecondComp` per later component, then `MaxWith` |
+//! | `synth_value` Var                      | leaf, slot lookup then shift | —                                                   |
+//! | `synth_value` Const / Unit / Lit       | leaf, resolve or mint        | —                                                   |
+//! | `synth_value` Pair                     | `SynthValue(first)`          | `SynthPairFirst`, then `SynthPairSecond`            |
+//! | `synth_value` Thunk                    | `SynthComp(body)`            | `SynthThunk`                                        |
+//! | `synth_value` Lift                     | `SynthValue(body)`           | `SynthLift`                                         |
+//! | `synth_value` Injection                | leaf, not inferable          | —                                                   |
+//! | `synth_value` Here                     | `SynthValue(point)`          | `SynthHere`, closed domain                          |
+//! | `synth_value` Higher / `HigherEvaluation` / `QuantifiedEvaluation` | leaf, not inferable | — |
+//! | `synth_value` Quote, either family     | leaf, formation then universe | —                                                  |
+//! | `synth_comp` Absurd                    | leaf, not inferable          | —                                                   |
+//! | `check_comp` Absurd                    | `CheckValue(body, Empty)`    | —                                                   |
+//! | `check_value` Injection                | `CheckValue(body, summand)`  | —                                                   |
+//! | `check_value` Pair                     | `CheckValue(first, first_t)` | `CheckPairSecond`                                   |
+//! | `check_value` Thunk                    | `CheckComp(body, codomain)`  | —                                                   |
+//! | `check_value` at Path, introduction    | `CheckValue(value, fibre)`   | —                                                   |
+//! | `check_value` Here                     | `CheckValue(point, domain)`  | `CheckHere`                                         |
+//! | `check_value` Higher                   | one `CheckValue` per guard   | `Pending`                                           |
+//! | `check_value` `HigherEvaluation`       | per component, in its telescope | `Components`, then `Pending`                     |
+//! | `check_value` `QuantifiedEvaluation`   | per telescope of each step tree | `Components`, then `Pending`                     |
+//! | `check_value` synth fallthrough        | `SynthValue(value)`          | `ConvertValue`                                      |
+//! | `synth_comp` Application, Arrow head   | `SynthComp(head)`            | `SynthApply`, then `ProduceComp`                    |
+//! | `synth_comp` Application, Pi head      | `SynthComp(head)`            | `SynthApply`, then `ProduceComp` at the instance    |
+//! | `synth_comp` Force                     | `SynthValue(value)`          | `SynthForce`                                        |
+//! | `synth_comp` Return                    | `SynthValue(value)`          | `SynthReturn`                                       |
+//! | `synth_comp` Bind                      | `SynthComp(bound)`           | `SynthBind`, `ScopeExit`, then `Strengthen`         |
+//! | `synth_comp` Case                      | `SynthValue(scrutinee)`      | `SynthCaseScrutinee` / `AfterLeft` / `AfterRight`, `ScopeExit`, each branch strengthened |
+//! | `synth_comp` `PathTransport`           | `SynthValue(path)`           | `ElementTransport`, then `ProduceComp` at the target |
+//! | `synth_comp` `TelescopeTransport`      | `SynthValue(path)`           | `TelescopePath`, `TelescopeStart`, `TelescopeOver`, then `ProduceComp` at the target pair |
+//! | `synth_comp` `RelatedApplication`      | `SynthValue(path)`           | `RelatedPath`, `Pending`, `RelatedBody`, three `ScopeExit` and `Strengthen` |
+//! | `synth_comp` With                      | `SynthComp(first)`, terminal for none | `SynthWith` per component                       |
+//! | `synth_comp` Project                   | `SynthComp(pair)`            | `Project`, the component read off the lazy product  |
+//! | `synth_comp` Lambda                    | leaf, not inferable          | —                                                   |
+//! | `check_comp` Lambda, Arrow             | `CheckComp(body, codomain↑)` | `ScopeExit`                                         |
+//! | `check_comp` Lambda, Pi                | `CheckComp(body, codomain)`  | `ScopeExit`                                         |
+//! | `check_comp` Return                    | `CheckValue(value, result)`  | —                                                   |
+//! | `check_comp` Bind                      | `SynthComp(bound)`           | `CheckBind` against `expected↑`, `ScopeExit`        |
+//! | `check_comp` With                      | `CheckComp(left, left_t)`    | `Pending` with `CheckComp(right, right_t)`          |
+//! | `check_comp` Case                      | `SynthValue(scrutinee)`      | `CheckCaseScrutinee` / `AfterLeft` against `expected↑`, `ScopeExit` |
+//! | `check_comp` Application, fixpoint head | `SynthValue(argument)`     | `FixpointArgument`, then `CheckComp(head, argument_t → expected)` |
+//! | `check_comp` synth fallthrough         | `SynthComp(computation)`     | `ConvertComp`                                       |
+//!
+//! **A type keeps the scope it was written in.** A plain arrow's codomain is
+//! written outside the arrow's binder — formation and the carried support read
+//! it there — so a lambda checked against it weakens it (`↑`) by the binder it
+//! steps under, where a dependent arrow's codomain is already written under
+//! it. A bind or a case moves its expected type under its binder the same way,
+//! and a type synthesized under a binder is strengthened back out of it,
+//! refused as [`KernelError::BinderEscape`] when it mentions the value bound.
+//! While every type was closed each of these was the identity; a code in a
+//! context of types is what makes them load-bearing.
+//!
+//! **The two `Element` rows are the arms that answer without descending.** Each
+//! reads the level off the node and records the code obligation with the sort
+//! of universe it owes; it pushes no goal and holds no frame, because the code
+//! is a *term* and the formation walk decides no term. The obligation leaves
+//! this table and re-enters it at [`drain_code_obligations`], which starts a
+//! fresh `CheckValue` goal against the universe the node named — one loop
+//! below the two machines rather than a step inside either. The `Quote` row is
+//! the converse crossing: a term whose type is a formation answer, so it calls
+//! the formation walk directly, as the lift's frame does.
+//!
+//! # The memo is the default path on **both** machines
+//!
+//! Admitting one declaration runs two iterative machines over the shared graph:
+//! this module's goal loop over the body, and [`type_level`]'s formation walk
+//! over the declared type. Both consult the memo. A memo covering only the term
+//! half would ship a small constant against an exponential capability, because
+//! type formation would keep expanding once per occurrence.
+//!
+//! The memo is reached through a statically dispatched seam whose activity is
+//! an associated constant, so the memoless path is **the same function at a
+//! different type parameter** rather than a second implementation — which is
+//! what makes the differential a genuine one and what makes the memoless path a
+//! permanent rollback target rather than dead code.
+//!
+//! # The dependent arrow and the drain
+//!
+//! The dependent arrow forms at the join of its children like the
+//! non-dependent one, and a lambda checks against the domain slot its codomain
+//! is written against. Universe decoding makes a type depend on a code value.
+//! Native nominal applications also carry term arguments, checked against the
+//! declaration's parameter telescope; these are invariant typed indices, not
+//! implicitly decoded type arguments.
+//!
+//! **The carried level keeps the two machines apart.** The former names the
+//! universe it is read out of, so type formation is a lookup rather than an
+//! inference, and the obligation formation cannot discharge — that the code
+//! inhabits that universe — is recorded rather than pursued. The drain carries
+//! a ceiling derived from the format's subterm-table cap, because a drained
+//! check can form a synthesized type and owe more codes, so the loop's bound
+//! is not the artifact's own size.
+//!
+//! A type synthesized under the binder of a bind or a case branch is
+//! strengthened by instantiating the binder's variable at the index one past
+//! the outer context, which nothing outside the binder can name; the result's
+//! carried support refuses it as [`KernelError::BinderEscape`] when that index
+//! survives — exactly when the type mentioned the bound value. A dedicated
+//! occurrence walk would answer the same question as a third machine; the
+//! instantiation and the carried support already answer it.
+//!
+//! # Universe families, codes and the lift
+//!
+//! **Two universes, one rule.** The universe of value types and the universe
+//! of computation types each form one level above the level they carry, as
+//! value types: a code is a value whichever family it decodes into. A sealed
+//! atom's kind must be the value universe, because an atom is a value type. A
+//! quote synthesizes the universe of its family at its quoted type's own
+//! level, by calling the formation walk directly, as the lift's frame does;
+//! the computation decode owes its code against the computation universe
+//! exactly as the value decode owes its code against the value universe,
+//! through the same deferred obligation.
+//!
+//! **No cumulativity; the lift is written.** A code inhabits exactly the
+//! universe at its type's level, so a code bound for a larger universe reaches
+//! the kernel as the quote of an explicit `Lift`, and the formation walk's
+//! strictness check on that lift is the kernel's smallness check. The producer
+//! decides smallness at the site it checks and writes the lift at
+//! readmission; the kernel trusts neither the decision nor the level. The
+//! alternative, a cumulative universe rule in conversion or in checking, would
+//! make conversion directional and put subtyping into the trusted base; the
+//! reversal condition is a measured cost of the written lifts that a
+//! subsumption rule would remove.
+//!
+//! **Codes compare by their quoted types.** Structural conversion compares two
+//! quotes by the types they quote; [`replay`](mod@crate::replay) states how a
+//! replayed comparison of two codes closes. Conversion fires no reduction, so
+//! a producer hands the kernel reduced codes to avoid a refusal. Two stuck
+//! eliminations' motives are the one exception: a replayed closing on them
+//! reads each returned endpoint it sets aside by the replay's own reduction.
+//!
+//! # Static operators
+//!
+//! **Formation.** A static Pi forms only over static classifiers — a universe
+//! of either sort, or a static Pi — and refuses any other child as
+//! `StaticClassifierExpected`. It forms at the join of its children's levels
+//! and is a value type, so an operator is a value whatever it builds. The
+//! check reads each child's head; a static Pi child is formed by the walk in
+//! turn, so every leaf of a curried classifier is reached.
+//!
+//! **Application.** A static application synthesizes: its head synthesizes a
+//! static Pi, its argument checks against the domain, and it produces the
+//! codomain, which binds nothing. A head of any other type refuses as
+//! `ValueShapeMismatch` expecting a static Pi. Every static application the
+//! kernel admits is neutral: there is no static lambda for it to meet.
+//! Structural conversion compares two static applications head to head and
+//! argument to argument, and a static Pi by its two children.
+//!
+//! **Alternatives.** A dependent static Pi would need a substitution at every
+//! synthesis; no former at this vocabulary is indexed by a static argument.
+//! The static lambda's absence and its reversal are recorded in
+//! `gandr-kernel-term`, and the replay's operator unfolding in
+//! [`replay`](mod@crate::replay).
+//!
+//! # Native List
+//!
+//! `List A` is a built-in finite former beside nominal data and records. Its
+//! introductions and pure right fold participate in ordinary declaration
+//! checking, readmission, encoding, substitution and normalization. They are
+//! not a Sum encoding and add no effects to the kernel.
+//!
+//! | Former | Typing and computation |
+//! | ------ | ---------------------- |
+//! | `List A` | Forms at the universe level of `A`; conversion compares element types. |
+//! | `nil` | Checks at any expected `List A`; does not synthesize an element type. |
+//! | `cons head tail` | Checks `head : A` and `tail : List A`; malformed tails and Sum injections refuse. |
+//! | `fold[A, B] list on_nil on_cons` | Forms both annotations, checks `list : List A`, and synthesizes `F B`. The empty branch checks at `F B` in the ambient context. The cell branch checks beneath `head : A` then `folded : B`, with capture-avoiding shifts of the ambient types. Nil reduces to `on_nil`; cons folds its tail before entering `on_cons`. |
+//!
+//! The two cell binders are ordered: folded result is index zero, head is
+//! index one. Substitution protects both binders and any outer context. A
+//! neutral list retains its fold rather than fabricating a result. Checking
+//! and replay use the iterative machines, not recursive host-language list
+//! ownership. The fold carries its element and result annotations so the
+//! eliminator synthesizes.
+//!
+//! **Choice.** Complete the represented List former instead of translating it
+//! into sums or nominal declarations; the kernel needs no host operations or
+//! effect rows for this eliminator. **Reversal.** Dependent motives or general
+//! strictly positive descriptions require their own formation, binding and
+//! replay rules; neither is implied by this pure fold. The
+//! `native_list_introductions_and_fold_check` and
+//! `native_list_fold_reduces_without_capturing_outer_variables` witnesses
+//! exercise native typing, refusals and reduction; `gandr-kernel-term`'s tag
+//! table assigns the persisted syntax.
+//!
+//! # References
+//!
+//! - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the
+//!   presented-spaces plan (§ presented-spaces-crates) — the field label on
+//!   each refusal of a record field's value or a restriction's fixed value, for
+//!   the replay of a patched type's formation and of its meets.
+//! - `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile
+//!   — a device fails on the allocation and not on the average, so the `counts`
+//!   feature counts each frame that the machines pop, for the small-device
+//!   bench.
+
+use alloc::vec::Vec;
+use core::marker::PhantomData;
+use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
+
+use anodized::spec;
+use gandr_kernel_check_memo::CheckMemo;
+use gandr_kernel_check_memo::ContentAgreement;
+use gandr_kernel_check_memo::MemoActivity;
+use gandr_kernel_check_memo::MemoKey as _;
+use gandr_kernel_check_memo::OverlaidMemo;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::CompType;
+use gandr_kernel_term::CompTypeId;
+use gandr_kernel_term::Computation;
+use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Declaration;
+use gandr_kernel_term::DeclarationContent;
+use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::LooseDepth;
+use gandr_kernel_term::Reads;
+use gandr_kernel_term::Reflexivities;
+use gandr_kernel_term::RelatedEndpoints;
+use gandr_kernel_term::Summand;
+use gandr_kernel_term::TableEntryCount;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
+use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
+use gandr_kernel_term::ValueTypeId;
+use gandr_kernel_term::WIDEST;
+use quenchant_arith::arith;
+use quenchant_shape::shape::Maybe;
+
+use crate::census::ExpansionCensus;
+use crate::census::ExpansionKind;
+use crate::conv::ConversionGoal;
+use crate::conv::Convertibility;
+use crate::conv::case_branch_mismatch;
+use crate::conv::convert_comp_type;
+use crate::conv::convertible_comp_types;
+use crate::conv::pending_endpoints;
+use crate::encoding::ObligationGoal;
+pub(crate) use crate::encoding::Partiality;
+use crate::encoding::RecordName;
+use crate::encoding::SupportGoal;
+use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
+use crate::env::projected_atoms;
+use crate::error::ExpectedComputationShape;
+use crate::error::ExpectedValueShape;
+use crate::error::KernelError;
+use crate::error::NonInferableForm;
+use crate::error::RegisterFault;
+use crate::levels::LevelContext;
+use crate::replay::EndpointReading;
+use crate::replay::ReplayBudget;
+use crate::replay::StuckEndpoints;
+use crate::replay::Unfoldings;
+use crate::replay::read_comp_decode;
+use crate::replay::read_decode;
+use crate::replay::read_endpoints;
+use crate::replay::read_identity_endpoints;
+use crate::rewrite::BinderDepth;
+use crate::rewrite::rotate_comp_type;
+use crate::rewrite::shift_comp_type;
+use crate::rewrite::shift_value;
+use crate::rewrite::shift_value_type;
+use crate::rewrite::substitute_comp_type;
+use crate::rewrite::substitute_comp_type_at_call;
+use crate::rewrite::substitute_value_type;
+use crate::seal;
+use crate::stage_order::StageOrder;
+use crate::support::Discharge;
+use crate::support::DrainLedger;
+use crate::support::Meeting;
+use crate::support::NodeOutcome;
+use crate::support::NodeSupport;
+use crate::support::Opened;
+use crate::support::Owed;
+use crate::support::Question;
+use crate::support::SupportContext;
+use crate::support::SupportPlane;
+use crate::witness::comp_type_witness;
+use crate::witness::value_type_witness;
+
+/// The memo an unsupplied check builds for itself: the default path. It is
+/// an overlay, so the parts of a forked drain read it apart and record into
+/// memos of the same type.
+pub type DefaultMemo = OverlaidMemo<NodeSupport, NodeOutcome>;
+
+/// Borrow a value node, or the fail-closed arena fault.
+///
+/// Child ids are copied; a lift frame owns the level its synthesized type
+/// needs. Literal payloads stay in the arena: the lookup does not clone their
+/// bytes.
+///
+/// # Specification
+/// - requires: nothing; an id that resolves to nothing is admissible input and
+///   is refused.
+/// - ensures: a reference to exactly the arena node at `id`.
+/// - provides: the fail-closed borrow every value rule uses; callers retain
+///   only the data their later frames need before mutating the arena.
+/// - fails: `KernelError::ArenaFault` for an id that resolves to no node, so a
+///   resolution defect rejects the declaration rather than proceeding on a
+///   fabricated node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readable variable produces its context type; truncating
+///   value and computation roots instead produces the exact arena fault without
+///   fabricating a type or growing the arena.
+/// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+/// - witness: `check::tests::unreadable_term_roots_fail_closed`
+#[spec(ensures: |ret| arena.value(id).map_or_else(
+    || matches!(&ret, Err(KernelError::ArenaFault)),
+    |expected| ret.as_ref().is_ok_and(|found| core::ptr::eq(core::ptr::from_ref(*found), core::ptr::from_ref(expected))),
+))]
+#[inline]
+fn read_value(
+    arena: &TermArena,
+    id: ValueId,
+) -> Result<&Value, KernelError>
+{
+    arena.value(id).ok_or(KernelError::ArenaFault)
+}
+
+/// Resolve a computation id, or the fail-closed arena fault.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as `read_value`, on the computation plane.
+/// - provides: the fail-closed read every computation rule goes through.
+/// - fails: `KernelError::ArenaFault` for an id that resolves to no node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an application produces its codomain and a return binds
+///   its value; an unreadable computation root instead gives the arena fault.
+/// - witness: `check::tests::an_application_produces_the_codomain`
+/// - witness: `check::tests::a_bind_binds_the_returned_value`
+/// - witness: `check::tests::unreadable_term_roots_fail_closed`
+#[spec(ensures: |ret| arena.computation(id).map_or_else(
+    || matches!(&ret, Err(KernelError::ArenaFault)),
+    |expected| ret.as_ref().is_ok_and(|found| core::ptr::eq(core::ptr::from_ref(*found), core::ptr::from_ref(expected))),
+))]
+#[inline]
+fn read_computation(
+    arena: &TermArena,
+    id: ComputationId,
+) -> Result<&Computation, KernelError>
+{
+    arena.computation(id).ok_or(KernelError::ArenaFault)
+}
+
+/// A value-type shape mismatch, with a content witness of the offending type.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn value_shape_mismatch(
+    arena: &TermArena,
+    expected: ExpectedValueShape,
+    actual: ValueTypeId,
+) -> KernelError
+{
+    KernelError::ValueShapeMismatch {
+        expected,
+        actual: value_type_witness(arena, actual),
+    }
+}
+
+/// The sum a case's branches bind: `scrutinee_type`, a sum of one summand for
+/// each branch.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success, `scrutinee_type`, a sum of exactly as many summands
+///   as there are branches.
+/// - fails: a sum shape mismatch when `scrutinee_type` is not a sum of exactly
+///   as many summands as there are branches; [`KernelError::ArenaFault`] never,
+///   an unresolvable classifier being a shape mismatch too.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a three-way case checks and synthesizes; a case of two
+///   branches over a sum of three, and a case over a product, refuse as a sum
+///   shape mismatch.
+/// - witness: `check::tests::an_n_way_case_binds_each_summand`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&sum| sum == scrutinee_type
+    && matches!(arena.value_type(sum), Some(&ValueType::Sum(ref summands)) if summands.len() == branches.len())))]
+fn case_sum(
+    arena: &TermArena,
+    scrutinee_type: ValueTypeId,
+    branches: &[ComputationId],
+) -> Result<ValueTypeId, KernelError>
+{
+    match arena.value_type(scrutinee_type) {
+        Some(&ValueType::Sum(ref summands)) if summands.len() == branches.len() => {
+            Ok(scrutinee_type)
+        },
+        _ => Err(value_shape_mismatch(
+            arena,
+            ExpectedValueShape::Sum,
+            scrutinee_type,
+        )),
+    }
+}
+
+/// The branch of `case` at `next`, with the summand of `sum` that it binds;
+/// none past the last branch.
+///
+/// # Specification
+/// - requires: `sum` is the case's [`case_sum`].
+/// - ensures: the branch and the summand at `next`, or none past the last.
+/// - fails: [`KernelError::ArenaFault`] when `case` is no case or `sum` no sum.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`case_sum`].
+/// - witness: `check::tests::an_n_way_case_binds_each_summand`
+#[spec(ensures: |ret| match ret.as_ref() {
+    Ok(&Some((branch, summand))) => match (arena.computation(case), arena.value_type(sum)) {
+        (Some(&Computation::Case { ref branches, .. }), Some(&ValueType::Sum(ref summands))) => {
+            branches.get(usize::from(next)) == Some(&branch)
+                && summands.get(usize::from(next)) == Some(&summand)
+        },
+        _ => false,
+    },
+    Ok(&None) => true,
+    Err(error) => matches!(*error, KernelError::ArenaFault),
+})]
+fn case_branch(
+    arena: &TermArena,
+    (case, sum): (ComputationId, ValueTypeId),
+    next: Summand,
+) -> Result<Option<(ComputationId, ValueTypeId)>, KernelError>
+{
+    let (Some(&Computation::Case { ref branches, .. }), Some(&ValueType::Sum(ref summands))) =
+        (arena.computation(case), arena.value_type(sum))
+    else {
+        return Err(KernelError::ArenaFault);
+    };
+    let at = usize::from(next);
+    Ok(branches.get(at).copied().zip(summands.get(at).copied()))
+}
+
+/// A computation-type shape mismatch, with a content witness.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn comp_shape_mismatch(
+    arena: &TermArena,
+    expected: ExpectedComputationShape,
+    actual: CompTypeId,
+) -> KernelError
+{
+    KernelError::ComputationShapeMismatch {
+        expected,
+        actual: comp_type_witness(arena, actual),
+    }
+}
+
+/// The first returner `expected` ends in, reached through arrows, dependent
+/// arrows and lazy-product components as they stand.
+///
+/// # Specification
+/// - requires: nothing — a dangling id is admissible input.
+/// - ensures: `Some` naming a returner exactly when one is reached from
+///   `expected` through those formers; `None` for a type that ends only in
+///   codata types, decodes and dangling ids.
+/// - provides: the types a partial fixpoint may not recurse at outside a ruled
+///   operation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` loop over an explicit worklist, not recursion.
+/// - measure: the computation types under `expected`, each minted before the
+///   former that holds it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a partial loop at a returner and a partial recursion at a
+///   function to one are refused; a partial stream at a codata type is
+///   admitted.
+/// - witness: `tests::recursive_data::a_structural_fixpoint_needs_an_arrow_to_recurse_on`
+/// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
+/// - witness: `tests::codata::a_stream_is_admitted_and_observed`
+#[spec(ensures: |ret| ret.is_none_or(|returner| matches!(arena.comp_type(returner), Some(&(CompType::Returner(_) | CompType::Returns(_))))))]
+fn returner_ending(
+    arena: &TermArena,
+    expected: CompTypeId,
+) -> Option<CompTypeId>
+{
+    let mut pending = Vec::from([expected]);
+    while let Some(shape) = pending.pop() {
+        match arena.comp_type(shape) {
+            Some(&(CompType::Returner(_) | CompType::Returns(_))) => return Some(shape),
+            Some(&(CompType::Arrow { codomain, .. } | CompType::Pi { codomain, .. })) => {
+                pending.push(codomain);
+            },
+            Some(&CompType::With(ref components)) => pending.extend(components.iter().copied()),
+            Some(&(CompType::Element { .. } | CompType::Codata { .. })) | None => {},
+        }
+    }
+    None
+}
+
+/// What `goal` comes to once the returned endpoints its structure leaves open
+/// are read: normalized with the admitted definitions in `entries` unfolding,
+/// and the normal forms converted by the one conversion, two endpoints that
+/// stay stuck by the kernel's conversion with those definitions unfolding;
+/// and, where that leaves the goal apart, what the endpoint pairs the
+/// declaration relates make of it.
+///
+/// # Specification
+/// - requires: `goal`'s roots and the judgement's related pairs live in
+///   `arena`.
+/// - ensures: [`EndpointReading::Converts`] when the structural walk converges
+///   setting nothing aside, or [`read_endpoints`] converts the set-aside pairs
+///   under [`StuckEndpoints::Unfolding`] at the unfoldings of the judgement's
+///   entries' definitions, every other entry opaque; otherwise, when the
+///   judgement relates no pair, [`EndpointReading::Apart`], and when it does,
+///   what [`crate::element_identity::related_endpoints`] makes of the goal at
+///   those unfoldings. `arena` holds what it held on entry.
+/// - provides: the one place the checker reads a returned endpoint, shared by
+///   every mode switch; the unfoldings are built only when a pair is set aside
+///   or a relation is read. Reflexivity relates its endpoints by the dialogue
+///   it carries instead ([`crate::element_identity::reflexive_endpoints`]).
+/// - fails: [`crate::element_identity::IdentityError::RelatedEndpointsDiffer`]
+///   when a related pair's dialogue does not replay.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type whose endpoint returns its value through a
+///   definition converts at a mode switch, and one returning a different value
+///   does not; compound endpoints related only through a definition's body
+///   convert by the definition's dialogue and are refused by name when it is
+///   corrupted; two decodes stuck on a binder whose arms differ by a call one
+///   side holds and the other has run convert, and an arm run to another type
+///   stays apart.
+/// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
+/// - witness: `element_identity::tests::a_certificate_with_a_returned_endpoint_decodes_checks_and_replays`
+/// - witness: `element_identity::tests::a_definition_relating_compound_endpoints_admits_274`
+/// - witness: `element_identity::tests::a_corrupted_relation_is_refused_by_name`
+/// - witness: `check::tests::a_mode_switch_reads_a_call_a_stuck_arm_holds_by_its_unfolding_3090`
+#[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
+fn read_returned(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    goal: ConversionGoal,
+) -> Result<EndpointReading, KernelError>
+{
+    let mut pending = Vec::new();
+    let structural = pending_endpoints(arena, judgement.presentations, goal, &mut pending);
+    if structural == Convertibility::Convertible && pending.is_empty() {
+        return Ok(EndpointReading::Converts);
+    }
+    if structural == Convertibility::Distinct && judgement.related.is_empty() {
+        return Ok(EndpointReading::Apart);
+    }
+    let unfoldings = entry_unfoldings(judgement);
+    if structural == Convertibility::Convertible
+        && read_endpoints(
+            arena,
+            &unfoldings,
+            &pending,
+            ReplayBudget::DEFAULT,
+            StuckEndpoints::Unfolding,
+        ) == EndpointReading::Converts
+    {
+        return Ok(EndpointReading::Converts);
+    }
+    if judgement.related.is_empty() {
+        return Ok(EndpointReading::Apart);
+    }
+    crate::element_identity::related_endpoints(arena, &unfoldings, judgement.related, goal)
+}
+
+/// The unfoldings a judgement's readings run at: the body of every admitted
+/// definition, every other entry opaque, the judgement's presentations, its
+/// lawful atoms' relations and its ruled definitions' fixpoints.
+///
+/// # Specification
+/// - ensures: one unfolding per entry of `judgement`, in order — the body of a
+///   definition, [`Unfoldable::Opaque`](crate::replay::Unfoldable::Opaque) for
+///   a datatype, a codata type, an axiom or an abstract type — presenting the
+///   judgement's presentations, identifying its entries' lawful atoms and
+///   ruling its ruled definitions.
+/// - executable: none — the unfoldings expose no per-constant listing to
+///   compare with the entries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned endpoint read through a definition, a decode
+///   read through a call into a thunk, and a transport along a lawful atom's
+///   evidence into its unit fibre, each read at these unfoldings.
+/// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
+/// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+/// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
+{
+    Unfoldings::admitted(judgement.entries)
+        .presenting(judgement.presentations.clone())
+        .ruling(judgement.entries)
+}
+
+/// Admit `declared` as the one type a literal identity test at `test`'s base
+/// stands at: `U(B → B → F(1 + 1))`, its summands the unit type.
+///
+/// # Specification
+/// - requires: nothing; a node that does not resolve fails the shape.
+/// - ensures: `Ok` exactly when `declared` is that type, node for node.
+/// - provides: the admission obligation of a literal identity test.
+/// - fails: [`KernelError::LiteralIdentityType`] at any other type.
+/// - panics: none.
+///
+/// # Errors
+/// - [`KernelError::LiteralIdentityType`] — `declared` is not the test's type.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each test admits at its base's type and is refused at the
+///   other base's and at an integer answer.
+/// - witness: `check::tests::a_literal_identity_test_admits_only_at_its_base_s_type`
+#[spec(ensures: |ret| ret.is_err() || matches!(arena.value_type(declared), Some(&ValueType::Thunk(_))))]
+fn literal_identity_typed(
+    arena: &TermArena,
+    declared: ValueTypeId,
+    test: gandr_kernel_term::LiteralIdentity,
+) -> Result<(), KernelError>
+{
+    let refused = || KernelError::LiteralIdentityType {
+        actual: value_type_witness(arena, declared),
+    };
+    let compared =
+        |id: ValueTypeId| arena.value_type(id) == Some(&ValueType::Base(test.base().base_type()));
+    let unit = |id: &ValueTypeId| matches!(arena.value_type(*id), Some(ValueType::Product(units)) if units.is_empty());
+    let Some(&ValueType::Thunk(outer)) = arena.value_type(declared)
+    else {
+        return Err(refused());
+    };
+    let Some(&CompType::Arrow {
+        domain: first,
+        codomain: inner,
+    }) = arena.comp_type(outer)
+    else {
+        return Err(refused());
+    };
+    let Some(&CompType::Arrow {
+        domain: second,
+        codomain: answer,
+    }) = arena.comp_type(inner)
+    else {
+        return Err(refused());
+    };
+    let Some(&CompType::Returner(boolean)) = arena.comp_type(answer)
+    else {
+        return Err(refused());
+    };
+    let typed = compared(first)
+        && compared(second)
+        && matches!(arena.value_type(boolean), Some(ValueType::Sum(summands))
+            if summands.len() == 2 && summands.iter().all(unit));
+    if typed { Ok(()) } else { Err(refused()) }
+}
+
+/// `value` read through the definitions it names: a constant that a
+/// definition among the judgement's entries defines reads as that body.
+///
+/// # Specification
+/// - requires: nothing — an entry that is no definition stops the reading.
+/// - ensures: `value` itself when it is no constant.
+/// - provides: the first value along the chain of defined constants from
+///   `value` that is no defined constant, or the value the chain reaches after
+///   as many steps as the judgement holds entries. The chain's end remains
+///   prose-only: checking it would walk the entries again, which is the body.
+///   This is the fixed value a restriction's replay compares with the field,
+///   read as the checker reads a fixed value that is a name.
+///
+/// # Termination
+/// - reason: the `for` loop runs at most once for each entry.
+/// - measure: the entries left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixed value that names a definition of 443 fixes the
+///   field 443, and one that names a definition of 80 is refused by its label.
+/// - witness: `tests::native_formers::a_value_coerced_in_at_a_named_fixed_value_replays_5683`
+#[spec(ensures: |ret| ret == value || matches!(arena.value(value), Some(&Value::Constant(_))))]
+fn defined_value(
+    arena: &TermArena,
+    judgement: Judgement<'_>,
+    value: ValueId,
+) -> ValueId
+{
+    let mut read = value;
+    // A chain of defined constants visits each entry at most once, so the
+    // entries' count bounds it without a walk over them.
+    for _ in 0 .. usize::from(judgement.entries.len()) {
+        let Some(&Value::Constant(constant)) = arena.value(read)
+        else {
+            break;
+        };
+        let Some(&DeclarationContent::Def { body, .. }) = judgement
+            .entries
+            .get(usize::from(constant))
+            .map(AdmittedDeclaration::content)
+        else {
+            break;
+        };
+        read = body;
+    }
+    read
+}
+
+/// `ty`, or the type its code quotes when `ty` decodes a returned code that
+/// normalizes to a quote at the judgement's unfoldings: a decode of a call is
+/// read to the type the call returns.
+///
+/// # Specification
+/// - requires: `ty`, and the body of every definition among the judgement's
+///   entries, live in `arena`.
+/// - ensures: what [`read_decode`] reads the code to when `ty` is a decode of a
+///   returned code it reads to a type; `ty` otherwise.
+/// - provides: the check's one reading of a decode it must see the head of, for
+///   a rule that reads the head of the type a value checks at, is scrutinized
+///   at or is forced at: the identity at `El(⟨R a b⟩)` is the identity at the
+///   type `R a b` returns, a binder a case refined to a call returning a data
+///   type or a sum is cased on at that data type or sum, the empty sum among
+///   them, and a value whose type decodes a call returning a thunk type is
+///   forced at that thunk type.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a data case on a binder whose type decodes a call
+///   returning a data type's quote is a case over that data type, and one
+///   returning `⌜Unit⌝` is refused with the data shape; an empty case on one
+///   decoding to `⌜Void⌝` checks, one on `⌜Unit⌝` is refused with the sum
+///   shape, and a synthesized case on one decoding to `⌜Unit + Unit⌝` is
+///   admitted; a reflexivity at the diagonal of a relation returning an
+///   identity's code checks at the identity the code quotes; a force of a
+///   binder decoding a call returning a thunk type's quote is admitted, and one
+///   returning `⌜Unit⌝` is refused with the thunk shape.
+/// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
+/// - witness: `check::tests::a_sum_case_reads_a_decode_of_a_call_to_its_sum_2830`
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
+/// - witness: `check::tests::a_force_reads_a_decode_of_a_call_to_its_thunk_type_6057`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| (ret == ty && arena.watermark() == before)
+        || (arena.value_type(ret).is_some()
+            && matches!(arena.value_type(ty), Some(&ValueType::Element { code, .. })
+                if matches!(arena.value(code), Some(Value::Returned(_))))),
+)]
+fn read_returned_decode(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    ty: ValueTypeId,
+) -> ValueTypeId
+{
+    let Some(&ValueType::Element { code, .. }) = arena.value_type(ty)
+    else {
+        return ty;
+    };
+    if !matches!(arena.value(code), Some(Value::Returned(_))) {
+        return ty;
+    }
+    let unfoldings = entry_unfoldings(judgement);
+    read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
+}
+
+/// `ty`, or the computation type its code quotes when `ty` decodes a returned
+/// code that normalizes to a computation quote at the judgement's unfoldings.
+///
+/// # Specification
+/// - requires: `ty`, and the body of every definition among the judgement's
+///   entries, live in `arena`.
+/// - ensures: what [`read_comp_decode`] reads the code to when `ty` is a decode
+///   of a returned code it reads to a computation type; `ty` otherwise, with
+///   `arena` unchanged.
+/// - provides: the head of a computation type a rule reads, when that type is a
+///   joint fixpoint's goal at a summand: `El(⟨case (injᵢ x) { … }⟩)` reads as
+///   the arm's quoted type (#5036).
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda checks at a decode whose code is a case on an
+///   injection returning an arrow's quote, and a call at such a decode converts
+///   with the arrow; a decode whose code returns no quote stays.
+/// - witness: `check::tests::a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036`
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| (ret == ty && arena.watermark() == before)
+        || (arena.comp_type(ret).is_some()
+            && matches!(arena.comp_type(ty), Some(&CompType::Element { code, .. })
+                if matches!(arena.value(code), Some(Value::Returned(_))))),
+)]
+fn read_returned_comp_decode(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    ty: CompTypeId,
+) -> CompTypeId
+{
+    let Some(&CompType::Element { code, .. }) = arena.comp_type(ty)
+    else {
+        return ty;
+    };
+    if !matches!(arena.value(code), Some(Value::Returned(_))) {
+        return ty;
+    }
+    let unfoldings = entry_unfoldings(judgement);
+    read_comp_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(ty)
+}
+
+/// The shape an introduction form needs of the type it checks at, for the
+/// forms whose check reads that type's head: a record, a list, an injection,
+/// a tuple, a thunk and a reflexivity. Every other value checks by synthesis
+/// or by a rule of its own.
+///
+/// # Specification
+/// - ensures: `Some` of the shape the form's arm of the check refuses with, for
+///   exactly the seven forms named; `None` for every other value and for an
+///   absent one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tuple at a decode of a returned code reads the decode
+///   first and checks at the type it quotes, and so does a reflexivity at the
+///   diagonal of a relation returning an identity's code.
+/// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
+#[spec(ensures: |ret| ret.is_some() == matches!(value, Some(Value::Record(_) | Value::ListNil | Value::ListCons(..) | Value::Injection(..) | Value::Tuple(_) | Value::Thunk(_) | Value::Here { .. })))]
+const fn introduced_shape(value: Option<&Value>) -> Option<ExpectedValueShape>
+{
+    let Some(value) = value
+    else {
+        return None;
+    };
+    match *value {
+        Value::Record(_) => Some(ExpectedValueShape::Record),
+        Value::ListNil | Value::ListCons(..) => Some(ExpectedValueShape::List),
+        Value::Injection(..) => Some(ExpectedValueShape::Sum),
+        Value::Tuple(_) => Some(ExpectedValueShape::Product),
+        Value::Thunk(_) => Some(ExpectedValueShape::Thunk),
+        Value::Here { .. } => Some(ExpectedValueShape::Path),
+        Value::Stay { .. }
+        | Value::Higher { .. }
+        | Value::HigherEvaluation { .. }
+        | Value::QuantifiedEvaluation { .. }
+        | Value::Constructor { .. }
+        | Value::Returned(_)
+        | Value::PathRefl(_)
+        | Value::PathProduct(..)
+        | Value::SessionPath { .. }
+        | Value::SessionFlow { .. }
+        | Value::ForwardFlow { .. }
+        | Value::FunctionFlow { .. }
+        | Value::Then { .. }
+        | Value::FlowProduct(..)
+        | Value::PathEquiv { .. }
+        | Value::Univalence { .. }
+        | Value::Variable(_)
+        | Value::Constant(_)
+        | Value::Literal(_)
+        | Value::Lift { .. }
+        | Value::Quote(_)
+        | Value::QuoteComputation(_)
+        | Value::Restrict { .. }
+        | Value::StaticApplication(..) => None,
+    }
+}
+
+/// The read-only inputs every judgement of one declaration stands on.
+///
+/// They are the environment's admission log, this declaration's admitted
+/// level context, the atoms whose minting admission is open, the block a
+/// data declaration's own fields may name, and where the check stands on
+/// admitted results. Grouped because they travel together through both
+/// machines and are constant for the whole of one check, which is also why
+/// none is in a memo key.
+#[derive(Clone, Copy, Debug)]
+pub struct Judgement<'session>
+{
+    /// The environment's admitted declarations, for constant and atom
+    /// resolution.
+    entries: &'session Entries,
+    /// This declaration's admitted level context.
+    levels: &'session LevelContext,
+    /// The atoms this declaration reads as their representations, because
+    /// it is admitted inside the admission that minted them.
+    manifest: &'session [ConstantIndex],
+    /// The path endpoints the declaration's conversions relate, with the
+    /// dialogue relating each pair: empty but for a relating definition.
+    related: &'session [RelatedEndpoints],
+    /// The laws the declaration's folds rest on, one per rule of the folded
+    /// type: empty but for a lawful definition.
+    laws: &'session [ConstantIndex],
+    /// The block in scope beside the admitted prefix: a data or codata
+    /// declaration's own signature while its fields or observations form, or a
+    /// mutual block's members while its families form.
+    block: Block<'session>,
+    /// The presented types among the entries, whose terms conversion
+    /// rewrites.
+    presentations: &'session crate::presented::Presentations,
+    /// The structural fixpoint a definition's body thunks: its own, whose
+    /// self binder its constant reads as in a case's field types.
+    own: Maybe<ComputationId, recursion::Unowned>,
+    /// The structural fixpoint whose result of its recursed-on parameter's
+    /// type is read at that parameter's stage.
+    following: Maybe<ComputationId, recursion::Unowned>,
+    /// Whether a fixpoint without termination evidence may recurse at a
+    /// returner.
+    partial: Partiality,
+    /// Whether the check takes a closed pair's admitted result or derives
+    /// it, and where it counts what it takes.
+    taking: crate::admitted::Taking<'session>,
+    /// Whether the check's last drain runs its obligations apart, and
+    /// through which fork.
+    forking: crate::fork::Forking<'session>,
+}
+
+/// A walk's parameters as the kept memo names them. A walk names them at its
+/// first miss. A walk never changes its judgement.
+#[derive(Clone, Copy, Debug)]
+enum KeptParameters
+{
+    /// Not named yet.
+    Unnamed,
+    /// The judgement does not ask or keep. [`Judgement::parameters`] gives
+    /// none for it.
+    Uncrossed,
+    /// Named in the session's table, by the record's name.
+    Named(RecordName),
+}
+
+impl KeptParameters
+{
+    /// The name of `judgement`'s parameters in `session`. The first ask names
+    /// them. None means that the judgement does not ask or keep.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn name(
+        &mut self,
+        arena: &TermArena,
+        judgement: &Judgement<'_>,
+        session: &mut SupportContext,
+    ) -> Option<RecordName>
+    {
+        if matches!(*self, Self::Unnamed) {
+            *self = judgement
+                .parameters()
+                .map_or(Self::Uncrossed, |parameters| {
+                    Self::Named(session.name_parameters(arena, &parameters))
+                });
+        }
+        match *self {
+            Self::Named(name) => Some(name),
+            Self::Unnamed | Self::Uncrossed => None,
+        }
+    }
+}
+
+/// The block a judgement may name past the admitted prefix.
+#[derive(Clone, Copy, Debug)]
+enum Block<'session>
+{
+    /// No block: every nominal head names an admitted declaration.
+    Outside,
+    /// A data declaration being admitted at `position`, its signature in
+    /// scope for its own fields.
+    Inside
+    {
+        /// The position the declaration takes.
+        position: ConstantIndex,
+        /// The declaration's own telescope and constructor table.
+        signature: former::Signature<'session>,
+    },
+    /// A mutual block whose families are forming: every family in scope at
+    /// its signature, and every definition at its declared type.
+    Mutual
+    {
+        /// The block's extent.
+        block: occurrence::Block,
+        /// Its members, in order from the block's first position.
+        members: &'session [Declaration],
+    },
+    /// A codata declaration being admitted at `position`, its signature in
+    /// scope for its own observations.
+    Codata
+    {
+        /// The position the declaration takes.
+        position: ConstantIndex,
+        /// The declaration's own telescope and observations.
+        signature: codata::Signature<'session>,
+    },
+}
+
+impl<'session> Judgement<'session>
+{
+    /// Pair an admission log with a level context, outside any block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        entries: &'session Entries,
+        levels: &'session LevelContext,
+    ) -> Self
+    {
+        Self {
+            entries,
+            levels,
+            manifest: &[],
+            related: &[],
+            laws: &[],
+            block: Block::Outside,
+            presentations: &crate::presented::FREE,
+            own: Maybe::Absent(recursion::Unowned::Outside),
+            following: Maybe::Absent(recursion::Unowned::Outside),
+            partial: Partiality::Refused,
+            taking: crate::admitted::Taking::Deriving,
+            forking: crate::fork::Forking::new(None),
+        }
+    }
+
+    /// The same judgement admitting the partial fixpoints of a ruled
+    /// operation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn ruled(self) -> Self
+    {
+        Self {
+            partial: Partiality::Ruled,
+            ..self
+        }
+    }
+
+    /// The same judgement with `fixpoint` as the definition's own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn owning(
+        self,
+        fixpoint: ComputationId,
+    ) -> Self
+    {
+        Self {
+            own: Maybe::Present(fixpoint),
+            ..self
+        }
+    }
+
+    /// The same judgement reading `fixpoint`'s result of its recursed-on
+    /// parameter's type at that parameter's stage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn following(
+        self,
+        fixpoint: ComputationId,
+    ) -> Self
+    {
+        Self {
+            following: Maybe::Present(fixpoint),
+            ..self
+        }
+    }
+
+    /// This judgement's parameters, as the kept memo names them.
+    ///
+    /// A mutual block's members are whole declarations. A relating
+    /// definition's endpoints carry their dialogue. So this function names
+    /// neither. A judgement in a mutual block gets none. A judgement with
+    /// relating endpoints gets none. Such a judgement does not ask or keep. It
+    /// loses its recalls. It cannot receive a wrong recall.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none exactly when the block is mutual or the judgement
+    ///   relates endpoints. Otherwise every parameter as the judgement holds
+    ///   it. A data or codata block comes with its position and signature.
+    /// - provides: the parameters that a kept memo's key names.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a data declaration refused after its own field
+    ///   formed, another admitted at its position one level up, and a third
+    ///   whose field names it. Parameters without the block serve the refused
+    ///   declaration's level to the third.
+    /// - witness: `environment::tests::a_refused_data_declaration_s_outcomes_do_not_answer_its_successor`
+    #[spec(ensures: |ret| ret.is_none()
+        == (matches!(self.block, Block::Mutual { .. }) || !self.related.is_empty()))]
+    pub(crate) fn parameters(&self) -> Option<crate::encoding::Parameters<'session>>
+    {
+        use crate::encoding::ParametersBlock;
+        if !self.related.is_empty() {
+            return None;
+        }
+        let block = match self.block {
+            Block::Outside => ParametersBlock::Outside,
+            Block::Inside {
+                position,
+                signature,
+            } => ParametersBlock::Data {
+                position,
+                kind: signature.kind,
+                parameters: signature.parameters,
+                indices: signature.indices,
+                constructors: signature.constructors,
+                results: signature.results,
+            },
+            Block::Codata {
+                position,
+                signature,
+            } => ParametersBlock::Codata {
+                position,
+                kind: signature.kind,
+                parameters: signature.parameters,
+                observations: signature.observations,
+            },
+            Block::Mutual { .. } => return None,
+        };
+        let fixpoint = |fixpoint: Maybe<ComputationId, recursion::Unowned>| match fixpoint {
+            Maybe::Present(id) => Some(id),
+            Maybe::Absent(_) => None,
+        };
+        Some(crate::encoding::Parameters {
+            level_params: self.levels.params(),
+            constraints: self.levels.constraints(),
+            manifest: self.manifest,
+            laws: self.laws,
+            block,
+            own: fixpoint(self.own),
+            following: fixpoint(self.following),
+            partiality: self.partial,
+        })
+    }
+
+    /// The same judgement rewriting the terms of the presented types in
+    /// `presentations`, which are those of its entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn presenting(
+        self,
+        presentations: &'session crate::presented::Presentations,
+    ) -> Self
+    {
+        Self {
+            presentations,
+            ..self
+        }
+    }
+
+    /// The same judgement inside the minting admissions of `manifest`: every
+    /// atom it names reads as its representation at a definition's declared
+    /// type and at every constant's synthesized type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unsealing(
+        self,
+        manifest: &'session [ConstantIndex],
+    ) -> Self
+    {
+        Self { manifest, ..self }
+    }
+
+    /// The same judgement standing on admitted results as `taking` does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn taking(
+        self,
+        taking: crate::admitted::Taking<'session>,
+    ) -> Self
+    {
+        Self { taking, ..self }
+    }
+
+    /// The same judgement running the obligations of its last drain apart
+    /// through `fork`, or each on the calling thread when `fork` is none. The
+    /// fork changes no verdict: a part that refuses sends the check back to
+    /// its serial drain.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn forking(
+        self,
+        fork: Option<&'session dyn crate::fork::ObligationFork>,
+    ) -> Self
+    {
+        Self {
+            forking: crate::fork::Forking::new(fork),
+            ..self
+        }
+    }
+
+    /// The same judgement reading `related` where a mode switch's forced
+    /// reading leaves path endpoints apart.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn relating(
+        self,
+        related: &'session [RelatedEndpoints],
+    ) -> Self
+    {
+        Self { related, ..self }
+    }
+
+    /// The same judgement resting a fold on `laws` where it computes a rule's
+    /// sides apart.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn lawful(
+        self,
+        laws: &'session [ConstantIndex],
+    ) -> Self
+    {
+        Self { laws, ..self }
+    }
+
+    /// The same judgement with a data block in scope at its own position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn within_block(
+        self,
+        position: ConstantIndex,
+        signature: former::Signature<'session>,
+    ) -> Self
+    {
+        Self {
+            block: Block::Inside {
+                position,
+                signature,
+            },
+            ..self
+        }
+    }
+
+    /// The same judgement with a codata declaration in scope at its own
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn within_codata(
+        self,
+        position: ConstantIndex,
+        signature: codata::Signature<'session>,
+    ) -> Self
+    {
+        Self {
+            block: Block::Codata {
+                position,
+                signature,
+            },
+            ..self
+        }
+    }
+
+    /// The same judgement with the members of a mutual block in scope while
+    /// its families form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn within_mutual(
+        self,
+        block: occurrence::Block,
+        members: &'session [Declaration],
+    ) -> Self
+    {
+        Self {
+            block: Block::Mutual { block, members },
+            ..self
+        }
+    }
+
+    /// The same judgement with the whole of its mutual block in scope, as
+    /// the block's families formed: a family's field read inside a
+    /// definition may name a later definition of the block at its declared
+    /// type, which the families foresaw.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: inside a mutual block, the block reaching past its last
+    ///   member; every other judgement unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a universe whose field decodes a later definition of
+    ///   its block reaches the decoder's stage check rather than an unbound
+    ///   constant.
+    /// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+    #[spec(ensures: |ret| match (self.block, ret.block) {
+        (Block::Mutual { members, .. }, Block::Mutual { members: kept, .. }) => members.len() == kept.len(),
+        _ => true,
+    })]
+    #[must_use]
+    fn foreseeing(self) -> Self
+    {
+        let Block::Mutual { block, members } = self.block
+        else {
+            return self;
+        };
+        let end = ConstantIndex::from(usize::from(block.first()).saturating_add(members.len()));
+        self.within_mutual(
+            occurrence::Block::new(block.first(), block.families(), end),
+            members,
+        )
+    }
+
+    /// The member of the mutual block in scope at `index`, with what it is in
+    /// the block.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a member exactly when a mutual block is in scope and holds
+    ///   `index`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a universe's family and its decoder each resolve in
+    ///   the block, and the position past it does not.
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present((_, membership)) => membership != occurrence::Membership::Other,
+        Maybe::Absent(_) => true,
+    })]
+    fn member(
+        self,
+        index: ConstantIndex,
+    ) -> Maybe<(&'session Declaration, occurrence::Membership), constant_type::Absent>
+    {
+        let Block::Mutual { block, members } = self.block
+        else {
+            return Maybe::Absent(constant_type::Absent::Unadmitted);
+        };
+        let membership = block.membership(index);
+        if membership == occurrence::Membership::Other {
+            return Maybe::Absent(constant_type::Absent::Unadmitted);
+        }
+        usize::from(index)
+            .checked_sub(usize::from(block.first()))
+            .and_then(|offset| members.get(offset))
+            .map_or(Maybe::Absent(constant_type::Absent::Unadmitted), |member| {
+                Maybe::Present((member, membership))
+            })
+    }
+}
+
+/// The mutable state one declaration's check threads through both machines:
+/// the memo, the session its keys are derived against, the expansion census,
+/// and the code obligations the formation walk owes.
+///
+/// Grouped because the four travel together everywhere and are meaningful only
+/// as a set — the memo is keyed against the session, the census counts what the
+/// memo did not serve, and the obligations are what a walk could not answer on
+/// its own. The read-only half of a judgement is [`Judgement`]; this is the
+/// half that changes.
+struct Recording<'session, M>
+{
+    /// The check memo, at whichever instantiation this run takes.
+    memo: &'session mut M,
+    /// The session the memo's keys are derived against.
+    session: &'session mut SupportContext,
+    /// The per-plane expansion census.
+    census: &'session mut ExpansionCensus,
+    /// The code obligations the formation walk deferred.
+    owed: &'session mut Vec<CodeObligation>,
+}
+
+/// What a walk of the checker machine carries from one goal to the next,
+/// beside its frames, its context and its [`Recording`]. A goal's child that
+/// runs on a frame stack of its own starts from a copy of its parent's walk,
+/// and its own walk ends with it.
+struct Walk
+{
+    /// The stages this run's structural fixpoints and their cases mint, from
+    /// those the goal was owed under.
+    stages: StageOrder,
+    /// The case a structural fixpoint opens with, read as that fixpoint
+    /// against its type's rules, until the case is met. The goals between the
+    /// two — the fixpoint's lambda and the case itself — are neither recalled
+    /// nor memoized: a bare `λg. λy. case y` in a context of the same types is
+    /// the same goal, and it owes the case's own obligation, which the root
+    /// does not.
+    root: Maybe<(ComputationId, respect::Reading), respect::root::Absent>,
+    /// How many fixpoint bodies the current goal stands under. A goal under
+    /// one is neither recalled nor memoized: whether a constructor with no
+    /// recursive field stands below a stage depends on every value in scope,
+    /// beyond the binders its support reaches, and a stage is this run's own.
+    /// A goal owed under a stage stands under the body that minted it.
+    staged_bodies: usize,
+    /// The context slot and type of the self binder of the declaration's own
+    /// structural fixpoint, the one its body thunks, while it is in scope:
+    /// its constant in a case's field types reads as that binder.
+    own_fixpoint: Maybe<(usize, ValueTypeId), recursion::Unowned>,
+    /// The judgement's parameters as the kept memo names them. The walk names
+    /// them at its first miss.
+    parameters: KeptParameters,
+}
+
+impl Walk
+{
+    /// The walk of a goal owed under `stages`, at its start.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn starting(stages: StageOrder) -> Self
+    {
+        let staged_bodies = usize::from(stages != StageOrder::default());
+        Self {
+            stages,
+            root: Maybe::Absent(respect::root::Absent::Unmarked),
+            staged_bodies,
+            own_fixpoint: Maybe::Absent(recursion::Unowned::Outside),
+            parameters: KeptParameters::Unnamed,
+        }
+    }
+}
+
+/// A pending type-formation obligation — the goal of the [`type_level`] walk.
+#[derive(Clone, Copy, Debug)]
+enum TypeLevelGoal
+{
+    /// The level of a value type.
+    Value(ValueTypeId),
+    /// The level of a computation type.
+    Comp(CompTypeId),
+}
+
+impl TypeLevelGoal
+{
+    /// This goal in the memo's support vocabulary.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn support(self) -> SupportGoal
+    {
+        match self {
+            Self::Value(id) => SupportGoal::ValueTypeLevel(id),
+            Self::Comp(id) => SupportGoal::CompTypeLevel(id),
+        }
+    }
+}
+
+/// A code obligation the formation walk deferred: this value must check against
+/// the universe the type that carried it named.
+///
+/// **The deferral is what keeps the two machines two machines.** Deciding a
+/// code's type is the checking machine's job, and having the formation walk
+/// call it would make the two mutually recursive — the shape the recursion ban
+/// exists to forbid. Instead formation records what it owes, the driver drains
+/// the record through the checking machine, and neither walk reaches the other.
+///
+/// **An obligation is drained where it was owed.** It carries the typing
+/// telescope it stood in and the stages the recording run had minted by the
+/// time it returned, so a code a structural fixpoint's body names — a call to
+/// the fixpoint's own self binder at a field a case opened, decoded in a type
+/// — stands below the stage that case put its fields at, as it did where the
+/// formation walk met it. Formation outside a run owes under no stage. The
+/// decoder of `fixture/model/universe/inductive-recursive.gandr` in the
+/// surface corpus, whose arm returns `+U ((x : elPi[<](a)) -> -F
+/// elPi[<](b(x)))`, is the witness on readmission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CodeObligation
+{
+    /// A universe code deferred by Element formation.
+    Universe
+    {
+        /// The element type that owes the check: its code and its level are
+        /// the obligation's inputs.
+        element: AnyNode,
+        /// Value that must inhabit the universe.
+        code: ValueId,
+        /// Required universe family.
+        sort: GroundSort,
+        /// Required universe level.
+        level: Level,
+        /// Ambient typing telescope.
+        context: Vec<ValueTypeId>,
+        /// The stages the recording run had minted.
+        stages: StageOrder,
+        /// The mutual block it was owed inside.
+        scope: Owing,
+    },
+    /// Declaration-directed argument checks deferred by nominal formation.
+    Data
+    {
+        /// Nominal application whose arguments must check.
+        datatype: ValueTypeId,
+        /// Ambient typing telescope.
+        context: Vec<ValueTypeId>,
+        /// The stages the recording run had minted.
+        stages: StageOrder,
+        /// The mutual block it was owed inside.
+        scope: Owing,
+    },
+    /// Argument checks deferred by codata formation.
+    Codata
+    {
+        /// Codata application whose arguments must check.
+        codata: CompTypeId,
+        /// Ambient typing telescope.
+        context: Vec<ValueTypeId>,
+        /// The stages the recording run had minted.
+        stages: StageOrder,
+        /// The mutual block it was owed inside.
+        scope: Owing,
+    },
+    /// Endpoint checks deferred by identity formation.
+    Endpoints
+    {
+        /// The identity type that owes the checks: its domain and its two
+        /// endpoints are the obligation's inputs.
+        identity: ValueTypeId,
+        /// The domain both endpoints inhabit.
+        domain: ValueTypeId,
+        /// Source endpoint.
+        left: ValueId,
+        /// Target endpoint.
+        right: ValueId,
+        /// Ambient typing telescope.
+        context: Vec<ValueTypeId>,
+        /// The stages the recording run had minted.
+        stages: StageOrder,
+        /// The mutual block it was owed inside.
+        scope: Owing,
+    },
+}
+
+impl CodeObligation
+{
+    /// Join into the goal open on `session` the binders the driver's check of
+    /// this obligation can read: those its nodes carry, in the context it was
+    /// owed at.
+    ///
+    /// The driver checks an obligation against its own context, so what that
+    /// check reads lies within its nodes' carried supports; joining those is
+    /// the syntactic layer standing in for a judgement that has not run yet.
+    ///
+    /// # Specification
+    /// - requires: the obligation's nodes live in `arena`.
+    /// - ensures: the open goal gains, as [`SupportContext::read`] joins them,
+    ///   the supports of the code, the application, or the domain and both
+    ///   endpoints the obligation checks, in the context it was owed at.
+    /// - provides: the support an owing goal records, so a recall of it never
+    ///   skips an owed check under a context that differs where the check
+    ///   reads.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the accrual stack is the session's own, and what
+    ///   the join adds shows only in the key the goal later records.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one decode formed under a code binder and under a
+    ///   binder that is not a code: the second formation must owe its code
+    ///   again rather than be served the first's level.
+    /// - witness: `tests::acceptance::an_owed_code_keeps_its_binder_in_the_formation_key`
+    #[inline]
+    fn accrue(
+        &self,
+        arena: &TermArena,
+        session: &mut SupportContext,
+    )
+    {
+        match *self {
+            Self::Universe {
+                code, ref context, ..
+            } => session.read(arena.value_support(code), context),
+            Self::Data {
+                datatype,
+                ref context,
+                ..
+            } => session.read(arena.value_type_support(datatype), context),
+            Self::Codata {
+                codata,
+                ref context,
+                ..
+            } => session.read(arena.comp_type_support(codata), context),
+            Self::Endpoints {
+                domain,
+                left,
+                right,
+                ref context,
+                ..
+            } => {
+                session.read(arena.value_type_support(domain), context);
+                session.read(arena.value_support(left), context);
+                session.read(arena.value_support(right), context);
+            },
+        }
+    }
+
+    /// The mutual block this obligation was owed inside.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn scope(&self) -> Owing
+    {
+        match *self {
+            Self::Universe { scope, .. }
+            | Self::Data { scope, .. }
+            | Self::Codata { scope, .. }
+            | Self::Endpoints { scope, .. } => scope,
+        }
+    }
+
+    /// The goal that names this obligation's verdict: its kind, over the type
+    /// node that owes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn goal(&self) -> SupportGoal
+    {
+        SupportGoal::Obligation(match *self {
+            Self::Universe { element, .. } => ObligationGoal::Universe(element),
+            Self::Data { datatype, .. } => ObligationGoal::Data(datatype),
+            Self::Codata { codata, .. } => ObligationGoal::Codata(codata),
+            Self::Endpoints { identity, .. } => ObligationGoal::Endpoints(identity),
+        })
+    }
+
+    /// The key of this obligation's verdict: its goal under the context it
+    /// was owed at, over the binders its owing node carries.
+    ///
+    /// The owing node holds every input of the check, so its carried support
+    /// holds every binder the check can read. The walk that owes it and the
+    /// drain that checks it take the key from this one resolution.
+    ///
+    /// # Specification
+    /// - requires: the obligation's nodes live in `arena`.
+    /// - ensures: two obligations take one key exactly when they are of one
+    ///   kind over owing nodes of equal content, under contexts that agree at
+    ///   every binder the owing node carries.
+    /// - provides: the key the drain records a passed check under, and the key
+    ///   a formation's entry carries.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the key is the session table's interning, which a
+    ///   predicate could restate only by interning it again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the eight pairs of declarations, each a refused
+    ///   declaration and a successor that owes the same obligation, in both
+    ///   orders.
+    /// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+    #[inline]
+    fn key(
+        &self,
+        arena: &TermArena,
+        session: &mut SupportContext,
+    ) -> NodeSupport
+    {
+        let (reads, context) = match *self {
+            Self::Universe {
+                element: AnyNode::CompType(element),
+                ref context,
+                ..
+            }
+            | Self::Codata {
+                codata: element,
+                ref context,
+                ..
+            } => (arena.comp_type_support(element), context),
+            Self::Universe {
+                element: AnyNode::ValueType(element),
+                ref context,
+                ..
+            }
+            | Self::Data {
+                datatype: element,
+                ref context,
+                ..
+            }
+            | Self::Endpoints {
+                identity: element,
+                ref context,
+                ..
+            } => (arena.value_type_support(element), context),
+            Self::Universe {
+                element: AnyNode::Value(_) | AnyNode::Computation(_),
+                ref context,
+                ..
+            } => (&WIDEST, context),
+        };
+        NodeSupport::recorded(arena, session, self.goal(), context, reads)
+    }
+}
+
+/// Owe `obligation` to the driver. With an active memo, its nodes' carried
+/// supports and its key join the goal open on `session`.
+///
+/// # Specification
+/// - requires: the obligation's nodes live in `arena`.
+/// - ensures: `obligation` is owed last; with an active memo, the open goal
+///   gains what [`CodeObligation::accrue`] joins and the obligation's key.
+/// - provides: the formation walk's one way to owe.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`CodeObligation::accrue`] and
+///   [`CodeObligation::key`].
+/// - witness: `tests::acceptance::an_owed_code_keeps_its_binder_in_the_formation_key`
+/// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+#[spec(captures: count = owed.len(), ensures: owed.len() == count.saturating_add(1))]
+#[inline]
+fn owe<M>(
+    arena: &TermArena,
+    session: &mut SupportContext,
+    owed: &mut Vec<CodeObligation>,
+    obligation: CodeObligation,
+) where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    if matches!(M::ACTIVITY, MemoActivity::Active) {
+        obligation.accrue(arena, session);
+        let key = obligation.key(arena, session);
+        session.owe_obligation(&key);
+    }
+    owed.push(obligation);
+}
+
+/// Whether each obligation of `owed` holds a checked verdict, in `memo` or
+/// kept by an earlier admission under `parameters`, or this declaration's
+/// check owes it already.
+///
+/// An obligation that this check owes is checked by its drain before the
+/// declaration is admitted. So a formation recalled in the same check is
+/// served on it, and the drain checks the obligation one time.
+///
+/// # Specification
+/// - requires: each key and `parameters` were built in `session`.
+/// - ensures: [`Discharge::Held`] exactly when each key holds a checked outcome
+///   in `memo`, holds one in the kept memo under `parameters`, or is owed by
+///   this declaration's check. A formation that owes nothing is held.
+/// - provides: the condition a recalled formation is served on.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer is a probe of two memos. A predicate could
+///   restate it only by probing them again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the eight pairs of declarations, each a refused
+///   declaration and a successor that owes the same obligation, and a shared
+///   formation that one declaration recalls many times.
+/// - witness: `tests::memo_order::a_refused_obligation_does_not_answer_a_later_declaration_6869`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+#[inline]
+fn discharged<M>(
+    memo: &M,
+    session: &SupportContext,
+    owed: &Owed,
+    parameters: Option<RecordName>,
+) -> Discharge
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    let held = owed.keys().iter().all(|key| {
+        session.owes(key) == Discharge::Held
+            || memo
+                .filed(key.digest())
+                .any(|hit| hit.support() == key && *hit.outcome() == NodeOutcome::Checked)
+            || parameters.is_some_and(|named| session.kept_checked(key, named) == Discharge::Held)
+    });
+    if held {
+        Discharge::Held
+    }
+    else {
+        Discharge::Open
+    }
+}
+
+/// The mutual block an obligation was owed inside, which its drain reads it
+/// in: a field a definition reads inside its own fixpoint names the block's
+/// later definitions, as its family did, and the codes it owes are checked
+/// with them in scope.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the extent of the block the owing judgement held, or that it held
+///   none.
+/// - provides: the scope a drained obligation is judged in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a universe whose field decodes a later definition of its
+///   block reaches the decoder's stage check on the drained code.
+/// - witness: `tests::recursive_data::a_mutual_block_is_refused_whole`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Owing
+{
+    /// Outside a mutual block.
+    Alone,
+    /// Inside a mutual block, to the extent the owing judgement read.
+    Mutual(occurrence::Block),
+}
+
+impl Owing
+{
+    /// The scope `judgement` reads.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn of(judgement: Judgement<'_>) -> Self
+    {
+        match judgement.block {
+            Block::Mutual { block, .. } => Self::Mutual(block),
+            Block::Outside | Block::Inside { .. } | Block::Codata { .. } => Self::Alone,
+        }
+    }
+
+    /// `judgement`, reading this scope's block when it holds the members.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reading(
+        self,
+        judgement: Judgement<'_>,
+    ) -> Judgement<'_>
+    {
+        match (self, judgement.block) {
+            (Self::Mutual(block), Block::Mutual { members, .. }) => {
+                judgement.within_mutual(block, members)
+            },
+            _ => judgement,
+        }
+    }
+}
+
+/// The ceiling on how many code obligations one declaration's check may drain.
+///
+/// A drained obligation runs the checking machine, which can form a synthesized
+/// type over nodes it just minted and owe codes that were never table entries,
+/// so **the obligation count is not bounded by the artifact's entry count** and
+/// the constant is a ceiling rather than a derivation. What the format's entry
+/// cap supplies is a scale that moves with the artifact sizes the kernel
+/// accepts, so retuning the cap retunes this with it and no second magic number
+/// enters the trusted base. Past the ceiling the declaration is refused rather
+/// than pursued, which is the fail-closed posture the rest of the kernel takes
+/// toward a condition it cannot bound.
+const MAX_CODE_OBLIGATIONS: TableEntryCount = gandr_kernel_term::MAX_TABLE_ENTRIES;
+
+/// The frames that the checks of the process popped, on both machines.
+#[cfg(feature = "counts")]
+static POPPED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// How many frames the checks of the process popped, on both machines.
+#[cfg(feature = "counts")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct PoppedFrames(u64);
+
+#[cfg(feature = "counts")]
+impl core::fmt::Display for PoppedFrames
+{
+    /// The count, in decimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// How many frames the checks of the process popped so far, on both machines.
+/// A check that passes pops each frame that it pushes once, so for such checks
+/// the count is the frames that they push.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "counts")]
+#[inline]
+#[must_use]
+pub fn popped() -> PoppedFrames
+{
+    PoppedFrames(POPPED.load(Ordering::Relaxed))
+}
+
+/// A continuation of the type-formation walk.
+#[derive(Debug)]
+enum TypeLevelFrame
+{
+    /// The first operand's level is in the register; take the second value
+    /// operand next — a product or a sum.
+    MaxSecondValue(ValueTypeId),
+    /// The first operand's level is in the register; take the second
+    /// computation operand next — an arrow, whose codomain stands in the same
+    /// context the arrow does.
+    MaxSecondComp(CompTypeId),
+    /// The domain's level is in the register; take the codomain next, **under
+    /// the domain's binder** — a dependent arrow.
+    MaxSecondCompUnder(ValueTypeId, CompTypeId),
+    /// The first factor's level is in the register; take the second factor
+    /// next, **under the first factor's binder** — a dependent pair.
+    MaxSecondValueUnder(ValueTypeId, ValueTypeId),
+    /// A result's level of the returner of several results is in the register;
+    /// take the result at the position next, under the binder of the result
+    /// before it and those already open.
+    MaxNextResult(CompTypeId, usize),
+    /// A formation binder closes: pop the innermost context slot.
+    ScopeExit,
+    /// Restore the surrounding telescope after closed session payload
+    /// formation.
+    SessionScope(Vec<ValueTypeId>),
+    /// The second operand's level is in the register; join with the first.
+    MaxWith(Level),
+    /// The inner level is in the register; check the lift's strictness and
+    /// replace it with the target.
+    LiftCheck(Level),
+    /// The goal this frame was pushed for is now answered; record it under
+    /// its question and the binders its accrual gathered.
+    ///
+    /// Pushed **before** the goal's own continuations, so it pops after all of
+    /// them — which is exactly when the register holds that goal's final
+    /// answer, by the machine's own unwinding invariant.
+    Memoize(Question, Opened),
+}
+
+/// The universe level of a well-formed value or computation type: the
+/// well-formedness gate, computed iteratively so it is total on any depth.
+///
+/// # Specification
+/// - requires: the judgement and context belong to this arena; the memo and
+///   session hold only this call's history. An unreadable root is admissible
+///   input and refuses rather than panicking.
+/// - ensures: `Ok(level)` — the type's universe level — exactly when every
+///   embedded level is in scope, every lift strictly raises, every sealed atom
+///   resolves to an admitted abstract-type declaration, every static Pi stands
+///   over static classifiers, and no successor overflows; a bare universe of
+///   either sort at `l` forms at `l + 1`, a static Pi at the join of its
+///   children, and a decode of either family forms at the level it carries and
+///   owes its code. The walk is iterative over an explicit heap frame stack, so
+///   it is total on any type depth.
+/// - provides: type formation for the declared type and for the machine's lift
+///   synthesis, with the memo consulted on **this** plane so the type half's
+///   collapse is real rather than assumed. The predicate checks result scope
+///   and the null memo's closed-leaf rule. The full formation judgement and
+///   provenance still require the rule derivation, not a second formation walk.
+/// - fails: [`KernelError::LevelVariableOutOfScope`],
+///   [`KernelError::LevelArithmetic`], [`KernelError::UniverseViolation`],
+///   [`KernelError::LevelOracleFault`], [`KernelError::NotAnAbstractType`],
+///   [`KernelError::AbstractTypeKindNotUniverse`],
+///   [`KernelError::StaticClassifierExpected`], [`KernelError::ArenaFault`];
+///   [`KernelError::StagePresented`] for a type naming a stage.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the stacks and the context, growth within the type's depth.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — the composite level is pinned by the join over one
+///   type of every former; the L3 residues are the universe successor at both
+///   sorts, the arrow join, the lift-strictness boundary, the decode obligation
+///   of either family and the atom lookup, each pinned by a unit golden or its
+///   negative.
+/// - witness: `check::tests::a_universe_forms_one_level_up`
+/// - witness: `check::tests::a_lift_requires_a_strictly_higher_target`
+/// - witness: `check::tests::an_arrow_forms_at_the_join_of_its_children`
+/// - witness: `check::tests::a_dependent_arrow_forms_checks_and_eliminates_like_an_arrow`
+/// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
+/// - witness: `check::tests::a_computation_decode_owes_its_code_to_the_computation_universe`
+/// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
+/// - witness: `check::tests::a_static_pi_forms_over_static_classifiers_only`
+/// - witness: `session::tests::session_codes_are_closed_and_contractive`
+/// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
+/// - witness: `element_identity::tests::identity_at_an_open_type_is_a_neutral_fibre`
+#[spec(ensures: |ret| {
+    let closed_leaf = match root {
+        TypeLevelGoal::Value(id) => matches!(arena.value_type(id), Some(&ValueType::Base(_))) || matches!(arena.value_type(id), Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) if parts.is_empty()),
+        TypeLevelGoal::Comp(_) => false,
+    };
+    (ret.is_err() || ret.as_ref().is_ok_and(|level| judgement.levels.check_level_scope(level).is_ok()))
+        && (matches!(M::ACTIVITY, MemoActivity::Active) || !closed_leaf
+            || ret.as_ref().is_ok_and(|level| *level == Level::zero()))
+        && (matches!(M::ACTIVITY, MemoActivity::Active) || match root {
+            TypeLevelGoal::Value(id) if matches!(arena.value_type(id), Some(&ValueType::PathUniverse(..))) =>
+                ret.as_ref().map_or(true, |level| *level == Level::zero()),
+            TypeLevelGoal::Value(_) | TypeLevelGoal::Comp(_) => true,
+        })
+})]
+fn type_level<M>(
+    arena: &TermArena,
+    judgement: Judgement<'_>,
+    root: TypeLevelGoal,
+    mut context: Vec<ValueTypeId>,
+    recording: Recording<'_, M>,
+) -> Result<Level, KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    let Recording {
+        memo,
+        session,
+        census,
+        owed,
+    } = recording;
+    let mut frames: Vec<TypeLevelFrame> = Vec::new();
+    // The barriers opened where the walk swapped its context, innermost last;
+    // empty when the memo is inactive.
+    let mut barriers: Vec<Opened> = Vec::new();
+    // The judgement's parameters as the kept memo names them. The walk names
+    // them at its first miss.
+    let mut parameters = KeptParameters::Unnamed;
+    let mut goal = root;
+    'expand: loop {
+        // A type's level reads no binder itself; the codes and arguments it
+        // owes do, and their supports join this goal's as they are owed. The
+        // goal is asked by its question and served an entry whose recorded
+        // binders this context agrees with. When the memo is inactive this
+        // whole block is a constant-false branch that monomorphization
+        // removes.
+        let mut recalled: Option<Level> = None;
+        let mut answered = ExpansionKind::Expanded;
+        if matches!(M::ACTIVITY, MemoActivity::Active) {
+            let question = Question::ask(arena, session, goal.support());
+            let hit = memo.filed(question.digest()).find(|hit| {
+                matches!(
+                    question.agreement(arena, session, context.as_slice(), hit.support()),
+                    ContentAgreement::Agree
+                )
+            });
+            // A term-shaped answer cannot have come from this walk. The memo
+            // is shared between the two machines, and a shape disagreement
+            // means the entry was not this machine's: decline it and
+            // recompute, which costs one expansion and cannot fabricate a
+            // level. A formation is served only when each obligation it owes
+            // holds a checked verdict. Otherwise it expands and owes them
+            // again.
+            if let Some(hit) = hit
+                && let NodeOutcome::Formed(ref level, ref owes) = *hit.outcome()
+                && (owes.keys().is_empty() || {
+                    let named = parameters.name(arena, &judgement, session);
+                    discharged(&*memo, session, owes, named) == Discharge::Held
+                })
+            {
+                // The recalled goal's binders and keys are read here, as if
+                // its walk had run.
+                session.read(hit.support().reads(), &context);
+                session.owe(owes.keys());
+                recalled = Some(level.clone());
+                answered = ExpansionKind::Recalled;
+            }
+            else if let Some(named) = parameters.name(arena, &judgement, session)
+                && let Some(NodeOutcome::Formed(level, owes)) =
+                    session.recall_kept(arena, question, context.as_slice(), named)
+                && discharged(&*memo, session, &owes, Some(named)) == Discharge::Held
+            {
+                // An earlier admission formed it under these parameters. Its
+                // binders are read here as if its walk had run.
+                session.owe(owes.keys());
+                recalled = Some(level);
+                answered = ExpansionKind::Kept;
+            }
+            else {
+                let opened = session.open(&context);
+                frames.push(TypeLevelFrame::Memoize(question, opened));
+            }
+        }
+        census.record(SupportPlane::Type, answered);
+        let mut produced: Level = match recalled {
+            Some(level) => level,
+            None => match goal {
+                TypeLevelGoal::Value(id) => {
+                    let value_type = arena.value_type(id).ok_or(KernelError::ArenaFault)?;
+                    match *value_type {
+                        ValueType::Data {
+                            declaration,
+                            ref arguments,
+                        } => {
+                            let signature = former::resolve(judgement, declaration)?;
+                            if signature.arity() != former::FamilyArity(arguments.len()) {
+                                return Err(KernelError::DataArgumentArity);
+                            }
+                            let level = former::level(arena, signature.kind)?;
+                            judgement.levels.check_level_scope(&level)?;
+                            if !arguments.is_empty() {
+                                owe::<M>(arena, session, owed, CodeObligation::Data {
+                                    datatype: id,
+                                    context: context.clone(),
+                                    stages: StageOrder::default(),
+                                    scope: Owing::of(judgement),
+                                });
+                            }
+                            level
+                        },
+                        ValueType::Record(ref fields) => {
+                            let mut fields = fields.values().copied();
+                            if let Some(first) = fields.next() {
+                                frames.extend(fields.rev().map(TypeLevelFrame::MaxSecondValue));
+                                goal = TypeLevelGoal::Value(first);
+                                continue 'expand;
+                            }
+                            Level::zero()
+                        },
+                        ValueType::Session {
+                            ref graph,
+                            payloads,
+                        } => {
+                            crate::session::validate_graph(arena, graph, payloads)
+                                .map_err(KernelError::Session)?;
+                            if matches!(M::ACTIVITY, MemoActivity::Active) {
+                                barriers.push(session.open_barrier());
+                            }
+                            frames
+                                .push(TypeLevelFrame::SessionScope(core::mem::take(&mut context)));
+                            goal = TypeLevelGoal::Value(payloads);
+                            continue 'expand;
+                        },
+                        ValueType::PathUniverse(..) => {
+                            let endpoints = crate::path_universe::endpoints(
+                                arena,
+                                judgement.entries,
+                                id,
+                                crate::replay::ReplayBudget::DEFAULT,
+                            )
+                            .map_err(KernelError::Path)?;
+                            frames.push(TypeLevelFrame::MaxSecondValue(endpoints.target));
+                            goal = TypeLevelGoal::Value(endpoints.source);
+                            continue 'expand;
+                        },
+                        ValueType::FlowUniverse(..) => {
+                            let endpoints = crate::flow_universe::endpoints(
+                                arena,
+                                judgement.entries,
+                                id,
+                                crate::replay::ReplayBudget::DEFAULT,
+                            )
+                            .map_err(KernelError::Flow)?;
+                            frames.push(TypeLevelFrame::MaxSecondValue(endpoints.target));
+                            goal = TypeLevelGoal::Value(endpoints.source);
+                            continue 'expand;
+                        },
+                        // An identity forms at its domain's level, open or
+                        // closed: at an open domain it is its own neutral
+                        // fibre. Its endpoints are terms, so their checks are
+                        // owed to the checking machine like a decode's code.
+                        // A directed identity forms alike: direction is in
+                        // its introductions and its elimination, not in its
+                        // formation.
+                        ValueType::Path {
+                            domain,
+                            left,
+                            right,
+                        }
+                        | ValueType::Flow {
+                            domain,
+                            source: left,
+                            target: right,
+                        } => {
+                            owe::<M>(arena, session, owed, CodeObligation::Endpoints {
+                                identity: id,
+                                domain,
+                                left,
+                                right,
+                                context: context.clone(),
+                                stages: StageOrder::default(),
+                                scope: Owing::of(judgement),
+                            });
+                            goal = TypeLevelGoal::Value(domain);
+                            continue 'expand;
+                        },
+                        // A bridge forms as an identity does, at its domain's
+                        // level with its endpoints owed, unless its domain
+                        // reaches a sealed atom stating no interface: the
+                        // relation there is the abstraction's to choose, and is
+                        // refused by name.
+                        ValueType::Bridge {
+                            domain,
+                            left,
+                            right,
+                        } => {
+                            crate::element_identity::require_unsealed(
+                                arena,
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                                domain,
+                            )?;
+                            owe::<M>(arena, session, owed, CodeObligation::Endpoints {
+                                identity: id,
+                                domain,
+                                left,
+                                right,
+                                context: context.clone(),
+                                stages: StageOrder::default(),
+                                scope: Owing::of(judgement),
+                            });
+                            goal = TypeLevelGoal::Value(domain);
+                            continue 'expand;
+                        },
+                        ValueType::Base(_) => Level::zero(),
+                        // A universe of either sort forms one level above the
+                        // level it carries, in the universe of value types:
+                        // a code is a value whatever family it decodes into.
+                        ValueType::Universe { ref level, .. } => {
+                            judgement.levels.check_level_scope(level)?;
+                            level.succ()?
+                        },
+                        // A sealed atom forms at the level its own
+                        // declaration's kind fixes. The lookup is the whole
+                        // rule: nothing is inferred, nothing unfolds, and a
+                        // position that does not resolve to an abstract-type
+                        // declaration is refused here rather than trusted.
+                        ValueType::Abstract(atom) => {
+                            abstract_atom_level(arena, judgement.entries, atom)?
+                        },
+                        // A code's type is the checking machine's question, so
+                        // the level is read off the node and the obligation is
+                        // recorded for the driver to drain. Reading it is not
+                        // trusting it: nothing admits until the recorded
+                        // obligation has been checked.
+                        ValueType::Element { code, ref target } => {
+                            judgement.levels.check_level_scope(target)?;
+                            owe::<M>(arena, session, owed, CodeObligation::Universe {
+                                element: AnyNode::ValueType(id),
+                                code,
+                                sort: GroundSort::Value,
+                                level: target.clone(),
+                                context: context.clone(),
+                                stages: StageOrder::default(),
+                                scope: Owing::of(judgement),
+                            });
+                            target.clone()
+                        },
+                        // A product or a sum forms at the join of its parts'
+                        // levels; the unit and the empty type, with no part,
+                        // form at level zero.
+                        ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                            let mut parts = parts.iter().copied();
+                            if let Some(first) = parts.next() {
+                                frames.extend(parts.rev().map(TypeLevelFrame::MaxSecondValue));
+                                goal = TypeLevelGoal::Value(first);
+                                continue 'expand;
+                            }
+                            Level::zero()
+                        },
+                        // The dependent pair forms at the join of its factors'
+                        // levels, as the dependent arrow does, its second
+                        // factor formed under the first's binder.
+                        ValueType::Sigma { first, second } => {
+                            frames.push(TypeLevelFrame::MaxSecondValueUnder(first, second));
+                            goal = TypeLevelGoal::Value(first);
+                            continue 'expand;
+                        },
+                        // A static Pi classifies type operators, so both its
+                        // children must classify codes: a universe, or a static
+                        // Pi over universes, which the walk forms in turn. Its
+                        // inhabitants are codes, so it forms at the join of its
+                        // children's levels, among the value types.
+                        ValueType::StaticPi { domain, codomain } => {
+                            static_classifier(arena, domain)?;
+                            static_classifier(arena, codomain)?;
+                            frames.push(TypeLevelFrame::MaxSecondValue(codomain));
+                            goal = TypeLevelGoal::Value(domain);
+                            continue 'expand;
+                        },
+                        ValueType::Thunk(body) => {
+                            goal = TypeLevelGoal::Comp(body);
+                            continue 'expand;
+                        },
+                        ValueType::List(element) => {
+                            goal = TypeLevelGoal::Value(element);
+                            continue 'expand;
+                        },
+                        ValueType::Lift { inner, ref target } => {
+                            frames.push(TypeLevelFrame::LiftCheck(target.clone()));
+                            goal = TypeLevelGoal::Value(inner);
+                            continue 'expand;
+                        },
+                        // Formation reads presented types alone, and admission
+                        // alone mints a stage.
+                        ValueType::Staged { .. } => return Err(KernelError::StagePresented),
+                    }
+                },
+                TypeLevelGoal::Comp(id) => {
+                    let comp_type = arena.comp_type(id).ok_or(KernelError::ArenaFault)?;
+                    match *comp_type {
+                        // A returner of several results forms at the join of
+                        // their levels, each result under the binders of the
+                        // results before it; with none, at level zero.
+                        CompType::Returns(ref results) => match results.first() {
+                            Some(&first) => {
+                                if results.len() > 1 {
+                                    frames.push(TypeLevelFrame::MaxNextResult(id, 1));
+                                }
+                                goal = TypeLevelGoal::Value(first);
+                                continue 'expand;
+                            },
+                            None => Level::zero(),
+                        },
+                        CompType::Returner(result) => {
+                            goal = TypeLevelGoal::Value(result);
+                            continue 'expand;
+                        },
+                        // Both arrows form at the join of their two children's
+                        // levels, and the dependent one needs no context to do
+                        // it: no type former is indexed by a value term, so a
+                        // codomain's level is a function of its own node however
+                        // many binders it stands under.
+                        CompType::Arrow { domain, codomain } => {
+                            frames.push(TypeLevelFrame::MaxSecondComp(codomain));
+                            goal = TypeLevelGoal::Value(domain);
+                            continue 'expand;
+                        },
+                        // The dependent arrow's codomain is formed under the
+                        // domain's binder, so the walk carries a context of its
+                        // own — the half of "types in the context stop being
+                        // closed" that formation pays.
+                        CompType::Pi { domain, codomain } => {
+                            frames.push(TypeLevelFrame::MaxSecondCompUnder(domain, codomain));
+                            goal = TypeLevelGoal::Value(domain);
+                            continue 'expand;
+                        },
+                        // The computation decode is the value decode's twin: the
+                        // level is read off the node and the code is owed
+                        // against the computation universe at that level.
+                        CompType::Element { code, ref target } => {
+                            judgement.levels.check_level_scope(target)?;
+                            owe::<M>(arena, session, owed, CodeObligation::Universe {
+                                element: AnyNode::CompType(id),
+                                code,
+                                sort: GroundSort::Computation,
+                                level: target.clone(),
+                                context: context.clone(),
+                                stages: StageOrder::default(),
+                                scope: Owing::of(judgement),
+                            });
+                            target.clone()
+                        },
+                        // The lazy product forms at the join of its
+                        // components' levels, as the product does: no
+                        // component binds anything, and the terminal type,
+                        // with none, forms at level zero.
+                        CompType::With(ref parts) => {
+                            let mut parts = parts.iter().copied();
+                            if let Some(first) = parts.next() {
+                                frames.extend(parts.rev().map(TypeLevelFrame::MaxSecondComp));
+                                goal = TypeLevelGoal::Comp(first);
+                                continue 'expand;
+                            }
+                            Level::zero()
+                        },
+                        // A codata application forms at its declaration's
+                        // computation universe; its arguments are owed against
+                        // the telescope, as a data application's are.
+                        CompType::Codata {
+                            declaration,
+                            ref arguments,
+                        } => {
+                            let signature = codata::resolve(judgement, declaration)?;
+                            if signature.parameters.len() != arguments.len() {
+                                return Err(KernelError::DataArgumentArity);
+                            }
+                            let level = codata::level(arena, signature.kind)?;
+                            judgement.levels.check_level_scope(&level)?;
+                            if !arguments.is_empty() {
+                                owe::<M>(arena, session, owed, CodeObligation::Codata {
+                                    codata: id,
+                                    context: context.clone(),
+                                    stages: StageOrder::default(),
+                                    scope: Owing::of(judgement),
+                                });
+                            }
+                            level
+                        },
+                    }
+                },
+            },
+        };
+        loop {
+            let Some(frame) = frames.pop()
+            else {
+                return Ok(produced);
+            };
+            #[cfg(feature = "counts")]
+            let _counted = POPPED.fetch_add(1, Ordering::Relaxed);
+            match frame {
+                TypeLevelFrame::Memoize(question, opened) => {
+                    // When the stack does not hold the accrual, its keys are
+                    // unknown, so the walk does not record the formation. A
+                    // memo at its ceiling declines to record. The check
+                    // proceeds unmemoized from there, which costs collapse
+                    // and never correctness.
+                    if let Some((reads, owes)) = session.close_owing(opened) {
+                        let support = question.answered(arena, session, context.as_slice(), reads);
+                        let outcome = NodeOutcome::Formed(produced.clone(), owes);
+                        if let Some(named) = parameters.name(arena, &judgement, session) {
+                            session.keep(&support, named, &outcome);
+                        }
+                        let _recorded = memo.remember(support, outcome);
+                    }
+                },
+                TypeLevelFrame::MaxSecondValue(second) => {
+                    frames.push(TypeLevelFrame::MaxWith(produced));
+                    goal = TypeLevelGoal::Value(second);
+                    continue 'expand;
+                },
+                TypeLevelFrame::MaxSecondComp(second) => {
+                    frames.push(TypeLevelFrame::MaxWith(produced));
+                    goal = TypeLevelGoal::Comp(second);
+                    continue 'expand;
+                },
+                TypeLevelFrame::MaxSecondCompUnder(domain, second) => {
+                    frames.push(TypeLevelFrame::MaxWith(produced));
+                    frames.push(TypeLevelFrame::ScopeExit);
+                    context.push(domain);
+                    goal = TypeLevelGoal::Comp(second);
+                    continue 'expand;
+                },
+                TypeLevelFrame::MaxNextResult(returner, position) => {
+                    let Some(&CompType::Returns(ref results)) = arena.comp_type(returner)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (Some(&before), Some(&next)) =
+                        (results.get(position.wrapping_sub(1)), results.get(position))
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let more = position.saturating_add(1) < results.len();
+                    frames.push(TypeLevelFrame::MaxWith(produced));
+                    frames.push(TypeLevelFrame::ScopeExit);
+                    if more {
+                        frames.push(TypeLevelFrame::MaxNextResult(
+                            returner,
+                            position.saturating_add(1),
+                        ));
+                    }
+                    context.push(before);
+                    goal = TypeLevelGoal::Value(next);
+                    continue 'expand;
+                },
+                TypeLevelFrame::MaxSecondValueUnder(first, second) => {
+                    frames.push(TypeLevelFrame::MaxWith(produced));
+                    frames.push(TypeLevelFrame::ScopeExit);
+                    context.push(first);
+                    goal = TypeLevelGoal::Value(second);
+                    continue 'expand;
+                },
+                TypeLevelFrame::SessionScope(outer) => {
+                    context = outer;
+                    if let Some(barrier) = barriers.pop() {
+                        let _closed = session.close(barrier);
+                    }
+                },
+                TypeLevelFrame::ScopeExit => {
+                    let _popped = context.pop();
+                },
+                TypeLevelFrame::MaxWith(first) => {
+                    produced = first.max(&produced);
+                },
+                TypeLevelFrame::LiftCheck(target) => {
+                    judgement.levels.check_level_scope(&target)?;
+                    judgement.levels.check_universe_below(&produced, &target)?;
+                    produced = target;
+                },
+            }
+        }
+    }
+}
+
+/// The universe level of a sealed abstract type, read off its declaration's
+/// kind.
+///
+/// This is the **whole** formation rule for a sealed atom, and its shape is the
+/// point: a lookup, not an inference. The kernel resolves the position,
+/// requires the declaration it finds to be an abstract type, and reads the
+/// level out of a kind that admission already pinned to a universe. No branch
+/// consults the atom's representation: formation is the same inside the
+/// minting admission and outside it, and only the seal rule, at a member's
+/// declared type and a constant's synthesized one, ever reads it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `|ret| match
+///   entries.get(usize::from(atom)).map(AdmittedDeclaration::content) {
+///   Some(&DeclarationContent::AbstractType { kind, .. }) =>
+///   arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node {
+///   ValueType::Universe { sort: GroundSort::Value, ref level } =>
+///   ret.as_ref().is_ok_and(|actual| actual == level), _ => ret.is_err() }), _
+///   => ret.is_err() }` — success carries the declared universe level exactly
+///   when `atom` names an admitted abstract type whose kind resolves to a
+///   universe of value types.
+/// - provides: the atom's formation level.
+/// - fails: [`KernelError::NotAnAbstractType`] for an out-of-range position, a
+///   forward reference, or a definition or axiom at that position;
+///   [`KernelError::AbstractTypeKindNotUniverse`] when the kind is not a
+///   universe of value types, which admission pins and which is therefore
+///   surfaced rather than trusted; [`KernelError::ArenaFault`] on an unreadable
+///   kind.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — an atom typed at its declared universe is pinned by the
+///   admission witness; the L3 residues are the three refusal arms, each pinned
+///   by its own negative witness.
+/// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
+/// - witness: `check::tests::an_atom_naming_a_definition_is_not_an_abstract_type`
+/// - witness: `check::tests::a_forward_atom_reference_is_not_an_abstract_type`
+#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), ValueType::Data { .. } | ValueType::Record(_) | ValueType::Session { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Staged { .. } => ret.is_err() }), _ => ret.is_err() })]
+fn abstract_atom_level(
+    arena: &TermArena,
+    entries: &Entries,
+    atom: ConstantIndex,
+) -> Result<Level, KernelError>
+{
+    let entry = entries
+        .get(usize::from(atom))
+        .ok_or(KernelError::NotAnAbstractType { index: atom })?;
+    let DeclarationContent::AbstractType { kind, .. } = *entry.content()
+    else {
+        return Err(KernelError::NotAnAbstractType { index: atom });
+    };
+    let kind_node = arena.value_type(kind).ok_or(KernelError::ArenaFault)?;
+    match *kind_node {
+        ValueType::Universe {
+            sort: GroundSort::Value,
+            ref level,
+        } => Ok(level.clone()),
+        ValueType::Universe {
+            sort: GroundSort::Computation,
+            ..
+        }
+        | ValueType::Data { .. }
+        | ValueType::Record(_)
+        | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
+        | ValueType::Base(_)
+        | ValueType::Product(..)
+        | ValueType::Sigma { .. }
+        | ValueType::Session { .. }
+        | ValueType::List(_)
+        | ValueType::Sum(..)
+        | ValueType::Thunk(_)
+        | ValueType::Lift { .. }
+        | ValueType::Element { .. }
+        | ValueType::Abstract(_)
+        | ValueType::Path { .. }
+        | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
+        | ValueType::StaticPi { .. }
+        | ValueType::Staged { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
+            actual: value_type_witness(arena, kind),
+        }),
+    }
+}
+
+/// Require `classifier` to classify codes: a universe of either sort, or a
+/// static Pi.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success exactly when `classifier` resolves to a universe or to a
+///   static Pi.
+/// - provides: the head check static Pi formation runs on each child. A static
+///   Pi child is formed by the walk in turn, so the check reaches every leaf of
+///   a nested classifier.
+/// - fails: [`KernelError::StaticClassifierExpected`] for any other type, and
+///   [`KernelError::ArenaFault`] when `classifier` does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a universe of either sort and a static Pi pass; a base
+///   type at either child refuses by name.
+/// - witness: `check::tests::a_static_pi_forms_over_static_classifiers_only`
+#[spec(ensures: |ret| ret.is_ok() == matches!(arena.value_type(classifier), Some(&ValueType::Universe { .. } | &ValueType::StaticPi { .. })))]
+fn static_classifier(
+    arena: &TermArena,
+    classifier: ValueTypeId,
+) -> Result<(), KernelError>
+{
+    match *arena
+        .value_type(classifier)
+        .ok_or(KernelError::ArenaFault)?
+    {
+        ValueType::Universe { .. } | ValueType::StaticPi { .. } => Ok(()),
+        ValueType::Data { .. }
+        | ValueType::Record(_)
+        | ValueType::PathUniverse(..)
+        | ValueType::FlowUniverse(..)
+        | ValueType::Base(_)
+        | ValueType::Product(..)
+        | ValueType::Sigma { .. }
+        | ValueType::Session { .. }
+        | ValueType::List(_)
+        | ValueType::Sum(..)
+        | ValueType::Thunk(_)
+        | ValueType::Lift { .. }
+        | ValueType::Element { .. }
+        | ValueType::Abstract(_)
+        | ValueType::Path { .. }
+        | ValueType::Flow { .. }
+        | ValueType::Bridge { .. }
+        | ValueType::Staged { .. } => Err(KernelError::StaticClassifierExpected {
+            actual: value_type_witness(arena, classifier),
+        }),
+    }
+}
+
+/// A result the checker machine produced into its register.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Produced
+{
+    /// A synthesized value type.
+    ValueType(ValueTypeId),
+    /// A synthesized computation type.
+    CompType(CompTypeId),
+    /// A check succeeded; no type is carried.
+    Checked,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a memo outcome cannot supply the term register.
+    mod term_outcome {
+        /// A result belongs to the other checking machine.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// A universe level is a formation answer, not a term answer.
+            Formation,
+        }
+    }
+}
+
+impl Produced
+{
+    /// This answer in the memo's outcome vocabulary.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn outcome(self) -> NodeOutcome
+    {
+        match self {
+            Self::ValueType(id) => NodeOutcome::ValueType(id),
+            Self::CompType(id) => NodeOutcome::CompType(id),
+            Self::Checked => NodeOutcome::Checked,
+        }
+    }
+
+    /// Read a memo outcome back as a register value.
+    ///
+    /// A formation level cannot be the answer to a term goal, so it is treated
+    /// as a **miss** rather than trusted: declining costs one recomputation and
+    /// cannot fabricate a verdict.
+    ///
+    /// # Specification
+    /// - requires: nothing; an outcome of the formation machine is admissible
+    ///   input.
+    /// - ensures: the register value a term goal's answer carries, and nothing
+    ///   for a formation level, which is not an answer to a term goal.
+    /// - provides: the term register or [`Absent::Formation`], which declines a
+    ///   formation answer and forces recomputation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a formation answer cannot satisfy a term goal; the
+    ///   mirror-plane poison witness observes recomputation and the verdict.
+    /// - witness: `tests::acceptance::a_formation_shaped_answer_in_a_term_support_is_declined_and_recomputed`
+    ///
+    /// [`Absent::Formation`]: term_outcome::Absent::Formation
+    #[spec(ensures: |ret| matches!((outcome, &ret),
+        (NodeOutcome::ValueType(_), Maybe::Present(Self::ValueType(_)))
+        | (NodeOutcome::CompType(_), Maybe::Present(Self::CompType(_)))
+        | (NodeOutcome::Checked, Maybe::Present(Self::Checked))
+        | (NodeOutcome::Formed(..), Maybe::Absent(term_outcome::Absent::Formation))))]
+    #[inline]
+    const fn of_outcome(outcome: &NodeOutcome) -> Maybe<Self, term_outcome::Absent>
+    {
+        match *outcome {
+            NodeOutcome::ValueType(id) => Maybe::Present(Self::ValueType(id)),
+            NodeOutcome::CompType(id) => Maybe::Present(Self::CompType(id)),
+            NodeOutcome::Checked => Maybe::Present(Self::Checked),
+            NodeOutcome::Formed(..) => Maybe::Absent(term_outcome::Absent::Formation),
+        }
+    }
+
+    /// Project a synthesized value type out of the register.
+    ///
+    /// # Specification
+    /// - requires: nothing; every register state is admissible input.
+    /// - ensures: a value-type register projects its id; either other state
+    ///   returns the precise value-polarity fault.
+    /// - provides: the fail-closed projection every value-consuming frame
+    ///   takes, so a wiring defect refuses instead of fabricating a type.
+    /// - fails: [`KernelError::CheckerRegisterFault`] with
+    ///   [`RegisterFault::ExpectedValueType`] on a non-value register.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`KernelError::CheckerRegisterFault`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the variable fixture preserves its selected context
+    ///   type; both other register states produce the exact polarity fault.
+    /// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+    /// - witness: `check::tests::register_polarity_faults_fail_closed`
+    #[spec(ensures: |ret| matches!((self, &ret),
+        (Self::ValueType(_), Ok(_))
+        | (Self::CompType(_) | Self::Checked,
+            Err(KernelError::CheckerRegisterFault(RegisterFault::ExpectedValueType)))))]
+    #[inline]
+    const fn value_type(self) -> Result<ValueTypeId, KernelError>
+    {
+        match self {
+            Self::ValueType(id) => Ok(id),
+            Self::CompType(_) | Self::Checked => Err(KernelError::CheckerRegisterFault(
+                RegisterFault::ExpectedValueType,
+            )),
+        }
+    }
+
+    /// Project a synthesized computation type out of the register.
+    ///
+    /// # Specification
+    /// - requires: nothing; every register state is admissible input.
+    /// - ensures: a computation-type register projects its id; either other
+    ///   state returns the precise computation-polarity fault.
+    /// - provides: the fail-closed projection every computation-consuming frame
+    ///   takes, with the same refusal discipline as [`Self::value_type`].
+    /// - fails: [`KernelError::CheckerRegisterFault`] with
+    ///   [`RegisterFault::ExpectedCompType`] on a non-computation register.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`KernelError::CheckerRegisterFault`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — forcing a thunk preserves its computation type; both
+    ///   other register states produce the exact polarity fault.
+    /// - witness: `check::tests::a_force_unwraps_a_thunk`
+    /// - witness: `check::tests::register_polarity_faults_fail_closed`
+    #[spec(ensures: |ret| matches!((self, &ret),
+        (Self::CompType(_), Ok(_))
+        | (Self::ValueType(_) | Self::Checked,
+            Err(KernelError::CheckerRegisterFault(RegisterFault::ExpectedCompType)))))]
+    #[inline]
+    const fn comp_type(self) -> Result<CompTypeId, KernelError>
+    {
+        match self {
+            Self::CompType(id) => Ok(id),
+            Self::ValueType(_) | Self::Checked => Err(KernelError::CheckerRegisterFault(
+                RegisterFault::ExpectedCompType,
+            )),
+        }
+    }
+}
+
+/// A checking obligation over a term node — the goal of the machine.
+#[derive(Clone, Copy, Debug)]
+enum Goal
+{
+    /// Synthesize a value's type.
+    SynthValue(ValueId),
+    /// Check a value against an expected value type.
+    CheckValue(ValueId, ValueTypeId),
+    /// Synthesize a computation's type.
+    SynthComp(ComputationId),
+    /// Check a computation against an expected computation type.
+    CheckComp(ComputationId, CompTypeId),
+}
+
+impl Goal
+{
+    /// This goal in the memo's support vocabulary.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn support(self) -> SupportGoal
+    {
+        match self {
+            Self::SynthValue(id) => SupportGoal::SynthValue(id),
+            Self::CheckValue(id, expected) => SupportGoal::CheckValue(id, expected),
+            Self::SynthComp(id) => SupportGoal::SynthComp(id),
+            Self::CheckComp(id, expected) => SupportGoal::CheckComp(id, expected),
+        }
+    }
+}
+
+/// A frame's run of items: a slice of one of the machine's stacks, named by
+/// the place of its first item and the count of its items. The next item is
+/// the last of the slice.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Slice<Item>
+{
+    /// The place of the slice's first item in the stack.
+    start: usize,
+    /// The count of the slice's items.
+    count: usize,
+    /// The stack's item.
+    item: PhantomData<fn() -> Item>,
+}
+
+impl<Item: Copy> Slice<Item>
+{
+    /// Push `items` on `stack` in their order, as a new slice.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn pushed<Items>(
+        stack: &mut Vec<Item>,
+        items: Items,
+    ) -> Self
+    where
+        Items: IntoIterator<Item = Item>,
+    {
+        let start = stack.len();
+        stack.extend(items);
+        Self {
+            start,
+            count: stack.len().saturating_sub(start),
+            item: PhantomData,
+        }
+    }
+
+    /// An empty slice at the top of `stack`, which the items pushed on it
+    /// next fill.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn mark(stack: &[Item]) -> Self
+    {
+        Self {
+            start: stack.len(),
+            count: 0,
+            item: PhantomData,
+        }
+    }
+
+    /// Each item of `stack` from the slice's first place on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn above(
+        self,
+        stack: &[Item],
+    ) -> &[Item]
+    {
+        stack.get(self.start ..).unwrap_or_default()
+    }
+
+    /// As [`Self::above`], to change in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn above_mut(
+        self,
+        stack: &mut [Item],
+    ) -> &mut [Item]
+    {
+        stack.get_mut(self.start ..).unwrap_or_default()
+    }
+
+    /// The slice of each item of `stack` from the slice's first place on, in
+    /// their order: the last pushed is the next.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn filled(
+        self,
+        stack: &[Item],
+    ) -> Self
+    {
+        Self {
+            start: self.start,
+            count: stack.len().saturating_sub(self.start),
+            item: PhantomData,
+        }
+    }
+
+    /// As [`Self::filled`], with the items turned in place: the first pushed
+    /// is the next.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn turned(
+        self,
+        stack: &mut [Item],
+    ) -> Self
+    {
+        let filled = self.filled(stack);
+        filled.above_mut(stack).reverse();
+        filled
+    }
+
+    /// Push `item` on `stack` as the slice's last item. Each frame above the
+    /// slice's frame gave its places back, so the slice stands at the top.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn grown(
+        self,
+        stack: &mut Vec<Item>,
+        item: Item,
+    ) -> Self
+    {
+        // Each frame above this one gave its places back, so the slice ends at
+        // the top of `stack`.
+        stack.push(item);
+        Self {
+            start: self.start,
+            count: self.count.saturating_add(1),
+            item: PhantomData,
+        }
+    }
+
+    /// The slice's items, the next last.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn items(
+        self,
+        stack: &[Item],
+    ) -> &[Item]
+    {
+        stack
+            .get(self.start .. self.start.saturating_add(self.count))
+            .unwrap_or_default()
+    }
+
+    /// The next item, and the slice that remains after it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn next(
+        self,
+        stack: &[Item],
+    ) -> Option<(Item, Self)>
+    {
+        let count = self.count.checked_sub(1)?;
+        let item = *stack.get(self.start.saturating_add(count))?;
+        Some((item, Self {
+            start: self.start,
+            count,
+            item: PhantomData,
+        }))
+    }
+
+    /// Give the slice's places back to `stack`, with each place above them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn release(
+        self,
+        stack: &mut Vec<Item>,
+    )
+    {
+        stack.truncate(self.start);
+    }
+
+    /// The slice's items, to change in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn items_mut(
+        self,
+        stack: &mut [Item],
+    ) -> &mut [Item]
+    {
+        stack
+            .get_mut(self.start .. self.start.saturating_add(self.count))
+            .unwrap_or_default()
+    }
+
+    /// Push the items of `items` on `stack` as a new slice, and empty
+    /// `items`, which keeps its places.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn saved(
+        stack: &mut Vec<Item>,
+        items: &mut Vec<Item>,
+    ) -> Self
+    {
+        let slice = Self::pushed(stack, items.iter().copied());
+        items.clear();
+        slice
+    }
+
+    /// Write the slice's items back into `items`, and give the slice's places
+    /// back to `stack`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn restored(
+        self,
+        stack: &mut Vec<Item>,
+        items: &mut Vec<Item>,
+    )
+    {
+        items.clear();
+        items.extend_from_slice(self.items(stack));
+        self.release(stack);
+    }
+}
+
+/// The checker machine's continuation: its frames, innermost last, and the
+/// stacks of the items that its frames name by slice. On each stack, a
+/// frame's slice stands above the slices of the frames below it. A check
+/// owns one and lends it to each of its runs, and each run empties it first,
+/// so its places outlive the run.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Continuation
+{
+    /// The frames, innermost last.
+    frames: Vec<Frame>,
+    /// The goals of the frames' slices.
+    goals: Vec<Goal>,
+    /// The values of the frames' slices.
+    values: Vec<ValueId>,
+    /// The value types of the frames' slices.
+    types: Vec<ValueTypeId>,
+    /// The computation types of the frames' slices.
+    comp_types: Vec<CompTypeId>,
+    /// The higher evaluation components of the frames' slices.
+    components: Vec<ComponentChecks>,
+    /// The questions of the frames' memo records.
+    questions: Vec<Question>,
+}
+
+/// One component of a higher evaluation on the machine's stacks: the
+/// telescope its checks stand in, outermost first, and its checks, the next
+/// last.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct ComponentChecks
+{
+    /// The telescope the checks stand in, outermost first.
+    context: Slice<ValueTypeId>,
+    /// The checks, the next last.
+    goals: Slice<Goal>,
+}
+
+impl ComponentChecks
+{
+    /// Push the telescope and the checks of each of `obligations` on the
+    /// stacks, the last obligation first, so that the first is the next.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn pushed(
+        (components, types, goals): (&mut Vec<Self>, &mut Vec<ValueTypeId>, &mut Vec<Goal>),
+        obligations: &[crate::identity_recursion::ComponentObligation],
+    ) -> Slice<Self>
+    {
+        Slice::pushed(
+            components,
+            obligations.iter().rev().map(|obligation| Self {
+                context: Slice::pushed(types, obligation.context.iter().copied()),
+                goals: Slice::pushed(
+                    goals,
+                    obligation
+                        .checks
+                        .iter()
+                        .rev()
+                        .map(|&(value, ty)| Goal::CheckValue(value, ty)),
+                ),
+            }),
+        )
+    }
+}
+
+/// A continuation of the checker machine. Every held type is a `Copy` id.
+#[derive(Clone, Copy, Debug)]
+enum Frame
+{
+    /// Discharge the remaining goals of a slice of the goal stack, the next
+    /// last, then yield their promised result.
+    Pending(Slice<Goal>, Produced),
+    /// Discharge the remaining goals of a record's fields, or of a
+    /// restriction's fixed values, in order, then yield the checked answer.
+    /// A refusal raised under this frame names the field checked now, the
+    /// last of the `begun` first labels of `holder` ([`run`]).
+    Fields
+    {
+        /// The goals still to discharge, the next last.
+        remaining: Slice<Goal>,
+        /// The record literal or the restriction whose fields these are.
+        holder: ValueId,
+        /// How many of the holder's fields began their check, in the order of
+        /// its labels. Each field has one goal.
+        begun: usize,
+    },
+    /// Accumulate inferred record field types without recursive checking.
+    /// The record literal names each field: its labels, in their order, name
+    /// the types in the same order.
+    RecordField
+    {
+        /// The record literal whose fields these are.
+        holder: ValueId,
+        /// The values still to synthesize, the next last.
+        remaining: Slice<ValueId>,
+        /// The classifiers inferred so far, in label order.
+        types: Slice<ValueTypeId>,
+    },
+    /// Project the field that the projection names once the record's
+    /// classifier is known.
+    RecordProjection(ComputationId),
+    /// Project a component once the tuple's classifier is known; the tuple
+    /// itself is kept, since a dependent pair's second factor reads the first
+    /// component.
+    TupleProjection(ValueId, gandr_kernel_term::Component),
+    /// Check a motive and constructor-specific branches after scrutinee
+    /// synthesis, the branches at `motive`: the written one, or the staged
+    /// result the case is checked at ([`recursion::motive_at`]).
+    DataCase
+    {
+        /// The case.
+        case: ComputationId,
+        /// The motive its branches are read at.
+        motive: CompTypeId,
+    },
+    /// Decide that a case over a presented type respects the type's rules,
+    /// once its branches have checked.
+    Respect(ComputationId, respect::Reading),
+    /// Show a case over a sort its words loop at respects each loop, once its
+    /// branches have checked.
+    Loops(ComputationId, ValueTypeId),
+    /// Form a dependent split's motive and check its body after scrutinee
+    /// synthesis.
+    SigmaSplit(ComputationId),
+    /// Restore the outer context after checking closed payload paths.
+    SessionPayload
+    {
+        /// Session-path classifier to synthesize after its obligations.
+        classifier: ValueTypeId,
+        /// Surrounding telescope, excluded from the closed proof tuple.
+        context: Slice<ValueTypeId>,
+    },
+    /// Synthesize the second product-path component after the first.
+    PathProductFirst(ValueId),
+    /// Combine the two decoded component endpoints.
+    PathProductSecond(crate::path_universe::PathType),
+    /// Synthesize the second product-flow component after the first.
+    FlowProductFirst(ValueId),
+    /// Combine the two decoded component endpoints of a flow product.
+    FlowProductSecond(crate::flow_universe::FlowType),
+    /// Check the backward map after the closed forward map.
+    PathForward
+    {
+        /// The native equivalence carrying both maps and its evidence.
+        path: ValueId,
+        /// Validated endpoint types.
+        endpoints: crate::path_universe::PathType,
+        /// The enclosing context, restored after both map checks.
+        context: Slice<ValueTypeId>,
+    },
+    /// Replay both round trips after both translators checked.
+    PathBackward
+    {
+        /// The native equivalence.
+        path: ValueId,
+        /// Validated endpoint types.
+        endpoints: crate::path_universe::PathType,
+        /// The enclosing context.
+        context: Slice<ValueTypeId>,
+    },
+    /// Check a transport operand after synthesizing its path classifier.
+    Transport(ValueId),
+    /// A `here` synthesis: the point's type is synthesized; the identity is
+    /// its diagonal.
+    SynthHere(ValueId),
+    /// A returned endpoint's synthesis: its computation is synthesizing, and
+    /// must synthesize a returner.
+    SynthReturned,
+    /// A `here` or `stay` check: the point checked at the domain; it must
+    /// convert with both held endpoints, by the forced conversion or the
+    /// dialogue it carries for each.
+    CheckHere
+    {
+        /// The reflexivity's point.
+        point: ValueId,
+        /// The source endpoint.
+        left: ValueId,
+        /// The target endpoint.
+        right: ValueId,
+        /// The `here` or `stay` value, whose dialogues relate the point to
+        /// each endpoint.
+        holder: ValueId,
+    },
+    /// A higher evaluation's component checks, each in its own pattern
+    /// telescope, then the enclosing context restored.
+    Components
+    {
+        /// The enclosing context.
+        outer: Slice<ValueTypeId>,
+        /// The components still to check, the next one last.
+        remaining: Slice<ComponentChecks>,
+    },
+    /// An element transport: its path's classifier is synthesized.
+    ElementTransport(ComputationId),
+    /// A telescope transport: its path's classifier is synthesized.
+    TelescopePath(ComputationId),
+    /// A telescope transport: its start checked at the family's fibre over
+    /// the path's source; synthesize the identity over the path.
+    TelescopeStart
+    {
+        /// The transport.
+        transport: ComputationId,
+        /// The path's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// A telescope transport: the identity over the path is synthesized.
+    TelescopeOver
+    {
+        /// The transport.
+        transport: ComputationId,
+        /// The path's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// A `stay` synthesis: the point's type is synthesized; the flow is its
+    /// diagonal.
+    SynthStay(ValueId),
+    /// Replay a forward flow's images after its translator checked in the
+    /// empty context.
+    FlowForward
+    {
+        /// The forward flow.
+        flow: ValueId,
+        /// Its validated first-order endpoint types.
+        endpoints: crate::flow_universe::FlowType,
+        /// The enclosing context, restored after the replay.
+        context: Slice<ValueTypeId>,
+    },
+    /// A function flow: the boundary at `position` is synthesized; orient it.
+    FlowBoundary
+    {
+        /// The function flow.
+        flow: ValueId,
+        /// The boundary whose classifier is synthesized.
+        position: crate::flow_universe::Boundary,
+    },
+    /// A composition: its first flow's classifier is synthesized.
+    ThenFirst(ValueId),
+    /// A composition: its second flow's classifier is synthesized; the first's
+    /// is held.
+    ThenSecond
+    {
+        /// The composition.
+        then: ValueId,
+        /// The first flow's classifier.
+        first: ValueTypeId,
+    },
+    /// A ride: its flow's classifier is synthesized.
+    Ride(ComputationId),
+    /// A telescope ride: its flow's classifier is synthesized.
+    TelescopeRideFlow(ComputationId),
+    /// A telescope ride: its start checked at the family's fibre over the
+    /// flow's source; synthesize the flow over the flow.
+    TelescopeRideStart
+    {
+        /// The ride.
+        ride: ComputationId,
+        /// The flow's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// A telescope ride: the flow over the flow is synthesized.
+    TelescopeRideOver
+    {
+        /// The ride.
+        ride: ComputationId,
+        /// The flow's source and target.
+        ends: (ValueId, ValueId),
+    },
+    /// A related application: its function identity's classifier is
+    /// synthesized.
+    RelatedPath(ComputationId),
+    /// A related application: its premises checked; synthesize the body under
+    /// the two results and their identity, held in binding order.
+    RelatedBody
+    {
+        /// The body source.
+        body: ComputationId,
+        /// The source result's, the target result's, and their identity's
+        /// types, each written in the context its binder extends.
+        binders: [ValueTypeId; 3],
+    },
+    /// A tuple synthesis: the component in the register is synthesized; the
+    /// tuple holds the rest, and the types synthesized so far stand in order.
+    SynthTuple
+    {
+        /// The tuple, whose component past the types so far is the next.
+        tuple: ValueId,
+        /// The component types synthesized so far, in order.
+        types: Slice<ValueTypeId>,
+    },
+    /// A thunk synthesis: the body computation is synthesizing.
+    SynthThunk,
+    /// A lift synthesis: the body is synthesizing; the lift holds the target
+    /// level.
+    SynthLift(ValueId),
+    /// A list-cell check: the head checked; check the tail against the held
+    /// list type.
+    CheckPairSecond(ValueId, ValueTypeId),
+    /// Check the nil branch after checking the fold's list.
+    FoldNil(ComputationId, CompTypeId),
+    /// Check the cons branch under its head and folded-result binders.
+    FoldCons(ValueTypeId, CompTypeId, ComputationId),
+    /// A list case: the list is synthesizing; the branches and the case's
+    /// expected type are held.
+    ListCaseScrutinee
+    {
+        /// The empty branch source.
+        on_nil: ComputationId,
+        /// The cell branch source.
+        on_cons: ComputationId,
+        /// The case's expected type.
+        expected: CompTypeId,
+    },
+    /// Check a list case's cell branch under a binder of the element and one
+    /// of the tail, against the case's expected type: the element, the tail's
+    /// type — at the stage the case opened when the list stood at one — the
+    /// expected type and the branch.
+    ListCaseCons(ValueTypeId, ValueTypeId, CompTypeId, ComputationId),
+    /// A value mode switch: the value synthesized; convert against the held
+    /// expected type.
+    ConvertValue(ValueTypeId),
+    /// A restriction: its record value's type is synthesized; each fixed
+    /// value checks at its field's type, then each fixed field converts.
+    SynthRestrict(ValueId),
+    /// A restriction: its fixed values checked; each field of its record
+    /// value converts with the value fixed at its label, and the restriction
+    /// synthesizes `kept`, the record type of the other fields.
+    RestrictConverts
+    {
+        /// The restriction.
+        restriction: ValueId,
+        /// The record type of the fields it does not fix.
+        kept: ValueTypeId,
+    },
+    /// A restriction checked at a type: its type is synthesized; a label the
+    /// two records do not share is refused by name before they convert.
+    CheckRestricted(ValueTypeId),
+    /// An application: the head is synthesized; the argument source is held.
+    SynthApply(ValueId),
+    /// An application of a fixpoint in checking position: the argument is
+    /// synthesizing; the fixpoint and the application's expected type are
+    /// held, and the fixpoint checks against the arrow from the argument's
+    /// type to it.
+    FixpointArgument(ComputationId, CompTypeId),
+    /// An application: the argument checked; produce the held codomain.
+    ProduceComp(CompTypeId),
+    /// A call into a definition whose result follows a parameter: the
+    /// application's returner of the held staged type's base reads at it.
+    Restage(ValueTypeId),
+    /// A static application: the head is synthesized; the argument source is
+    /// held.
+    SynthStaticApply(ValueId),
+    /// A static application: the argument checked; produce the held codomain.
+    ProduceValue(ValueTypeId),
+    /// A univalence: its record is synthesized; read the identity and the
+    /// record type off that type, then check the record against it.
+    UnivalenceRecord(ValueId),
+    /// A force: the value is synthesized.
+    SynthForce,
+    /// A returner synthesis: the value is synthesized.
+    SynthReturn,
+    /// A synthesis of a return of several values: the value in the register is
+    /// synthesized; the return holds the rest, and the types synthesized so
+    /// far stand in order.
+    SynthReturnAll
+    {
+        /// The return, whose value past the types so far is the next.
+        returns: ComputationId,
+        /// The value types synthesized so far, in order, each in the ambient
+        /// context.
+        types: Slice<ValueTypeId>,
+    },
+    /// A lazy pairing synthesis: the component in the register is
+    /// synthesized; the pairing holds the rest, and the types synthesized so
+    /// far stand in order.
+    SynthWith
+    {
+        /// The pairing, whose component past the types so far is the next.
+        with: ComputationId,
+        /// The component types synthesized so far, in order.
+        types: Slice<CompTypeId>,
+    },
+    /// A projection: the pairing's type is synthesizing; the component is
+    /// held.
+    Project(gandr_kernel_term::Component),
+    /// A bind synthesis: the bound computation is synthesized; the body source
+    /// is held, and the body's type, strengthened past the bind's binder,
+    /// becomes the bind's.
+    SynthBind(ComputationId),
+    /// A synthesis of a bind of several values: the bound computation is
+    /// synthesized; the body source is held with the count of values it
+    /// binds, and the body's type, strengthened past every binder, becomes
+    /// the bind's.
+    SynthBindAll(ComputationId, gandr_kernel_term::ResultCount),
+    /// A case synthesis: the scrutinee is synthesized; the case holds the
+    /// branch sources, in summand order.
+    SynthCaseScrutinee(ComputationId),
+    /// A case synthesis: the branch in the register synthesized under its
+    /// summand; the case and its sum hold the rest, and the first branch's
+    /// type, once known, stands for the convergence check.
+    SynthCaseBranch
+    {
+        /// The case, whose branches these are.
+        case: ComputationId,
+        /// The sum the case scrutinizes, one summand for each branch.
+        sum: ValueTypeId,
+        /// The summand of the next branch.
+        next: Summand,
+        /// The first branch's strengthened type, once synthesized.
+        first: Option<CompTypeId>,
+    },
+    /// A computation mode switch: the computation synthesized; convert against
+    /// the held expected type.
+    ConvertComp(CompTypeId),
+    /// A bind check: the bound computation synthesized; the body source and the
+    /// expected type are held.
+    CheckBind(ComputationId, CompTypeId),
+    /// A check of a bind of several values: the bound computation
+    /// synthesized; the body source, the count of values it binds and the
+    /// expected type are held.
+    CheckBindAll(ComputationId, gandr_kernel_term::ResultCount, CompTypeId),
+    /// A case check: the scrutinee synthesized; the case and the expected type
+    /// are held.
+    CheckCaseScrutinee
+    {
+        /// The case, whose branch sources stand in summand order.
+        case: ComputationId,
+        /// The expected type every branch checks against, written outside
+        /// their binders.
+        expected: CompTypeId,
+        /// The expected type, when the scrutinee is the innermost binder and
+        /// the type reads it: each branch reads it at its own injection.
+        refining: Maybe<CompTypeId, refining::Absent>,
+    },
+    /// A case check: the branches still to check, each under its summand.
+    CheckCaseBranch
+    {
+        /// The case, whose branches these are.
+        case: ComputationId,
+        /// The sum the case scrutinizes, one summand for each branch.
+        sum: ValueTypeId,
+        /// The expected type every branch checks against, already read from
+        /// under its binder.
+        expected: CompTypeId,
+        /// The expected type written outside the binders, when it reads the
+        /// scrutinee, the innermost binder: each branch reads it at its own
+        /// injection.
+        refining: Maybe<CompTypeId, refining::Absent>,
+        /// The summand of the next branch.
+        next: Summand,
+    },
+    /// A binder scope closes: pop the innermost context slot.
+    ScopeExit,
+    /// A structural fixpoint's body has checked: the goals after it stand
+    /// under one stage fewer.
+    StageExit,
+    /// A binder scope has closed: strengthen the computation type synthesized
+    /// under it back out of it.
+    Strengthen,
+    /// The goal this frame was pushed for is now answered; record it under
+    /// its question, a slice of one item on the question stack, and the
+    /// binders its accrual gathered.
+    ///
+    /// Pushed **before** the goal's own continuations, so it pops after all of
+    /// them — which is exactly when the produced register holds that goal's
+    /// final answer, by the machine's own unwinding invariant.
+    Memoize(Slice<Question>, Opened),
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a case on a sum checks every branch against one goal.
+    mod refining {
+        /// The goal is not read at each branch's injection.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The scrutinee is no variable.
+            Scrutinee,
+            /// The goal does not read the scrutinee.
+            Unread,
+            /// The goal reads a binder inside the scrutinee.
+            Inside,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a raw context slot is unavailable.
+    mod context_slot {
+        /// The requested de Bruijn index names no context slot.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The index is at or beyond the context length.
+            OutOfScope,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no variable type can be raised into the use context.
+    mod variable_type {
+        /// The variable has no binding in this context.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// No raw slot exists at the variable's de Bruijn index.
+            Unbound,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the admission log supplies no constant type.
+    mod constant_type {
+        /// The constant has no prior admitted declaration.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The requested index is outside the admission log.
+            Unadmitted,
+        }
+    }
+}
+
+/// The value type bound at de Bruijn `index`, if in scope. The context head is
+/// index zero.
+///
+/// # Specification
+/// - requires: `context` is the machine's typing context, outermost first, so
+///   index zero names its last slot.
+/// - ensures: the slot `index` names when it is in scope, and nothing when the
+///   index reaches past the context.
+/// - provides: the raw slot or [`Absent::OutOfScope`] when the index names no
+///   slot, including an index not representable as `usize`.
+/// - fails: never — an out-of-scope index is the absence, which the caller
+///   refuses on.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — inner and outer slots distinguish reversal and off-by-one
+///   errors; empty, exact-length and maximal indices observe absence.
+/// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+///
+/// [`Absent::OutOfScope`]: context_slot::Absent::OutOfScope
+#[spec(ensures: |ret| usize::try_from(u32::from(index)).ok()
+    .and_then(|steps| context.iter().rev().nth(steps))
+    .map_or_else(
+        || matches!(&ret, Maybe::Absent(context_slot::Absent::OutOfScope)),
+        |expected| matches!(&ret, Maybe::Present(found) if found == expected),
+    ))]
+#[inline]
+fn slot(
+    context: &[ValueTypeId],
+    index: DeBruijnIndex,
+) -> Maybe<ValueTypeId, context_slot::Absent>
+{
+    let Ok(steps) = usize::try_from(u32::from(index))
+    else {
+        return Maybe::Absent(context_slot::Absent::OutOfScope);
+    };
+    if steps >= context.len() {
+        return Maybe::Absent(context_slot::Absent::OutOfScope);
+    }
+    // The range guard establishes length > steps; both subtractions are exact.
+    let remaining = arith::sub(arith::Int::from(context.len()), arith::Int::from(steps));
+    let position = usize::from(arith::sub(remaining, arith::Int::from(1_usize)));
+    match context.get(position) {
+        Some(&found) => Maybe::Present(found),
+        None => Maybe::Absent(context_slot::Absent::OutOfScope),
+    }
+}
+
+/// The value type bound at de Bruijn `index`, **read into the context the
+/// variable stands in**.
+///
+/// A slot was recorded against the context prefix that preceded it, so a slot
+/// reached across `index` binders is written one context shorter for each of
+/// them and has to be raised past all of them before it means anything at the
+/// use site. That is the shift the dependent arrow makes necessary and the
+/// reason a context of types stops being a context of closed things.
+///
+/// # Specification
+/// - requires: `context` is the machine's typing context, outermost first.
+/// - ensures: the slot raised past the binders between it and the use site
+///   exactly when `index` names a slot in scope.
+/// - provides: the raised type or [`Absent::Unbound`] when the variable names
+///   no context slot. The context's provenance and raised-content equality
+///   remain prose-only: the context carries no origin token, and checking the
+///   shifted result would repeat the mutating rewrite or require an allocating
+///   entry snapshot.
+/// - fails: never — an out-of-scope index is non-failure absence here.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the slot lookup and the raise, separated
+///   by a variable naming a closed slot (the slot itself, unshifted because
+///   raising a closed type is the identity) and by the shifting machine's own
+///   witnesses at a family where indices occur.
+/// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+///
+/// [`Absent::Unbound`]: variable_type::Absent::Unbound
+#[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
+    entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && match (slot(context, index), &ret) {
+            (Maybe::Present(_), &Maybe::Present(_)) => true,
+            (Maybe::Absent(context_slot::Absent::OutOfScope), &Maybe::Absent(variable_type::Absent::Unbound)) => arena.watermark() == entry_mark,
+            _ => false,
+        })]
+#[inline]
+fn lookup(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    context: &[ValueTypeId],
+    index: DeBruijnIndex,
+) -> Maybe<ValueTypeId, variable_type::Absent>
+{
+    let found = match slot(context, index) {
+        Maybe::Present(found) => found,
+        Maybe::Absent(context_slot::Absent::OutOfScope) => {
+            return Maybe::Absent(variable_type::Absent::Unbound);
+        },
+    };
+    // The variable's type is read: its binder is in the goal's support.
+    session.read(&Reads::variable(index), context);
+    let amount = BinderDepth::past(BinderDepth::from(u32::from(index)));
+    let (table, rewrites) = session.rewrite_parts();
+    Maybe::Present(shift_value_type(
+        arena,
+        table,
+        rewrites,
+        found,
+        BinderDepth::NONE,
+        amount,
+    ))
+}
+
+/// The type a transport returns at: `target`, at the stage of the variable
+/// `value` when `context` binds it at a stage.
+///
+/// A transport along a path in a set runs as the identity, so the value keeps
+/// its stage. A transport along any other path may run an equivalence that
+/// grows the value, so it carries no stage ([`KernelError::StageNotCarried`]
+/// states the counterexample).
+///
+/// # Specification
+/// - requires: `carrier` is the path's carrier and `target` the motive at the
+///   path's target, both read in `context`.
+/// - ensures: `target` at the variable's stage when `value` is a variable that
+///   `context` binds at a stage and `carrier` is a set as [`respect::sethood`]
+///   reads it; `target` itself when `value` is no variable at a stage.
+/// - fails: [`KernelError::StageNotCarried`] when `value` is a variable at a
+///   stage and `carrier` is not a set.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field moved along a path in the naturals keeps its
+///   stage, and its recursive call is admitted; along the circle's loop the
+///   transport is refused by name.
+/// - witness: `tests::native_formers::a_stage_is_carried_across_a_set_and_not_along_a_loop_3631`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&ty| ty == target || matches!(arena.value_type(ty), Some(&ValueType::Staged { .. }))))]
+fn carried_stage(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    context: &[ValueTypeId],
+    (value, carrier, target): (ValueId, ValueTypeId, ValueTypeId),
+) -> Result<ValueTypeId, KernelError>
+{
+    let Some(&Value::Variable(index)) = arena.value(value)
+    else {
+        return Ok(target);
+    };
+    let Maybe::Present(bound) = slot(context, index)
+    else {
+        return Ok(target);
+    };
+    let Some(&ValueType::Staged { stage, .. }) = arena.value_type(bound)
+    else {
+        return Ok(target);
+    };
+    if respect::sethood(arena, (judgement.entries, judgement.presentations), carrier)
+        != respect::Sethood::Set
+    {
+        return Err(KernelError::StageNotCarried);
+    }
+    Ok(arena.value_type_staged(target, stage))
+}
+
+/// `subject`, written outside one binder, read under it.
+///
+/// # Specification
+/// - requires: `subject` is written in the context the binder extends.
+/// - ensures: every free index of `subject` raised by one, so each names the
+///   slot it named from under the binder; a closed type comes back unchanged.
+/// - provides: the weakening a lambda checked against a plain arrow, a bind and
+///   a case each take on the type they check their body against.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a codomain naming a code bound outside the arrow, checked
+///   from under the lambda and from under a bind, each separated from the
+///   unweakened reading by the variable it would otherwise name.
+/// - witness: `check::tests::a_plain_arrow_reads_its_codomain_outside_its_binder`
+/// - witness: `check::tests::a_bind_reads_its_expected_type_outside_its_binder`
+#[spec(captures: [entry_mark = arena.watermark(), entry_head = arena.comp_type(subject).map(core::mem::discriminant)],
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && arena.comp_type(ret).map(core::mem::discriminant) == entry_head)]
+#[inline]
+fn weakened(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    subject: CompTypeId,
+) -> CompTypeId
+{
+    let (table, rewrites) = session.rewrite_parts();
+    shift_comp_type(
+        arena,
+        table,
+        rewrites,
+        subject,
+        BinderDepth::NONE,
+        BinderDepth::from(1_u32),
+    )
+}
+
+/// The goal a case on `scrutinee` reads at each branch's injection: `expected`
+/// with the scrutinee read as its innermost binder, when `expected` reads the
+/// scrutinee and no binder inside it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `expected` rotated so that the scrutinee's index reads as index
+///   zero ([`rotate_comp_type`]), present exactly when `scrutinee` is a
+///   variable and its index is the innermost index the support of `expected`
+///   holds; a support that names no index set reads every one.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case on the innermost binder at a goal reading it
+///   refines, and so does a case on an outer binder whose goal reads no binder
+///   inside it; one at a closed goal does not.
+/// - witness: `check::tests::a_case_on_the_innermost_binder_reads_its_goal_at_each_injection_5036`
+/// - witness: `check::tests::a_case_on_an_outer_binder_reads_its_goal_at_each_injection_6110`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(found) => arena.comp_type(found).is_some(),
+    Maybe::Absent(_) => true,
+})]
+fn refining_goal(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    scrutinee: ValueId,
+    expected: CompTypeId,
+) -> Maybe<CompTypeId, refining::Absent>
+{
+    let Some(&Value::Variable(index)) = arena.value(scrutinee)
+    else {
+        return Maybe::Absent(refining::Absent::Scrutinee);
+    };
+    // The widest support reads every binder, the innermost first.
+    let first = match arena.comp_type_support(expected).indices() {
+        Maybe::Present(mut indices) => indices.next(),
+        Maybe::Absent(_) => Some(DeBruijnIndex::from(0_u32)),
+    };
+    match first {
+        Some(first) if first == index => {
+            // The goal reads no binder inside the scrutinee, so the rotation
+            // moves only unread binders past it.
+            let (table, rewrites) = session.rewrite_parts();
+            Maybe::Present(rotate_comp_type(
+                arena,
+                table,
+                rewrites,
+                expected,
+                BinderDepth::from(u32::from(index)),
+            ))
+        },
+        Some(first) if first < index => Maybe::Absent(refining::Absent::Inside),
+        Some(_) | None => Maybe::Absent(refining::Absent::Unread),
+    }
+}
+
+/// `outside`, read as written outside a case on the innermost binder `y`, read
+/// under the branch at `summand` with `y` read as that branch's injection of
+/// its binder: `outside[y := injᵢ x]`, `x` the branch's binder and `y` still
+/// bound outside it. A case on an outer binder reads its goal through
+/// [`refining_goal`]'s rotation, so the binders between `y` and `x` stand
+/// unread, as they stand in the goal.
+///
+/// # Specification
+/// - requires: `outside` is scoped with `y` its innermost binder.
+/// - ensures: the goal scoped under the branch's binder: `y` at index one, read
+///   nowhere, its occurrences in `outside` the injection of index zero, and
+///   every index past `y` raised by one.
+/// - provides: the dependent elimination of a sum the joint of a mutual block
+///   reads its members' types through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`refining_goal`].
+/// - witness: `check::tests::a_case_on_the_innermost_binder_reads_its_goal_at_each_injection_5036`
+#[spec(ensures: |ret| arena.comp_type(ret).is_some())]
+fn arm_goal(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    outside: CompTypeId,
+    summand: Summand,
+) -> CompTypeId
+{
+    let (table, rewrites) = session.rewrite_parts();
+    // A slot for the branch's binder opens past `y`; `y` is read as its
+    // injection and leaves; `y` is bound again outside the branch's binder.
+    let opened = shift_comp_type(
+        arena,
+        table,
+        rewrites,
+        outside,
+        BinderDepth::from(1_u32),
+        BinderDepth::from(1_u32),
+    );
+    let own = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let injected = arena.value_injection(summand, own);
+    let read = substitute_comp_type(arena, table, rewrites, opened, injected);
+    shift_comp_type(
+        arena,
+        table,
+        rewrites,
+        read,
+        BinderDepth::from(1_u32),
+        BinderDepth::from(1_u32),
+    )
+}
+
+/// Push on `goals` the goals checking each of `values` against its result in
+/// `results`, a telescope, the first goal last.
+///
+/// # Specification
+/// - requires: `results` and `values` have one length, which fits `u32`; each
+///   result is written under the binders of the results before it, and the
+///   values in the ambient context.
+/// - ensures: one value check per value pushed on `goals`, in reverse order.
+///   Each checks at its result with every earlier binder replaced by the
+///   earlier value, the innermost first, each value carried past the binders
+///   still outside it.
+/// - provides: the check of a return of several values.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a second result naming the first checks its value at the
+///   first value, and refuses a value of the first result's unread type.
+/// - witness: `check::tests::a_return_of_several_values_checks_each_at_its_instantiated_result`
+#[spec(captures: start = goals.len(), ensures: |()| goals.len() == start.saturating_add(values.len()))]
+fn returned_goals(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    (results, values): (&[ValueTypeId], &[ValueId]),
+    goals: &mut Vec<Goal>,
+)
+{
+    let (table, rewrites) = session.rewrite_parts();
+    goals.reserve(values.len());
+    for (position, (&result, &value)) in results.iter().zip(values).enumerate().rev() {
+        let mut instantiated = result;
+        for (earlier, &replacement) in values.iter().enumerate().take(position).rev() {
+            let outside = BinderDepth::from(u32::try_from(earlier).unwrap_or(u32::MAX));
+            let replacement = shift_value(
+                arena,
+                table,
+                rewrites,
+                replacement,
+                BinderDepth::NONE,
+                outside,
+            );
+            instantiated = substitute_value_type(arena, table, rewrites, instantiated, replacement);
+        }
+        goals.push(Goal::CheckValue(value, instantiated));
+    }
+}
+
+/// `subject`, synthesized under one binder, read outside it.
+///
+/// The binder's variable is replaced by the index one past the outer context —
+/// a variable nothing outside the binder can name — and every other index is
+/// lowered by one. The replacement survives exactly where the binder's variable
+/// occurred, and the result's carried support reads it as an index past the
+/// context.
+///
+/// # Specification
+/// - requires: `outside` is the context the binder extended, its slot already
+///   popped; `subject` was synthesized under that binder.
+/// - ensures: `subject` with every free index lowered by one, exactly when it
+///   does not mention the binder's variable; a closed type comes back
+///   unchanged.
+/// - provides: the strengthening a synthesized bind and each synthesized case
+///   branch take.
+/// - fails: [`KernelError::BinderEscape`] when `subject` mentions the binder's
+///   variable or reaches past the context it was synthesized in.
+/// - panics: none.
+///
+/// # Errors
+/// [`KernelError::BinderEscape`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type naming a code bound outside the bind, which
+///   lowers, and a type naming the bound value, which is refused.
+/// - witness: `check::tests::a_bind_strengthens_its_type_past_its_binder`
+#[spec(captures: [entry_mark = arena.watermark(), entry_head = arena.comp_type(subject).map(core::mem::discriminant)],
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && match ret {
+            Ok(lowered) => arena.comp_type(lowered).map(core::mem::discriminant) == entry_head,
+            Err(KernelError::BinderEscape { .. }) => true,
+            Err(_) => false,
+        })]
+fn strengthened(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    outside: &[ValueTypeId],
+    subject: CompTypeId,
+) -> Result<CompTypeId, KernelError>
+{
+    let escape = |arena: &TermArena| KernelError::BinderEscape {
+        actual: comp_type_witness(arena, subject),
+    };
+    let Ok(width) = u32::try_from(outside.len())
+    else {
+        return Err(escape(arena));
+    };
+    let fresh = arena.value_variable(DeBruijnIndex::from(width));
+    let (table, rewrites) = session.rewrite_parts();
+    let lowered = substitute_comp_type(arena, table, rewrites, subject, fresh);
+    if arena.comp_type_support(lowered).depth() > LooseDepth::from(width) {
+        return Err(escape(arena));
+    }
+
+    Ok(lowered)
+}
+
+/// The declared value type of a prior admitted declaration, or of a
+/// definition of the mutual block whose families are forming.
+///
+/// # Specification
+/// - requires: the judgement's entries are the environment's admission log, in
+///   admission order.
+/// - ensures: the declared value-type root of the declaration at `index` the
+///   log holds; else, while a mutual block's families form, the declared type
+///   of the block's definition at `index`; and nothing otherwise — which is
+///   what makes any other forward reference into the append-only log a refusal
+///   rather than a resolution.
+/// - provides: the declared type or [`Absent::Unadmitted`] when the index names
+///   no prior admitted declaration and no foreseen definition.
+/// - fails: never — an unresolved position is the absence, which the caller
+///   refuses on.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a prior declaration supplies its type; a forward
+///   reference refuses instead of resolving an unrelated entry; a universe's
+///   field names its decoder at the decoder's declared type.
+/// - witness: `environment::tests::a_definition_referencing_a_prior_one_checks`
+/// - witness: `environment::tests::a_forward_constant_reference_is_unbound`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+///
+/// [`Absent::Unadmitted`]: constant_type::Absent::Unadmitted
+#[spec(ensures: |ret| judgement.entries.get(usize::from(index)).is_none_or(
+    |entry| matches!(&ret, Maybe::Present(found) if *found == entry.declared_id()),
+))]
+#[inline]
+fn resolve_constant(
+    judgement: Judgement<'_>,
+    index: ConstantIndex,
+) -> Maybe<ValueTypeId, constant_type::Absent>
+{
+    if let Some(entry) = judgement.entries.get(usize::from(index)) {
+        return Maybe::Present(entry.declared_id());
+    }
+    match judgement.member(index) {
+        Maybe::Present((member, occurrence::Membership::Definition)) => {
+            Maybe::Present(member.declared_id())
+        },
+        Maybe::Present((_, occurrence::Membership::Family | occurrence::Membership::Other))
+        | Maybe::Absent(_) => Maybe::Absent(constant_type::Absent::Unadmitted),
+    }
+}
+
+/// The δ-rules the admission log offers a replay: each definition's body at
+/// its admission position, every other declaration opaque; the presented
+/// types whose terms the replay rewrites; and the ruled definitions'
+/// fixpoints, which unfold at a partial gate.
+///
+/// # Specification
+/// - requires: the judgement's entries are the environment's admission log, in
+///   admission order, every body minted into `arena`, the arena the replay runs
+///   in, and its presentations are those of the entries.
+/// - ensures: [`Unfoldable::Body`](crate::replay::Unfoldable::Body) at each
+///   definition's position and
+///   [`Unfoldable::Opaque`](crate::replay::Unfoldable::Opaque) at every data
+///   declaration, axiom and abstract type, one entry per admitted declaration,
+///   presenting the judgement's presentations, identifying its entries' lawful
+///   atoms and ruling its ruled definitions.
+/// - provides: the unfoldings a persisted higher evaluation and a universe
+///   path's round trips replay under, so a function either relates may name
+///   what was admitted before it; and the bodies a respect obligation's cong
+///   chains are read through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composition of two admitted definitions replays its
+///   anchor-free δ-steps against their bodies, and so does negation named as a
+///   universe path's translator.
+/// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
+/// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
+#[spec(ensures: |ret| ret.presentations() == judgement.presentations)]
+fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
+{
+    Unfoldings::admitted(judgement.entries)
+        .presenting(judgement.presentations.clone())
+        .ruling(judgement.entries)
+}
+
+/// The checker machine that [`run`] drives: from an initial goal and context
+/// to a verdict, minting synthesized types into `arena`, over the frame stack
+/// `frames` that the caller holds.
+///
+/// # Specification
+/// - requires: `context` is the initial typing context, empty for a
+///   declaration's body; its types and the admission log belong to this arena.
+///   `stages` is the order the goal was owed under, empty unless the goal is a
+///   drained obligation. The memo and session hold only this call's history.
+///   `frames` is empty, and the caller reads it after a refusal.
+/// - ensures: `Ok(produced)` — a synthesized type for a synthesis goal, or the
+///   checked answer for a checking goal — exactly when the term checks or
+///   synthesizes under this subset's rules. The walk is iterative over a heap
+///   frame stack and an explicit context stack, so it is total on any term
+///   depth. Synthesized types are appended to `arena` as readable intermediates
+///   of the goal's family, for the caller to truncate after the verdict. A
+///   successful run can defer code obligations, each carrying the stages the
+///   run minted; the declaration driver drains them and can refuse at its
+///   occurrence-based operational ceiling.
+/// - provides: the shared checking and synthesis engine. The predicate checks
+///   result polarity, readable synthesized roots and preservation of the arena
+///   prefix. Typing and provenance require the rule derivation; final verdict
+///   agreement across memo policies excludes operational ceiling refusals.
+/// - fails: any [`KernelError`] a rule surfaces.
+/// - panics: none.
+///
+/// # Errors
+/// Any [`KernelError`].
+///
+/// # Cost
+/// - allocation: the stacks and the context, growth within the term's depth.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — the finite corpus separates selected checking and
+///   synthesis rules and their refusal arms, and compares memo policies below
+///   the operational ceiling. The deep-chain witness covers its stated depth on
+///   a small stack, not every possible artifact or resource bound.
+/// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+/// - witness: `check::tests::an_injection_is_not_inferable`
+/// - witness: `check::tests::an_injection_checks_against_its_sum`
+/// - witness: `check::tests::a_pair_propagates_into_a_checking_component`
+/// - witness: `check::tests::an_application_produces_the_codomain`
+/// - witness: `check::tests::a_static_application_produces_the_codomain_of_its_head`
+/// - witness: `check::tests::a_dependent_arrow_forms_checks_and_eliminates_like_an_arrow`
+/// - witness: `check::tests::an_application_instantiates_a_dependent_codomain`
+/// - witness: `check::tests::a_force_unwraps_a_thunk`
+/// - witness: `check::tests::a_case_requires_convergent_branches`
+/// - witness: `check::tests::a_case_propagates_the_expected_type`
+/// - witness: `check::tests::an_n_way_case_binds_each_summand`
+/// - witness: `check::tests::a_tuple_and_an_injection_read_their_positions`
+/// - witness: `check::tests::a_bind_binds_the_returned_value`
+/// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
+/// - witness: `element_identity::tests::a_dependent_motive_instantiates_by_substitution`
+/// - witness: `element_identity::tests::a_higher_evaluation_proves_function_extensionality`
+#[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
+    entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && match (initial, &ret) {
+            (Goal::SynthValue(_), &Ok(Produced::ValueType(id))) => arena.value_type(id).is_some(),
+            (Goal::SynthComp(_), &Ok(Produced::CompType(id))) => arena.comp_type(id).is_some(),
+            (Goal::CheckValue(_, _) | Goal::CheckComp(_, _), &Ok(Produced::Checked)) | (_, &Err(_)) => true,
+            _ => false,
+        })]
+fn machine<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    mut context: Vec<ValueTypeId>,
+    initial: Goal,
+    walk: &mut Walk,
+    recording: Recording<'_, M>,
+    continuation: &mut Continuation,
+) -> Result<Produced, KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    let Recording {
+        memo,
+        session,
+        census,
+        owed,
+    } = recording;
+    let &mut Continuation {
+        ref mut frames,
+        goals: ref mut goal_stack,
+        values: ref mut value_stack,
+        types: ref mut type_stack,
+        comp_types: ref mut comp_type_stack,
+        components: ref mut component_stack,
+        questions: ref mut question_stack,
+    } = continuation;
+    let first_owed = owed.len();
+    // The barriers opened where the machine swapped its context, innermost
+    // last; empty when the memo is inactive.
+    let mut barriers: Vec<Opened> = Vec::new();
+    let mut goal = initial;
+    // The walk this goal stands in, handed back at the run's end.
+    let Walk {
+        mut stages,
+        mut root,
+        mut staged_bodies,
+        mut own_fixpoint,
+        mut parameters,
+    } = core::mem::replace(walk, Walk::starting(StageOrder::default()));
+    // The evidence values and evaluation components of the higher identity
+    // being checked, copied out of the arena the obligations then mint into;
+    // refilled per goal, so the walk allocates them once.
+    let mut owed_values: Vec<ValueId> = Vec::new();
+    let mut owed_components: Vec<gandr_kernel_term::EvaluationComponent> = Vec::new();
+    'expand: loop {
+        // Ask the memo this goal's question before reading the node, and take
+        // an entry whose recorded binders this context agrees with. When the
+        // memo is inactive this whole block — the question included — is a
+        // constant-false branch that monomorphization removes, so the memoless
+        // path compiles to the code it would have with no memo at all.
+        let mut recalled: Option<Produced> = None;
+        let mut answered = ExpansionKind::Expanded;
+        if matches!(M::ACTIVITY, MemoActivity::Active)
+            && matches!(root, Maybe::Absent(_))
+            && staged_bodies == 0
+        {
+            let question = Question::ask(arena, session, goal.support());
+            let hit = memo.filed(question.digest()).find(|hit| {
+                matches!(
+                    question.agreement(arena, session, context.as_slice(), hit.support()),
+                    ContentAgreement::Agree
+                )
+            });
+            if let Some(hit) = hit
+                && let Maybe::Present(outcome) = Produced::of_outcome(hit.outcome())
+            {
+                // The recalled goal's binders are read here, as if its
+                // subgoals had run.
+                session.read(hit.support().reads(), &context);
+                recalled = Some(outcome);
+                answered = ExpansionKind::Recalled;
+            }
+            else if let Some(Maybe::Present(outcome)) = parameters
+                .name(arena, &judgement, session)
+                .and_then(|named| session.recall_kept(arena, question, context.as_slice(), named))
+                .map(|outcome| Produced::of_outcome(&outcome))
+            {
+                // An earlier admission answered it under these parameters.
+                // Its binders are read here as if its subgoals had run.
+                recalled = Some(outcome);
+                answered = ExpansionKind::Kept;
+            }
+            else {
+                let opened = session.open(&context);
+                frames.push(Frame::Memoize(
+                    Slice::pushed(question_stack, [question]),
+                    opened,
+                ));
+            }
+        }
+        census.record(SupportPlane::Term, answered);
+        let mut produced: Produced = match recalled {
+            Some(outcome) => outcome,
+            None => match goal {
+                Goal::SynthValue(id) => match *read_value(arena, id)? {
+                    Value::Constructor { .. } => {
+                        let mark = Slice::mark(goal_stack);
+                        let datatype =
+                            former::constructor(arena, judgement.entries, session, id, goal_stack)?;
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(datatype),
+                            context.clone(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        frames.push(Frame::Pending(
+                            mark.turned(goal_stack),
+                            Produced::ValueType(datatype),
+                        ));
+                        Produced::ValueType(datatype)
+                    },
+                    Value::Record(ref values) => {
+                        let remaining = Slice::pushed(value_stack, values.values().rev().copied());
+                        if let Some((value, remaining)) = remaining.next(value_stack) {
+                            frames.push(Frame::RecordField {
+                                holder: id,
+                                remaining,
+                                types: Slice::mark(type_stack),
+                            });
+                            goal = Goal::SynthValue(value);
+                            continue 'expand;
+                        }
+                        remaining.release(value_stack);
+                        Produced::ValueType(
+                            arena.value_type_record(alloc::collections::BTreeMap::new()),
+                        )
+                    },
+                    // A restriction synthesizes its record value's type first.
+                    Value::Restrict { value, .. } => {
+                        frames.push(Frame::SynthRestrict(id));
+                        goal = Goal::SynthValue(value);
+                        continue 'expand;
+                    },
+                    Value::SessionPath {
+                        path_type,
+                        ref evidence,
+                        payload_paths,
+                    } => {
+                        let evidence = alloc::sync::Arc::clone(evidence);
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(path_type),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        let endpoints = crate::path_universe::endpoints(
+                            arena,
+                            judgement.entries,
+                            path_type,
+                            crate::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Path)?;
+                        let expected = crate::session::obligations(
+                            arena,
+                            endpoints.source,
+                            endpoints.target,
+                            &evidence,
+                            crate::session::Relation::Bisimulation,
+                        )
+                        .map_err(KernelError::Session)?;
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
+                        frames.push(Frame::SessionPayload {
+                            classifier: path_type,
+                            context: Slice::saved(type_stack, &mut context),
+                        });
+                        goal = Goal::CheckValue(payload_paths, expected);
+                        continue 'expand;
+                    },
+                    Value::SessionFlow {
+                        flow_type,
+                        ref evidence,
+                        payload_paths,
+                    } => {
+                        let evidence = alloc::sync::Arc::clone(evidence);
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(flow_type),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        let endpoints = crate::flow_universe::endpoints(
+                            arena,
+                            judgement.entries,
+                            flow_type,
+                            crate::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Flow)?;
+                        let expected = crate::session::obligations(
+                            arena,
+                            endpoints.source,
+                            endpoints.target,
+                            &evidence,
+                            crate::session::Relation::Simulation,
+                        )
+                        .map_err(KernelError::Session)?;
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
+                        frames.push(Frame::SessionPayload {
+                            classifier: flow_type,
+                            context: Slice::saved(type_stack, &mut context),
+                        });
+                        goal = Goal::CheckValue(payload_paths, expected);
+                        continue 'expand;
+                    },
+                    // `stay(c)` synthesizes the directed diagonal at the type
+                    // `c` synthesizes.
+                    Value::Stay { point, .. } => {
+                        frames.push(Frame::SynthStay(point));
+                        goal = Goal::SynthValue(point);
+                        continue 'expand;
+                    },
+                    // A forward flow's translator checks in the empty context,
+                    // as an equivalence's maps do; its images replay after.
+                    Value::ForwardFlow {
+                        flow_type,
+                        translator,
+                        ..
+                    } => {
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(flow_type),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        let endpoints = crate::flow_universe::forward_type(
+                            arena,
+                            judgement.entries,
+                            flow_type,
+                            crate::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Flow)?;
+                        let result = arena.comp_type_returner(endpoints.target);
+                        let function = arena.comp_type_arrow(endpoints.source, result);
+                        let expected = arena.value_type_thunk(function);
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
+                        frames.push(Frame::FlowForward {
+                            flow: id,
+                            endpoints,
+                            context: Slice::saved(type_stack, &mut context),
+                        });
+                        goal = Goal::CheckValue(translator, expected);
+                        continue 'expand;
+                    },
+                    // A function flow's boundaries synthesize in turn, each
+                    // oriented by the variance its position fixes.
+                    Value::FunctionFlow {
+                        flow_type, domain, ..
+                    } => {
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(flow_type),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        let _arrows = crate::flow_universe::function_type(
+                            arena,
+                            flow_type,
+                            crate::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Flow)?;
+                        frames.push(Frame::FlowBoundary {
+                            flow: id,
+                            position: crate::flow_universe::Boundary::Domain,
+                        });
+                        goal = Goal::SynthValue(domain);
+                        continue 'expand;
+                    },
+                    Value::Then { first, .. } => {
+                        frames.push(Frame::ThenFirst(id));
+                        goal = Goal::SynthValue(first);
+                        continue 'expand;
+                    },
+                    Value::FlowProduct(first, second) => {
+                        frames.push(Frame::FlowProductFirst(second));
+                        goal = Goal::SynthValue(first);
+                        continue 'expand;
+                    },
+                    Value::PathRefl(code) => {
+                        let endpoint = crate::path_universe::code(
+                            arena,
+                            judgement.entries,
+                            code,
+                            crate::replay::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Path)?;
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(endpoint),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        Produced::ValueType(arena.value_type_path_universe(code, code))
+                    },
+                    Value::PathProduct(first, second) => {
+                        frames.push(Frame::PathProductFirst(second));
+                        goal = Goal::SynthValue(first);
+                        continue 'expand;
+                    },
+                    Value::PathEquiv {
+                        path_type, forward, ..
+                    } => {
+                        let endpoints = crate::path_universe::endpoints(
+                            arena,
+                            judgement.entries,
+                            path_type,
+                            crate::replay::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Path)?;
+                        let result = arena.comp_type_returner(endpoints.target);
+                        let function = arena.comp_type_arrow(endpoints.source, result);
+                        let translator = arena.value_type_thunk(function);
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
+                        frames.push(Frame::PathForward {
+                            path: id,
+                            endpoints,
+                            context: Slice::saved(type_stack, &mut context),
+                        });
+                        goal = Goal::CheckValue(forward, translator);
+                        continue 'expand;
+                    },
+                    // Univalence synthesises the identity at the value
+                    // universe between the codes its record's type names,
+                    // once the record checks as the bi-invertible map between
+                    // the two codes' types: the record's laws are its
+                    // evidence, at any two codes.
+                    Value::Univalence(equivalence) => {
+                        frames.push(Frame::UnivalenceRecord(equivalence));
+                        goal = Goal::SynthValue(equivalence);
+                        continue 'expand;
+                    },
+                    Value::Variable(index) => {
+                        let synthesized = match lookup(arena, session, context.as_slice(), index) {
+                            Maybe::Present(synthesized) => synthesized,
+                            Maybe::Absent(variable_type::Absent::Unbound) => {
+                                return Err(KernelError::UnboundVariable { index });
+                            },
+                        };
+                        Produced::ValueType(synthesized)
+                    },
+                    Value::Constant(index) => {
+                        let declared = match resolve_constant(judgement, index) {
+                            Maybe::Present(declared) => declared,
+                            Maybe::Absent(constant_type::Absent::Unadmitted) => {
+                                return Err(KernelError::UnboundConstant { index });
+                            },
+                        };
+                        // Inside a minting admission an earlier member typed at
+                        // one of its atoms reads at the representation, so the
+                        // sealed module's members check against each other
+                        // transparently.
+                        let synthesized =
+                            seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
+                        Produced::ValueType(synthesized)
+                    },
+                    Value::Literal(ref literal) => {
+                        Produced::ValueType(arena.value_type_base(literal.base_type()))
+                    },
+                    // A tuple synthesizes the product of its components'
+                    // types, in order; the empty tuple synthesizes the unit.
+                    Value::Tuple(ref components) => {
+                        if let Some(&first) = components.first() {
+                            frames.push(Frame::SynthTuple {
+                                tuple: id,
+                                types: Slice::mark(type_stack),
+                            });
+                            goal = Goal::SynthValue(first);
+                            continue 'expand;
+                        }
+                        Produced::ValueType(arena.value_type_unit())
+                    },
+                    Value::Thunk(body) => {
+                        frames.push(Frame::SynthThunk);
+                        goal = Goal::SynthComp(body);
+                        continue 'expand;
+                    },
+                    Value::Lift { body, .. } => {
+                        frames.push(Frame::SynthLift(id));
+                        goal = Goal::SynthValue(body);
+                        continue 'expand;
+                    },
+                    Value::Injection(..) => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::Injection,
+                        });
+                    },
+                    Value::ListNil | Value::ListCons(..) => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::List,
+                        });
+                    },
+                    // A code synthesizes the universe its quoted type forms
+                    // in, and of the family the type belongs to. Formation is
+                    // the one question asked, so the arm calls the formation
+                    // walk directly, as the lift's frame does, and descends no
+                    // further itself.
+                    Value::Quote(quoted) => {
+                        let level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(quoted),
+                            context.clone(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        Produced::ValueType(arena.value_type_universe(GroundSort::Value, level))
+                    },
+                    Value::QuoteComputation(quoted) => {
+                        let level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Comp(quoted),
+                            context.clone(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        Produced::ValueType(
+                            arena.value_type_universe(GroundSort::Computation, level),
+                        )
+                    },
+                    // A static application synthesizes from its head, as a
+                    // computation application does: the head's static Pi
+                    // supplies the domain the argument checks against and the
+                    // codomain it produces. No static lambda exists to stand at
+                    // the head, so nothing here reduces.
+                    Value::StaticApplication(head, argument) => {
+                        frames.push(Frame::SynthStaticApply(argument));
+                        goal = Goal::SynthValue(head);
+                        continue 'expand;
+                    },
+                    // `here(c)` synthesizes the diagonal identity at the type
+                    // `c` synthesizes, a neutral fibre where that type is open.
+                    Value::Here { point, .. } => {
+                        frames.push(Frame::SynthHere(point));
+                        goal = Goal::SynthValue(point);
+                        continue 'expand;
+                    },
+                    // A returned endpoint synthesizes the value type its
+                    // computation returns.
+                    Value::Returned(computation) => {
+                        frames.push(Frame::SynthReturned);
+                        goal = Goal::SynthComp(computation);
+                        continue 'expand;
+                    },
+                    Value::Higher { .. } => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::HigherField,
+                        });
+                    },
+                    Value::HigherEvaluation { .. } | Value::QuantifiedEvaluation { .. } => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::HigherEvaluation,
+                        });
+                    },
+                },
+                // A univalence checked at an identity at the value universe,
+                // `Path[.A = Type](a, b)` or the native `Path_U(a, b)`, checks its
+                // record at the bi-invertible record the two codes name, so a
+                // record literal checks; anywhere else it is synthesised and
+                // converted.
+                Goal::CheckValue(id, expected)
+                    if matches!(arena.value(id), Some(&Value::Univalence(_)))
+                        && crate::path_universe::identity_codes(arena, expected).is_ok() =>
+                {
+                    let Value::Univalence(equivalence) = *read_value(arena, id)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let record = crate::path_universe::univalence_record(arena, expected)
+                        .map_err(KernelError::Path)?;
+                    goal = Goal::CheckValue(equivalence, record);
+                    continue 'expand;
+                },
+                // One dimension up, at an identity over an identity at the
+                // value universe, a univalence checks its cell against the
+                // homotopy of the identity, and the identity at reflexivity it
+                // then stands at converts with `expected`.
+                Goal::CheckValue(id, expected)
+                    if matches!(arena.value(id), Some(&Value::Univalence(_)))
+                        && crate::path_universe::cell_code(arena, expected).is_ok() =>
+                {
+                    let Value::Univalence(cell) = *read_value(arena, id)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (homotopy, path) = crate::path_universe::univalence_cell(arena, expected)
+                        .map_err(KernelError::Path)?;
+                    frames.push(Frame::ConvertValue(expected));
+                    frames.push(Frame::ProduceValue(path));
+                    goal = Goal::CheckValue(cell, homotopy);
+                    continue 'expand;
+                },
+                // An introduction form checked at an identity checks at the
+                // fibre the identity fold computes for its domain and
+                // endpoints, or at a dependent pair's at a Σ domain, or at
+                // the product of the factors' identities when a tuple meets a
+                // product, or at the words a looped point's free cells mint;
+                // one checked at a bridge checks at the bridge fold's fibre.
+                // `here`, the higher forms and the neutrals take their own
+                // arms.
+                Goal::CheckValue(id, expected)
+                    if crate::element_identity::goal_reading(arena, id, expected)
+                        == crate::element_identity::GoalReading::Fibre =>
+                {
+                    let (mode, domain, left, right) =
+                        crate::element_identity::related_parts(arena, expected)?;
+                    // The decode of a returned code is read to the type the
+                    // code quotes, as an introduction form
+                    // reads it: the identity at
+                    // `El(⟨R a b⟩)` is the identity at the type `R a b`
+                    // returns.
+                    let domain = read_returned_decode(arena, judgement, domain);
+                    if mode == crate::identity_recursion::Mode::Bridge {
+                        goal = Goal::CheckValue(
+                            id,
+                            crate::element_identity::bridge_fibre(
+                                arena,
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                                domain,
+                                left,
+                                right,
+                            )?,
+                        );
+                        continue 'expand;
+                    }
+                    // A path whose one endpoint spells a looped point and whose
+                    // other converts with it is those words: the value checks
+                    // at the words, and the path then
+                    // converts with them. A path
+                    // whose endpoints both compute the point without spelling
+                    // it, `Path[.A = Circle](mul(Base, Base), mul(Base,
+                    // Base))`, checks at the words of the
+                    // one type of words over its
+                    // sort, and converts with the path at that point, which
+                    // pairs each endpoint with the point (#485).
+                    let spelled = |sides| judgement.presentations.words(arena, domain, sides);
+                    if spelled((left, right)).is_none()
+                        && let Some(words) =
+                            spelled((right, right)).or_else(|| spelled((left, left)))
+                    {
+                        let words = arena.value_type_data(words, Vec::new());
+                        frames.push(Frame::ConvertValue(expected));
+                        frames.push(Frame::ProduceValue(words));
+                        goal = Goal::CheckValue(id, words);
+                        continue 'expand;
+                    }
+                    if spelled((left, right)).is_none()
+                        && let Some(&ValueType::Data {
+                            declaration: sort,
+                            ref arguments,
+                        }) = arena.value_type(domain)
+                        && arguments.is_empty()
+                        && let mut looping = judgement
+                            .presentations
+                            .looping(sort)
+                            .filter(|looped| looped.1.reflexivities() == Reflexivities::NONE)
+                        && let Some((words, _)) = looping.next()
+                        && looping.next().is_none()
+                        && let Some(point) =
+                            crate::words::point(arena, judgement.presentations, words)
+                    {
+                        let at_point = arena.value_type_path(domain, point, point);
+                        let words = arena.value_type_data(words, Vec::new());
+                        frames.push(Frame::ConvertValue(expected));
+                        frames.push(Frame::ProduceValue(at_point));
+                        goal = Goal::CheckValue(id, words);
+                        continue 'expand;
+                    }
+                    let fibre = if let Some(words) =
+                        judgement.presentations.words(arena, domain, (left, right))
+                    {
+                        arena.value_type_data(words, Vec::new())
+                    }
+                    else if let Some(&ValueType::Sigma { first, second }) =
+                        arena.value_type(domain)
+                    {
+                        crate::element_identity::sigma_fibre(
+                            arena,
+                            session.rewrite_parts(),
+                            judgement.entries,
+                            (first, second),
+                            (left, right),
+                        )
+                    }
+                    else if let Some(&ValueType::Product(ref parts)) = arena.value_type(domain)
+                        && let Some(&Value::Tuple(ref components)) = arena.value(id)
+                        && components.len() == parts.len()
+                    {
+                        let parts = parts.to_vec();
+                        crate::element_identity::product_fibre(
+                            arena,
+                            judgement.entries,
+                            &parts,
+                            (left, right),
+                        )
+                    }
+                    else {
+                        crate::element_identity::fibre(
+                            arena,
+                            crate::identity_recursion::Interfaces::of(judgement.entries),
+                            domain,
+                            left,
+                            right,
+                        )?
+                    };
+                    goal = Goal::CheckValue(id, fibre);
+                    continue 'expand;
+                },
+                // A constructor wanted at a stage checks its recursive fields
+                // one step below it, and one with none checks only where a
+                // value in scope shows the stage holds one; its annotation
+                // then meets the type the stage refines.
+                Goal::CheckValue(id, expected)
+                    if matches!(arena.value(id), Some(Value::Constructor { .. }))
+                        && matches!(arena.value_type(expected), Some(ValueType::Staged { .. })) =>
+                {
+                    let Some(&ValueType::Staged { base, stage }) = arena.value_type(expected)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let mark = Slice::mark(goal_stack);
+                    let datatype =
+                        former::constructor(arena, judgement.entries, session, id, goal_stack)?;
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(datatype),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    // A mutual block's families share the stage: a field of
+                    // any of them stands one step below.
+                    let block = recursion::families(arena, judgement.entries, datatype)?;
+                    // The stage witness scans the context for a value at a
+                    // stage, so every binder is read.
+                    if matches!(M::ACTIVITY, MemoActivity::Active) {
+                        session.read(&WIDEST, &context);
+                    }
+                    recursion::constructor_fields(
+                        arena,
+                        (&stages, context.as_slice()),
+                        block,
+                        stage,
+                        mark.above_mut(goal_stack),
+                    )?;
+                    frames.push(Frame::ConvertValue(base));
+                    frames.push(Frame::Pending(
+                        mark.turned(goal_stack),
+                        Produced::ValueType(datatype),
+                    ));
+                    Produced::ValueType(datatype)
+                },
+                // An introduction form reads the head of the type it checks
+                // at, so a decode of a returned code is first read to the type
+                // the code quotes: the fibre a pair's second component checks
+                // at, instantiated at a first component its code calls into,
+                // is one (#721). A code that reads to no quote leaves the
+                // decode, which no introduction form checks at.
+                Goal::CheckValue(id, expected)
+                    if introduced_shape(arena.value(id)).is_some()
+                        && matches!(arena.value_type(expected), Some(&ValueType::Element { code, .. })
+                            if matches!(arena.value(code), Some(Value::Returned(_)))) =>
+                {
+                    let (Some(shape), Some(&ValueType::Element { code, .. })) = (
+                        introduced_shape(arena.value(id)),
+                        arena.value_type(expected),
+                    )
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let unfoldings = entry_unfoldings(judgement);
+                    let Some(decoded) =
+                        read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT)
+                    else {
+                        return Err(value_shape_mismatch(arena, shape, expected));
+                    };
+                    // A reflexivity reads the endpoints of the identity that
+                    // the code quotes. It reads them by the evaluator that read
+                    // the decode. The checker reads the whole decode by its own
+                    // evaluation. So it records no dialogue for an endpoint
+                    // that its evaluation runs (#5364).
+                    let decoded = if matches!(arena.value(id), Some(Value::Here { .. })) {
+                        read_identity_endpoints(arena, &unfoldings, decoded, ReplayBudget::DEFAULT)
+                    }
+                    else {
+                        decoded
+                    };
+                    goal = Goal::CheckValue(id, decoded);
+                    continue 'expand;
+                },
+                Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
+                    Value::Record(ref values) => {
+                        let Some(matched_native_node) = arena.value_type(expected)
+                        else {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::Record,
+                                expected,
+                            ));
+                        };
+                        let ValueType::Record(ref fields) = *matched_native_node
+                        else {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::Record,
+                                expected,
+                            ));
+                        };
+                        for label in fields.keys() {
+                            if !values.contains_key(label) {
+                                return Err(KernelError::AbsentRecordField {
+                                    label: label.clone(),
+                                });
+                            }
+                        }
+                        let remaining = Slice::pushed(
+                            goal_stack,
+                            values.iter().rev().map(|(label, value)| {
+                                fields.get(label).map_or(Goal::SynthValue(*value), |ty| {
+                                    Goal::CheckValue(*value, *ty)
+                                })
+                            }),
+                        );
+                        frames.push(Frame::Fields {
+                            remaining,
+                            holder: id,
+                            begun: 0,
+                        });
+                        Produced::Checked
+                    },
+                    Value::ListNil => match arena.value_type(expected) {
+                        Some(&ValueType::List(_)) => Produced::Checked,
+                        _ => {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::List,
+                                expected,
+                            ));
+                        },
+                    },
+                    Value::ListCons(head, tail) => match arena.value_type(expected) {
+                        Some(&ValueType::List(element)) => {
+                            frames.push(Frame::CheckPairSecond(tail, expected));
+                            goal = Goal::CheckValue(head, element);
+                            continue 'expand;
+                        },
+                        _ => {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::List,
+                                expected,
+                            ));
+                        },
+                    },
+                    // An injection checks its body against the summand it
+                    // names; a position past the sum's summands is a shape
+                    // mismatch, as a non-sum classifier is.
+                    Value::Injection(summand, body) => {
+                        match arena.value_type(expected).and_then(|held| match *held {
+                            ValueType::Sum(ref summands) => {
+                                summands.get(usize::from(summand)).copied()
+                            },
+                            ValueType::Data { .. }
+                            | ValueType::Record(_)
+                            | ValueType::Session { .. }
+                            | ValueType::PathUniverse(..)
+                            | ValueType::FlowUniverse(..)
+                            | ValueType::Path { .. }
+                            | ValueType::Flow { .. }
+                            | ValueType::Bridge { .. }
+                            | ValueType::Base(_)
+                            | ValueType::Product(_)
+                            | ValueType::Sigma { .. }
+                            | ValueType::List(_)
+                            | ValueType::Thunk(_)
+                            | ValueType::Universe { .. }
+                            | ValueType::Lift { .. }
+                            | ValueType::Element { .. }
+                            | ValueType::Abstract(_)
+                            | ValueType::StaticPi { .. }
+                            | ValueType::Staged { .. } => None,
+                        }) {
+                            Some(summand_type) => {
+                                goal = Goal::CheckValue(body, summand_type);
+                                continue 'expand;
+                            },
+                            _ => {
+                                return Err(value_shape_mismatch(
+                                    arena,
+                                    ExpectedValueShape::Sum,
+                                    expected,
+                                ));
+                            },
+                        }
+                    },
+                    // A tuple checks each component against the product's
+                    // component at its position; a product of another arity is
+                    // a shape mismatch. A pair checks against a dependent pair:
+                    // its first component at the first factor, its second at
+                    // the second factor instantiated at the first component.
+                    Value::Tuple(ref components) => {
+                        match (arena.value_type(expected), &**components) {
+                            (Some(&ValueType::Product(ref parts)), _)
+                                if parts.len() == components.len() =>
+                            {
+                                let goals = Slice::pushed(
+                                    goal_stack,
+                                    components.iter().zip(parts.iter()).rev().map(
+                                        |(&component, &part)| Goal::CheckValue(component, part),
+                                    ),
+                                );
+                                frames.push(Frame::Pending(goals, Produced::Checked));
+                                Produced::Checked
+                            },
+                            (Some(&ValueType::Sigma { first, second }), &[left, right]) => {
+                                let (table, rewrites) = session.rewrite_parts();
+                                let fibre =
+                                    substitute_value_type(arena, table, rewrites, second, left);
+                                frames.push(Frame::Pending(
+                                    Slice::pushed(goal_stack, [Goal::CheckValue(right, fibre)]),
+                                    Produced::Checked,
+                                ));
+                                goal = Goal::CheckValue(left, first);
+                                continue 'expand;
+                            },
+                            _ => {
+                                return Err(value_shape_mismatch(
+                                    arena,
+                                    ExpectedValueShape::Product,
+                                    expected,
+                                ));
+                            },
+                        }
+                    },
+                    Value::Thunk(body) => match arena.value_type(expected) {
+                        Some(&ValueType::Thunk(codomain)) => {
+                            goal = Goal::CheckComp(body, codomain);
+                            continue 'expand;
+                        },
+                        _ => {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::Thunk,
+                                expected,
+                            ));
+                        },
+                    },
+                    Value::Here { point, .. } => {
+                        let (domain, left, right) = crate::element_identity::reflexive_parts(
+                            arena,
+                            crate::identity_recursion::Interfaces::of(judgement.entries),
+                            expected,
+                        )?;
+                        frames.push(Frame::CheckHere {
+                            point,
+                            left,
+                            right,
+                            holder: id,
+                        });
+                        goal = Goal::CheckValue(point, domain);
+                        continue 'expand;
+                    },
+                    // `stay(c)` checks at a flow, at either reading, by the
+                    // point at the carrier and the endpoint conversions a
+                    // `here` owes.
+                    Value::Stay { point, .. } => {
+                        let ends = crate::flow_universe::ends(arena, expected)
+                            .map_err(KernelError::Flow)?;
+                        frames.push(Frame::CheckHere {
+                            point,
+                            left: ends.source,
+                            right: ends.target,
+                            holder: id,
+                        });
+                        goal = Goal::CheckValue(point, ends.carrier);
+                        continue 'expand;
+                    },
+                    // A higher field owes one check per guard, each at the
+                    // fibre its walk computes; none re-enters the machine.
+                    Value::Higher {
+                        ref program,
+                        ref evidence,
+                    } => {
+                        let program = alloc::sync::Arc::clone(program);
+                        owed_values.clear();
+                        owed_values.extend_from_slice(evidence);
+                        let goals = Slice::pushed(
+                            goal_stack,
+                            crate::element_identity::higher_obligations(
+                                arena,
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                                expected,
+                                &program,
+                                &owed_values,
+                            )?
+                            .into_iter()
+                            .rev()
+                            .map(|(guard, fibre)| Goal::CheckValue(guard, fibre)),
+                        );
+                        frames.push(Frame::Pending(goals, Produced::Checked));
+                        Produced::Checked
+                    },
+                    // A higher evaluation replays every component's dialogues
+                    // here, unfolding what the environment admitted, and owes
+                    // each component's checks in that component's pattern
+                    // telescope.
+                    Value::HigherEvaluation {
+                        ref dialogues,
+                        ref components,
+                    } => {
+                        let dialogues = alloc::sync::Arc::clone(dialogues);
+                        owed_components.clear();
+                        owed_components.extend_from_slice(components);
+                        let unfoldings = admitted_unfoldings(judgement);
+                        let remaining = crate::element_identity::evaluation_obligations(
+                            arena,
+                            (
+                                &unfoldings,
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                            ),
+                            expected,
+                            &dialogues,
+                            &owed_components,
+                        )?;
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
+                        let outer = Slice::saved(type_stack, &mut context);
+                        let remaining = ComponentChecks::pushed(
+                            (component_stack, type_stack, goal_stack),
+                            &remaining,
+                        );
+                        frames.push(Frame::Components { outer, remaining });
+                        Produced::Checked
+                    },
+                    // A quantified evaluation replays every step's dialogues
+                    // here, as a higher evaluation does, and owes each
+                    // telescope's checks: the premise evidence, each applied
+                    // input and each return's values and output evidence.
+                    Value::QuantifiedEvaluation {
+                        ref steps,
+                        ref children,
+                    } => {
+                        let steps = alloc::sync::Arc::clone(steps);
+                        owed_values.clear();
+                        owed_values.extend_from_slice(children);
+                        let unfoldings = admitted_unfoldings(judgement);
+                        let remaining = crate::element_identity::quantified_obligations(
+                            arena,
+                            (
+                                &unfoldings,
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                            ),
+                            expected,
+                            &steps,
+                            &owed_values,
+                        )?;
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            barriers.push(session.open_barrier());
+                        }
+                        let outer = Slice::saved(type_stack, &mut context);
+                        let remaining = ComponentChecks::pushed(
+                            (component_stack, type_stack, goal_stack),
+                            &remaining,
+                        );
+                        frames.push(Frame::Components { outer, remaining });
+                        Produced::Checked
+                    },
+                    // A restriction's type is exact: it is compared with the
+                    // expected record label by label before it converts.
+                    Value::Restrict { .. } => {
+                        frames.push(Frame::CheckRestricted(expected));
+                        goal = Goal::SynthValue(id);
+                        continue 'expand;
+                    },
+                    Value::Constructor { .. }
+                    | Value::Returned(_)
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::SessionPath { .. }
+                    | Value::SessionFlow { .. }
+                    | Value::ForwardFlow { .. }
+                    | Value::FunctionFlow { .. }
+                    | Value::Then { .. }
+                    | Value::FlowProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Univalence { .. }
+                    | Value::Variable(_)
+                    | Value::Constant(_)
+                    | Value::Literal(_)
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticApplication(..) => {
+                        frames.push(Frame::ConvertValue(expected));
+                        goal = Goal::SynthValue(id);
+                        continue 'expand;
+                    },
+                },
+                Goal::SynthComp(id) => match *read_computation(arena, id)? {
+                    Computation::DataCase {
+                        scrutinee, motive, ..
+                    } => {
+                        frames.push(Frame::DataCase { case: id, motive });
+                        goal = Goal::SynthValue(scrutinee);
+                        continue 'expand;
+                    },
+                    Computation::SigmaSplit { scrutinee, .. } => {
+                        frames.push(Frame::SigmaSplit(id));
+                        goal = Goal::SynthValue(scrutinee);
+                        continue 'expand;
+                    },
+                    Computation::RecordProjection(record, _) => {
+                        frames.push(Frame::RecordProjection(id));
+                        goal = Goal::SynthValue(record);
+                        continue 'expand;
+                    },
+                    Computation::TupleProjection(tuple, component) => {
+                        frames.push(Frame::TupleProjection(tuple, component));
+                        goal = Goal::SynthValue(tuple);
+                        continue 'expand;
+                    },
+                    Computation::ListFold {
+                        element,
+                        result,
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => {
+                        for annotation in [element, result] {
+                            let _level = type_level(
+                                arena,
+                                judgement,
+                                TypeLevelGoal::Value(annotation),
+                                context.clone(),
+                                Recording {
+                                    memo,
+                                    session,
+                                    census,
+                                    owed,
+                                },
+                            )?;
+                        }
+                        let result = arena.comp_type_returner(result);
+                        frames.push(Frame::ProduceComp(result));
+                        frames.push(Frame::FoldCons(element, result, on_cons));
+                        frames.push(Frame::FoldNil(on_nil, result));
+                        let list_type = arena.value_type_list(element);
+                        goal = Goal::CheckValue(list, list_type);
+                        continue 'expand;
+                    },
+                    // A list case carries no result annotation: it only
+                    // checks, its branches against the expected type.
+                    Computation::ListCase { .. } => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::ListCase,
+                        });
+                    },
+                    Computation::Transport(path, value) => {
+                        frames.push(Frame::Transport(value));
+                        goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
+                    Computation::PathTransport { path, .. } => {
+                        frames.push(Frame::ElementTransport(id));
+                        goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
+                    Computation::TelescopeTransport { path, .. } => {
+                        frames.push(Frame::TelescopePath(id));
+                        goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
+                    Computation::Ride { flow, .. } => {
+                        frames.push(Frame::Ride(id));
+                        goal = Goal::SynthValue(flow);
+                        continue 'expand;
+                    },
+                    Computation::TelescopeRide { flow, .. } => {
+                        frames.push(Frame::TelescopeRideFlow(id));
+                        goal = Goal::SynthValue(flow);
+                        continue 'expand;
+                    },
+                    Computation::RelatedApplication { path, .. } => {
+                        frames.push(Frame::RelatedPath(id));
+                        goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
+                    // A call into a definition whose result follows the
+                    // parameter it recurses on returns at the stage of the
+                    // argument there, read as the checker reads it.
+                    // A call into a definition quantified over stages reads
+                    // its type at the stages its arguments show: the spine's
+                    // arguments are applied to the re-staged type, and the
+                    // inner applications are not judged one by one.
+                    Computation::Application(head, argument)
+                        if let Maybe::Present((constant, arguments)) =
+                            quantified::spine(arena, head, argument)
+                            && let Some(entry) = judgement.entries.get(usize::from(constant))
+                            && !entry.declaration().stages().bounds().is_empty() =>
+                    {
+                        let signature = entry.declaration().stages();
+                        let declared = entry.declared_id();
+                        // The instantiation reads the slots of the spine's
+                        // variables, which their carried supports cover.
+                        if matches!(M::ACTIVITY, MemoActivity::Active) {
+                            for &applied in &arguments {
+                                session.read(arena.value_support(applied), &context);
+                            }
+                        }
+                        let at = quantified::instantiation(
+                            (arena, &stages),
+                            context.as_slice(),
+                            (declared, signature),
+                            &arguments,
+                        )?;
+                        let staged = quantified::restaged(arena, declared, signature, &at)?;
+                        let staged =
+                            seal::unseal(arena, judgement.entries, judgement.manifest, staged)?;
+                        for &applied in arguments.iter().rev() {
+                            frames.push(Frame::SynthApply(applied));
+                        }
+                        frames.push(Frame::SynthForce);
+                        Produced::ValueType(staged)
+                    },
+                    Computation::Application(head, argument) => {
+                        if let Maybe::Present(staged) = recursion::followed(
+                            arena,
+                            (session, judgement.entries, context.as_slice()),
+                            (head, argument),
+                        ) {
+                            frames.push(Frame::Restage(staged));
+                        }
+                        frames.push(Frame::SynthApply(argument));
+                        goal = Goal::SynthComp(head);
+                        continue 'expand;
+                    },
+                    Computation::Force(value) => {
+                        frames.push(Frame::SynthForce);
+                        goal = Goal::SynthValue(value);
+                        continue 'expand;
+                    },
+                    Computation::Return(value) => {
+                        frames.push(Frame::SynthReturn);
+                        goal = Goal::SynthValue(value);
+                        continue 'expand;
+                    },
+                    Computation::Bind(bound, body) => {
+                        frames.push(Frame::SynthBind(body));
+                        goal = Goal::SynthComp(bound);
+                        continue 'expand;
+                    },
+                    // A return of several values synthesizes the telescope of
+                    // their types, each carried past the results before it.
+                    Computation::ReturnAll(ref values) => {
+                        if let Some(&first) = values.first() {
+                            frames.push(Frame::SynthReturnAll {
+                                returns: id,
+                                types: Slice::mark(type_stack),
+                            });
+                            goal = Goal::SynthValue(first);
+                            continue 'expand;
+                        }
+                        Produced::CompType(arena.comp_type_returns(&[]))
+                    },
+                    Computation::BindAll { bound, arity, body } => {
+                        frames.push(Frame::SynthBindAll(body, arity));
+                        goal = Goal::SynthComp(bound);
+                        continue 'expand;
+                    },
+                    // A pairing synthesizes when every component does, as a
+                    // tuple does; a component that only checks makes the
+                    // pairing checking-only too. The empty pairing
+                    // synthesizes the terminal type.
+                    Computation::With(ref components) => {
+                        if let Some(&first) = components.first() {
+                            frames.push(Frame::SynthWith {
+                                with: id,
+                                types: Slice::mark(comp_type_stack),
+                            });
+                            goal = Goal::SynthComp(first);
+                            continue 'expand;
+                        }
+                        Produced::CompType(arena.comp_type_with(&[]))
+                    },
+                    Computation::Project(component, pair) => {
+                        frames.push(Frame::Project(component));
+                        goal = Goal::SynthComp(pair);
+                        continue 'expand;
+                    },
+                    // A case of no branches has none to synthesize a type
+                    // from; it only checks.
+                    Computation::Case {
+                        scrutinee,
+                        ref branches,
+                    } => {
+                        if branches.is_empty() {
+                            return Err(KernelError::NotInferable {
+                                form: NonInferableForm::EmptyCase,
+                            });
+                        }
+                        frames.push(Frame::SynthCaseScrutinee(id));
+                        goal = Goal::SynthValue(scrutinee);
+                        continue 'expand;
+                    },
+                    Computation::Lambda(_) => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::Lambda,
+                        });
+                    },
+                    Computation::Fixpoint { .. } => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::Fixpoint,
+                        });
+                    },
+                },
+                Goal::CheckComp(id, expected) => match *read_computation(arena, id)? {
+                    // A lambda pushes the arrow's domain as the innermost
+                    // context slot and checks its body against the codomain
+                    // read from under that slot. The dependent arrow's codomain
+                    // is written under the binder already; the plain arrow's is
+                    // written outside it, so it is weakened past the slot. A
+                    // codata type is read through its observations first, here
+                    // and at a returner and a pairing.
+                    Computation::Lambda(body) => {
+                        match codata::read(arena, session, judgement, expected)
+                            .map(|shape| arena.comp_type(shape))?
+                        {
+                            Some(&CompType::Arrow { domain, codomain }) => {
+                                let scoped = weakened(arena, session, codomain);
+                                context.push(domain);
+                                frames.push(Frame::ScopeExit);
+                                goal = Goal::CheckComp(body, scoped);
+                                continue 'expand;
+                            },
+                            Some(&CompType::Pi { domain, codomain }) => {
+                                context.push(domain);
+                                frames.push(Frame::ScopeExit);
+                                goal = Goal::CheckComp(body, codomain);
+                                continue 'expand;
+                            },
+                            _ => {
+                                return Err(comp_shape_mismatch(
+                                    arena,
+                                    ExpectedComputationShape::Arrow,
+                                    expected,
+                                ));
+                            },
+                        }
+                    },
+                    // A fixpoint checks with the self thunk as the innermost
+                    // slot, its body against the classifier weakened past that
+                    // slot. A partial one checks at any computation type, and
+                    // progress is the unfolding rule's gate, not a typing
+                    // condition; but one that names itself at a type ending in
+                    // a returner is refused outside a ruled operation, since
+                    // every call the fragment makes returns. A structural one
+                    // opens its stage first (`recursion::open_fixpoint`): the
+                    // self binder takes the recursed-on parameter below the
+                    // stage and the body takes it at the stage. A joint one at
+                    // a lazy product opens one stage for every component
+                    // (`recursion::open_joint`), each at its own position. No
+                    // structural one descends on a coinductive datatype, which
+                    // admits no fold. A guarded one stands at a returner of a
+                    // coinductive datatype, and its body keeps every call of
+                    // it under a constructor of that type (`guard::guarded`).
+                    Computation::Fixpoint { body, evidence } => {
+                        if matches!(evidence, FixpointEvidence::Partial)
+                            && judgement.partial == Partiality::Refused
+                            && returner_ending(arena, expected).is_some()
+                            && crate::support::innermost(arena.computation_support(body))
+                                == crate::element_identity::BinderUse::Read
+                        {
+                            return Err(KernelError::PartialFixpoint {
+                                actual: comp_type_witness(arena, expected),
+                            });
+                        }
+                        let result = match judgement.following {
+                            Maybe::Present(fixpoint) if fixpoint == id => {
+                                recursion::ResultStage::Following
+                            },
+                            Maybe::Present(_) | Maybe::Absent(_) => {
+                                recursion::ResultStage::Declared
+                            },
+                        };
+                        let position = evidence.descent();
+                        let (own, inside) = match (position, evidence) {
+                            (Some(position), _) => {
+                                if guard::descends_on_coinductive(
+                                    arena,
+                                    judgement.entries,
+                                    (expected, position),
+                                ) == guard::Descent::Coinductive
+                                {
+                                    return Err(KernelError::FoldOverCoinductive);
+                                }
+                                root = respect::fold_root(
+                                    arena,
+                                    judgement.presentations,
+                                    id,
+                                    (expected, position),
+                                    body,
+                                );
+                                let opened = recursion::open_fixpoint(
+                                    arena,
+                                    &mut stages,
+                                    (expected, position),
+                                    result,
+                                )?;
+                                staged_bodies = staged_bodies.saturating_add(1);
+                                frames.push(Frame::StageExit);
+                                (opened.own, opened.inside)
+                            },
+                            (None, FixpointEvidence::Joint { positions }) => {
+                                if let Some(&CompType::With(ref components)) =
+                                    arena.comp_type(expected)
+                                    && components.iter().zip(positions.iter()).any(
+                                        |(&component, position)| {
+                                            guard::descends_on_coinductive(
+                                                arena,
+                                                judgement.entries,
+                                                (component, position),
+                                            ) == guard::Descent::Coinductive
+                                        },
+                                    )
+                                {
+                                    return Err(KernelError::FoldOverCoinductive);
+                                }
+                                let opened = recursion::open_joint(
+                                    arena,
+                                    &mut stages,
+                                    (expected, positions),
+                                    result,
+                                )?;
+                                staged_bodies = staged_bodies.saturating_add(1);
+                                frames.push(Frame::StageExit);
+                                (opened.own, opened.inside)
+                            },
+                            (None, FixpointEvidence::Guarded) => {
+                                guard::guarded(arena, judgement.entries, (expected, body))?;
+                                (expected, expected)
+                            },
+                            (
+                                None,
+                                FixpointEvidence::Partial
+                                | FixpointEvidence::StructuralDescent
+                                | FixpointEvidence::Staged { .. },
+                            ) => (expected, expected),
+                        };
+                        let recursive = arena.value_type_thunk(own);
+                        let scoped = weakened(arena, session, inside);
+                        if position.is_some()
+                            && matches!(judgement.own, Maybe::Present(root) if root == id)
+                        {
+                            own_fixpoint = Maybe::Present((context.len(), recursive));
+                        }
+                        context.push(recursive);
+                        frames.push(Frame::ScopeExit);
+                        goal = Goal::CheckComp(body, scoped);
+                        continue 'expand;
+                    },
+                    Computation::Return(value) => {
+                        match codata::read(arena, session, judgement, expected)
+                            .map(|shape| arena.comp_type(shape))?
+                        {
+                            Some(&CompType::Returner(result)) => {
+                                goal = Goal::CheckValue(value, result);
+                                continue 'expand;
+                            },
+                            _ => {
+                                return Err(comp_shape_mismatch(
+                                    arena,
+                                    ExpectedComputationShape::Returner,
+                                    expected,
+                                ));
+                            },
+                        }
+                    },
+                    Computation::Bind(bound, body) => {
+                        frames.push(Frame::CheckBind(body, expected));
+                        goal = Goal::SynthComp(bound);
+                        continue 'expand;
+                    },
+                    // A return of several values checks against a returner of
+                    // as many results, each value against its result read at
+                    // the values before it.
+                    Computation::ReturnAll(_) => {
+                        let shape = codata::read(arena, session, judgement, expected)?;
+                        let (results, values) =
+                            match (arena.comp_type(shape), read_computation(arena, id)?) {
+                                (
+                                    Some(&CompType::Returns(ref results)),
+                                    &Computation::ReturnAll(ref values),
+                                ) if results.len() == values.len()
+                                    && u32::try_from(values.len()).is_ok() =>
+                                {
+                                    (results.clone(), values.clone())
+                                },
+                                _ => {
+                                    return Err(comp_shape_mismatch(
+                                        arena,
+                                        ExpectedComputationShape::Returner,
+                                        expected,
+                                    ));
+                                },
+                            };
+                        let mark = Slice::mark(goal_stack);
+                        returned_goals(arena, session, (&results, &values), goal_stack);
+                        let goals = mark.filled(goal_stack);
+                        frames.push(Frame::Pending(goals, Produced::Checked));
+                        Produced::Checked
+                    },
+                    Computation::BindAll { bound, arity, body } => {
+                        frames.push(Frame::CheckBindAll(body, arity, expected));
+                        goal = Goal::SynthComp(bound);
+                        continue 'expand;
+                    },
+                    // A pairing checks against a lazy product of its arity
+                    // by checking each component against its own; none binds
+                    // anything.
+                    Computation::With(_) => {
+                        let shape = codata::read(arena, session, judgement, expected)?;
+                        let goals = match (arena.comp_type(shape), read_computation(arena, id)?) {
+                            (
+                                Some(&CompType::With(ref types)),
+                                &Computation::With(ref components),
+                            ) if types.len() == components.len() => Slice::pushed(
+                                goal_stack,
+                                components
+                                    .iter()
+                                    .zip(types.iter())
+                                    .rev()
+                                    .map(|(&component, &ty)| Goal::CheckComp(component, ty)),
+                            ),
+                            _ => {
+                                return Err(comp_shape_mismatch(
+                                    arena,
+                                    ExpectedComputationShape::With,
+                                    expected,
+                                ));
+                            },
+                        };
+                        frames.push(Frame::Pending(goals, Produced::Checked));
+                        Produced::Checked
+                    },
+                    Computation::Case { scrutinee, .. } => {
+                        let refining = refining_goal(arena, session, scrutinee, expected);
+                        frames.push(Frame::CheckCaseScrutinee {
+                            case: id,
+                            expected,
+                            refining,
+                        });
+                        goal = Goal::SynthValue(scrutinee);
+                        continue 'expand;
+                    },
+                    // A list case synthesizes its list, as a sum case its
+                    // scrutinee, then checks each branch against the case's
+                    // type: the empty branch as it stands, the cell branch under
+                    // the head and the tail.
+                    Computation::ListCase {
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => {
+                        frames.push(Frame::ListCaseScrutinee {
+                            on_nil,
+                            on_cons,
+                            expected,
+                        });
+                        goal = Goal::SynthValue(list);
+                        continue 'expand;
+                    },
+                    // An applied fixpoint synthesizes nothing, so the
+                    // application reads its arrow off the argument's type and
+                    // the type it is checked against: the fixpoint checks
+                    // against that arrow, which is the application rule at
+                    // the domain the argument has.
+                    Computation::Application(head, argument)
+                        if matches!(
+                            read_computation(arena, head)?,
+                            &Computation::Fixpoint { .. }
+                        ) =>
+                    {
+                        frames.push(Frame::FixpointArgument(head, expected));
+                        goal = Goal::SynthValue(argument);
+                        continue 'expand;
+                    },
+                    Computation::DataCase {
+                        scrutinee, motive, ..
+                    } => {
+                        frames.push(Frame::ConvertComp(expected));
+                        // A case checked at its written motive with the
+                        // result read at a stage reads its branches there.
+                        match recursion::motive_at(arena, session, motive, expected)? {
+                            Maybe::Present(at) => {
+                                frames.push(Frame::DataCase {
+                                    case: id,
+                                    motive: at,
+                                });
+                                goal = Goal::SynthValue(scrutinee);
+                            },
+                            Maybe::Absent(_plain) => goal = Goal::SynthComp(id),
+                        }
+                        continue 'expand;
+                    },
+                    Computation::SigmaSplit { .. }
+                    | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..)
+                    | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::TelescopeTransport { .. }
+                    | Computation::Ride { .. }
+                    | Computation::TelescopeRide { .. }
+                    | Computation::RelatedApplication { .. }
+                    | Computation::ListFold { .. }
+                    | Computation::Application(..)
+                    | Computation::Project(..)
+                    | Computation::Force(_) => {
+                        frames.push(Frame::ConvertComp(expected));
+                        goal = Goal::SynthComp(id);
+                        continue 'expand;
+                    },
+                },
+            },
+        };
+        loop {
+            let Some(frame) = frames.pop()
+            else {
+                // Every code this run owed is drained under the stages it was
+                // owed below. The order only grows, so the one the run ends
+                // with keeps every fit the formation walk saw.
+                if stages != StageOrder::default() {
+                    for obligation in owed.iter_mut().skip(first_owed) {
+                        let &mut (CodeObligation::Universe {
+                            stages: ref mut under,
+                            ..
+                        }
+                        | CodeObligation::Data {
+                            stages: ref mut under,
+                            ..
+                        }
+                        | CodeObligation::Codata {
+                            stages: ref mut under,
+                            ..
+                        }
+                        | CodeObligation::Endpoints {
+                            stages: ref mut under,
+                            ..
+                        }) = obligation;
+                        under.clone_from(&stages);
+                    }
+                }
+                *walk = Walk {
+                    stages,
+                    root,
+                    staged_bodies,
+                    own_fixpoint,
+                    parameters,
+                };
+                return Ok(produced);
+            };
+            #[cfg(feature = "counts")]
+            let _counted = POPPED.fetch_add(1, Ordering::Relaxed);
+            match frame {
+                Frame::Pending(slice, result) => {
+                    let siblings = Siblings {
+                        context: &context,
+                        goals: slice.items(goal_stack),
+                        field: None,
+                        stages: &stages,
+                        root,
+                        staged_bodies,
+                        own_fixpoint,
+                        parameters,
+                    };
+                    if let Some(fork) = sibling_fork(judgement, census, &siblings)
+                        && matches!(
+                            siblings_forked(arena, judgement, fork, &siblings, Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            })?,
+                            FrameFork::Joined
+                        )
+                    {
+                        slice.release(goal_stack);
+                        produced = result;
+                        continue;
+                    }
+                    if let Some((next, rest)) = slice.next(goal_stack) {
+                        frames.push(Frame::Pending(rest, result));
+                        goal = next;
+                        continue 'expand;
+                    }
+                    slice.release(goal_stack);
+                    produced = result;
+                },
+                Frame::Fields {
+                    remaining,
+                    holder,
+                    begun,
+                } => {
+                    let siblings = Siblings {
+                        context: &context,
+                        goals: remaining.items(goal_stack),
+                        field: Some((holder, begun)),
+                        stages: &stages,
+                        root,
+                        staged_bodies,
+                        own_fixpoint,
+                        parameters,
+                    };
+                    if let Some(fork) = sibling_fork(judgement, census, &siblings)
+                        && matches!(
+                            siblings_forked(arena, judgement, fork, &siblings, Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            })?,
+                            FrameFork::Joined
+                        )
+                    {
+                        remaining.release(goal_stack);
+                        produced = Produced::Checked;
+                        continue;
+                    }
+                    if let Some((next, remaining)) = remaining.next(goal_stack) {
+                        frames.push(Frame::Fields {
+                            remaining,
+                            holder,
+                            begun: begun.saturating_add(1),
+                        });
+                        goal = next;
+                        continue 'expand;
+                    }
+                    remaining.release(goal_stack);
+                    produced = Produced::Checked;
+                },
+                Frame::RecordField {
+                    holder,
+                    remaining,
+                    types,
+                } => {
+                    let types = types.grown(type_stack, produced.value_type()?);
+                    if let Some((value, remaining)) = remaining.next(value_stack) {
+                        frames.push(Frame::RecordField {
+                            holder,
+                            remaining,
+                            types,
+                        });
+                        goal = Goal::SynthValue(value);
+                        continue 'expand;
+                    }
+                    let Some(&Value::Record(ref values)) = arena.value(holder)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let fields: alloc::collections::BTreeMap<_, _> = values
+                        .keys()
+                        .cloned()
+                        .zip(types.items(type_stack).iter().copied())
+                        .collect();
+                    types.release(type_stack);
+                    remaining.release(value_stack);
+                    produced = Produced::ValueType(arena.value_type_record(fields));
+                },
+                Frame::RecordProjection(projection) => {
+                    let actual = produced.value_type()?;
+                    let Some(matched_native_node) = arena.value_type(actual)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Record,
+                            actual,
+                        ));
+                    };
+                    let ValueType::Record(ref fields) = *matched_native_node
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Record,
+                            actual,
+                        ));
+                    };
+                    let Some(&Computation::RecordProjection(_, ref label)) =
+                        arena.computation(projection)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let field =
+                        *fields
+                            .get(label)
+                            .ok_or_else(|| KernelError::AbsentRecordField {
+                                label: label.clone(),
+                            })?;
+                    produced = Produced::CompType(arena.comp_type_returner(field));
+                },
+                // A projection of a product returns the part at its position.
+                // A projection of a dependent pair returns the first factor at
+                // the first component and, at the second, the second factor
+                // instantiated at the first component's own projection.
+                Frame::TupleProjection(tuple, component) => {
+                    let actual = produced.value_type()?;
+                    if let Some(&ValueType::Sigma { first, second }) = arena.value_type(actual) {
+                        let part = match usize::from(component) {
+                            0 => first,
+                            1 => {
+                                let projected = arena.computation_tuple_projection(
+                                    tuple,
+                                    gandr_kernel_term::Component::from(0_usize),
+                                );
+                                let projected = arena.value_returned(projected);
+                                let (table, rewrites) = session.rewrite_parts();
+                                substitute_value_type(arena, table, rewrites, second, projected)
+                            },
+                            _ => return Err(KernelError::AbsentTupleComponent { component }),
+                        };
+                        produced = Produced::CompType(arena.comp_type_returner(part));
+                        continue;
+                    }
+                    let Some(parts) = arena.value_type(actual).and_then(ValueType::product_parts)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Product,
+                            actual,
+                        ));
+                    };
+                    let part = *parts
+                        .get(usize::from(component))
+                        .ok_or(KernelError::AbsentTupleComponent { component })?;
+                    produced = Produced::CompType(arena.comp_type_returner(part));
+                },
+                Frame::DataCase { case, motive: at } => {
+                    // A decode of a returned code is read to the type the code
+                    // quotes: a binder a case refined to a call returning a
+                    // data type is cased on at that data type.
+                    let scrutinee = produced.value_type()?;
+                    let scrutinee = read_returned_decode(arena, judgement, scrutinee);
+                    // A scrutinee at a stage opens one below it, and a
+                    // scrutinee at a looped point's path is split over the
+                    // words its free cells mint.
+                    let (scrutinee_type, opened) =
+                        recursion::open_case(arena, judgement.entries, &mut stages, scrutinee)?;
+                    // A stratified value at no stage is read at a fresh root,
+                    // this run's own: the case's arms are neither recalled nor
+                    // memoized, as a fixpoint's body is not.
+                    if scrutinee_type == scrutinee && matches!(opened, Maybe::Present(_)) {
+                        staged_bodies = staged_bodies.saturating_add(1);
+                        frames.push(Frame::StageExit);
+                    }
+                    let datatype = judgement.presentations.identified(arena, scrutinee_type);
+                    let Some(matched_native_node) = arena.computation(case)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Computation::DataCase { ref motive, .. } = *matched_native_node
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let motive = *motive;
+                    context.push(datatype);
+                    let formed = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Comp(motive),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    );
+                    let _bound = context.pop();
+                    let _level = formed?;
+                    let reading = match core::mem::replace(
+                        &mut root,
+                        Maybe::Absent(respect::root::Absent::Unmarked),
+                    ) {
+                        Maybe::Present((marked, reading)) if marked == case => reading,
+                        Maybe::Present(_) | Maybe::Absent(_) => respect::Reading::Case { datatype },
+                    };
+                    // A case of no branches over a path between two apart
+                    // terms of a data type owes no branch.
+                    let absurd = former::absurd(
+                        arena,
+                        (judgement.entries, judgement.presentations),
+                        session,
+                        case,
+                        datatype,
+                    )?;
+                    if let Maybe::Present(result) = absurd {
+                        produced = Produced::CompType(result);
+                    }
+                    else {
+                        // Whether the self binder still stands at its slot is a
+                        // read of that slot.
+                        if matches!(M::ACTIVITY, MemoActivity::Active)
+                            && let Maybe::Present((slot, _)) = own_fixpoint
+                            && let Some(index) = context
+                                .len()
+                                .checked_sub(slot.saturating_add(1))
+                                .and_then(|index| u32::try_from(index).ok())
+                        {
+                            session.read(&Reads::variable(DeBruijnIndex::from(index)), &context);
+                        }
+                        // Inside the declaration's own fixpoint, its constant
+                        // in a field type reads as the self binder, at the
+                        // binder's index in the case's context.
+                        let own_constant = match own_fixpoint {
+                            Maybe::Present((slot, binder))
+                                if context.get(slot) == Some(&binder) =>
+                            {
+                                context
+                                    .len()
+                                    .checked_sub(slot.saturating_add(1))
+                                    .and_then(|index| u32::try_from(index).ok())
+                                    .map_or(Maybe::Absent(recursion::Unowned::Outside), |index| {
+                                        Maybe::Present((
+                                            ConstantIndex::from(usize::from(
+                                                judgement.entries.len(),
+                                            )),
+                                            DeBruijnIndex::from(index),
+                                        ))
+                                    })
+                            },
+                            Maybe::Present(_) | Maybe::Absent(_) => {
+                                Maybe::Absent(recursion::Unowned::Outside)
+                            },
+                        };
+                        // A rule is owed at the written motive; only a type
+                        // with none reads its branches at a staged one.
+                        let obliged = respect::obliged(arena, judgement.entries, datatype, reading);
+                        let branches_at = match obliged {
+                            Maybe::Present(_) => motive,
+                            Maybe::Absent(_) => at,
+                        };
+                        let mark = Slice::mark(goal_stack);
+                        let (result, looped, reads) = former::case(
+                            arena,
+                            (judgement.entries, judgement.presentations),
+                            session,
+                            (case, branches_at),
+                            (datatype, opened, own_constant),
+                            goal_stack,
+                        )?;
+                        // A field domain that named the constant is formed as
+                        // read, under the branch's fields before it at their
+                        // stage, so a decode at a place that does not descend
+                        // is refused by the stage order; the field may name a
+                        // later definition of the block, as its family did.
+                        for read in reads {
+                            let Some(&Goal::CheckComp(_, mut telescope)) =
+                                mark.above(goal_stack).get(usize::from(read.tag))
+                            else {
+                                return Err(KernelError::ArenaFault);
+                            };
+                            let mut under = context.clone();
+                            for _before in 0 .. usize::from(read.field) {
+                                let Some(&CompType::Pi { domain, codomain }) =
+                                    arena.comp_type(telescope)
+                                else {
+                                    return Err(KernelError::ArenaFault);
+                                };
+                                under.push(domain);
+                                telescope = codomain;
+                            }
+                            let _level = type_level(
+                                arena,
+                                judgement.foreseeing(),
+                                TypeLevelGoal::Value(read.domain),
+                                under,
+                                Recording {
+                                    memo,
+                                    session,
+                                    census,
+                                    owed,
+                                },
+                            )?;
+                        }
+                        if looped == former::Looped::Owed {
+                            frames.push(Frame::Loops(case, datatype));
+                        }
+                        if let Maybe::Present(reading) = obliged {
+                            frames.push(Frame::Respect(case, reading));
+                        }
+                        frames.push(Frame::Pending(
+                            mark.turned(goal_stack),
+                            Produced::CompType(result),
+                        ));
+                        produced = Produced::CompType(result);
+                    }
+                },
+                Frame::Respect(case, reading) => {
+                    let unfoldings = admitted_unfoldings(judgement);
+                    respect::respected(
+                        arena,
+                        (judgement.entries, &unfoldings),
+                        case,
+                        reading,
+                        judgement.laws,
+                    )?;
+                },
+                Frame::Loops(case, datatype) => {
+                    // The loops read the slots of the variables nested cases
+                    // are over, which the case's carried support covers.
+                    if matches!(M::ACTIVITY, MemoActivity::Active) {
+                        session.read(arena.computation_support(case), &context);
+                    }
+                    let unfoldings = admitted_unfoldings(judgement);
+                    loops::respected(arena, &unfoldings, context.as_slice(), (case, datatype))?;
+                },
+                // A dependent split forms its motive under the scrutinee's
+                // binder, checks its body under the two components against the
+                // motive at their pair, and returns the motive at the scrutinee.
+                Frame::SigmaSplit(split) => {
+                    let scrutinee_type = produced.value_type()?;
+                    let Some(&Computation::SigmaSplit {
+                        scrutinee,
+                        motive,
+                        body,
+                    }) = arena.computation(split)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Some(&ValueType::Sigma { first, second }) =
+                        arena.value_type(scrutinee_type)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Sigma,
+                            scrutinee_type,
+                        ));
+                    };
+                    context.push(scrutinee_type);
+                    let formed = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Comp(motive),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    );
+                    let _bound = context.pop();
+                    let _level = formed?;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let result = substitute_comp_type(arena, table, rewrites, motive, scrutinee);
+                    let (table, rewrites) = session.rewrite_parts();
+                    let lifted = shift_comp_type(
+                        arena,
+                        table,
+                        rewrites,
+                        motive,
+                        BinderDepth::from(1_u32),
+                        BinderDepth::from(2_u32),
+                    );
+                    let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+                    let inner = arena.value_variable(DeBruijnIndex::from(0_u32));
+                    let pair = arena.value_tuple(&[outer, inner]);
+                    let (table, rewrites) = session.rewrite_parts();
+                    let expected = substitute_comp_type(arena, table, rewrites, lifted, pair);
+                    context.push(first);
+                    context.push(second);
+                    frames.push(Frame::ProduceComp(result));
+                    frames.push(Frame::ScopeExit);
+                    frames.push(Frame::ScopeExit);
+                    goal = Goal::CheckComp(body, expected);
+                    continue 'expand;
+                },
+                Frame::FoldNil(body, result) => {
+                    goal = Goal::CheckComp(body, result);
+                    continue 'expand;
+                },
+                Frame::FoldCons(element, result, body) => {
+                    let under_head = weakened(arena, session, result);
+                    let Some(&CompType::Returner(folded)) = arena.comp_type(under_head)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let under_both = weakened(arena, session, under_head);
+                    context.push(element);
+                    context.push(folded);
+                    frames.push(Frame::ScopeExit);
+                    frames.push(Frame::ScopeExit);
+                    goal = Goal::CheckComp(body, under_both);
+                    continue 'expand;
+                },
+                Frame::ListCaseScrutinee {
+                    on_nil,
+                    on_cons,
+                    expected,
+                } => {
+                    let list_type = produced.value_type()?;
+                    // A list at a stage opens one below it, which its tail
+                    // takes.
+                    let (read, opened) =
+                        recursion::open_case(arena, judgement.entries, &mut stages, list_type)?;
+                    let Some(&ValueType::List(element)) = arena.value_type(read)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::List,
+                            list_type,
+                        ));
+                    };
+                    let tail = arena.value_type_list(element);
+                    let tail = match opened {
+                        Maybe::Present(child) => {
+                            arena.value_type_staged(tail, gandr_kernel_term::Stage::At(child))
+                        },
+                        Maybe::Absent(_) => tail,
+                    };
+                    frames.push(Frame::ListCaseCons(element, tail, expected, on_cons));
+                    goal = Goal::CheckComp(on_nil, expected);
+                    continue 'expand;
+                },
+                Frame::ListCaseCons(element, tail, expected, body) => {
+                    let listed = arena.comp_type_returner(tail);
+                    let listed = weakened(arena, session, listed);
+                    let Some(&CompType::Returner(tail)) = arena.comp_type(listed)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let under_head = weakened(arena, session, expected);
+                    let under_both = weakened(arena, session, under_head);
+                    context.push(element);
+                    context.push(tail);
+                    frames.push(Frame::ScopeExit);
+                    frames.push(Frame::ScopeExit);
+                    goal = Goal::CheckComp(body, under_both);
+                    continue 'expand;
+                },
+                Frame::Memoize(asked, opened) => {
+                    let Some((question, _)) = asked.next(question_stack)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    asked.release(question_stack);
+                    let reads = session.close(opened);
+                    let support = question.answered(arena, session, context.as_slice(), reads);
+                    // A memo at its ceiling declines to record; see the same
+                    // note in `type_level`.
+                    let outcome = produced.outcome();
+                    if let Some(named) = parameters.name(arena, &judgement, session) {
+                        session.keep(&support, named, &outcome);
+                    }
+                    let _recorded = memo.remember(support, outcome);
+                },
+                Frame::PathProductFirst(second) => {
+                    let first_type = produced.value_type()?;
+                    let endpoints = crate::path_universe::endpoints(
+                        arena,
+                        judgement.entries,
+                        first_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Path)?;
+                    frames.push(Frame::PathProductSecond(endpoints));
+                    goal = Goal::SynthValue(second);
+                    continue 'expand;
+                },
+                Frame::PathProductSecond(first) => {
+                    let second_type = produced.value_type()?;
+                    let second = crate::path_universe::endpoints(
+                        arena,
+                        judgement.entries,
+                        second_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Path)?;
+                    let source = arena.value_type_product(&[first.source, second.source]);
+                    let target = arena.value_type_product(&[first.target, second.target]);
+                    let source = arena.value_quote(source);
+                    let target = arena.value_quote(target);
+                    produced = Produced::ValueType(arena.value_type_path_universe(source, target));
+                },
+                // **The flow product.** Each component reads as a universe
+                // flow, under either reading of the level-zero universe; the
+                // product relates the pairs of their endpoints, source to
+                // source and target to target, as the path product does. The
+                // pairs must themselves be codes of the `Flow_U` vocabulary,
+                // so a component at a function or session code is refused
+                // rather than minting a classifier no other rule reads.
+                Frame::FlowProductFirst(second) => {
+                    let first_type = produced.value_type()?;
+                    let endpoints = crate::flow_universe::universe_reading(
+                        arena,
+                        judgement.entries,
+                        first_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    frames.push(Frame::FlowProductSecond(endpoints));
+                    goal = Goal::SynthValue(second);
+                    continue 'expand;
+                },
+                Frame::FlowProductSecond(first) => {
+                    let second_type = produced.value_type()?;
+                    let second = crate::flow_universe::universe_reading(
+                        arena,
+                        judgement.entries,
+                        second_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    let source = arena.value_type_product(&[first.source, second.source]);
+                    let target = arena.value_type_product(&[first.target, second.target]);
+                    let source = arena.value_quote(source);
+                    let target = arena.value_quote(target);
+                    let classifier = arena.value_type_flow_universe(source, target);
+                    let _decoded = crate::flow_universe::endpoints(
+                        arena,
+                        judgement.entries,
+                        classifier,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    produced = Produced::ValueType(classifier);
+                },
+                Frame::PathForward {
+                    path,
+                    endpoints,
+                    context: outer,
+                } => {
+                    let Value::PathEquiv { backward, .. } = *read_value(arena, path)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let result = arena.comp_type_returner(endpoints.source);
+                    let function = arena.comp_type_arrow(endpoints.target, result);
+                    let translator = arena.value_type_thunk(function);
+                    frames.push(Frame::PathBackward {
+                        path,
+                        endpoints,
+                        context: outer,
+                    });
+                    goal = Goal::CheckValue(backward, translator);
+                    continue 'expand;
+                },
+                Frame::PathBackward {
+                    path,
+                    endpoints,
+                    context: outer,
+                } => {
+                    let Value::PathEquiv {
+                        path_type,
+                        forward,
+                        backward,
+                        ref evidence,
+                    } = *read_value(arena, path)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    // Replay mutates the arena; retain only the evidence across
+                    // that borrow. A translator may name
+                    // what the environment admitted
+                    // before it, so both round trips unfold its definitions.
+                    let evidence = alloc::sync::Arc::clone(evidence);
+                    let unfoldings = admitted_unfoldings(judgement);
+                    let watermark = arena.watermark();
+                    let result = crate::path_universe::coverage::round_trip(
+                        arena,
+                        (&unfoldings, judgement.entries),
+                        (endpoints.source, crate::path_universe::Direction::Source),
+                        (forward, backward),
+                        &evidence.source,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .and_then(|()| {
+                        crate::path_universe::coverage::round_trip(
+                            arena,
+                            (&unfoldings, judgement.entries),
+                            (endpoints.target, crate::path_universe::Direction::Target),
+                            (backward, forward),
+                            &evidence.target,
+                            crate::replay::ReplayBudget::DEFAULT,
+                        )
+                    });
+                    arena.truncate_to(watermark);
+                    result.map_err(KernelError::Path)?;
+                    outer.restored(type_stack, &mut context);
+                    if let Some(barrier) = barriers.pop() {
+                        let _closed = session.close(barrier);
+                    }
+                    produced = Produced::ValueType(path_type);
+                },
+                Frame::Transport(value) => {
+                    let path_type = produced.value_type()?;
+                    let endpoints = crate::path_universe::endpoints(
+                        arena,
+                        judgement.entries,
+                        path_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Path)?;
+                    frames.push(Frame::ProduceComp(
+                        arena.comp_type_returner(endpoints.target),
+                    ));
+                    goal = Goal::CheckValue(value, endpoints.source);
+                    continue 'expand;
+                },
+                Frame::SynthHere(point) => {
+                    let domain = produced.value_type()?;
+                    produced = Produced::ValueType(arena.value_type_path(domain, point, point));
+                },
+                Frame::UnivalenceRecord(equivalence) => {
+                    let classifier = produced.value_type()?;
+                    let (path_type, record) =
+                        crate::path_universe::univalence_reading(arena, classifier)
+                            .map_err(KernelError::Path)?;
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(path_type),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    frames.push(Frame::ProduceValue(path_type));
+                    goal = Goal::CheckValue(equivalence, record);
+                    continue 'expand;
+                },
+                Frame::SynthReturned => {
+                    let synthesized = produced.comp_type()?;
+                    let Some(&CompType::Returner(result)) = arena.comp_type(synthesized)
+                    else {
+                        return Err(KernelError::Identity(
+                            crate::element_identity::IdentityError::ReturnedNonReturner(
+                                comp_type_witness(arena, synthesized),
+                            ),
+                        ));
+                    };
+                    produced = Produced::ValueType(result);
+                },
+                // Reflexivity is decided by the kernel's term conversion,
+                // the laws of bind among its forced rules; an endpoint it
+                // leaves apart is related by the dialogue the `here` carries,
+                // unfolding only the admitted definitions the dialogue names.
+                Frame::CheckHere {
+                    point,
+                    left,
+                    right,
+                    holder,
+                } => {
+                    let dialogues = match arena.value(holder) {
+                        Some(
+                            &(Value::Here { ref dialogues, .. }
+                            | Value::Stay { ref dialogues, .. }),
+                        ) => alloc::sync::Arc::clone(dialogues),
+                        _ => return Err(KernelError::ArenaFault),
+                    };
+                    let unfoldings = admitted_unfoldings(judgement);
+                    crate::element_identity::reflexive_endpoints(
+                        arena,
+                        &unfoldings,
+                        judgement.taking,
+                        point,
+                        (left, right),
+                        &dialogues,
+                    )?;
+                    produced = Produced::Checked;
+                },
+                Frame::Components { outer, remaining } => {
+                    let Some((component, rest)) = remaining.next(component_stack)
+                    else {
+                        remaining.release(component_stack);
+                        outer.restored(type_stack, &mut context);
+                        if let Some(barrier) = barriers.pop() {
+                            let _closed = session.close(barrier);
+                        }
+                        produced = Produced::Checked;
+                        continue;
+                    };
+                    component.context.restored(type_stack, &mut context);
+                    frames.push(Frame::Components {
+                        outer,
+                        remaining: rest,
+                    });
+                    frames.push(Frame::Pending(component.goals, Produced::Checked));
+                    produced = Produced::Checked;
+                },
+                // Transport's input checks at the motive instantiated at the
+                // source endpoint, and it returns at the motive instantiated
+                // at the target: instantiation is the rewrite machine's
+                // substitution, so the law holds of every motive. A word
+                // written as the path is followed as the path it is. A
+                // variable at a stage keeps its stage across a set
+                // ([`carried_stage`]).
+                Frame::ElementTransport(transport) => {
+                    let path_type = produced.value_type()?;
+                    // A path a field holds may check at the decode of a call,
+                    // its family's answer: the walk reads the type it returns.
+                    let path_type = read_returned_decode(arena, judgement, path_type);
+                    let Some(&Computation::PathTransport { motive, value, .. }) =
+                        arena.computation(transport)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (domain, left, right) =
+                        crate::words::followed(arena, judgement.presentations, path_type)?;
+                    let mut scoped = context.clone();
+                    scoped.push(domain);
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(motive),
+                        scoped,
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source = substitute_value_type(arena, table, rewrites, motive, left);
+                    let target = substitute_value_type(arena, table, rewrites, motive, right);
+                    let target =
+                        carried_stage(arena, judgement, &context, (value, domain, target))?;
+                    frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    // A path motive's endpoints check first, under the binder
+                    // at the path's carrier, and the value after them. A tower
+                    // of `Path.ap` with fewer levels than its cell's depth
+                    // applies its map off the map's domain, and is a type
+                    // error here. No conversion on the lowering's word decides
+                    // it, and no formation that the memo holds skips it.
+                    goal = Goal::CheckValue(value, source);
+                    if let Some(&ValueType::Path {
+                        domain: fibre,
+                        left: start,
+                        right: end,
+                    }) = arena.value_type(motive)
+                    {
+                        frames.push(Frame::Pending(
+                            Slice::pushed(goal_stack, [goal]),
+                            Produced::Checked,
+                        ));
+                        frames.push(Frame::ScopeExit);
+                        frames.push(Frame::Pending(
+                            Slice::pushed(goal_stack, [Goal::CheckValue(end, fibre)]),
+                            Produced::Checked,
+                        ));
+                        context.push(domain);
+                        goal = Goal::CheckValue(start, fibre);
+                    }
+                    continue 'expand;
+                },
+                // A telescope transport forms its motive, reads the path's
+                // carrier as the motive's first entry, and checks the start
+                // in the family's fibre over the path's source.
+                Frame::TelescopePath(transport) => {
+                    let path_type = produced.value_type()?;
+                    let path_type = read_returned_decode(arena, judgement, path_type);
+                    let Some(&Computation::TelescopeTransport { motive, start, .. }) =
+                        arena.computation(transport)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Maybe::Present(crate::element_identity::Telescope {
+                        carrier, family, ..
+                    }) = crate::element_identity::telescope(arena, motive)?
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Telescope,
+                            motive,
+                        ));
+                    };
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Comp(motive),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    let (domain, left, right) =
+                        crate::words::followed(arena, judgement.presentations, path_type)?;
+                    if let Err(mismatch) = former::assignable(arena, carrier, domain) {
+                        let reading = read_returned(
+                            arena,
+                            judgement,
+                            ConversionGoal::ValueType(carrier, domain),
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(mismatch);
+                        }
+                    }
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source_fibre = substitute_value_type(arena, table, rewrites, family, left);
+                    frames.push(Frame::TelescopeStart {
+                        transport,
+                        ends: (left, right),
+                    });
+                    goal = Goal::CheckValue(start, source_fibre);
+                    continue 'expand;
+                },
+                Frame::TelescopeStart { transport, ends } => {
+                    let Some(&Computation::TelescopeTransport { over, .. }) =
+                        arena.computation(transport)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    frames.push(Frame::TelescopeOver { transport, ends });
+                    goal = Goal::SynthValue(over);
+                    continue 'expand;
+                },
+                // **The dependency is respected or refused by name.** The
+                // second identity lies over the path: it relates, in the
+                // fibre at the path's target, the start transported along the
+                // path to some element. The value then checks at the body
+                // instantiated at the source pair and returns at the target
+                // pair, each by iterated single substitution.
+                Frame::TelescopeOver {
+                    transport,
+                    ends: (left, right),
+                } => {
+                    let over_type = produced.value_type()?;
+                    let Some(&Computation::TelescopeTransport {
+                        motive,
+                        path,
+                        start,
+                        value,
+                        ..
+                    }) = arena.computation(transport)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Maybe::Present(crate::element_identity::Telescope { family, body, .. }) =
+                        crate::element_identity::telescope(arena, motive)?
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Telescope,
+                            motive,
+                        ));
+                    };
+                    let (_fibre, _lifted, finish) =
+                        crate::element_identity::path_parts(arena, over_type)?;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let target_fibre = substitute_value_type(arena, table, rewrites, family, right);
+                    let carried = arena.computation_path_transport(family, path, start);
+                    let carried = arena.value_returned(carried);
+                    let lies_over = arena.value_type_path(target_fibre, carried, finish);
+                    if former::assignable(arena, lies_over, over_type).is_err() {
+                        let reading = read_returned(
+                            arena,
+                            judgement,
+                            ConversionGoal::ValueType(lies_over, over_type),
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(KernelError::Identity(
+                                crate::element_identity::IdentityError::NotOver {
+                                    expected: value_type_witness(arena, lies_over),
+                                    actual: value_type_witness(arena, over_type),
+                                },
+                            ));
+                        }
+                    }
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source = crate::element_identity::telescope_instance(
+                        arena,
+                        table,
+                        rewrites,
+                        body,
+                        (left, start),
+                    );
+                    let target = crate::element_identity::telescope_instance(
+                        arena,
+                        table,
+                        rewrites,
+                        body,
+                        (right, finish),
+                    );
+                    frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    goal = Goal::CheckValue(value, source);
+                    continue 'expand;
+                },
+                Frame::SynthStay(point) => {
+                    let domain = produced.value_type()?;
+                    produced = Produced::ValueType(arena.value_type_flow(domain, point, point));
+                },
+                // A forward flow's translator checked; each image opens to a
+                // leaf-natural target shape and its dialogue replays, unfolding
+                // only what the environment admitted before it.
+                Frame::FlowForward {
+                    flow,
+                    endpoints,
+                    context: outer,
+                } => {
+                    let (flow_type, translator, images, dialogues) = match *read_value(arena, flow)?
+                    {
+                        Value::ForwardFlow {
+                            flow_type,
+                            translator,
+                            ref outputs,
+                            ref dialogues,
+                        } => (
+                            flow_type,
+                            translator,
+                            outputs.clone(),
+                            alloc::sync::Arc::clone(dialogues),
+                        ),
+                        Value::Constructor { .. }
+                        | Value::Record(_)
+                        | Value::Restrict { .. }
+                        | Value::SessionPath { .. }
+                        | Value::SessionFlow { .. }
+                        | Value::Stay { .. }
+                        | Value::FunctionFlow { .. }
+                        | Value::Then { .. }
+                        | Value::FlowProduct(..)
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Univalence { .. }
+                        | Value::Here { .. }
+                        | Value::Returned(_)
+                        | Value::Higher { .. }
+                        | Value::HigherEvaluation { .. }
+                        | Value::QuantifiedEvaluation { .. }
+                        | Value::Variable(_)
+                        | Value::Constant(_)
+                        | Value::Literal(_)
+                        | Value::Tuple(_)
+                        | Value::Injection(..)
+                        | Value::ListNil
+                        | Value::ListCons(..)
+                        | Value::Thunk(_)
+                        | Value::Lift { .. }
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)
+                        | Value::StaticApplication(..) => return Err(KernelError::ArenaFault),
+                    };
+                    let unfoldings = admitted_unfoldings(judgement);
+                    let watermark = arena.watermark();
+                    let result = crate::flow_universe::forward(
+                        arena,
+                        &unfoldings,
+                        judgement.entries,
+                        endpoints,
+                        translator,
+                        (&images, &dialogues),
+                        crate::replay::ReplayBudget::DEFAULT,
+                    );
+                    arena.truncate_to(watermark);
+                    result.map_err(KernelError::Flow)?;
+                    outer.restored(type_stack, &mut context);
+                    if let Some(barrier) = barriers.pop() {
+                        let _closed = session.close(barrier);
+                    }
+                    produced = Produced::ValueType(flow_type);
+                },
+                // A function flow's boundary must run the way the arrow's
+                // variance fixes at its position: the domain from the target's
+                // argument to the source's, the codomain from the source's
+                // result to the target's.
+                Frame::FlowBoundary { flow, position } => {
+                    let classifier = produced.value_type()?;
+                    let Value::FunctionFlow {
+                        flow_type,
+                        codomain,
+                        ..
+                    } = *read_value(arena, flow)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let arrows = crate::flow_universe::function_type(
+                        arena,
+                        flow_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    crate::flow_universe::oriented(
+                        arena,
+                        position,
+                        arrows,
+                        classifier,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    match position {
+                        crate::flow_universe::Boundary::Domain => {
+                            frames.push(Frame::FlowBoundary {
+                                flow,
+                                position: crate::flow_universe::Boundary::Codomain,
+                            });
+                            goal = Goal::SynthValue(codomain);
+                            continue 'expand;
+                        },
+                        crate::flow_universe::Boundary::Codomain => {
+                            produced = Produced::ValueType(flow_type);
+                        },
+                    }
+                },
+                Frame::ThenFirst(then) => {
+                    let first = produced.value_type()?;
+                    let Value::Then { second, .. } = *read_value(arena, then)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    frames.push(Frame::ThenSecond { then, first });
+                    goal = Goal::SynthValue(second);
+                    continue 'expand;
+                },
+                // **The seam gate.** The carriers agree and the first flow's
+                // target meets the second's source; a feedback seam is a
+                // cycle and is refused by name.
+                Frame::ThenSecond { then, first } => {
+                    let second_type = produced.value_type()?;
+                    let Value::Then {
+                        first: earlier,
+                        second,
+                        seam,
+                    } = *read_value(arena, then)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let composite = crate::flow_universe::compose(
+                        arena,
+                        judgement.presentations,
+                        (first, second_type),
+                        seam,
+                        (earlier, second),
+                    )
+                    .map_err(KernelError::Flow)?;
+                    produced = Produced::ValueType(composite);
+                },
+                // A ride forms its motive over the flow's carrier, passes the
+                // covariance gate, checks its value at the motive's source
+                // instance and returns at its target instance.
+                Frame::Ride(ride) => {
+                    let flow_type = produced.value_type()?;
+                    let Some(&Computation::Ride { motive, value, .. }) = arena.computation(ride)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let ends =
+                        crate::flow_universe::ends(arena, flow_type).map_err(KernelError::Flow)?;
+                    let mut scoped = context.clone();
+                    scoped.push(ends.carrier);
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(motive),
+                        scoped,
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    crate::flow_universe::check_motive(
+                        arena,
+                        motive,
+                        gandr_kernel_term::DeBruijnIndex::from(0_u32),
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Flow)?;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source = substitute_value_type(arena, table, rewrites, motive, ends.source);
+                    let target = substitute_value_type(arena, table, rewrites, motive, ends.target);
+                    frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    goal = Goal::CheckValue(value, source);
+                    continue 'expand;
+                },
+                // A telescope ride forms its motive, reads the flow's carrier
+                // as the motive's first entry, passes the gate in both entries,
+                // and checks the start in the family's fibre over the flow's
+                // source.
+                Frame::TelescopeRideFlow(ride) => {
+                    let flow_type = produced.value_type()?;
+                    let Some(&Computation::TelescopeRide { motive, start, .. }) =
+                        arena.computation(ride)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Maybe::Present(crate::element_identity::Telescope {
+                        carrier,
+                        family,
+                        body,
+                    }) = crate::element_identity::telescope(arena, motive)?
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Telescope,
+                            motive,
+                        ));
+                    };
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Comp(motive),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    let ends =
+                        crate::flow_universe::ends(arena, flow_type).map_err(KernelError::Flow)?;
+                    if let Err(mismatch) = former::assignable(arena, carrier, ends.carrier) {
+                        let reading = read_returned(
+                            arena,
+                            judgement,
+                            ConversionGoal::ValueType(carrier, ends.carrier),
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(mismatch);
+                        }
+                    }
+                    for (entry, binder) in [(family, 0_u32), (body, 0_u32), (body, 1_u32)] {
+                        crate::flow_universe::check_motive(
+                            arena,
+                            entry,
+                            gandr_kernel_term::DeBruijnIndex::from(binder),
+                            crate::replay::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Flow)?;
+                    }
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source_fibre =
+                        substitute_value_type(arena, table, rewrites, family, ends.source);
+                    frames.push(Frame::TelescopeRideStart {
+                        ride,
+                        ends: (ends.source, ends.target),
+                    });
+                    goal = Goal::CheckValue(start, source_fibre);
+                    continue 'expand;
+                },
+                Frame::TelescopeRideStart { ride, ends } => {
+                    let Some(&Computation::TelescopeRide { over, .. }) = arena.computation(ride)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    frames.push(Frame::TelescopeRideOver { ride, ends });
+                    goal = Goal::SynthValue(over);
+                    continue 'expand;
+                },
+                // **The dependency is respected or refused by name.** The
+                // second flow lies over the first: it runs, in the fibre at
+                // the flow's target, from the start ridden along the flow to
+                // some element. The value then checks at the body instantiated
+                // at the source pair and returns at the target pair.
+                Frame::TelescopeRideOver {
+                    ride,
+                    ends: (left, right),
+                } => {
+                    let over_type = produced.value_type()?;
+                    let Some(&Computation::TelescopeRide {
+                        motive,
+                        flow,
+                        start,
+                        value,
+                        ..
+                    }) = arena.computation(ride)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Maybe::Present(crate::element_identity::Telescope { family, body, .. }) =
+                        crate::element_identity::telescope(arena, motive)?
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Telescope,
+                            motive,
+                        ));
+                    };
+                    let finish = crate::flow_universe::ends(arena, over_type)
+                        .map_err(KernelError::Flow)?
+                        .target;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let target_fibre = substitute_value_type(arena, table, rewrites, family, right);
+                    let carried = arena.computation_ride(family, flow, start);
+                    let carried = arena.value_returned(carried);
+                    let lies_over = arena.value_type_flow(target_fibre, carried, finish);
+                    if former::assignable(arena, lies_over, over_type).is_err() {
+                        let reading = read_returned(
+                            arena,
+                            judgement,
+                            ConversionGoal::ValueType(lies_over, over_type),
+                        )?;
+                        if reading != EndpointReading::Converts {
+                            return Err(KernelError::Identity(
+                                crate::element_identity::IdentityError::NotOver {
+                                    expected: value_type_witness(arena, lies_over),
+                                    actual: value_type_witness(arena, over_type),
+                                },
+                            ));
+                        }
+                    }
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source = crate::element_identity::telescope_instance(
+                        arena,
+                        table,
+                        rewrites,
+                        body,
+                        (left, start),
+                    );
+                    let target = crate::element_identity::telescope_instance(
+                        arena,
+                        table,
+                        rewrites,
+                        body,
+                        (right, finish),
+                    );
+                    frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    goal = Goal::CheckValue(value, source);
+                    continue 'expand;
+                },
+                // A related application reads its function identity's domain
+                // as a pure arrow, checks both arguments and their evidence,
+                // then synthesizes its body under both results and their
+                // identity.
+                Frame::RelatedPath(application) => {
+                    let path_type = produced.value_type()?;
+                    let Some(&Computation::RelatedApplication {
+                        left,
+                        right,
+                        evidence,
+                        body,
+                        ..
+                    }) = arena.computation(application)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (functions, ..) = crate::element_identity::path_parts(arena, path_type)?;
+                    let Some(&ValueType::Thunk(arrow)) = arena.value_type(functions)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Thunk,
+                            functions,
+                        ));
+                    };
+                    let (argument, result) = match arena.comp_type(arrow) {
+                        Some(&CompType::Arrow { domain, codomain }) => {
+                            match arena.comp_type(codomain) {
+                                Some(&CompType::Returner(result)) => (domain, result),
+                                _ => {
+                                    return Err(comp_shape_mismatch(
+                                        arena,
+                                        ExpectedComputationShape::Returner,
+                                        codomain,
+                                    ));
+                                },
+                            }
+                        },
+                        _ => {
+                            return Err(comp_shape_mismatch(
+                                arena,
+                                ExpectedComputationShape::Arrow,
+                                arrow,
+                            ));
+                        },
+                    };
+                    let premise = arena.value_type_path(argument, left, right);
+                    let (table, rewrites) = session.rewrite_parts();
+                    let once = shift_value_type(
+                        arena,
+                        table,
+                        rewrites,
+                        result,
+                        BinderDepth::NONE,
+                        BinderDepth::from(1_u32),
+                    );
+                    let twice = shift_value_type(
+                        arena,
+                        table,
+                        rewrites,
+                        result,
+                        BinderDepth::NONE,
+                        BinderDepth::from(2_u32),
+                    );
+                    let source_result = arena.value_variable(DeBruijnIndex::from(1_u32));
+                    let target_result = arena.value_variable(DeBruijnIndex::from(0_u32));
+                    let related = arena.value_type_path(twice, source_result, target_result);
+                    frames.push(Frame::RelatedBody {
+                        body,
+                        binders: [result, once, related],
+                    });
+                    frames.push(Frame::Pending(
+                        Slice::pushed(goal_stack, [
+                            Goal::CheckValue(evidence, premise),
+                            Goal::CheckValue(right, argument),
+                        ]),
+                        Produced::Checked,
+                    ));
+                    goal = Goal::CheckValue(left, argument);
+                    continue 'expand;
+                },
+                Frame::RelatedBody { body, binders } => {
+                    for binder in binders {
+                        context.push(binder);
+                        frames.push(Frame::Strengthen);
+                        frames.push(Frame::ScopeExit);
+                    }
+                    goal = Goal::SynthComp(body);
+                    continue 'expand;
+                },
+                Frame::SynthTuple { tuple, types } => {
+                    let types = types.grown(type_stack, produced.value_type()?);
+                    let Some(&Value::Tuple(ref components)) = arena.value(tuple)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    if let Some(&next) = components.get(types.items(type_stack).len()) {
+                        frames.push(Frame::SynthTuple { tuple, types });
+                        goal = Goal::SynthValue(next);
+                        continue 'expand;
+                    }
+                    produced =
+                        Produced::ValueType(arena.value_type_product(types.items(type_stack)));
+                    types.release(type_stack);
+                },
+                Frame::SynthThunk => {
+                    let body_type = produced.comp_type()?;
+                    produced = Produced::ValueType(arena.value_type_thunk(body_type));
+                },
+                Frame::SynthLift(lift) => {
+                    let body_type = produced.value_type()?;
+                    let body_level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(body_type),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    let Some(&Value::Lift { ref target, .. }) = arena.value(lift)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    judgement.levels.check_level_scope(target)?;
+                    judgement.levels.check_universe_below(&body_level, target)?;
+                    let target = target.clone();
+                    produced = Produced::ValueType(arena.value_type_lift(body_type, target));
+                },
+                Frame::CheckPairSecond(second, second_type) => {
+                    goal = Goal::CheckValue(second, second_type);
+                    continue 'expand;
+                },
+                // At the level-zero universe `Flow[.A = U₀](x, y)` and `Flow_U(x,
+                // y)` are two readings of one classifier: a flow synthesizing
+                // either checks at the other.
+                Frame::ConvertValue(expected) => {
+                    let synthesized = produced.value_type()?;
+                    let (expected, synthesized) =
+                        recursion::unstage(arena, &stages, expected, synthesized)?;
+                    // A stage below the top — a function field's, under its
+                    // thunk — is decided by the order once conversion alone
+                    // separates the two.
+                    if let Err(mismatch) = former::assignable(arena, expected, synthesized)
+                        && let Err(unsubsumed) = recursion::subsumes(
+                            arena,
+                            &stages,
+                            recursion::Subsumed::Values(expected, synthesized),
+                        )
+                    {
+                        if let KernelError::StageNotBelow { found, bound } = unsubsumed {
+                            return Err(KernelError::StageNotBelow { found, bound });
+                        }
+                        let reading = read_returned(
+                            arena,
+                            judgement,
+                            ConversionGoal::ValueType(expected, synthesized),
+                        )?;
+                        if reading != EndpointReading::Converts
+                            && crate::flow_universe::agree(
+                                arena,
+                                judgement.presentations,
+                                synthesized,
+                                expected,
+                            ) == crate::flow_universe::Agreement::Differ
+                        {
+                            return Err(mismatch);
+                        }
+                    }
+                    produced = Produced::Checked;
+                },
+                Frame::SynthRestrict(restriction) => {
+                    let record_type = produced.value_type()?;
+                    let Value::Restrict { ref fixed, .. } = *read_value(arena, restriction)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Some(&ValueType::Record(ref fields)) = arena.value_type(record_type)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Record,
+                            record_type,
+                        ));
+                    };
+                    if let Some(label) = fixed.keys().find(|&label| !fields.contains_key(label)) {
+                        return Err(KernelError::AbsentRecordField {
+                            label: label.clone(),
+                        });
+                    }
+                    let kept: alloc::collections::BTreeMap<_, _> = fields
+                        .iter()
+                        .filter(|&(label, _)| !fixed.contains_key(label))
+                        .map(|(label, &ty)| (label.clone(), ty))
+                        .collect();
+                    let remaining = Slice::pushed(
+                        goal_stack,
+                        fixed.iter().rev().filter_map(|(label, &value)| {
+                            fields.get(label).map(|&ty| Goal::CheckValue(value, ty))
+                        }),
+                    );
+                    let kept = arena.value_type_record(kept);
+                    frames.push(Frame::RestrictConverts { restriction, kept });
+                    frames.push(Frame::Fields {
+                        remaining,
+                        holder: restriction,
+                        begun: 0,
+                    });
+                    produced = Produced::Checked;
+                },
+                // Each fixed field replays its conversion here: the kernel
+                // never trusts the checker's comparison. A field of a record
+                // literal is read off it, and any other record value's by
+                // its projection, with the admitted definitions unfolding. A
+                // fixed value that names a definition is read as its body.
+                Frame::RestrictConverts { restriction, kept } => {
+                    let Value::Restrict { value, ref fixed } = *read_value(arena, restriction)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let fixed: Vec<_> = fixed
+                        .iter()
+                        .map(|(label, &held)| (label.clone(), held))
+                        .collect();
+                    for (label, held) in fixed {
+                        let held = defined_value(arena, judgement, held);
+                        let written = match arena.value(value) {
+                            Some(&Value::Record(ref fields)) => fields.get(&label).copied(),
+                            Some(_) | None => None,
+                        };
+                        let field = written.unwrap_or_else(|| {
+                            let projection =
+                                arena.computation_record_projection(value, label.clone());
+                            arena.value_returned(projection)
+                        });
+                        if read_returned(arena, judgement, ConversionGoal::Value(field, held))?
+                            != EndpointReading::Converts
+                        {
+                            return Err(KernelError::FixedFieldDiffers { label });
+                        }
+                    }
+                    produced = Produced::ValueType(kept);
+                },
+                Frame::CheckRestricted(expected) => {
+                    let synthesized = produced.value_type()?;
+                    if let (
+                        Some(&ValueType::Record(ref kept)),
+                        Some(&ValueType::Record(ref wanted)),
+                    ) = (arena.value_type(synthesized), arena.value_type(expected))
+                    {
+                        if let Some(label) = wanted.keys().find(|&label| !kept.contains_key(label))
+                        {
+                            return Err(KernelError::AbsentRecordField {
+                                label: label.clone(),
+                            });
+                        }
+                        if let Some(label) = kept.keys().find(|&label| !wanted.contains_key(label))
+                        {
+                            return Err(KernelError::KeptRecordField {
+                                label: label.clone(),
+                            });
+                        }
+                    }
+                    frames.push(Frame::ConvertValue(expected));
+                },
+                Frame::FixpointArgument(head, expected) => {
+                    let domain = produced.value_type()?;
+                    let arrow = arena.comp_type_arrow(domain, expected);
+                    goal = Goal::CheckComp(head, arrow);
+                    continue 'expand;
+                },
+                Frame::SynthApply(argument) => {
+                    let head_type = produced.comp_type()?;
+                    let head_shape = codata::read(arena, session, judgement, head_type)?;
+                    match arena.comp_type(head_shape) {
+                        // An application eliminates either arrow: check the
+                        // argument against the domain and produce the codomain.
+                        Some(&CompType::Arrow { domain, codomain }) => {
+                            frames.push(Frame::ProduceComp(codomain));
+                            goal = Goal::CheckValue(argument, domain);
+                            continue 'expand;
+                        },
+                        // **The dependent arm instantiates the codomain at the
+                        // argument**, which is the whole difference between the
+                        // two eliminations: a codomain that mentions its binder
+                        // through a code names the argument after this step, and
+                        // a codomain that mentions nothing is handed back
+                        // unchanged at no cost. A plain code a later argument of
+                        // the spine holds at a stage instantiates at that staged
+                        // code, re-derived as the checker read it. A returned
+                        // call instantiates as the lowering writes a call a type
+                        // decodes: bound ahead of each decode's returned code
+                        // that reads the binder (#720), the form a type written
+                        // with the call holds.
+                        Some(&CompType::Pi { domain, codomain }) => {
+                            let spine = frames.iter().rev().map_while(|frame| {
+                                if let Frame::SynthApply(later) = *frame {
+                                    Some(later)
+                                }
+                                else {
+                                    None
+                                }
+                            });
+                            let instance = match recursion::instantiation(
+                                arena,
+                                (session, context.as_slice()),
+                                (argument, codomain),
+                                spine,
+                            ) {
+                                Maybe::Present(staged) => staged,
+                                Maybe::Absent(recursion::Unstaged::Plain) => argument,
+                            };
+                            let (table, rewrites) = session.rewrite_parts();
+                            let instantiated = match arena.value(instance) {
+                                Some(&Value::Returned(call)) if instance == argument => {
+                                    substitute_comp_type_at_call(
+                                        arena,
+                                        table,
+                                        rewrites,
+                                        codomain,
+                                        (instance, call),
+                                    )
+                                },
+                                _ => {
+                                    substitute_comp_type(arena, table, rewrites, codomain, instance)
+                                },
+                            };
+                            frames.push(Frame::ProduceComp(instantiated));
+                            goal = Goal::CheckValue(argument, domain);
+                            continue 'expand;
+                        },
+                        _ => {
+                            return Err(comp_shape_mismatch(
+                                arena,
+                                ExpectedComputationShape::Arrow,
+                                head_type,
+                            ));
+                        },
+                    }
+                },
+                Frame::ProduceComp(codomain) => {
+                    produced = Produced::CompType(codomain);
+                },
+                Frame::Restage(staged) => {
+                    let read = produced.comp_type()?;
+                    produced = Produced::CompType(recursion::restaged(arena, read, staged));
+                },
+                Frame::SynthStaticApply(argument) => {
+                    let head_type = produced.value_type()?;
+                    match arena.value_type(head_type) {
+                        // The static Pi binds nothing, so its codomain is the
+                        // application's type as it stands.
+                        Some(&ValueType::StaticPi { domain, codomain }) => {
+                            frames.push(Frame::ProduceValue(codomain));
+                            goal = Goal::CheckValue(argument, domain);
+                            continue 'expand;
+                        },
+                        _ => {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::StaticPi,
+                                head_type,
+                            ));
+                        },
+                    }
+                },
+                Frame::SessionPayload {
+                    classifier,
+                    context: outer,
+                } => {
+                    outer.restored(type_stack, &mut context);
+                    if let Some(barrier) = barriers.pop() {
+                        let _closed = session.close(barrier);
+                    }
+                    produced = Produced::ValueType(classifier);
+                },
+                Frame::ProduceValue(codomain) => {
+                    produced = Produced::ValueType(codomain);
+                },
+                Frame::SynthForce => {
+                    // A decode of a returned code is read to the type the code
+                    // quotes: a value whose type a case refined, or a call
+                    // instantiated, to a call returning a thunk type is forced
+                    // at that thunk type.
+                    let value_type = produced.value_type()?;
+                    let value_type = read_returned_decode(arena, judgement, value_type);
+                    match arena.value_type(value_type) {
+                        Some(&ValueType::Thunk(codomain)) => {
+                            produced = Produced::CompType(codomain);
+                        },
+                        _ => {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::Thunk,
+                                value_type,
+                            ));
+                        },
+                    }
+                },
+                Frame::SynthReturn => {
+                    let result_type = produced.value_type()?;
+                    produced = Produced::CompType(arena.comp_type_returner(result_type));
+                },
+                Frame::SynthReturnAll { returns, types } => {
+                    let types = types.grown(type_stack, produced.value_type()?);
+                    let Some(&Computation::ReturnAll(ref values)) = arena.computation(returns)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    if let Some(&next) = values.get(types.items(type_stack).len()) {
+                        frames.push(Frame::SynthReturnAll { returns, types });
+                        goal = Goal::SynthValue(next);
+                        continue 'expand;
+                    }
+                    // Each type was synthesized in the ambient context, and
+                    // its result stands under the results before it.
+                    let (table, rewrites) = session.rewrite_parts();
+                    for (position, result) in types.items_mut(type_stack).iter_mut().enumerate() {
+                        let before = BinderDepth::from(u32::try_from(position).unwrap_or(u32::MAX));
+                        *result = shift_value_type(
+                            arena,
+                            table,
+                            rewrites,
+                            *result,
+                            BinderDepth::NONE,
+                            before,
+                        );
+                    }
+                    produced = Produced::CompType(arena.comp_type_returns(types.items(type_stack)));
+                    types.release(type_stack);
+                },
+                Frame::SynthWith { with, types } => {
+                    let types = types.grown(comp_type_stack, produced.comp_type()?);
+                    let Some(&Computation::With(ref components)) = arena.computation(with)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    if let Some(&next) = components.get(types.items(comp_type_stack).len()) {
+                        frames.push(Frame::SynthWith { with, types });
+                        goal = Goal::SynthComp(next);
+                        continue 'expand;
+                    }
+                    produced =
+                        Produced::CompType(arena.comp_type_with(types.items(comp_type_stack)));
+                    types.release(comp_type_stack);
+                },
+                // A projection reads its component off the pairing's
+                // synthesized lazy product, a codata type read through its
+                // observations; any other classifier is refused by name, and
+                // so is a position past the lazy product's last.
+                Frame::Project(component) => {
+                    let pair_type = produced.comp_type()?;
+                    let pair_shape = codata::read(arena, session, judgement, pair_type)?;
+                    let Some(&CompType::With(ref parts)) = arena.comp_type(pair_shape)
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::With,
+                            pair_type,
+                        ));
+                    };
+                    let part = *parts
+                        .get(usize::from(component))
+                        .ok_or(KernelError::AbsentTupleComponent { component })?;
+                    produced = Produced::CompType(part);
+                },
+                // A bind reads its bound's returner, a codata type read through
+                // its observations; any other classifier is refused by name.
+                Frame::SynthBind(body) => {
+                    let bound_type = produced.comp_type()?;
+                    let bound_shape = codata::read(arena, session, judgement, bound_type)?;
+                    match arena.comp_type(bound_shape) {
+                        Some(&CompType::Returner(result)) => {
+                            context.push(result);
+                            frames.push(Frame::Strengthen);
+                            frames.push(Frame::ScopeExit);
+                            goal = Goal::SynthComp(body);
+                            continue 'expand;
+                        },
+                        _ => {
+                            return Err(comp_shape_mismatch(
+                                arena,
+                                ExpectedComputationShape::Returner,
+                                bound_type,
+                            ));
+                        },
+                    }
+                },
+                // A bind of several values opens its bound's results in order,
+                // each in the context the results before it extend.
+                Frame::SynthBindAll(body, arity) => {
+                    let bound_type = produced.comp_type()?;
+                    let bound_shape = codata::read(arena, session, judgement, bound_type)?;
+                    match arena.comp_type(bound_shape) {
+                        Some(&CompType::Returns(ref results))
+                            if results.len() == usize::from(arity) =>
+                        {
+                            context.extend(results.iter().copied());
+                            for _ in 0 .. results.len() {
+                                frames.push(Frame::Strengthen);
+                                frames.push(Frame::ScopeExit);
+                            }
+                            goal = Goal::SynthComp(body);
+                            continue 'expand;
+                        },
+                        _ => {
+                            return Err(comp_shape_mismatch(
+                                arena,
+                                ExpectedComputationShape::Returner,
+                                bound_type,
+                            ));
+                        },
+                    }
+                },
+                Frame::SynthCaseScrutinee(case) => {
+                    // A decode of a returned code is read to the type the code
+                    // quotes, as a data case reads its scrutinee's.
+                    let scrutinee_type = produced.value_type()?;
+                    let scrutinee_type = read_returned_decode(arena, judgement, scrutinee_type);
+                    let Some(&Computation::Case { ref branches, .. }) = arena.computation(case)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let sum = case_sum(arena, scrutinee_type, branches)?;
+                    let Some((branch, summand)) =
+                        case_branch(arena, (case, sum), Summand::from(0_usize))?
+                    else {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::EmptyCase,
+                        });
+                    };
+                    context.push(summand);
+                    frames.push(Frame::SynthCaseBranch {
+                        case,
+                        sum,
+                        next: Summand::from(1_usize),
+                        first: None,
+                    });
+                    frames.push(Frame::ScopeExit);
+                    goal = Goal::SynthComp(branch);
+                    continue 'expand;
+                },
+                // Every branch's type, strengthened out of its binder, must
+                // convert to the first branch's, which the case then has.
+                Frame::SynthCaseBranch {
+                    case,
+                    sum,
+                    next,
+                    first,
+                } => {
+                    let branch_type =
+                        strengthened(arena, session, &context, produced.comp_type()?)?;
+                    let first_type = match first {
+                        None => branch_type,
+                        Some(first_type) => {
+                            match convertible_comp_types(arena, first_type, branch_type) {
+                                Convertibility::Convertible => first_type,
+                                Convertibility::Distinct => {
+                                    return Err(case_branch_mismatch(
+                                        arena,
+                                        first_type,
+                                        branch_type,
+                                    ));
+                                },
+                            }
+                        },
+                    };
+                    if let Some((branch, summand)) = case_branch(arena, (case, sum), next)? {
+                        context.push(summand);
+                        frames.push(Frame::SynthCaseBranch {
+                            case,
+                            sum,
+                            next: Summand::from(usize::from(next).saturating_add(1)),
+                            first: Some(first_type),
+                        });
+                        frames.push(Frame::ScopeExit);
+                        goal = Goal::SynthComp(branch);
+                        continue 'expand;
+                    }
+                    produced = Produced::CompType(first_type);
+                },
+                Frame::ConvertComp(expected) => {
+                    let synthesized = produced.comp_type()?;
+                    if let Err(mismatch) = convert_comp_type(arena, expected, synthesized)
+                        && let Err(unsubsumed) = recursion::subsumes(
+                            arena,
+                            &stages,
+                            recursion::Subsumed::Comps(expected, synthesized),
+                        )
+                    {
+                        if let KernelError::StageNotBelow { found, bound } = unsubsumed {
+                            return Err(KernelError::StageNotBelow { found, bound });
+                        }
+                        // A side decoding a returned code, as a joint's goal at
+                        // a summand does, is read to the type its code quotes.
+                        let read = ConversionGoal::CompType(
+                            read_returned_comp_decode(arena, judgement, expected),
+                            read_returned_comp_decode(arena, judgement, synthesized),
+                        );
+                        let reading = read_returned(arena, judgement, read)?;
+                        if reading != EndpointReading::Converts {
+                            return Err(mismatch);
+                        }
+                    }
+                    produced = Produced::Checked;
+                },
+                Frame::CheckBind(body, expected) => {
+                    let bound_type = produced.comp_type()?;
+                    let bound_shape = codata::read(arena, session, judgement, bound_type)?;
+                    match arena.comp_type(bound_shape) {
+                        Some(&CompType::Returner(result)) => {
+                            let scoped = weakened(arena, session, expected);
+                            context.push(result);
+                            frames.push(Frame::ScopeExit);
+                            goal = Goal::CheckComp(body, scoped);
+                            continue 'expand;
+                        },
+                        _ => {
+                            return Err(comp_shape_mismatch(
+                                arena,
+                                ExpectedComputationShape::Returner,
+                                bound_type,
+                            ));
+                        },
+                    }
+                },
+                Frame::CheckBindAll(body, arity, expected) => {
+                    let bound_type = produced.comp_type()?;
+                    let bound_shape = codata::read(arena, session, judgement, bound_type)?;
+                    let opened = match arena.comp_type(bound_shape) {
+                        Some(&CompType::Returns(ref results))
+                            if results.len() == usize::from(arity) =>
+                        {
+                            u32::try_from(results.len())
+                                .ok()
+                                .map(|binders| (binders, results.clone()))
+                        },
+                        _ => None,
+                    };
+                    let Some((binders, results)) = opened
+                    else {
+                        return Err(comp_shape_mismatch(
+                            arena,
+                            ExpectedComputationShape::Returner,
+                            bound_type,
+                        ));
+                    };
+                    let (table, rewrites) = session.rewrite_parts();
+                    let scoped = shift_comp_type(
+                        arena,
+                        table,
+                        rewrites,
+                        expected,
+                        BinderDepth::NONE,
+                        BinderDepth::from(binders),
+                    );
+                    context.extend(results.iter().copied());
+                    for _ in 0 .. results.len() {
+                        frames.push(Frame::ScopeExit);
+                    }
+                    goal = Goal::CheckComp(body, scoped);
+                    continue 'expand;
+                },
+                // Each branch checks, under its summand's binder, against the
+                // expected type read from under that binder. A case of no
+                // branches over the empty sum checks at once.
+                Frame::CheckCaseScrutinee {
+                    case,
+                    expected,
+                    refining,
+                } => {
+                    // A decode of a returned code is read to the type the code
+                    // quotes: a binder a case refined to a call returning a sum
+                    // is cased on at that sum, the empty one among them.
+                    let scrutinee_type = produced.value_type()?;
+                    let scrutinee_type = read_returned_decode(arena, judgement, scrutinee_type);
+                    let Some(&Computation::Case { ref branches, .. }) = arena.computation(case)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let sum = case_sum(arena, scrutinee_type, branches)?;
+                    let scoped = weakened(arena, session, expected);
+                    frames.push(Frame::CheckCaseBranch {
+                        case,
+                        sum,
+                        expected: scoped,
+                        refining,
+                        next: Summand::from(0_usize),
+                    });
+                    produced = Produced::Checked;
+                },
+                Frame::CheckCaseBranch {
+                    case,
+                    sum,
+                    expected,
+                    refining,
+                    next,
+                } => {
+                    if let Some((branch, summand)) = case_branch(arena, (case, sum), next)? {
+                        let goal_here = match refining {
+                            Maybe::Present(outside) => arm_goal(arena, session, outside, next),
+                            Maybe::Absent(_) => expected,
+                        };
+                        context.push(summand);
+                        frames.push(Frame::CheckCaseBranch {
+                            case,
+                            sum,
+                            expected,
+                            refining,
+                            next: Summand::from(usize::from(next).saturating_add(1)),
+                        });
+                        frames.push(Frame::ScopeExit);
+                        goal = Goal::CheckComp(branch, goal_here);
+                        continue 'expand;
+                    }
+                    produced = Produced::Checked;
+                },
+                Frame::ScopeExit => {
+                    let _popped = context.pop();
+                    if let Maybe::Present((slot, _)) = own_fixpoint
+                        && slot >= context.len()
+                    {
+                        own_fixpoint = Maybe::Absent(recursion::Unowned::Outside);
+                    }
+                },
+                Frame::StageExit => staged_bodies = staged_bodies.saturating_sub(1),
+                Frame::Strengthen => {
+                    let synthesized = produced.comp_type()?;
+                    produced =
+                        Produced::CompType(strengthened(arena, session, &context, synthesized)?);
+                },
+            }
+        }
+    }
+}
+
+/// Run the checker machine from an initial goal and context to a verdict, and
+/// name the field whose value a refusal is about.
+///
+/// # Specification
+/// - requires: as [`machine`]; `continuation` is the check's own, which this
+///   run empties first and then holds.
+/// - ensures: [`machine`]'s verdict, except that [`field_refused`] names the
+///   refusal of a field's value by the field's label. A refusal deeper inside
+///   the value, or outside every field, stays as the machine raised it.
+/// - fails: any [`KernelError`] a rule surfaces.
+/// - panics: none.
+/// - executable: none — [`machine`]'s and [`field_refused`]'s attributes check
+///   the verdict and its naming.
+///
+/// # Errors
+/// Any [`KernelError`] a rule surfaces, named by its field where the refusal
+/// is about a field's value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`field_refused`].
+/// - witness: `check::tests::a_record_field_of_another_type_is_refused_by_its_label`
+/// - witness: `check::tests::a_fixed_value_of_another_type_is_refused_by_its_label`
+fn run<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    context: Vec<ValueTypeId>,
+    initial: Goal,
+    stages: StageOrder,
+    recording: Recording<'_, M>,
+    continuation: &mut Continuation,
+) -> Result<Produced, KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    continuation.frames.clear();
+    continuation.goals.clear();
+    continuation.values.clear();
+    continuation.types.clear();
+    continuation.comp_types.clear();
+    continuation.components.clear();
+    continuation.questions.clear();
+    machine(
+        arena,
+        judgement,
+        context,
+        initial,
+        &mut Walk::starting(stages),
+        recording,
+        continuation,
+    )
+    .map_err(|refusal| field_refused(arena, &continuation.frames, refusal))
+}
+
+/// `refusal`, named by the innermost field frame of `frames` when it is about
+/// the value of that field: the value's shape, its type, or its inference.
+///
+/// # Specification
+/// - ensures: [`KernelError::FieldRefused`] at the field's label, holding the
+///   refusal's payload as its cause, when a field frame is open, its holder
+///   names the field, and the refusal is a shape mismatch, a type mismatch or a
+///   form that does not synthesize. Otherwise `refusal` as it is.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal at a record's field, one at a restriction's
+///   fixed value and one outside any field separate the arms.
+/// - witness: `check::tests::a_record_field_of_another_type_is_refused_by_its_label`
+/// - witness: `check::tests::a_fixed_value_of_another_type_is_refused_by_its_label`
+#[spec(captures: given = refusal.clone(), ensures: |ref ret| *ret == given || matches!((ret, &given), (&KernelError::FieldRefused { .. }, &(KernelError::ValueShapeMismatch { .. } | KernelError::ValueTypeMismatch(_) | KernelError::NotInferable { .. }))))]
+fn field_refused(
+    arena: &TermArena,
+    frames: &[Frame],
+    refusal: KernelError,
+) -> KernelError
+{
+    let cause = if let KernelError::ValueShapeMismatch { expected, actual } = refusal {
+        crate::error::FieldCause::Shape { expected, actual }
+    }
+    else if let KernelError::ValueTypeMismatch(mismatch) = refusal {
+        crate::error::FieldCause::Type(mismatch)
+    }
+    else if let KernelError::NotInferable { form } = refusal {
+        crate::error::FieldCause::NotInferable(form)
+    }
+    else {
+        return refusal;
+    };
+    let Some((holder, index)) = frames.iter().rev().find_map(|frame| {
+        if let Frame::Fields { holder, begun, .. } = *frame {
+            // The field checked now is the last whose check began.
+            Some((holder, begun.checked_sub(1)?))
+        }
+        else {
+            None
+        }
+    })
+    else {
+        return refusal;
+    };
+    let label = match arena.value(holder) {
+        Some(&Value::Record(ref fields)) => fields.keys().nth(index),
+        Some(&Value::Restrict { ref fixed, .. }) => fixed.keys().nth(index),
+        Some(_) | None => None,
+    };
+    label.map_or(refusal, |label| KernelError::FieldRefused {
+        label: label.clone(),
+        cause: alloc::boxed::Box::new(cause),
+    })
+}
+
+/// Check a declaration's sealing provenance against its declared type.
+///
+/// The slot claims which atoms a sealing projection rebound; this re-derives
+/// that claim rather than accepting it. Two obligations, and both are about
+/// making the slot **falsifiable**: every claimed atom occurs in the declared
+/// type, so the recorded extent of the projection is observable in what the
+/// projection produced; and the entries are strictly ascending, so the slot is
+/// a set with one spelling and a repeat cannot inflate an extent.
+///
+/// What is deliberately *not* checked: that sealing happened, that a signature
+/// was matched, or that the producer did anything in particular. Those are
+/// claims about a history the kernel did not witness and cannot re-derive.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Ok(())` exactly when the provenance is strictly ascending and
+///   every entry occurs as a sealed atom reachable from the declared type.
+/// - provides: the choke point's sealing-provenance gate.
+/// - fails: [`KernelError::SealingProvenanceNotCanonical`],
+///   [`KernelError::SealingProvenanceNotProjected`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a sealed member whose provenance matches its type admits;
+///   the L3 residues are the two refusal arms, each pinned by a negative
+///   witness naming the exact offending atom.
+/// - witness: `check::tests::sealing_provenance_must_occur_in_the_declared_type`
+/// - witness: `check::tests::sealing_provenance_must_be_strictly_ascending`
+// The predicate covers the ascending half, stated as a sortedness test rather
+// than through the body's own previous-index loop. The occurrence half would
+// mean re-deriving the projected-atom set, doubling a walk over the declared
+// type at the choke point, so it stays with the witnesses.
+#[spec(ensures: |ret| ret.is_err()
+    || provenance.is_sorted_by(|left, right| usize::from(*left) < usize::from(*right)))]
+fn check_sealing_provenance(
+    arena: &TermArena,
+    declared: ValueTypeId,
+    provenance: &[ConstantIndex],
+) -> Result<(), KernelError>
+{
+    if provenance.is_empty() {
+        return Ok(());
+    }
+    let mut previous: Option<ConstantIndex> = None;
+    for &atom in provenance {
+        if let Some(last) = previous
+            && usize::from(atom) <= usize::from(last)
+        {
+            return Err(KernelError::SealingProvenanceNotCanonical { atom });
+        }
+        previous = Some(atom);
+    }
+    let projected = projected_atoms(arena, declared);
+    for &atom in provenance {
+        if !projected.contains(&atom) {
+            return Err(KernelError::SealingProvenanceNotProjected { atom });
+        }
+    }
+    Ok(())
+}
+
+/// Check a declaration through the default path: a fresh live memo, built here
+/// and dropped here, against the session its environment lends it, charging
+/// each goal to the census the caller keeps.
+///
+/// This is the entry the admission choke point calls, and it takes **no memo
+/// parameter** — which is the structural form of the lifetime rule. A caller
+/// cannot hand admission a memo, so nothing an earlier call recorded can reach
+/// a later one through the checked entry. The session it takes carries names,
+/// not answers: its table keeps the names of the environment's nodes across
+/// admissions, and [`SupportContext::begin_admission`] opens it with its
+/// rewrite memo and accruals empty.
+///
+/// # Specification
+/// - requires: `declaration`'s content roots were minted into `arena`;
+///   `judgement` pairs the environment's admission log with the declaration's
+///   level context and the ascending positions of the abstract types whose
+///   minting admission is open, outside any block; `session` has been used with
+///   no arena but `arena`.
+/// - ensures: the occurrence walk's accessibility for a data declaration, and
+///   the reading of none for any other, when the declared type forms, sealing
+///   provenance re-derives, a definition's body checks — at its declared type
+///   with every manifest atom read as its representation, as is every constant
+///   it names — and every deferred code checks within the operational ceiling.
+///   An axiom checks only its type; a sealed atom checks that its kind is a
+///   universe and that its representation forms below that kind's successor.
+///   The original arena prefix remains, and successful content roots are
+///   readable. Synthesized intermediates are appended for the caller to
+///   truncate.
+/// - provides: the body check the choke point runs, with a fresh live memo on
+///   both machines, and the environment's names and kept outcomes. `census`
+///   gains one charge per goal, as [`check_declaration_with_memo`] charges it,
+///   so the caller keeps the admission's tally. Full typing and admission-log
+///   provenance still require the rule derivation. An operational refusal does
+///   not establish ill-typedness.
+/// - fails: any [`KernelError`] the checker surfaces.
+/// - panics: none.
+///
+/// # Errors
+/// Any [`KernelError`].
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — the selected definitions, axiom and sealed atom
+///   separate the three content arms; a bad code refuses. At the finite
+///   occurrence boundary, a live memo accepts the shared valid declaration that
+///   the null memo refuses operationally. A member inside its atom's minting
+///   admission checks at the representation and the same value outside it is
+///   refused.
+/// - witness: `check::tests::an_identity_thunk_checks`
+/// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
+/// - witness: `check::tests::a_code_that_is_not_of_its_declared_universe_refuses`
+/// - witness: `check::tests::an_axiom_checks_only_its_type`
+/// - witness: `check::tests::a_sealed_atom_checks_only_its_kind`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+/// - witness: `environment::tests::a_value_of_the_representation_does_not_inhabit_the_atom`
+#[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
+    entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && (ret.is_err() || (arena.value_type(declaration.declared_id()).is_some()
+            && match *declaration.content() {
+                DeclarationContent::Def { body, .. } => arena.value(body).is_some(),
+                DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. } | DeclarationContent::AbstractType { .. } => true,
+            })))]
+#[inline]
+pub(crate) fn check_declaration(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    declaration: &Declaration,
+    session: &mut SupportContext,
+    census: &mut ExpansionCensus,
+) -> Result<occurrence::Accessibility, KernelError>
+{
+    let mut memo: DefaultMemo = DefaultMemo::new();
+    session.begin_admission();
+    check_declaration_with_memo(arena, judgement, declaration, &mut memo, session, census)
+}
+
+/// Form a mutual block definition's declared type before its block's
+/// families are admitted: the first step of the block's schedule.
+///
+/// # Specification
+/// - requires: `judgement` holds the block's families in scope and none of its
+///   definitions; `declared` was minted into `arena`; `session` has been used
+///   with no arena but `arena`.
+/// - ensures: `Ok(())` when the type forms and every code it owes checks, as a
+///   lone declaration's declared type does; intermediates are appended for the
+///   caller to truncate. `census` gains one charge per goal the formation
+///   walks.
+/// - provides: the foresight a family's fields rest on when they name the
+///   definition at this type.
+/// - fails: any [`KernelError`] the formation surfaces.
+/// - panics: none.
+///
+/// # Errors
+/// Any [`KernelError`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decoder's type over its universe forms in the block.
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
+#[spec(captures: entry_mark = arena.watermark(), ensures:
+    entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark)]
+pub(crate) fn form_declared(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    declared: ValueTypeId,
+    session: &mut SupportContext,
+    census: &mut ExpansionCensus,
+) -> Result<(), KernelError>
+{
+    let mut memo: DefaultMemo = DefaultMemo::new();
+    session.begin_admission();
+    session.name_constants(judgement.entries);
+    let judgement = judgement.presenting(judgement.entries.presentations());
+    // As a lone declaration's, the declared type forms through the seal rule.
+    let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
+    let mut owed: Vec<CodeObligation> = Vec::new();
+    let _level = type_level(
+        arena,
+        judgement,
+        TypeLevelGoal::Value(unsealed),
+        Vec::new(),
+        Recording {
+            memo: &mut memo,
+            session,
+            census,
+            owed: &mut owed,
+        },
+    )?;
+    drain_code_obligations(
+        arena,
+        judgement,
+        &mut memo,
+        session,
+        census,
+        owed,
+        &mut Continuation::default(),
+    )
+}
+
+/// Check a declaration against a caller-supplied memo — the **opt-in** entry.
+///
+/// # This entry admits nothing, and that is the seam
+///
+/// It returns a verdict and never a checked id, so a caller reaching it cannot
+/// get a declaration into an environment. Admission goes through
+/// [`check_declaration`], which builds its own memo. No admitting entry
+/// accepts one. So the surface makes a single call `memo`'s lifetime. A
+/// caller does not have to remember a discipline.
+///
+/// # Why `memo` lives for one call
+///
+/// The key is content. It carries no arena id. So dangling ids are not the
+/// reason. A support names a goal and the binders that it read. It names
+/// nothing of the judgement. One call holds the judgement fixed. So a hit in
+/// `memo` claims only its own history. Across calls, the judgement changes.
+///
+/// An *outcome* can carry arena ids, though the key does not. An entry that
+/// outlives its arena would hand back a synthesized type that does not
+/// resolve.
+///
+/// # What the session keeps
+///
+/// `session` keeps the content outcomes of the environment's earlier
+/// admissions. A content outcome is a check that succeeded or a level that a
+/// type formed at. Each is kept under the parameters of its judgement. A goal
+/// that `memo` misses asks these outcomes. Its answer is kept there too. A
+/// judgement in a mutual block does not ask or keep. A judgement with
+/// relating endpoints does not ask or keep.
+///
+/// # Specification
+/// - requires: as [`check_declaration`]. Additionally, `memo`, and the rewrite
+///   memo and open accruals of `session`, hold only entries recorded during
+///   this same call against this same arena.
+///   [`SupportContext::begin_admission`] empties the session's. The outcomes
+///   that `session` keeps were answered against this environment.
+/// - ensures: the typing verdict agrees with [`check_declaration`] and the null
+///   memo when neither execution reaches
+///   [`KernelError::CodeObligationCeiling`]. A live memo can avoid repeated
+///   obligations that exhaust the null memo's occurrence budget. Each counter
+///   is monotone, and the initial formation goal charges at least one
+///   type-plane event, subject to saturation, unless a data declaration's
+///   occurrence walk, or the shape check of a coinductive datatype, refuses it
+///   before formation starts. The arena's original prefix remains available on
+///   either verdict.
+/// - provides: both memo policies through one function. Per-goal accounting,
+///   memo provenance and typing agreement still require their event history or
+///   differential witnesses, not a second check inside a return predicate.
+/// - fails: any [`KernelError`] the checker surfaces.
+/// - panics: none.
+///
+/// # Errors
+/// Any [`KernelError`].
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — the finite differential corpus agrees below the
+///   operational ceiling. The boundary fixture separates resource refusal from
+///   typing, and poisoned histories change answers on both planes,
+///   demonstrating why the per-call history requirement is part of the
+///   contract.
+/// - witness: `tests::acceptance::memoized_checking_agrees_with_memoless_checking`
+/// - witness: `tests::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
+/// - witness: `tests::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+/// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
+#[spec(captures: [entry_mark = arena.watermark(),
+    entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
+    entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
+    entry_term_kept = u64::from(census.plane_kept(SupportPlane::Term)),
+    entry_type_expanded = u64::from(census.plane_expansions(SupportPlane::Type)),
+    entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type)),
+    entry_type_kept = u64::from(census.plane_kept(SupportPlane::Type))],
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
+        let term_expanded = u64::from(census.plane_expansions(SupportPlane::Term));
+        let term_recalled = u64::from(census.plane_recalls(SupportPlane::Term));
+        let term_kept = u64::from(census.plane_kept(SupportPlane::Term));
+        let type_expanded = u64::from(census.plane_expansions(SupportPlane::Type));
+        let type_recalled = u64::from(census.plane_recalls(SupportPlane::Type));
+        let type_kept = u64::from(census.plane_kept(SupportPlane::Type));
+        term_expanded >= entry_term_expanded
+            && term_recalled >= entry_term_recalled
+            && term_kept >= entry_term_kept
+            && type_expanded >= entry_type_expanded
+            && type_recalled >= entry_type_recalled
+            && type_kept >= entry_type_kept
+            && (matches!(ret, Err(KernelError::CrossBlockReference { .. }
+                    | KernelError::NegativeOccurrence(_)
+                    | KernelError::IndexOccurrence(_)
+                    | KernelError::NestedOccurrence(_)
+                    | KernelError::NonUniformOccurrence(_)
+                    | KernelError::CoinductiveNotFree))
+                || type_expanded.saturating_add(type_recalled).saturating_add(type_kept)
+                    >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(entry_type_kept).saturating_add(1_u64))
+    })]
+#[inline]
+pub fn check_declaration_with_memo<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    declaration: &Declaration,
+    memo: &mut M,
+    session: &mut SupportContext,
+    census: &mut ExpansionCensus,
+) -> Result<occurrence::Accessibility, KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    // A declaration's check opens on an empty accrual stack, whatever a
+    // refusal before it left there.
+    if matches!(M::ACTIVITY, MemoActivity::Active) {
+        session.reset_accruals();
+    }
+    let declared = declaration.declared_id();
+    // Keys read a plain definition's reference by its content, so they do not
+    // depend on where the environment admitted it.
+    session.name_constants(judgement.entries);
+    // A relating definition's conversions read the pairs it relates, a lawful
+    // one's folds rest on its laws, and every conversion rewrites the
+    // presented types admitted before it.
+    let judgement = judgement
+        .relating(declaration.related())
+        .lawful(declaration.laws())
+        .presenting(judgement.entries.presentations());
+    // A coinductive datatype is the final coalgebra of its constructors alone:
+    // it is indexed by nothing, presents no rules or cells, holds no role, and
+    // stands outside a mutual block.
+    if declaration.fixpoint() == gandr_kernel_term::DataFixpoint::Greatest
+        && let DeclarationContent::Data { ref indices, .. } = *declaration.content()
+        && (!indices.is_empty()
+            || !declaration.presentation().rules().is_empty()
+            || declaration.presentation().cells().is_some()
+            || matches!(declaration.role(), Maybe::Present(_))
+            || matches!(judgement.block, Block::Mutual { .. }))
+    {
+        return Err(KernelError::CoinductiveNotFree);
+    }
+    // A data declaration's own position names its block while it is checked:
+    // the occurrence walk refuses every occurrence of a family of the block
+    // the stage order cannot place below its constructor, by name, first,
+    // reading a definition of the block through its body and a family
+    // admitted before through its parameters' variance, and formation then
+    // reads it through the block's signatures. Alone, the block is the
+    // declaration's own; in a mutual block, the block in scope already holds
+    // it.
+    let (judgement, accessibility) = match *declaration.content() {
+        DeclarationContent::Data {
+            kind,
+            ref parameters,
+            ref indices,
+            ref constructors,
+            ref results,
+        } => match judgement.block {
+            Block::Mutual { block, members } => {
+                let first = usize::from(block.first());
+                let definitions = members
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(offset, member)| match *member.content() {
+                        DeclarationContent::Def { body, .. } => {
+                            Some((ConstantIndex::from(first.saturating_add(offset)), body))
+                        },
+                        DeclarationContent::Data { .. }
+                        | DeclarationContent::Codata { .. }
+                        | DeclarationContent::Axiom { .. }
+                        | DeclarationContent::LiteralIdentity { .. }
+                        | DeclarationContent::AbstractType { .. } => None,
+                    })
+                    .collect::<Vec<_>>();
+                let accessibility = occurrence::occurrences(
+                    arena,
+                    (block, &definitions, judgement.entries),
+                    parameters,
+                    constructors,
+                )?;
+                (judgement, accessibility)
+            },
+            Block::Outside | Block::Inside { .. } | Block::Codata { .. } => {
+                let position = ConstantIndex::from(usize::from(judgement.entries.len()));
+                let accessibility = occurrence::occurrences(
+                    arena,
+                    (occurrence::Block::lone(position), &[], judgement.entries),
+                    parameters,
+                    constructors,
+                )?;
+                (
+                    judgement.within_block(position, former::Signature {
+                        parameters,
+                        indices,
+                        constructors,
+                        results,
+                        kind,
+                    }),
+                    accessibility,
+                )
+            },
+        },
+        // A codata declaration's own position names it while its observations
+        // form; `codata::guarded` keeps every such name at an observation's
+        // result.
+        DeclarationContent::Codata {
+            kind,
+            ref parameters,
+            ref observations,
+        } => {
+            let position = ConstantIndex::from(usize::from(judgement.entries.len()));
+            (
+                judgement.within_codata(position, codata::Signature {
+                    parameters,
+                    observations,
+                    kind,
+                }),
+                occurrence::Accessibility::unwalked(),
+            )
+        },
+        DeclarationContent::Def { .. }
+        | DeclarationContent::Axiom { .. }
+        | DeclarationContent::LiteralIdentity { .. }
+        | DeclarationContent::AbstractType { .. } => {
+            (judgement, occurrence::Accessibility::unwalked())
+        },
+    };
+    // The seal rule: inside the admission that minted an atom, a declaration
+    // is checked at its representation — its declared type forms there, as
+    // every constant it calls is read, and a definition's body is checked at
+    // it. The declaration keeps its declared type, so a member is exported at
+    // the atom.
+    let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
+    let mut owed: Vec<CodeObligation> = Vec::new();
+    let _level = type_level(
+        arena,
+        judgement,
+        TypeLevelGoal::Value(unsealed),
+        Vec::new(),
+        Recording {
+            memo,
+            session,
+            census,
+            owed: &mut owed,
+        },
+    )?;
+    check_sealing_provenance(arena, declared, declaration.provenance())?;
+    let mut following = Maybe::Absent(recursion::Unstaged::Plain);
+    // One continuation for every run of the check: each run empties it first
+    // and keeps its places, so its stacks allocate once for the check.
+    let mut continuation = Continuation::default();
+    let verdict: Result<(), KernelError> = match *declaration.content() {
+        DeclarationContent::Data {
+            kind,
+            ref parameters,
+            ref indices,
+            ref constructors,
+            ref results,
+        } => {
+            // An indexed family states one result index per index for each
+            // constructor, and presents no rules.
+            let stated = results.len() == constructors.len()
+                && results.iter().all(|result| result.len() == indices.len());
+            let presented = !declaration.presentation().rules().is_empty()
+                || declaration.presentation().cells().is_some();
+            if !indices.is_empty() && (!stated || presented) {
+                return Err(KernelError::IndexedSignature);
+            }
+            if indices.is_empty() && !results.is_empty() {
+                return Err(KernelError::IndexedSignature);
+            }
+            let level = former::level(arena, kind)?;
+            let upper = level.succ()?;
+            let mut context = Vec::new();
+            for parameter in parameters {
+                let _formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Value(*parameter),
+                    context.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                context.push(*parameter);
+            }
+            // An index forms under the parameters and the indices before it.
+            let mut indexed = context.clone();
+            for index in indices {
+                let _formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Value(*index),
+                    indexed.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                indexed.push(*index);
+            }
+            // A field forms under the parameters and the fields before it in
+            // its constructor, which a later field's type may name; the
+            // constructor's result index checks under all of them. One scope,
+            // cut back to the parameters before each constructor.
+            let mut scope = context.clone();
+            for (tag, fields) in constructors.iter().enumerate() {
+                scope.truncate(context.len());
+                for field in fields {
+                    let formed = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(*field),
+                        scope.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                    )?;
+                    judgement.levels.check_universe_below(&formed, &upper)?;
+                    scope.push(*field);
+                }
+                let stated = results.get(tag).map_or(&[][..], Vec::as_slice);
+                for (position, (&value, &index)) in stated.iter().zip(indices).enumerate() {
+                    let depth = |count: usize| {
+                        u32::try_from(count)
+                            .map(BinderDepth::from)
+                            .map_err(|_cause| KernelError::ConstructorArity)
+                    };
+                    let expected = former::index_at(
+                        arena,
+                        session,
+                        index,
+                        (stated, depth(position)?),
+                        depth(fields.len())?,
+                    )?;
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        scope.clone(),
+                        Goal::CheckValue(value, expected),
+                        StageOrder::default(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                        &mut continuation,
+                    )?;
+                }
+            }
+            // A presented type's rules are checked against the table its
+            // fields just formed: linear, constructor-headed over the own
+            // type, and shrinking, so its conversion terminates. A type of
+            // words is re-minted from its cells and compared.
+            crate::presented::admit(
+                arena,
+                judgement.entries,
+                (
+                    ConstantIndex::from(usize::from(judgement.entries.len())),
+                    parameters.as_slice(),
+                ),
+                constructors,
+                declaration.presentation(),
+            )?;
+            Ok(())
+        },
+        // A codata declaration's kind is a computation universe, and its
+        // observations form under the parameters below that universe's
+        // successor, each naming the declaration only at its result.
+        DeclarationContent::Codata {
+            kind,
+            ref parameters,
+            ref observations,
+        } => {
+            let level = codata::level(arena, kind)?;
+            let upper = level.succ()?;
+            if observations.is_empty() {
+                return Err(KernelError::CodataWithoutObservations);
+            }
+            let position = ConstantIndex::from(usize::from(judgement.entries.len()));
+            let mut context = Vec::new();
+            for parameter in parameters {
+                let _formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Value(*parameter),
+                    context.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                context.push(*parameter);
+            }
+            let mut search = crate::env::ConstantSearch::new(position);
+            for &observation in observations {
+                codata::guarded(
+                    arena,
+                    (position, &mut search),
+                    former::FamilyArity(parameters.len()),
+                    observation,
+                )?;
+                let formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Comp(observation),
+                    context.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                judgement.levels.check_universe_below(&formed, &upper)?;
+            }
+            Ok(())
+        },
+        DeclarationContent::Def { body, .. } => {
+            // The body is checked at the declared type the seal rule read.
+            let context: Vec<ValueTypeId> = Vec::new();
+            // A ruled operation's partial fixpoints terminate by its rules.
+            let ruled = if declaration.operation_rules().rules().is_empty() {
+                judgement
+            }
+            else {
+                judgement.ruled()
+            };
+            // A block's definition whose body thunks a fixpoint is that
+            // fixpoint: inside it, the definition's own constant — which only
+            // the block's families name — reads as the self binder.
+            let owning = match (ruled.block, arena.value(body)) {
+                (Block::Mutual { .. }, Some(&Value::Thunk(root)))
+                    if matches!(arena.computation(root), Some(&Computation::Fixpoint { .. })) =>
+                {
+                    ruled.owning(root)
+                },
+                (
+                    Block::Outside
+                    | Block::Inside { .. }
+                    | Block::Mutual { .. }
+                    | Block::Codata { .. },
+                    _,
+                ) => ruled,
+            };
+            // A definition quantified over stages checks its body with each
+            // binder at a stage minted for it, the marked occurrences of its
+            // declared type refined there.
+            let (minted, checked_at) = if declaration.stages().bounds().is_empty() {
+                (StageOrder::default(), unsealed)
+            }
+            else {
+                let mut minted = StageOrder::default();
+                let at = quantified::minted(&mut minted, declaration.stages())?;
+                let staged = quantified::restaged(arena, unsealed, declaration.stages(), &at)?;
+                (minted, staged)
+            };
+            let _checked = run(
+                arena,
+                owning,
+                context,
+                Goal::CheckValue(body, checked_at),
+                minted,
+                Recording {
+                    memo,
+                    session,
+                    census,
+                    owed: &mut owed,
+                },
+                &mut continuation,
+            )?;
+            // A structural definition whose type returns the type it recurses
+            // on is checked once more with that result read at the
+            // parameter's stage; when that holds, a call reads its result at
+            // its argument's stage. The second check recalls nothing the first
+            // recorded, which held at the declared result, and what it owes is
+            // discharged with it; a refusal leaves the result as declared.
+            if let Some(&Value::Thunk(root)) = arena.value(body)
+                && let Some(&Computation::Fixpoint { evidence, .. }) = arena.computation(root)
+                && let Some(recursed) = evidence.descent()
+                && let Some(&ValueType::Thunk(classifier)) = arena.value_type(unsealed)
+                && let Maybe::Present(position) =
+                    recursion::returns_recursed_on(arena, classifier, recursed)?
+            {
+                let mut owed_staged: Vec<CodeObligation> = Vec::new();
+                let unrecorded = &mut gandr_kernel_check_memo::NullMemo;
+                let staged = run(
+                    arena,
+                    owning.following(root),
+                    Vec::new(),
+                    Goal::CheckValue(body, unsealed),
+                    StageOrder::default(),
+                    Recording {
+                        memo: unrecorded,
+                        session,
+                        census,
+                        owed: &mut owed_staged,
+                    },
+                    &mut continuation,
+                )
+                .and_then(|_checked| {
+                    drain_code_obligations(
+                        arena,
+                        judgement,
+                        &mut gandr_kernel_check_memo::NullMemo,
+                        session,
+                        census,
+                        owed_staged,
+                        &mut continuation,
+                    )
+                });
+                if staged.is_ok() {
+                    following = Maybe::Present(position);
+                }
+            }
+            // An operation's rules are decided over the declarations admitted
+            // before it: well formed, oriented and every critical pair joined,
+            // and the body their decision tree.
+            crate::ruled::admit(
+                arena,
+                judgement.entries,
+                ConstantIndex::from(usize::from(judgement.entries.len())),
+                (declared, body),
+                declaration.operation_rules(),
+            )?;
+            // A presentation's rules are decided as its value states them.
+            crate::theory_rules::admit(arena, judgement.entries, (declared, body))?;
+            // Each match's derivation replays against its tree.
+            cover::admit(
+                arena,
+                (judgement.entries, judgement.presentations),
+                declaration.covers(),
+            )?;
+            Ok(())
+        },
+        DeclarationContent::Axiom { .. } => Ok(()),
+        // A literal identity test's obligation is its type: the kernel computes
+        // the test, so it stands only at the one type its base gives.
+        DeclarationContent::LiteralIdentity { declared, test } => {
+            literal_identity_typed(arena, declared, test)
+        },
+        // A sealed atom's admission obligation is that its kind is a universe
+        // of value types — the atom is a value type, so a computation universe
+        // is no kind for it — and that its representation forms below that
+        // universe's successor, the bound a data declaration's fields meet.
+        // There is no body to check and no inhabitant claimed. An atom stating
+        // an interface owes its relation and its reflexivity, checked here,
+        // over the representation the atom reads as inside its seal.
+        DeclarationContent::AbstractType {
+            kind,
+            representation,
+            interface,
+            ..
+        } => {
+            let kind_node = arena.value_type(kind).ok_or(KernelError::ArenaFault)?;
+            let level = match *kind_node {
+                ValueType::Universe {
+                    sort: GroundSort::Value,
+                    ref level,
+                } => level.clone(),
+                ValueType::Universe {
+                    sort: GroundSort::Computation,
+                    ..
+                }
+                | ValueType::Data { .. }
+                | ValueType::Record(_)
+                | ValueType::PathUniverse(..)
+                | ValueType::FlowUniverse(..)
+                | ValueType::Base(_)
+                | ValueType::Product(..)
+                | ValueType::Sigma { .. }
+                | ValueType::Session { .. }
+                | ValueType::List(_)
+                | ValueType::Sum(..)
+                | ValueType::Thunk(_)
+                | ValueType::Lift { .. }
+                | ValueType::Element { .. }
+                | ValueType::Abstract(_)
+                | ValueType::Path { .. }
+                | ValueType::Flow { .. }
+                | ValueType::Bridge { .. }
+                | ValueType::StaticPi { .. }
+                | ValueType::Staged { .. } => {
+                    return Err(KernelError::AbstractTypeKindNotUniverse {
+                        actual: value_type_witness(arena, kind),
+                    });
+                },
+            };
+            let formed = type_level(
+                arena,
+                judgement,
+                TypeLevelGoal::Value(representation),
+                Vec::new(),
+                Recording {
+                    memo,
+                    session,
+                    census,
+                    owed: &mut owed,
+                },
+            )?;
+            judgement
+                .levels
+                .check_universe_below(&formed, &level.succ()?)?;
+            if let Maybe::Present(interface) = interface {
+                let (relations, reflexive) = crate::element_identity::interface_types(
+                    arena,
+                    (kind, level.clone()),
+                    representation,
+                    interface.relation(),
+                );
+                let law = match interface.law() {
+                    Maybe::Present(law) => Some((
+                        law,
+                        crate::element_identity::law_type(
+                            arena,
+                            &level,
+                            representation,
+                            (interface.relation(), interface.reflexivity()),
+                        ),
+                    )),
+                    Maybe::Absent(_) => None,
+                };
+                for (value, expected) in [
+                    (interface.relation(), relations),
+                    (interface.reflexivity(), reflexive),
+                ]
+                .into_iter()
+                .chain(law)
+                {
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        Vec::new(),
+                        Goal::CheckValue(value, expected),
+                        StageOrder::default(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                        &mut continuation,
+                    )?;
+                }
+            }
+            Ok(())
+        },
+    };
+    verdict?;
+    drain_code_obligations(
+        arena,
+        judgement,
+        memo,
+        session,
+        census,
+        owed,
+        &mut continuation,
+    )?;
+    // A holder answers its role's canonical form, over the entries admitted
+    // before it.
+    crate::builtin::admit(arena, judgement.entries, declaration)?;
+    Ok(match following {
+        Maybe::Present(position) => accessibility.following(position),
+        Maybe::Absent(_) => accessibility,
+    })
+}
+
+/// Check every code a formation walk owed, and every code those checks owe in
+/// turn.
+///
+/// A judgement that forks checks the obligations of a drain that holds
+/// [`FORKED_DRAIN`] or more at its start apart, in runs of [`FORKED_PART`] or
+/// more, and folds the runs in the serial order ([`drain_forked`]). When a run
+/// refuses, the drain checks serially from the state that it held before the
+/// fork, which the runs did not change.
+///
+/// # Specification
+/// - requires: `owed` holds the obligations the declaration's own walks
+///   recorded, each with the context its code stands in; `continuation` is the
+///   check's own, which each run of the drain empties first.
+/// - ensures: `Ok(())` when every pending or generated obligation checks before
+///   the operational ceiling is exhausted. An empty worklist is a no-op.
+///   Otherwise the first attempted check charges a term-plane event when the
+///   budget is nonzero, unless the check's forked children drained first: a key
+///   that they met is not checked again, so a drain whose every key they met
+///   attempts no check. Counters never decrease and the arena prefix remains.
+/// - provides: the deferred half of formation, without recursive calls between
+///   the two machines. A memo hit can suppress repeated obligations, so the
+///   occurrence budget can refuse a valid declaration under one memo policy but
+///   not another. Full code typing still requires the checking derivation.
+/// - fails: [`KernelError::CodeObligationCeiling`] when the drain exceeds
+///   [`MAX_CODE_OBLIGATIONS`]; any [`KernelError`] a code's check surfaces.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite witnesses separate a valid code, a code's own
+///   refusal, and the drain's operational boundary. Exactly the allowed count
+///   succeeds with the null memo; one more refuses at the stated ceiling. The
+///   same shared above-limit declaration succeeds with a fresh live memo,
+///   showing that a resource refusal is not an ill-typedness judgement.
+/// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
+/// - witness: `check::tests::a_code_that_is_not_of_its_declared_universe_refuses`
+/// - witness: `tests::acceptance::draining_code_obligations_reaches_the_checking_machine`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+/// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
+#[spec(captures: [entry_mark = arena.watermark(), entry_empty = owed.is_empty(),
+    entry_forked = usize::from(session.drained()),
+    entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
+    entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
+    entry_term_kept = u64::from(census.plane_kept(SupportPlane::Term)),
+    entry_type_expanded = u64::from(census.plane_expansions(SupportPlane::Type)),
+    entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type)),
+    entry_type_kept = u64::from(census.plane_kept(SupportPlane::Type))],
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
+        let term_expanded = u64::from(census.plane_expansions(SupportPlane::Term));
+        let term_recalled = u64::from(census.plane_recalls(SupportPlane::Term));
+        let term_kept = u64::from(census.plane_kept(SupportPlane::Term));
+        let type_expanded = u64::from(census.plane_expansions(SupportPlane::Type));
+        let type_recalled = u64::from(census.plane_recalls(SupportPlane::Type));
+        let type_kept = u64::from(census.plane_kept(SupportPlane::Type));
+        term_expanded >= entry_term_expanded
+            && term_recalled >= entry_term_recalled
+            && term_kept >= entry_term_kept
+            && type_expanded >= entry_type_expanded
+            && type_recalled >= entry_type_recalled
+            && type_kept >= entry_type_kept
+            && if entry_empty {
+                ret.is_ok() && arena.watermark() == entry_mark
+                && term_expanded == entry_term_expanded
+                && term_recalled == entry_term_recalled
+                && term_kept == entry_term_kept
+                && type_expanded == entry_type_expanded
+                && type_recalled == entry_type_recalled
+                && type_kept == entry_type_kept
+            } else {
+                (usize::from(MAX_CODE_OBLIGATIONS) == 0
+                    || entry_forked > 0
+                    || term_expanded.saturating_add(term_recalled).saturating_add(term_kept)
+                        >= entry_term_expanded
+                            .saturating_add(entry_term_recalled)
+                            .saturating_add(entry_term_kept)
+                            .saturating_add(1_u64))
+                    && match ret {
+                        Err(KernelError::CodeObligationCeiling { ceiling }) => ceiling == MAX_CODE_OBLIGATIONS,
+                        _ => true,
+                    }
+            }
+    })]
+fn drain_code_obligations<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    memo: &mut M,
+    session: &mut SupportContext,
+    census: &mut ExpansionCensus,
+    owed: Vec<CodeObligation>,
+    continuation: &mut Continuation,
+) -> Result<(), KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    // The drains of the check's forked children took their obligations
+    // already, so this drain goes on from what they checked: their count
+    // stands against the ceiling, and a key they met is not checked again.
+    if let Some(fork) = judgement.forking.fork()
+        && owed.len() >= FORKED_DRAIN
+        && let Some(parts) = drain_forked(arena, judgement, fork, memo, session, census, &owed)?
+    {
+        let mut ledger = session.take_drained();
+        ledger.absorb(parts);
+        ledger.record(memo, session);
+        return Ok(());
+    }
+    let mut ledger = session.take_drained();
+    drain_into(
+        arena,
+        judgement,
+        memo,
+        session,
+        census,
+        owed,
+        (&mut ledger, continuation),
+    )?;
+    ledger.record(memo, session);
+    Ok(())
+}
+
+/// The fewest obligations a drain forks. A smaller drain checks on the calling
+/// thread, because a part costs more to fork and to join than a few
+/// obligations cost to check.
+const FORKED_DRAIN: usize = 64;
+
+/// The fewest obligations one part of a forked drain checks.
+const FORKED_PART: usize = 16;
+
+/// Check each obligation of `owed`, and each obligation those checks owe in
+/// turn, last owed first, into `ledger`.
+///
+/// # Specification
+/// - requires: as [`drain_code_obligations`]; `recording.owed` is empty.
+/// - ensures: `Ok(())` when every obligation checks before `ledger` counts past
+///   the ceiling. The ledger holds each checked key, each one time.
+/// - provides: the serial order of a drain, and the check of one part of a
+///   forked drain.
+/// - fails: as [`drain_code_obligations`].
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Termination
+/// - reason: the drain is a loop over an explicit worklist, not recursion.
+/// - measure: the ceiling minus the number of obligations already drained,
+///   which strictly falls at every iteration and is checked before the body
+///   runs.
+/// - boundedness: a check that owes more obligations than the ceiling allows is
+///   refused rather than pursued, so the loop cannot run more than
+///   [`MAX_CODE_OBLIGATIONS`] times whatever the artifact contains.
+/// - input recursion: none — a drained check appends to this worklist rather
+///   than re-entering this function.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`drain_code_obligations`].
+/// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+#[spec(ensures: |ret| match ret {
+    Err(KernelError::CodeObligationCeiling { ceiling }) => ceiling == MAX_CODE_OBLIGATIONS,
+    _ => true,
+})]
+fn drain_into<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    memo: &mut M,
+    session: &mut SupportContext,
+    census: &mut ExpansionCensus,
+    mut owed: Vec<CodeObligation>,
+    (ledger, continuation): (&mut DrainLedger, &mut Continuation),
+) -> Result<(), KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    while let Some(obligation) = owed.pop() {
+        ledger.take(MAX_CODE_OBLIGATIONS)?;
+        if matches!(M::ACTIVITY, MemoActivity::Active) {
+            let key = obligation.key(arena, session);
+            if matches!(ledger.meets(&key), Meeting::Again) {
+                continue;
+            }
+            let named = KeptParameters::Unnamed.name(
+                arena,
+                &obligation.scope().reading(judgement),
+                session,
+            );
+            ledger.pass(key, named);
+        }
+        match obligation {
+            CodeObligation::Universe {
+                code,
+                sort,
+                level,
+                context,
+                stages,
+                scope,
+                ..
+            } => {
+                let universe = arena.value_type_universe(sort, level);
+                let _checked = run(
+                    arena,
+                    scope.reading(judgement),
+                    context,
+                    Goal::CheckValue(code, universe),
+                    stages,
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                    continuation,
+                )?;
+            },
+            CodeObligation::Endpoints {
+                domain,
+                left,
+                right,
+                context,
+                stages,
+                scope,
+                ..
+            } => {
+                for endpoint in [left, right] {
+                    let _checked = run(
+                        arena,
+                        scope.reading(judgement),
+                        context.clone(),
+                        Goal::CheckValue(endpoint, domain),
+                        stages.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                        continuation,
+                    )?;
+                }
+            },
+            CodeObligation::Data {
+                datatype,
+                context,
+                stages,
+                scope,
+            } => {
+                let Some(matched_native_node) = arena.value_type(datatype)
+                else {
+                    return Err(KernelError::ArenaFault);
+                };
+                let ValueType::Data {
+                    ref declaration,
+                    ref arguments,
+                } = *matched_native_node
+                else {
+                    return Err(KernelError::ArenaFault);
+                };
+                let judgement = scope.reading(judgement);
+                let signature = former::resolve(judgement, *declaration)?;
+                if signature.arity() != former::FamilyArity(arguments.len()) {
+                    return Err(KernelError::DataArgumentArity);
+                }
+                // Each index classifier is scoped under the parameters and the
+                // indices before it, so it instantiates at every argument
+                // before its own place, as a parameter does.
+                let telescope = signature
+                    .parameters
+                    .iter()
+                    .chain(signature.indices)
+                    .copied();
+                for (index, parameter) in telescope.enumerate() {
+                    let expected = former::instantiate(
+                        arena,
+                        session,
+                        parameter,
+                        datatype,
+                        former::ParameterPrefix(index),
+                    )?;
+                    let argument = match arena.value_type(datatype) {
+                        Some(&ValueType::Data { ref arguments, .. }) => arguments
+                            .get(index)
+                            .copied()
+                            .ok_or(KernelError::DataArgumentArity)?,
+                        _ => return Err(KernelError::ArenaFault),
+                    };
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        context.clone(),
+                        Goal::CheckValue(argument, expected),
+                        stages.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                        continuation,
+                    )?;
+                }
+            },
+            CodeObligation::Codata {
+                codata: application,
+                context,
+                stages,
+                scope,
+            } => {
+                let Some(&CompType::Codata { declaration, .. }) = arena.comp_type(application)
+                else {
+                    return Err(KernelError::ArenaFault);
+                };
+                let judgement = scope.reading(judgement);
+                let signature = codata::resolve(judgement, declaration)?;
+                for (index, &parameter) in signature.parameters.iter().enumerate() {
+                    let (argument, expected) = codata::argument(
+                        arena,
+                        session,
+                        (application, parameter),
+                        former::ParameterPrefix(index),
+                    )?;
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        context.clone(),
+                        Goal::CheckValue(argument, expected),
+                        stages.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                        continuation,
+                    )?;
+                }
+            },
+        }
+    }
+    Ok(())
+}
+
+/// One run of obligations of a forked drain, with the state its check runs
+/// on: a clone of the arena, and overlays of the memo and of the session.
+///
+/// # Specification
+/// trivial.
+struct DrainPart<'part>
+{
+    /// The judgement of the drain, which forks no further.
+    judgement: Judgement<'part>,
+    /// Set by the first part that refuses: a part that has not started then
+    /// does not start, since the drain checks serially after.
+    refused: &'part AtomicBool,
+    /// A clone of the drain's frozen arena, which the part mints into.
+    arena: TermArena,
+    /// An overlay of the drain's memo.
+    memo: DefaultMemo,
+    /// An overlay of the drain's session.
+    session: SupportContext,
+    /// The goals the part expanded and recalled.
+    census: ExpansionCensus,
+    /// The run of obligations, until the part runs.
+    owed: Vec<CodeObligation>,
+    /// What the part checked.
+    ledger: DrainLedger,
+    /// The part's answer, once it ran.
+    answer: Option<Result<(), KernelError>>,
+}
+
+impl crate::fork::Job for DrainPart<'_>
+{
+    /// Drain the part's run of obligations, and every obligation they owe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(&mut self)
+    {
+        if self.answer.is_some() || self.refused.load(Ordering::Relaxed) {
+            return;
+        }
+        let owed = core::mem::take(&mut self.owed);
+        let answer = drain_into(
+            &mut self.arena,
+            self.judgement,
+            &mut self.memo,
+            &mut self.session,
+            &mut self.census,
+            owed,
+            (&mut self.ledger, &mut Continuation::default()),
+        );
+        if answer.is_err() {
+            self.refused.store(true, Ordering::Relaxed);
+        }
+        self.answer = Some(answer);
+    }
+}
+
+/// Check the obligations of `owed` apart, in contiguous runs, one part for
+/// each run, through `fork`, and fold the parts in the serial order: the last
+/// run first, as the serial drain pops them. The runs are as many as the
+/// fork's width, with [`FORKED_PART`] obligations or more in each.
+///
+/// # Specification
+/// - requires: as [`drain_code_obligations`]. The obligations that the
+///   session's forked children drained count as drained before.
+/// - ensures: a ledger of the keys the parts checked, each one time, when each
+///   part passed and all drained no more than the ceiling. The arena, the
+///   session, the memo and the census then hold the parts' folds, and the memo
+///   keeps no outcome that names a node of a part's own. None when the fork's
+///   width or the size of `owed` gives fewer than two runs, when the memo
+///   cannot fork, when a part refused or did not run, or when the parts drained
+///   more than the ceiling. The arena's nodes, the memo's answers, the
+///   session's names and the census are then as the call found them.
+/// - provides: the fork of a declaration's last drain.
+/// - fails: two parts that keep two outcomes under one key, which do not glue.
+///   Any other refusal is the serial drain's to give.
+/// - panics: a panic of a part.
+///
+/// # Errors
+/// [`KernelError::KeptOutcomesDisagree`], naming the key by its content digest
+/// and both outcomes, when the memo or the session of a part keeps an outcome
+/// under a key that an earlier part kept with another outcome.
+///
+/// # Adequacy
+/// - hypothesis: L3 — declarations whose drains pass and refuse, checked at
+///   width one, in the reverse order and on threads of their own, against the
+///   unforked check.
+/// - witness: `check::tests::a_forked_drain_gives_the_serial_verdict_at_each_order`
+#[spec(captures: entry_mark = arena.watermark(), ensures: arena.watermark() == entry_mark)]
+fn drain_forked<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    fork: &dyn crate::fork::ObligationFork,
+    memo: &mut M,
+    session: &mut SupportContext,
+    census: &mut ExpansionCensus,
+    owed: &[CodeObligation],
+) -> Result<Option<DrainLedger>, KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    let runs = NonZeroUsize::from(fork.workers())
+        .get()
+        .min(owed.len().div_euclid(FORKED_PART));
+    if runs < 2 {
+        return Ok(None);
+    }
+    let run = owed.len().div_ceil(runs);
+    let mut memos = Vec::with_capacity(runs);
+    for _run in owed.chunks(run) {
+        let Some(child) = memo.fork_child()
+        else {
+            return Ok(None);
+        };
+        memos.push(child);
+    }
+    let taken = judgement.taking.taken();
+    arena.freeze();
+    // A part forks no further.
+    let unforked = judgement.forking(None);
+    let refused = AtomicBool::new(false);
+    let mut parts: Vec<DrainPart<'_>> = owed
+        .chunks(run)
+        .rev()
+        .zip(memos)
+        .map(|(obligations, part_memo)| DrainPart {
+            judgement: unforked,
+            refused: &refused,
+            arena: arena.clone(),
+            memo: part_memo,
+            session: session.fork(arena),
+            census: ExpansionCensus::new(),
+            owed: obligations.to_vec(),
+            ledger: DrainLedger::default(),
+            answer: None,
+        })
+        .collect();
+    let mut jobs: Vec<&mut dyn crate::fork::Job> = parts
+        .iter_mut()
+        .map(|part| -> &mut dyn crate::fork::Job { part })
+        .collect();
+    fork.run_jobs(&mut jobs);
+    let passed = parts
+        .iter()
+        .try_fold(usize::from(session.drained()), |sum, part| {
+            match part.answer {
+                Some(Ok(())) => sum.checked_add(usize::from(part.ledger.drained())),
+                Some(Err(_)) | None => None,
+            }
+        })
+        .is_some_and(|drained| drained <= usize::from(MAX_CODE_OBLIGATIONS));
+    if !passed {
+        judgement.taking.reset(taken);
+    }
+    // A reader that names nodes by their positions forgets each part's own
+    // before any fold, so a refused fold leaves none of them behind.
+    for part in &parts {
+        arena.dropped(&part.arena);
+    }
+    let mut ledger = DrainLedger::default();
+    for part in parts {
+        let DrainPart {
+            memo: part_memo,
+            session: part_session,
+            census: part_census,
+            ledger: part_ledger,
+            ..
+        } = part;
+        // A failed fork folds no entry: the join drops each entry of the part
+        // and links no layer. An outcome that names a node of the part's own
+        // names a node that the join leaves out, so the memo does not keep it.
+        // Two parts can name one type by two nodes, and the two outcomes agree.
+        memo.join_child(
+            part_memo,
+            |_, outcome| {
+                passed
+                    && match *outcome {
+                        NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
+                        NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
+                        NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
+                    }
+            },
+            |held, offered| {
+                matches!(
+                    held.agrees(offered, arena, session),
+                    ContentAgreement::Agree
+                )
+            },
+        )
+        .map_err(|disagreement| {
+            let (key, held, offered) = disagreement.into_parts();
+            KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
+                crate::error::KeptOutcomes::new(key.digest(), held, offered),
+            ))
+        })?;
+        if passed {
+            session.join(arena, part_session)?;
+            census.absorb(&part_census);
+            ledger.absorb(part_ledger);
+        }
+    }
+    Ok(passed.then_some(ledger))
+}
+
+/// The fewest sibling goals of one frame that a check forks.
+const FORKED_SIBLINGS: usize = 2;
+
+/// The fewest goals a check expands before it forks a frame's sibling goals.
+/// A check that expanded fewer is small, and its siblings cost less to check
+/// on the calling thread than a part costs to fork and to join.
+const FORKED_AFTER: u64 = 256;
+
+/// The fork through which the sibling goals of `frame` check apart, if the
+/// check forks them: the check holds a fork of more than one worker, the frame
+/// holds two goals or more, the walk stands at no root and under no fixpoint
+/// body, and the check expanded [`FORKED_AFTER`] goals or more. The decision
+/// reads counts alone, so each run at one width forks the same frames.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn sibling_fork<'session>(
+    judgement: Judgement<'session>,
+    census: &ExpansionCensus,
+    frame: &Siblings<'_>,
+) -> Option<&'session dyn crate::fork::ObligationFork>
+{
+    let fork = judgement.forking.fork()?;
+    (matches!(frame.root, Maybe::Absent(_))
+        && frame.staged_bodies == 0
+        && frame.goals.len() >= FORKED_SIBLINGS
+        && NonZeroUsize::from(fork.workers()).get() > 1
+        && u64::from(census.expansions()) >= FORKED_AFTER)
+        .then_some(fork)
+}
+
+/// What a fork of a frame's sibling goals leaves the frame to do.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FrameFork
+{
+    /// Each part passed, and the frame holds the folds of the parts.
+    Joined,
+    /// The memo cannot fork, or a part refused or did not run. The frame
+    /// checks its goals inline, as the serial walk checks them.
+    Inline,
+}
+
+/// The sibling goals of one frame, as [`sibling_fork`] and [`siblings_forked`]
+/// read them, and the walk the frame stands in.
+struct Siblings<'frame>
+{
+    /// The context the goals are checked in.
+    context: &'frame [ValueTypeId],
+    /// The goals, the next last.
+    goals: &'frame [Goal],
+    /// The holder of a `Fields` frame and how many of its fields began, or
+    /// none for a `Pending` frame.
+    field: Option<(ValueId, usize)>,
+    /// The walk's stages.
+    stages: &'frame StageOrder,
+    /// The walk's root.
+    root: Maybe<(ComputationId, respect::Reading), respect::root::Absent>,
+    /// The fixpoint bodies the walk stands under.
+    staged_bodies: usize,
+    /// The declaration's own fixpoint, while it is in scope.
+    own_fixpoint: Maybe<(usize, ValueTypeId), recursion::Unowned>,
+    /// The walk's kept parameters.
+    parameters: KeptParameters,
+}
+
+/// One sibling goal of a frame, checked apart from its siblings: on a clone
+/// of the frame's frozen arena, through overlays of the frame's memo and
+/// session, from a copy of the frame's walk. It drains the obligations it
+/// owes on its own clone, so none of them names a node the join leaves out.
+struct SiblingPart<'part>
+{
+    /// The judgement of the frame.
+    judgement: Judgement<'part>,
+    /// Set by the first part that refuses: a part that has not started then
+    /// does not start, since the frame checks its goals inline after.
+    refused: &'part AtomicBool,
+    /// A clone of the frame's frozen arena, which the part mints into.
+    arena: TermArena,
+    /// An overlay of the frame's memo.
+    memo: DefaultMemo,
+    /// The frame's session, forked at its innermost open goal.
+    session: SupportContext,
+    /// The goals the part expanded and recalled.
+    census: ExpansionCensus,
+    /// The context the goal is checked in, until the part runs.
+    context: Vec<ValueTypeId>,
+    /// The goal.
+    goal: Goal,
+    /// The part's walk, a copy of the frame's.
+    walk: Walk,
+    /// The holder of the field the goal checks, and how many of its fields
+    /// began with this one, so a refusal names the field.
+    field: Option<(ValueId, usize)>,
+    /// The part's answer, once it ran.
+    answer: Option<Result<(), KernelError>>,
+}
+
+impl crate::fork::Job for SiblingPart<'_>
+{
+    /// Check the part's goal, then drain the obligations it owes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(&mut self)
+    {
+        if self.answer.is_some() || self.refused.load(Ordering::Relaxed) {
+            return;
+        }
+        let answer = self.check();
+        if answer.is_err() {
+            self.refused.store(true, Ordering::Relaxed);
+        }
+        self.answer = Some(answer);
+    }
+}
+
+impl SiblingPart<'_>
+{
+    /// Check the part's goal on a frame stack of its own, with its field's
+    /// frame at the bottom, and drain what the goal owes into the session's
+    /// ledger.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn check(&mut self) -> Result<(), KernelError>
+    {
+        let mut continuation = Continuation::default();
+        if let Some((holder, begun)) = self.field {
+            continuation.frames.push(Frame::Fields {
+                remaining: Slice::mark(&continuation.goals),
+                holder,
+                begun,
+            });
+        }
+        let mut owed = Vec::new();
+        let _produced = machine(
+            &mut self.arena,
+            self.judgement,
+            core::mem::take(&mut self.context),
+            self.goal,
+            &mut self.walk,
+            Recording {
+                memo: &mut self.memo,
+                session: &mut self.session,
+                census: &mut self.census,
+                owed: &mut owed,
+            },
+            &mut continuation,
+        )
+        .map_err(|refusal| field_refused(&self.arena, &continuation.frames, refusal))?;
+        if owed.is_empty() {
+            return Ok(());
+        }
+        let mut ledger = DrainLedger::default();
+        drain_into(
+            &mut self.arena,
+            self.judgement,
+            &mut self.memo,
+            &mut self.session,
+            &mut self.census,
+            owed,
+            (&mut ledger, &mut continuation),
+        )?;
+        self.session.fold_drained(ledger);
+        Ok(())
+    }
+}
+
+/// Check the sibling goals of one frame apart, one part for each goal,
+/// through `fork`, and fold the parts in the serial order of the goals.
+///
+/// # Specification
+/// - requires: `frame` holds the goals of a frame and the walk it stands in, at
+///   no root and under no fixpoint body; `recording` is the frame's.
+/// - ensures: [`FrameFork::Joined`] when each part passed. The arena, the memo,
+///   the session and the census then hold the parts' folds; the memo keeps no
+///   outcome that names a node of a part's own; the session's innermost open
+///   goal holds what each part read and owed, and its ledger what each part
+///   drained. [`FrameFork::Inline`] when the memo cannot fork, or when a part
+///   refused or did not run. The arena's nodes, the memo's answers, the
+///   session's accruals and the census are then as the call found them, and the
+///   frame checks its goals inline, so a refusal is the serial run's.
+/// - provides: the fork of a frame's sibling goals.
+/// - fails: two parts that keep two outcomes under one key, which do not agree
+///   and so do not glue.
+/// - panics: a panic of a part.
+///
+/// # Errors
+/// [`KernelError::KeptOutcomesDisagree`], naming the key by its content digest
+/// and both outcomes, when the memo or the session of a part keeps an outcome
+/// under a key that an earlier part kept with an outcome that does not agree.
+/// Two types of one content agree ([`NodeOutcome::agrees`]).
+///
+/// # Adequacy
+/// - hypothesis: L3 — declarations whose frames pass and refuse, checked at
+///   width one, in the reverse order and on threads of their own, against the
+///   unforked check.
+/// - witness: `check::tests::a_forked_frame_gives_the_serial_verdict_at_each_order`
+#[spec(captures: entry_mark = arena.watermark(), ensures: arena.watermark() == entry_mark)]
+fn siblings_forked<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    fork: &dyn crate::fork::ObligationFork,
+    frame: &Siblings<'_>,
+    recording: Recording<'_, M>,
+) -> Result<FrameFork, KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    let Recording {
+        memo,
+        session,
+        census,
+        ..
+    } = recording;
+    let &Siblings {
+        context,
+        goals,
+        field,
+        stages,
+        root,
+        staged_bodies,
+        own_fixpoint,
+        parameters,
+    } = frame;
+    let mut memos = Vec::with_capacity(goals.len());
+    for _goal in goals {
+        let Some(child) = memo.fork_child()
+        else {
+            return Ok(FrameFork::Inline);
+        };
+        memos.push(child);
+    }
+    let taken = judgement.taking.taken();
+    arena.freeze();
+    let refused = AtomicBool::new(false);
+    // The serial run checks the goals last first, as the frame pops them.
+    let mut parts: Vec<SiblingPart<'_>> = goals
+        .iter()
+        .rev()
+        .zip(memos)
+        .zip(1_usize ..)
+        .map(|((&goal, part_memo), position)| SiblingPart {
+            judgement,
+            refused: &refused,
+            arena: arena.clone(),
+            memo: part_memo,
+            session: session.fork_goal(arena),
+            census: ExpansionCensus::new(),
+            context: context.to_vec(),
+            goal,
+            walk: Walk {
+                stages: stages.clone(),
+                root,
+                staged_bodies,
+                own_fixpoint,
+                parameters,
+            },
+            field: field.map(|(holder, begun)| (holder, begun.saturating_add(position))),
+            answer: None,
+        })
+        .collect();
+    {
+        let mut jobs: Vec<&mut dyn crate::fork::Job> = parts
+            .iter_mut()
+            .map(|part| -> &mut dyn crate::fork::Job { part })
+            .collect();
+        fork.run_jobs(&mut jobs);
+    }
+    let passed = parts.iter().all(|part| matches!(part.answer, Some(Ok(()))));
+    if !passed {
+        judgement.taking.reset(taken);
+    }
+    // A reader that names nodes by their positions forgets each part's own
+    // before any fold, so a refused fold leaves none of them behind.
+    for part in &parts {
+        arena.dropped(&part.arena);
+    }
+    // The table folds first the part that holds the most own records, before
+    // any agreement places a type: the fold appends them as they stand, and
+    // interns again only what the other parts add.
+    if passed
+        && let Some(lead) = parts.iter_mut().reduce(|lead, part| {
+            if part.session.cmp_own_records(&lead.session) == core::cmp::Ordering::Greater {
+                part
+            }
+            else {
+                lead
+            }
+        })
+    {
+        session.join_table(arena, &mut lead.session);
+    }
+    for part in parts {
+        let SiblingPart {
+            memo: part_memo,
+            session: part_session,
+            census: part_census,
+            ..
+        } = part;
+        // A refused fork folds no entry: the join drops each entry of the part
+        // and links no layer. An outcome that names a node of the part's own
+        // names a node that the join leaves out, so the memo does not keep it.
+        // Two parts can name one type by two nodes, and the two outcomes agree.
+        memo.join_child(
+            part_memo,
+            |_, outcome| {
+                passed
+                    && match *outcome {
+                        NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
+                        NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
+                        NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
+                    }
+            },
+            |held, offered| {
+                matches!(
+                    held.agrees(offered, arena, session),
+                    ContentAgreement::Agree
+                )
+            },
+        )
+        .map_err(|disagreement| {
+            let (key, held, offered) = disagreement.into_parts();
+            KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
+                crate::error::KeptOutcomes::new(key.digest(), held, offered),
+            ))
+        })?;
+        if passed {
+            session.join_goal(arena, part_session)?;
+            census.absorb(&part_census);
+        }
+    }
+    Ok(if passed {
+        FrameFork::Joined
+    }
+    else {
+        FrameFork::Inline
+    })
+}
+
+/// Check a closed value without admitting a declaration or retaining a memo.
+///
+/// # Specification
+/// - requires: both roots live in `arena`.
+/// - ensures: success exactly when `expected` forms and `value` checks in the
+///   empty term, declaration, and level contexts, including code obligations.
+/// - provides: the closed translator check for universe paths; no receipt.
+/// - fails: the formation or checking machine's `KernelError`.
+/// - panics: none.
+///
+/// # Errors
+/// Any `KernelError` from formation, checking, or code-obligation replay.
+///
+/// # Cost
+/// - allocation: the empty level context and the memo, the session and the
+///   frames of the check, growth within the value's term
+///
+/// # Adequacy
+/// - hypothesis: L3 — malformed translator types must refuse before their
+///   round-trip dialogues can certify an equivalence.
+/// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+#[spec(requires: arena.value(value).is_some() && arena.value_type(expected).is_some())]
+pub(crate) fn check_closed_value(
+    arena: &mut TermArena,
+    value: ValueId,
+    expected: ValueTypeId,
+) -> Result<(), KernelError>
+{
+    let levels = LevelContext::admit(
+        gandr_kernel_term::LevelParamCount::from(0_u32),
+        gandr_kernel_data::SmallVec::<_, 0, alloc::alloc::Global>::new(),
+    )?;
+    let judgement = Judgement::new(&crate::env::NO_ENTRIES, &levels);
+    let mut memo = DefaultMemo::new();
+    let mut session = SupportContext::new();
+    let mut census = ExpansionCensus::new();
+    let mut owed = Vec::new();
+    let mut continuation = Continuation::default();
+    let _level = type_level(
+        arena,
+        judgement,
+        TypeLevelGoal::Value(expected),
+        Vec::new(),
+        Recording {
+            memo: &mut memo,
+            session: &mut session,
+            census: &mut census,
+            owed: &mut owed,
+        },
+    )?;
+    let _checked = run(
+        arena,
+        judgement,
+        Vec::new(),
+        Goal::CheckValue(value, expected),
+        StageOrder::default(),
+        Recording {
+            memo: &mut memo,
+            session: &mut session,
+            census: &mut census,
+            owed: &mut owed,
+        },
+        &mut continuation,
+    )?;
+    drain_code_obligations(
+        arena,
+        judgement,
+        &mut memo,
+        &mut session,
+        &mut census,
+        owed,
+        &mut continuation,
+    )
+}
+
+/// Synthesize a closed native value and discharge every code obligation.
+///
+/// # Specification
+/// - requires: the value belongs to the arena.
+/// - ensures: the returned classifier is justified in empty contexts.
+/// - provides: the typed boundary for callable native transport replay.
+/// - fails: any native synthesis or code-formation error.
+/// - panics: none.
+///
+/// # Errors
+/// Any `KernelError`.
+///
+/// # Cost
+/// - allocation: the empty level context and the memo, the session and the
+///   frames of the check, growth within the value's term
+///
+/// # Adequacy
+/// - hypothesis: L3 — replay admits a certified path and refuses forged
+///   evidence.
+/// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+#[spec(
+    requires: arena.value(value).is_some(),
+    ensures: |ret| ret.as_ref().map_or(true, |&classifier| match arena.value(value) {
+        Some(&Value::PathRefl(code)) => matches!(arena.value_type(classifier), Some(&ValueType::PathUniverse(source, target)) if source == code && target == code),
+        Some(&Value::PathEquiv { path_type, .. }) => classifier == path_type,
+        Some(&Value::PathProduct(..)) => matches!(arena.value_type(classifier), Some(&ValueType::PathUniverse(..))),
+        _ => arena.value_type(classifier).is_some(),
+    }),
+)]
+pub(crate) fn synth_closed_value(
+    arena: &mut TermArena,
+    value: ValueId,
+) -> Result<ValueTypeId, KernelError>
+{
+    let levels = LevelContext::admit(
+        gandr_kernel_term::LevelParamCount::from(0_u32),
+        gandr_kernel_data::SmallVec::<_, 0, alloc::alloc::Global>::new(),
+    )?;
+    let judgement = Judgement::new(&crate::env::NO_ENTRIES, &levels);
+    let mut memo = DefaultMemo::new();
+    let mut session = SupportContext::new();
+    let mut census = ExpansionCensus::new();
+    let mut owed = Vec::new();
+    let mut continuation = Continuation::default();
+    let result = run(
+        arena,
+        judgement,
+        Vec::new(),
+        Goal::SynthValue(value),
+        StageOrder::default(),
+        Recording {
+            memo: &mut memo,
+            session: &mut session,
+            census: &mut census,
+            owed: &mut owed,
+        },
+        &mut continuation,
+    )?
+    .value_type()?;
+    drain_code_obligations(
+        arena,
+        judgement,
+        &mut memo,
+        &mut session,
+        &mut census,
+        owed,
+        &mut continuation,
+    )?;
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use anodized::spec;
+    use gandr_kernel_check_memo::NullMemo;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_strata::LevelConstant;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::CompType;
+    use gandr_kernel_term::CompTypeId;
+    use gandr_kernel_term::ComputationId;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::LevelParamCount;
+    use gandr_kernel_term::LevelSignature;
+    use gandr_kernel_term::SealExtent;
+    use gandr_kernel_term::SealScope;
+    use gandr_kernel_term::Side;
+    use gandr_kernel_term::Summand;
+    use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::ValueId;
+    use gandr_kernel_term::ValueType;
+    use gandr_kernel_term::ValueTypeId;
+
+    use super::BinderDepth;
+    use super::Continuation;
+    use super::Goal;
+    use super::Judgement;
+    use super::Produced;
+    use super::Recording;
+    use super::TypeLevelGoal;
+    use super::run;
+    use super::type_level;
+    use crate::Environment;
+    use crate::census::ExpansionCensus;
+    use crate::error::ExpectedValueShape;
+    use crate::error::KernelError;
+    use crate::error::NonInferableForm;
+    use crate::error::RegisterFault;
+    use crate::error::ValueTypeHead;
+    use crate::levels::LevelContext;
+    use crate::stage_order::StageOrder;
+    use crate::support::SupportContext;
+
+    #[test]
+    fn native_list_introductions_and_fold_check()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let list_type = arena.value_type_list(unit_type);
+        let unit = arena.value_unit();
+        let nil = arena.value_list_nil();
+        let cons = arena.value_list_cons(unit, nil);
+        let malformed_tail = arena.value_list_cons(unit, unit);
+        let malformed_head = arena.value_list_cons(nil, nil);
+        let sum_encoding = arena.value_injection(Side::Left.into(), unit);
+        for valid in [nil, cons] {
+            assert_eq!(
+                super::check_closed_value(&mut arena, valid, list_type),
+                Ok(())
+            );
+        }
+        for invalid in [malformed_tail, malformed_head, sum_encoding] {
+            assert!(super::check_closed_value(&mut arena, invalid, list_type).is_err());
+        }
+        let head = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let folded = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let cell = arena.value_list_cons(head, folded);
+        let on_cons = arena.computation_return(cell);
+        let on_nil = arena.computation_return(nil);
+        let fold = arena.computation_list_fold(unit_type, list_type, cons, on_nil, on_cons);
+        let result = arena.comp_type_returner(list_type);
+        let suspended = arena.value_type_thunk(result);
+        let body = arena.value_thunk(fold);
+        assert_eq!(
+            super::check_closed_value(&mut arena, body, suspended),
+            Ok(())
+        );
+        let wrong_cell = arena.value_list_cons(folded, head);
+        let wrong_branch = arena.computation_return(wrong_cell);
+        let wrong_fold =
+            arena.computation_list_fold(unit_type, list_type, cons, on_nil, wrong_branch);
+        let wrong = arena.value_thunk(wrong_fold);
+        assert!(super::check_closed_value(&mut arena, wrong, suspended).is_err());
+    }
+
+    /// The telescope `(c : Type, x : El c)`: its second result reads the first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn code_and_element(arena: &mut TermArena) -> CompTypeId
+    {
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(code, Level::zero());
+        arena.comp_type_returns(&[universe, element])
+    }
+
+    #[test]
+    fn a_return_of_several_values_checks_each_at_its_instantiated_result()
+    {
+        let mut arena = TermArena::new();
+        let telescope = code_and_element(&mut arena);
+        let suspended = arena.value_type_thunk(telescope);
+        let unit_type = arena.value_type_unit();
+        let empty_type = arena.value_type_empty();
+        let unit_code = arena.value_quote(unit_type);
+        let empty_code = arena.value_quote(empty_type);
+        let unit = arena.value_unit();
+        let nil = arena.value_list_nil();
+        let returned = |arena: &mut TermArena, values: &[ValueId]| {
+            let body = arena.computation_return_all(values);
+            arena.value_thunk(body)
+        };
+        let admitted = returned(&mut arena, &[unit_code, unit]);
+        assert_eq!(
+            super::check_closed_value(&mut arena, admitted, suspended),
+            Ok(()),
+            "the unit checks at the element type of the unit's code"
+        );
+        for (refused, why) in [
+            (
+                [empty_code, unit].as_slice(),
+                "the second value checks at the first value's type",
+            ),
+            (
+                [unit_code, nil].as_slice(),
+                "the second value checks at its instantiated result",
+            ),
+            (
+                [unit_code, unit, unit].as_slice(),
+                "a return of three is no returner of two",
+            ),
+        ] {
+            let refused = returned(&mut arena, refused);
+            assert!(
+                super::check_closed_value(&mut arena, refused, suspended).is_err(),
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bind_of_several_values_binds_them_in_order()
+    {
+        let mut arena = TermArena::new();
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let returner = arena.comp_type_returner(universe);
+        let suspended = arena.value_type_thunk(returner);
+        let unit_type = arena.value_type_unit();
+        let unit_code = arena.value_quote(unit_type);
+        let unit = arena.value_unit();
+        let bound = arena.computation_return_all(&[unit_code, unit]);
+        let bind = |arena: &mut TermArena, arity: usize, index: u32| {
+            let read = arena.value_variable(DeBruijnIndex::from(index));
+            let body = arena.computation_return(read);
+            let bind = arena.computation_bind_all(
+                bound,
+                gandr_kernel_term::ResultCount::from(arity),
+                body,
+            );
+            arena.value_thunk(bind)
+        };
+        let first = bind(&mut arena, 2, 1);
+        assert_eq!(
+            super::check_closed_value(&mut arena, first, suspended),
+            Ok(()),
+            "the outer binder is the first value, the code"
+        );
+        let second = bind(&mut arena, 2, 0);
+        assert!(
+            super::check_closed_value(&mut arena, second, suspended).is_err(),
+            "the inner binder is the second value, the unit, which is no code"
+        );
+        let another = bind(&mut arena, 3, 2);
+        assert!(
+            super::check_closed_value(&mut arena, another, suspended).is_err(),
+            "a bind of three refuses a return of two"
+        );
+    }
+
+    #[test]
+    fn obligation_ceiling_can_separate_memoized_and_memoless_checks()
+    {
+        let mut environment = Environment::new();
+        let code_axiom = {
+            let mut staging = environment.stage();
+            let universe = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, Level::zero());
+            staging.axiom(LevelSignature::monomorphic(), universe)
+        };
+        let code_axiom = environment
+            .add_decl(code_axiom)
+            .expect("the code axiom admits");
+        let mut arena = environment.arena().clone();
+        let (at_limit, above_limit) = {
+            let mut builder = gandr_kernel_term::DeclarationBuilder::new(&mut arena);
+            let code = builder.arena().value_constant(code_axiom.position());
+            let leaf = builder.arena().value_type_element(code, Level::zero());
+            let mut root = builder.arena().value_type_unit();
+            let mut power = leaf;
+            let mut remaining = usize::from(super::MAX_CODE_OBLIGATIONS);
+            while remaining != 0 {
+                if remaining & 1_usize != 0 {
+                    root = builder.arena().value_type_product(&[root, power]);
+                }
+                remaining >>= 1_u32;
+                if remaining != 0 {
+                    power = builder.arena().value_type_product(&[power, power]);
+                }
+            }
+            let above = builder.arena().value_type_product(&[root, leaf]);
+            (builder.axiom(LevelSignature::monomorphic(), root), above)
+        };
+        let above_limit = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
+            .axiom(LevelSignature::monomorphic(), above_limit);
+        let levels = level_context(LevelParamCount::from(0_u32));
+        let content_end = arena.watermark();
+        let at_limit = super::check_declaration_with_memo(
+            &mut arena,
+            super::Judgement::new(environment.entries(), &levels),
+            &at_limit,
+            &mut NullMemo,
+            &mut SupportContext::new(),
+            &mut ExpansionCensus::new(),
+        );
+        assert!(
+            at_limit.is_ok(),
+            "the exact occurrence budget is accepted: {at_limit:?}"
+        );
+        arena.truncate_to(content_end);
+        let memoized = super::check_declaration_with_memo(
+            &mut arena,
+            super::Judgement::new(environment.entries(), &levels),
+            &above_limit,
+            &mut super::DefaultMemo::new(),
+            &mut SupportContext::new(),
+            &mut ExpansionCensus::new(),
+        );
+        assert!(
+            memoized.is_ok(),
+            "the shared valid type checks with a live memo: {memoized:?}"
+        );
+        arena.truncate_to(content_end);
+        let memoless = super::check_declaration_with_memo(
+            &mut arena,
+            super::Judgement::new(environment.entries(), &levels),
+            &above_limit,
+            &mut NullMemo,
+            &mut SupportContext::new(),
+            &mut ExpansionCensus::new(),
+        );
+        assert!(
+            matches!(memoless, Err(KernelError::CodeObligationCeiling { ceiling })
+            if ceiling == super::MAX_CODE_OBLIGATIONS)
+        );
+    }
+
+    #[test]
+    fn unreadable_term_roots_fail_closed()
+    {
+        let mut arena = TermArena::new();
+        let before = arena.watermark();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        arena.truncate_to(before);
+        assert!(matches!(
+            synth_value(&mut arena, vec![], value),
+            Err(KernelError::ArenaFault)
+        ));
+        assert!(matches!(
+            synth_comp(&mut arena, vec![], computation),
+            Err(KernelError::ArenaFault)
+        ));
+        assert_eq!(before, arena.watermark());
+    }
+
+    /// No prior declarations.
+    ///
+    /// # Specification
+    /// trivial.
+    fn no_entries() -> crate::env::Entries
+    {
+        crate::env::Entries::new()
+    }
+
+    /// An unconstrained level context over `params` prenex parameters.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a level context over `params` prenex parameters with no
+    ///   declared constraints, whose universe judgements are the free-fragment
+    ///   oracle's.
+    /// - provides: the level context the machine cases run under.
+    /// - fails: never.
+    /// - panics: when admission refuses, which an empty constraint set never
+    ///   does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closed universes form in the zero-parameter fixture;
+    ///   the one-parameter boundary admits its last variable and refuses the
+    ///   next one, separating lost or enlarged scope through formation.
+    /// - witness: `check::tests::a_universe_forms_one_level_up`
+    /// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
+    #[spec(ensures: |ret| ret.params() == params)]
+    fn level_context(params: LevelParamCount) -> LevelContext
+    {
+        LevelContext::admit(params, gandr_kernel_data::SmallVec::new())
+            .expect("an unconstrained context admits")
+    }
+
+    /// The constant level `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn level(value: LevelConstant) -> Level
+    {
+        Level::constant(value)
+    }
+
+    /// Synthesize a value's type in a bare arena under `context`.
+    ///
+    /// # Specification
+    /// - requires: `context` is the typing context the value stands in, and
+    ///   `arena` holds it.
+    /// - ensures: the machine's answer for a value-synthesis goal, run at the
+    ///   null memo with a fresh session and census, so the case observes the
+    ///   unmemoized path.
+    /// - provides: the synthesis fixture the value rules are asserted through.
+    /// - fails: whatever the machine refuses the goal with.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a readable variable synthesizes the selected context
+    ///   type; an injection has no synthesized type and an unreadable root
+    ///   produces the arena fault. These are finite rule and refusal cases.
+    /// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+    /// - witness: `check::tests::an_injection_is_not_inferable`
+    /// - witness: `check::tests::unreadable_term_roots_fail_closed`
+    #[spec(ensures: |ret| match ret {
+        Ok(Produced::ValueType(id)) => arena.value_type(id).is_some(),
+        Err(_) => true,
+        _ => false,
+    })]
+    fn synth_value(
+        arena: &mut TermArena,
+        context: Vec<ValueTypeId>,
+        value: ValueId,
+    ) -> Result<Produced, KernelError>
+    {
+        let mut memo = NullMemo;
+        let mut session = SupportContext::new();
+        let mut census = ExpansionCensus::new();
+        let entries = no_entries();
+        let context_levels = level_context(LevelParamCount::from(0_u32));
+        run(
+            arena,
+            Judgement::new(&entries, &context_levels),
+            context,
+            Goal::SynthValue(value),
+            StageOrder::default(),
+            Recording {
+                memo: &mut memo,
+                session: &mut session,
+                census: &mut census,
+                owed: &mut Vec::new(),
+            },
+            &mut Continuation::default(),
+        )
+    }
+
+    /// Check a value against an expected type in a bare arena.
+    ///
+    /// # Specification
+    /// - requires: `context` is the typing context the value stands in, and
+    ///   `arena` holds both the value and `expected`.
+    /// - ensures: the machine's answer for a checking goal, run at the null
+    ///   memo with a fresh session and census.
+    /// - provides: the checking fixture the value rules are asserted through.
+    /// - fails: whatever the machine refuses the goal with.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an injection is accepted against its sum, and the
+    ///   expected type reaches a checking component of a pair. Success is a
+    ///   checking result rather than a synthesized-type register.
+    /// - witness: `check::tests::an_injection_checks_against_its_sum`
+    /// - witness: `check::tests::a_pair_propagates_into_a_checking_component`
+    #[spec(ensures: |ret| matches!(&ret, Ok(Produced::Checked) | Err(_)))]
+    fn check_value(
+        arena: &mut TermArena,
+        context: Vec<ValueTypeId>,
+        value: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<Produced, KernelError>
+    {
+        let mut memo = NullMemo;
+        let mut session = SupportContext::new();
+        let mut census = ExpansionCensus::new();
+        let entries = no_entries();
+        let context_levels = level_context(LevelParamCount::from(0_u32));
+        run(
+            arena,
+            Judgement::new(&entries, &context_levels),
+            context,
+            Goal::CheckValue(value, expected),
+            StageOrder::default(),
+            Recording {
+                memo: &mut memo,
+                session: &mut session,
+                census: &mut census,
+                owed: &mut Vec::new(),
+            },
+            &mut Continuation::default(),
+        )
+    }
+
+    /// Synthesize a computation's type in a bare arena.
+    ///
+    /// # Specification
+    /// - requires: `context` is the typing context the computation stands in,
+    ///   and `arena` holds it.
+    /// - ensures: the machine's answer for a computation-synthesis goal, run at
+    ///   the null memo with a fresh session and census.
+    /// - provides: the synthesis fixture the computation rules are asserted
+    ///   through.
+    /// - fails: whatever the machine refuses the goal with.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an application and a force synthesize their selected
+    ///   computation types; an unreadable computation root produces the arena
+    ///   fault without fabricating a type.
+    /// - witness: `check::tests::an_application_produces_the_codomain`
+    /// - witness: `check::tests::a_force_unwraps_a_thunk`
+    /// - witness: `check::tests::unreadable_term_roots_fail_closed`
+    #[spec(ensures: |ret| match ret {
+        Ok(Produced::CompType(id)) => arena.comp_type(id).is_some(),
+        Err(_) => true,
+        _ => false,
+    })]
+    fn synth_comp(
+        arena: &mut TermArena,
+        context: Vec<ValueTypeId>,
+        computation: ComputationId,
+    ) -> Result<Produced, KernelError>
+    {
+        let mut memo = NullMemo;
+        let mut session = SupportContext::new();
+        let mut census = ExpansionCensus::new();
+        let entries = no_entries();
+        let context_levels = level_context(LevelParamCount::from(0_u32));
+        run(
+            arena,
+            Judgement::new(&entries, &context_levels),
+            context,
+            Goal::SynthComp(computation),
+            StageOrder::default(),
+            Recording {
+                memo: &mut memo,
+                session: &mut session,
+                census: &mut census,
+                owed: &mut Vec::new(),
+            },
+            &mut Continuation::default(),
+        )
+    }
+
+    /// The level of a value type in a bare arena.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds `root`.
+    /// - ensures: the universe level the formation walk reads off `root`, run
+    ///   at the null memo with a fresh session and census and with its code
+    ///   obligations discarded.
+    /// - provides: the formation fixture the type rules are asserted through.
+    /// - fails: whatever the formation walk refuses the type with.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the closed-universe successor and lift boundary
+    ///   distinguish the formation result from refusal. This fixture does not
+    ///   claim to discharge the codes its formation walk defers.
+    /// - witness: `check::tests::a_universe_forms_one_level_up`
+    /// - witness: `check::tests::a_lift_requires_a_strictly_higher_target`
+    #[spec(ensures: |ret| match arena.value_type(root) {
+        None => matches!(&ret, Err(KernelError::ArenaFault)),
+        Some(&ValueType::Base(_)) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
+        Some(held) if held.product_parts() == Some(&[]) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
+        Some(_) => ret.is_err() || ret.as_ref().is_ok_and(|level| level.atoms().next().is_none()),
+    })]
+    fn value_level(
+        arena: &TermArena,
+        root: ValueTypeId,
+    ) -> Result<Level, KernelError>
+    {
+        let mut memo = NullMemo;
+        let mut session = SupportContext::new();
+        let mut census = ExpansionCensus::new();
+        let entries = no_entries();
+        let context_levels = level_context(LevelParamCount::from(0_u32));
+        type_level(
+            arena,
+            Judgement::new(&entries, &context_levels),
+            TypeLevelGoal::Value(root),
+            Vec::new(),
+            Recording {
+                memo: &mut memo,
+                session: &mut session,
+                census: &mut census,
+                owed: &mut Vec::new(),
+            },
+        )
+    }
+
+    #[test]
+    fn a_variable_synthesizes_its_context_type()
+    {
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit = arena.value_type_unit();
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let produced = synth_value(&mut arena, vec![unit, integer], variable)
+            .expect("an in-scope variable synthesizes");
+        assert_eq!(
+            integer,
+            produced.value_type().expect("a value type"),
+            "index zero names the innermost slot"
+        );
+        let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let produced = synth_value(&mut arena, vec![unit, integer], outer)
+            .expect("the outermost slot remains in scope");
+        assert_eq!(unit, produced.value_type().expect("a value type"));
+        assert_eq!(
+            Err(KernelError::UnboundVariable {
+                index: DeBruijnIndex::from(0_u32)
+            }),
+            synth_value(&mut arena, Vec::new(), variable),
+            "an empty context has no innermost slot"
+        );
+        let maximal = arena.value_variable(DeBruijnIndex::from(u32::MAX));
+        assert_eq!(
+            Err(KernelError::UnboundVariable {
+                index: DeBruijnIndex::from(u32::MAX)
+            }),
+            synth_value(&mut arena, vec![unit, integer], maximal),
+            "a maximal external index is absent without arithmetic failure"
+        );
+        let escaping = arena.value_variable(DeBruijnIndex::from(2_u32));
+        assert_eq!(
+            Err(KernelError::UnboundVariable {
+                index: DeBruijnIndex::from(2_u32)
+            }),
+            synth_value(&mut arena, vec![unit, integer], escaping),
+            "and an index past the context escapes"
+        );
+    }
+
+    #[test]
+    fn an_injection_is_not_inferable()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let injection = arena.value_injection(Side::Left.into(), unit);
+        assert_eq!(
+            Err(KernelError::NotInferable {
+                form: NonInferableForm::Injection
+            }),
+            synth_value(&mut arena, Vec::new(), injection),
+            "an injection carries no record of which sum it injects into"
+        );
+    }
+
+    #[test]
+    fn an_injection_checks_against_its_sum()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let sum = arena.value_type_sum(&[unit_type, integer]);
+        let left = arena.value_injection(Side::Left.into(), unit);
+        assert!(
+            check_value(&mut arena, Vec::new(), left, sum).is_ok(),
+            "the left injection checks against the left summand"
+        );
+        let right = arena.value_injection(Side::Right.into(), unit);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), right, sum),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
+            ),
+            "and the right injection is checked against the right summand, which the unit tuple \
+             is not"
+        );
+        let refused = check_value(&mut arena, Vec::new(), left, unit_type);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "and a non-sum expected type is a shape mismatch: {refused:?}"
+        );
+    }
+
+    #[test]
+    fn a_pair_propagates_into_a_checking_component()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let injection = arena.value_injection(Side::Left.into(), unit);
+        let sum = arena.value_type_sum(&[unit_type, integer]);
+        let pair = arena.value_tuple(&[unit, injection]);
+        let product = arena.value_type_product(&[unit_type, sum]);
+        assert!(
+            check_value(&mut arena, Vec::new(), pair, product).is_ok(),
+            "the expected product flows into both components, so the checking-only injection \
+             reaches its sum"
+        );
+        assert!(
+            matches!(
+                synth_value(&mut arena, Vec::new(), pair),
+                Err(KernelError::NotInferable {
+                    form: NonInferableForm::Injection
+                })
+            ),
+            "and the same pair does not synthesize, since nothing tells the injection its sum"
+        );
+    }
+
+    #[test]
+    fn a_record_field_of_another_type_is_refused_by_its_label()
+    {
+        let mut arena = TermArena::new();
+        let label =
+            |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+        let unit = arena.value_unit();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let injection = arena.value_injection(Side::Left.into(), unit);
+        // `*{.host = (), .port = inj₀ ()}` at `*{host : (), port : Integer}`.
+        let record = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("host"), unit),
+            (label("port"), injection),
+        ]));
+        let expected = arena.value_type_record(alloc::collections::BTreeMap::from([
+            (label("host"), unit_type),
+            (label("port"), integer),
+        ]));
+        let refused = check_value(&mut arena, Vec::new(), record, expected);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::FieldRefused { ref label, ref cause })
+                    if label.as_ref() == "port"
+                        && matches!(**cause, crate::error::FieldCause::Shape {
+                            expected: ExpectedValueShape::Sum,
+                            ..
+                        })
+            ),
+            "a field whose value has another type is refused by its label, beside the refusal \
+             of its value: {refused:?}"
+        );
+        let right = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("host"), unit),
+            (label("port"), injection),
+        ]));
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), injection, integer),
+                Err(KernelError::ValueShapeMismatch { .. })
+            ),
+            "and the same value checked outside a record names no field"
+        );
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), right, unit_type),
+                Err(KernelError::ValueShapeMismatch { .. })
+            ),
+            "and a record checked at another former is refused as a whole, by no field"
+        );
+    }
+
+    #[test]
+    fn a_fixed_value_of_another_type_is_refused_by_its_label()
+    {
+        let mut arena = TermArena::new();
+        let label =
+            |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+        let unit = arena.value_unit();
+        let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(
+                gandr_kernel_term::Sign::NonNegative,
+                gandr_kernel_term::Magnitude::zero(),
+            ),
+        ));
+        let injection = arena.value_injection(Side::Left.into(), unit);
+        // `*{.host = 0, .port = 0}` restricted at `.port = inj₀ ()`: the fixed
+        // value has another type than the field it fixes.
+        let record = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("host"), zero),
+            (label("port"), zero),
+        ]));
+        let restriction = arena.value_restrict(
+            record,
+            alloc::collections::BTreeMap::from([(label("port"), injection)]),
+        );
+        let refused = synth_value(&mut arena, Vec::new(), restriction);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::FieldRefused { ref label, ref cause })
+                    if label.as_ref() == "port"
+                        && matches!(**cause, crate::error::FieldCause::Shape { .. })
+            ),
+            "a restriction fixing a field at a value of another type is refused by the field's \
+             label: {refused:?}"
+        );
+        let restriction = arena.value_restrict(
+            record,
+            alloc::collections::BTreeMap::from([(label("port"), zero)]),
+        );
+        assert!(
+            synth_value(&mut arena, Vec::new(), restriction).is_ok(),
+            "and the same restriction at the field's own value synthesizes"
+        );
+    }
+
+    #[test]
+    fn an_application_produces_the_codomain()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returner = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(unit_type, returner);
+        let thunk_type = arena.value_type_thunk(arrow);
+        let head_variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let head = arena.computation_force(head_variable);
+        let unit = arena.value_unit();
+        let application = arena.computation_application(head, unit);
+        let produced = synth_comp(&mut arena, vec![thunk_type], application)
+            .expect("an application of a forced thunk synthesizes");
+        assert_eq!(
+            returner,
+            produced.comp_type().expect("a computation type"),
+            "an application produces its head's codomain"
+        );
+    }
+
+    #[test]
+    fn a_force_unwraps_a_thunk()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let returner = arena.comp_type_returner(unit_type);
+        let thunk_type = arena.value_type_thunk(returner);
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let force = arena.computation_force(variable);
+        let produced =
+            synth_comp(&mut arena, vec![thunk_type], force).expect("forcing a thunk synthesizes");
+        assert_eq!(
+            returner,
+            produced.comp_type().expect("a computation type"),
+            "a force yields the thunked computation type"
+        );
+        let not_a_thunk = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bad_force = arena.computation_force(not_a_thunk);
+        assert!(
+            matches!(
+                synth_comp(&mut arena, vec![unit_type], bad_force),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Thunk,
+                    ..
+                })
+            ),
+            "and forcing a non-thunk is a shape mismatch"
+        );
+    }
+
+    #[test]
+    fn a_bind_binds_the_returned_value()
+    {
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returner = arena.comp_type_returner(integer);
+        let thunk_type = arena.value_type_thunk(returner);
+        let held = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.computation_force(held);
+        // The body reads the payload the bind introduced, at index zero.
+        let payload = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_return(payload);
+        let sequence = arena.computation_bind(bound, body);
+        let produced = synth_comp(&mut arena, vec![thunk_type], sequence)
+            .expect("a bind over a returner synthesizes");
+        let produced_type = produced.comp_type().expect("a computation type");
+        let read = arena.comp_type(produced_type).expect("the type resolves");
+        assert!(
+            matches!(*read, CompType::Returner(result) if result == integer),
+            "the body sees the bound payload's type, so the bind returns it"
+        );
+    }
+
+    #[test]
+    fn a_case_requires_convergent_branches()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let sum = arena.value_type_sum(&[unit_type, unit_type]);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let left = arena.computation_return(bound);
+        let right = arena.computation_return(bound);
+        let case = arena.computation_case(scrutinee, &[left, right]);
+        assert!(
+            synth_comp(&mut arena, vec![sum], case).is_ok(),
+            "two branches returning their own summand converge when the summands agree"
+        );
+
+        let mixed = arena.value_type_sum(&[unit_type, integer]);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let case = arena.computation_case(scrutinee, &[left, right]);
+        assert!(
+            matches!(
+                synth_comp(&mut arena, vec![mixed], case),
+                Err(KernelError::CaseBranchMismatch(_))
+            ),
+            "and they diverge when the summands do"
+        );
+    }
+
+    #[test]
+    fn a_case_propagates_the_expected_type()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let mixed = arena.value_type_sum(&[unit_type, integer]);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let unit = arena.value_unit();
+        let left = arena.computation_return(unit);
+        let right = arena.computation_return(unit);
+        let case = arena.computation_case(scrutinee, &[left, right]);
+        let expected = arena.comp_type_returner(unit_type);
+        let thunk = arena.value_thunk(case);
+        let thunk_type = arena.value_type_thunk(expected);
+        assert!(
+            check_value(&mut arena, vec![mixed], thunk, thunk_type).is_ok(),
+            "checking pushes one expected type into both branches, where synthesis would have \
+             required them to agree on their own"
+        );
+    }
+
+    /// A case binds each branch to the summand at its position, takes exactly
+    /// one branch per summand, and at no branches eliminates the empty sum,
+    /// which checks but cannot be synthesized.
+    #[test]
+    fn an_n_way_case_binds_each_summand()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(bound);
+        let three_way = arena.computation_case(scrutinee, &[returned, returned, returned]);
+
+        let uniform = arena.value_type_sum(&[integer, integer, integer]);
+        let produced = synth_comp(&mut arena, vec![uniform], three_way)
+            .expect("three branches returning agreeing summands converge");
+        assert!(
+            matches!(
+                arena.comp_type(produced.comp_type().expect("a computation type")),
+                Some(&CompType::Returner(result)) if result == integer
+            ),
+            "and the case returns the summands' common type"
+        );
+        let middle_differs = arena.value_type_sum(&[integer, unit_type, integer]);
+        assert!(
+            matches!(
+                synth_comp(&mut arena, vec![middle_differs], three_way),
+                Err(KernelError::CaseBranchMismatch(_))
+            ),
+            "the middle branch binds the middle summand"
+        );
+        let two_way = arena.value_type_sum(&[integer, integer]);
+        assert!(
+            matches!(
+                synth_comp(&mut arena, vec![two_way], three_way),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "three branches do not eliminate a sum of two"
+        );
+
+        let empty = arena.value_type_empty();
+        let no_branches = arena.computation_case(scrutinee, &[]);
+        let returner = arena.comp_type_returner(integer);
+        let thunk_type = arena.value_type_thunk(returner);
+        let thunk = arena.value_thunk(no_branches);
+        assert!(
+            check_value(&mut arena, vec![empty], thunk, thunk_type).is_ok(),
+            "a case of no branches over the empty sum checks at any type"
+        );
+        assert_eq!(
+            Err(KernelError::NotInferable {
+                form: NonInferableForm::EmptyCase
+            }),
+            synth_comp(&mut arena, vec![empty], no_branches),
+            "and has no branch to synthesize a type from"
+        );
+        assert!(
+            matches!(
+                check_value(&mut arena, vec![unit_type], thunk, thunk_type),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "but eliminates nothing that is not the empty sum"
+        );
+    }
+
+    /// A tuple checks component by component against a product of its own
+    /// arity and synthesizes the product of its components' types; an
+    /// injection checks against the summand its position names.
+    #[test]
+    fn a_tuple_and_an_injection_read_their_positions()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit = arena.value_unit();
+        let triple = arena.value_tuple(&[unit, unit, unit]);
+        let three = arena.value_type_product(&[unit_type, unit_type, unit_type]);
+        assert!(check_value(&mut arena, Vec::new(), triple, three).is_ok());
+        let produced = synth_value(&mut arena, Vec::new(), triple)
+            .expect("a tuple synthesizes")
+            .value_type()
+            .expect("a value type");
+        assert_eq!(
+            crate::conv::Convertibility::Convertible,
+            crate::conv::convertible_value_types(&arena, produced, three),
+            "the product of its components' types"
+        );
+        let two = arena.value_type_product(&[unit_type, unit_type]);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), triple, two),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
+            ),
+            "a product of another arity is a shape mismatch"
+        );
+
+        let sum = arena.value_type_sum(&[integer, integer, unit_type]);
+        let last = arena.value_injection(Summand::from(2_usize), unit);
+        assert!(
+            check_value(&mut arena, Vec::new(), last, sum).is_ok(),
+            "the third summand is the unit type"
+        );
+        let past = arena.value_injection(Summand::from(3_usize), unit);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), past, sum),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "a position past the summands is a shape mismatch"
+        );
+    }
+
+    #[test]
+    fn a_prenex_scope_controls_universe_formation()
+    {
+        let mut arena = TermArena::new();
+        let variable = Level::var(gandr_kernel_strata::LevelVar::new(
+            gandr_kernel_strata::LevelVarIndex::from(0_u32),
+        ));
+        let expected = variable.succ().expect("a variable's successor fits");
+        let in_scope = arena.value_type_universe(GroundSort::Value, variable);
+        let out_of_scope = arena.value_type_universe(
+            GroundSort::Value,
+            Level::var(gandr_kernel_strata::LevelVar::new(
+                gandr_kernel_strata::LevelVarIndex::from(1_u32),
+            )),
+        );
+        let levels = level_context(LevelParamCount::from(1_u32));
+        let entries = no_entries();
+        let formed = type_level(
+            &arena,
+            Judgement::new(&entries, &levels),
+            TypeLevelGoal::Value(in_scope),
+            Vec::new(),
+            Recording {
+                memo: &mut NullMemo,
+                session: &mut SupportContext::new(),
+                census: &mut ExpansionCensus::new(),
+                owed: &mut Vec::new(),
+            },
+        );
+        assert_eq!(formed, Ok(expected));
+        let refused = type_level(
+            &arena,
+            Judgement::new(&entries, &levels),
+            TypeLevelGoal::Value(out_of_scope),
+            Vec::new(),
+            Recording {
+                memo: &mut NullMemo,
+                session: &mut SupportContext::new(),
+                census: &mut ExpansionCensus::new(),
+                owed: &mut Vec::new(),
+            },
+        );
+        assert_eq!(
+            refused,
+            Err(KernelError::LevelVariableOutOfScope {
+                variable: gandr_kernel_strata::LevelVar::new(
+                    gandr_kernel_strata::LevelVarIndex::from(1_u32),
+                ),
+            })
+        );
+    }
+
+    #[test]
+    fn a_universe_forms_one_level_up()
+    {
+        let mut arena = TermArena::new();
+        let universe = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(3)));
+        assert_eq!(
+            Ok(level(LevelConstant::from(4))),
+            value_level(&arena, universe),
+            "the universe at l forms at l + 1"
+        );
+        let computation =
+            arena.value_type_universe(GroundSort::Computation, level(LevelConstant::from(3)));
+        assert_eq!(
+            Ok(level(LevelConstant::from(4))),
+            value_level(&arena, computation),
+            "and so does the computation universe, itself a value type"
+        );
+        let unit = arena.value_type_unit();
+        assert_eq!(
+            Ok(level(LevelConstant::from(0))),
+            value_level(&arena, unit),
+            "and a small type forms at zero"
+        );
+    }
+
+    #[test]
+    fn a_lift_requires_a_strictly_higher_target()
+    {
+        let mut arena = TermArena::new();
+        let universe = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        let raised = arena.value_type_lift(universe, level(LevelConstant::from(5)));
+        assert_eq!(
+            Ok(level(LevelConstant::from(5))),
+            value_level(&arena, raised),
+            "a lift forms at its target"
+        );
+        // `Universe(1)` itself forms at level 2, so 3 is the first admissible
+        // target and 2 is the boundary that does not strictly raise.
+        let boundary = arena.value_type_lift(universe, level(LevelConstant::from(3)));
+        assert_eq!(
+            Ok(level(LevelConstant::from(3))),
+            value_level(&arena, boundary),
+            "one above the inner type's own level is admissible"
+        );
+        let sunk = arena.value_type_lift(universe, level(LevelConstant::from(2)));
+        assert!(
+            matches!(
+                value_level(&arena, sunk),
+                Err(KernelError::UniverseViolation(_))
+            ),
+            "and a target at the inner type's own level does not strictly raise"
+        );
+    }
+
+    #[test]
+    fn an_arrow_forms_at_the_join_of_its_children()
+    {
+        let mut arena = TermArena::new();
+        let low = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        let high = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(4)));
+        let returner = arena.comp_type_returner(high);
+        let arrow = arena.comp_type_arrow(low, returner);
+        let thunk = arena.value_type_thunk(arrow);
+        assert_eq!(
+            Ok(level(LevelConstant::from(5))),
+            value_level(&arena, thunk),
+            "the arrow takes the maximum of its domain's and codomain's levels"
+        );
+    }
+
+    #[test]
+    fn a_static_pi_forms_over_static_classifiers_only()
+    {
+        let mut arena = TermArena::new();
+        let low = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        let high =
+            arena.value_type_universe(GroundSort::Computation, level(LevelConstant::from(3)));
+        let operator = arena.value_type_static_pi(low, high);
+        assert_eq!(
+            Ok(level(LevelConstant::from(4))),
+            value_level(&arena, operator),
+            "a static Pi forms at the join of its children's levels"
+        );
+        let curried = arena.value_type_static_pi(low, operator);
+        assert_eq!(
+            Ok(level(LevelConstant::from(4))),
+            value_level(&arena, curried),
+            "and a static Pi is itself a static classifier"
+        );
+        let integer = arena.value_type_base(BaseType::Integer);
+        for ill in [
+            arena.value_type_static_pi(integer, low),
+            arena.value_type_static_pi(low, integer),
+        ] {
+            assert!(
+                matches!(
+                    value_level(&arena, ill),
+                    Err(KernelError::StaticClassifierExpected { actual })
+                        if actual.head() == ValueTypeHead::Base
+                ),
+                "a type that classifies no codes stands at neither child"
+            );
+        }
+    }
+
+    #[test]
+    fn a_static_application_produces_the_codomain_of_its_head()
+    {
+        let mut arena = TermArena::new();
+        let small = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let computations = arena.value_type_universe(GroundSort::Computation, Level::zero());
+        let operator = arena.value_type_static_pi(small, computations);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let code = arena.value_quote(integer);
+        let head = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let instance = arena.value_static_application(head, code);
+        let produced = synth_value(&mut arena, vec![operator], instance)
+            .expect("an operator applied to a code of its domain synthesizes");
+        assert_eq!(
+            computations,
+            produced.value_type().expect("a value type"),
+            "a static application produces its head's codomain"
+        );
+
+        let unit = arena.value_unit();
+        let ill_argument = arena.value_static_application(head, unit);
+        assert!(
+            matches!(
+                synth_value(&mut arena, vec![operator], ill_argument),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
+            ),
+            "the argument is checked against the domain"
+        );
+        assert!(
+            matches!(
+                synth_value(&mut arena, vec![small], instance),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::StaticPi,
+                    ..
+                })
+            ),
+            "and only a static Pi's inhabitant is applied"
+        );
+    }
+
+    /// The dependent arrow forms like the arrow, checks a lambda like the
+    /// arrow, and eliminates like the arrow. Three assertions in one case
+    /// because they are one claim: at a type vocabulary with no former indexed
+    /// by a value term, the binder the dependent arrow scopes its codomain
+    /// under is the context slot a lambda's check already pushes, and
+    /// instantiating the codomain at the argument moves nothing.
+    #[test]
+    fn a_dependent_arrow_forms_checks_and_eliminates_like_an_arrow()
+    {
+        let mut arena = TermArena::new();
+        let low = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        let high = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(4)));
+        let returner = arena.comp_type_returner(high);
+        let dependent = arena.comp_type_pi(low, returner);
+        let thunk = arena.value_type_thunk(dependent);
+        assert_eq!(
+            Ok(level(LevelConstant::from(5))),
+            value_level(&arena, thunk),
+            "the dependent arrow forms at the join of its domain's and codomain's levels"
+        );
+
+        let unit_type = arena.value_type_unit();
+        let unit_returner = arena.comp_type_returner(unit_type);
+        let identity = arena.comp_type_pi(unit_type, unit_returner);
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_return(bound);
+        let lambda = arena.computation_lambda(body);
+        let mut memo = NullMemo;
+        let mut session = SupportContext::new();
+        let mut census = ExpansionCensus::new();
+        let entries = no_entries();
+        let context_levels = level_context(LevelParamCount::from(0_u32));
+        let checked = run(
+            &mut arena,
+            Judgement::new(&entries, &context_levels),
+            Vec::new(),
+            Goal::CheckComp(lambda, identity),
+            StageOrder::default(),
+            Recording {
+                memo: &mut memo,
+                session: &mut session,
+                census: &mut census,
+                owed: &mut Vec::new(),
+            },
+            &mut Continuation::default(),
+        );
+        assert_eq!(
+            Ok(Produced::Checked),
+            checked,
+            "a lambda checks against a dependent arrow through the domain it pushes"
+        );
+
+        let head_thunk = arena.value_type_thunk(identity);
+        let head_variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let head = arena.computation_force(head_variable);
+        let unit = arena.value_unit();
+        let application = arena.computation_application(head, unit);
+        let produced = synth_comp(&mut arena, vec![head_thunk], application)
+            .expect("an application at a dependent head synthesizes");
+        assert_eq!(
+            unit_returner,
+            produced.comp_type().expect("a computation type"),
+            "and the elimination produces the codomain, which no term occurs in to substitute for"
+        );
+    }
+
+    #[test]
+    fn an_abstract_type_forms_at_its_declared_universe()
+    {
+        let mut environment = Environment::new();
+        let atom = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(2)));
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
+        };
+        let _admitted = environment
+            .add_decl(atom)
+            .expect("an abstract type at a universe kind admits");
+        let definition = {
+            let mut staging = environment.stage();
+            let declared = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(9)));
+            let _inner = staging
+                .arena()
+                .value_type_abstract(ConstantIndex::from(0_usize));
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        let _second = environment
+            .add_decl(definition)
+            .expect("an axiom at a universe admits");
+
+        // The atom's own formation level is read off the kind its declaration
+        // fixed, which is the whole rule.
+        let referencing = {
+            let mut staging = environment.stage();
+            let atom_type = staging
+                .arena()
+                .value_type_abstract(ConstantIndex::from(0_usize));
+            let raised = staging
+                .arena()
+                .value_type_lift(atom_type, level(LevelConstant::from(3)));
+            staging.axiom(LevelSignature::monomorphic(), raised)
+        };
+        assert!(
+            environment.add_decl(referencing).is_ok(),
+            "a lift of the atom to one level above its declared kind admits"
+        );
+        let too_low = {
+            let mut staging = environment.stage();
+            let atom_type = staging
+                .arena()
+                .value_type_abstract(ConstantIndex::from(0_usize));
+            let raised = staging
+                .arena()
+                .value_type_lift(atom_type, level(LevelConstant::from(2)));
+            staging.axiom(LevelSignature::monomorphic(), raised)
+        };
+        assert!(
+            matches!(
+                environment.add_decl(too_low),
+                Err(KernelError::UniverseViolation(_))
+            ),
+            "and a lift to the atom's own level does not, so the level came from the kind"
+        );
+    }
+
+    #[test]
+    fn an_atom_naming_a_definition_is_not_an_abstract_type()
+    {
+        let mut environment = Environment::new();
+        let definition = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_unit();
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        let _admitted = environment
+            .add_decl(definition)
+            .expect("a unit definition admits");
+        let forged = {
+            let mut staging = environment.stage();
+            let declared = staging
+                .arena()
+                .value_type_abstract(ConstantIndex::from(0_usize));
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        assert_eq!(
+            Err(KernelError::NotAnAbstractType {
+                index: ConstantIndex::from(0_usize)
+            }),
+            environment.add_decl(forged).map(|_admitted| ()),
+            "nothing in an artifact says 'I am an atom'; the kernel resolves the position"
+        );
+    }
+
+    #[test]
+    fn a_forward_atom_reference_is_not_an_abstract_type()
+    {
+        let mut environment = Environment::new();
+        let forward = {
+            let mut staging = environment.stage();
+            let declared = staging
+                .arena()
+                .value_type_abstract(ConstantIndex::from(7_usize));
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        assert_eq!(
+            Err(KernelError::NotAnAbstractType {
+                index: ConstantIndex::from(7_usize)
+            }),
+            environment.add_decl(forward).map(|_admitted| ()),
+            "an out-of-range position resolves to nothing and is refused"
+        );
+    }
+
+    #[test]
+    fn an_identity_thunk_checks()
+    {
+        let mut environment = Environment::new();
+        let definition = {
+            let mut staging = environment.stage();
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            let returner = staging.arena().comp_type_returner(integer);
+            let arrow = staging.arena().comp_type_arrow(integer, returner);
+            let declared = staging.arena().value_type_thunk(arrow);
+            let variable = staging.arena().value_variable(DeBruijnIndex::from(0_u32));
+            let body = staging.arena().computation_return(variable);
+            let lambda = staging.arena().computation_lambda(body);
+            let thunk = staging.arena().value_thunk(lambda);
+            staging.def(LevelSignature::monomorphic(), declared, thunk)
+        };
+        assert!(
+            environment.add_decl(definition).is_ok(),
+            "the identity on integers admits through the checked choke point"
+        );
+    }
+
+    /// The polymorphic identity, admitted through the public choke point.
+    ///
+    /// `Π (A : U 0). Π (_ : El A). F (El A)` is the smallest declaration that
+    /// makes every part of the dependent machinery load-bearing at once: the
+    /// codomain mentions the binder through a code, so the context stops
+    /// holding closed types and a variable synthesis has to shift its slot;
+    /// the formation walk owes two code obligations and the driver drains
+    /// both through the checking machine; and the mode switch at the
+    /// returned variable converts two codes rather than two closed types.
+    #[test]
+    fn a_dependent_identity_checks_through_its_codes()
+    {
+        let mut environment = Environment::new();
+        let definition = {
+            let mut staging = environment.stage();
+            let zero = level(LevelConstant::from(0));
+            let mint = staging.arena();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let outer_code = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let domain = mint.value_type_element(outer_code, zero.clone());
+            let inner_code = mint.value_variable(DeBruijnIndex::from(1_u32));
+            let result = mint.value_type_element(inner_code, zero);
+            let returner = mint.comp_type_returner(result);
+            let inner = mint.comp_type_pi(domain, returner);
+            let outer = mint.comp_type_pi(universe, inner);
+            let declared = mint.value_type_thunk(outer);
+
+            let returned = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(returned);
+            let inner_lambda = mint.computation_lambda(body);
+            let outer_lambda = mint.computation_lambda(inner_lambda);
+            let thunk = mint.value_thunk(outer_lambda);
+            staging.def(LevelSignature::monomorphic(), declared, thunk)
+        };
+        assert_eq!(
+            Ok(()),
+            environment.add_decl(definition).map(|_admitted| ()),
+            "the dependent identity admits through the checked choke point"
+        );
+    }
+
+    /// Admit `Σ (t : U (Unit → F Type)). U (Unit → F El(⟨force t ()⟩))` at
+    /// the pair `(thunk λ_. return ⌜quoted⌝, thunk λ_. return ())`, with
+    /// `quoted` minted by `quote`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_family_pair(
+        quote: impl FnOnce(&mut TermArena) -> ValueTypeId
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let definition = {
+            let mut staging = environment.stage();
+            let zero = level(LevelConstant::from(0));
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let returns_code = mint.comp_type_returner(universe);
+            let code_arrow = mint.comp_type_arrow(unit, returns_code);
+            let first = mint.value_type_thunk(code_arrow);
+            let family = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let forced = mint.computation_force(family);
+            let argument = mint.value_unit();
+            let call = mint.computation_application(forced, argument);
+            let code = mint.value_returned(call);
+            let decoded = mint.value_type_element(code, zero);
+            let returns_element = mint.comp_type_returner(decoded);
+            let element_arrow = mint.comp_type_arrow(unit, returns_element);
+            let second = mint.value_type_thunk(element_arrow);
+            let declared = mint.value_type_sigma(first, second);
+
+            let quoted = quote(mint);
+            let quoted = mint.value_quote(quoted);
+            let returns_quote = mint.computation_return(quoted);
+            let code_arm = mint.computation_lambda(returns_quote);
+            let code_thunk = mint.value_thunk(code_arm);
+            let unit_value = mint.value_unit();
+            let returns_unit = mint.computation_return(unit_value);
+            let element_arm = mint.computation_lambda(returns_unit);
+            let element_thunk = mint.value_thunk(element_arm);
+            let pair = mint.value_tuple(&[code_thunk, element_thunk]);
+            staging.def(LevelSignature::monomorphic(), declared, pair)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A pair's second component checks at the fibre instantiated at its
+    /// first, whose decode reads a call into that first component: the check
+    /// reads the code to the quote it returns before it reads the shape the
+    /// component needs (#721). A first component returning `⌜Integer⌝` keeps
+    /// `()` apart, so the reading is the one that separates the two.
+    #[test]
+    fn a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721()
+    {
+        assert_eq!(
+            Ok(()),
+            admit_family_pair(TermArena::value_type_unit),
+            "the fibre decodes to the unit type its first component returns"
+        );
+        assert!(
+            matches!(
+                admit_family_pair(|mint| mint.value_type_base(BaseType::Integer)),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
+            ),
+            "a fibre decoding to the integers refuses the empty tuple"
+        );
+    }
+
+    /// The non-negative integer literal of `magnitude`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn integer(
+        mint: &mut TermArena,
+        magnitude: &gandr_kernel_term::Magnitude,
+    ) -> ValueId
+    {
+        mint.value_literal(gandr_kernel_term::Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(
+                gandr_kernel_term::Sign::NonNegative,
+                magnitude.clone(),
+            ),
+        ))
+    }
+
+    /// Admit `pick = thunk λ_. return answer` at `U (Unit → F Integer)`, then
+    /// `family = thunk λ_. return ⌜Path[.A = Integer](⟨force pick ()⟩, point)⌝`
+    /// at `U (Unit → F Type)`, then `here(point)` with no dialogue at
+    /// `El(⟨force family ()⟩)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_reflexivity_at_a_computed_identity(
+        answer: &gandr_kernel_term::Magnitude,
+        point: &gandr_kernel_term::Magnitude,
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let pick = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let number = mint.value_type_base(BaseType::Integer);
+            let returns_number = mint.comp_type_returner(number);
+            let arrow = mint.comp_type_arrow(unit, returns_number);
+            let declared = mint.value_type_thunk(arrow);
+            let answer = integer(mint, answer);
+            let returns_answer = mint.computation_return(answer);
+            let lambda = mint.computation_lambda(returns_answer);
+            let body = mint.value_thunk(lambda);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)?.position()
+        };
+        let family = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let returns_code = mint.comp_type_returner(universe);
+            let arrow = mint.comp_type_arrow(unit, returns_code);
+            let declared = mint.value_type_thunk(arrow);
+            let number = mint.value_type_base(BaseType::Integer);
+            let picked = mint.value_constant(pick);
+            let forced = mint.computation_force(picked);
+            let argument = mint.value_unit();
+            let call = mint.computation_application(forced, argument);
+            let left = mint.value_returned(call);
+            let right = integer(mint, point);
+            let identity = mint.value_type_path(number, left, right);
+            let quoted = mint.value_quote(identity);
+            let returns_quote = mint.computation_return(quoted);
+            let lambda = mint.computation_lambda(returns_quote);
+            let body = mint.value_thunk(lambda);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)?.position()
+        };
+        let reflexivity = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let family = mint.value_constant(family);
+            let forced = mint.computation_force(family);
+            let argument = mint.value_unit();
+            let call = mint.computation_application(forced, argument);
+            let code = mint.value_returned(call);
+            let declared = mint.value_type_element(code, zero);
+            let point = integer(mint, point);
+            let body = mint.value_here(point);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        environment.add_decl(reflexivity).map(|_admitted| ())
+    }
+
+    /// A reflexivity with no dialogue checks at a decode whose code returns
+    /// an identity's quote over an endpoint that calls a definition: the check
+    /// reads that endpoint by the evaluator that read the decode (#5364). A
+    /// point the call does not answer stays apart from the endpoint, so the
+    /// reading is the one that separates the two.
+    #[test]
+    fn a_reflexivity_reads_the_endpoints_of_a_decoded_identity_5364()
+    {
+        let seven =
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("7"))
+                .expect("decimal digits");
+        let eight =
+            gandr_kernel_term::Magnitude::from_decimal_text(alloc::string::String::from("8"))
+                .expect("decimal digits");
+        assert_eq!(
+            Ok(()),
+            admit_reflexivity_at_a_computed_identity(&seven, &seven),
+            "the endpoint reads to the point the call answers"
+        );
+        assert!(
+            matches!(
+                admit_reflexivity_at_a_computed_identity(&seven, &eight),
+                Err(KernelError::Identity(
+                    crate::element_identity::IdentityError::EndpointsDiffer {
+                        side: crate::element_identity::EndpointSide::Left,
+                        ..
+                    }
+                ))
+            ),
+            "an endpoint the call answers apart from the point is refused"
+        );
+    }
+
+    /// Admit `Two`, of two constants, then `Σ (t : U (Unit → F Type)).
+    /// U (El(⟨force t ()⟩) → F Unit)` at the pair `(thunk λ_. return
+    /// ⌜quoted⌝, thunk λv. body)`, with `quoted` minted by `quote` from `Two`
+    /// and `body` by `case` from `v`, `F Unit` and `return ()`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_decoded_case(
+        quote: impl FnOnce(&mut TermArena, ValueTypeId) -> ValueTypeId,
+        case: impl FnOnce(&mut TermArena, ValueId, CompTypeId, ComputationId) -> ComputationId,
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let two = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+            let declaration = staging.data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![]],
+                kind,
+            );
+            environment.add_decl(declaration)?.position()
+        };
+        let definition = {
+            let mut staging = environment.stage();
+            let zero = level(LevelConstant::from(0));
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let returns_code = mint.comp_type_returner(universe);
+            let code_arrow = mint.comp_type_arrow(unit, returns_code);
+            let first = mint.value_type_thunk(code_arrow);
+            let family = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let forced = mint.computation_force(family);
+            let argument = mint.value_unit();
+            let call = mint.computation_application(forced, argument);
+            let code = mint.value_returned(call);
+            let decoded = mint.value_type_element(code, zero);
+            let returns_unit_type = mint.comp_type_returner(unit);
+            let case_arrow = mint.comp_type_arrow(decoded, returns_unit_type);
+            let second = mint.value_type_thunk(case_arrow);
+            let declared = mint.value_type_sigma(first, second);
+
+            let data = mint.value_type_data(two, vec![]);
+            let quoted = quote(mint, data);
+            let quoted = mint.value_quote(quoted);
+            let returns_quote = mint.computation_return(quoted);
+            let code_arm = mint.computation_lambda(returns_quote);
+            let code_thunk = mint.value_thunk(code_arm);
+            let unit_value = mint.value_unit();
+            let returns_unit = mint.computation_return(unit_value);
+            let scrutinee = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let case = case(mint, scrutinee, returns_unit_type, returns_unit);
+            let case_arm = mint.computation_lambda(case);
+            let case_thunk = mint.value_thunk(case_arm);
+            let pair = mint.value_tuple(&[code_thunk, case_thunk]);
+            staging.def(LevelSignature::monomorphic(), declared, pair)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// `case v { return (), return () }` over `Two`, at the motive `motive`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn two_way_data_case(
+        mint: &mut TermArena,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        arm: ComputationId,
+    ) -> ComputationId
+    {
+        mint.computation_data_case(scrutinee, motive, vec![arm, arm])
+    }
+
+    /// A data case on a binder whose type decodes a call returning a data
+    /// type's quote is a case over that data type: the check reads the code
+    /// to the quote it returns before it reads the scrutinee's shape (#2872).
+    /// A call returning `⌜Unit⌝` is no data type, and the case is refused
+    /// with the data shape, so the reading is the one that separates the two.
+    #[test]
+    fn a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872()
+    {
+        assert_eq!(
+            Ok(()),
+            admit_decoded_case(|_mint, data| data, two_way_data_case),
+            "the binder decodes to the data type its code returns"
+        );
+        let refused = admit_decoded_case(|mint, _data| mint.value_type_unit(), two_way_data_case);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Data,
+                    ..
+                })
+            ),
+            "a binder decoding to the unit type is no data case's: {refused:?}"
+        );
+    }
+
+    /// A sum case on a binder whose type decodes a call returning a sum's
+    /// quote is a case over that sum, in either mode (#2830). Checked, an
+    /// empty case on a decode of `⌜Void⌝` is accepted and one on a decode of
+    /// `⌜Unit⌝` refused with the sum shape. Synthesized, as a bound
+    /// computation, a two-way case on a decode of `⌜Unit + Unit⌝` is accepted.
+    #[test]
+    fn a_sum_case_reads_a_decode_of_a_call_to_its_sum_2830()
+    {
+        let empty_case =
+            |mint: &mut TermArena, scrutinee, _motive, _arm| mint.computation_case(scrutinee, &[]);
+        assert_eq!(
+            Ok(()),
+            admit_decoded_case(|mint, _data| mint.value_type_empty(), empty_case),
+            "an empty case checks on a binder decoding to the empty sum"
+        );
+        let refused = admit_decoded_case(|mint, _data| mint.value_type_unit(), empty_case);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "a binder decoding to the unit type is no sum case's: {refused:?}"
+        );
+        let two_way = |mint: &mut TermArena| {
+            let unit = mint.value_type_unit();
+            mint.value_type_sum(&[unit, unit])
+        };
+        let bound_case = |mint: &mut TermArena, scrutinee, _motive, arm| {
+            let case = mint.computation_case(scrutinee, &[arm, arm]);
+            let bound = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(bound);
+            mint.computation_bind(case, body)
+        };
+        assert_eq!(
+            Ok(()),
+            admit_decoded_case(|mint, _data| two_way(mint), bound_case),
+            "a synthesized case reads its scrutinee's decode as the check does"
+        );
+    }
+
+    /// A force of a binder whose type decodes a call returning a thunk type's
+    /// quote is a force at that thunk type: the check reads the code to the
+    /// quote it returns before it reads the forced value's shape (#6057). A
+    /// call returning `⌜Unit⌝` is no thunk type, and the force is refused with
+    /// the thunk shape, so the reading is the one that separates the two.
+    #[test]
+    fn a_force_reads_a_decode_of_a_call_to_its_thunk_type_6057()
+    {
+        let thunk_type = |mint: &mut TermArena| {
+            let unit = mint.value_type_unit();
+            let returns_unit = mint.comp_type_returner(unit);
+            let arrow = mint.comp_type_arrow(unit, returns_unit);
+            mint.value_type_thunk(arrow)
+        };
+        let applied = |mint: &mut TermArena, scrutinee, _motive, _arm| {
+            let forced = mint.computation_force(scrutinee);
+            let argument = mint.value_unit();
+            mint.computation_application(forced, argument)
+        };
+        assert_eq!(
+            Ok(()),
+            admit_decoded_case(|mint, _data| thunk_type(mint), applied),
+            "the binder is forced at the thunk type its code returns"
+        );
+        let refused = admit_decoded_case(|mint, _data| mint.value_type_unit(), applied);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Thunk,
+                    ..
+                })
+            ),
+            "a binder decoding to the unit type is not forced: {refused:?}"
+        );
+    }
+
+    /// Admit `Two`, of two constants, and `c = thunk λ_. return ⌜Unit⌝` at
+    /// `U(Unit → F U₀)`, then `thunk λx. λv. return v` at `U(Π (x : Two).
+    /// El(⟨held⟩) → F El(⟨ran⟩))`. `held` cases on `x`, returning `⌜Void⌝` at
+    /// the first constant and calling `c(())` at the second; `ran` is the same
+    /// case returning `⌜t⌝` at the second instead, with `t` minted by `run`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_held_against_run(
+        run: impl FnOnce(&mut TermArena) -> ValueTypeId
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let two = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, zero.clone());
+            let declaration = staging.data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![]],
+                kind,
+            );
+            environment.add_decl(declaration)?.position()
+        };
+        let code = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let returns_code = mint.comp_type_returner(universe);
+            let arrow = mint.comp_type_arrow(unit, returns_code);
+            let declared = mint.value_type_thunk(arrow);
+            let quoted = mint.value_quote(unit);
+            let returned = mint.computation_return(quoted);
+            let lambda = mint.computation_lambda(returned);
+            let body = mint.value_thunk(lambda);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)?.position()
+        };
+        let definition = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let motive = mint.comp_type_returner(universe);
+            let void = mint.value_type_empty();
+            let void = mint.value_quote(void);
+            let void_arm = mint.computation_return(void);
+            let decoded = |mint: &mut TermArena, arm: ComputationId| {
+                let scrutinee = mint.value_variable(DeBruijnIndex::from(0_u32));
+                let cased = mint.computation_data_case(scrutinee, motive, vec![void_arm, arm]);
+                let returned = mint.value_returned(cased);
+                mint.value_type_element(returned, zero.clone())
+            };
+            let head = mint.value_constant(code);
+            let forced = mint.computation_force(head);
+            let unit_value = mint.value_unit();
+            let call = mint.computation_application(forced, unit_value);
+            let held = decoded(mint, call);
+            let ran = run(mint);
+            let ran = mint.value_quote(ran);
+            let ran = mint.computation_return(ran);
+            let ran = decoded(mint, ran);
+            let returns = mint.comp_type_returner(ran);
+            let arrow = mint.comp_type_arrow(held, returns);
+            let data = mint.value_type_data(two, vec![]);
+            let family = mint.comp_type_pi(data, arrow);
+            let declared = mint.value_type_thunk(family);
+            let bound = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(bound);
+            let body = mint.computation_lambda(body);
+            let body = mint.computation_lambda(body);
+            let body = mint.value_thunk(body);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A mode switch converts two decodes stuck on a binder whose arms differ
+    /// by a call one side holds and the other has run, by the kernel's δ-step
+    /// at the held call, as a step's own reading does (#3090). An arm run to
+    /// another type stays apart, so the δ-step is the one that separates the
+    /// two.
+    #[test]
+    fn a_mode_switch_reads_a_call_a_stuck_arm_holds_by_its_unfolding_3090()
+    {
+        assert_eq!(
+            Ok(()),
+            admit_held_against_run(TermArena::value_type_unit),
+            "the held call reads as the quote it runs to"
+        );
+        let refused = admit_held_against_run(|mint| mint.value_type_base(BaseType::Integer));
+        assert!(
+            matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
+            "an arm run to the integers stays apart: {refused:?}"
+        );
+    }
+
+    /// Admit `pick = thunk λy. case y { λu. return u | return u }` at `U(Π (y
+    /// : Unit + Unit). El(⟨case y { return ⌜Unit → F Unit⌝ | return ⌜F
+    /// Unit⌝ }⟩))`, a joint's goal, then `thunk λx. (force pick) (inj₀ x)` at
+    /// `U(Unit → member)`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_joint_member(
+        member: impl FnOnce(&mut TermArena) -> CompTypeId
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let pick = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let sum = mint.value_type_sum(&[unit, unit]);
+            let returns_unit = mint.comp_type_returner(unit);
+            let takes_unit = mint.comp_type_arrow(unit, returns_unit);
+            let first = mint.value_quote_computation(takes_unit);
+            let first = mint.computation_return(first);
+            let second = mint.value_quote_computation(returns_unit);
+            let second = mint.computation_return(second);
+            let y = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let motive = mint.computation_case(y, &[first, second]);
+            let motive = mint.value_returned(motive);
+            let goal = mint.comp_type_element(motive, zero);
+            let family = mint.comp_type_pi(sum, goal);
+            let declared = mint.value_type_thunk(family);
+            let u = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let returned = mint.computation_return(u);
+            let first_arm = mint.computation_lambda(returned);
+            let case = mint.computation_case(y, &[first_arm, returned]);
+            let body = mint.computation_lambda(case);
+            let body = mint.value_thunk(body);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            environment.add_decl(declaration)?.position()
+        };
+        let definition = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let result = member(mint);
+            let arrow = mint.comp_type_arrow(unit, result);
+            let declared = mint.value_type_thunk(arrow);
+            let head = mint.value_constant(pick);
+            let forced = mint.computation_force(head);
+            let x = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let injected = mint.value_injection(Summand::from(0_usize), x);
+            let call = mint.computation_application(forced, injected);
+            let body = mint.computation_lambda(call);
+            let body = mint.value_thunk(body);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A lambda checks at a decode whose code is a case on an injection
+    /// returning an arrow's quote, and a call at such a decode converts with
+    /// the arrow: each member of a joint fixpoint reads its own goal (#5036).
+    /// A member declared at the other summand's type stays apart, so the
+    /// reading is the one that separates the two.
+    #[test]
+    fn a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036()
+    {
+        let arrow = |mint: &mut TermArena| {
+            let unit = mint.value_type_unit();
+            let returns_unit = mint.comp_type_returner(unit);
+            mint.comp_type_arrow(unit, returns_unit)
+        };
+        assert_eq!(
+            Ok(()),
+            admit_joint_member(arrow),
+            "the first member reads the arrow its summand's arm quotes"
+        );
+        let refused = admit_joint_member(|mint| {
+            let unit = mint.value_type_unit();
+            mint.comp_type_returner(unit)
+        });
+        assert!(
+            refused.is_err(),
+            "a member at the other summand's type stays apart: {refused:?}"
+        );
+    }
+
+    /// Admit `Tag(s : Unit + Unit) : Type { Mk }`, then `thunk λy. λz₁ … λzₙ.
+    /// case y { return Mk : Tag(inj₀ x) | return Mk : Tag(inj₁ x) }` at the
+    /// type `U(Π (y : Unit + Unit). Π (z₁ : Unit) … Π (zₙ : Unit). F
+    /// Tag(y))`, with `unread` binders `zᵢ` that the goal does not read,
+    /// its arms in the order `arms` gives.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_tag_case(
+        arms: [Summand; 2],
+        unread: BinderDepth,
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let tags = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let sum = mint.value_type_sum(&[unit, unit]);
+            let kind = mint.value_type_universe(GroundSort::Value, zero);
+            let declaration =
+                staging.data(LevelSignature::monomorphic(), vec![sum], vec![vec![]], kind);
+            environment.add_decl(declaration)?.position()
+        };
+        let definition = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let sum = mint.value_type_sum(&[unit, unit]);
+            let y = mint.value_variable(DeBruijnIndex::from(u32::from(unread)));
+            let tag_at_y = mint.value_type_data(tags, vec![y]);
+            let mut family = mint.comp_type_returner(tag_at_y);
+            for _ in 0 .. u32::from(unread) {
+                family = mint.comp_type_pi(unit, family);
+            }
+            let family = mint.comp_type_pi(sum, family);
+            let declared = mint.value_type_thunk(family);
+            let branches = arms.map(|summand| {
+                let own = mint.value_variable(DeBruijnIndex::from(0_u32));
+                let injected = mint.value_injection(summand, own);
+                let made = mint.value_constructor_of(
+                    tags,
+                    vec![injected],
+                    gandr_kernel_term::ConstructorTag::from(0_usize),
+                    vec![],
+                );
+                mint.computation_return(made)
+            });
+            let mut body = mint.computation_case(y, &branches);
+            for _ in 0 ..= u32::from(unread) {
+                body = mint.computation_lambda(body);
+            }
+            let body = mint.value_thunk(body);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// A case on the innermost binder checks each arm against its goal with
+    /// the binder read as that arm's injection (#5036): each arm returns the
+    /// tag of its own injection. Arms returning each other's tag are refused,
+    /// so each arm reads its own summand rather than the next one.
+    #[test]
+    fn a_case_on_the_innermost_binder_reads_its_goal_at_each_injection_5036()
+    {
+        assert_eq!(
+            Ok(()),
+            admit_tag_case([0_usize, 1].map(Summand::from), BinderDepth::NONE),
+            "each arm checks at the tag of its own injection"
+        );
+        let refused = admit_tag_case([1_usize, 0].map(Summand::from), BinderDepth::NONE);
+        assert!(
+            refused.is_err(),
+            "arms returning each other's tag are refused: {refused:?}"
+        );
+    }
+
+    /// A case on a binder with two unread binders inside it reads its goal at
+    /// each injection as a case on the innermost binder does (#6110). A goal
+    /// read in place would take the innermost unread binder for the
+    /// scrutinee, so the rotation is what separates the two.
+    #[test]
+    fn a_case_on_an_outer_binder_reads_its_goal_at_each_injection_6110()
+    {
+        let unread = BinderDepth::from(2_u32);
+        assert_eq!(
+            Ok(()),
+            admit_tag_case([0_usize, 1].map(Summand::from), unread),
+            "each arm checks at the tag of its own injection past the unread binders"
+        );
+        let refused = admit_tag_case([1_usize, 0].map(Summand::from), unread);
+        assert!(
+            refused.is_err(),
+            "arms returning each other's tag are refused: {refused:?}"
+        );
+    }
+
+    /// Admit `Π (A : U 0). inner` with the body `thunk body`, both built by
+    /// `build` against the universe and the fuss-free level; the body carries
+    /// every lambda, the outer binder's included.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_polymorphic(
+        build: impl FnOnce(&mut TermArena, ValueTypeId, Level) -> (CompTypeId, ComputationId)
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let definition = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let zero = level(LevelConstant::from(0));
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let (inner, body) = build(mint, universe, zero);
+            let outer = mint.comp_type_pi(universe, inner);
+            let declared = mint.value_type_thunk(outer);
+            let thunk = mint.value_thunk(body);
+            staging.def(LevelSignature::monomorphic(), declared, thunk)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// `λ λ. body`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under_two(
+        mint: &mut TermArena,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        let inner = mint.computation_lambda(body);
+        mint.computation_lambda(inner)
+    }
+
+    /// `Π (A : U 0). El A → F (El A)`: the plain arrow's codomain names `A`
+    /// at index zero, outside the arrow's own binder, so the lambda reads it
+    /// one binder further out; and the same arrow returning at a second code
+    /// is refused, so the reading is the one that separates the two.
+    #[test]
+    fn a_plain_arrow_reads_its_codomain_outside_its_binder()
+    {
+        let identity = admit_polymorphic(|mint, _universe, zero| {
+            let code = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let element = mint.value_type_element(code, zero);
+            let returner = mint.comp_type_returner(element);
+            let inner = mint.comp_type_arrow(element, returner);
+            let returned = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(returned);
+            (inner, under_two(mint, body))
+        });
+        assert_eq!(
+            Ok(()),
+            identity,
+            "the identity over a plain inner arrow admits"
+        );
+
+        let crossed = admit_polymorphic(|mint, universe, zero| {
+            let first = mint.value_variable(DeBruijnIndex::from(1_u32));
+            let domain = mint.value_type_element(first, zero.clone());
+            let second = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let result = mint.value_type_element(second, zero);
+            let returner = mint.comp_type_returner(result);
+            let arrow = mint.comp_type_arrow(domain, returner);
+            let inner = mint.comp_type_pi(universe, arrow);
+            let returned = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(returned);
+            let innermost = mint.computation_lambda(body);
+            (inner, under_two(mint, innermost))
+        });
+        assert!(
+            matches!(crossed, Err(KernelError::ValueTypeMismatch(_))),
+            "a value of the first code returned at the second is refused: {crossed:?}"
+        );
+    }
+
+    /// `Π (A : U 0). El A → F (El A)` with the body `y ← return x; return y`:
+    /// the bind checks its body against the expected type read from under its
+    /// own binder, so `A` is found two binders further out, not one.
+    #[test]
+    fn a_bind_reads_its_expected_type_outside_its_binder()
+    {
+        let admitted = admit_polymorphic(|mint, _universe, zero| {
+            let code = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let element = mint.value_type_element(code, zero);
+            let returner = mint.comp_type_returner(element);
+            let inner = mint.comp_type_arrow(element, returner);
+            let argument = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let bound = mint.computation_return(argument);
+            let payload = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(payload);
+            let sequence = mint.computation_bind(bound, body);
+            (inner, under_two(mint, sequence))
+        });
+        assert_eq!(
+            Ok(()),
+            admitted,
+            "a bind under the polymorphic identity admits"
+        );
+    }
+
+    /// A bind synthesizes its body's type strengthened past its binder: a type
+    /// naming a code bound outside lowers by one, and a type naming the bound
+    /// value itself is refused, since no type outside the binder states it.
+    #[test]
+    fn a_bind_strengthens_its_type_past_its_binder()
+    {
+        let mut arena = TermArena::new();
+        let zero = level(LevelConstant::from(0));
+        let universe = arena.value_type_universe(GroundSort::Value, zero.clone());
+        let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(code, zero.clone());
+        let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.computation_return(argument);
+        let payload = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_return(payload);
+        let sequence = arena.computation_bind(bound, body);
+        let produced = synth_comp(&mut arena, vec![universe, element], sequence)
+            .expect("a bind returning its payload synthesizes");
+        let produced_type = produced.comp_type().expect("a computation type");
+        let Some(&CompType::Returner(result)) = arena.comp_type(produced_type)
+        else {
+            panic!("a bind over a return synthesizes a returner");
+        };
+        let Some(&ValueType::Element { code: named, .. }) = arena.value_type(result)
+        else {
+            panic!("the payload's type is read off its code");
+        };
+        assert_eq!(
+            Some(&Value::Variable(DeBruijnIndex::from(1_u32))),
+            arena.value(named),
+            "the payload's type names the code one binder out from the bind"
+        );
+
+        let returns_universe = arena.comp_type_returner(universe);
+        let made = arena.value_type_thunk(returns_universe);
+        let decoded = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let decoded_element = arena.value_type_element(decoded, zero);
+        let picked = arena.comp_type_returner(decoded_element);
+        let pick_type = arena.comp_type_pi(universe, picked);
+        let pick = arena.value_type_thunk(pick_type);
+        let make = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let bound = arena.computation_force(make);
+        let picker = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let head = arena.computation_force(picker);
+        let chosen = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_application(head, chosen);
+        let dependent = arena.computation_bind(bound, body);
+        let escaped = synth_comp(&mut arena, vec![made, pick], dependent);
+        assert!(
+            matches!(escaped, Err(KernelError::BinderEscape { .. })),
+            "a type naming the bound code is refused: {escaped:?}"
+        );
+    }
+
+    /// A code whose type is not the universe its own node claimed is refused,
+    /// and the refusal is the ordinary checking mismatch rather than a special
+    /// one — the carried level is checked exactly like every other obligation
+    /// the kernel re-derives.
+    #[test]
+    fn a_code_that_is_not_of_its_declared_universe_refuses()
+    {
+        let mut environment = Environment::new();
+        let axiom = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            // The unit *value* is not a code: it is the empty tuple, which
+            // checks only against a product, so the type read off it does not
+            // form.
+            let not_a_code = mint.value_unit();
+            let declared = mint.value_type_element(not_a_code, level(LevelConstant::from(0)));
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        assert!(
+            matches!(
+                environment.add_decl(axiom),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
+            ),
+            "a code that does not inhabit the universe its type named is refused"
+        );
+    }
+
+    /// A computation decode owes its code to the computation universe, so the
+    /// same telescope over the value universe is refused, and a value quote
+    /// read as a computation type is minted as written and refused there.
+    #[test]
+    fn a_computation_decode_owes_its_code_to_the_computation_universe()
+    {
+        let decode_over = |environment: &mut Environment, sort: GroundSort| {
+            let mut staging = environment.stage();
+            let zero = level(LevelConstant::from(0));
+            let mint = staging.arena();
+            let universe = mint.value_type_universe(sort, zero.clone());
+            let code = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let decoded = mint.comp_type_element(code, zero);
+            let dependent = mint.comp_type_pi(universe, decoded);
+            let declared = mint.value_type_thunk(dependent);
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        let mut environment = Environment::new();
+        let admitted = decode_over(&mut environment, GroundSort::Computation);
+        assert_eq!(
+            Ok(()),
+            environment.add_decl(admitted).map(|_admitted| ()),
+            "a binder of the computation universe decodes to a computation type"
+        );
+        let refused = decode_over(&mut environment, GroundSort::Value);
+        assert!(
+            matches!(
+                environment.add_decl(refused),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "while a binder of the value universe is a code of the other family"
+        );
+        let crossed = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let quote = mint.value_quote(unit);
+            let decoded = mint.comp_type_element(quote, level(LevelConstant::from(0)));
+            let declared = mint.value_type_thunk(decoded);
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        assert!(
+            matches!(
+                environment.add_decl(crossed),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "and a value quote decoded as a computation type is not decoded on mint but refused"
+        );
+    }
+
+    #[test]
+    fn a_quote_synthesizes_the_universe_of_its_family()
+    {
+        let mut arena = TermArena::new();
+        let zero = level(LevelConstant::from(0));
+        let unit = arena.value_type_unit();
+        let quote = arena.value_quote(unit);
+        let produced = synth_value(&mut arena, Vec::new(), quote).expect("a quote synthesizes");
+        assert_eq!(
+            Some(&ValueType::Universe {
+                sort: GroundSort::Value,
+                level: zero.clone(),
+            }),
+            arena.value_type(produced.value_type().expect("a value type")),
+            "a value type's code inhabits the value universe at the type's own level"
+        );
+        let returner = arena.comp_type_returner(unit);
+        let quoted = arena.value_quote_computation(returner);
+        let produced = synth_value(&mut arena, Vec::new(), quoted).expect("a quote synthesizes");
+        assert_eq!(
+            Some(&ValueType::Universe {
+                sort: GroundSort::Computation,
+                level: zero.clone(),
+            }),
+            arena.value_type(produced.value_type().expect("a value type")),
+            "a computation type's code inhabits the computation universe"
+        );
+        let universe = arena.value_type_universe(GroundSort::Computation, zero);
+        let quoted_universe = arena.value_quote(universe);
+        let produced =
+            synth_value(&mut arena, Vec::new(), quoted_universe).expect("a quote synthesizes");
+        assert_eq!(
+            Some(&ValueType::Universe {
+                sort: GroundSort::Value,
+                level: level(LevelConstant::from(1)),
+            }),
+            arena.value_type(produced.value_type().expect("a value type")),
+            "and a universe of either sort is a value type one level up"
+        );
+    }
+
+    /// The kernel half of smallness: a code inhabits exactly the universe at
+    /// its type's level, so a code bound for a larger universe arrives as the
+    /// quote of an explicit lift, and the lift's strictness is the kernel's
+    /// own check.
+    #[test]
+    fn a_smaller_code_checks_at_a_larger_universe_only_through_a_lift()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let quote = arena.value_quote(unit);
+        let one = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), quote, one),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "the kernel has no cumulativity, so a bare code does not check one level up"
+        );
+        let lifted = arena.value_type_lift(unit, level(LevelConstant::from(1)));
+        let lifted_quote = arena.value_quote(lifted);
+        assert_eq!(
+            Ok(Produced::Checked),
+            check_value(&mut arena, Vec::new(), lifted_quote, one),
+            "while the code of its lift does"
+        );
+        let zero = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+        let sunk = arena.value_type_lift(unit, level(LevelConstant::from(0)));
+        let sunk_quote = arena.value_quote(sunk);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), sunk_quote, zero),
+                Err(KernelError::UniverseViolation(_))
+            ),
+            "and a lift that does not strictly raise is refused inside the quote"
+        );
+    }
+
+    #[test]
+    fn a_computation_universe_is_no_kind_for_an_abstract_type()
+    {
+        let mut environment = Environment::new();
+        let atom = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Computation, level(LevelConstant::from(0)));
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
+        };
+        assert!(
+            matches!(
+                environment.add_decl(atom),
+                Err(KernelError::AbstractTypeKindNotUniverse { .. })
+            ),
+            "a sealed atom is a value type, so only the value universe classifies it"
+        );
+    }
+
+    /// Instantiating a dependent codomain at an argument is observable because
+    /// a codomain can mention its binder: applying the polymorphic identity's
+    /// type to a code produces the arrow over *that* code.
+    #[test]
+    fn an_application_instantiates_a_dependent_codomain()
+    {
+        let mut arena = TermArena::new();
+        let zero = level(LevelConstant::from(0));
+        let universe = arena.value_type_universe(GroundSort::Value, zero.clone());
+        let bound_code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound_element = arena.value_type_element(bound_code, zero.clone());
+        let returner = arena.comp_type_returner(bound_element);
+        let dependent = arena.comp_type_pi(universe, returner);
+        let head_thunk = arena.value_type_thunk(dependent);
+
+        // The argument is an outer variable naming a code, so the instantiated
+        // codomain has to name *it* rather than the vanished binder.
+        let argument = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let head_variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let head = arena.computation_force(head_variable);
+        let application = arena.computation_application(head, argument);
+        let outer_universe = arena.value_type_universe(GroundSort::Value, zero);
+        let produced = synth_comp(&mut arena, vec![outer_universe, head_thunk], application)
+            .expect("the dependent application synthesizes");
+        let synthesized = produced.comp_type().expect("a computation type");
+        let Some(&CompType::Returner(result)) = arena.comp_type(synthesized)
+        else {
+            panic!("the instantiated codomain is a returner");
+        };
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(result)
+        else {
+            panic!("over a type read off a code");
+        };
+        assert_eq!(
+            Some(&Value::Variable(DeBruijnIndex::from(1_u32))),
+            arena.value(code),
+            "the codomain names the argument rather than the binder that vanished"
+        );
+    }
+
+    #[test]
+    fn an_axiom_checks_only_its_type()
+    {
+        let mut environment = Environment::new();
+        let axiom = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_base(BaseType::Integer);
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        assert!(
+            environment.add_decl(axiom).is_ok(),
+            "an axiom claims an inhabitant and offers no body, so only its type is checked"
+        );
+    }
+
+    #[test]
+    fn a_sealed_atom_checks_only_its_kind()
+    {
+        let mut environment = Environment::new();
+        let bad = {
+            let mut staging = environment.stage();
+            let kind = staging.arena().value_type_unit();
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                kind,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
+        };
+        assert!(
+            matches!(
+                environment.add_decl(bad),
+                Err(KernelError::AbstractTypeKindNotUniverse { .. })
+            ),
+            "an atom whose kind is not a universe would leave formation with a level to infer"
+        );
+    }
+
+    #[test]
+    fn a_literal_identity_test_admits_only_at_its_base_s_type()
+    {
+        use gandr_kernel_term::IdentityBase;
+        use gandr_kernel_term::LiteralIdentity;
+        use gandr_kernel_term::Polarity;
+        // `U(B → B → F answer)`, staged for `test`.
+        let staged = |environment: &mut Environment,
+                      test: LiteralIdentity,
+                      compared: BaseType,
+                      boolean: bool| {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let base = arena.value_type_base(compared);
+            let answer = if boolean {
+                let unit = arena.value_type_unit();
+                arena.value_type_sum(&[unit, unit])
+            }
+            else {
+                arena.value_type_base(BaseType::Integer)
+            };
+            let returner = arena.comp_type_returner(answer);
+            let inner = arena.comp_type_arrow(base, returner);
+            let outer = arena.comp_type_arrow(base, inner);
+            let declared = arena.value_type_thunk(outer);
+            staging.literal_identity(LevelSignature::monomorphic(), declared, test)
+        };
+        let mut environment = Environment::new();
+        for (base, compared) in [
+            (IdentityBase::Integer, BaseType::Integer),
+            (IdentityBase::Text, BaseType::String),
+        ] {
+            for polarity in [Polarity::Same, Polarity::Different] {
+                let test = LiteralIdentity::new(base, polarity);
+                let admitted = staged(&mut environment, test, compared, true);
+                let admitted = environment
+                    .add_decl(admitted)
+                    .expect("a test admits at its base's type");
+                assert!(
+                    environment.audit(admitted).axioms().is_empty(),
+                    "the kernel computes a test, so its audit reports no axiom"
+                );
+                assert_eq!(
+                    environment.audit(admitted).primitives(),
+                    [admitted.position()],
+                    "and it reports the test as the kernel primitive it is"
+                );
+            }
+        }
+        let text = LiteralIdentity::new(IdentityBase::Text, Polarity::Same);
+        let integers = staged(&mut environment, text, BaseType::Integer, true);
+        assert!(
+            matches!(
+                environment.add_decl(integers),
+                Err(KernelError::LiteralIdentityType { .. })
+            ),
+            "a text test over integers would answer where its type owes no boolean"
+        );
+        let counted = staged(&mut environment, text, BaseType::String, false);
+        assert!(
+            matches!(
+                environment.add_decl(counted),
+                Err(KernelError::LiteralIdentityType { .. })
+            ),
+            "a test answering an integer is refused"
+        );
+    }
+
+    #[test]
+    fn sealing_provenance_must_occur_in_the_declared_type()
+    {
+        let mut environment = Environment::new();
+        let atom = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
+        };
+        let _admitted = environment.add_decl(atom).expect("an atom admits");
+        let claiming = {
+            let mut staging = environment.stage();
+            let declared = staging.arena().value_type_unit();
+            let body = staging.arena().value_unit();
+            staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![
+                ConstantIndex::from(0_usize),
+            ])
+        };
+        assert_eq!(
+            Err(KernelError::SealingProvenanceNotProjected {
+                atom: ConstantIndex::from(0_usize)
+            }),
+            environment.add_decl(claiming).map(|_admitted| ()),
+            "a provenance entry with no occurrence is an unfalsifiable claim"
+        );
+    }
+
+    #[test]
+    fn sealing_provenance_must_be_strictly_ascending()
+    {
+        let mut environment = Environment::new();
+        let atom = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+            let integer = staging.arena().value_type_base(BaseType::Integer);
+            staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                integer,
+                SealScope::Closed(SealExtent::from(0_usize)),
+            )
+        };
+        let _admitted = environment.add_decl(atom).expect("an atom admits");
+        let repeated = {
+            let mut staging = environment.stage();
+            let declared = staging
+                .arena()
+                .value_type_abstract(ConstantIndex::from(0_usize));
+            let body = staging.arena().value_unit();
+            staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![
+                ConstantIndex::from(0_usize),
+                ConstantIndex::from(0_usize),
+            ])
+        };
+        assert_eq!(
+            Err(KernelError::SealingProvenanceNotCanonical {
+                atom: ConstantIndex::from(0_usize)
+            }),
+            environment.add_decl(repeated).map(|_admitted| ()),
+            "canonical order is what makes the slot a set with one spelling"
+        );
+    }
+
+    #[test]
+    fn register_polarity_faults_fail_closed()
+    {
+        assert_eq!(
+            Err(KernelError::CheckerRegisterFault(
+                RegisterFault::ExpectedValueType
+            )),
+            Produced::Checked.value_type(),
+            "a wiring defect refuses rather than fabricating a type"
+        );
+        assert_eq!(
+            Err(KernelError::CheckerRegisterFault(
+                RegisterFault::ExpectedCompType
+            )),
+            Produced::Checked.comp_type(),
+            "on both polarities"
+        );
+    }
+
+    /// The width of each test fork: four workers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn four() -> crate::fork::ForkWidth
+    {
+        crate::fork::ForkWidth::from(core::num::NonZeroUsize::MIN.saturating_add(3))
+    }
+
+    /// Runs the parts of a drain in order, on the calling thread.
+    ///
+    /// # Specification
+    /// trivial.
+    struct InOrder;
+
+    impl crate::fork::ObligationFork for InOrder
+    {
+        /// Each part, in order.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_jobs(
+            &self,
+            jobs: &mut [&mut dyn crate::fork::Job],
+        )
+        {
+            for job in jobs.iter_mut() {
+                job.run();
+            }
+        }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
+        }
+    }
+
+    /// Runs the parts of a drain last first, on the calling thread.
+    ///
+    /// # Specification
+    /// trivial.
+    struct Backwards;
+
+    impl crate::fork::ObligationFork for Backwards
+    {
+        /// Each part, last first.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_jobs(
+            &self,
+            jobs: &mut [&mut dyn crate::fork::Job],
+        )
+        {
+            for job in jobs.iter_mut().rev() {
+                job.run();
+            }
+        }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
+        }
+    }
+
+    /// Runs each part of a drain on a thread of its own, all at once.
+    ///
+    /// # Specification
+    /// trivial.
+    struct Threads;
+
+    impl crate::fork::ObligationFork for Threads
+    {
+        /// Each part on a scoped thread of its own.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_jobs(
+            &self,
+            jobs: &mut [&mut dyn crate::fork::Job],
+        )
+        {
+            extern crate std;
+            std::thread::scope(|scope| {
+                for job in jobs.iter_mut() {
+                    let _running = scope.spawn(move || job.run());
+                }
+            });
+        }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
+        }
+    }
+
+    /// Runs no part, so the drain must check serially.
+    ///
+    /// # Specification
+    /// trivial.
+    struct Idle;
+
+    impl crate::fork::ObligationFork for Idle
+    {
+        /// Nothing.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_jobs(
+            &self,
+            _jobs: &mut [&mut dyn crate::fork::Job],
+        )
+        {
+        }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
+        }
+    }
+
+    /// Counts the parts it is handed, and runs them in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[repr(transparent)]
+    struct Counting(core::sync::atomic::AtomicUsize);
+
+    impl crate::fork::ObligationFork for Counting
+    {
+        /// Each part in order, counted.
+        ///
+        /// # Specification
+        /// trivial.
+        fn run_jobs(
+            &self,
+            jobs: &mut [&mut dyn crate::fork::Job],
+        )
+        {
+            let _before = self
+                .0
+                .fetch_add(jobs.len(), core::sync::atomic::Ordering::Relaxed);
+            for job in jobs.iter_mut() {
+                job.run();
+            }
+        }
+
+        /// Four workers.
+        ///
+        /// # Specification
+        /// trivial.
+        fn workers(&self) -> crate::fork::ForkWidth
+        {
+            four()
+        }
+    }
+
+    /// A declaration's last drain gives the verdict of the serial drain at
+    /// each order of its parts: in order, last first, at once, and not run at
+    /// all. A refusing part sends the check back to the serial drain, and a
+    /// passing fork expands no less than the serial check. A drain of 64
+    /// obligations or more forks into one run for each worker, and a smaller
+    /// drain does not fork.
+    #[test]
+    fn a_forked_drain_gives_the_serial_verdict_at_each_order()
+    {
+        let mut environment = Environment::new();
+        let zero = level(LevelConstant::from(0));
+        let codes: Vec<ConstantIndex> = core::iter::repeat_with(|| {
+            let axiom = {
+                let mut staging = environment.stage();
+                let universe = staging
+                    .arena()
+                    .value_type_universe(GroundSort::Value, zero.clone());
+                staging.axiom(LevelSignature::monomorphic(), universe)
+            };
+            environment
+                .add_decl(axiom)
+                .expect("a code axiom admits")
+                .position()
+        })
+        .take(super::FORKED_DRAIN)
+        .collect();
+        let mut arena = environment.arena().clone();
+        // Each element type owes its code to the universe: 64 codes that
+        // check, the same with the unit value second, which is no code, and
+        // three codes, too few to fork.
+        let (passing, refused, few) = {
+            let mut builder = gandr_kernel_term::DeclarationBuilder::new(&mut arena);
+            let elements: Vec<ValueTypeId> = codes
+                .iter()
+                .map(|&code| {
+                    let constant = builder.arena().value_constant(code);
+                    builder.arena().value_type_element(constant, zero.clone())
+                })
+                .collect();
+            let not_a_code = builder.arena().value_unit();
+            let refused = builder.arena().value_type_element(not_a_code, zero);
+            let mut refusing = elements.clone();
+            refusing.insert(1, refused);
+            let refusing = builder.arena().value_type_product(&refusing);
+            let few = builder
+                .arena()
+                .value_type_product(elements.get(.. 3).expect("64 elements hold three"));
+            let passing = builder.arena().value_type_product(&elements);
+            (
+                builder.axiom(LevelSignature::monomorphic(), passing),
+                refusing,
+                few,
+            )
+        };
+        let refusing = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
+            .axiom(LevelSignature::monomorphic(), refused);
+        let few = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
+            .axiom(LevelSignature::monomorphic(), few);
+        let levels = level_context(LevelParamCount::from(0_u32));
+        let content_end = arena.watermark();
+        let mut check = |declaration: &gandr_kernel_term::Declaration,
+                         fork: Option<&dyn crate::fork::ObligationFork>| {
+            let mut census = ExpansionCensus::new();
+            let verdict = super::check_declaration_with_memo(
+                &mut arena,
+                Judgement::new(environment.entries(), &levels).forking(fork),
+                declaration,
+                &mut super::DefaultMemo::new(),
+                &mut SupportContext::new(),
+                &mut census,
+            );
+            arena.truncate_to(content_end);
+            let goals = [census.expansions(), census.recalls(), census.kept()]
+                .map(u64::from)
+                .iter()
+                .sum::<u64>();
+            (verdict, goals)
+        };
+        for (declaration, parts, passes) in [
+            (&passing, 4_usize, true),
+            (&refusing, 4, false),
+            (&few, 0, true),
+        ] {
+            let (serial, serial_goals) = check(declaration, None);
+            assert_eq!(serial.is_ok(), passes, "the serial verdict: {serial:?}");
+            let counting = Counting(core::sync::atomic::AtomicUsize::new(0));
+            let forks: [&dyn crate::fork::ObligationFork; 5] =
+                [&InOrder, &Backwards, &Threads, &Idle, &counting];
+            for fork in forks {
+                let (forked, forked_goals) = check(declaration, Some(fork));
+                assert_eq!(forked, serial, "a fork gives the serial verdict");
+                assert!(
+                    forked_goals >= serial_goals,
+                    "a fork expands no less than the serial check: {forked_goals} against \
+                     {serial_goals}"
+                );
+            }
+            assert_eq!(
+                counting.0.into_inner(),
+                parts,
+                "the drain forks one run for each worker, or none below the grain"
+            );
+        }
+    }
+
+    /// The last field of the tuple that [`frame_tuple`] mints.
+    #[derive(Clone, Copy)]
+    enum Last
+    {
+        /// A second constructor of `Two`, with a node of its own for `Two`.
+        Constructor,
+        /// The literal `0`, which `Two` refuses.
+        Literal,
+    }
+
+    /// Mint `(t, c, c')` at `Integer^n × Two × Two`, where `t` is the tuple of
+    /// the `n` literals `numbers`. `c` is a constructor of `two`, and `c'` is
+    /// `last`. Each constructor carries a node of its own for its data type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn frame_tuple(
+        arena: &mut TermArena,
+        two: ConstantIndex,
+        numbers: &[ValueId],
+        last: Last,
+    ) -> gandr_kernel_term::Declaration
+    {
+        let mut builder = gandr_kernel_term::DeclarationBuilder::new(arena);
+        let mint = builder.arena();
+        let integer_type = mint.value_type_base(BaseType::Integer);
+        let numbers_type = mint.value_type_product(&vec![integer_type; numbers.len()]);
+        let numbers = mint.value_tuple(numbers);
+        let first_two = mint.value_type_data(two, vec![]);
+        let second_two = mint.value_type_data(two, vec![]);
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let first = mint.value_constructor(two, first_two, tag, vec![]);
+        let second = match last {
+            Last::Constructor => mint.value_constructor(two, second_two, tag, vec![]),
+            Last::Literal => integer(mint, &gandr_kernel_term::Magnitude::zero()),
+        };
+        let declared = mint.value_type_product(&[numbers_type, first_two, second_two]);
+        let body = mint.value_tuple(&[numbers, first, second]);
+        builder.def(LevelSignature::monomorphic(), declared, body)
+    }
+
+    /// A frame's sibling goals give the verdict of the serial check at each
+    /// order of their parts: in order, last first, at once, and not run at
+    /// all. Past the grain, the two constructor fields of a tuple fork. Each
+    /// part synthesizes `Two` at the node its own field carries, so two parts
+    /// answer one key by two nodes of one content, and the join glues them. A
+    /// refusing field sends the check back to the serial walk, a passing fork
+    /// expands no less than the serial check, and a check below the grain
+    /// forks no frame.
+    #[test]
+    fn a_forked_frame_gives_the_serial_verdict_at_each_order()
+    {
+        let mut environment = Environment::new();
+        let two = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+            let declaration = staging.data(
+                LevelSignature::monomorphic(),
+                vec![],
+                vec![vec![], vec![]],
+                kind,
+            );
+            environment
+                .add_decl(declaration)
+                .expect("a data type of two constants admits")
+                .position()
+        };
+        let mut arena = environment.arena().clone();
+        // The literals take the check past the grain before the outer frame
+        // holds its two constructor fields.
+        let past = usize::try_from(super::FORKED_AFTER).expect("the grain fits a count");
+        let numbers: Vec<ValueId> = (0 .. past)
+            .map(|number| {
+                let magnitude =
+                    gandr_kernel_term::Magnitude::from_decimal_text(alloc::format!("{number}"))
+                        .expect("decimal digits");
+                integer(&mut arena, &magnitude)
+            })
+            .collect();
+        let three = numbers.get(.. 3).expect("the grain holds three literals");
+        let passing = frame_tuple(&mut arena, two, &numbers, Last::Constructor);
+        let refusing = frame_tuple(&mut arena, two, &numbers, Last::Literal);
+        let few = frame_tuple(&mut arena, two, three, Last::Constructor);
+        let levels = level_context(LevelParamCount::from(0_u32));
+        let content_end = arena.watermark();
+        let mut check = |declaration: &gandr_kernel_term::Declaration,
+                         fork: Option<&dyn crate::fork::ObligationFork>| {
+            let mut census = ExpansionCensus::new();
+            let verdict = super::check_declaration_with_memo(
+                &mut arena,
+                Judgement::new(environment.entries(), &levels).forking(fork),
+                declaration,
+                &mut super::DefaultMemo::new(),
+                &mut SupportContext::new(),
+                &mut census,
+            );
+            arena.truncate_to(content_end);
+            let goals = [census.expansions(), census.recalls(), census.kept()]
+                .map(u64::from)
+                .iter()
+                .sum::<u64>();
+            (verdict, goals)
+        };
+        for (declaration, forks, passes) in [
+            (&passing, true, true),
+            (&refusing, true, false),
+            (&few, false, true),
+        ] {
+            let (serial, serial_goals) = check(declaration, None);
+            assert_eq!(serial.is_ok(), passes, "the serial verdict: {serial:?}");
+            let counting = Counting(core::sync::atomic::AtomicUsize::new(0));
+            let orders: [&dyn crate::fork::ObligationFork; 5] =
+                [&InOrder, &Backwards, &Threads, &Idle, &counting];
+            for fork in orders {
+                let (forked, forked_goals) = check(declaration, Some(fork));
+                assert_eq!(forked, serial, "a fork gives the serial verdict");
+                assert!(
+                    forked_goals >= serial_goals,
+                    "a fork expands no less than the serial check: {forked_goals} against \
+                     {serial_goals}"
+                );
+            }
+            assert_eq!(
+                counting.0.into_inner() > 0,
+                forks,
+                "a frame past the grain forks, and a check below the grain forks no frame"
+            );
+        }
+    }
+}
+
+mod codata;
+
+mod cover;
+
+mod former;
+
+mod guard;
+
+mod loops;
+
+mod quantified;
+
+mod recursion;
+
+mod respect;
+
+pub(crate) mod occurrence;
+
+pub use occurrence::Accessibility;
+pub use occurrence::Stratification;
+pub use occurrence::Variance;

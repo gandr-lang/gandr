@@ -1,0 +1,317 @@
+#:tombi toml-version = "v1.0.0"
+#:schema https://mise.jdx.dev/schema/mise-task.json
+
+# A library producer moves its nightly and Clippy tag from a stable release.
+# An external consumer takes the nightly from a reviewed full workflow commit
+# and changes its Dylint metadata revision in the same operation. The installer
+# reads that metadata too, so no independently editable binary revision exists.
+# Either way the rust-clippy commit the Dylint driver's build reads
+# (`.github/docker/rust-clippy.bash`, for the CI image and `check:dylint`)
+# moves with them: the commit on the first-parent line of the Clippy source
+# that set the channel. The source is a rust-<stable> tag, or the full commit
+# that the workflow's clippy_utils pins for a nightly no release tag names.
+["toolchain:bump"]
+description = "Move the compiler and its local or external lint source together"
+usage = '''
+arg "[version]" help="stable release for a local library producer, e.g. 1.98.0"
+flag "--workflow-rev <revision>" help="reviewed full 40-hex commit for an external workflow consumer"
+'''
+tools.jq = "1.8.1"
+# Preserve shell parameter length syntax through template rendering. The task
+# runs under bash, which sources the GitHub wrapper (`budget.bash`, #6253).
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -eu
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
+
+version=${usage_version:-}
+revision=${usage_workflow_rev:-}
+workflow_git=https://github.com/gandr-lang/quenchant
+old_revision=
+if [ -f Cargo.toml ]; then
+  old_revision=$(cargo metadata --manifest-path Cargo.toml --no-deps --format-version 1 | jq -er --arg git "$workflow_git" '[.metadata.dylint.libraries[]? | select(.git == $git and .pattern == "crates/quenchant-dylints")] | if length == 0 then "" elif length == 1 then .[0].rev | select(type == "string" and test("^[0-9a-f]{40}$")) else error("expected one workflow library") end')
+fi
+
+if [ -n "$revision" ]; then
+  if [ -n "$version" ] || [ -z "$old_revision" ]; then
+    echo 'toolchain:bump: --workflow-rev requires external Dylint metadata and no stable version' >&2
+    exit 1
+  fi
+  case "$revision" in
+    *[!0-9a-f]*|'') echo 'toolchain:bump: revision must be lowercase hexadecimal' >&2; exit 1 ;;
+  esac
+  if [ "${#revision}" -ne 40 ]; then
+    echo 'toolchain:bump: revision must be a full 40-hex commit' >&2
+    exit 1
+  fi
+  channel=$(gh api --jq .content "repos/gandr-lang/quenchant/contents/rust-toolchain.toml?ref=$revision" | base64 -d | sed -n 's/^channel = "\([^"]*\)".*/\1/p')
+  workflow_manifest=$(gh api --jq .content "repos/gandr-lang/quenchant/contents/Cargo.toml?ref=$revision" | base64 -d)
+  clippy_tag=$(sed -n '/^\[workspace\.dependencies\.clippy_utils\]/,/^\[/s/^tag = "\([^"]*\)".*/\1/p' <<< "$workflow_manifest")
+  clippy_commit=$(sed -n '/^\[workspace\.dependencies\.clippy_utils\]/,/^\[/s/^rev = "\([^"]*\)".*/\1/p' <<< "$workflow_manifest")
+else
+  if [ -z "$version" ] || [ -n "$old_revision" ]; then
+    echo 'toolchain:bump: external consumers require --workflow-rev; local producers require a stable version' >&2
+    exit 1
+  fi
+  case "$version" in
+    *[!0-9.]*|'') echo 'toolchain:bump: stable version must contain only digits and dots' >&2; exit 1 ;;
+  esac
+  # rust-clippy's release tag names the nightly its clippy_utils was built
+  # against; the bump writes both pins from that one file.
+  channel=$(gh api --jq .content "repos/rust-lang/rust-clippy/contents/rust-toolchain.toml?ref=rust-$version" | base64 -d | sed -n 's/^channel = "\([^"]*\)".*/\1/p')
+  clippy_tag=rust-$version
+  clippy_commit=
+fi
+case "$channel" in
+  nightly-*) ;;
+  *) echo 'toolchain:bump: source carries no usable nightly channel' >&2; exit 1 ;;
+esac
+
+# Dylint's walk yields the commit on rust-clippy's first-parent line that set
+# the channel: the first whose first parent names an earlier one.
+# rust-clippy.bash serves that commit to the driver's build as `main`, so the
+# walk stops there. A tag may sit a few commits after it, so the bump walks
+# the source's first parents back to it.
+if [ -n "$clippy_commit" ]; then
+  case "$clippy_commit" in
+    *[!0-9a-f]*) echo 'toolchain:bump: clippy_utils rev must be lowercase hexadecimal' >&2; exit 1 ;;
+  esac
+  if [ -n "$clippy_tag" ] || [ "${#clippy_commit}" -ne 40 ]; then
+    echo 'toolchain:bump: clippy_utils must pin one full rev or one tag' >&2
+    exit 1
+  fi
+  clippy_source=${clippy_commit:0:9}
+  clippy_rev=$clippy_commit
+else
+  case "$clippy_tag" in
+    rust-[0-9]*) ;;
+    *) echo 'toolchain:bump: source carries no rust-<stable> clippy_utils tag or full rev' >&2; exit 1 ;;
+  esac
+  clippy_source=$clippy_tag
+  clippy_rev=$(gh api --jq .sha "repos/rust-lang/rust-clippy/commits/$clippy_tag")
+fi
+clippy_channel_at() {
+  gh api --jq .content "repos/rust-lang/rust-clippy/contents/rust-toolchain.toml?ref=$1" | base64 -d | sed -n 's/^channel = "\([^"]*\)".*/\1/p'
+}
+if [ "$(clippy_channel_at "$clippy_rev")" != "$channel" ]; then
+  echo "toolchain:bump: rust-clippy $clippy_source ($clippy_rev) does not name $channel" >&2
+  exit 1
+fi
+steps=0
+while clippy_parent=$(gh api --jq '.parents[0].sha' "repos/rust-lang/rust-clippy/commits/$clippy_rev") \
+  && [ "$(clippy_channel_at "$clippy_parent")" = "$channel" ]; do
+  clippy_rev=$clippy_parent
+  steps=$((steps + 1))
+  if [ "$steps" -ge 500 ]; then
+    echo "toolchain:bump: no commit within 500 first parents of rust-clippy $clippy_source sets $channel" >&2
+    exit 1
+  fi
+done
+
+# Values enter Perl through environment variables, never program interpolation.
+export WORKFLOW_OLD_REV="$old_revision" WORKFLOW_NEW_REV="$revision" WORKFLOW_CHANNEL="$channel" WORKFLOW_STABLE="$version" CLIPPY_TAG="$clippy_source" CLIPPY_REV="$clippy_rev"
+if [ -n "$revision" ]; then
+  perl -0777 -pi -e 's{(^\[\[workspace\.metadata\.dylint\.libraries\]\]\n)(.*?)(?=^\[|\z)}{my ($head, $body) = ($1, $2); if ($body =~ /^git = "https:\/\/github\.com\/gandr-lang\/quenchant"$/m && $body =~ /^pattern = "crates\/quenchant-dylints"$/m) { $body =~ s/^rev = "\Q$ENV{WORKFLOW_OLD_REV}\E"$/rev = "$ENV{WORKFLOW_NEW_REV}"/m; } "$head$body"}gmse' Cargo.toml
+elif [ -f Cargo.toml ]; then
+  perl -0777 -pi -e 's{(^\[workspace\.dependencies\.clippy_utils\]\n)(.*?)(?=^\[|\z)}{my ($head, $body) = ($1, $2); $body =~ s/^tag = ".*"$/tag = "rust-$ENV{WORKFLOW_STABLE}"/m; "$head$body"}gmse' Cargo.toml
+fi
+perl -pi -e 's/^channel = .*/channel = "$ENV{WORKFLOW_CHANNEL}"/' rust-toolchain.toml
+# mise reads the rust pin from rust-toolchain.toml and holds it in mise.lock,
+# and CI installs it with --locked. The install writes the entry of the new
+# pin, so the lock moves with the pin (#7541).
+mise install rust
+if [ -f .github/docker/rust-clippy.bash ]; then
+  perl -0777 -pi -e 's{^# rust-clippy.s \S+, the commit that set \S+\.\nrev=[0-9a-f]{40}$}{# rust-clippy\x27s $ENV{CLIPPY_TAG}, the commit that set $ENV{WORKFLOW_CHANNEL}.\nrev=$ENV{CLIPPY_REV}}m or die "rust-clippy.bash carries no rust-clippy pin\n"' .github/docker/rust-clippy.bash
+fi
+
+echo "pinned channel $channel, and its entry in mise.lock; workflow revision ${revision:-local-library}; rust-clippy $clippy_source at $clippy_rev"
+echo 'clear ~/.dylint_drivers; each worktree cleans its target at its first gate under the new pin (target:pin); then rerun the full gate wall'
+echo 'external consumers: mise run check'
+{% endraw %}
+'''
+
+# A build directory remembers the compiler that filled it (#7497,
+# `.config/mise/target-pin.bash`). Cargo's own record, `.rustc_info.json` at
+# the root of the target, names it. The step compares that compiler with the
+# tree's pin, keeps the target on one compiler and runs `cargo clean` on a
+# difference. A target with no record has nothing to clean. `check`,
+# `gate:all` and `wt:warm` run it before their first build, so no host fills
+# when the pin moves.
+["target:pin"]
+description = "Clean the build directory when the compiler that cargo's record names is not the tree's, before the first build under a new pin"
+tools.jq = "1.8.1"
+run = ".config/mise/target-pin.bash"
+
+# Every project pin but the compiler and the Dylint driver moves to its newest
+# release, and the lockfile with it. `mise upgrade --bump` would also rewrite
+# `rust-toolchain.toml` to the newest nightly, apart from the rust-clippy tag
+# the Dylint driver is built against; the channel moves only with
+# `toolchain:bump` above. The driver and its linker follow the library's
+# `dylint_linting` at the pinned quenchant revision. The global config's tools
+# stay with the user.
+["tools:bump"]
+description = "Bump every project tool pin but the compiler and the Dylint driver, each moved with what it is built against"
+run = "mise upgrade --bump --no-global --exclude rust --exclude cargo:cargo-dylint --exclude cargo:dylint-link"
+
+# The driver's release build, linked as the gandr toolchain `dev` (#4379), so
+# a `gandr` on `PATH` that selects `dev` runs this checkout's build. The first
+# toolchain linked becomes the default.
+["install"]
+description = "Build the release driver and link target/release as the gandr toolchain dev"
+run = '''
+cargo build --release --locked -p gandr-lang --bin gandr
+target/release/gandr toolchain link dev target/release
+'''
+
+# The driver built for WASI 0.3 (#4882): `gandr check`, `gandr run` and the
+# portable executor inside it, in `target/wasm32-wasip3/release/gandr.wasm`.
+# The pinned nightly ships no `wasm32-wasip3` standard library, so the build
+# rebuilds it from `rust-src`. wasi-sdk gives the C library and the linker:
+# its `wasm-ld` resolves the thread-local import that library makes, which
+# the nightly's linker does not. `+tail-call` keeps each `become` a tail
+# call. Wasmtime runs the module, as `test:wasm` does.
+["build:wasm"]
+description = "Build the release driver for wasm32-wasip3"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+sdk=$(printf '%s' "$(mise where github:WebAssembly/wasi-sdk)"/wasi-sdk-*)
+library=$sdk/share/wasi-sysroot/lib/wasm32-wasip3
+export CARGO_TARGET_WASM32_WASIP3_RUSTFLAGS="-C target-feature=+tail-call -C linker=$sdk/bin/wasm-component-ld -C link-self-contained=no -L native=$library -C link-arg=$library/crt1-command.o"
+cargo build --release --locked -Zbuild-std=std,panic_abort --target wasm32-wasip3 -p gandr-lang --bin gandr
+'''
+
+# The wasm driver against the native one (#4882): each case of
+# `.config/wasm/cases.txt` runs on both, and the task fails on any case
+# where they print differently or one fails alone. Wasmtime is the test
+# oracle here, never a dependency of the driver.
+["test:wasm"]
+description = "Run the wasm32-wasip3 driver under Wasmtime against the native driver"
+depends = ["build:wasm"]
+run = '''
+cargo build --release --locked -p gandr-lang --bin gandr
+.config/wasm/compare.bash target/release/gandr target/wasm32-wasip3/release/gandr.wasm
+'''
+
+# Each host's toolchain follows `main` (#4499), so no seat and no editor
+# reloads for new tooling: every `interval` seconds the follower fetches
+# `origin main` into the main checkout, fast-forwards it, builds the driver in
+# its warm `target/` and deploys the build as the default toolchain `main`. A
+# running `gandr lsp` or `gandr mcp` moves to it in place on the next request
+# its client sends, and keeps its process and its session (#4380). The builds
+# live under `$XDG_DATA_HOME/gandr/builds/<commit>/`, the current one and the
+# one before it, linked as `previous` for a rollback; a build a process still
+# runs stays until the next deploy (`prune.jq`). A checkout off `main` or
+# dirty is never touched, and it and a build that cargo refuses are paged once
+# per commit, a fetch that fails twice in a row too (#4540,
+# `.config/follow/follow.bash`). A build that a signal ends is built again at
+# the next reading. The fetches keep the URL `origin` names, past a rewrite in
+# the user's git configuration. After each fast-forward it syncs the
+# checkout's code index, where one exists, so `wt:warm` copies a current index
+# into every new worktree; a failed sync is paged and holds back no deploy
+# (#4866). `--once` reads once and exits. `--install` runs the follower as a
+# host service from this checkout, as `stall:watch --install` does
+# (`.config/service/`), carrying git's configuration from the installing
+# shell, and `--remove` stops and deletes it. A main checkout older than the
+# follower has no such task: fast-forward it once to `origin/main` before the
+# first `--install`. The checkout, the interval and the page command are
+# configuration, never the tree's.
+["toolchain:follow"]
+description = "Build and deploy main as the default toolchain whenever main moves, so a running gandr lsp or mcp follows it with no reload; --install runs it as a service"
+quiet = true
+tools.jq = "1.8.1"
+usage = '''
+flag "--once" help="read once and exit"
+flag "--install" help="install and start the service that keeps toolchain:follow running from this checkout"
+flag "--remove" help="stop and delete that service"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/service/service.bash
+source .config/follow/follow.bash
+description='gandr toolchain follower (toolchain:follow)'
+if [[ ${usage_remove:-false} == true ]]; then service_unit remove toolchain-follow toolchain:follow "$description"; exit; fi
+config=$(follow_configuration) || exit 2
+# The service starts only on a configuration the loop reads.
+if [[ ${usage_install:-false} == true ]]; then service_unit install toolchain-follow toolchain:follow "$description"; exit; fi
+mapfile -t follow_page_command < <(jq -r '.page[]' <<< "$config")
+checkout=$(jq -r .checkout <<< "$config")
+while :; do
+  (follow_once "$checkout") || echo "toolchain:follow: the reading failed; reading again next interval" >&2
+  if [[ ${usage_once:-false} == true ]]; then exit; fi
+  sleep "$(jq .interval <<< "$(follow_configuration)")"
+done
+{% endraw %}
+'''
+
+# The pin of mise: the `version` of the mise step of
+# `.github/actions/install-tools/action.yml`, which the CI image reads too
+# (#7008). Each host runs this version of mise.
+["mise:pin"]
+description = "Print the pin of mise, the version that CI installs and that each host runs"
+quiet = true
+tools.yq = "4.54.1"
+run = '''
+yq '.runs.steps[] | select(.uses // "" | test("^jdx/mise-action@")) | .with.version' .github/actions/install-tools/action.yml
+'''
+
+# The tools of `mise.toml` whose releases publish no binary for a target,
+# cross-built on this host into a directory of keys, once for each version
+# (#7008). `.config/host-tools/builds.toml` names them and how each builds,
+# and `crates/workflow-host-tools` builds them; a key that stands is kept.
+# The builder's linker, C tools and programs are its configuration,
+# `$XDG_CONFIG_HOME/gandr/host-tools.toml`, never the tree's.
+["tools:build"]
+description = "Cross-build each tool that publishes no binary for a target into a directory of keys, once for each version"
+usage = '''
+arg "<target>" help="the target triple, as riscv64gc-unknown-linux-gnu"
+arg "<into>" help="the directory of the keys, <target>/<install name>/<version>"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+pin=$(mise run --quiet mise:pin)
+cargo run --quiet --release --locked -p gandr-workflow-host-tools --bin host-tools -- \
+  build --target "${usage_target:?}" --into "${usage_into:?}" --mise-version "$pin"
+'''
+
+# The push (#7008): the builds of `tools:build` for the target of each
+# receiver that the builder's configuration names. Each key goes into the
+# mise install directory of the receivers of its target when its build ends.
+# mise comes to the pin on the builder and on each receiver, and each receiver
+# of keys turns mise's automatic installs off. A marker records each push, so
+# a key goes to a host once. With no receiver it does nothing. The follower
+# runs it at each reading (`follow_tools` in `.config/follow/follow.bash`).
+["tools:push"]
+description = "Build the keys of each receiver's target, copy each key to its receivers and bring mise to the pin on each host"
+usage = '''
+arg "[into]" help="the directory of the keys; $XDG_DATA_HOME/gandr/host-tools when absent"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+pin=$(mise run --quiet mise:pin)
+data=${XDG_DATA_HOME:-$HOME/.local/share}
+into=${usage_into:-$data/gandr/host-tools}
+cargo run --quiet --release --locked -p gandr-workflow-host-tools --bin host-tools -- \
+  push --into "$into" --mise-version "$pin"
+'''
+
+# The refusal (#7008): the tools of the checkout that this host lacks. A tool
+# lacks when mise holds no install of it, when its install holds no program,
+# or when a program of it is an ELF file of another machine. Each lack prints
+# one line with the tool, its version and the host's platform, and the lines
+# go into `$XDG_STATE_HOME/gandr/host-tools-needs.txt`, the need for the
+# builder. A tool whose backend needs a tool that the host disables stays out,
+# as `npm:` where `node` is off. The check also prints the host's mise against
+# the pin. A job on a host that receives keys runs it first.
+["tools:check"]
+description = "Name each tool of the checkout that this host lacks or holds for another machine, and the host's mise against the pin"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+pin=$(mise run --quiet mise:pin)
+cargo run --quiet --release --locked -p gandr-workflow-host-tools --bin host-tools -- \
+  check --mise-version "$pin"
+'''

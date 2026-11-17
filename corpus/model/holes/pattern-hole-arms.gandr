@@ -1,0 +1,27 @@
+//! This source shows a covered match with a hole body.
+//!
+//! A written arm covers its pattern. Its hole leaves its result owed.
+//!
+//! The checker decides the arm before it owes the result.
+//!
+//! - see: `corpus/pathological/holes/pattern-hole-arms.gandr` — a pattern hole leaves the arm undecided.
+//!
+/// This data type has three colours.
+data Color : Type where
+  | Red : Color
+  | Green : Color
+  | Blue : Color
+
+/// This function writes one arm for each colour.
+def classify(c : Color) -> Integer =
+  match c where
+    | Red => 0
+    | Green => 1
+    | Blue => 2
+
+/// This function writes Green's arm with a hole body.
+def sketch(c : Color) -> Integer =
+  match c where
+    | Red => 0
+    | Green => ?
+    | Blue => 2

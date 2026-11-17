@@ -1,0 +1,9 @@
+@[ checks ]
+data Circle : Type where {
+    | Base : Circle
+    | Loop : (c : Circle) --> Circle
+    | Unloop : (c : Circle) --> Circle
+    rule : Loop (Unloop x) ==> x;
+    rule : Unloop (Loop x) ==> x;
+    rule : Loop (Loop x) ==> x;
+}

@@ -1,0 +1,5 @@
+def s = "a  ${  b }	c" ;
+def h = #!{
+    printf 'hi'
+} ;
+def k = (  ?hole  ) ;

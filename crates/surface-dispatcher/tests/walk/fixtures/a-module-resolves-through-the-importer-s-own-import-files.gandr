@@ -1,0 +1,3 @@
+pub module Seat where {
+  def task : Integer = 1;
+}

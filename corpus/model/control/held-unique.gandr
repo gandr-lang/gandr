@@ -1,0 +1,36 @@
+//! This source shows grade-one holds.
+//!
+//! A grade-one hold has one owner.
+//! Its value does not copy while the hold lives.
+//!
+//! An exclusive view transfers the value once.
+//! `resume` writes the new value back.
+//! The write-back needs no count of the other holders of the value.
+//! The grades are those of graded modal types
+//! [Orchard-2019-quantitative_program_reasoning_graded_modal_types].
+//!
+//! - cites: [Orchard-2019-quantitative_program_reasoning_graded_modal_types]
+//!
+//! [Orchard-2019-quantitative_program_reasoning_graded_modal_types]: https://doi.org/10.1145/3341714 "Orchard, Liepelt and Eades, Quantitative Program Reasoning with Graded Modal Types"
+
+// The successor, a call whose type synthesises where a statement binds it.
+import "./accessor-counter.gandr";
+
+/// `counted` creates a grade-one count.
+/// Its exclusive view moves the count and writes its successor back.
+@[runs("1")]
+def counted() -> Integer =
+  var[1] c = 0
+  access c as v { let n = succ v; resume v n; pure n }
+
+/// `untouched` aborts before its grade-one view reads.
+/// The tuple stays in the hold.
+def untouched() -> Unit =
+  var[1] p = *{1, 2};
+  access p as v { abort v } unwind { pure *{} }
+
+/// A hold at the default grade, under which each read copies.
+@[runs("2")]
+def copied() -> Integer =
+  var c = 1
+  pure c + c

@@ -1,0 +1,12 @@
+theory Older where {
+  oper answer : Integer;
+}
+theory Tagged where {
+  oper reply : Integer;
+  oper label : String;
+}
+flow retagged : Tagged ~~> Older where {
+  def answer = reply;
+}
+import "./newer.gandr" as newer : Older via retagged ;
+def relayed() -> Integer { newer.answer }

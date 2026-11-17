@@ -1,0 +1,7 @@
+{NAT}def next(n : Nat) -> -F Nat {{ return Succ n }}
+def rec still(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ | Zero => return Path.here n | Succ(p) => {{ let q = still[<] p; become Path.ap next q }} }} }}
+def kept(n : Nat, m : Nat) -> -F Path[.A = Nat](m, m) {{ match n {{ | Zero => return Path.here m | Succ(p) => return Path.here m }} }}
+data Circle : Type where {{ | Base : Circle | loop : Base <-> Base }}
+def loopOn(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Circle](Base, Base) {{ return loop ∷ p }}
+def unloopOn(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Circle](Base, Base) {{ return back (loop) ∷ p }}
+def rec looped(p : Path[.A = Circle](Base, Base)) -> -F Path[.A = Path[.A = Circle](Base, Base)](p, p) {{ match p {{ | here => return Path.here p | loop ∷ q => {{ let r = looped[<] q; become Path.ap loopOn r }} | back(loop) ∷ q => {{ let r = looped[<] q; become Path.ap unloopOn r }} }} }}
