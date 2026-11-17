@@ -11,7 +11,14 @@ check-dist = ["check", "--config=.cargo/config.dist.toml", "--profile=dist"]
 # restamp then dates a changed source before an older restored unit, and that
 # stale unit reads as fresh.
 # - see: #3206, #7775
+#
+# Each build in the tree runs the compiler through the tree's wrapper, which
+# is kache where the host has it. Cargo reads the path from the parent of this
+# directory. `RUSTC_WRAPPER` comes before this key, and its empty value gives
+# a build no wrapper.
+# - see: `.config/kache/rustc-wrapper`, #7789
 [build]
+rustc-wrapper = ".config/kache/rustc-wrapper"
 fingerprint = "content"
 
 # Each mold process uses every core. With `MOLD_JOBS=1`, concurrent links
