@@ -3296,6 +3296,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::Pieces','struct','Hold
 INSERT INTO purpose VALUES('surface-lowering-base','form::Placed','struct','Holds a form''s placement, so the form''s placement is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Repair','enum','Names a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Repaired','struct','Holds a form''s repair, so a repaired form is refused where it stands.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','form::RetiredBox','struct','Names whether an extra operand is the retired box, so the box is refused by its name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::RuleIdentity','struct','Names a rule by its name in its grammar, so two rules are compared by identity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::Run','enum','Holds the operands between two of a form''s own tiles, so a form reads one, none or several.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::RunReading','enum','Names how a run of glyphs reads, so an operator written wrong is refused at the run.',NULL,'fits','sound',NULL);
@@ -3307,6 +3308,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::Universe','struct','Na
 INSERT INTO purpose VALUES('surface-lowering-base','form::WrittenPath','struct','Holds a dotted path as a form writes it, so the path resolves in the module its segments name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::applied_word','function','Finds the application a word heads, so a misspelt keyword is refused at the word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::bare_bracket','function','Finds the bare bracket open at a refusal, so an index written without its operator is refused at the bracket.',NULL,'fits','record','Its documentation names an issue number as the origin of its reading.');
+INSERT INTO purpose VALUES('surface-lowering-base','form::boxed_extra','function','Names whether an extra operand of sort Type starts with `=>`, so a refused declaration names the retired box.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::classifies_codes','function','Names whether a written type classifies codes, so a kind arrow lowers as the static arrow and the formatter writes no alias for its thunk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::declined_feature','function','Names the feature the dispatch table declines a form by, so the refusal names its feature.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::entry_path','function','Reads an effect''s entry at a cursor, so a row, a scope, a requirement and an offer resolve one entry alike.',NULL,'fits','sound',NULL);
@@ -3320,6 +3322,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::own_children','functio
 INSERT INTO purpose VALUES('surface-lowering-base','form::read_as_type','function','Names whether a form stands as a type, so a form of the wrong sort is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::read_pieces','function','Reads a node''s children against its own rule, so each form reads its tiles and operands in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::repair_at','function','Reads the repair the parser inserted at a child, so the refusal names the repair.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','form::retired_within','function','Reads the first retired token a form holds at any depth, so a refused declaration names the old spelling and no other fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::run_reading','function','Reads how a run of glyphs reads, so an operator written wrong is refused at the run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::shape_of','function','Reads the shape of a node, so each node is dispatched by its shape.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::stop_of','function','Finds where a form itself stopped, so a torn form is refused where it left its shape.',NULL,'fits','sound',NULL);

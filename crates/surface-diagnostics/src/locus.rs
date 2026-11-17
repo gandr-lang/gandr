@@ -5118,11 +5118,11 @@ mod tests
         let unfolded = Comparison {
             expected: Maybe::Absent(Absent::Unspelled),
             found: Maybe::Present("pairOf(Integer, Bool)"),
-            unfolded: Maybe::Present("#{x : Integer, y : Bool}"),
+            unfolded: Maybe::Present("*{x : Integer, y : Bool}"),
         };
         assert_eq!(
             unfolded.to_string(),
-            "found `pairOf(Integer, Bool)`, which unfolds to `#{x : Integer, y : Bool}`"
+            "found `pairOf(Integer, Bool)`, which unfolds to `*{x : Integer, y : Bool}`"
         );
         assert_eq!(UNCOMPARED.to_string(), "");
     }

@@ -126,6 +126,7 @@ use gandr_surface_lowering::FragmentFeature;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::OperandCount;
+use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Unbuilt;
 use gandr_surface_lowering::description::MemberFault;
 use gandr_surface_lowering::model::ModelFault;
@@ -2970,7 +2971,11 @@ impl<'source> RefusalOf<'source, Arena>
         ret == RefusalName::UndescribedMember(member_tag(fault))
     } else if let LoweringRefusal::SignatureMismatch { fault, .. } = refusal {
         ret == RefusalName::SignatureMismatch(signature_tag(fault))
-    } else if let LoweringRefusal::MalformedForm { fault: FormFault::Retired(form), .. } = refusal {
+    } else if let LoweringRefusal::MalformedForm {
+        fault: FormFault::Retired(form) | FormFault::Repaired(Repair::Retired(form)),
+        ..
+    } = refusal
+    {
         ret == RefusalName::RetiredSpelling(form)
     } else if let LoweringRefusal::RetiredName { form, .. } = refusal {
         ret == RefusalName::RetiredSpelling(form)
@@ -3005,7 +3010,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::BareFeedback { .. } => RefusalName::BareFeedback,
         LoweringRefusal::RetiredName { form, .. }
         | LoweringRefusal::MalformedForm {
-            fault: FormFault::Retired(form),
+            fault: FormFault::Retired(form) | FormFault::Repaired(Repair::Retired(form)),
             ..
         } => RefusalName::RetiredSpelling(form),
         LoweringRefusal::IllFormedDescription {

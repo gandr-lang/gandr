@@ -81,6 +81,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_surface_grammar::RetiredForm;
 use gandr_surface_syntax::SourceFragment;
 
 use crate::meld::primitive_copy_wrapper;
@@ -2085,20 +2086,13 @@ fn scan_shell_interior(
         },
         b'\r' | b'\n' => ScanResult::new(Lexeme::Space, scan_newlines(bytes, pos)),
         // `#!{` / `$!{` open a nested shell block; the brace / bracket / paren
-        // punctuation is structural. The freshness relation's lone `#` and the
-        // sequence literal's `#[` are host syntax, so inside a shell block the
-        // `#` stays unknown.
-        b'#' => match scan_hash(bytes, pos) {
-            ScanResult {
-                lexeme: Lexeme::Punct,
-                next,
-            } if next == pos.advance(ByteWidth::ONE)
-                || bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'[')) =>
-            {
-                ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE))
-            },
-            scanned => scanned,
+        // punctuation is structural. The freshness relation's lone `#`, the
+        // sequence literal's `#[` and the retired `#{` are host syntax, so
+        // inside a shell block a `#` that opens no shell stays unknown.
+        b'#' if bytes.byte(pos.advance(ByteWidth::ONE)) == Some(SourceByte::from(b'!')) => {
+            scan_hash(bytes, pos)
         },
+        b'#' => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
         b'$' => scan_dollar(bytes, pos),
         // A shell `[` / `]` is a subshell bracket (tree-sitter `subshell`),
         // classified DISTINCTLY from the host list-literal `[` so a subshell
@@ -2349,14 +2343,15 @@ fn scan_slash(
     }
 }
 /// Scan a lexeme led by `#`: a shebang, a shell start, the sequence literal's
-/// `#[`, the freshness relation, or a stray byte.
+/// `#[`, the retired token `#{`, the freshness relation, or a stray byte.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; shebangs are layout, sequence and valid shell
-///   openers are punctuation, a `#` that opens none is the one-byte punctuation
-///   of a freshness condition `a # t`, and a `#!` that opens no shell is
-///   unknown.
+///   openers are punctuation, the glued `#{` is one unknown token that the
+///   lowering refuses by name, a `#` that opens none is the one-byte
+///   punctuation of a freshness condition `a # t`, and a `#!` that opens no
+///   shell is unknown.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2373,6 +2368,17 @@ fn scan_hash(
     pos: ByteOffset,
 ) -> ScanResult
 {
+    // The glued `#{` is a retired token: one token that no tile molds, so the
+    // parser grouts it whole and the lowering names it. `# {` with a space
+    // stays the freshness relation and a brace.
+    let retired = RetiredForm::ViewTelescope.written().0.as_bytes();
+    if bytes
+        .0
+        .get(pos.0 ..)
+        .is_some_and(|rest| rest.starts_with(retired))
+    {
+        return ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::from(retired.len())));
+    }
     match bytes.byte(pos.advance(ByteWidth::ONE)).map(u8::from) {
         Some(b'!') => match bytes.byte(pos.advance(ByteWidth::TWO)).map(u8::from) {
             // `#!/…` first-line shebang (trivia).
@@ -3618,7 +3624,8 @@ mod tests
             (super::scan_hash, &[
                 ("#!/x\n", Lexeme::Space, 4),
                 ("#!sh{x", Lexeme::Punct, 5),
-                ("#{x", Lexeme::Punct, 1),
+                ("#{x", Lexeme::Unknown, 2),
+                ("# {x", Lexeme::Punct, 1),
                 ("#[x", Lexeme::Punct, 2),
                 ("#!bad", Lexeme::Unknown, 1),
                 ("#", Lexeme::Punct, 1),

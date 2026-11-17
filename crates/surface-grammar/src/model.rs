@@ -851,17 +851,25 @@ pub enum RetiredForm
     PositionalBridgeCarrier,
     /// A flow type written `Flow(A, a, b)`, its carrier first.
     PositionalFlowCarrier,
+    /// A telescope or a record opened by the glued token `#{`, which `*{`
+    /// replaces.
+    ViewTelescope,
+    /// A function type written `A => B` in a type position, which `A -> B`
+    /// replaces.
+    FatArrowBox,
 }
 
 impl RetiredForm
 {
     /// Every retired spelling, in the order of the enum.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 7] = [
         Self::ShapeMember,
         Self::UnitValue,
         Self::PositionalPathCarrier,
         Self::PositionalBridgeCarrier,
         Self::PositionalFlowCarrier,
+        Self::ViewTelescope,
+        Self::FatArrowBox,
     ];
 
     /// The surface name of the spelling: the row's surface and the tag of its
@@ -879,6 +887,8 @@ impl RetiredForm
             Self::PositionalPathCarrier => "positional_path_carrier",
             Self::PositionalBridgeCarrier => "positional_bridge_carrier",
             Self::PositionalFlowCarrier => "positional_flow_carrier",
+            Self::ViewTelescope => "view_telescope",
+            Self::FatArrowBox => "fat_arrow_box",
         })
     }
 
@@ -897,6 +907,8 @@ impl RetiredForm
             Self::PositionalPathCarrier => "Path[.A = A](a, b)",
             Self::PositionalBridgeCarrier => "Bridge[.A = A](a, b)",
             Self::PositionalFlowCarrier => "Flow[.A = A](a, b)",
+            Self::ViewTelescope => "*{ … }",
+            Self::FatArrowBox => "A -> B",
         })
     }
 
@@ -915,6 +927,8 @@ impl RetiredForm
             Self::PositionalPathCarrier => "Path",
             Self::PositionalBridgeCarrier => "Bridge",
             Self::PositionalFlowCarrier => "Flow",
+            Self::ViewTelescope => "#{",
+            Self::FatArrowBox => "=>",
         })
     }
 }

@@ -177,6 +177,7 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Repair;
+use crate::form::RetiredBox;
 use crate::form::Run;
 use crate::form::RunReading;
 use crate::form::Shape;
@@ -184,12 +185,14 @@ use crate::form::TileName;
 use crate::form::Universe;
 use crate::form::applied_word;
 use crate::form::bare_bracket;
+use crate::form::boxed_extra;
 use crate::form::family_of;
 use crate::form::misspelt_keyword;
 use crate::form::misspelt_operator;
 use crate::form::opens_expression;
 use crate::form::read_as_type;
 use crate::form::read_pieces;
+use crate::form::retired_within;
 use crate::form::run_reading;
 use crate::form::shape_of;
 use crate::form::tile_label;
@@ -20533,6 +20536,97 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         if owed { Owed::Owed } else { Owed::Nothing }
     }
 
+    /// The refusal of the slot `slot`, refused as `refusal` at `at`: the
+    /// refusal of the first retired token that a form of the slot holds, when
+    /// one holds such a token; the retired box, when `refusal` is an extra
+    /// operand that [`boxed_extra`] reads as the box; and `refusal`
+    /// otherwise.
+    ///
+    /// A declaration that holds an old spelling reports that refusal and no
+    /// other fault, since the faults around it follow from it.
+    ///
+    /// # Specification
+    /// - requires: `at` and the halves of `slot` name nodes of the tree.
+    /// - ensures: [`crate::form::Repaired::refusal`] of [`retired_within`]'s
+    ///   repair under the first of `at`, the form that introduced the slot, its
+    ///   signature and its definition that holds a retired token, named by that
+    ///   form; else, for an extra operand that [`boxed_extra`] reads as the box
+    ///   under one of them, the same refusal with [`FormFault::Retired`] of
+    ///   [`RetiredForm::FatArrowBox`]; `refusal` otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: none on a declaration that lowers. On a refused declaration,
+    ///   one walk of the nodes of each of at most four forms of that
+    ///   declaration, and one compare of at most 2 bytes at each grout.
+    ///
+    /// # Cost
+    /// - allocation: the worklists of the walks of the refused forms, error
+    ///   path
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `def a = #{ .x = 1 };` reads an extra operand first
+    ///   and reports the retired token; `def b : Integer => Integer;` reports
+    ///   the box at `=> Integer`; a declaration with neither keeps its refusal.
+    /// - witness: `gandr-surface-lowering::lower::tests::the_glued_view_telescope_is_refused_by_name_7879`
+    /// - witness: `gandr-surface-lowering::lower::tests::the_fat_arrow_box_is_refused_by_name_7879`
+    #[spec(ensures: |ret| ret == refusal || matches!(ret, LoweringRefusal::MalformedForm { fault: FormFault::Repaired(Repair::Retired(_)) | FormFault::Retired(RetiredForm::FatArrowBox), .. }))]
+    fn retired_first(
+        &self,
+        slot: &DeclarationSlot<'source>,
+        at: NodeIndex,
+        refusal: LoweringRefusal<'source>,
+    ) -> LoweringRefusal<'source>
+    {
+        let cx = self.cx();
+        let halves = [slot.signature, slot.definition].map(|half| match half {
+            Maybe::Present(half) => Some(half.declaration.node),
+            Maybe::Absent(_) => None,
+        });
+        let forms = [
+            Some(at),
+            Some(slot.introduced_by.node),
+            halves[0],
+            halves[1],
+        ];
+        let token = forms.into_iter().flatten().find_map(|form| {
+            let Maybe::Present(found) = retired_within(cx.pbg, cx.tree, form)
+            else {
+                return None;
+            };
+            let name = cx
+                .tree
+                .node(form)
+                .and_then(|node| match shape_of(cx.pbg, node) {
+                    Ok(Shape::Form { name, .. }) => Some(name),
+                    _ => None,
+                })
+                .unwrap_or(FormName::DECLARATION);
+            Some(found.refusal(name))
+        });
+        if let Some(found) = token {
+            return found;
+        }
+        if let LoweringRefusal::MalformedForm {
+            span,
+            form,
+            fault: FormFault::ExtraOperand,
+        } = refusal
+            && forms
+                .into_iter()
+                .flatten()
+                .any(|held| boxed_extra(cx.pbg, cx.tree, held, span) == RetiredBox(true))
+        {
+            return LoweringRefusal::MalformedForm {
+                span,
+                form,
+                fault: FormFault::Retired(RetiredForm::FatArrowBox),
+            };
+        }
+        refusal
+    }
+
     /// What the slot at `position` amounts to by its own halves, whatever
     /// module it belongs to.
     ///
@@ -20540,20 +20634,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - requires: the slot and its member coordinates are interpreted in this
     ///   lowering run.
     /// - ensures: a stored refusal takes precedence, then a refusal a check
-    ///   after minting filed; a definition written `Eq.generic(T)` is the
-    ///   equality derived for `T`, and the prelude's `Eq.generic` itself is
-    ///   unminted; a world declaration is the world it names; a data
-    ///   declaration, or a described family the decoder admitted, `Theory`
-    ///   among them, is the index of its minted signature; an operation, a
-    ///   derived rule and a `theory` block's definition are each the type and
-    ///   body minted for it; an abstract slot is the abstract type it lowered
-    ///   to, and a kind witness the check of its type member's code at the
-    ///   kind; otherwise the available signature — written, a function tail's,
-    ///   the type a model derives, or the annotation an unsigned definition's
-    ///   whole value is written under — and body select Completed, Uncompleted
-    ///   or Bodied, but a definition written as a value or a function tail
-    ///   whose body did not mint is the body's absence, which [`Self::outcome`]
-    ///   refuses by name, never an obligation the signature owes (#6113).
+    ///   after minting filed, each read as [`Self::retired_first`] reads it; a
+    ///   definition written `Eq.generic(T)` is the equality derived for `T`,
+    ///   and the prelude's `Eq.generic` itself is unminted; a world declaration
+    ///   is the world it names; a data declaration, or a described family the
+    ///   decoder admitted, `Theory` among them, is the index of its minted
+    ///   signature; an operation, a derived rule and a `theory` block's
+    ///   definition are each the type and body minted for it; an abstract slot
+    ///   is the abstract type it lowered to, and a kind witness the check of
+    ///   its type member's code at the kind; otherwise the available signature
+    ///   — written, a function tail's, the type a model derives, or the
+    ///   annotation an unsigned definition's whole value is written under — and
+    ///   body select Completed, Uncompleted or Bodied, but a definition written
+    ///   as a value or a function tail whose body did not mint is the body's
+    ///   absence, which [`Self::outcome`] refuses by name, never an obligation
+    ///   the signature owes (#6113).
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -20574,13 +20669,16 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::tests::modules::an_abstract_component_kinds_at_a_universe`
     /// - witness: `gandr-surface-lowering::lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
     /// - witness: `gandr-surface-lowering::lower::tests::a_written_definition_minting_no_body_is_refused_by_name_6113`
+    ///
+    /// # Cost
+    /// - allocation: the refusal that a refused outcome owns, error path
     #[spec(
         ensures: |ret| {
-            if let Maybe::Present((_at, refusal)) = slot.refusal {
-                ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
+            if let Maybe::Present((at, refusal)) = slot.refusal {
+                ret == Maybe::Present(DeclarationOutcome::Refused(self.retired_first(slot, at, refusal)))
             }
             else if let Some(&refusal) = self.cx().faults.get(&position) {
-                ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
+                ret == Maybe::Present(DeclarationOutcome::Refused(self.retired_first(slot, slot.introduced_by.node, refusal)))
             }
             else if let Some(&(declared_type, body)) = self.cx().generics.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Completed { declared_type, body })
@@ -20687,11 +20785,16 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         slot: &DeclarationSlot<'source>,
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
-        if let Maybe::Present((_at, refusal)) = slot.refusal {
-            return Maybe::Present(DeclarationOutcome::Refused(refusal));
+        if let Maybe::Present((at, refusal)) = slot.refusal {
+            return Maybe::Present(DeclarationOutcome::Refused(
+                self.retired_first(slot, at, refusal),
+            ));
         }
         if let Some(&refusal) = self.cx().faults.get(&position) {
-            return Maybe::Present(DeclarationOutcome::Refused(refusal));
+            let at = slot.introduced_by.node;
+            return Maybe::Present(DeclarationOutcome::Refused(
+                self.retired_first(slot, at, refusal),
+            ));
         }
         if let Some(&(declared_type, body)) = self.cx().generics.get(&position) {
             return Maybe::Present(DeclarationOutcome::Completed {

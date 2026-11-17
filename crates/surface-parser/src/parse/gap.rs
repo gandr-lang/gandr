@@ -329,7 +329,7 @@ fn class(
             bracketing: match bracket(token, SourceBytes::from(<&str>::from(text).as_bytes())) {
                 Bracket::Open => Bracketing::Opens(match spelled {
                     "{" => Kind::Block,
-                    "*{" | "+{" | "&{" | "#{" => Kind::Group("}"),
+                    "*{" | "+{" | "&{" => Kind::Group("}"),
                     _ if spelled.ends_with('{') => Kind::Opaque,
                     _ if spelled.ends_with('(') => Kind::Group(")"),
                     _ => Kind::Group("]"),
