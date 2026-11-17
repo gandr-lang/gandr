@@ -4885,9 +4885,9 @@ if [[ -n "$findings" ]]; then
   if grep -q '^arm: ' <<< "$findings"; then echo "$findings"; exit 0; fi
   echo "$findings" >&2
 fi
-# The title and the body name nothing private and keep the body rules before
-# anything is built (#3849), so a long sentence costs no gate; they are read
-# again as posted, once the observation block is written.
+# The title must pass the merge queue's title policy before the body checks or
+# a costly gate run. The landing task reads the posted title again before it queues.
+"$config_dir/pr-title/lint.bash" --title "${usage_title:?}"
 mise run --quiet body:check --title "${usage_title:?}" "$body"
 mise run --quiet body:prose "$body"
 # The features ledger rows the body names against those the change touches
@@ -5199,6 +5199,7 @@ if [[ -z "$number" ]]; then number=$(gh pr view --json number --jq .number); fi
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
+GITHUB_REPOSITORY="$repo" "$(git rev-parse --show-toplevel)/.config/pr-title/lint.bash" "$number"
 deadline=$((SECONDS + 5400))
 queued=false
 previous=
