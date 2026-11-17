@@ -9509,18 +9509,35 @@ mod tests
     #[test]
     fn a_block_answers_at_its_own_tiles_7855()
     {
-        let source =
-            SourceText::from("def nested() -> -F Unit {\n  let u = { pure *{}; };\n  pure u\n}\n");
+        let source = SourceText::from(include_str!(
+            "typed/unformatted/a-block-answers-at-its-own-tiles-7855.gandr"
+        ));
         let table = table(source);
-        for needle in ["{ pure", "; };", "};\n  pure u", "pure *{}"] {
-            let answered = answer(&table, source, SourceText::from(needle));
-            assert!(
-                matches!(
-                    answered,
-                    Maybe::Present(Answer { subject: Subject::Term, ref ty, expected: Maybe::Absent(_) })
-                        if ty == "-F Unit"
-                ),
-                "`{needle}` answers the block's returner: {answered:?}"
+        let block = <&str>::from(source)
+            .find("{ pure")
+            .expect("the source writes the block");
+        for (tile, offset) in [
+            ("the block's `{`", block),
+            ("the block's last `;`", block.saturating_add(10)),
+            ("the block's `}`", block.saturating_add(12)),
+            ("the `pure` inside the block", block.saturating_add(2)),
+        ] {
+            let answered = match table.at(
+                ByteOffset::from(offset),
+                PageWidth::from(80_u32),
+                Form::Explicit.into(),
+            ) {
+                Maybe::Present(entry) => Some((
+                    entry.subject(),
+                    String::from(entry.ty().as_ref()),
+                    matches!(entry.expected(), Maybe::Absent(_)),
+                )),
+                Maybe::Absent(_) => None,
+            };
+            assert_eq!(
+                answered,
+                Some((Subject::Term, String::from("-F Unit"), true)),
+                "{tile} answers the block's returner"
             );
         }
     }

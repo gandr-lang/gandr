@@ -15598,6 +15598,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::lower::tests::the_eager_product_and_pair_lower_to_their_formers`
     /// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
     /// - witness: `gandr-surface-lowering::tests::modules::functors::a_parameter_s_abstract_type_answers_at_its_kind_2183`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_block_records_its_span_beside_its_computation_7855`
+    ///
+    /// # Cost
+    /// - allocation: the node's arena slot and its origins, growth within the
+    ///   module's plans
     #[spec(
         captures: promised = (
             match *plan {

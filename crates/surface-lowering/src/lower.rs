@@ -4428,7 +4428,9 @@ mod tests
     #[test]
     fn a_block_records_its_span_beside_its_computation_7855()
     {
-        let written = "def nested() -> -F Unit {\n  let u = { pure *{}; };\n  pure u\n}\n";
+        let written = include_str!(
+            "lower/fixtures/a-block-records-its-span-beside-its-computation-7855.gandr"
+        );
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(written), &mut arena);
         let start = written.find("{ pure").expect("the source writes the block");
