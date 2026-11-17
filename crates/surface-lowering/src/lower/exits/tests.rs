@@ -2,6 +2,8 @@ use alloc::format;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Verdict;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
@@ -315,6 +317,62 @@ fn a_block_ending_in_a_statement_returns_the_unit_1205()
         (SurfaceName::from("some"), SurfaceName::from("some_by_hand")),
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn a_block_final_semicolon_returns_the_unit_in_both_spellings_7733()
+{
+    let source = include_str!(
+        "tests/fixtures/a-block-final-semicolon-returns-the-unit-in-both-spellings-7733.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert_same_body(
+        &module,
+        &arena,
+        (SurfaceName::from("laid"), SurfaceName::from("braced")),
+    );
+    let returns = |id: ComputationId| matches!(arena.computation(id), Some(Computation::Return(_)));
+    let laid = tail_of(&arena, body_named(&module, SurfaceName::from("laid")));
+    assert!(
+        matches!(
+            arena.computation(laid),
+            Some(&Computation::Bind(ran, rest))
+                if returns(ran)
+                    && matches!(
+                        arena.computation(rest),
+                        Some(&Computation::Split { arity, body, .. })
+                            if arity == ComponentCount::default() && returns(body)
+                    )
+        ),
+        "the laid-out block runs its last statement, splits its unit and returns the unit"
+    );
+    let report = judged(&module, &mut arena);
+    let names: Vec<SurfaceName<'_>> = module
+        .declarations()
+        .iter()
+        .map(|declaration| declaration.name())
+        .collect();
+    assert_eq!(
+        names,
+        ["laid", "braced", "kept", "dropped"].map(SurfaceName::from),
+        "every declaration lowers"
+    );
+    let verdicts: Vec<Verdict> = report
+        .judged()
+        .iter()
+        .map(|judged| judged.verdict())
+        .collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            Verdict::Refused(CheckRefusal::ShapeMismatch { .. }),
+        ]),
+        "a bare last statement keeps its value, and one before `;` is discarded against \
+         the unit: {verdicts:?}"
+    );
 }
 
 #[test]
