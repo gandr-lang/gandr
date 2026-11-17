@@ -106,9 +106,9 @@ pub use layout::Move;
 ///   labeler and token-text observer carry its executable obligations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — host and shell contexts cover the complete lexical
-///   vocabulary with exact class streams and source spans. Wrong modes, missing
-///   classes and shifted spans change these observations.
+/// - hypothesis: L3 — the host contexts cover the complete lexical vocabulary
+///   with exact class streams and source spans. Wrong modes, missing classes
+///   and shifted spans change these observations.
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
 /// - witness: `label::tests::labels_a_definition_losslessly`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -543,9 +543,9 @@ impl ScanResult
 ///   labeler and token-text observer carry its executable obligations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — host and shell contexts cover the complete lexical
-///   vocabulary with exact class streams and source spans. Wrong modes, missing
-///   classes and shifted spans change these observations.
+/// - hypothesis: L3 — the host contexts cover the complete lexical vocabulary
+///   with exact class streams and source spans. Wrong modes, missing classes
+///   and shifted spans change these observations.
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
 /// - witness: `label::tests::labels_a_definition_losslessly`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -621,9 +621,9 @@ pub enum Bracket
 /// # Specification
 /// - requires: `bytes` is the exact buffer `token` was labeled from.
 /// - ensures: [`Bracket::Open`] for a layout opener and [`Bracket::Close`] for
-///   a layout closer. For a punctuation or subshell token, [`Bracket::Open`]
-///   when its spelling ends in `(`, `[` or `{`, and [`Bracket::Close`] when it
-///   is `)`, `]` or `}`. [`Bracket::Neither`] otherwise.
+///   a layout closer. For a punctuation token, [`Bracket::Open`] when its
+///   spelling ends in `(`, `[` or `{`, and [`Bracket::Close`] when it is `)`,
+///   `]` or `}`. [`Bracket::Neither`] otherwise.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -718,7 +718,7 @@ pub fn bracket(
 ///   `ω` and the wildcard `_`.
 ///
 /// `@[` and `@![` are read at the delimiter `@`, and `#`, `//`, `/*`, `"` and
-/// `'` lead a shebang, a shell block, a comment, a string or a character before
+/// `'` lead a shebang, a comment, a string or a character before
 /// any run is read.
 const OPERATORS: &[&str] = &[
     "-->", "<->", "==>", "<=>", "∷", "≃", "≅", "⇝", "↦", "⊸", "<~>", "~~>", "|->", "-o", "~>",
@@ -761,10 +761,8 @@ const BYTE_ORDER_MARK_UTF8: [u8; 3] = [0xef, 0xbb, 0xbf];
 /// # Adequacy
 /// - hypothesis: L2/L3 — exact token classes and spans for every lexical mode
 ///   distinguish wrong dispatch, premature consumption, overconsumption and
-///   lost layout; sampled sources additionally observe full reconstruction. The
-///   green witnesses do not cover a dangling shell-assignment escape or a
-///   non-ASCII braced shell name, whose spans violate the intended boundary
-///   contract. Source sizes above the wire ceiling are not exercised.
+///   lost layout; sampled sources additionally observe full reconstruction.
+///   Source sizes above the wire ceiling are not exercised.
 /// - witness: `label::tests::labels_a_definition_losslessly`
 /// - witness: `label::tests::span_tiling_is_total_and_gapless`
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
@@ -833,8 +831,6 @@ enum Opened
     Brace,
     /// A host parenthesis or bracket.
     Plain,
-    /// A shell block or a bracket inside one, where `|` is the shell's pipe.
-    Shell,
 }
 
 primitive_copy_wrapper!(
@@ -951,14 +947,14 @@ fn arrow_ahead(
 ///
 /// # Specification
 /// - requires: `tokens` are the labeled tokens of `bytes`.
-/// - ensures: a `|` outside a shell block is an arm bar exactly when no token
-///   but space stands between it and the line's start, when the innermost open
-///   bracket is a brace and the token before the bar is a `,`, or when the
-///   innermost open bracket is a brace whose first token after it is a `|`,
-///   unless the brace's current arm has met no `=>` and one follows before the
-///   next `:`, `;`, line-leading `|`, reset or the brace's close, where it is
-///   an or-pattern's; no other token changes. A token that [`resets`] closes
-///   every bracket open before it.
+/// - ensures: a `|` is an arm bar exactly when no token but space stands
+///   between it and the line's start, when the innermost open bracket is a
+///   brace and the token before the bar is a `,`, or when the innermost open
+///   bracket is a brace whose first token after it is a `|`, unless the brace's
+///   current arm has met no `=>` and one follows before the next `:`, `;`,
+///   line-leading `|`, reset or the brace's close, where it is an or-pattern's;
+///   no other token changes. A token that [`resets`] closes every bracket open
+///   before it.
 /// - panics: none.
 /// - executable: none — the clause would walk every token twice per call; the
 ///   witness checks each class.
@@ -966,10 +962,9 @@ fn arrow_ahead(
 /// # Adequacy
 /// - hypothesis: L3 — a line-leading bar, bars on one line in a bar brace, a
 ///   union in parentheses inside one, an or-pattern among a clause's patterns
-///   on one line and on its own, a bar after a plain brace's first token, a bar
-///   after a plain brace's comma and a shell pipe each take their class;
-///   marking by line alone, by brace alone or past the arm's `=>` changes one
-///   of them.
+///   on one line and on its own, a bar after a plain brace's first token and a
+///   bar after a plain brace's comma each take their class; marking by line
+///   alone, by brace alone or past the arm's `=>` changes one of them.
 /// - witness: `label::tests::arm_bars_lead_lines_and_bar_braces`
 fn mark_arm_bars(
     bytes: SourceBytes<'_>,
@@ -1020,7 +1015,6 @@ fn mark_arm_bars(
                     .is_some_and(|gap| gap.contains(&b'\n'))
             });
             let arm = match within {
-                Some(Opened::Shell) => false,
                 Some(Opened::Bars { written, arrowed }) => {
                     line_start
                         || !written
@@ -1056,21 +1050,14 @@ fn mark_arm_bars(
         if matches!(token.lexeme, Lexeme::Punct) {
             let spelled = text(&token);
             if spelled.ends_with(b"(") || spelled.ends_with(b"[") || spelled.ends_with(b"{") {
-                let shell = within == Some(Opened::Shell)
-                    || spelled.starts_with(b"#!")
-                    || spelled.starts_with(b"$!");
-                let bars = !shell
-                    && spelled.ends_with(b"{")
+                let bars = spelled.ends_with(b"{")
                     && tokens
                         .get(index.saturating_add(1) ..)
                         .unwrap_or_default()
                         .iter()
                         .find(|next| next.lexeme != Lexeme::Space)
                         .is_some_and(&is_bar);
-                opened.push(if shell {
-                    Opened::Shell
-                }
-                else if bars {
+                opened.push(if bars {
                     Opened::Bars {
                         written: false,
                         arrowed: false,
@@ -1392,11 +1379,11 @@ impl Labeling
     ///
     /// # Adequacy
     /// - hypothesis: L3 — hostile sources replaced at arbitrary byte ranges by
-    ///   hostile text, edits inside strings, shell blocks, interpolations,
-    ///   comments, numbers, layout blocks and a long dialect run among them,
-    ///   relabel to the labeling of the edited source; a restart inside the
-    ///   margin, on the edit's line or off a reset, a restart off ground, or a
-    ///   resync short of the suffix or off a reset changes a token.
+    ///   hostile text, edits inside strings, interpolations, comments, numbers
+    ///   and layout blocks among them, relabel to the labeling of the edited
+    ///   source; a restart inside the margin, on the edit's line or off a
+    ///   reset, a restart off ground, or a resync short of the suffix or off a
+    ///   reset changes a token.
     /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
     /// - witness: `label::tests::a_relabel_restarts_before_what_a_token_read`
     #[inline]
@@ -1604,7 +1591,7 @@ fn scan_string_interior(
 }
 /// Scan one lexeme starting at `pos`, returning its class and the next cursor.
 ///
-/// Layout, a comment, a shebang or shell start, a string quote, a character, a
+/// Layout, a comment, a shebang, a string quote, a character, a
 /// number and each delimiter are read first; any other byte starts a run,
 /// which [`scan_run`] reads to the next whitespace or delimiter.
 ///
@@ -1805,25 +1792,25 @@ fn scan_slash(
         _ => ScanResult::new(Lexeme::Unknown, pos.advance(ByteWidth::ONE)),
     }
 }
-/// Scan a lexeme led by `#`: a shebang, a shell start, the sequence literal's
-/// `#[`, the retired token `#{`, the freshness relation, or a stray byte.
+/// Scan a lexeme led by `#`: a shebang, the sequence literal's `#[`, the
+/// retired token `#{`, the freshness relation, or a stray byte.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
-/// - ensures: scanning advances; shebangs are layout, sequence and valid shell
-///   openers are punctuation, the glued `#{` is one unknown token that the
-///   lowering refuses by name, a `#` that opens none is the one-byte
-///   punctuation of a freshness condition `a # t`, and a `#!` that opens no
-///   shell is unknown.
+/// - ensures: scanning advances; shebangs are layout, the sequence opener is
+///   punctuation, the glued `#{` is one unknown token that the lowering refuses
+///   by name, a `#` that opens none is the one-byte punctuation of a freshness
+///   condition `a # t`, and a `#!` that opens no shebang is an unknown token of
+///   two bytes.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
 ///   complete tokens, adjacent delimiters and truncated tails are compared with
 ///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
-///   and failure to advance change a row; shebangs are layout, sequence and
-///   valid shell openers are punctuation, a lone hash is punctuation and a `#!`
-///   that opens no shell is unknown.
+///   and failure to advance change a row; shebangs are layout, the sequence
+///   opener is punctuation, a lone hash is punctuation and a `#!` that opens no
+///   shebang is unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 #[spec(requires: bytes.0.get(pos.0) == Some(&b'#'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_hash(
@@ -2570,80 +2557,9 @@ mod tests
     }
 
     #[test]
-    fn quoted_values_stop_only_at_an_unescaped_quote()
-    {
-        for (source, end) in [
-            ("\"\";", 2_usize),
-            ("\"a b\";", 5),
-            ("\"a\\\"b\";", 6),
-            ("\"tail", 5),
-        ] {
-            assert_eq!(
-                usize::from(super::scan_shell_quoted_value(
-                    super::SourceBytes::from(source.as_bytes()),
-                    super::ByteOffset::from(0_usize)
-                )),
-                end
-            );
-        }
-    }
-
-    /// #1070: a quoted value whose last byte is an escaping backslash ends at
-    /// the source's end, and the shell block it closes labels whole: the
-    /// escape stepped the cursor one byte past the source.
-    #[test]
-    fn a_quoted_value_ending_in_a_lone_backslash_ends_at_the_source_1070()
-    {
-        assert_eq!(
-            usize::from(super::scan_shell_quoted_value(
-                super::SourceBytes::from(b"\"\\".as_slice()),
-                super::ByteOffset::from(0_usize)
-            )),
-            2_usize
-        );
-        let source = super::SourceFragment::from("#!{NAME=\"\\");
-        assert_eq!(relabeled(source, source), Labeling::new(source));
-    }
-
-    #[test]
     fn prefix_recognizers_respect_truncation_and_word_boundaries()
     {
         let zero = super::ByteOffset::from(0_usize);
-        for (source, expected) in [
-            ("", false),
-            ("#!", false),
-            ("#!{", true),
-            ("$!sh{", true),
-            ("#sh{", false),
-            ("#!sh}", false),
-        ] {
-            assert_eq!(
-                bool::from(super::is_shell_open(super::SourceBytes::from(
-                    source.as_bytes()
-                ))),
-                expected,
-                "{source}"
-            );
-        }
-        for (source, expected) in [
-            ("", false),
-            ("A=", true),
-            ("_a9=x", true),
-            ("9a=x", false),
-            ("--x=y", false),
-            ("a-b=x", false),
-            ("=x", false),
-        ] {
-            assert_eq!(
-                bool::from(super::is_env_assign_run(
-                    super::SourceBytes::from(source.as_bytes()),
-                    zero,
-                    super::ByteOffset::from(source.len())
-                )),
-                expected,
-                "{source}"
-            );
-        }
         for suffix in [
             "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize", "f32", "f64",
         ] {
@@ -2692,16 +2608,6 @@ mod tests
                 None
             );
         }
-
-        for source in ["#!{", "$!{"] {
-            let result = super::scan_shell_start(
-                super::SourceBytes::from(source.as_bytes()),
-                zero,
-                super::SourceByte::from(b'{'),
-            );
-            assert_eq!(result.lexeme, Lexeme::Punct);
-            assert_eq!(usize::from(result.next), 3);
-        }
     }
 
     #[test]
@@ -2717,41 +2623,6 @@ mod tests
                 ("\\", Lexeme::Unknown, 1),
                 ("${x", Lexeme::Punct, 2),
                 ("a$b\"", Lexeme::StringFragment, 3),
-            ]),
-            (super::scan_single_quoted_interior, &[
-                ("'x", Lexeme::Punct, 1),
-                ("a\\n'", Lexeme::SingleQuotedContent, 3),
-                ("a\"b", Lexeme::SingleQuotedContent, 3),
-            ]),
-            (super::scan_variable_name, &[
-                ("_a9!", Lexeme::VariableName, 3),
-                ("9x", Lexeme::VariableName, 2),
-                ("!", Lexeme::Unknown, 1),
-            ]),
-            (super::scan_braced_shell_interior, &[
-                ("}x", Lexeme::Punct, 1),
-                ("a9_}", Lexeme::VariableName, 3),
-                (":x", Lexeme::ShellWord, 1),
-                ("éx", Lexeme::ShellWord, 2),
-                ("�x", Lexeme::ShellWord, 3),
-                ("\u{10000}x", Lexeme::ShellWord, 4),
-            ]),
-            (super::scan_shell_double_interior, &[
-                ("\"x", Lexeme::Punct, 1),
-                ("\\n", Lexeme::EscapeSequence, 2),
-                ("\\", Lexeme::Unknown, 1),
-                ("${x", Lexeme::Punct, 2),
-                ("a b$", Lexeme::ShellStringFragment, 3),
-            ]),
-            (super::scan_shell_interior, &[
-                ("[x", Lexeme::SubshellOpen, 1),
-                ("]x", Lexeme::SubshellClose, 1),
-                ("# q", Lexeme::Unknown, 1),
-                ("#[x", Lexeme::Unknown, 1),
-                ("#{x", Lexeme::Unknown, 1),
-                ("word=ok;", Lexeme::EnvAssign, 7),
-                (" \t", Lexeme::Space, 2),
-                ("2>x", Lexeme::FileDescriptor, 1),
             ]),
             (super::scan_one, &[
                 ("a9;", Lexeme::LowerWord, 2),
@@ -2771,11 +2642,11 @@ mod tests
             ]),
             (super::scan_hash, &[
                 ("#!/x\n", Lexeme::Space, 4),
-                ("#!sh{x", Lexeme::Punct, 5),
+                ("#!sh{x", Lexeme::Unknown, 2),
                 ("#{x", Lexeme::Unknown, 2),
                 ("# {x", Lexeme::Punct, 1),
                 ("#[x", Lexeme::Punct, 2),
-                ("#!bad", Lexeme::Unknown, 1),
+                ("#!bad", Lexeme::Unknown, 2),
                 ("#", Lexeme::Punct, 1),
                 ("# q", Lexeme::Punct, 1),
             ]),
@@ -2791,34 +2662,6 @@ mod tests
                 ("\\n", Lexeme::EscapeSequence, 2),
                 ("\\", Lexeme::Unknown, 1),
             ]),
-            (super::scan_dollar, &[
-                ("${x", Lexeme::Punct, 2),
-                ("$!sh{x", Lexeme::Punct, 5),
-                ("$!bad", Lexeme::Unknown, 1),
-                ("$x", Lexeme::Punct, 1),
-                ("$", Lexeme::Punct, 1),
-            ]),
-            (super::scan_shell_operator, &[
-                ("&&x", Lexeme::Punct, 2),
-                ("||x", Lexeme::Punct, 2),
-                ("|&x", Lexeme::Punct, 2),
-                ("&|", Lexeme::Punct, 1),
-                (";", Lexeme::Punct, 1),
-            ]),
-            (super::scan_shell_redirection, &[
-                ("<>x", Lexeme::Punct, 2),
-                ("<&x", Lexeme::Punct, 2),
-                (">&x", Lexeme::Punct, 2),
-                (">>x", Lexeme::Punct, 2),
-                ("><", Lexeme::Punct, 1),
-                (">", Lexeme::Punct, 1),
-            ]),
-            (super::scan_shell_fd_or_word, &[
-                ("12>x", Lexeme::FileDescriptor, 2),
-                ("12nd", Lexeme::ShellWord, 4),
-                ("12 ", Lexeme::ShellWord, 2),
-                ("2", Lexeme::ShellWord, 1),
-            ]),
             (super::scan_number, &[
                 ("1", Lexeme::Number, 1),
                 ("1.", Lexeme::Number, 1),
@@ -2826,13 +2669,6 @@ mod tests
                 ("1e+", Lexeme::Number, 1),
                 ("0.5u32!", Lexeme::TypedNumber, 6),
                 ("1u32x", Lexeme::Number, 1),
-            ]),
-            (super::scan_shell_word, &[
-                ("a=b;", Lexeme::EnvAssign, 3),
-                ("A=\"a b\";", Lexeme::EnvAssign, 7),
-                ("--x=y;", Lexeme::ShellWord, 5),
-                ("=", Lexeme::ShellWord, 1),
-                (";", Lexeme::Unknown, 1),
             ]),
             (super::scan_dot, &[
                 (".5!", Lexeme::Punct, 1),
@@ -2925,22 +2761,16 @@ mod tests
     #[test]
     fn cursor_arithmetic_saturates_at_both_boundaries()
     {
-        for (start, width, forward, backward) in [
-            (0_usize, 0_usize, 0_usize, 0_usize),
-            (1, 2, 3, 0),
-            (0, usize::MAX, usize::MAX, 0),
-            (usize::MAX, 1, usize::MAX, usize::MAX.saturating_sub(1)),
-            (
-                usize::MAX.saturating_sub(1),
-                1,
-                usize::MAX,
-                usize::MAX.saturating_sub(2),
-            ),
+        for (start, width, forward) in [
+            (0_usize, 0_usize, 0_usize),
+            (1, 2, 3),
+            (0, usize::MAX, usize::MAX),
+            (usize::MAX, 1, usize::MAX),
+            (usize::MAX.saturating_sub(1), 1, usize::MAX),
         ] {
             let start = super::ByteOffset::from(start);
             let width = super::ByteWidth::from(width);
             assert_eq!(usize::from(start.advance(width)), forward);
-            assert_eq!(usize::from(start.retreat(width)), backward);
         }
     }
 
@@ -2952,20 +2782,8 @@ mod tests
             let letter = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".contains(&value);
             let digit = b"0123456789".contains(&value);
             assert_eq!(
-                bool::from(byte.is_var_name_start()),
-                letter || value == b'_'
-            );
-            assert_eq!(
                 bool::from(byte.is_word_continue()),
                 letter || digit || value == b'_'
-            );
-            assert_eq!(
-                bool::from(byte.is_dialect()),
-                letter || digit || b"_-".contains(&value)
-            );
-            assert_eq!(
-                bool::from(byte.is_shell_word()),
-                !b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&value)
             );
             assert_eq!(
                 bool::from(byte.is_run_end()),
@@ -3028,25 +2846,6 @@ mod tests
             ("\"a\"", &[Quote, StringFragment, Quote]),
             ("\"\\n\"", &[Quote, EscapeSequence, Quote]),
             ("+", &[Punct]),
-            ("#!{hi}", &[Punct, ShellWord, Punct]),
-            ("#!{A=b}", &[Punct, EnvAssign, Punct]),
-            ("#!{'hi'}", &[
-                Punct,
-                Punct,
-                SingleQuotedContent,
-                Punct,
-                Punct,
-            ]),
-            ("#!{$A}", &[Punct, Punct, VariableName, Punct]),
-            ("#!{\"a\"}", &[
-                Punct,
-                Punct,
-                ShellStringFragment,
-                Punct,
-                Punct,
-            ]),
-            ("#!{[]}", &[Punct, SubshellOpen, SubshellClose, Punct]),
-            ("#!{2>f}", &[Punct, FileDescriptor, Punct, ShellWord, Punct]),
             (" ", &[Space]),
             ("\u{1}", &[Unknown]),
             ("~a", &[Punct, LowerWord]),
@@ -3091,8 +2890,6 @@ mod tests
             ("f : T where\n  | x => a | b\n  | y => c", &[
                 true, false, true,
             ]),
-            // A shell pipe is never an arm's, at a line's start or not.
-            ("#!{ a | b\n| c }", &[false, false]),
             // A closed bar brace gives the bar after it back to the union.
             ("({ | a } | b)", &[true, false]),
             // A bar among a clause's patterns, before its `=>`, is an
@@ -3200,145 +2997,6 @@ mod tests
             ]
         );
     }
-    #[test]
-    fn shell_braced_parameter_lexes_distinctly_from_interpolation()
-    {
-        // `#!{ echo ${HOME}; }`: the shell `${` opens a braced parameter whose
-        // interior is a `variable_name` (VariableName), and the matching `}`
-        // closes the brace WITHOUT closing the shell block — the shell block's
-        // own `}` still follows. This is the shell-brace mode, distinct from
-        // the string-interpolation `${ E }` (whose interior is host tokens).
-        let src = "#!{ echo ${HOME}; }";
-        let tokens = label(SourceFragment::from(src));
-        assert_eq!(
-            reconstruct(SourceFragment::from(src), &tokens),
-            src,
-            "braced param is lossless"
-        );
-        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
-            (Lexeme::Punct, "#!{".to_owned()),
-            (Lexeme::ShellWord, "echo".to_owned()),
-            (Lexeme::Punct, "${".to_owned()),
-            (Lexeme::VariableName, "HOME".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-            (Lexeme::Punct, ";".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-        ]);
-    }
-    #[test]
-    fn shell_file_descriptor_is_a_digit_run_before_a_redirection()
-    {
-        // A digit run immediately before `<` / `>` is a FileDescriptor (`2>`),
-        // while a bare digit word and a digit-led word stay ShellWords.
-        let src = "#!{ make 2>&1; }";
-        assert_eq!(
-            reconstruct(SourceFragment::from(src), &label(SourceFragment::from(src))),
-            src,
-            "fd is lossless"
-        );
-        assert_eq!(
-            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "make".to_owned()),
-                (Lexeme::FileDescriptor, "2".to_owned()),
-                (Lexeme::Punct, ">&".to_owned()),
-                (Lexeme::ShellWord, "1".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-        // A bare digit word (`echo 2 things`) and a digit-led word (`2nd`) are
-        // NOT file descriptors — the lookahead requires an abutting
-        // redirection.
-        assert_eq!(
-            tiles(
-                SourceFragment::from("#!{ echo 2 2nd; }"),
-                &label(SourceFragment::from("#!{ echo 2 2nd; }"))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::ShellWord, "2".to_owned()),
-                (Lexeme::ShellWord, "2nd".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_subshell_brackets_are_distinct_from_host_brackets()
-    {
-        // A shell `[` / `]` classifies as SubshellOpen / SubshellClose (a
-        // shell-context bracket), while a host list literal keeps the ordinary
-        // `[` / `]` punctuation — the two never share a lexeme class, so the
-        // host `[` mold menu is untouched.
-        let shell = "#!{ [ echo a ]; }";
-        assert_eq!(
-            reconstruct(
-                SourceFragment::from(shell),
-                &label(SourceFragment::from(shell))
-            ),
-            shell,
-            "subshell lossless"
-        );
-        assert_eq!(
-            tiles(
-                SourceFragment::from(shell),
-                &label(SourceFragment::from(shell))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::SubshellOpen, "[".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::ShellWord, "a".to_owned()),
-                (Lexeme::SubshellClose, "]".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-        // A host list literal keeps the plain `[` / `]` punctuation.
-        assert_eq!(
-            tiles(
-                SourceFragment::from("[1, 2]"),
-                &label(SourceFragment::from("[1, 2]"))
-            ),
-            vec![
-                (Lexeme::Punct, "[".to_owned()),
-                (Lexeme::Number, "1".to_owned()),
-                (Lexeme::Punct, ",".to_owned()),
-                (Lexeme::Number, "2".to_owned()),
-                (Lexeme::Punct, "]".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_single_and_double_quotes_do_not_cross()
-    {
-        // A `"` inside single quotes is verbatim content, and a `'` inside
-        // double quotes is a literal fragment byte — the two quote modes never
-        // toggle each other, and neither closes the shell block.
-        let src = "#!{ echo 'a \"b' \"c 'd\"; }";
-        let tokens = label(SourceFragment::from(src));
-        assert_eq!(
-            reconstruct(SourceFragment::from(src), &tokens),
-            src,
-            "mixed quotes are lossless"
-        );
-        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
-            (Lexeme::Punct, "#!{".to_owned()),
-            (Lexeme::ShellWord, "echo".to_owned()),
-            (Lexeme::Punct, "'".to_owned()),
-            (Lexeme::SingleQuotedContent, "a \"b".to_owned()),
-            (Lexeme::Punct, "'".to_owned()),
-            (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::ShellStringFragment, "c 'd".to_owned()),
-            (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::Punct, ";".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-        ]);
-    }
-
     #[test]
     fn labels_a_definition_losslessly()
     {
@@ -3507,78 +3165,6 @@ mod tests
         ]);
     }
     #[test]
-    fn shell_env_assignment_is_one_token()
-    {
-        // `NAME=value` munches across the `=` into ONE token — the whole-token
-        // shape the tree-sitter `token(seq(…))` and the PBG's single-tile atom
-        // both expect. Splitting it left the `=` with no admissible
-        // shell mold at all.
-        let src = "#!{ FOO=1 echo }";
-        assert_eq!(
-            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::EnvAssign, "FOO=1".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_env_assignment_takes_a_quoted_value()
-    {
-        // A `"`-quoted value binds into the same token (the tree-sitter
-        // `choice(pattern_shell_word, /"([^"\\]|\\.)*"/)` value), so an
-        // assignment with an interior space is still ONE assignment.
-        let src = "#!{ FOO=\"a b\" echo }";
-        assert_eq!(
-            tiles(SourceFragment::from(src), &label(SourceFragment::from(src))),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::EnvAssign, "FOO=\"a b\"".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_words_containing_eq_are_not_assignments()
-    {
-        // The name part must be identifier-shaped, so a flag with an `=` is ONE
-        // ordinary shell word (it was three tiles, with an unmoldable `=`,
-        // before the environment-assignment munch) and a bare `=` — the
-        // `[ "$a" = "$b" ]` test operator — is a plain word rather than
-        // an `UnmoldedTok`.
-        let flag = "#!{ ls --color=auto }";
-        assert_eq!(
-            tiles(
-                SourceFragment::from(flag),
-                &label(SourceFragment::from(flag))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "ls".to_owned()),
-                (Lexeme::ShellWord, "--color=auto".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-        let bare = "#!{ test a = b }";
-        assert_eq!(
-            tiles(
-                SourceFragment::from(bare),
-                &label(SourceFragment::from(bare))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "test".to_owned()),
-                (Lexeme::ShellWord, "a".to_owned()),
-                (Lexeme::ShellWord, "=".to_owned()),
-                (Lexeme::ShellWord, "b".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
     fn typed_numbers_and_suffix_boundaries()
     {
         assert_eq!(
@@ -3690,8 +3276,8 @@ mod tests
             ),
             vec![(Lexeme::LowerWord, "x′y".to_owned())]
         );
-        // The prime reaches only the word scanner: strings, comments, and shell
-        // words all run their own scanners and are untouched.
+        // The prime reaches only the word scanner: strings and comments run
+        // their own scanners and are untouched.
         assert_eq!(
             tiles(
                 SourceFragment::from("\"a ′ b\""),
@@ -3791,98 +3377,6 @@ mod tests
             (Lexeme::Quote, "\"".to_owned()),
         ]);
     }
-    #[test]
-    fn shell_braced_parameters_nest_and_juxtapose()
-    {
-        // Adjacent and word-embedded braced parameters keep their own `}` and
-        // never leak into the shell block's brace accounting.
-        let adjacent = "#!{ echo ${x}${y}; }";
-        assert_eq!(
-            reconstruct(
-                SourceFragment::from(adjacent),
-                &label(SourceFragment::from(adjacent))
-            ),
-            adjacent
-        );
-        assert_eq!(
-            tiles(
-                SourceFragment::from(adjacent),
-                &label(SourceFragment::from(adjacent))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::Punct, "${".to_owned()),
-                (Lexeme::VariableName, "x".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-                (Lexeme::Punct, "${".to_owned()),
-                (Lexeme::VariableName, "y".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-        // A word-embedded parameter `pre${x}post` splits into three shell
-        // atoms.
-        let embedded = "#!{ echo pre${x}post; }";
-        assert_eq!(
-            reconstruct(
-                SourceFragment::from(embedded),
-                &label(SourceFragment::from(embedded))
-            ),
-            embedded
-        );
-        assert_eq!(
-            tiles(
-                SourceFragment::from(embedded),
-                &label(SourceFragment::from(embedded))
-            ),
-            vec![
-                (Lexeme::Punct, "#!{".to_owned()),
-                (Lexeme::ShellWord, "echo".to_owned()),
-                (Lexeme::ShellWord, "pre".to_owned()),
-                (Lexeme::Punct, "${".to_owned()),
-                (Lexeme::VariableName, "x".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-                (Lexeme::ShellWord, "post".to_owned()),
-                (Lexeme::Punct, ";".to_owned()),
-                (Lexeme::Punct, "}".to_owned()),
-            ]
-        );
-    }
-    #[test]
-    fn shell_double_quote_lexes_fragments_escapes_and_expansions()
-    {
-        // A shell double-quoted string keeps interior spaces as ONE
-        // `double_string_fragment` run, lexes `\.` escapes, and expands
-        // `$name` / `${name}` — never juxtaposed shell words. The interior `}`
-        // and space stay literal fragment content.
-        let src = "#!{ echo \"a $x ${y}\\tb\"; }";
-        let tokens = label(SourceFragment::from(src));
-        assert_eq!(
-            reconstruct(SourceFragment::from(src), &tokens),
-            src,
-            "shell dquote is lossless"
-        );
-        assert_eq!(tiles(SourceFragment::from(src), &tokens), vec![
-            (Lexeme::Punct, "#!{".to_owned()),
-            (Lexeme::ShellWord, "echo".to_owned()),
-            (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::ShellStringFragment, "a ".to_owned()),
-            (Lexeme::Punct, "$".to_owned()),
-            (Lexeme::VariableName, "x".to_owned()),
-            (Lexeme::ShellStringFragment, " ".to_owned()),
-            (Lexeme::Punct, "${".to_owned()),
-            (Lexeme::VariableName, "y".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-            (Lexeme::EscapeSequence, "\\t".to_owned()),
-            (Lexeme::ShellStringFragment, "b".to_owned()),
-            (Lexeme::Punct, "\"".to_owned()),
-            (Lexeme::Punct, ";".to_owned()),
-            (Lexeme::Punct, "}".to_owned()),
-        ]);
-    }
-
     /// Replace `before`'s bytes in `cut`, its start widened back and its end
     /// forward to character boundaries, with `replacement`.
     ///
@@ -3945,18 +3439,13 @@ mod tests
     #[test]
     fn a_relabel_restarts_before_what_a_token_read()
     {
-        // A dialect run reads to the end of its line, far past the margin; a
-        // newline run reads the byte after it; a string, a shell block, an
-        // interpolation and a block comment hold their modes across lines.
-        let dialect = "a".repeat(96);
-        let before = format!(
-            "def x = 1;\ndef y = \"s ${{ f(\"${{x}}\") }} t\";\n#!{dialect} ;\n\n\n\
-             def z = #!{{ echo \"$HOME ${{X}}\" 'q' 2>&1; }};\n/* a /* b */\n*/ def w = '\\n';\n\
+        // A newline run reads the byte after it; a string, an interpolation
+        // and a block comment hold their modes across lines.
+        let before = "def x = 1;\ndef y = \"s ${ f(\"${x}\") } t\";\n\n\n\
+             /* a /* b */\n*/ def w = '\\n';\n\
              def v = 1.5e+3u32 +U x′y -->;\n"
-        );
-        for replacement in [
-            "", "{", "\n", "\"", "x", "*/", "/*", "'", "#!", "}", "${", "#!{",
-        ] {
+            .to_owned();
+        for replacement in ["", "{", "\n", "\"", "x", "*/", "/*", "'", "#!", "}", "${"] {
             let mut start = 0_usize;
             while start <= before.len() {
                 for length in [0_usize, 1, 3] {
@@ -3998,18 +3487,13 @@ mod tests
         let fragments = vec![
             "def x = 1;\n",
             "\"a ${ f(\"${x}\") } b\"",
-            "#!{ echo \"$HOME ${X}\" 'q' [ a ] 2>&1; }",
             "/* c /* n */ */",
             "// line\n",
             "'\\n' 'x' '",
             "1.5e+3u32 .5 x.f",
-            "#!bash{ ls }",
-            "#!aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(",
             "x′y +U -F +Unit",
             "\n\n\n",
             "\t \u{a0}\u{200b}",
-            "$!{ x }",
-            "NAME=\"v w\"",
             "def f(x : A) -> A =\n  let y = x\n  y\n",
             "\n  match x\n    | a => b\n",
             "\n  match x where\n    | a => b\n",

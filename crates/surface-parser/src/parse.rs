@@ -22,12 +22,10 @@
 //! letter ends, so `+Unit` stays a sign and a word and the sum keeps its
 //! spellings. A backslash in code is one tile, the static abstraction's lead,
 //! so `\A.` is the lead, the binder and the dot; an escape sequence exists only
-//! inside a string or a character, whose modes read it. Shell blocks, strings
-//! and interpolations switch the labeler into their own lexical modes.
-//!
-//! In a shell braced parameter, non-name scalars remain whole shell-word
-//! tokens. UTF-8 boundaries are preserved even when closing braces are missing,
-//! so batch and form-split parsing see the same source bytes.
+//! inside a string or a character, whose modes read it. Strings and
+//! interpolations switch the labeler into their own lexical modes. UTF-8
+//! boundaries are preserved even when closing braces are missing, so batch and
+//! form-split parsing see the same source bytes.
 //!
 //! The molder's candidates for a token are the union of the grammar's molds for
 //! each label the token could carry, visited in ascending `MoldId` order. The
@@ -50,16 +48,15 @@
 //!
 //! ### An edit is relabeled around itself
 //!
-//! The labeler carries a little state between tokens — inside a string, a shell
-//! block, a shell quote or a parameter expansion, an interpolation — and the
-//! lexemes it scans read ahead of themselves: a word looks for a prime, a
-//! number for its suffix, a character literal for its closing quote, a shell
-//! start along its dialect word for the brace. `Labeling` keeps a source's
+//! The labeler carries a little state between tokens — inside a string or an
+//! interpolation — and the lexemes it scans read ahead of themselves: a word
+//! looks for a prime, a number for its suffix, a character literal for its
+//! closing quote. `Labeling` keeps a source's
 //! tokens and the tokens before which the labeler stood within a mode, and
 //! `Labeling::relabel` labels an edit of the source from them. It restarts at
 //! the last token boundary at ground on an earlier line than the edit and at
 //! least 64 bytes before it: no scanner reads further past its token than eight
-//! bytes save along a dialect word, which stops at a line break, so every token
+//! bytes, so every token
 //! before the restart is a token of the edited source. It stops at the first
 //! boundary inside the unedited suffix where it stands at ground over a
 //! boundary the old labeling stood at ground on: the labeler never reads behind
@@ -2125,7 +2122,6 @@ mod tests
             "if c { pure 1 } else { pure 2 }",
             "*{ .a = 1, .b = \"s\" }",
             "#[1, 2, 3] ++ #[4]",
-            "#!{ echo hi; }",
             "@[doc(\"d\")] def y = 2;",
         ];
         prop_oneof![

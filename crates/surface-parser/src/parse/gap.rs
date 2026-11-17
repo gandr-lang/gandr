@@ -35,7 +35,7 @@
 //! Each place is written at the end of the token before the line, so the
 //! repair it owes stands on the line the item leaves. A line at column zero
 //! gives no place, since the layout pass closes every bracket there. A brace
-//! block and a layout block take no `,`, and a shell block or an
+//! block and a layout block take no `,`, and an
 //! interpolation hides its contents from the search.
 //!
 //! A written closer can close a bracket that is not the innermost open one,
@@ -134,8 +134,7 @@ enum Kind
     Group(&'static str),
     /// A brace or layout block, whose items `;` separates.
     Block,
-    /// A shell block or an interpolation, whose contents the search does not
-    /// read.
+    /// An interpolation, whose contents the search does not read.
     Opaque,
 }
 
@@ -161,8 +160,8 @@ struct Frame
     limit: u32,
     /// Where its items stand.
     items: Items,
-    /// The closer its written opener takes: none for a layout block, a shell
-    /// block or an interpolation.
+    /// The closer its written opener takes: none for a layout block or an
+    /// interpolation.
     closer: Option<&'static str>,
     /// For each of `)`, `]` and `}`, in that order, the index in the stack of
     /// the nearest frame, this one included, whose written opener takes that
@@ -373,34 +372,33 @@ fn class(
 /// - requires: `tokens` label `text`.
 /// - ensures: in `lines`, one place per line that begins, right of column zero,
 ///   with a token that neither closes nor separates, after a token that opens
-///   nothing, with no shell block or interpolation open, where the line stands
-///   at or left of an open group's limit or at or left of the innermost group's
-///   items' column: the closer of each group whose limit the line reaches,
-///   innermost first, then a `,` when the line stands right of the next group's
-///   limit and at or left of its items' column and the token before the line is
-///   no `,`. In `siblings`, a `,` between each two tokens on one line, apart,
-///   the first ending an operand and the second beginning one, directly inside
-///   a group. In `arrows`, a `->` between each two tokens on one line, apart,
-///   the first ending an operand and the second `-F`, with no shell block or
-///   interpolation open. Each place stands at the end of the token before it,
-///   in source order. In `openers`, a `@[` at the first token of the line or of
-///   the block member that holds each `]` with no shell block or interpolation
-///   open and with a brace or layout block or no bracket innermost, when that
-///   first token is a lower-case word of two or more bytes that is no keyword
-///   and stands before the `]`, and when the `]` is the last significant token,
-///   the next one begins a line, or the next one is a keyword. A block member
-///   begins after a block opens and after a written `;`. Also in `lines`, `k`
-///   moves at the first token of each line before which the layout pass closes
-///   `k > 0` blocks, one for each count of closes from 0 to `k - 1`, when the
-///   token neither closes nor separates, no shell block or interpolation is
-///   open, and the innermost open frame is none or a layout block whose items
-///   stand at another column. Also in `lines`, at the end of the token before
-///   each written closer that closes an open bracket other than the innermost,
-///   with no shell block or interpolation open and only written brackets opened
-///   inside that bracket: the closer of each of those brackets, innermost
-///   first. The scan reads the closer as the close of the innermost bracket, as
-///   it reads every closer. In `words`, each lower-case word of two or more
-///   bytes that is no keyword, outside a shell block or an interpolation, in
+///   nothing, with no interpolation open, where the line stands at or left of
+///   an open group's limit or at or left of the innermost group's items'
+///   column: the closer of each group whose limit the line reaches, innermost
+///   first, then a `,` when the line stands right of the next group's limit and
+///   at or left of its items' column and the token before the line is no `,`.
+///   In `siblings`, a `,` between each two tokens on one line, apart, the first
+///   ending an operand and the second beginning one, directly inside a group.
+///   In `arrows`, a `->` between each two tokens on one line, apart, the first
+///   ending an operand and the second `-F`, with no interpolation open. Each
+///   place stands at the end of the token before it, in source order. In
+///   `openers`, a `@[` at the first token of the line or of the block member
+///   that holds each `]` with no interpolation open and with a brace or layout
+///   block or no bracket innermost, when that first token is a lower-case word
+///   of two or more bytes that is no keyword and stands before the `]`, and
+///   when the `]` is the last significant token, the next one begins a line, or
+///   the next one is a keyword. A block member begins after a block opens and
+///   after a written `;`. Also in `lines`, `k` moves at the first token of each
+///   line before which the layout pass closes `k > 0` blocks, one for each
+///   count of closes from 0 to `k - 1`, when the token neither closes nor
+///   separates, no interpolation is open, and the innermost open frame is none
+///   or a layout block whose items stand at another column. Also in `lines`, at
+///   the end of the token before each written closer that closes an open
+///   bracket other than the innermost, with no interpolation open and only
+///   written brackets opened inside that bracket: the closer of each of those
+///   brackets, innermost first. The scan reads the closer as the close of the
+///   innermost bracket, as it reads every closer. In `words`, each lower-case
+///   word of two or more bytes that is no keyword, outside an interpolation, in
 ///   source order.
 /// - fails: never.
 /// - panics: none.
@@ -429,7 +427,7 @@ fn gaps<'text>(
 {
     let mut places = Places::default();
     let mut stack: Vec<Frame> = Vec::new();
-    // How many frames of `stack` are a shell block or an interpolation, whose
+    // How many frames of `stack` are an interpolation, whose
     // contents the search does not read.
     let mut opaque = 0_usize;
     let mut line_start = 0_u32;

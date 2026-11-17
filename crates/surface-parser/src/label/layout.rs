@@ -68,7 +68,7 @@
 //! No separator is written before a closer or a line-leading `|`, or after an
 //! attribute.
 //!
-//! Inside parentheses, brackets, shell blocks, attributes and the other
+//! Inside parentheses, brackets, attributes and the other
 //! bracketed forms no opener opens and no separator is written.
 
 use alloc::vec::Vec;
@@ -114,7 +114,7 @@ enum Kind
         /// The column its items stand at.
         column: Option<u32>,
     },
-    /// A parenthesis, a bracket, a shell block, an attribute, or a brace
+    /// A parenthesis, a bracket, an attribute, or a brace
     /// some sigil leads.
     Plain,
 }

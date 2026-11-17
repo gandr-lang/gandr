@@ -2076,10 +2076,10 @@ pub struct MeldState<'pbg>
     /// (`Role::FormTile { open: true }`), the top of a monotone index cache.
     ///
     /// The three index caches (`frontiers` / `operators` / `barriers`) keep the
-    /// per-token head queries O(1) instead of O(content-region): a shell block
-    /// accumulates its whole interior as juxtaposed operand cells above the
-    /// open `#!{` frontier, so the former top-down role scans cost O(atoms) per
-    /// token — O(atoms²) per block (the shell-juxtaposition hazard). Every
+    /// per-token head queries O(1) instead of O(content-region): a form can
+    /// accumulate a long run of operand cells above its open frontier, so a
+    /// top-down role scan would cost O(atoms) per token — O(atoms²) per form.
+    /// Every
     /// slope mutation is a top push, a top-reaching splice, or a
     /// frontier-flag flip, so each cache maintains itself with amortized
     /// O(1) pushes/pops and no rescans.
@@ -2264,7 +2264,7 @@ impl<'pbg> MeldState<'pbg>
     ///   drift between the two changes the corpus trees.
     /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-    /// - witness: `tests::grammar::juxtaposition_applies_outside_a_shell_form_4853`
+    /// - witness: `tests::grammar::juxtaposition_applies_between_operands_4853`
     #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
     pub(crate) fn push_text(
         &mut self,
@@ -4199,13 +4199,10 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// With the head an operand, such a mold and a competing fresh atom /
     /// non-absorbing form-start over the same lexeme (a call `(` versus a
-    /// parenthesised `(`, the comparison `>` versus a shell redirection atom)
-    /// tie on the local `(Delta, continuation, sort)` key. Extending the
-    /// operand is the reading gandr's expression grammar always intends
-    /// after an operand (there is no bare expression juxtaposition outside
-    /// a shell block, and the shell corpus never puts these lexemes after a
-    /// command word), so the molder prefers it — settling the tie with no
-    /// lookahead window.
+    /// parenthesised `(`) tie on the local `(Delta, continuation, sort)` key.
+    /// Extending the operand is the reading gandr's expression grammar always
+    /// intends after an operand, so the molder prefers it — settling the tie
+    /// with no lookahead window.
     ///
     /// # Specification
     /// - requires: none.
@@ -4368,8 +4365,7 @@ impl<'pbg> MeldState<'pbg>
     {
         // The scan's Operand arm is a no-op, so it starts at the topmost
         // non-operand cell (the higher of the operator / form-tile cache tops)
-        // rather than walking the whole top operand run — a shell block's run
-        // holds every juxtaposed command atom (the sibling scan).
+        // rather than walking the whole top operand run (the sibling scan).
         let top_non_operand = match (self.operators.last(), self.barriers.last()) {
             (Some(&op), Some(&tile)) => op.max(tile),
             (Some(&op), None) => op,
@@ -5445,8 +5441,7 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// The topmost `open` frontier is the innermost active form; its content is
     /// collapsed to hole-fills by the caller before the frontier advances.
-    /// O(1): the `frontiers` cache top — never a scan of the content region
-    /// (which for a shell block holds every juxtaposed command atom).
+    /// O(1): the `frontiers` cache top — never a scan of the content region.
     ///
     /// # Specification
     /// - ensures: returns the highest stack position carrying an open form, or
@@ -13271,19 +13266,19 @@ mod tests
         // The O(1) head caches (`frontiers` / `operators` / `barriers`) must
         // equal a fresh role scan after EVERY mutation: pushes (every Kind),
         // splice-reduces, form open/close flips, mark/rollback dry-runs, and
-        // checkpoint resume. The sources cross the mutation classes: shell
+        // checkpoint resume. The sources cross the mutation classes:
         // juxtaposition (long operand runs over an open frontier), nested
         // forms, operators, strings, data members (closed-tile runs), and
         // malformed input (stray closers, force-closes at commit).
         let pbg = built_in()?;
         let sources = [
-            "#!{ echo a b c d e f; ls | grep x && echo y; }",
-            "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
+            "def f = g a b c d e f h;",
+            "def f = g (h a b) #[c, d] e;",
             "def f(x : Integer) -> -F Integer { return (x * x + 1) }",
             "data Tree(a) where { Leaf, Node(l : Tree(a), v : a, r : Tree(a)) }",
             "def s = \"a ${ f \"${x}\" } b\";",
             "match v { Inl(x) => x, Inr(y) => y }",
-            "#!{ echo unclosed",
+            "def f = g (a b c",
             ") } ] stray closers",
             "let p = (1, 2); if c { pure p } else { pure p }",
         ];

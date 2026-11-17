@@ -209,24 +209,6 @@
 //!   operand's rule decides what it binds, say. The rule then has to compare
 //!   that too, or yield to the window.
 //!
-//! ### A shell string's text is its own lexeme
-//!
-//! A `"` opens an expression string in code and a double-quoted string in a
-//! shell block, and both forms open with the same `"` label. The labeler
-//! already scans the two interiors in different modes, so it gives a shell
-//! string's text its own lexeme, `ShellStringFragment`, labelled
-//! `double_string_fragment`, where an expression string's text stays a
-//! `StringFragment` labelled `string_fragment`. The token after the `"` then
-//! refutes the reading of the other context, and the tie runs no window.
-//! Carrying both labels on both fragments would mold the two readings alike,
-//! and the window would keep the lesser mold, the expression string, inside
-//! shell blocks too.
-//!
-//! - Alternatives: a distinct label for the shell `"` itself, which is a
-//!   grammar change for what the labeler already knows.
-//! - Reversal: a string form that admits both interiors, which would take both
-//!   labels again.
-//!
 //! ### A token's labels are derived once, held inline and read by number
 //!
 //! A token's candidate labels feed three steps: settling the holes it cannot
@@ -437,7 +419,7 @@ impl<'label> From<CandidateLabel<'label>> for &'label str
 /// # Adequacy
 /// - hypothesis: L3 — every lexeme's menu reads back as the exact label
 ///   sequence, and a reserved word's fallback labels follow its own.
-/// - witness: `mold::tests::literal_and_shell_menus_are_exact`
+/// - witness: `mold::tests::literal_menus_are_exact`
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TokenLabels<'label>
@@ -475,7 +457,7 @@ impl<'label> TokenLabels<'label>
     /// # Adequacy
     /// - hypothesis: L3 — the menus of every lexeme and a reserved word's
     ///   fallback read back whole.
-    /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
+    /// - witness: `mold::tests::literal_menus_are_exact`
     #[inline]
     #[spec(captures: before = self.count, ensures: |()| (before == LABEL_CAPACITY && self.count == before) || (self.count == before.saturating_add(1) && self.as_slice().last() == Some(&label)))]
     fn push(
@@ -976,12 +958,11 @@ pub const STATEMENT_LEADS: &[&str] = &[
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every lexeme menu, reserved and ordinary words, canonical
-///   versus dialect shell openers and each ASCII token of the spelling table
-///   (`<~>`, `~~>`, `::`, `inf`) expose exact label sequences. Dropping a
-///   generic alternative, widening a keyword or losing the source spelling
-///   changes the menu.
+///   and each ASCII token of the spelling table (`<~>`, `~~>`, `::`, `inf`)
+///   expose exact label sequences. Dropping a generic alternative, widening a
+///   keyword or losing the source spelling changes the menu.
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
-/// - witness: `mold::tests::literal_and_shell_menus_are_exact`
+/// - witness: `mold::tests::literal_menus_are_exact`
 #[inline]
 #[must_use]
 #[spec(ensures: |ret| ret.is_empty() == matches!(lexeme, Lexeme::Space | Lexeme::Unknown) && ret.len() <= MAX_LABELS && (!matches!(lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct) || ret.first().is_some_and(|label| label.0 == text.0) || (matches!(lexeme, Lexeme::LowerWord) && tile_spelling(CandidateLabel::from(text.0)) != TileSpelling::Literal(text.0))))]
@@ -5720,7 +5701,7 @@ mod tests
     }
 
     #[test]
-    fn literal_and_shell_menus_are_exact()
+    fn literal_menus_are_exact()
     {
         let cases: &[(Lexeme, &str, &[&str])] = &[
             (Lexeme::Number, "1", &["number"]),
@@ -5728,24 +5709,8 @@ mod tests
             (Lexeme::Character, "'a'", &["character"]),
             (Lexeme::Quote, "\"", &["\""]),
             (Lexeme::StringFragment, "x", &["string_fragment"]),
-            (Lexeme::ShellStringFragment, "x", &[
-                "double_string_fragment",
-            ]),
             (Lexeme::EscapeSequence, "\\n", &["escape_sequence"]),
-            (Lexeme::ShellWord, "word", &["shell_word"]),
-            (Lexeme::EnvAssign, "A=b", &["environment_assignment"]),
-            (Lexeme::SingleQuotedContent, "a", &["single_quoted_content"]),
-            (Lexeme::VariableName, "A", &["variable_name"]),
-            (Lexeme::SubshellOpen, "[", &["subshell_open"]),
-            (Lexeme::SubshellClose, "]", &["subshell_close"]),
-            (Lexeme::FileDescriptor, "2", &["file_descriptor"]),
             (Lexeme::ArmBar, "|", &["arm_bar"]),
-            (Lexeme::Punct, "#!sh{", &["#!sh{", "#!{"]),
-            (Lexeme::Punct, "$!py{", &[
-                "$!py{",
-                "command_substitution_start",
-            ]),
-            (Lexeme::Punct, "#!{", &["#!{", "#!{"]),
             (Lexeme::Punct, "<~>", &["<~>", "≃"]),
             (Lexeme::Punct, "~~>", &["~~>", "⇝"]),
             (Lexeme::Punct, "|->", &["|->", "↦"]),
