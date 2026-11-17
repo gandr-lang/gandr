@@ -404,20 +404,13 @@ fn the_path_operations_fold_in_both_forms_5206()
         format!(
             "{CIRCLE}def spin(x : Circle) -> {returner} = x;
 
-def thrice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step loop (Path.step loop loop),
-  Path.here Base
-);
+def thrice : Path[.A = Path[.A = Circle] Base Base]
+  (Path.step loop (Path.step loop loop))
+  (Path.here Base);
 
-def undone : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.back loop,
-  Path.back loop
-);
+def undone : Path[.A = Path[.A = Circle] Base Base] (Path.back loop) (Path.back loop);
 
-def spun : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.ap spin loop,
-  Path.ap spin loop
-);
+def spun : Path[.A = Path[.A = Circle] Base Base] (Path.ap spin loop) (Path.ap spin loop);
 "
         )
     };
@@ -1154,7 +1147,10 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     let alone = format_beside(&grammar, &parsed, options, (Beside::Alone, None))
         .unwrap_or_else(|error| panic!("the source formats alone: {error}"));
     assert_eq!(alone.withdrawn(), []);
-    assert_eq!(alone.into_text(), source);
+    assert_eq!(
+        alone.into_text(),
+        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle] Base Base]\n  (Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) loop loop)\n  (Path.here Base);\n"
+    );
 }
 
 /// #812: desugaring `stay`'s dependent alias once changed how `stayUp`'s

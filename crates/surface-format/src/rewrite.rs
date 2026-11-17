@@ -3504,7 +3504,7 @@ impl<'source> Respelling<'_, 'source>
                 Role::Operand(child) => {
                     let operand = self.operand(child);
                     if opened {
-                        out.gap(Spelling(" "));
+                        out.glue();
                         out.place(&operand, Band::Atom);
                     }
                     else if carrier {
@@ -3578,7 +3578,7 @@ impl<'source> Respelling<'_, 'source>
         let led = operands.first().is_some_and(enclosed);
         out.fragment(head);
         for operand in &operands {
-            out.gap(Spelling(" "));
+            out.glue();
             out.place(operand, Band::Atom);
         }
         Some(if led { Band::Bridge } else { Band::Application })
@@ -4201,6 +4201,23 @@ impl<'source> Builder<'source>
         self.gap(Spelling(" "));
         self.token(Spelling(spaced.0.trim()));
         self.gap(Spelling(" "));
+    }
+
+    /// Write the empty tile a type's juxtaposition stands on, after a
+    /// space, as the parser reads it before each operand. The layout reads
+    /// the spine of a respelled type at these tiles, as it reads a written
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn glue(&mut self)
+    {
+        self.gap(Spelling(" "));
+        let leaf = Leaf {
+            context: Spacing::TypeGlue,
+            ..self.written(SourceFragment::from(""), Material::Token)
+        };
+        self.leaves.push(leaf);
     }
 
     /// Write `comments`, each after the whitespace the source wrote before
