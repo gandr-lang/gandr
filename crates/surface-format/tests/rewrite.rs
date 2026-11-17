@@ -555,9 +555,9 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
 {
     let grammar = grammar();
     for body in [
-        "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) (Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p p) p",
-        "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p (Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) \
-         (Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p p) (Path.here Base))",
+        "Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) (Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) p p) p",
+        "Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) p (Path.walk (fun (a) { type(Path[.A = Circle] a Base) }) \
+         (Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) p p) (Path.here Base))",
     ] {
         let source = format!(
             include_str!(
@@ -799,19 +799,19 @@ fn a_transport_along_no_path_motive_keeps_its_spelling()
         ),
         (
             "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
-            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
+            "Path.walk (fun (a) { type(Path[.A = Circle] a a) }) loop (Path.here Base)",
         ),
         (
             "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
-            "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
+            "Path.walk (fun (a) { type(Path[.A = Circle] Base Base) }) loop (Path.here Base)",
         ),
         (
             "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
-            "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
+            "Path.walk (fun (a) { type(Path[.A = Circle] a Base) }) loop loop",
         ),
         (
             "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop",
-            "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop",
+            "Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) loop",
         ),
     ] {
         let source = format!("{CIRCLE}def m : Integer = {value};\n");

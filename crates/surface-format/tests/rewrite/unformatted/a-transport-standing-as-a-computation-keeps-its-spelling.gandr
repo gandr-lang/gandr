@@ -1,4 +1,4 @@
-{CIRCLE}def twice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) = Path.walk
-  (fun (a) {{ type(Path[.A = Circle](Base, a)) }})
+{CIRCLE}def twice(p : Path[.A = Circle] Base Base) -> Path[.A = Circle] Base Base = Path.walk
+  (fun (a) {{ type(Path[.A = Circle] Base a) }})
   p
   p;
