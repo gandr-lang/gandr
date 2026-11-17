@@ -1172,7 +1172,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     ///   as the codes of the types they spell. A carrier the form leaves out is
     ///   a hole it nominates for the implicit `A` of `head`.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a supply naming an
-    ///   implicit other than `A`; [`FormFault::PositionalCarrier`] at the head
+    ///   implicit other than `A`; the retired carrier of [`FormFault::Retired`] at the head
     ///   of a bare form over three operands, its carrier written first; a
     ///   misplaced-tile or extra-operand fault for a form out of shape; the
     ///   budget refusal once no hole name is left.
@@ -1240,7 +1240,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
         closed(site, cursor, TileName::COMMA)?;
         let right = site.one(cursor.operands())?;
         if let (None, Maybe::Present(_)) = (supplied, cursor.at(TileName::COMMA)) {
-            return Err(site.fault(written, FormFault::PositionalCarrier(head)));
+            return Err(site.fault(written, FormFault::carrier_first(head)));
         }
         closed(site, cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, cursor)?;

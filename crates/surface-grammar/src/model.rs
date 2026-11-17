@@ -817,17 +817,101 @@ fn first_child(rest: &[RegexEntry]) -> RegexView<'_>
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RemovalIssue(pub u32);
 
-/// The spelling that stays in the place of an old one: a rule's name, or a
-/// surface form inside a rule.
+/// The spelling that stays in the place of an old one: a rule's name, a
+/// surface form inside a rule, or the text a source writes.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Replacement(pub &'static str);
 
-/// The name of the refusal that a source meets when it writes an old
-/// spelling, as an exemplar's `refuses` states it.
-#[repr(transparent)]
+/// An old spelling that a source meets as a refusal.
+///
+/// Each arm is one row of the syntax ledger. The row's surface is the tag of
+/// the refusal `RetiredSpelling.<surface>`, and the row's replacement is the
+/// text that the refusal's message offers, so the row and the refusal hold
+/// one string each.
+///
+/// # Specification
+/// trivial.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RefusalName(pub &'static str);
+pub enum RetiredForm
+{
+    /// A theory member written `shape`, which `boundary` replaces.
+    ShapeMember,
+    /// The unit value written `unit`, which `*{}` replaces.
+    UnitValue,
+    /// A path type written `Path(A, a, b)`, its carrier first.
+    PositionalPathCarrier,
+    /// A bridge type written `Bridge(A, a, b)`, its carrier first.
+    PositionalBridgeCarrier,
+    /// A flow type written `Flow(A, a, b)`, its carrier first.
+    PositionalFlowCarrier,
+}
+
+impl RetiredForm
+{
+    /// Every retired spelling, in the order of the enum.
+    pub const ALL: [Self; 5] = [
+        Self::ShapeMember,
+        Self::UnitValue,
+        Self::PositionalPathCarrier,
+        Self::PositionalBridgeCarrier,
+        Self::PositionalFlowCarrier,
+    ];
+
+    /// The surface name of the spelling: the row's surface and the tag of its
+    /// refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn surface(self) -> SurfaceForm
+    {
+        SurfaceForm(match self {
+            Self::ShapeMember => "shape_member",
+            Self::UnitValue => "unit_value",
+            Self::PositionalPathCarrier => "positional_path_carrier",
+            Self::PositionalBridgeCarrier => "positional_bridge_carrier",
+            Self::PositionalFlowCarrier => "positional_flow_carrier",
+        })
+    }
+
+    /// The spelling that stays, as a source writes it: the row's
+    /// replacement and the text the refusal's message offers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn replaced_by(self) -> Replacement
+    {
+        Replacement(match self {
+            Self::ShapeMember => "boundary",
+            Self::UnitValue => "*{}",
+            Self::PositionalPathCarrier => "Path[.A = A](a, b)",
+            Self::PositionalBridgeCarrier => "Bridge[.A = A](a, b)",
+            Self::PositionalFlowCarrier => "Flow[.A = A](a, b)",
+        })
+    }
+
+    /// The old spelling as a source writes it: the word or the tile a reader
+    /// meets.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn written(self) -> &'static str
+    {
+        match self {
+            Self::ShapeMember => "shape",
+            Self::UnitValue => "unit",
+            Self::PositionalPathCarrier => "Path",
+            Self::PositionalBridgeCarrier => "Bridge",
+            Self::PositionalFlowCarrier => "Flow",
+        }
+    }
+}
 
 /// Whether an adaptation records an old spelling, and how far its removal
 /// stands.
@@ -835,7 +919,7 @@ pub struct RefusalName(pub &'static str);
 /// An old spelling that the grammar still parses names the open issue that
 /// removes it: `ledger:syntax` writes the mark, and `check:ledger` refuses a
 /// mark whose issue does not stand open. An old spelling that the parser or
-/// the lowering refuses names its refusal: the mark stays, so a later change
+/// the lowering refuses is a retired form: the mark stays, so a later change
 /// that reads the spelling again meets the exemplar that states the refusal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Removal
@@ -845,9 +929,9 @@ pub enum Removal
     /// The grammar still parses the old spelling: this issue removes it, and
     /// the replacement stays.
     By(RemovalIssue, Replacement),
-    /// A source that writes the old spelling meets this refusal, and the
-    /// replacement stays.
-    Refused(RefusalName, Replacement),
+    /// A source that writes the old spelling meets the refusal of this
+    /// retired form.
+    Refused(RetiredForm),
 }
 
 /// An adaptation record: where a rule's shape departs from the surface form
@@ -914,8 +998,8 @@ impl Adaptation
         }
     }
 
-    /// Records an old spelling that a source meets as a refusal, the spelling
-    /// that replaces it, and the refusal's name.
+    /// Records an old spelling that a source meets as a refusal. The retired
+    /// form gives the record its surface, its replacement and its refusal.
     ///
     /// # Specification
     /// trivial.
@@ -923,16 +1007,15 @@ impl Adaptation
     #[must_use]
     pub const fn refused(
         rule: RuleName,
-        surface: SurfaceForm,
+        form: RetiredForm,
         reason: AdaptationReason,
-        (replaced_by, refusal): (Replacement, RefusalName),
     ) -> Self
     {
         Self {
             rule: rule.0,
-            surface: surface.0,
+            surface: form.surface().0,
             reason: reason.0,
-            removal: Removal::Refused(refusal, replaced_by),
+            removal: Removal::Refused(form),
         }
     }
 }

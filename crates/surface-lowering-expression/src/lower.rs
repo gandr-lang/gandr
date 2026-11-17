@@ -72,6 +72,7 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
+use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering_base::lower::Block;
 use gandr_surface_lowering_base::lower::Body;
 use gandr_surface_lowering_base::lower::Bridge;
@@ -5251,6 +5252,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     Err(LoweringRefusal::RegionAsValue {
                         span: site.at.span,
                         name,
+                    })
+                }
+                else if name.as_ref() == RetiredForm::UnitValue.written() {
+                    Err(LoweringRefusal::RetiredName {
+                        span: site.at.span,
+                        form: RetiredForm::UnitValue,
                     })
                 }
                 else {
@@ -11889,7 +11896,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let start = written.start;
         let count = written.end.saturating_sub(start);
         let first = self.cx().operands.entries().get(start).copied();
-        let written_first = count == 3_usize;
+        let written_first = count == 3_usize
+            || (count == 1_usize && first.is_some_and(|argument| self.three_members(argument)));
         let pair = self
             .cx()
             .operands
@@ -11914,7 +11922,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             .into_iter()
             .find(|shaped| name.as_ref() == shaped.as_ref());
         if let (Some(shaped), true) = (path_shaped, written_first) {
-            return Err(site.fault(head.span, FormFault::PositionalCarrier(shaped)));
+            return Err(site.fault(head.span, FormFault::carrier_first(shaped)));
         }
         if let Some(written) = pair
             && let Some(relating) = [Relating::Path, Relating::Bridge]
@@ -11959,6 +11967,41 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         };
 
         self.apply_former(site, former, argument)
+    }
+
+    /// Whether the operand at `argument` is a tuple of three members, the
+    /// carrier and two endpoints that a path-shaped head takes as one
+    /// argument where a value is read: `Path(A, a, b)`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the node is a tuple form whose children
+    ///   hold two `,` tiles.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: none
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Path(Integer, 4, 4)` where a value is read is
+    ///   refused at its head with the carrier written first.
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_refused_5024`
+    fn three_members(
+        &self,
+        argument: NodeIndex,
+    ) -> bool
+    {
+        let cx = self.cx();
+        let tupled = cx.tree.node(argument).is_some_and(|node| {
+            matches!(shape_of(cx.pbg, node), Ok(Shape::Form { name, .. }) if name == FormName::TUPLE)
+        });
+        tupled
+            && cx
+                .tree
+                .children(argument)
+                .filter(|&child| cx.tree.fragment(child).is_some_and(|text| <&str>::from(text) == ","))
+                .count()
+                == 2_usize
     }
 }
 

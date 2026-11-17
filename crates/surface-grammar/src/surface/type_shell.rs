@@ -55,6 +55,7 @@ use crate::Provenance;
 use crate::Regex;
 use crate::RemovalIssue;
 use crate::Replacement;
+use crate::RetiredForm;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -477,8 +478,14 @@ fn add_type_rules(
             ]),
         ])
     };
-    for (name, head) in [("path_type", "Path"), ("bridge_type", "Bridge")] {
-        rules.push(rule(
+    // A three-operand list writes the carrier first, `Path(A, a, b)`: the
+    // grammar reads it, and the lowering refuses it by name, so the head
+    // takes its carrier by name, `Path[.A = A](a, b)`.
+    for (name, head, retired) in [
+        ("path_type", "Path", RetiredForm::PositionalPathCarrier),
+        ("bridge_type", "Bridge", RetiredForm::PositionalBridgeCarrier),
+    ] {
+        let mut carried = rule(
             RuleName(name),
             ty,
             type_application,
@@ -499,14 +506,26 @@ fn add_type_rules(
                     supplied(Listed::Optionally),
                 ]),
             ]),
+        );
+        carried.adaptations.push(Adaptation::refused(
+            RuleName(name),
+            retired,
+            AdaptationReason("a carrier written first, by position, is refused by name: the head takes its carrier by name"),
         ));
+        rules.push(carried);
     }
-    rules.push(rule(
+    let mut flow = rule(
         RuleName("flow_type"),
         ty,
         type_application,
         Regex::seq([tile(TileLabel("Flow")), supplied(Listed::Always)]),
+    );
+    flow.adaptations.push(Adaptation::refused(
+        RuleName("flow_type"),
+        RetiredForm::PositionalFlowCarrier,
+        AdaptationReason("a carrier written first, by position, is refused by name: the head takes its carrier by name"),
     ));
+    rules.push(flow);
     // A type application's head is a type name or a type variable: a
     // declaration's name is lowercase, so a type operator a declaration binds
     // is applied under the spelling a type position reads it by, `small` or

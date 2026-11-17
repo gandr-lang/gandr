@@ -7189,6 +7189,33 @@ mod tests
     }
 
     #[test]
+    fn probe_retired_forms_7877()
+    {
+        let pbg = grammar();
+        let mut seen = alloc::string::String::new();
+        for source in [
+            "def c : *{};\ndef c = unit;\n",
+            "def d(A : Type, a : A, b : A) -> -F Type { return (Path(A, a, b)) }\n",
+            "theory T where { shape S { a, b }; }\n",
+        ] {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("parses")
+                .into_tree();
+            let mut arena = CoreArena::new();
+            let module = lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .unwrap();
+            seen.push_str(&alloc::format!("{source:?}: {:?}\n", outcomes(&module)));
+        }
+        panic!("{seen}");
+    }
+
+    #[test]
     fn an_unended_form_names_its_missing_tile_where_it_belongs()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));

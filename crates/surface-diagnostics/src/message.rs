@@ -272,6 +272,12 @@ fn lowered(
 {
     match refusal {
         LoweringRefusal::UnresolvedName { name, .. } => write!(f, "`{name}` is not defined"),
+        LoweringRefusal::RetiredName { form, .. } => write!(
+            f,
+            "`{}` is a retired spelling, and `{}` replaces it",
+            form.written(),
+            form.replaced_by().0
+        ),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             write!(
                 f,
@@ -541,10 +547,10 @@ fn lowered(
                      operator `{}`",
                     operator.as_ref()
                 ),
-                FormFault::Retired(keyword) => write!(
+                FormFault::Retired(retired) => write!(
                     f,
-                    "this keyword is retired here, and `{}` replaces it",
-                    keyword.as_ref()
+                    "this spelling is retired, and `{}` replaces it",
+                    retired.replaced_by().0
                 ),
                 FormFault::NotAName => {
                     write!(f, "this {form} names its match with a name, and a pattern stands here")
@@ -564,11 +570,6 @@ fn lowered(
                 FormFault::SuppliedTwice => {
                     f.write_str("this implicit is supplied a second time")
                 },
-                FormFault::PositionalCarrier(head) => write!(
-                    f,
-                    "`{}` takes its carrier by name, and this {form} writes it first",
-                    head.as_ref()
-                ),
                 FormFault::MissingOpen(close) => {
                     write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
                         ClosingClass::Paren => "(",

@@ -497,9 +497,9 @@ pub enum FormFault
     /// A run of symbols one edit from this operator, read as a name that
     /// nothing in scope declares: the operator misspelt, `∷∷` for `∷`.
     MisspeltOperator(crate::form::TileName),
-    /// A retired keyword standing where the form spells this one: the site
-    /// names the keyword that replaces it.
-    Retired(crate::form::TileName),
+    /// A retired spelling of a form: the grammar names the spelling that
+    /// replaces it.
+    Retired(gandr_surface_grammar::RetiredForm),
     /// A pattern stands where the form binds a name: the left side of an
     /// as-pattern, `x @ p`.
     NotAName,
@@ -519,10 +519,39 @@ pub enum FormFault
     /// An implicit supplied twice in one bracket, by name twice or by position
     /// and by name, `f[T, .a = U]`.
     SuppliedTwice,
-    /// A path-shaped type under this head written over three operands, its
-    /// carrier first, `Path(A, a, b)`. The head takes its carrier by name,
+}
+
+impl FormFault
+{
+    /// The fault of a path-shaped type under `head` written over three
+    /// operands, its carrier first: `Path(A, a, b)` for
     /// `Path[.A = A](a, b)`.
-    PositionalCarrier(crate::form::TileName),
+    ///
+    /// # Specification
+    /// - requires: `head` is the tile of `Path`, `Bridge` or `Flow`.
+    /// - ensures: [`FormFault::Retired`] with the retired form of that head;
+    ///   the form of `Path` for any other head.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the three heads, written with its carrier
+    ///   first, is refused with the form of its own head.
+    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_refused_5024`
+    #[spec(ensures: |ret| matches!(ret, Self::Retired(gandr_surface_grammar::RetiredForm::PositionalPathCarrier | gandr_surface_grammar::RetiredForm::PositionalBridgeCarrier | gandr_surface_grammar::RetiredForm::PositionalFlowCarrier)))]
+    #[inline]
+    #[must_use]
+    pub fn carrier_first(head: crate::form::TileName) -> Self
+    {
+        Self::Retired(if head == crate::form::TileName::BRIDGE {
+            gandr_surface_grammar::RetiredForm::PositionalBridgeCarrier
+        }
+        else if head == crate::form::TileName::FLOW_TYPE {
+            gandr_surface_grammar::RetiredForm::PositionalFlowCarrier
+        }
+        else {
+            gandr_surface_grammar::RetiredForm::PositionalPathCarrier
+        })
+    }
 }
 
 impl fmt::Display for FormFault
@@ -560,11 +589,11 @@ impl fmt::Display for FormFault
             Self::MisspeltOperator(operator) => {
                 write!(f, "misspells the operator `{}`", operator.as_ref())
             },
-            Self::Retired(keyword) => {
+            Self::Retired(form) => {
                 write!(
                     f,
-                    "uses a retired keyword in place of `{}`",
-                    keyword.as_ref()
+                    "uses a retired spelling in place of `{}`",
+                    form.replaced_by().0
                 )
             },
             Self::NotAName => f.write_str("binds a pattern where it takes a name"),
@@ -577,9 +606,6 @@ impl fmt::Display for FormFault
             },
             Self::CompoundPositional => f.write_str("supplies a compound value by position"),
             Self::SuppliedTwice => f.write_str("supplies one implicit twice"),
-            Self::PositionalCarrier(head) => {
-                write!(f, "writes the carrier of `{}` by position", head.as_ref())
-            },
         }
     }
 }
@@ -890,6 +916,16 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
         /// The identifier as it was written.
         name: SurfaceName<'source>,
+    },
+
+    /// A name that no binder or declaration answers and that a retired
+    /// spelling of a form writes: `unit` for the unit value.
+    RetiredName
+    {
+        /// The bytes the name covers.
+        span: ByteSpan,
+        /// The retired spelling the name writes.
+        form: gandr_surface_grammar::RetiredForm,
     },
 
     /// A documentation link to a name the module does not declare.
@@ -2544,6 +2580,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the lowering minted no body for `{name}`, or neither a type nor a body, and \
                  refused nothing in it"
             ),
+            Self::RetiredName { form, .. } => write!(
+                f,
+                "this name is a retired spelling, and `{}` replaces it",
+                form.replaced_by().0
+            ),
         }
     }
 }
@@ -2681,6 +2722,7 @@ impl LoweringRefusal<'_>
     {
         match *self {
             Self::UnresolvedName { span, .. }
+            | Self::RetiredName { span, .. }
             | Self::UnresolvedDocLink { span, .. }
             | Self::UnresolvedTypeHead { span, .. }
             | Self::DuplicateSignature { span, .. }
@@ -3447,7 +3489,7 @@ mod tests
             &FormFault::MissingOpen(ClosingClass::Brace),
             &FormFault::Misspelt(crate::form::TileName::SEMICOLON),
             &FormFault::MisspeltOperator(crate::form::TileName::SEMICOLON),
-            &FormFault::Retired(crate::form::TileName::BOUNDARY),
+            &FormFault::Retired(gandr_surface_grammar::RetiredForm::ShapeMember),
             &FormFault::NotAName,
         ]));
         assert_apart(&render(&[

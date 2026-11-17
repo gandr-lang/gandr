@@ -80,6 +80,7 @@ use crate::PrecName;
 use crate::PrecTable;
 use crate::Provenance;
 use crate::Regex;
+use crate::RetiredForm;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -4743,6 +4744,11 @@ fn primary_expressions(
         RuleName("telescope_expression"),
         SurfaceForm("record_update_expression"),
         AdaptationReason("factored into the #{ expression family: the update tail `| id = E, … }` shares the `#{ E` prefix and discriminates on the `|` tile after the source expression"),
+    ));
+    telescope.adaptations.push(Adaptation::refused(
+        RuleName("telescope_expression"),
+        RetiredForm::UnitValue,
+        AdaptationReason("the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name"),
     ));
     out.push(telescope);
     // The injection `+{ .ok = E }` into a sum over labels, positional as

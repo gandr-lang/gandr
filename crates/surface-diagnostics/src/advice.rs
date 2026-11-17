@@ -169,6 +169,12 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnresolvedName { name, .. } => {
             format!("define `{name}`, or import the module that exports it")
         },
+        LoweringRefusal::RetiredName { form, .. } => {
+            format!(
+                "write `{}` in place of the retired spelling",
+                form.replaced_by().0
+            )
+        },
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             format!("declare `{name}`, or link to a name this source declares")
         },
@@ -665,10 +671,10 @@ fn malformed(
                 operator.as_ref()
             )
         },
-        FormFault::Retired(keyword) => {
+        FormFault::Retired(retired) => {
             format!(
-                "write `{}` in place of the retired keyword",
-                keyword.as_ref()
+                "write `{}` in place of the retired spelling",
+                retired.replaced_by().0
             )
         },
         FormFault::NotAName => String::from("write a name before the `@`"),
@@ -683,12 +689,6 @@ fn malformed(
             String::from("supply the value by name, as `.n = …` with the implicit's name for `n`")
         },
         FormFault::SuppliedTwice => String::from("remove one of the two entries"),
-        FormFault::PositionalCarrier(head) => {
-            format!(
-                "supply the carrier by name, as `{}[.A = …](…, …)`, or leave it to the endpoints",
-                head.as_ref()
-            )
-        },
         FormFault::MissingOpen(close) => {
             format!(
                 "add the `{}` that this `{}` closes",

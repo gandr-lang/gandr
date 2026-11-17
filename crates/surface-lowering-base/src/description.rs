@@ -585,7 +585,9 @@ impl DescriptionDiagnostic
                 LoweringRefusal::MalformedForm {
                     span: self.span,
                     form: crate::form::FormName::DECLARATION,
-                    fault: crate::error::FormFault::Retired(crate::form::TileName::BOUNDARY),
+                    fault: crate::error::FormFault::Retired(
+                        gandr_surface_grammar::RetiredForm::ShapeMember,
+                    ),
                 }
             },
             DescriptionFault::IllFormed(ref reason) => LoweringRefusal::IllFormedDescription {
