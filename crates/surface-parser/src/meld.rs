@@ -2965,6 +2965,48 @@ impl<'pbg> MeldState<'pbg>
             })
     }
 
+    /// The tiles that the head frontier's form owes next: the slope's head is
+    /// an open form tile that faces a tile, and its form cannot end there.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: yields, in ascending order, each `≐`-successor of the head
+    ///   cell's mold when that cell is an open form tile that faces no hole and
+    ///   that the grammar's LAST set lacks; yields nothing otherwise; leaves
+    ///   `self` unchanged.
+    /// - panics: none.
+    /// - executable: none — the specification macro cannot name this opaque
+    ///   iterator return.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member that lost its `:` after its name owes the
+    ///   `:`; a frontier that faces a hole, or that can end its form, owes no
+    ///   tile, and a source that parses never meets one that owes.
+    /// - witness: `tests::acceptance::a_member_that_lost_a_tile_owes_once_7881`
+    pub(crate) fn owed_tiles(&self) -> impl Iterator<Item = MoldId> + '_
+    {
+        let owing = match self.stack.last().map(|cell| cell.role) {
+            Some(Role::FormTile {
+                mold, open: true, ..
+            }) if self.frontier_hole_sort(mold).is_none()
+                && !bool::from(FormTable::is_form_last(self.pbg, mold)) =>
+            {
+                Some(mold)
+            },
+            Some(Role::FormTile { .. } | Role::Operand | Role::Operator { .. }) | None => None,
+        };
+        let adjacencies = self.pbg.adjacencies();
+        let successors = owing.map_or(0 .. 0, |mold| {
+            adjacencies.partition_point(|&(left, _)| left < mold)
+                .. adjacencies.partition_point(|&(left, _)| left <= mold)
+        });
+        adjacencies
+            .get(successors)
+            .unwrap_or_default()
+            .iter()
+            .map(|&(_, next)| next)
+    }
+
     /// How many cells the slope holds.
     ///
     /// # Specification

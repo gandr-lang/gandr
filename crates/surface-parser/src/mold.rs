@@ -1695,6 +1695,9 @@ pub struct DecisionCensus
     pub windows: DecisionCount,
     /// The tokens those windows molded.
     pub window_tokens: DecisionCount,
+    /// The tokens at which the molder weighed a minted owed tile beside the
+    /// reading as it stands.
+    pub owed_tile_weighings: DecisionCount,
 }
 
 impl DecisionCensus
@@ -1832,6 +1835,19 @@ impl Census
         #[cfg(feature = "census")]
         {
             self.decided.window_tokens = self.decided.window_tokens.saturating_add(1);
+        }
+    }
+
+    /// Count one token at which the molder weighs a minted owed tile.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn owed_tile_weighing(&mut self)
+    {
+        #[cfg(feature = "census")]
+        {
+            self.counts.owed_tile_weighings.0 = self.counts.owed_tile_weighings.0.saturating_add(1);
         }
     }
 
@@ -2424,6 +2440,13 @@ impl<'pbg> Molder<'pbg>
                     &source,
                     (token.lexeme, text, &labels),
                 );
+                self.settle_owed_tile(
+                    state,
+                    tokens,
+                    TokenIndex::from(index),
+                    &source,
+                    (token.lexeme, text, &labels),
+                );
                 let taken = bool::from(ends_declaration(
                     self.pbg,
                     tokens,
@@ -2835,6 +2858,104 @@ impl<'pbg> Molder<'pbg>
         if closes {
             self.gather(state, head.lexeme, head_text, &head_labels, Ahead::Nothing);
             state.settle_top_level_boundary(&self.candidates);
+        }
+        self.gather(state, lexeme, text, labels, ahead);
+    }
+
+    /// Mint the tile that the head frontier's form owes, before a token that
+    /// does not continue the form, when that reading owes no more than the
+    /// reading as it stands.
+    ///
+    /// A member that lost its `:` reads its type as an atom beside its name.
+    /// The `;` after the atom then continues no form, so the member's block
+    /// ends there, and each member after it owes again. The fault is at the
+    /// token after the name. So the molder weighs each tile that the form
+    /// owes next: it mints the tile, reads the token in the slot after it, and
+    /// molds a window. It molds the window of the reading as it stands under
+    /// the least of those, and keeps the minted tile unless that reading owes
+    /// less. At equal cost the minted tile wins, since it continues the form.
+    ///
+    /// # Specification
+    /// - requires: the candidate buffer holds the token's menu at `state`.
+    /// - ensures: when the head frontier owes a tile and no candidate continues
+    ///   the form, mints the owed tile whose window owes least, unless the
+    ///   window of the reading as it stands owes less than each; the candidate
+    ///   buffer, sorted, holds the menu at the resulting state; changes nothing
+    ///   otherwise. Each window ends at the molder's look-ahead.
+    /// - panics: none.
+    /// - bound: one window for each tile that the form owes, and one for the
+    ///   reading as it stands, each of at most the look-ahead's tokens.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `oper n0  String;` in a theory owes its `:` once, and
+    ///   the members after it owe nothing. A source that parses never weighs,
+    ///   since a token there continues each form that owes a tile.
+    /// - witness: `tests::acceptance::a_member_that_lost_a_tile_owes_once_7881`
+    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    fn settle_owed_tile<'src>(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &'src SourceFragment<'src>,
+        (lexeme, text, labels): (Lexeme, TokenText<'_>, &LabelIds),
+    )
+    {
+        let owed = state.owed_tiles().count();
+        if owed == 0
+            || self
+                .candidates
+                .iter()
+                .any(|&mold| bool::from(state.would_continue_form(mold)))
+        {
+            return;
+        }
+        self.census.owed_tile_weighing();
+        let ahead = Ahead::Stream {
+            tokens,
+            index,
+            source,
+        };
+        let next = TokenIndex::from(usize::from(index).saturating_add(1));
+        let mut least = None;
+        let mut minted = None;
+        for nth in 0 .. owed {
+            let Some(tile) = state.owed_tiles().nth(nth)
+            else {
+                break;
+            };
+            let mark = state.mark();
+            state.push_missing(tile);
+            self.gather(state, lexeme, text, labels, ahead);
+            let reading = self.reading;
+            let choice = self.choose_stream(state, tokens, index, source);
+            Self::push_choice(state, choice, text, reading);
+            let bound = least.map_or(WindowBound::Unbounded, WindowBound::Below);
+            let end = self.mold_window(state, tokens, next, source, &mark, bound);
+            let delta = (end == WindowEnd::Molded)
+                .then(|| state.completion_delta(state.delta_since(&mark)));
+            state.rollback_to(&mark);
+            if let Some(delta) = delta {
+                least = Some(delta);
+                minted = Some(tile);
+            }
+        }
+        let Some(tile) = minted
+        else {
+            self.gather(state, lexeme, text, labels, ahead);
+            return;
+        };
+        self.gather(state, lexeme, text, labels, ahead);
+        let mark = state.mark();
+        let reading = self.reading;
+        let choice = self.choose_stream(state, tokens, index, source);
+        Self::push_choice(state, choice, text, reading);
+        let bound = least.map_or(WindowBound::Unbounded, WindowBound::Below);
+        let end = self.mold_window(state, tokens, next, source, &mark, bound);
+        let standing = end == WindowEnd::Molded;
+        state.rollback_to(&mark);
+        if !standing {
+            state.push_missing(tile);
         }
         self.gather(state, lexeme, text, labels, ahead);
     }
