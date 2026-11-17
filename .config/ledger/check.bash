@@ -19,8 +19,10 @@
 # #4900).
 # The shared sources it was drawn from stay in `corpus`. An old spelling that
 # the grammar still parses, a row of `superseded` in `ledger/syntax.json`,
-# names an open issue that removes it (#6876). Every finding is printed
-# before the gate fails.
+# names an open issue that removes it (#6876). An old spelling that a source
+# meets as a refusal has an exemplar under `corpus/ledger/syntax/superseded/`
+# that states the refusal, and each file there is one such row's (#6896).
+# Every finding is printed before the gate fails.
 #
 # The issues the rows rest on are read through `gh` in one GraphQL query of
 # aliases, a hundred issues a request (#4263): a check that read each issue
@@ -244,7 +246,29 @@ while IFS=$'\t' read -r rule surface number; do
     echo "ledger/syntax.json: the old spelling \`$surface\` of \`$rule\` names #$number to remove it, and #$number does not stay open after this change; remove the spelling, or name the open issue that removes it" >&2
     failed=1
   fi
-done < <(jq -r '.superseded[] | [.rule, .surface, (.issue | tostring)] | @tsv' ledger/syntax.json)
+done < <(jq -r '.superseded[] | select(has("issue")) | [.rule, .surface, (.issue | tostring)] | @tsv' ledger/syntax.json)
+# An old spelling that a source meets as a refusal keeps its row (#6896). Its
+# exemplar under `corpus/ledger/syntax/superseded/` states the refusal, so a
+# change that reads the spelling again fails `check:exemplars`. Each file
+# there is the exemplar of one such row.
+superseded=corpus/ledger/syntax/superseded
+while IFS=$'\t' read -r rule surface refusal exemplar; do
+  path=ledger/$exemplar
+  path=${path#ledger/../}
+  if [[ ! -f $path ]]; then
+    echo "ledger/syntax.json: the refused spelling \`$surface\` of \`$rule\` has no exemplar at $path; write a source that states refuses(\"$refusal\")" >&2
+    failed=1
+  elif ! grep -qF "refuses(\"$refusal\")" "$path"; then
+    echo "$path: the exemplar of the refused spelling \`$surface\` of \`$rule\` does not state refuses(\"$refusal\")" >&2
+    failed=1
+  fi
+done < <(jq -r '.superseded[] | select(has("refused")) | [.rule, .surface, .refused, .exemplar] | @tsv' ledger/syntax.json)
+while IFS= read -r path; do
+  if ! jq -e --arg exemplar "../$path" 'any(.superseded[]; .exemplar == $exemplar)' ledger/syntax.json > /dev/null; then
+    echo "$path: no refused spelling of ledger/syntax.json names this exemplar; name it in a row, or take it out" >&2
+    failed=1
+  fi
+done < <(git ls-files -- "$superseded/*.gandr")
 if (( failed )); then
   echo 'ledger check FAILED' >&2
   exit 1

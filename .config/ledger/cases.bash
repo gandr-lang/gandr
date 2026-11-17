@@ -10,7 +10,8 @@
 # bodies of a merge group's entries in the directory the queue gives (#6883),
 # and its `event` the body as a pull request's CI event holds it (#6767).
 # The scratch syntax ledger holds no old spelling, and a case's `superseded`
-# replaces its rows (#6876).
+# replaces its rows (#6876). A case's `files` are sources the change adds,
+# each by its path, as a refused spelling's exemplar is (#6896).
 # `check.bash` runs there, and its exit status and standard error are the
 # case's. The base of the change that a gate names is not the scratch
 # repository's, so the harness drops it.
@@ -82,6 +83,11 @@ while IFS= read -r case; do
   if jq -e 'has("superseded")' <<< "$case" > /dev/null; then
     jq '{superseded: .superseded}' <<< "$case" > "$repo/ledger/syntax.json"
   fi
+  while IFS= read -r path; do
+    mkdir -p "$repo/$(dirname "$path")"
+    jq -r --arg path "$path" '.files[$path]' <<< "$case" > "$repo/$path"
+    git -C "$repo" add "$path"
+  done < <(jq -r '.files // {} | keys[]' <<< "$case")
   status=0
   env=(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/answers")
   if jq -e 'has("body")' <<< "$case" > /dev/null; then
