@@ -320,7 +320,6 @@ INSERT INTO position VALUES('crates/storage-values/src/units.rs','EditDepth','',
 INSERT INTO position VALUES('crates/storage-values/src/units.rs','SeamDepth','','none',NULL,'A depth.');
 INSERT INTO position VALUES('crates/storage-values/src/units.rs','ValueManifestVersion','','none',NULL,'A version of the value manifest.');
 INSERT INTO position VALUES('crates/surface-corpus/src/distribution.rs','Bits','','none',NULL,'A count of fair bits.');
-INSERT INTO position VALUES('crates/surface-corpus/src/kernel_export.rs','Shard','','local',NULL,'A source''s shard among the tests of one sweep, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/surface-dispatcher/src/cells/fusion.rs','HoleCount','','none',NULL,'A count of occurrences.');
 INSERT INTO position VALUES('crates/surface-dispatcher/src/component.rs','ParsedBytes','','none',NULL,'A count of parsed bytes.');
 INSERT INTO position VALUES('crates/surface-dispatcher/src/component.rs','Position','','local',NULL,'A source''s place in the order that one run first reads the sources in, which no key, name or byte form writes.');
@@ -343,6 +342,7 @@ INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/grant.rs','Token
 INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/host.rs','Count','','none',NULL,'A count of tokens.');
 INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/host.rs','Place','','local',NULL,'A slot''s place in one host''s segment, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/host.rs','Wakes','','none',NULL,'A count of wakes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/host/porter.rs','Reaped','','none',NULL,'A count of tokens that a holder did not write back.');
 INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','Bucket','','local',NULL,'A bucket''s place among the latency buckets of one process.');
 INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','Mask','','none',NULL,'A mask of idle bits.');
 INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','Part','','local',NULL,'A part''s place in the frame of one fork.');
