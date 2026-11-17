@@ -18,7 +18,7 @@ pub data Grid : (r : Nat, c : Nat) --> Type where
   /// The empty grid, at no row and no column.
   | GNil : Grid Zero Zero
   /// A grid and one more row, whose last cell is `cell`.
-  | GRow : (r : Nat, c : Nat, cell : Integer, rest : Grid r c) --> Grid(Succ(r), c)
+  | GRow : (r : Nat, c : Nat, cell : Integer, rest : Grid r c) --> Grid (Succ r) c
   /// A grid and one more column, whose last cell is `cell`.
   | GCol : (r : Nat, c : Nat, cell : Integer, rest : Grid r c) --> Grid r (Succ c)
 

@@ -27,9 +27,9 @@ data Ctx : Type where
 /// `Var` represents a variable of type `a` in `gamma`.
 data Var : (gamma : Ctx, a : ObjTy) --> Type where
   /// The variable the last entry binds.
-  | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
+  | Here : (gamma : Ctx, a : ObjTy) --> Var (Extend gamma a) a
   /// A variable of `gamma`, past one more entry.
-  | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var gamma a) --> Var(Extend(gamma, b), a)
+  | There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var gamma a) --> Var (Extend gamma b) a
 
 /// The variable of the first entry in a context of two.
 def firstVar(a : ObjTy, b : ObjTy) -> Var (Extend (Extend Empty a) b) a =
@@ -59,9 +59,9 @@ def weaken(d : Ctx, b : ObjTy, a : ObjTy) -> Var(d, a) -> Var(Extend(d, b), a) =
 /// Positions below a bound.
 data Fin : Nat -> Type where
   /// The first position below the successor of `n`.
-  | FZ : (n : Nat) --> Fin(Succ(n))
+  | FZ : (n : Nat) --> Fin (Succ n)
   /// The position after `i`, below the successor of `n`.
-  | FS : (n : Nat, i : Fin n) --> Fin(Succ(n))
+  | FS : (n : Nat, i : Fin n) --> Fin (Succ n)
 
 /// A value of `a` marked at the position `i` below `n`. The type of the
 /// second index reads the first, beside the parameter.
