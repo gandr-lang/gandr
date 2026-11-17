@@ -1,0 +1,9 @@
+{VARIABLES}def here(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) {{ let x = Here g a; x }}
+def next(g : Ctx, a : ObjTy, b : ObjTy, v : Var(g, a)) -> Var(Extend(g, b), a) {{
+let x = There g a b v;
+x
+}}
+def closed() -> Var(Extend(Empty, Arr(Base, Base)), Arr(Base, Base)) {{
+let x = Here Empty (Arr Base Base);
+x
+}}

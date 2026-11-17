@@ -1,0 +1,19 @@
+theory Pointed where {
+  sort M : Type;
+  oper point : () --> M;
+}
+theory Magma where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+}
+theory UnitalMagma where {
+  include Pointed;
+  include Magma;
+}
+theory MagmaWithUnit where {
+  include Pointed;
+  include Magma;
+}
+theory Above where {
+  include UnitalMagma;
+}

@@ -1,0 +1,2767 @@
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::session::Step;
+use gandr_surface_grammar::NamedKind;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::SourceText;
+
+use crate::budget::LoweringBudget;
+use crate::error::FormFault;
+use crate::error::FragmentBoundary;
+use crate::error::FragmentSort;
+use crate::error::LoweringRefusal;
+use crate::fixture::grammar;
+use crate::fixture::parsed;
+use crate::fixture::span;
+use crate::form::FormName;
+use crate::lower::lower_module;
+use crate::module::DeclarationOutcome;
+use crate::module::LoweredDeclaration;
+use crate::module::LoweredModule;
+use crate::namespace::Recognition;
+use crate::origin::Label;
+use crate::origin::Labelled;
+use crate::resolve::SurfaceName;
+
+/// One core node of any family, as [`shown`] walks it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the family of the node is kept beside its id.
+/// - executable: none — the root holds no arena.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witnesses below walk roots of all four families.
+/// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+/// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
+#[derive(Clone, Copy, Debug)]
+enum Root
+{
+    /// A value.
+    Value(ValueId),
+    /// A value type.
+    ValueType(ValueTypeId),
+    /// A computation.
+    Computation(ComputationId),
+    /// A computation type.
+    CompType(CompTypeId),
+}
+
+/// The core term at `root`, in pre-order, one token per former, so two
+/// terms minted at different arena positions compare by structure.
+///
+/// # Specification
+/// - requires: an acyclic graph rooted in `arena`.
+/// - ensures: one token per node reached, its arity written into the token for
+///   the formers of any arity and its children following it in order; a former
+///   outside the arity-shaped vocabulary is one diagnostic token.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 on the formers the witnesses reach — product, sum, record,
+///   lazy product and dependent arrow, and their values, eliminations and
+///   observations each yield a pinned token.
+/// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+/// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
+/// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_answer`
+#[spec(ensures: |ret| !ret.is_empty())]
+fn shown(
+    arena: &CoreArena,
+    root: Root,
+) -> Vec<String>
+{
+    let labels = |keys: alloc::vec::Vec<&str>| keys.join(",");
+    let mut pending = vec![root];
+    let mut tokens = Vec::new();
+    while let Some(next) = pending.pop() {
+        let (token, children): (String, Vec<Root>) = match next {
+            Root::ValueType(at) => match arena.value_type(at) {
+                Some(&ValueType::Base(base)) => (format!("{base:?}"), Vec::new()),
+                Some(&ValueType::Product(ref parts)) => (
+                    format!("*{}", parts.len()),
+                    parts.iter().map(|&part| Root::ValueType(part)).collect(),
+                ),
+                Some(&ValueType::Sum(ref parts)) => (
+                    format!("+{}", parts.len()),
+                    parts.iter().map(|&part| Root::ValueType(part)).collect(),
+                ),
+                Some(&ValueType::Record(ref fields)) => (
+                    format!(
+                        "#{{{}}}",
+                        labels(fields.keys().map(AsRef::as_ref).collect())
+                    ),
+                    fields
+                        .values()
+                        .map(|&field| Root::ValueType(field))
+                        .collect(),
+                ),
+                Some(&ValueType::Sigma { first, second }) => (String::from("S"), vec![
+                    Root::ValueType(first),
+                    Root::ValueType(second),
+                ]),
+                Some(&ValueType::Path {
+                    carrier,
+                    left,
+                    right,
+                }) => (String::from("Path"), vec![
+                    Root::ValueType(carrier),
+                    Root::Value(left),
+                    Root::Value(right),
+                ]),
+                Some(&ValueType::Thunk(inner)) => (String::from("U"), vec![Root::CompType(inner)]),
+                other => (format!("{other:?}"), Vec::new()),
+            },
+            Root::CompType(at) => match arena.comp_type(at) {
+                Some(&CompType::Returner { result, .. }) => {
+                    (String::from("F"), vec![Root::ValueType(result)])
+                },
+                Some(&CompType::Returns {
+                    ref results,
+                    ref effects,
+                }) => (
+                    // A group under a row is marked by the row's presence.
+                    if *effects == gandr_core_term::effect::EffectRow::EMPTY {
+                        format!("F{}", results.len())
+                    }
+                    else {
+                        format!("F{}[row]", results.len())
+                    },
+                    results
+                        .iter()
+                        .map(|&result| Root::ValueType(result))
+                        .collect(),
+                ),
+                Some(&CompType::Arrow { domain, codomain }) => (String::from("->"), vec![
+                    Root::ValueType(domain),
+                    Root::CompType(codomain),
+                ]),
+                Some(&CompType::Pi { domain, codomain }) => (String::from("Pi"), vec![
+                    Root::ValueType(domain),
+                    Root::CompType(codomain),
+                ]),
+                Some(&CompType::LinearArrow {
+                    domain,
+                    multiplicity,
+                    codomain,
+                }) => (String::from("-o"), vec![
+                    Root::ValueType(domain),
+                    Root::Value(multiplicity),
+                    Root::CompType(codomain),
+                ]),
+                Some(&CompType::With(ref components)) => (
+                    format!("&{}", components.len()),
+                    components
+                        .iter()
+                        .map(|&component| Root::CompType(component))
+                        .collect(),
+                ),
+                other => (format!("{other:?}"), Vec::new()),
+            },
+            Root::Value(at) => match arena.value(at) {
+                Some(&Value::Tuple(ref components)) => (
+                    format!("tuple{}", components.len()),
+                    components
+                        .iter()
+                        .map(|&component| Root::Value(component))
+                        .collect(),
+                ),
+                Some(&Value::Injection(summand, body)) => (
+                    format!("in{}", usize::from(summand)),
+                    vec![Root::Value(body)],
+                ),
+                Some(&Value::Record(ref fields)) => (
+                    format!(
+                        "record{{{}}}",
+                        labels(fields.keys().map(AsRef::as_ref).collect())
+                    ),
+                    fields.values().map(|&field| Root::Value(field)).collect(),
+                ),
+                Some(&Value::RecordUpdate { base, overlay }) => (String::from("update"), vec![
+                    Root::Value(base),
+                    Root::Value(overlay),
+                ]),
+                Some(&Value::Returned(computation)) => {
+                    (String::from("returned"), vec![Root::Computation(
+                        computation,
+                    )])
+                },
+                Some(&Value::Nested(computation)) => {
+                    (String::from("nested"), vec![Root::Computation(computation)])
+                },
+                Some(&Value::Thunk(body)) => (String::from("thunk"), vec![Root::Computation(body)]),
+                Some(&Value::Variable { index, .. }) => {
+                    (format!("#{}", u32::from(index)), Vec::new())
+                },
+                Some(&Value::Constant(constant)) => {
+                    (format!("const{}", usize::from(constant)), Vec::new())
+                },
+                Some(&Value::Literal(ref literal)) => (format!("{literal:?}"), Vec::new()),
+                other => (format!("{other:?}"), Vec::new()),
+            },
+            Root::Computation(at) => match arena.computation(at) {
+                Some(&Computation::Return(value)) => {
+                    (String::from("return"), vec![Root::Value(value)])
+                },
+                Some(&Computation::ReturnAll(ref values)) => (
+                    format!("return{}", values.len()),
+                    values.iter().map(|&value| Root::Value(value)).collect(),
+                ),
+                Some(&Computation::Force(value)) => {
+                    (String::from("force"), vec![Root::Value(value)])
+                },
+                Some(&Computation::Lambda(body)) => {
+                    (String::from("lambda"), vec![Root::Computation(body)])
+                },
+                Some(&Computation::Application(function, argument)) => (String::from("app"), vec![
+                    Root::Computation(function),
+                    Root::Value(argument),
+                ]),
+                Some(&Computation::Bind(bound, body)) => (String::from("bind"), vec![
+                    Root::Computation(bound),
+                    Root::Computation(body),
+                ]),
+                Some(&Computation::BindAll { bound, arity, body }) => {
+                    (format!("bindall{}", usize::from(arity)), vec![
+                        Root::Computation(bound),
+                        Root::Computation(body),
+                    ])
+                },
+                Some(&Computation::With(ref components)) => (
+                    format!("with{}", components.len()),
+                    components
+                        .iter()
+                        .map(|&component| Root::Computation(component))
+                        .collect(),
+                ),
+                Some(&Computation::TupleProjection(tuple, component)) => {
+                    (format!("component{}", usize::from(component)), vec![
+                        Root::Value(tuple),
+                    ])
+                },
+                Some(&Computation::RecordProjection(record, ref label)) => (
+                    format!("field.{}", label.as_ref()),
+                    vec![Root::Value(record)],
+                ),
+                Some(&Computation::Project(component, body)) => {
+                    (format!("project{}", usize::from(component)), vec![
+                        Root::Computation(body),
+                    ])
+                },
+                other => (format!("{other:?}"), Vec::new()),
+            },
+        };
+        tokens.push(token);
+        pending.extend(children.into_iter().rev());
+    }
+
+    tokens
+}
+
+/// The module the parser and the lowering make of `source`.
+///
+/// # Specification
+/// - requires: the source parses cleanly within the default allowance.
+/// - ensures: one declaration per declared name, in admission order.
+/// - fails: never on accepted fixtures.
+/// - panics: if the lowering refuses the module as a whole.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness below reads its module through here.
+/// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+#[spec(ensures: |ret| ret.declarations().iter().next().is_some())]
+fn lowered<'source, Text>(
+    source: Text,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+where
+    Text: Into<SourceText<'source>>,
+{
+    let pbg = grammar();
+    let tree = parsed(&pbg, source.into());
+
+    lower_module(
+        &pbg,
+        &tree,
+        arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .unwrap()
+}
+
+/// What the declaration `name` of `module` lowered to.
+///
+/// # Specification
+/// - requires: `module` declares `name`.
+/// - ensures: the outcome of the declaration so named.
+/// - fails: never on accepted fixtures.
+/// - panics: if no declaration carries the name.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witnesses read each declaration by its name.
+/// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+#[spec(ensures: |ret| module.declarations().iter().any(|declaration| declaration.outcome() == ret))]
+fn outcome<'source, 'name, Name>(
+    module: &LoweredModule<'source>,
+    name: Name,
+) -> DeclarationOutcome<'source>
+where
+    Name: Into<SurfaceName<'name>>,
+{
+    let name = name.into();
+    module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == name)
+        .map(LoweredDeclaration::outcome)
+        .expect("the module declares the name")
+}
+
+/// The declared type of `name`, shown.
+///
+/// # Specification
+/// - requires: `name` lowered a signature.
+/// - ensures: the signature's tokens.
+/// - fails: never on accepted fixtures.
+/// - panics: if the declaration lowered no signature.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the type witnesses read each signature here.
+/// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+#[spec(ensures: |ret| !ret.is_empty())]
+fn declared<'name, Name>(
+    arena: &CoreArena,
+    module: &LoweredModule<'_>,
+    name: Name,
+) -> Vec<String>
+where
+    Name: Into<SurfaceName<'name>>,
+{
+    let name = name.into();
+    match outcome(module, name) {
+        DeclarationOutcome::Completed { declared_type, .. }
+        | DeclarationOutcome::Uncompleted { declared_type } => {
+            shown(arena, Root::ValueType(declared_type))
+        },
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
+    }
+}
+
+/// The body of `name`, shown.
+///
+/// # Specification
+/// - requires: `name` lowered a body.
+/// - ensures: the body's tokens.
+/// - fails: never on accepted fixtures.
+/// - panics: if the declaration lowered no body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the value witnesses read each body here.
+/// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
+#[spec(ensures: |ret| !ret.is_empty())]
+fn body<'name, Name>(
+    arena: &CoreArena,
+    module: &LoweredModule<'_>,
+    name: Name,
+) -> Vec<String>
+where
+    Name: Into<SurfaceName<'name>>,
+{
+    let name = name.into();
+    match outcome(module, name) {
+        DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } => {
+            shown(arena, Root::Value(body))
+        },
+        other @ (DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a body, not {other:?}"),
+    }
+}
+
+/// The refusal of the one refused declaration of `source`.
+///
+/// # Specification
+/// - requires: exactly the last declaration of `source` is refused.
+/// - ensures: that declaration's refusal.
+/// - fails: never on accepted fixtures.
+/// - panics: if the last declaration is not refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the refusal witnesses read exact refusals here.
+/// - witness: `lower::arity::tests::labels_are_of_one_kind_and_written_once`
+#[spec(ensures: |ret| matches!(ret.span(), quenchant_shape::shape::Maybe::Present(_)))]
+fn refused<'source, Text>(source: Text) -> LoweringRefusal<'source>
+where
+    Text: Into<SourceText<'source>>,
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    match module
+        .declarations()
+        .iter()
+        .next_back()
+        .map(LoweredDeclaration::outcome)
+    {
+        Some(DeclarationOutcome::Refused(refusal)) => refusal,
+        other => panic!("the last declaration is refused, not {other:?}"),
+    }
+}
+
+/// The bytes `needle` covers at its `nth` occurrence in `source`.
+///
+/// # Specification
+/// - requires: `needle` occurs at least `nth + 1` times in `source`.
+/// - ensures: the span whose bytes in `source` are `needle`.
+/// - fails: never on accepted fixtures.
+/// - panics: if the occurrence is absent.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the refusal witnesses locate each refusal's span here.
+/// - witness: `lower::arity::tests::labels_are_of_one_kind_and_written_once`
+#[spec(
+    ensures: |ret| {
+        source
+            .as_ref()
+            .get(usize::from(ret.start()) .. usize::from(ret.end()))
+            == Some(needle.as_ref())
+    },
+)]
+fn at<Source, Needle, Nth>(
+    source: Source,
+    needle: Needle,
+    nth: Nth,
+) -> ByteSpan
+where
+    Source: AsRef<str>,
+    Needle: AsRef<str>,
+    Nth: Into<usize>,
+{
+    let (source, needle, nth) = (source.as_ref(), needle.as_ref(), nth.into());
+    let start = source
+        .match_indices(needle)
+        .nth(nth)
+        .map(|(start, _)| start)
+        .expect("the needle occurs");
+
+    span(
+        ByteOffset::from(start),
+        ByteOffset::from(start.saturating_add(needle.len())),
+    )
+}
+
+/// The refusal a form named `form` earns for `fault` at `span`.
+///
+/// # Specification
+/// trivial.
+fn malformed(
+    span: ByteSpan,
+    form: NamedKind<'static>,
+    fault: FormFault,
+) -> LoweringRefusal<'static>
+{
+    LoweringRefusal::MalformedForm {
+        span,
+        form: FormName::from(form),
+        fault,
+    }
+}
+
+#[test]
+fn a_telescope_type_lowers_by_its_arity()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def none : *{} ; def one : *{Integer} ; def three : *{Integer, String, Unit,} ; def \
+         labelled : *{n : Integer, s : String} ; def reordered : *{s : String, n : Integer} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "none"),
+        ["*0"],
+        "`#{{}}` is the unit"
+    );
+    assert_eq!(
+        declared(&arena, &module, "one"),
+        ["*1", "Integer"],
+        "`#{{A}}` is the product of one component, not `A`"
+    );
+    assert_eq!(
+        declared(&arena, &module, "three"),
+        ["*3", "Integer", "String", "*0"],
+        "a trailing comma closes the list it ends"
+    );
+    assert_eq!(
+        declared(&arena, &module, "labelled"),
+        ["#{n,s}", "Integer", "String"],
+        "a labelled telescope is the record keyed by its labels"
+    );
+    assert_eq!(
+        declared(&arena, &module, "reordered"),
+        declared(&arena, &module, "labelled"),
+        "and the order its fields are written in is not observable"
+    );
+    let source = "def bad : *{Integer : String} ;";
+    assert_eq!(
+        refused(source),
+        malformed(
+            at(source, "Integer", 0_usize),
+            NamedKind("telescope_type"),
+            FormFault::MisplacedTile
+        ),
+        "a key is a lowercase word, told from a type by its kind"
+    );
+}
+
+/// A builtin type's lowercase name, `f32`, keys a field as any lowercase word
+/// does, and stays the builtin type where the field's type is read (#5561).
+#[test]
+fn a_builtin_type_s_lowercase_name_is_a_key_5561()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def numbers : *{u32 : Integer, u64 : Integer, i32 : Integer, i64 : Integer, f32 : \
+         Integer, f64 : Integer} ; def named : *{u32 : u32} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "numbers"),
+        [
+            "#{f32,f64,i32,i64,u32,u64}",
+            "Integer",
+            "Integer",
+            "Integer",
+            "Integer",
+            "Integer",
+            "Integer"
+        ],
+        "each lowercase builtin name keys its field"
+    );
+    assert_eq!(
+        declared(&arena, &module, "named"),
+        ["#{u32}", "Fixed(U32)"],
+        "the key `u32` labels a field whose type is the builtin `u32`"
+    );
+}
+
+/// A later label naming an earlier one makes the type the right-nested
+/// dependent pairs of its entries, each link a `Σ` when a later entry names
+/// its label and a product of two otherwise, the variable read past the
+/// links that bind; a record naming none stays the record.
+#[test]
+fn a_later_label_reading_an_earlier_one_lowers_to_nested_pairs()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def two : *{n : Integer, v : Path[.A = Integer](n, n)} ; def three : *{a : Integer, b : \
+         Integer, c : Path[.A = Integer](a, a)} ; def late : *{a : Integer, b : Integer, c : \
+         Path[.A = Integer](b, b)} ; def plain : *{n : Integer, s : String} ; def pair : *{n : \
+         Integer, v : Path[.A = Integer](n, n)} ; def pair = *{2, Path.here 2} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "two"),
+        ["S", "Integer", "Path", "Integer", "#0", "#0"],
+        "the second entry reads the first as the pair's binder"
+    );
+    assert_eq!(
+        declared(&arena, &module, "three"),
+        [
+            "S", "Integer", "*2", "Integer", "Path", "Integer", "#0", "#0"
+        ],
+        "the first link binds, the second, which nothing later reads, is a product"
+    );
+    assert_eq!(
+        declared(&arena, &module, "late"),
+        [
+            "*2", "Integer", "S", "Integer", "Path", "Integer", "#0", "#0"
+        ],
+        "a label only the last entry reads binds at its own link"
+    );
+    assert_eq!(
+        declared(&arena, &module, "plain"),
+        ["#{n,s}", "Integer", "String"],
+        "labels nothing later names are a record's"
+    );
+    assert_eq!(
+        body(&arena, &module, "pair").first().map(String::as_str),
+        Some("tuple2"),
+        "the value is the pair of its entries"
+    );
+}
+
+/// A nested type list's key binds its name rather than naming an outer
+/// label, and one rebinding the label hides it from the entries after it, so
+/// the outer record stays a record; a nested entry before the rebinding still
+/// names the outer label and links it (#3010).
+#[test]
+fn a_nested_record_s_key_is_no_mention_of_an_outer_label_3010()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def keyed : *{d : Integer, s : *{d : String, t : String}} ; def hidden : *{d : \
+         Integer, s : *{d : String, t : Path[.A = String](d, d)}} ; def domain : *{d : Integer, f : \
+         (d : Integer) -> Integer} ; def seen : *{d : Integer, s : *{e : Path[.A = Integer](d, d), d : \
+         String}} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "keyed"),
+        ["#{d,s}", "Integer", "#{d,t}", "String", "String"],
+        "a nested record's key is no mention of the outer label"
+    );
+    assert_eq!(
+        declared(&arena, &module, "hidden")
+            .first()
+            .map(String::as_str),
+        Some("#{d,s}"),
+        "a name after the nested key reads the nested binder"
+    );
+    assert_eq!(
+        declared(&arena, &module, "domain")
+            .first()
+            .map(String::as_str),
+        Some("#{d,f}"),
+        "a dependent arrow's binder is no mention of the outer label"
+    );
+    assert_eq!(
+        declared(&arena, &module, "seen")
+            .first()
+            .map(String::as_str),
+        Some("S"),
+        "a nested entry before the rebinding names the outer label"
+    );
+}
+
+/// Each link of a dependent record keeps where the label of the field it
+/// holds first is written, a dependent pair's and a product's alike; the
+/// innermost link keeps the last field's label as its second component's,
+/// and every other link none, its second component being the next link
+/// (#1613, #3934).
+#[test]
+fn each_record_link_keeps_its_labels_3934()
+{
+    let mut arena = CoreArena::new();
+    let source = "def two : *{n : Integer, v : Path[.A = Integer](n, n)} ; def three : *{a : Integer, \
+                  b : Integer, c : Path[.A = Integer](a, a)} ; def chain : *{x : Integer, y : \
+                  Path[.A = Integer](x, x), z : Path[.A = Path[.A = Integer](x, x)](y, y)} ;";
+    let module = lowered(source, &mut arena);
+    let origins = module.origins();
+    let written = |origin: crate::origin::Origin| {
+        source
+            .get(usize::from(origin.span().start()) .. usize::from(origin.span().end()))
+            .unwrap_or_default()
+    };
+    let mut labels: Vec<(&str, Option<&str>)> = origins
+        .pairs()
+        .iter()
+        .map(|&(pair, binder)| {
+            let seconds = origins.seconds();
+            let second = seconds
+                .binary_search_by_key(&pair, |&(held, _)| held)
+                .ok()
+                .and_then(|at| seconds.get(at))
+                .map(|&(_, label)| written(label));
+            (written(binder), second)
+        })
+        .collect();
+    labels.sort_unstable();
+    assert_eq!(
+        labels,
+        [
+            ("a", None),
+            ("b", Some("c")),
+            ("n", Some("v")),
+            ("x", None),
+            ("y", Some("z")),
+        ],
+        "each link's first label, and the last field's label at the innermost link"
+    );
+}
+
+/// #4395: the core erases a sum's and a lazy record type's labels to
+/// positions, so the printer spelled a labelled one at positions. Each keeps
+/// where its labels are written, in written order. A sum or a lazy record
+/// written at positions, or as a chain, keeps none.
+#[test]
+fn a_sum_and_a_lazy_record_keep_where_their_labels_are_written_4395()
+{
+    let mut arena = CoreArena::new();
+    let source = "def picked : +{ok : Integer, err : String} ; def placed : +{Integer, String} ; \
+                  def chained : Integer + String ; def got : +U &{put : -F String, get : -F \
+                  Integer} ; def held : +U &{-F String, -F Integer} ; def joined : +U (-F String \
+                  & -F Integer) ;";
+    let module = lowered(source, &mut arena);
+    let origins = module.origins();
+    let written = |labels: &[crate::origin::Origin]| -> Vec<&str> {
+        labels
+            .iter()
+            .map(|label| {
+                source
+                    .get(usize::from(label.span().start()) .. usize::from(label.span().end()))
+                    .unwrap_or_default()
+            })
+            .collect()
+    };
+    let sums: Vec<(usize, Vec<&str>)> = origins
+        .sum_labels()
+        .iter()
+        .map(|&(sum, ref labels)| {
+            let arity = match arena.value_type(sum) {
+                Some(&ValueType::Sum(ref parts)) => parts.len(),
+                Some(_) | None => 0,
+            };
+            (arity, written(labels))
+        })
+        .collect();
+    assert_eq!(
+        sums,
+        [(2_usize, Vec::from(["ok", "err"]))],
+        "the labelled sum alone keeps its labels, one per summand in written order"
+    );
+    let lazies: Vec<(usize, Vec<&str>)> = origins
+        .with_labels()
+        .iter()
+        .map(|&(with, ref labels)| {
+            let arity = match arena.comp_type(with) {
+                Some(&CompType::With(ref components)) => components.len(),
+                Some(_) | None => 0,
+            };
+            (arity, written(labels))
+        })
+        .collect();
+    assert_eq!(
+        lazies,
+        [(2_usize, Vec::from(["put", "get"]))],
+        "the labelled lazy record alone keeps its labels, in written order"
+    );
+}
+
+/// A selection off a name written with a dependent record projects the
+/// entry its label names along the nesting, each inner link read as the
+/// value its projection returns; a label the type lacks is refused.
+#[test]
+fn a_selection_projects_a_dependent_record_along_its_nesting()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def first(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.n } \
+         def last(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> -F \
+         Path[.A = Integer](t.a, t.a) { return t.c }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "first"),
+        ["thunk", "lambda", "return", "nested", "component0", "#0"],
+        "the first entry is the pair's first component"
+    );
+    assert_eq!(
+        body(&arena, &module, "last"),
+        [
+            "thunk",
+            "lambda",
+            "return",
+            "nested",
+            "component1",
+            "returned",
+            "component1",
+            "#0"
+        ],
+        "the last of three is the second component of the second link"
+    );
+    let source = "def lacks(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return \
+                  p.w }";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { .. }),
+        "a label the type lacks names nothing"
+    );
+}
+
+/// A selection off a name written with a record no field depends on, which
+/// mints as the record type, projects the record at its label, as a record
+/// pattern does; a dependent record still projects along its nesting (#855).
+#[test]
+fn a_selection_off_a_record_projects_its_label_855()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def by_label(r : *{n : Integer, s : String}) -> -F String { return r.s }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "by_label"),
+        ["thunk", "lambda", "return", "nested", "field.s", "#0"],
+        "the record is projected at the label"
+    );
+}
+
+/// A selection off a name written at a type member projects the record the
+/// member's definition writes at its label, as a selection off that record
+/// written in place does; a name written at a member that is no record keeps
+/// its refusal (#5826).
+#[test]
+fn a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "type Band = *{low : Integer, high : Integer}; def high(b : Band) -> -F Integer { return \
+         b.high }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "high"),
+        ["thunk", "lambda", "return", "nested", "field.high", "#0"],
+        "the member's record is projected at the label"
+    );
+    assert!(
+        matches!(
+            refused("type Count = Integer; def typed(n : Count) -> -F Integer { n.x }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "a name written at a member that is no record keeps its refusal"
+    );
+}
+
+/// A selection off a value no written type states is the field of the record
+/// the value is, projected at its label: off a definition with no signature,
+/// and off a field of it, the inner link read as the value its projection
+/// returns. A name whose written type is no record keeps its refusal (#1106).
+#[test]
+fn a_field_of_a_record_no_type_states_projects_its_label_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def outer = *{ tag = \"t\", inner = *{ x = 1, y = 2 } } ; def one() -> -F *{x : \
+         Integer, y : Integer} { outer.inner } def two() -> -F Integer { outer.inner.x }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "one"),
+        ["thunk", "field.inner", "const0"],
+        "the record the definition holds is projected at the label"
+    );
+    assert_eq!(
+        body(&arena, &module, "two"),
+        ["thunk", "field.x", "nested", "field.inner", "const0"],
+        "the outer link projects the record the inner one returns"
+    );
+    assert!(
+        matches!(
+            refused("def typed(n : Integer) -> -F Integer { n.x }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "a written type that is no record keeps the selection's refusal"
+    );
+}
+
+/// A sub-record binds each field it selects in written order, the name
+/// raised past the fields bound before it, and returns the record of the
+/// bound fields: off a stated record each field is projected as `r.l` is, and
+/// off a record no type states at its label for the checker. A value that is
+/// no name is unadmitted.
+#[test]
+fn a_sub_record_binds_each_field_and_returns_their_record()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def pick(r : *{a : Integer, b : Integer, c : Integer}) -> -F *{c : Integer, a : \
+         Integer} { r.*{.c, .a} } def outer = *{ x = 1, y = 2 } ; def free() -> -F *{y : \
+         Integer} { outer.*{.y} }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "pick"),
+        [
+            "thunk",
+            "lambda",
+            "bind",
+            "field.c",
+            "#0",
+            "bind",
+            "field.a",
+            "#1",
+            "return",
+            "record{a,c}",
+            "#0",
+            "#1"
+        ],
+        "each field is bound in written order and their record returned"
+    );
+    assert_eq!(
+        body(&arena, &module, "free"),
+        [
+            "thunk",
+            "bind",
+            "field.y",
+            "const1",
+            "return",
+            "record{y}",
+            "#0"
+        ],
+        "a record no type states is projected at the label"
+    );
+    assert!(
+        matches!(
+            refused("def p(r : *{a : Integer}) -> -F *{a : Integer} { (r).*{.a} }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "a value that is no name is unadmitted"
+    );
+}
+
+/// A selection by position projects the pair its operand is: `.0` its first
+/// component and `.1` its second, as the labels of a type of two name them;
+/// a third position names nothing.
+#[test]
+fn a_selection_by_position_projects_a_pair_401()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def first(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Integer { return p.0 } \
+         def second(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F Path[.A = Integer](p.0, p.0) \
+         { return p.1 } def by_label(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> -F \
+         Path[.A = Integer](p.n, p.n) { return p.v }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "first"),
+        ["thunk", "lambda", "return", "nested", "component0", "#0"],
+        "`.0` is the pair's first component"
+    );
+    assert_eq!(
+        (
+            body(&arena, &module, "second"),
+            declared(&arena, &module, "second")
+        ),
+        (
+            body(&arena, &module, "by_label"),
+            declared(&arena, &module, "by_label")
+        ),
+        "`.1` and `.0` project as the labels naming the same entries"
+    );
+    assert!(
+        matches!(
+            refused("def third(p : Integer * String) -> -F String { return p.2 }"),
+            LoweringRefusal::UnresolvedName { .. }
+        ),
+        "a pair has no third position"
+    );
+}
+
+/// A selection by position off a name reads the type written for it: each
+/// place of a product chain is its component, a place of a record is the
+/// entry's label, and a place past the type's entries names nothing. With no
+/// written type, a place past the pair's two stays unadmitted (#1106).
+#[test]
+fn a_selection_by_position_reads_the_written_type_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def middle(p : Integer * String * Integer) -> -F String { return p.1 } def last(p : \
+         Integer * String * Integer) -> -F Integer { return p.2 } def by_place(r : *{n : \
+         Integer, s : String}) -> -F String { return r.1 } def by_label(r : *{n : Integer, s : \
+         String}) -> -F String { return r.s }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        (
+            body(&arena, &module, "middle"),
+            body(&arena, &module, "last")
+        ),
+        (
+            ["thunk", "lambda", "return", "nested", "component1", "#0"]
+                .map(String::from)
+                .to_vec(),
+            ["thunk", "lambda", "return", "nested", "component2", "#0"]
+                .map(String::from)
+                .to_vec()
+        ),
+        "each place of the product is its own component"
+    );
+    assert_eq!(
+        body(&arena, &module, "by_place"),
+        body(&arena, &module, "by_label"),
+        "a place of a record is the entry's label"
+    );
+    assert!(
+        matches!(
+            refused("def past(p : Integer * String * Integer) -> -F Integer { return p.3 }"),
+            LoweringRefusal::UnresolvedName { .. }
+        ),
+        "a product of three has no fourth place"
+    );
+    assert!(
+        matches!(
+            refused("def pair = *{1, 2} ; def third() -> -F Integer { pair.2 }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "with no written type a third place stays unadmitted"
+    );
+}
+
+#[test]
+fn a_telescope_value_lowers_by_its_arity()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def none = *{} ; def one = *{1} ; def two = *{1, \"b\"} ; def trailing = *{1, \"b\",} ; \
+         def reordered = *{.1 = \"b\", .0 = 1} ; def dotted = *{.s = \"x\", .n = 3} ; def \
+         shorthand = *{n = 3, s = \"x\"} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "none"),
+        ["tuple0"],
+        "`#{{}}` is the unit"
+    );
+    assert_eq!(
+        body(&arena, &module, "one").first().map(String::as_str),
+        Some("tuple1"),
+        "`#{{a}}` is the tuple of one"
+    );
+    assert_eq!(
+        body(&arena, &module, "two").first().map(String::as_str),
+        Some("tuple2")
+    );
+    assert_eq!(
+        body(&arena, &module, "trailing"),
+        body(&arena, &module, "two"),
+        "a trailing comma closes the list it ends"
+    );
+    assert_eq!(
+        body(&arena, &module, "reordered"),
+        body(&arena, &module, "two"),
+        "indexed entries are reordered by their indices"
+    );
+    assert_eq!(
+        body(&arena, &module, "dotted").first().map(String::as_str),
+        Some("record{n,s}"),
+        "dotted labels make the record keyed by them"
+    );
+    assert_eq!(
+        body(&arena, &module, "shorthand"),
+        body(&arena, &module, "dotted"),
+        "and the shorthand `l = e` is the same record, in either order"
+    );
+    // Two entries side by side are one entry, an application. So the case
+    // writes a tile that neither separates nor closes the entry before it.
+    let source = "def bad = *{1 = 2} ;";
+    assert!(
+        matches!(
+            refused(source),
+            LoweringRefusal::MalformedForm { form, .. }
+                if form == FormName::from(NamedKind("telescope_expression"))
+        ),
+        "an entry is closed by a comma or the brace"
+    );
+}
+
+#[test]
+fn a_record_update_lowers_to_its_base_and_its_fields()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def r = *{n = 1} ; def one = *{r | n = 2} ; def written = *{n = 2} ; def two = *{r | n = \
+         2, m = \"a\",} ; def both = *{m = \"a\", n = 2} ;",
+        &mut arena,
+    );
+    let over = |record: &str| {
+        [String::from("update"), String::from("const0")]
+            .into_iter()
+            .chain(body(&arena, &module, record))
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        body(&arena, &module, "one"),
+        over("written"),
+        "the update holds its base beside the record of the field it writes"
+    );
+    assert_eq!(
+        body(&arena, &module, "two"),
+        over("both"),
+        "the fields it writes make one record keyed by them, a trailing comma closing them"
+    );
+    let source = "def r = *{n = 1} ; def twice = *{r | n = 2, n = 3} ;";
+    assert_eq!(
+        refused(source),
+        LoweringRefusal::DuplicateDefinition {
+            span: at(source, "n", 2_usize),
+            name: SurfaceName::from("n"),
+            first: at(source, "n", 1_usize),
+        },
+        "an update writes a field once"
+    );
+}
+
+#[test]
+fn labels_are_of_one_kind_and_written_once()
+{
+    let source = "def gap = *{.0 = 1, .2 = 2} ;";
+    assert_eq!(
+        refused(source),
+        malformed(
+            at(source, "2", 0_usize),
+            NamedKind("telescope_expression"),
+            FormFault::MisplacedTile
+        ),
+        "the indices of a form are exactly 0 to n - 1"
+    );
+    let source = "def repeated = *{.0 = 1, .0 = 2} ;";
+    assert_eq!(
+        refused(source),
+        LoweringRefusal::DuplicateDefinition {
+            span: at(source, "0", 1_usize),
+            name: SurfaceName::from("0"),
+            first: at(source, "0", 0_usize),
+        },
+        "an index names one entry"
+    );
+    let source = "def twice = *{.n = 1, .n = 2} ;";
+    assert_eq!(
+        refused(source),
+        LoweringRefusal::DuplicateDefinition {
+            span: at(source, "n", 1_usize),
+            name: SurfaceName::from("n"),
+            first: at(source, "n", 0_usize),
+        },
+        "a label names one entry"
+    );
+    let source = "def mixed = *{.n = 1, .1 = 2} ;";
+    assert_eq!(
+        refused(source),
+        malformed(
+            at(source, "1", 1_usize),
+            NamedKind("telescope_expression"),
+            FormFault::MisplacedTile
+        ),
+        "a form holds one kind of entry throughout"
+    );
+    let source = "def mixed : *{Integer, k : String} ;";
+    assert_eq!(
+        refused(source),
+        malformed(
+            at(source, "k", 0_usize),
+            NamedKind("telescope_type"),
+            FormFault::MisplacedTile
+        ),
+        "positional and labelled entries do not mix"
+    );
+}
+
+#[test]
+fn a_sum_over_labels_lowers_to_the_sum_of_its_entries()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def empty : +{} ; def one : +{Integer} ; def positional : +{Integer, String} ; def \
+         labelled : +{ok : Integer, err : String} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "empty"),
+        ["+0"],
+        "`+{{}}` is the empty sum"
+    );
+    assert_eq!(
+        declared(&arena, &module, "one"),
+        ["+1", "Integer"],
+        "`+{{A}}` is the sum of one summand"
+    );
+    assert_eq!(declared(&arena, &module, "positional"), [
+        "+2", "Integer", "String"
+    ]);
+    assert_eq!(
+        declared(&arena, &module, "labelled"),
+        declared(&arena, &module, "positional"),
+        "a sum keeps its written order and erases its labels"
+    );
+}
+
+#[test]
+fn an_injection_takes_its_index_from_its_label()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def third = +{.2 = *{}} ; def labelled = (+{.err = \"no\"} : +{ok : Integer, err : \
+         String}) ; def only = (+{.only = 4} : +{only : Integer}) ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "third").first().map(String::as_str),
+        Some("in2"),
+        "an index past the binary sum names its summand itself"
+    );
+    assert_eq!(
+        body(&arena, &module, "labelled")
+            .first()
+            .map(String::as_str),
+        Some("in1"),
+        "a label takes the index it has in the sum its annotation states"
+    );
+    assert_eq!(
+        body(&arena, &module, "only").first().map(String::as_str),
+        Some("in0"),
+        "a one-summand sum injects at its only label"
+    );
+    let source = "def bare = +{.err = \"no\"} ;";
+    assert_eq!(
+        refused(source),
+        LoweringRefusal::OutOfFragment {
+            span: at(source, "+{.err = \"no\"}", 0_usize),
+            form: FormName::from(NamedKind("labelled_sum_expression")),
+            sort: FragmentSort::Value,
+            boundary: FragmentBoundary::Unannotated,
+        },
+        "a label with no stated sum has no index"
+    );
+    let source = "def missing = (+{.gone = 1} : +{ok : Integer, err : String}) ;";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, span } if name == SurfaceName::from("gone") && span == at(source, "gone", 0_usize)),
+        "a label the stated sum lacks is unresolved where it is written"
+    );
+}
+
+#[test]
+fn a_session_entry_reads_the_select_and_the_offer()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered("def value : +{ok : Integer} ;", &mut arena);
+    assert_eq!(
+        declared(&arena, &module, "value"),
+        ["+1", "Integer"],
+        "over value types the braces are the sum"
+    );
+    let module = lowered(
+        include_str!(
+            "tests/unformatted/a-session-entry-reads-the-select-and-the-offer-module.gandr"
+        ),
+        &mut arena,
+    );
+    for (name, select) in [("choose", true), ("menu", false), ("nested", true)] {
+        let DeclarationOutcome::Uncompleted { declared_type } = outcome(&module, name)
+        else {
+            panic!("`{name}` lowers its signature");
+        };
+        let Some(held) = arena.value_type(declared_type)
+        else {
+            panic!("`{name}`'s signature is in the arena");
+        };
+        let ValueType::Session(ref session) = *held
+        else {
+            panic!("`{name}` is a session type: {held:?}");
+        };
+        assert_eq!(
+            session.step().map(|step| matches!(step, Step::Select(_))),
+            Ok(select),
+            "`{name}`: over session types the sum is the select and the lazy record the offer"
+        );
+    }
+    let source = "def mixed : +{ok : Integer, done : end} ;";
+    assert_eq!(
+        refused(source),
+        malformed(
+            at(source, "end", 0_usize),
+            NamedKind("labelled_sum_type"),
+            FormFault::MisplacedTile
+        ),
+        "session types and value types do not mix in one form"
+    );
+    for (source, form) in [
+        (
+            "def menu : +U &{get : ! Integer . end, put : ? Integer . end} ;",
+            "offer_session_type",
+        ),
+        (
+            "def pick : +U +{ok : ! Integer . end} ;",
+            "select_session_type",
+        ),
+    ] {
+        assert!(
+            matches!(
+                refused(source),
+                LoweringRefusal::OutOfFragment { form: refused, .. }
+                    if refused == crate::form::FormName::from(NamedKind(form))
+            ),
+            "a session type where a value type is read is refused as the session form it is: \
+             {:?}",
+            refused(source)
+        );
+    }
+}
+
+#[test]
+fn a_lazy_record_lowers_to_one_lazy_product()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def two : +U &{get : -F Integer, put : -F String} ; def binary : +U (-F Integer & -F \
+         String) ; def three : +U &{a : -F Integer, b : -F String, c : -F Unit} ; def chain : +U \
+         (-F Integer & -F String & -F Unit) ; def nested : +U (-F Integer & (-F String & -F \
+         Unit)) ; def none : +U &{} ; def single : +U &{get : -F Integer} ;",
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "two"),
+        ["U", "&2", "F", "Integer", "F", "String"],
+        "a lazy record of two is the lazy product"
+    );
+    assert_eq!(
+        declared(&arena, &module, "binary"),
+        declared(&arena, &module, "two"),
+        "and `C & D` is the same core type"
+    );
+    assert_eq!(
+        declared(&arena, &module, "three"),
+        ["U", "&3", "F", "Integer", "F", "String", "F", "*0"],
+        "a lazy record of three is one lazy product of three"
+    );
+    assert_eq!(
+        declared(&arena, &module, "chain"),
+        declared(&arena, &module, "three"),
+        "and so is the chain `C & D & E`"
+    );
+    assert_eq!(
+        declared(&arena, &module, "nested"),
+        ["U", "&2", "F", "Integer", "&2", "F", "String", "F", "*0"],
+        "a parenthesized operand stays a component of its own"
+    );
+    assert_eq!(
+        declared(&arena, &module, "none"),
+        ["U", "&0"],
+        "`&{{}}` is the empty lazy product"
+    );
+    assert_eq!(
+        declared(&arena, &module, "single"),
+        ["U", "&1", "F", "Integer"],
+        "`&{{C}}` is the lazy product of one, not `C`"
+    );
+}
+
+#[test]
+fn a_copattern_block_orders_its_clauses_by_its_answer()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/unformatted/a-copattern-block-orders-its-clauses-by-its-answer-module-1.gandr"
+        ),
+        &mut arena,
+    );
+    let with = |name: &str| -> Vec<String> {
+        let tokens = body(&arena, &module, name);
+        tokens
+            .iter()
+            .position(|token| token.starts_with("with"))
+            .map_or_default(|start| tokens.get(start ..).unwrap_or_default().to_vec())
+    };
+
+    assert_eq!(
+        with("stated").first().map(String::as_str),
+        Some("with2"),
+        "a copattern block is the lazy product"
+    );
+    assert_eq!(
+        with("stated").get(1_usize ..= 2_usize),
+        Some(&[String::from("return"), String::from("#0")][..]),
+        "its clauses take the order the answer states, `.get` first"
+    );
+    assert_eq!(
+        with("positional"),
+        with("stated"),
+        "indexed clauses are ordered by their indices"
+    );
+    let source = "def unstated(n : Integer) -> -F Integer { &{.get => return n, .put => return n} \
+                  }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Unannotated | FragmentBoundary::WrongSort,
+            ..
+        }),
+        "labelled clauses with no lazy record stated have no order"
+    );
+    let source = "def single(n : Integer) -> &{get : -F Integer, put : -F Integer} { &{.get => \
+                  return n} }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::MalformedForm {
+            fault: FormFault::MissingOperand,
+            ..
+        }),
+        "an entry the block leaves out is a missing clause: {:?}",
+        refused(source)
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/unformatted/a-copattern-block-orders-its-clauses-by-its-answer-module-2.gandr"
+        ),
+        &mut arena,
+    );
+    let lazy = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .skip_while(|token| !token.starts_with("with"))
+            .collect()
+    };
+    assert_eq!(
+        lazy("one"),
+        ["with1", "return", "#0"],
+        "a block of one clause is the lazy product of one"
+    );
+    assert_eq!(lazy("none"), ["with0"], "`&{{}}` is the empty lazy product");
+    let maybe =
+        "data Maybe(a : Type) : Type where { | None : Maybe(a) | Some : (x : a) --> Maybe(a) }\n";
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{maybe}def some(n : Integer) -> &{{-F Maybe(Integer), -F String}} {{ &{{.0 => return \
+         Some(n), .1 => return \"s\"}} }}\n"
+    );
+    let module = lowered(source.as_str(), &mut arena);
+    assert!(
+        matches!(
+            outcome(&module, "some"),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "each indexed clause answers the entry the answer states at its index, so a constructor \
+         of parameters takes its classifier there: {:?}",
+        outcome(&module, "some")
+    );
+    let source = alloc::format!(
+        "{maybe}def short(n : Integer) -> &{{-F Maybe(Integer), -F String, -F Unit}} {{ &{{.0 \
+         => return Some(n), .1 => return \"s\"}} }}\n"
+    );
+    assert!(
+        matches!(
+            refused(source.as_str()),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "clauses fewer than the entries stated answer none of them, so the constructor has no \
+         classifier: {:?}",
+        refused(source.as_str())
+    );
+}
+
+/// #4376: a lazy record or a labelled sum written at its labels, as a
+/// definition whose signature states its type, was refused `Unannotated`.
+/// Each takes its labels' order from the signature, as under an annotation.
+#[test]
+fn labelled_forms_take_their_order_from_the_definition_s_signature_4376()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/fixtures/labelled-forms-take-their-order-from-the-definition-s-signature-4376-module.gandr"
+        ),
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "err").first().map(String::as_str),
+        Some("in1"),
+        "a label takes the index it has in the sum the signature states"
+    );
+    assert_eq!(
+        body(&arena, &module, "swapped"),
+        body(&arena, &module, "positional"),
+        "labelled clauses take the order of the lazy record the signature states"
+    );
+    let source = include_str!(
+        "tests/fixtures/labelled-forms-take-their-order-from-the-definition-s-signature-4376.gandr"
+    );
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("gone")),
+        "a label the signed sum lacks is unresolved"
+    );
+}
+
+#[test]
+fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
+{
+    let pair = "codata Duo : Type[-] where { fst : Integer; snd : String; }\n";
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        include_str!(
+            "tests/unformatted/a-copattern-block-orders-its-clauses-by-its-codata-answer-2.gandr"
+        ),
+        pair = pair
+    );
+    let module = lowered(source.as_str(), &mut arena);
+    let with = |name: &str| -> Vec<String> {
+        let tokens = body(&arena, &module, name);
+        tokens
+            .iter()
+            .position(|token| token.starts_with("with"))
+            .map_or_default(|start| tokens.get(start ..).unwrap_or_default().to_vec())
+    };
+
+    assert_eq!(
+        with("ordered").get(.. 3_usize),
+        Some(
+            &[
+                String::from("with2"),
+                String::from("return"),
+                String::from("#0")
+            ][..]
+        ),
+        "a block answering a codata family is the lazy product of its observations, `.fst` first"
+    );
+    assert_eq!(
+        with("swapped"),
+        with("ordered"),
+        "clauses written out of order take the order the declaration states"
+    );
+    let source = alloc::format!(
+        "{pair}def stray(n : Integer) -> Duo {{ &{{.fst => return n, .third => return \"s\"}} }}\n"
+    );
+    assert!(
+        matches!(refused(source.as_str()), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("third")),
+        "a label the codata family does not observe is unresolved: {:?}",
+        refused(source.as_str())
+    );
+    let source = String::from(include_str!(
+        "tests/unformatted/a-copattern-block-orders-its-clauses-by-its-codata-answer-1.gandr"
+    ));
+    assert!(
+        matches!(refused(source.as_str()), LoweringRefusal::MalformedForm {
+            fault: FormFault::MissingOperand,
+            ..
+        }),
+        "an observation the block leaves out is a missing clause: {:?}",
+        refused(source.as_str())
+    );
+}
+
+#[test]
+fn an_observation_reads_through_one_thunk_only()
+{
+    let source = "def obs(m : +U (+U &{get : -F Integer, put : -F String})) -> -F Integer { become \
+                  m.get }\n";
+    assert!(
+        matches!(
+            refused(source),
+            LoweringRefusal::OutOfFragment { span, boundary: FragmentBoundary::WrongSort, .. }
+                if span == at(source, "m.get", 0_usize)
+        ),
+        "a lazy record under two thunks is no observable record: {:?}",
+        refused(source)
+    );
+}
+
+#[test]
+fn an_observation_projects_its_entry()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!("tests/fixtures/an-observation-projects-its-entry-module.gandr"),
+        &mut arena,
+    );
+    let observed = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .filter(|token| token.starts_with("project") || token == "force")
+            .collect()
+    };
+
+    assert_eq!(
+        observed("first"),
+        ["project0", "force"],
+        "the first entry is the first component"
+    );
+    assert_eq!(
+        observed("middle"),
+        ["project1", "force"],
+        "a middle entry is its own component, one projection deep"
+    );
+    assert_eq!(
+        observed("last"),
+        ["project2", "force"],
+        "and so is the last"
+    );
+    assert_eq!(
+        observed("only"),
+        ["project0", "force"],
+        "the only entry of a lazy record of one is its first component"
+    );
+    let source =
+        "def gone(m : +U &{a : -F Integer, b : -F Integer}) -> -F Integer { become m.z }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("z")),
+        "a label the lazy record lacks is unresolved"
+    );
+}
+
+#[test]
+fn an_observation_by_position_projects_its_entry_941()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/fixtures/an-observation-by-position-projects-its-entry-941-module.gandr"
+        ),
+        &mut arena,
+    );
+    let observed = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .filter(|token| token.starts_with("project") || token == "force")
+            .collect()
+    };
+
+    assert_eq!(
+        observed("placed"),
+        observed("labelled"),
+        "a lazy record's entry by position is the entry its label names"
+    );
+    assert_eq!(
+        observed("placed"),
+        ["project1", "force"],
+        "the position counts from zero"
+    );
+    assert_eq!(
+        observed("chained"),
+        ["project2", "force"],
+        "a lazy product chain's component is observed by its position"
+    );
+    assert_eq!(
+        observed("counted"),
+        observed("named"),
+        "a codata family's observation by position is the one its label names"
+    );
+    let source = "def past(m : +U (-F Integer & -F Integer)) -> -F Integer { become m.2 }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("2")),
+        "a position past the last component is unresolved: {:?}",
+        refused(source)
+    );
+    let source = "def lacked(m : +U (-F Integer & -F Integer)) -> -F Integer { become m.a }\n";
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("a")),
+        "a lazy product chain has no labels: {:?}",
+        refused(source)
+    );
+}
+
+/// #1106: a call whose callee writes a codata family or a lazy record as its
+/// result is observed by running the call and projecting what it returns,
+/// with no force, by label, by position and in an operand.
+#[test]
+fn an_observation_off_a_call_projects_the_run_result_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/fixtures/an-observation-off-a-call-projects-the-run-result-1106-module.gandr"
+        ),
+        &mut arena,
+    );
+    // The projections, forces and applications of a body, in its walk's
+    // order.
+    let observed = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .filter(|token| token.starts_with("project") || token == "force" || token == "app")
+            .collect()
+    };
+
+    assert_eq!(
+        observed("named"),
+        ["project1", "app", "force"],
+        "the call runs to the codata value, projected at the label's place unforced; the force \
+         is the call's head"
+    );
+    assert_eq!(
+        observed("counted"),
+        observed("named"),
+        "an observation by position off a call is the one its label names"
+    );
+    assert_eq!(
+        observed("grouped"),
+        observed("named"),
+        "an observation through parentheses is the one written without them"
+    );
+    assert_eq!(
+        observed("recorded"),
+        ["project1", "app", "force"],
+        "a lazy record a call returns is projected at its label's entry"
+    );
+    assert!(
+        matches!(
+            outcome(&module, "above"),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "an observation off a call stands as an operand: {:?}",
+        outcome(&module, "above")
+    );
+    let source =
+        include_str!("tests/fixtures/an-observation-off-a-call-projects-the-run-result-1106.gandr");
+    assert!(
+        matches!(refused(source), LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("z")),
+        "a label the callee's family lacks is unresolved: {:?}",
+        refused(source)
+    );
+}
+
+/// #1106: a chain of observations reads each link off the one before it: an
+/// observation whose written result is its own family, a stream's tail, is
+/// observed again under that family's labels, off a thunk a name holds and
+/// off a call. A link off an observation whose result is not its family is
+/// no observation.
+#[test]
+fn a_chain_of_observations_projects_each_link_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!("tests/fixtures/a-chain-of-observations-projects-each-link-1106-module.gandr"),
+        &mut arena,
+    );
+    // The projections, forces and applications of a body, in its walk's
+    // order.
+    let observed = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .filter(|token| token.starts_with("project") || token == "force" || token == "app")
+            .collect()
+    };
+
+    assert_eq!(
+        observed("second"),
+        ["project0", "project1", "force"],
+        "the thunk is forced once, its tail observed, then the tail's head"
+    );
+    assert_eq!(
+        observed("third"),
+        ["project0", "project1", "project1", "app", "force"],
+        "the call runs once and each link projects what the one before it returns"
+    );
+    assert_eq!(
+        observed("counted"),
+        observed("third"),
+        "a chain by position is the chain its labels name"
+    );
+    assert_eq!(
+        observed("grouped"),
+        observed("third"),
+        "a chain off a call through parentheses is the chain written without them"
+    );
+    assert_eq!(
+        observed("deeper"),
+        ["project0", "force"],
+        "a head is no stream, so only the head is observed"
+    );
+}
+
+#[test]
+fn a_telescope_binds_each_entry_in_the_ones_after_it()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/fixtures/a-telescope-binds-each-entry-in-the-ones-after-it-module.gandr"
+        ),
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "dependent").get(.. 2_usize),
+        Some(&[String::from("U"), String::from("Pi")][..]),
+        "a named entry a later entry mentions binds a dependent arrow"
+    );
+    assert_eq!(
+        declared(&arena, &module, "mixed"),
+        ["U", "->", "Integer", "->", "String", "F", "Integer"],
+        "a named entry nothing after it names is a plain arrow"
+    );
+    assert_eq!(
+        declared(&arena, &module, "plain"),
+        ["U", "->", "Integer", "->", "String", "F", "Integer"],
+        "a list of unnamed entries stays the plain function space"
+    );
+    assert_eq!(
+        declared(&arena, &module, "endpoint").get(.. 2_usize),
+        Some(&[String::from("U"), String::from("Pi")][..]),
+        "an entry the codomain names as a value binds a dependent arrow"
+    );
+    assert_eq!(
+        declared(&arena, &module, "spelled"),
+        declared(&arena, &module, "tail"),
+        "a telescope and a function tail writing one signature declare one type"
+    );
+    let source = "def twice : (x : Integer, x : String) -> Integer ;";
+    assert!(
+        matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("x")),
+        "a binder is written once"
+    );
+}
+
+#[test]
+fn an_implicit_group_is_its_explicit_twin_4853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def listed : [a : Type] (x : a) -> a ; def twin : (a : Type, x : a) -> a ; def single : \
+         [a : Type] a -> a ; def two : [a : Type, b : Type] (x : a, y : b) -> b ; def two_twin : \
+         (a : Type, b : Type, x : a, y : b) -> b ;",
+        &mut arena,
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
+    };
+    for (implicit, explicit, reason) in [
+        ("listed", "twin", "an implicit group before a list"),
+        ("single", "twin", "an implicit group before one type"),
+        ("two", "two_twin", "an implicit group of two entries"),
+    ] {
+        let (implicit, explicit) = (signature(implicit), signature(explicit));
+        let (implicit, explicit) = (arena.value_quote(implicit), arena.value_quote(explicit));
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, implicit, explicit),
+            gandr_core_term::CertificateEquality::Equal,
+            "{reason} is the box its explicit twin writes"
+        );
+    }
+    let source = "def twice : [a : Type, a : Type] (x : a) -> a ;";
+    assert!(
+        matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("a")),
+        "an implicit binder is written once"
+    );
+}
+
+#[test]
+fn names_that_share_a_type_are_their_entries_written_apart_4853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def shared : (m n : Integer) -> Integer ; def apart : (m : Integer, n : Integer) -> \
+         Integer ; def bound : (a : Type, x y : a) -> a ; def bound_apart : (a : Type, x : a, y : \
+         a) -> a ; def three : (k m n : Integer) -> Integer ; def three_apart : (k : Integer, m : \
+         Integer, n : Integer) -> Integer ; def outputs : (m : Integer) -> (q r : Integer) ; def \
+         outputs_apart : (m : Integer) -> (q : Integer, r : Integer) ; def linked : (a : Type, x \
+         y : a, p : Path[.A = a](x, y)) -> a ; def linked_apart : (a : Type, x : a, y : a, p : \
+         Path[.A = a](x, y)) -> a ;",
+        &mut arena,
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
+    };
+    for (shared, apart, reason) in [
+        ("shared", "apart", "two inputs that share a type"),
+        (
+            "bound",
+            "bound_apart",
+            "two inputs that share a type the group binds",
+        ),
+        ("three", "three_apart", "three inputs that share a type"),
+        ("outputs", "outputs_apart", "two outputs that share a type"),
+        (
+            "linked",
+            "linked_apart",
+            "two inputs that share a type a later type names",
+        ),
+    ] {
+        let (shared, apart) = (signature(shared), signature(apart));
+        let (shared, apart) = (arena.value_quote(shared), arena.value_quote(apart));
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, shared, apart),
+            gandr_core_term::CertificateEquality::Equal,
+            "{reason} is the group that writes each entry apart"
+        );
+    }
+    let source = "def typed : (m List(Integer) : Integer) -> Integer ;";
+    assert!(
+        matches!(refused(source), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "only bare words share a type"
+    );
+    let source = "def twice : (m m : Integer) -> Integer ;";
+    assert!(
+        matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("m")),
+        "a shared binder is written once"
+    );
+}
+
+#[test]
+fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def spelled : +U ((a : Type) -> (x : a) -> -F a) ; def aliased : (a : Type, x : a) -> a \
+         ; def ignored : +U ((n : Integer) -> -F Integer) ; def tail(n : Integer) -> -F Integer { \
+         return n }",
+        &mut arena,
+    );
+    assert_eq!(
+        declared(&arena, &module, "spelled").get(.. 2_usize),
+        Some(&[String::from("U"), String::from("Pi")][..]),
+        "a computation arrow whose codomain names its binder is dependent"
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type } => declared_type,
+        other @ (DeclarationOutcome::Completed { .. }
+        | DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` lowers a signature, not {other:?}"),
+    };
+    let (spelled, aliased) = (signature("spelled"), signature("aliased"));
+    let (spelled, aliased) = (arena.value_quote(spelled), arena.value_quote(aliased));
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, spelled, aliased),
+        gandr_core_term::CertificateEquality::Equal,
+        "the dependent arrows under a thunk are the term the alias abbreviates"
+    );
+    assert_eq!(
+        declared(&arena, &module, "ignored"),
+        ["U", "->", "Integer", "F", "Integer"],
+        "a binder nothing names is the plain arrow"
+    );
+    assert_eq!(
+        declared(&arena, &module, "ignored"),
+        declared(&arena, &module, "tail"),
+        "the type the function tail writing the same signature declares"
+    );
+}
+
+/// A linear arrow binds its domain once, at the multiplicity one, with its
+/// binder named or not and in either spelling; a codomain that names the
+/// binder reads that one binder (#5853).
+#[test]
+fn a_linear_arrow_binds_its_domain_once_5853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def named : +U ((x : Integer) ⊸ -F Integer) ; def nameless : +U (Integer ⊸ -F Integer) \
+         ; def ascii : +U ((x : Integer) -o -F Integer) ; def dependent : +U ((x : Integer) ⊸ -F \
+         Path(x, x)) ;",
+        &mut arena,
+    );
+    let one = gandr_kernel_term::Magnitude::from_decimal_text(String::from("1"))
+        .expect("the digits are decimal");
+    let one = format!(
+        "{:?}",
+        gandr_kernel_term::Literal::Integer(gandr_kernel_term::IntegerLiteral::new(
+            gandr_kernel_term::Sign::NonNegative,
+            one,
+        ))
+    );
+    assert_eq!(
+        declared(&arena, &module, "named"),
+        ["U", "-o", "Integer", one.as_str(), "F", "Integer"],
+        "a linear arrow holds its domain, the multiplicity one and its codomain"
+    );
+    assert_eq!(
+        declared(&arena, &module, "nameless"),
+        declared(&arena, &module, "named"),
+        "a nameless domain binds as a named one that nothing reads"
+    );
+    assert_eq!(
+        declared(&arena, &module, "ascii"),
+        declared(&arena, &module, "named"),
+        "the ASCII spelling writes the same arrow"
+    );
+    let dependent = declared(&arena, &module, "dependent");
+    assert_eq!(
+        dependent.get(.. 4_usize),
+        Some(
+            &[
+                String::from("U"),
+                String::from("-o"),
+                String::from("Integer"),
+                one
+            ][..]
+        ),
+        "a codomain that names the binder stays under the one linear arrow"
+    );
+    assert!(
+        dependent.ends_with(&[String::from("#0"), String::from("#0")]),
+        "the codomain's endpoints read the one binder the arrow opens: {dependent:?}"
+    );
+}
+
+#[test]
+fn a_group_of_outputs_is_the_many_value_returner()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!("tests/fixtures/a-group-of-outputs-is-the-many-value-returner-module.gandr"),
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "named"),
+        ["U", "->", "Integer", "F2", "Integer", "String"],
+        "two named outputs are the returner of both, in written order"
+    );
+    assert_eq!(
+        declared(&arena, &module, "unnamed"),
+        declared(&arena, &module, "named"),
+        "a name on an output changes nothing its type says"
+    );
+    assert_eq!(
+        declared(&arena, &module, "explicit"),
+        declared(&arena, &module, "unnamed"),
+        "the returner of a group is the group a result writes"
+    );
+    assert_eq!(
+        declared(&arena, &module, "signed"),
+        declared(&arena, &module, "unnamed"),
+        "the group a printer writes after an arrow reads back"
+    );
+    assert_eq!(
+        declared(&arena, &module, "none"),
+        ["U", "->", "Integer", "F0"],
+        "an empty group returns nothing, which is no unit"
+    );
+    assert_eq!(
+        declared(&arena, &module, "one"),
+        declared(&arena, &module, "bare"),
+        "one named output is the returner of its one type"
+    );
+    assert_eq!(
+        declared(&arena, &module, "grouped"),
+        declared(&arena, &module, "bare"),
+        "one unnamed entry is grouping, not a group of outputs"
+    );
+    let dependent = declared(&arena, &module, "dependent");
+    assert_eq!(
+        dependent.get(.. 4_usize),
+        Some(
+            &[
+                String::from("U"),
+                String::from("->"),
+                String::from("Integer"),
+                String::from("F2")
+            ][..]
+        ),
+        "a later output may name an earlier one, {dependent:?}"
+    );
+    let source = "def twice(m : Integer) -> (x : Integer, x : String) { return m }";
+    assert!(
+        matches!(refused(source), LoweringRefusal::DuplicateDefinition { name, .. } if name == SurfaceName::from("x")),
+        "an output is named once"
+    );
+}
+
+#[test]
+fn a_tuple_ending_a_body_of_outputs_returns_each_member()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/fixtures/a-tuple-ending-a-body-of-outputs-returns-each-member-module.gandr"
+        ),
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "swap"),
+        ["thunk", "lambda", "lambda", "return2", "#0", "#1"],
+        "a tuple ending a body of two outputs returns each member as one"
+    );
+    assert_eq!(
+        body(&arena, &module, "paired"),
+        ["thunk", "lambda", "lambda", "return", "tuple2", "#0", "#1"],
+        "a tuple ending a body of one product returns the one tuple"
+    );
+}
+
+#[test]
+fn a_tuple_pattern_binds_each_output_of_a_call()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!("tests/fixtures/a-tuple-pattern-binds-each-output-of-a-call-module.gandr"),
+        &mut arena,
+    );
+
+    let second = body(&arena, &module, "second");
+    assert_eq!(
+        second.get(.. 4_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "each output of the call is bound by one bind, {second:?}"
+    );
+    assert_eq!(
+        second.last().map(String::as_str),
+        Some("#0"),
+        "the last output is the innermost binder"
+    );
+    assert_eq!(
+        body(&arena, &module, "first").last().map(String::as_str),
+        Some("#1"),
+        "the first output is the outermost binder"
+    );
+    assert!(
+        !body(&arena, &module, "split")
+            .iter()
+            .any(|token| token.starts_with("bindall")),
+        "a call returning a pair is split, not bound output by output"
+    );
+    let source = include_str!("tests/fixtures/a-tuple-pattern-binds-each-output-of-a-call.gandr");
+    assert!(
+        matches!(
+            refused(source),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(operands),
+                ..
+            } if usize::from(operands) == 3
+        ),
+        "a pattern binds every output of the call, no more"
+    );
+}
+
+/// #4855: an operation of several outputs returns them as a function's group
+/// does, so a pattern binds each output of its call by one bind of several
+/// values and splits no product.
+#[test]
+fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
+{
+    let operation = include_str!(
+        "tests/unformatted/a-tuple-pattern-binds-each-output-of-an-operation-4855-operation.gandr"
+    );
+    let source = format!(
+        "{operation}def second(a : Flag, b : Flag) -> Flag {{ let (x, y) = swap(a, b); y }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source.as_str(), &mut arena);
+    let second = body(&arena, &module, "second");
+    assert_eq!(
+        second.get(.. 4_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "each output of the operation's call is bound by one bind, {second:?}"
+    );
+    assert_eq!(
+        second.last().map(String::as_str),
+        Some("#0"),
+        "the last output is the innermost binder"
+    );
+    let three =
+        format!("{operation}def three(a : Flag) -> Flag {{ let (x, y, z) = swap(a, a); x }}\n");
+    assert!(
+        matches!(
+            refused(three.as_str()),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(operands),
+                ..
+            } if usize::from(operands) == 3
+        ),
+        "a pattern binds every output of the operation's call, no more"
+    );
+}
+
+/// An operation's outputs carry the labels its ports are written with, so a
+/// selection, a labelled pattern and `~ports` read an operation's outputs as
+/// they do a function's, and a label the operation lacks is refused at its
+/// tile.
+#[test]
+fn an_operation_s_outputs_are_selected_and_bound_by_label_5147()
+{
+    let operation = include_str!(
+        "tests/unformatted/a-tuple-pattern-binds-each-output-of-an-operation-4855-operation.gandr"
+    );
+    let source = format!(
+        include_str!(
+            "tests/unformatted/an-operation-s-outputs-are-selected-and-bound-by-label-5147.gandr"
+        ),
+        operation = operation
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source.as_str(), &mut arena);
+    let first = body(&arena, &module, "first");
+    assert!(
+        first.iter().any(|token| token == "bindall2"),
+        "a selection binds every output of the operation's call, {first:?}"
+    );
+    assert_eq!(
+        first.get(first.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#1")][..]),
+        "`.x` returns the first output, the outermost binder"
+    );
+    let last = body(&arena, &module, "last");
+    assert_eq!(
+        last.get(last.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#0")][..]),
+        "`.y` returns the last output, {last:?}"
+    );
+    assert_eq!(
+        body(&arena, &module, "punned").last().map(String::as_str),
+        Some("#0"),
+        "`.y` binds the last output, written first"
+    );
+    assert_eq!(
+        body(&arena, &module, "renamed").last().map(String::as_str),
+        Some("#1"),
+        "`.x = p` binds the first output to `p`, written last"
+    );
+    let stray =
+        format!("{operation}def stray(a : Flag) -> Flag {{ let *{{.z, .x}} = swap a a; x }}\n");
+    assert!(
+        matches!(refused(stray.as_str()), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "a label names an output of the operation"
+    );
+    let kept = format!(
+        "{operation}def kept(a : Flag, b : Flag) -> Flag {{ let r = ~ports (swap a b); r.x }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(kept.as_str(), &mut arena);
+    let kept = body(&arena, &module, "kept");
+    assert!(
+        kept.iter().any(|token| token == "bindall2")
+            && kept.iter().any(|token| token == "record{x,y}"),
+        "an operation's call bound to one name binds the record of its labelled outputs, {kept:?}"
+    );
+}
+
+#[test]
+fn a_selected_output_binds_every_output_and_returns_one()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/fixtures/a-selected-output-binds-every-output-and-returns-one-module.gandr"
+        ),
+        &mut arena,
+    );
+
+    let half = body(&arena, &module, "half");
+    assert_eq!(
+        half.get(.. 3_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "a selection binds every output of the call, {half:?}"
+    );
+    assert_eq!(
+        half.get(half.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#1")][..]),
+        "the first output is the outermost binder"
+    );
+    let rest = body(&arena, &module, "rest");
+    assert_eq!(
+        rest.get(rest.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("return"), String::from("#0")][..]),
+        "a selection through parentheses returns its output, {rest:?}"
+    );
+}
+
+#[test]
+fn a_plugging_passes_every_output_in_order()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!("tests/fixtures/a-plugging-passes-every-output-in-order-module.gandr"),
+        &mut arena,
+    );
+
+    let round = body(&arena, &module, "round");
+    assert_eq!(
+        round.get(.. 3_usize),
+        Some(
+            &[
+                String::from("thunk"),
+                String::from("lambda"),
+                String::from("bindall2")
+            ][..]
+        ),
+        "a plugging binds every output of the call, {round:?}"
+    );
+    assert_eq!(
+        round.get(round.len().saturating_sub(2_usize) ..),
+        Some(&[String::from("#1"), String::from("#0")][..]),
+        "the first output is the first input, {round:?}"
+    );
+    let single = body(&arena, &module, "single");
+    assert!(
+        single.iter().all(|token| !token.starts_with("bindall")),
+        "a call of one value binds it alone, {single:?}"
+    );
+    assert_eq!(
+        single.last().map(String::as_str),
+        Some("#0"),
+        "the one value is the one input, {single:?}"
+    );
+}
+
+/// `~ports e` stands as the record of the outputs of the call `e`, labelled
+/// when the callee names every output. The same call bound to one name with
+/// no `~ports` is refused at the call, and `~ports` of a call of one value is
+/// refused at its operand.
+#[test]
+fn a_call_of_outputs_standing_as_one_value_is_their_record()
+{
+    let module_text = include_str!(
+        "tests/fixtures/a-call-of-outputs-standing-as-one-value-is-their-record-module.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(module_text, &mut arena);
+
+    let named = body(&arena, &module, "named");
+    assert!(
+        named.iter().any(|token| token == "bindall2")
+            && named.iter().any(|token| token == "record{q,r}"),
+        "`~ports` of a call of named outputs binds the record of them, {named:?}"
+    );
+    let whole = body(&arena, &module, "whole");
+    assert!(
+        whole.iter().any(|token| token == "bindall2")
+            && whole.iter().any(|token| token == "tuple2"),
+        "`~ports` of a call of unnamed outputs binds the tuple of them, {whole:?}"
+    );
+    // The record of `~ports` and the record a source builds by hand from
+    // the bound outputs lower to the same 16 nodes, one record among them.
+    // Only the order of the binds differs: `~ports` binds the outputs inside
+    // the bind of the record.
+    let hand = body(&arena, &module, "hand");
+    let sorted = |tokens: &[String]| {
+        let mut tokens = tokens.to_vec();
+        tokens.sort();
+        tokens
+    };
+    assert_eq!(
+        (
+            named.len(),
+            named.iter().filter(|token| *token == "record{q,r}").count(),
+            sorted(&named)
+        ),
+        (16_usize, 1_usize, sorted(&hand)),
+        "`~ports` builds the one record that a source builds by hand, {named:?} {hand:?}"
+    );
+
+    let bare = include_str!("tests/fixtures/a-bare-call-of-outputs-is-refused-5767.gandr");
+    let call = bare.find("divmod a a").expect("the call is written");
+    let LoweringRefusal::OutputsAsOneValue { span, callee } = refused(bare)
+    else {
+        panic!("a call of several outputs bound to one name is refused by name");
+    };
+    assert_eq!(
+        (
+            usize::from(span.start()),
+            usize::from(span.end()),
+            callee.as_ref()
+        ),
+        (call, call + "divmod a a".len(), "divmod"),
+        "the refusal stands at the call and names its callee"
+    );
+
+    let single = include_str!("tests/fixtures/ports-of-one-value-is-refused-5767.gandr");
+    let operand = single
+        .find("ports (one a)")
+        .expect("the operand is written");
+    let LoweringRefusal::UnknownTactic { span } = refused(single)
+    else {
+        panic!("`~ports` of a call of one value is refused at its operand");
+    };
+    assert_eq!(
+        (usize::from(span.start()), usize::from(span.end())),
+        (operand, operand + "ports (one a)".len()),
+        "the refusal stands at the splice's operand"
+    );
+}
+
+#[test]
+fn a_row_returns_a_group_of_outputs()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!("tests/fixtures/a-row-returns-a-group-of-outputs-module.gandr"),
+        &mut arena,
+    );
+
+    assert_eq!(
+        declared(&arena, &module, "spin"),
+        ["U", "->", "Integer", "F2[row]", "Integer", "Integer"],
+        "a row before a group is the row of the group's returner"
+    );
+    assert_eq!(
+        declared(&arena, &module, "explicit"),
+        declared(&arena, &module, "spin"),
+        "the explicit returner over a row writes the same group"
+    );
+    assert_eq!(
+        body(&arena, &module, "spin"),
+        ["thunk", "lambda", "return2", "#0", "#0"],
+        "a tuple ending a body under a row returns each member"
+    );
+    assert!(
+        body(&arena, &module, "caller")
+            .iter()
+            .any(|token| token == "bindall2"),
+        "a caller binds each output of a group under a row"
+    );
+    assert_eq!(
+        body(&arena, &module, "none"),
+        ["thunk", "lambda", "return0"],
+        "`()` ends a body of no outputs under a row"
+    );
+}
+
+#[test]
+fn a_labelled_group_returns_each_value_at_its_output()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/unformatted/a-labelled-group-returns-each-value-at-its-output-module.gandr"
+        ),
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "divmod"),
+        ["thunk", "lambda", "lambda", "return2", "#0", "#1"],
+        "each value returns at the output its label names, whatever order the group writes"
+    );
+    assert_eq!(
+        body(&arena, &module, "nothing"),
+        ["thunk", "lambda", "return0"],
+        "`()` ending a body of no outputs returns none"
+    );
+    let loose = "def loose(a : Integer) -> Integer { (.q = a, .r = a) }";
+    assert!(
+        matches!(refused(loose), LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        }),
+        "a labelled group is no value"
+    );
+    let stray = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (.q = n, .x = \
+                 m) }";
+    assert!(
+        matches!(refused(stray), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "a group's labels are its outputs' names"
+    );
+}
+
+#[test]
+fn a_labelled_pattern_binds_each_output_by_its_label()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!(
+            "tests/unformatted/a-labelled-pattern-binds-each-output-by-its-label-module.gandr"
+        ),
+        &mut arena,
+    );
+
+    let punned = body(&arena, &module, "punned");
+    assert!(
+        punned.iter().any(|token| token == "bindall2"),
+        "a labelled pattern binds every output of the call, {punned:?}"
+    );
+    assert_eq!(
+        punned.last().map(String::as_str),
+        Some("#0"),
+        "`.r` binds the last output, written first"
+    );
+    assert_eq!(
+        body(&arena, &module, "renamed").last().map(String::as_str),
+        Some("#1"),
+        "`.q = quo` binds the first output to `quo`, written last"
+    );
+    let divmod = "def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }\n";
+    let stray =
+        format!("{divmod}def stray(a : Integer) -> Integer {{ let (.x, .q) = divmod(a, a); q }}");
+    assert!(
+        matches!(refused(stray.as_str()), LoweringRefusal::MalformedForm {
+            fault: FormFault::MisplacedTile,
+            ..
+        }),
+        "a label names an output of the call"
+    );
+    let mixed =
+        format!("{divmod}def mixed(a : Integer) -> Integer {{ let (.q, r) = divmod(a, a); r }}");
+    let mixed = refused(mixed.as_str());
+    assert!(
+        matches!(mixed, LoweringRefusal::OutOfFragment {
+            sort: FragmentSort::Pattern,
+            ..
+        }),
+        "a group is all positional or all labelled: a dotted entry among positional ones is no \
+         pattern, {mixed:?}"
+    );
+    let record = include_str!(
+        "tests/unformatted/a-labelled-pattern-binds-each-output-by-its-label-record.gandr"
+    );
+    assert!(
+        matches!(refused(record), LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        }),
+        "labels name a call's outputs, never a product's components"
+    );
+}
+
+/// #2179: a dependent arrow and a telescope whose binder is named as a type
+/// is, `(A : Type) -> A -> -F A`, bind it as the lowercase binder does, so
+/// the type a parameter list naming `A` declares reads back as written.
+#[test]
+fn a_dependent_arrow_binds_a_type_named_binder_2179()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def named : +U ((A : Type) -> A -> -F A) ; def lower : +U ((a : Type) -> a -> -F a) ; def \
+         aliased : (A : Type, A) -> A ; def tail(A : Type, x : A) -> -F A { return x }",
+        &mut arena,
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type }
+        | DeclarationOutcome::Completed { declared_type, .. } => declared_type,
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` declares a type, not {other:?}"),
+    };
+    for name in ["named", "aliased", "tail"] {
+        assert_eq!(
+            gandr_core_term::equal_type_syntax(&arena, signature(name), signature("lower")),
+            gandr_core_term::CertificateEquality::Equal,
+            "`{name}` declares the arrow its lowercase twin does"
+        );
+    }
+}
+
+#[test]
+fn each_label_names_what_it_labels()
+{
+    let mut arena = CoreArena::new();
+    let source = include_str!("tests/fixtures/each-label-names-what-it-labels.gandr");
+    let module = lowered(source, &mut arena);
+    let written = |label: &Label| {
+        source
+            .get(usize::from(label.span.start()) .. usize::from(label.span.end()))
+            .unwrap_or_default()
+    };
+    let types: Vec<(&str, Option<ValueType>, Vec<String>)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            Labelled::ValueType { ty, ref context } => Some((
+                written(label),
+                arena.value_type(ty).cloned(),
+                context.clone(),
+            )),
+            Labelled::CompType { .. }
+            | Labelled::Value(_)
+            | Labelled::Endpoint(_)
+            | Labelled::Branch { .. }
+            | Labelled::Bound(_)
+            | Labelled::Kind(_) => None,
+        })
+        .collect();
+    let terms: Vec<(&str, Option<Value>)> = module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            Labelled::Value(value) => Some((written(label), arena.value(value).cloned())),
+            Labelled::ValueType { .. }
+            | Labelled::CompType { .. }
+            | Labelled::Endpoint(_)
+            | Labelled::Branch { .. }
+            | Labelled::Bound(_)
+            | Labelled::Kind(_) => None,
+        })
+        .collect();
+    let integer = Some(ValueType::Base(gandr_kernel_term::BaseType::Integer));
+    assert!(
+        types.contains(&("n", integer.clone(), Vec::new())),
+        "a record type's field at its closed type: {types:?}"
+    );
+    assert!(
+        matches!(*terms.as_slice(), [("m", Some(_))]),
+        "a record's field at its value: {terms:?}"
+    );
+    assert!(
+        types.contains(&("y", integer, Vec::new())),
+        "a dependent arrow's binder at its domain: {types:?}"
+    );
+    assert!(
+        types
+            .iter()
+            .any(|&(label, _, ref context)| label == "x" && *context == ["a"]),
+        "a telescope's binder under the binder before it: {types:?}"
+    );
+    assert!(
+        types.contains(&(
+            "k",
+            Some(ValueType::Base(gandr_kernel_term::BaseType::Integer)),
+            Vec::new()
+        )),
+        "a dependent record's first label at its closed type: {types:?}"
+    );
+    assert!(
+        types
+            .iter()
+            .any(|&(label, _, ref context)| label == "w" && *context == ["k"]),
+        "a dependent record's later label under the label it reads: {types:?}"
+    );
+}
+
+/// #4853: a box returns what a definition's result does. A group of outputs,
+/// a row before a type and a row before a group each lower to the thunked
+/// arrow into the returner `-F` spells for them, and a box whose output is a
+/// box keeps that output a value type.
+#[test]
+fn a_box_returns_a_group_under_a_row_4853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def grouped : Integer -> (q : Integer, r : Integer) ; def groupedT : +U (Integer -> -F \
+         (q : Integer, r : Integer)) ; def rowed : Integer -> [Partial] Integer ; def rowedT : +U \
+         (Integer -> -F [Partial] Integer) ; def both : (n : Integer) -> [Partial] (x : Integer, \
+         y : Integer) ; def bothT : +U (Integer -> -F [Partial] (x : Integer, y : Integer)) ; def \
+         none : Integer -> () ; def noneT : +U (Integer -> -F ()) ; def staged : Integer -> \
+         (Integer -> Integer) ; def stagedT : +U (Integer -> -F (+U (Integer -> -F Integer))) ;",
+        &mut arena,
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type }
+        | DeclarationOutcome::Completed { declared_type, .. } => declared_type,
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` declares a type, not {other:?}"),
+    };
+    for name in ["grouped", "rowed", "both", "none", "staged"] {
+        assert_eq!(
+            gandr_core_term::equal_type_syntax(
+                &arena,
+                signature(name),
+                signature(&format!("{name}T"))
+            ),
+            gandr_core_term::CertificateEquality::Equal,
+            "`{name}` is the thunked arrow its `-F` spelling writes"
+        );
+    }
+    let module = lowered(
+        include_str!("tests/fixtures/a-box-returns-a-group-under-a-row-4853-module.gandr"),
+        &mut arena,
+    );
+    for name in ["half", "apply"] {
+        let called = body(&arena, &module, name);
+        assert!(
+            called.iter().any(|token| token == "bindall2"),
+            "a call of a box, declared or a parameter, binds each output it returns: {called:?}"
+        );
+    }
+}
+
+/// #4853: a function's body written after `=` is the block of its one
+/// expression, so the tail lowers as the braced tail does, outputs included,
+/// and an arrow at its result is the box it returns, never curried.
+#[test]
+fn a_body_after_equals_is_its_block_4853()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        include_str!("tests/fixtures/a-body-after-equals-is-its-block-4853-module.gandr"),
+        &mut arena,
+    );
+    assert_eq!(
+        body(&arena, &module, "equals"),
+        body(&arena, &module, "braced"),
+        "a body after `=` lowers as its braced block does"
+    );
+    let half = body(&arena, &module, "half");
+    assert!(
+        half.iter().any(|token| token == "bindall2"),
+        "a body after `=` returns and selects outputs as a braced one does: {half:?}"
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type }
+        | DeclarationOutcome::Completed { declared_type, .. } => declared_type,
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` declares a type, not {other:?}"),
+    };
+    assert_eq!(
+        gandr_core_term::equal_type_syntax(&arena, signature("stepped"), signature("steppedT")),
+        gandr_core_term::CertificateEquality::Equal,
+        "an arrow at a function's result is the box it returns"
+    );
+}

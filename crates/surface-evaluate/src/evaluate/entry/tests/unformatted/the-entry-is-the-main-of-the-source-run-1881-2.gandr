@@ -1,0 +1,2 @@
+def main() -> -F Integer { return 0 }
+main()
