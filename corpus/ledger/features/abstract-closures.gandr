@@ -28,7 +28,7 @@ data Nat : Type where
 
 /// The constant function at `n`, a closure over `n`.
 def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) =
-  return fun (_m) { n }
+  fun (_m) { n }
 
 /// Applies `g` to zero.
 def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat =

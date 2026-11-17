@@ -8,7 +8,7 @@ import std.list (List);
 def unit() -> Type { return Unit }
 
 /// A family that ignores its index.
-def after(a : Type) -> Integer -> Type { return fun (x) { a } }
+def after(a : Type) -> Integer -> Type { fun (x) { a } }
 
 /// A list of points at the type that the calls name. The type applies `List`,
 /// calls `unit` with no arguments, and applies the result of `after` again.
