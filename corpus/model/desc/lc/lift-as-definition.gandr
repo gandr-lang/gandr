@@ -1,0 +1,32 @@
+// This source defines `Lift` as a function.
+//
+// `subst-subst` contains `substTwiceUnderLam`.
+//
+// Two substitutions under an abstraction unfold both definitions. The outer
+// substitution unfolds at the stuck call of the inner one. The lifting call
+// unfolds to `Lift`. The recursive calls compare each part. The step converts
+// as the constructor form converts.
+//
+// - see: #879
+
+// This source imports naturals, terms and lookup.
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+
+/// `liftOf` constructs `Lift`.
+def liftOf(s : Env) -> Env =
+  Lift s
+
+/// `substLifting` uses `liftOf` below abstractions.
+def rec substLifting(t : Term, s : Env) -> Term =
+  match t where
+    | Ix(n) => look n s Z
+    | Lam(b) => Lam (substLifting[<] b (liftOf s))
+    | Ap(f, a) => Ap (substLifting[<] f s) (substLifting[<] a s)
+
+/// Two substitutions below an abstraction unfold once.
+def substLiftingTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
+  substLifting (substLifting (Lam b) s1) s2,
+  Lam (substLifting (substLifting b (liftOf s1)) (liftOf s2))
+) =
+  Path.here (Lam (substLifting (substLifting b (liftOf s1)) (liftOf s2)))

@@ -1,0 +1,10 @@
+data Two : Type where {
+  | Z : Two
+  | S : (u : Integer) --> Two
+}
+def f(t : Two) -> Integer {
+  match t { | Z => 0 | S(n) => n }
+}
+def g(n : Integer) -> Integer {
+  n
+}

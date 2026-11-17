@@ -1,0 +1,58 @@
+//! `unwound` models cleanup after a handler abandons a continuation with open
+//! access views.
+//!
+//! It proves that captured cleanup runs from the inner access to the outer
+//! access.
+//! It shows a blame when cleanup calls an owed declaration.
+//! The cleanup replaces the write-back that the abandoned stack never reaches.
+//! The other frames of that stack never run.
+//!
+//! The examples abandon continuations through an exit handler.
+//! They observe a cleanup call and a list that survives the cleanup.
+//!
+//! - see: #1334 — `unwound`
+//! - cites: [Congard-2025-linear_effects_exceptions_and_resource_safety]
+//!
+//! [Congard-2025-linear_effects_exceptions_and_resource_safety]: https://arxiv.org/abs/2510.23517 "Congard, Munch-Maccagnoni and Douence, Linear Effects, Exceptions, and Resource Safety"
+
+// The import provides native finite lists.
+import std.list (List);
+// The import provides the early-exit host interface.
+import std.process;
+
+/// A run reports blame when it calls the owed `later` declaration.
+@[owes(1)]
+def later : Integer -> Unit;
+
+/// Cleanup calls `later` after a handler abandons an open access.
+/// The blame shows that the abandonment runs the cleanup.
+@[runs("blame: `later` is owed its body")]
+def unwound() -> Integer =
+  var x = 1
+  let r : Integer = handle c : std.process.Exit.Eff {
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { later 1 };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
+  };
+  pure x
+
+/// The function creates a two-element list with its argument first.
+def built(a : Integer) -> List Integer =
+  pure cons a (cons 2 nil)
+
+/// Cleanup reads a list before the enclosing scope reads it again.
+/// Both retain the list.
+@[runs("cons 9 (cons 1 (cons 2 nil))")]
+def unwound_kept() -> List Integer =
+  let ys = built 1
+  var x = 1
+  let r : Integer = handle c : std.process.Exit.Eff {
+    access x as v { let _ = c.exit 1; resume v 5 } unwind { let _ = ys; pure *{} };
+    pure 0
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
+  };
+  pure cons 9 ys

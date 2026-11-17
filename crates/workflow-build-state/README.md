@@ -1,0 +1,52 @@
+# gandr-workflow-build-state
+
+The `build-state` binary prunes a Cargo profile directory to the units the recorded builds use, and joins the builds of a lane's shards into it. The build state that CI hands on then stays the size of one build and holds each unit from one build.
+
+- [Synopsis](#synopsis)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Dependencies](#dependencies)
+- [License](#license)
+
+## Synopsis
+
+**What.** `gandr-workflow-build-state` installs the `build-state` binary. `build-state prune` reads the JSON messages of one or more Cargo builds and removes every unit's files in a profile directory that none of them used. `build-state join` moves each unit of a lane's shards into the restored state, whole from one build.
+
+**Why.** Cargo names a unit's files with a hash of its package, features, profile and dependencies. A dependency, feature or lockfile change writes the unit and everything above it under new hashes and leaves the old ones in place, so a target directory restored and saved on every landing grows by a dependency cone with every manifest change, and every lane pays for the size in transfer, archiving and the caches it evicts.
+
+Two shards that build one unit can build it differently. A build script can print its inputs in the order a file system lists them, and a compiler can give one crate two hashes. A state that copies the shards' files over one another then holds a dependent compiled against another build of its dependency. Cargo calls the dependent fresh, and rustc refuses it (#7508).
+
+**How.** A build prints a `compiler-artifact` message for every unit it used, fresh ones included, and a `build-script-executed` message for every build-script output directory. The hashes those paths carry are the keep set. Cargo also copies each executable out under its plain name as a hard link, so the unit behind a plain-named path is the hashed file it shares an inode with. Every hashed entry of `deps`, `build`, `.fingerprint` and `examples` outside the keep set is removed. Under Cargo's new build layout, each unit is a directory `build/<package>/<hash>` that holds its `fingerprint`, `out` and `run`, and the prune reads that layout too (#6951). The [crate docs](src/lib.rs) state the keep set and the refusal of an incomplete account.
+
+The join takes each unit from the first shard that holds it, else from the restored state. A unit's fingerprint names the fingerprint of each dependency. The join finds each of those in the unit's own shard first, then in the restored state. A unit stays when each dependency it finds is the build the join keeps, and when the unit holds its fingerprint and its outputs. Every other unit leaves with each unit that depends on it, and the next build makes them again.
+
+## Provided features
+
+- `build-state prune --profile-dir DIR MESSAGES...` prunes `DIR` and prints the entries and mebibytes removed and the entries kept.
+- `build-state join --profile-dir DIR SHARDS...` moves each unit of the shards' profile directories into `DIR`, whole from one build, and prints the units it took, kept and dropped.
+- A message file without Cargo's successful `build-finished` message is refused before anything is removed.
+- `BuildStateError` names the file behind every refusal.
+
+## Expected features
+
+The message files come from builds into `DIR`, with `--message-format json` (Cargo) or `--cargo-message-format json` (nextest); a file per build, so one prune keeps the units of every build the directory serves. On a platform without inodes, every unit whose name has an executable's stem is kept.
+
+Each shard's profile directory holds each entry at its path in `DIR`, on the file system of `DIR`, so the join moves a unit without a copy.
+
+## Examples
+
+```sh
+cargo nextest run --workspace --no-run --cargo-message-format json-render-diagnostics > target/units.jsonl
+build-state prune --profile-dir target/debug target/units.jsonl
+build-state join --profile-dir target/enforcing/debug shards/*/target/enforcing/debug
+cargo nextest run -p gandr-workflow-build-state
+```
+
+## Dependencies
+
+`serde` and `serde_json` read Cargo's messages, with the features the root `Cargo.toml` records.
+
+## License
+
+Apache-2.0 WITH LLVM-exception. See [Apache-2.0](../../LICENSE.Apache-2.0.txt) and the [LLVM exception](../../LICENSE.LLVM-exception.txt) at the repository root.
