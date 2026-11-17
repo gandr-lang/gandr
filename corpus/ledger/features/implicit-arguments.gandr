@@ -10,8 +10,9 @@
 /// - see: #1188 — `twiceRun`
 /// - see: #5480 — `alongInferred`
 // Implicit parameters: the telescope `[a : Type]` after a function's name
-// binds parameters a use supplies by name, `same[.a = Integer](3)`, or by
-// position, `same[Integer](3)`.
+// binds parameters a use supplies by name, `same[.a = Integer] 3`, or by
+// position, `same[Integer] 3`. A printed call supplies by position each atom
+// at the head of the written block, and the rest by name.
 // The implicit and the explicit parameters merge into one telescope, each
 // after every parameter its type names, ties kept in the written order; which
 // ones are implicit is the declaration's metadata, so the declared type is the
@@ -130,7 +131,7 @@ def apply(f : Integer -> Integer, x : Integer) -> Integer { f x }
 /// `same` passed as a value, its implicit supplied where it is taken: the
 /// function applied to its implicits alone is a function of the rest.
 @[runs("3")]
-def passedRun() -> Integer { apply same[.a = Integer] 3 }
+def passedRun() -> Integer { apply same[Integer] 3 }
 
 /// A function applied to a value of the type it is passed, the function
 /// implicit: its type names `t`, so the merge binds `t` before it.
@@ -158,10 +159,10 @@ module Adding where {
 @[checks]
 def twice[m : Type, combine : (m, m) -> m](x : m) -> m { combine x x }
 
-/// `twice` with its combination supplied by a module path: a resident's value
-/// runs to the slot's next `,` or its `]`.
+/// `twice` with its carrier by position and its combination by a module
+/// path, by name: a resident's value runs to the slot's next `,` or its `]`.
 @[runs("6")]
-def twiceRun() -> Integer { twice[.m = Integer, .combine = Adding.plus] 3 }
+def twiceRun() -> Integer { twice[Integer, .combine = Adding.plus] 3 }
 
 /// The explicit twin of `same`: the function `same`'s implicit makes explicit
 /// runs as the same curried function.
