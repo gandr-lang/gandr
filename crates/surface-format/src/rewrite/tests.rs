@@ -184,8 +184,8 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
 fn a_refusal_moved_into_another_declaration_is_withdrawn_6726()
 {
     let grammar = grammar();
-    let source = "def a : Integer = x;\ndef b : Integer = y;\n";
-    let exchanged = "def a : Integer = y;\ndef b : Integer = x;\n";
+    let source = include_str!("../unformatted/two-unbound-names.gandr");
+    let exchanged = include_str!("../unformatted/two-unbound-names-exchanged.gandr");
     let parsed = parse(&grammar, SourceText::from(source))
         .unwrap_or_else(|error| panic!("the source parses: {error}"));
     let tree = parsed.tree();

@@ -29,6 +29,7 @@ use crate::composite::within;
 
 /// The spans of the `return` forms the sugared form writes as their value.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[repr(transparent)]
 pub struct Tails
 {
     /// The `return` forms' spans, in the source's own offsets.

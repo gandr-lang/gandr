@@ -1469,7 +1469,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
 fn a_rewrite_keeps_a_matching_refusal_6681()
 {
     let grammar = grammar();
-    let source = "def rejected : Integer = selfComposite;\ndef pair : *{Integer, String};\n";
+    let source = include_str!("rewrite/unformatted/a-rewrite-keeps-a-matching-refusal-6681.gandr");
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -1514,8 +1514,9 @@ fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
 fn a_rewrite_that_moves_a_refusal_keeps_its_site_6726()
 {
     let grammar = grammar();
-    let source = "def refused : Integer = selfComposite;\ndef pair : (Integer, String) -> Integer \
-                  = fun (_pair) { 1 };\ndef post : Integer -> Type = fun (_o) { return Unit };\n";
+    let source = include_str!(
+        "rewrite/unformatted/a-rewrite-that-moves-a-refusal-keeps-its-site-6726.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Explicit,

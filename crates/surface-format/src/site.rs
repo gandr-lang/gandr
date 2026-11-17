@@ -59,18 +59,6 @@ pub enum Placement
     Moved,
 }
 
-/// Whether `outer` holds `inner`, its ends included.
-///
-/// # Specification
-/// trivial.
-fn holds(
-    outer: ByteSpan,
-    inner: ByteSpan,
-) -> bool
-{
-    outer.start() <= inner.start() && inner.end() <= outer.end()
-}
-
 impl Sites
 {
     /// The map of the pass whose written leaves are `written`, read back
@@ -81,6 +69,15 @@ impl Sites
     /// - ensures: each respelled form's leaves are the run of paired leaves
     ///   around the leaves its rewrite wrote, each copied from inside its
     ///   extent or written for a form inside it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the map is the pass's leaves, which a predicate
+    ///   over the answer would pair again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a respelled form whose operands the pass copies maps
+    ///   its ends to the ends of its leaves, and an end inside the tile it
+    ///   replaces has no image.
     /// - witness: `site::tests::a_respelled_form_maps_its_ends_to_its_leaves`
     pub fn new(
         written: &[Leaf<'_>],
@@ -107,13 +104,16 @@ impl Sites
                     .or_insert((ordinal, ordinal));
             }
         }
+        // Whether the pair at `ordinal` belongs to `form`: a leaf copied from
+        // inside its extent, or a leaf written for a form inside it.
         let inside = |form: ByteSpan, ordinal: usize| {
-            pairs
-                .get(ordinal)
-                .is_some_and(|&(origin, source, _)| match origin {
-                    Origin::Source => holds(form, source),
-                    Origin::Rewrite(within) => holds(form, within),
-                })
+            pairs.get(ordinal).is_some_and(|&(origin, source, _)| {
+                let within = match origin {
+                    Origin::Source => source,
+                    Origin::Rewrite(within) => within,
+                };
+                form.start() <= within.start() && within.end() <= form.end()
+            })
         };
         let mut starts: Vec<(ByteSpan, ByteSpan)> = anchors
             .into_iter()
@@ -146,16 +146,26 @@ impl Sites
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: true exactly when a copied leaf's source span holds `place`
+    /// - ensures: `Same` exactly when a copied leaf's source span holds `place`
     ///   and its candidate span holds `image` at the same offset, or a
     ///   respelled form starts at `place` and its leaves start at `image`, or
-    ///   it ends at `place` and its leaves end at `image`.
+    ///   it ends at `place` and its leaves end at `image`. `Moved` otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a search of the map, which a
+    ///   predicate over the answer would search again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an offset at the start, the end and inside a copied
+    ///   leaf reaches its image, and an offset at another copy of its text or
+    ///   in layout reaches none.
     /// - witness: `site::tests::a_respelled_form_maps_its_ends_to_its_leaves`
+    /// - witness: `site::tests::a_site_at_another_copy_or_in_layout_is_moved`
     fn reaches(
         &self,
         place: ByteOffset,
         image: ByteOffset,
-    ) -> bool
+    ) -> Placement
     {
         let first = self
             .copied
@@ -192,7 +202,12 @@ impl Sites
                 .take_while(|&&(form, _)| form.end() == place)
                 .any(|&(_, leaves)| leaves.end() == image)
         };
-        copied || opened || closed
+        if copied || opened || closed {
+            Placement::Same
+        }
+        else {
+            Placement::Moved
+        }
     }
 
     /// Whether `before`, a span of the text before the pass, and `candidate`,
@@ -202,6 +217,14 @@ impl Sites
     /// - requires: nothing.
     /// - ensures: `Same` exactly when `candidate`'s start is an image of
     ///   `before`'s start and its end an image of `before`'s end.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is two searches of the map, which a
+    ///   predicate over the answer would search again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a respaced text keeps each site of a copied leaf, and
+    ///   a site at another copy or with an end in layout is moved.
     /// - witness: `site::tests::a_respaced_text_keeps_each_site_of_a_copied_leaf`
     /// - witness: `site::tests::a_site_at_another_copy_or_in_layout_is_moved`
     pub fn spanned(
@@ -210,8 +233,8 @@ impl Sites
         candidate: ByteSpan,
     ) -> Placement
     {
-        if self.reaches(before.start(), candidate.start())
-            && self.reaches(before.end(), candidate.end())
+        if self.reaches(before.start(), candidate.start()) == Placement::Same
+            && self.reaches(before.end(), candidate.end()) == Placement::Same
         {
             Placement::Same
         }
@@ -232,7 +255,16 @@ impl Sites
     ///   where both are present, start at or after `base`, and
     ///   [`Sites::spanned`] places them as one in each text's own offsets.
     ///   `Moved` otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a search of the map, which a
+    ///   predicate over the answer would search again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a span that ends before the base compares by its
+    ///   bytes, and a span after it compares through the map.
     /// - witness: `site::tests::a_site_at_another_copy_or_in_layout_is_moved`
+    /// - witness: `tests::rewrite::a_refusal_beside_or_at_a_respelled_form_keeps_its_site_6726`
     pub fn placed<Reason>(
         &self,
         base: ByteOffset,

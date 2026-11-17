@@ -16,29 +16,63 @@ use crate::leaf::Leaf;
 use crate::leaf::Origin;
 
 /// Two declarations, each naming a name that nothing declares.
-const BEFORE: &str = "def a : Integer = x;\ndef b : Integer = y;\n";
+///
+/// # Specification
+/// trivial.
+fn before() -> SourceText<'static>
+{
+    SourceText::from(include_str!("../unformatted/two-unbound-names.gandr"))
+}
 
-/// [`BEFORE`] with blank lines between its declarations and spaces inside
+/// [`before`] with blank lines between its declarations and spaces inside
 /// the second.
-const RESPACED: &str = "def a : Integer = x;\n\n\ndef b : Integer =   y;\n";
+///
+/// # Specification
+/// trivial.
+fn respaced() -> SourceText<'static>
+{
+    SourceText::from(include_str!(
+        "../unformatted/two-unbound-names-respaced.gandr"
+    ))
+}
 
-/// [`BEFORE`] with its two names exchanged.
-const EXCHANGED: &str = "def a : Integer = y;\ndef b : Integer = x;\n";
+/// [`before`] with its two names exchanged.
+///
+/// # Specification
+/// trivial.
+fn exchanged() -> SourceText<'static>
+{
+    SourceText::from(include_str!(
+        "../unformatted/two-unbound-names-exchanged.gandr"
+    ))
+}
 
 /// A declaration whose type a rewrite respells, with a name after it.
-const PRODUCT: &str = "def p : *{Integer, String} = x;\n";
+///
+/// # Specification
+/// trivial.
+fn product() -> SourceText<'static>
+{
+    SourceText::from("def p : *{Integer, String} = x;\n")
+}
 
-/// [`PRODUCT`] with its type in the sugared spelling.
-const SUGARED: &str = "def p : Integer * String = x;\n";
+/// [`product`] with its type in the sugared spelling.
+///
+/// # Specification
+/// trivial.
+fn sugared() -> SourceText<'static>
+{
+    SourceText::from("def p : Integer * String = x;\n")
+}
 
 /// The leaves of `text`.
 ///
 /// # Specification
 /// trivial.
-fn leaves(text: &str) -> Vec<Leaf<'_>>
+fn leaves(text: SourceText<'_>) -> Vec<Leaf<'_>>
 {
     let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
-    let parsed = parse(&grammar, SourceText::from(text)).expect("the text parses");
+    let parsed = parse(&grammar, text).expect("the text parses");
     leaf::flatten(&grammar, parsed.tree(), parsed.obligations()).leaves
 }
 
@@ -47,11 +81,12 @@ fn leaves(text: &str) -> Vec<Leaf<'_>>
 /// # Specification
 /// trivial.
 fn span(
-    text: &str,
-    needle: &str,
-    from: usize,
+    text: SourceText<'_>,
+    needle: SourceFragment<'_>,
+    from: ByteOffset,
 ) -> ByteSpan
 {
+    let (text, needle, from) = (<&str>::from(text), <&str>::from(needle), usize::from(from));
     let start = text
         .get(from ..)
         .and_then(|rest| rest.find(needle))
@@ -62,6 +97,18 @@ fn span(
         ByteOffset::from(start.saturating_add(needle.len())),
     )
     .expect("a span")
+}
+
+/// The span of the first `needle` in `text`.
+///
+/// # Specification
+/// trivial.
+fn first(
+    text: SourceText<'_>,
+    needle: SourceFragment<'_>,
+) -> ByteSpan
+{
+    span(text, needle, ByteOffset::from(0_usize))
 }
 
 /// The span from the start of `first` to the end of `last`.
@@ -82,18 +129,23 @@ fn joined(
 #[test]
 fn a_respaced_text_keeps_each_site_of_a_copied_leaf()
 {
-    let before = leaves(BEFORE);
-    let sites = Sites::new(&before, &leaves(RESPACED));
-    let (left, right) = (span(BEFORE, "y", 0), span(RESPACED, "y", 0));
+    let read = leaves(before());
+    let sites = Sites::new(&read, &leaves(respaced()));
+    let y = SourceFragment::from("y");
+    let (left, right) = (first(before(), y), first(respaced(), y));
     assert_ne!(left, right);
     assert_eq!(sites.spanned(left, right), Placement::Same);
-    let end = |text: &str| {
-        let at = span(text, ";", 21).end();
+    let second = ByteOffset::from(21_usize);
+    let end = |text: SourceText<'_>| {
+        let at = span(text, SourceFragment::from(";"), second).end();
         ByteSpan::new(at, at).expect("an empty span")
     };
-    assert_eq!(sites.spanned(end(BEFORE), end(RESPACED)), Placement::Same);
-    let inner = |text: &str| {
-        let integer = span(text, "Integer", 21);
+    assert_eq!(
+        sites.spanned(end(before()), end(respaced())),
+        Placement::Same
+    );
+    let inner = |text: SourceText<'_>| {
+        let integer = span(text, SourceFragment::from("Integer"), second);
         ByteSpan::new(
             ByteOffset::from(usize::from(integer.start()).saturating_add(2)),
             integer.end(),
@@ -101,10 +153,13 @@ fn a_respaced_text_keeps_each_site_of_a_copied_leaf()
         .expect("a span")
     };
     assert_eq!(
-        sites.spanned(inner(BEFORE), inner(RESPACED)),
+        sites.spanned(inner(before()), inner(respaced())),
         Placement::Same
     );
-    assert_eq!(sites.spanned(span(BEFORE, "x", 0), right), Placement::Moved);
+    assert_eq!(
+        sites.spanned(first(before(), SourceFragment::from("x")), right),
+        Placement::Moved
+    );
 }
 
 /// A rewrite that writes `*{Integer, String}` as `Integer * String` copies
@@ -115,7 +170,7 @@ fn a_respaced_text_keeps_each_site_of_a_copied_leaf()
 #[test]
 fn a_respelled_form_maps_its_ends_to_its_leaves()
 {
-    let before = leaves(PRODUCT);
+    let before = leaves(product());
     let tokens: Vec<Leaf<'_>> = crate::material_leaves(&before).copied().collect();
     let position = |needle: &str| {
         tokens
@@ -125,7 +180,10 @@ fn a_respelled_form_maps_its_ends_to_its_leaves()
     };
     let open = position("*{");
     let close = position("}");
-    let form = joined(span(PRODUCT, "*{", 0), span(PRODUCT, "}", 0));
+    let form = joined(
+        first(product(), SourceFragment::from("*{")),
+        first(product(), SourceFragment::from("}")),
+    );
     let star = Leaf {
         span: ByteSpan::new(form.start(), form.start()).expect("an empty span"),
         text: SourceFragment::from("*"),
@@ -139,14 +197,21 @@ fn a_respelled_form_maps_its_ends_to_its_leaves()
         tokens[position("String")],
     ]);
     written.extend(tokens.get(close.saturating_add(1) ..).expect("the rest"));
-    let sites = Sites::new(&written, &leaves(SUGARED));
-    let sugared = joined(span(SUGARED, "Integer", 0), span(SUGARED, "String", 0));
-    assert_eq!(sites.spanned(form, sugared), Placement::Same);
-    let (left, right) = (span(PRODUCT, "x", 0), span(SUGARED, "x", 0));
+    let sites = Sites::new(&written, &leaves(sugared()));
+    let whole = joined(
+        first(sugared(), SourceFragment::from("Integer")),
+        first(sugared(), SourceFragment::from("String")),
+    );
+    assert_eq!(sites.spanned(form, whole), Placement::Same);
+    let x = SourceFragment::from("x");
+    let (left, right) = (first(product(), x), first(sugared(), x));
     assert_ne!(left, right);
     assert_eq!(sites.spanned(left, right), Placement::Same);
     assert_eq!(
-        sites.spanned(span(PRODUCT, ",", 0), span(SUGARED, "*", 0)),
+        sites.spanned(
+            first(product(), SourceFragment::from(",")),
+            first(sugared(), SourceFragment::from("*"))
+        ),
         Placement::Moved
     );
 }
@@ -157,8 +222,8 @@ fn a_respelled_form_maps_its_ends_to_its_leaves()
 #[test]
 fn a_site_at_another_copy_or_in_layout_is_moved()
 {
-    let before = leaves(BEFORE);
-    let mut written = before.clone();
+    let read = leaves(before());
+    let mut written = read.clone();
     let at = |needle: &str| {
         written
             .iter()
@@ -167,29 +232,40 @@ fn a_site_at_another_copy_or_in_layout_is_moved()
     };
     let (x, y) = (at("x"), at("y"));
     written.swap(x, y);
-    let sites = Sites::new(&written, &leaves(EXCHANGED));
-    assert_eq!(span(BEFORE, "x", 0), span(EXCHANGED, "y", 0));
+    let sites = Sites::new(&written, &leaves(exchanged()));
+    let (x, y) = (SourceFragment::from("x"), SourceFragment::from("y"));
+    let source = before();
+    assert_eq!(first(source, x), first(exchanged(), y));
     assert_eq!(
-        sites.spanned(span(BEFORE, "x", 0), span(EXCHANGED, "y", 0)),
+        sites.spanned(first(source, x), first(exchanged(), y)),
         Placement::Moved
     );
     assert_eq!(
-        sites.spanned(span(BEFORE, "x", 0), span(EXCHANGED, "x", 21)),
+        sites.spanned(
+            first(source, x),
+            span(exchanged(), x, ByteOffset::from(21_usize))
+        ),
         Placement::Same
     );
-    let respaced = leaves(RESPACED);
-    let kept = Sites::new(&respaced, &respaced);
-    let equals = span(RESPACED, "=", 21).end();
+    let respaced_leaves = leaves(respaced());
+    let kept = Sites::new(&respaced_leaves, &respaced_leaves);
+    let equals = span(
+        respaced(),
+        SourceFragment::from("="),
+        ByteOffset::from(21_usize),
+    )
+    .end();
     let layout = ByteOffset::from(usize::from(equals).saturating_add(2));
     let blank = ByteSpan::new(layout, layout).expect("an empty span");
     assert_eq!(kept.spanned(blank, blank), Placement::Moved);
-    let reaching = ByteSpan::new(layout, span(RESPACED, "y", 0).end()).expect("a span");
+    let reaching = ByteSpan::new(layout, first(respaced(), y).end()).expect("a span");
     assert_eq!(kept.spanned(reaching, reaching), Placement::Moved);
-    let named = span(RESPACED, "y", 0);
+    let named = first(respaced(), y);
     assert_eq!(kept.spanned(named, named), Placement::Same);
-    let kept = Sites::new(&before, &before);
+    let kept = Sites::new(&read, &read);
     let base = ByteOffset::from(4_usize);
-    let import = span(BEFORE, "def", 0);
+    let def = SourceFragment::from("def");
+    let import = first(source, def);
     assert_eq!(
         kept.placed::<()>(base, (Maybe::Present(import), Maybe::Present(import))),
         Placement::Same
@@ -199,7 +275,7 @@ fn a_site_at_another_copy_or_in_layout_is_moved()
             base,
             (
                 Maybe::Present(import),
-                Maybe::Present(span(BEFORE, "def", 1))
+                Maybe::Present(span(source, def, ByteOffset::from(1_usize)))
             )
         ),
         Placement::Moved
