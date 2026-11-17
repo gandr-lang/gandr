@@ -13,7 +13,7 @@
 //! module). `access x as v { t }
 //! unwind { u }` lends the slot `x` names exclusively and binds the view `v`,
 //! linearly, over the body `t`; the unwind `u` reads where the access stands,
-//! and a missing unwind is `unwind { pure unit }`. `access exclusive x as v { …
+//! and a missing unwind is `unwind { pure *{} }`. `access exclusive x as v { …
 //! }` spells the same mode. `access shared x as v { t }` lends `x` shared: the
 //! view ends with the body, so the form takes no unwind, and an `unwind`
 //! after it is a misplaced tile. Either mode lends a place of `x` when an
@@ -839,7 +839,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the memory form over its children's lowered nodes at
     ///   `origin`, an access's blocks minted as blocks, its index as a value,
-    ///   and an exclusive access's missing unwind minted as `pure unit` at
+    ///   and an exclusive access's missing unwind minted as `pure *{}` at
     ///   `origin`; a method's place `self.#[e]` minted as `var p = self ;
     ///   access shared p.#[e] as v { let _ : a = v ; pure e }`, `a` the element
     ///   type, every node below the hold marked as inserted for the method; a
@@ -1037,7 +1037,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///   nested right side holds, over the exclusive access of the slot at the
     ///   place, its index raised past the bind, whose body resumes the view
     ///   with the right side or with the row's result over the view and the
-    ///   right side, and whose unwind is `pure unit`; the bind at `origin`,
+    ///   right side, and whose unwind is `pure *{}`; the bind at `origin`,
     ///   every node below it inserted for the assignment.
     /// - fails: never; the first absence among the parts is answered.
     /// - panics: none.

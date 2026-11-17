@@ -709,13 +709,12 @@ fn add_type_rules(
             ]),
         ]),
     ));
-    // A parenthesized type holds one type or, as the domain of the n-ary `=>`,
-    // a list of them, each entry a bare type or a binder `x : A` — the
-    // telescope `(x : A, y : B(x)) => C`. One rule, so `(` keeps a single
-    // type-sort mold; the binder's name is a type hole the `:` after it makes
-    // a key, so `(a -> -F b)` still reads its `a` as a type. The lowering
-    // refuses a list anywhere but before `=>`, and a binder anywhere but
-    // before `=>` or, alone, before `->`, where it binds the dependent arrow.
+    // A parenthesized type holds one type or, as the domain of the n-ary box
+    // `(A, B) -> C`, a list of them, each entry a bare type or a binder
+    // `x : A` — the telescope `(x : A, y : B(x)) -> C`. One rule, so `(` keeps
+    // a single type-sort mold; the binder's name is a type hole the `:` after
+    // it makes a key, so `(a -> -F b)` still reads its `a` as a type. The
+    // lowering refuses a list or a binder anywhere but before `->`.
     rules.push(rule(
         RuleName("parenthesized_type"),
         ty,

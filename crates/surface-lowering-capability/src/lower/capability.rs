@@ -1647,7 +1647,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a clause resuming its subject lowers to the
-    ///   resumption of `pure unit` and checks; a function resuming the stack it
+    ///   resumption of `pure *{}` and checks; a function resuming the stack it
     ///   states lowers to the same resumption.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_stated_stack_is_resumed_as_a_clause_resumes_1387`

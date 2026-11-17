@@ -108,7 +108,7 @@ pub enum RewriteName
     /// the lowering reads with the returner inserted; only the sugared form
     /// moves it, and never a returner with an effect row.
     InsertedReturner,
-    /// The value-function alias at its shortest: `(A) => B` and `A => B`, a
+    /// The value-function alias at its shortest: `(A) -> B` and `A -> B`, a
     /// binder nothing later reads left out; only the sugared form moves it.
     ShortAlias,
     /// A thunk the checker inserts: `thunk { e }` and `e`, where the checker
@@ -967,14 +967,14 @@ enum Context
     Judgment,
     /// A law's statement in a theory, after its `:`: the theory reads it only
     /// as written, the value-function alias over its named telescope, `(x :
-    /// A, p : P) => Path(…)`, so no rewrite respells it (#2384).
+    /// A, p : P) -> Path[.A = A](…)`, so no rewrite respells it (#2384).
     Law,
     /// A data or codata declaration's kind, after its `:` and before its
     /// `where`: the declaration reads `A -> Type` there as the family's
     /// indices, never as a value function, so no rewrite respells it.
     Kind,
-    /// Anywhere else: a value or a computation, where `() => A` reads as an
-    /// expression, and `A => B` and `(x : A, B) => C` as the value-function
+    /// Anywhere else: a value or a computation, where `() -> A` reads as an
+    /// expression, and `A -> B` and `(x : A, B) -> C` as the value-function
     /// alias.
     Value,
 }

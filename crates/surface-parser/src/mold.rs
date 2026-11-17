@@ -4260,13 +4260,13 @@ impl<'pbg> Molder<'pbg>
     }
 
     /// Read a `(` a fresh expression slot admits as a parenthesized
-    /// expression as a parenthesized type instead when `=>` is the next
+    /// expression as a parenthesized type instead when `->` is the next
     /// significant token past the group's `)`: the group is then the domain
-    /// list of a value-function type, `(y : A, P) => B`, which stands where a
-    /// value is read as `A => B` does. An ascription `(e : T)` never goes on
-    /// with `=>`, and a handler's clause arrow reads only inside its `with`
-    /// braces, so the token past the group decides. An empty group stays the
-    /// unit: a domain list holds at least one type.
+    /// list of a value-function type, `(y : A, P) -> B`, which stands where a
+    /// value is read as `A -> B` does. An ascription `(e : T)` never goes on
+    /// with `->`, and a handler's clause arrow reads only inside its `with`
+    /// braces, so the token past the group decides. An empty group stays a
+    /// parenthesized expression: a domain list holds at least one type.
     ///
     /// # Specification
     /// - requires: `frontier` is `state`'s admissibility frontier; `tokens` is
@@ -4282,7 +4282,7 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — a telescope, a bare domain list, a tuple, an
     ///   ascription, the unit and a group left open on the stream expose the
-    ///   decision. Keeping the expression before `=>` reads the domain list as
+    ///   decision. Keeping the expression before `->` reads the domain list as
     ///   a tuple and refuses it as a type, and taking the type elsewhere reads
     ///   an ascription as a binder.
     /// - witness: `tests::grammar::every_type_operator_spelling_reads_cleanly`

@@ -1761,7 +1761,7 @@ where
             (None, None) => Vec::from([bare(annotated), value_type(ty)]),
         },
         // An offer's arm and a fork's child end in a computation the surface
-        // reads only as one, `retire => pure unit`: no exit is elided there.
+        // reads only as one, `retire => pure *{}`: no exit is elided there.
         Former::Offer { arms, .. } => components(
             arms,
             Admits::Computation(Tail::Continues),

@@ -341,9 +341,8 @@ impl FormName
     pub const TYPE_ABSTRACTION: Self = Self("type_abstraction");
     /// A number written with its type.
     pub const TYPED_NUMBER: Self = Self("typed_number");
-    /// The unit value: the keyword `unit`, and the empty parentheses `()` the
-    /// grammar folds into the parenthesised expression, which the lowering
-    /// refuses as an empty list.
+    /// The empty parentheses `()`, which the grammar folds into the
+    /// parenthesised expression and the lowering refuses as an empty list.
     pub const UNIT: Self = Self("unit");
     /// The statement `module m = e ;`, which opens the model `e` as `m` over
     /// the rest of its block, inlined into its block.

@@ -441,8 +441,8 @@ impl<'source> Machine<'_, 'source>
     ///   terminal with no core reading or one the printer cannot lay out is
     ///   [`Evaluation::Unfinished`]; otherwise the terminal is read back and
     ///   spelled as the grammar writes it: an integer in decimal, a text quoted
-    ///   with its escapes, `unit`, a tuple as `*{a, b}`, an injection as `+{.i
-    ///   = v}`, a constructor by its name, a thunk as `thunk { … }` and a
+    ///   with its escapes, `*{}`, a tuple as `*{a, b}`, an injection as `+{.i =
+    ///   v}`, a constructor by its name, a thunk as `thunk { … }` and a
     ///   function as its `fun`; a read-back terminal that mentions a member its
     ///   module's signature hides is instead [`Evaluation::Sealed`] at that
     ///   module with the declared type of the declaration run, or

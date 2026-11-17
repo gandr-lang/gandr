@@ -68,7 +68,7 @@
 //! continuation's type `Stack(C, D)`, `Type`,
 //! `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract
 //! type and a constant by name, and a decode as the code it reads; values are
-//! `unit`, literals with their canonical digits and escapes, `*{a, b, …}`,
+//! `*{}`, literals with their canonical digits and escapes, `*{a, b, …}`,
 //! `*{.l = v, …}`, a record update `*{b | l = v, …}`, `+{.i = v}`,
 //! `Path.here(a)`, `Path.funext(f, g)`, `equiv(f, g)`, univalence at a stratum
 //! `ua[n, k](a, b, f, g)` with its two descriptions by name, the static
@@ -845,7 +845,7 @@ where
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: the root written as [`present_type`] writes a type, a value's
-///   formers spelled `unit`, as their literal, `*{a, b}`, `*{.l = v}` in label
+///   formers spelled `*{}`, as their literal, `*{a, b}`, `*{.l = v}` in label
 ///   order, `*{b | l = v}` in label order, `+{.i = v}` at any summand,
 ///   `Path.here(a)`, `Path.funext(f, g)`, `equiv(f, g)`, `ua[n, k](a, b, f,
 ///   g)`, a constant by its name and the code of a type as the type; a thunk is

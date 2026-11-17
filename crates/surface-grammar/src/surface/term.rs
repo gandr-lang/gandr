@@ -23,47 +23,27 @@
 //! - Reversal: a binder that needs its classifier written beside it, `fun (T :
 //!   Type -> Type[-]) { … }`, is the typed parameter the lambda already molds.
 //!
-//! The value function space `A => B` is the alias of the thunked arrow `+U (A
-//! -> -F B)`, and `(A, B) => C` its n-ary form, `+U (A -> B -> -F C)`. It is an
-//! infix rule in the arrow's group, so the two arrows nest to the right of one
-//! another; its n-ary domain is a parenthesized type list, which is why
-//! `parenthesized_type` holds one type or several. One rule keeps `(` at a
-//! single type-sort mold, so the molder never opens a lookahead window to tell
-//! a parenthesized type from a domain list, and the lowering refuses a list
-//! anywhere but before `=>`. A case arm's `=>` follows a pattern and this one a
-//! type; the two never compete for one slot. Nothing distinguishes the alias
-//! from its unfolding after lowering except the printer, which may choose
-//! either spelling.
+//! The value function space, the box `A -> B`, is the arrow `function_type`
+//! over a value codomain. It is the alias of the thunked arrow `+U (A -> -F
+//! B)`, and `(A, B) -> C` is its n-ary form, `+U (A -> B -> -F C)`. The box
+//! has no rule of its own, and the lowering tells it from the computation
+//! arrow by the kind of its codomain. Its n-ary domain is a parenthesized type
+//! list, so `parenthesized_type` holds one type or several. One rule keeps `(`
+//! at a single type-sort mold, so the molder never opens a lookahead window to
+//! tell a parenthesized type from a domain list. A case arm's `=>` follows a
+//! pattern, and no type takes `=>`. Nothing distinguishes the alias from its
+//! unfolding after lowering except the printer, which may choose either
+//! spelling.
 //!
-//! The empty list `() => B` is the nullary form, `+U (-F B)`: the lowering
+//! The empty list `() -> B` is the nullary form, `+U (-F B)`: the lowering
 //! reads an empty domain list as no domain, so it is a different type from
-//! `Unit => B`, the function of one argument of the unit type.
+//! `Unit -> B`, the function of one argument of the unit type. The unit value
+//! is the empty telescope `*{}`, and its type is `Unit`.
 //!
-//! - Alternatives: a separate rule for the n-ary domain, `( T , T+ ) => T`,
+//! - Alternatives: a separate rule for the n-ary domain, `( T , T+ ) -> T`,
 //!   which gives `(` two type-sort molds tied on the molder's local key.
 //! - Reversal: if a tuple type ever takes the parenthesized list, the domain
-//!   list moves into the alias rule and the tie is settled there.
-//!
-//! # The unit value is a keyword
-//!
-//! The unit value is the keyword `unit`, one tile at the expression sort and
-//! one at the pattern sort, beside `true` and `false`; its type is the type
-//! name `Unit`. The empty parentheses `()` stay a parenthesised list with no
-//! member, so the lowering refuses them as a value or a type and reads them as
-//! the empty domain list before `=>`. Adding the two rules moved the pinned
-//! shape from 2487 molds, 77 labels and the fingerprint
-//! `0x4116_5b5c_93e2_0732`.
-//!
-//! - Choice: `unit` is reserved, and `()` is always an empty list. The unit is
-//!   the nullary product, and with an n-ary product the empty list is its
-//!   nullary case, so one spelling stands for one thing.
-//! - Alternatives: `()` as the unit, which makes `() => B` and `Unit => B` the
-//!   same type and reads one token sequence two ways by position; leaving
-//!   `unit` an ordinary name the prelude declares, which a local binding could
-//!   shadow.
-//! - Reversal: if the n-ary product is never admitted and no source writes `()
-//!   => B`, `()` may return as a second spelling of `unit` and the keyword
-//!   stays.
+//!   list moves into the arrow rule and the tie is settled there.
 //!
 //! # The splice
 //!

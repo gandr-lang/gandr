@@ -478,7 +478,7 @@ fn a_declaration_in_one_form_or_two_names_the_later_holes_alike_5469()
 #[test]
 fn an_omitted_implicit_is_a_nominated_hole()
 {
-    // `first(5, unit)`: one nominated hole per omitted implicit, applied in
+    // `first(5, *{})`: one nominated hole per omitted implicit, applied in
     // the telescope's order, each recorded with the implicit it stands for;
     // the checker solves both.
     let source = format!(
@@ -514,7 +514,7 @@ fn an_omitted_implicit_is_a_nominated_hole()
 #[test]
 fn a_signature_s_implicit_group_is_supplied_by_the_call_4853()
 {
-    // A signature's implicit group is plicity, as a head's is: `pick(5, unit)`
+    // A signature's implicit group is plicity, as a head's is: `pick(5, *{})`
     // and `single(5)` leave out each implicit, and each becomes a hole that
     // names it, in the telescope's order.
     let source = include_str!(
@@ -594,10 +594,10 @@ fn a_path_call_omits_its_member_s_implicits_5520()
 #[test]
 fn a_wildcard_is_a_nominated_hole_of_its_own()
 {
-    // `first[.a = _](5, unit)`: the wildcard the slot writes for `a` and the
+    // `first[.a = _](5, *{})`: the wildcard the slot writes for `a` and the
     // hole the call nominates for the `b` it omits are two metavariables,
     // the one recorded and named as a wildcard and the other naming its
-    // implicit; the checker solves both, `5` forcing the wildcard and `unit`
+    // implicit; the checker solves both, `5` forcing the wildcard and `*{}`
     // the implicit.
     let source = format!(
         include_str!("tests/unformatted/a-wildcard-is-a-nominated-hole-of-its-own.gandr"),

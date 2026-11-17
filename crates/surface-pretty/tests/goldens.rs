@@ -8669,7 +8669,7 @@ fn a_loop_prints_as_the_loop_it_lowered_from_941()
     let nothing = core.value_unit();
     let ends = core.computation_return(nothing);
     let ending = core.computation_fixpoint(ends, partial);
-    // `fun (a) { while force a { … } ; unit }`: the condition under the
+    // `fun (a) { while force a { … } ; *{} }`: the condition under the
     // loop's binder, each branch under the loop's, the test's and its own;
     // the true branch tests again, its branches under two more.
     let tested = variable(&mut core, 1_u32);

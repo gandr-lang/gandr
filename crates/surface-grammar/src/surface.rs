@@ -11,13 +11,13 @@
 //! a lazy-record entry `.l => c` defines a computation run when observed,
 //! and a pattern entry `.l` puns its label where `.l = p` renames it. A
 //! positional label is a number, `.0`, which the labeler reads as `.` then
-//! `0`. `A * B`, `A + B`, `C & D`, `(a, b)`, `unit`, `Unit` and `Void` stay
+//! `0`. `A * B`, `A + B`, `C & D`, `(a, b)`, `*{}`, `Unit` and `Void` stay
 //! as written. The session select and offer are the sum and the lazy record
 //! over labels read where a session type is read, so they are not second
 //! rules; they, the session field and the record type, value, pattern and
 //! update forms are recorded as adaptations for the parity inventory. A
 //! parenthesised type's entries take the same `k : T` shape: the domain of
-//! the telescope Π `(x : A, y : B(x)) => C`.
+//! the telescope Π `(x : A, y : B(x)) -> C`.
 //!
 //! A type entry's key is a type hole rather than an `identifier` tile. A
 //! form's own tile continues the open form and so outranks every atom at its
