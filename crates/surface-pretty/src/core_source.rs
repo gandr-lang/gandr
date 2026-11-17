@@ -3991,9 +3991,8 @@ mod tests
         }
     }
 
-    /// A staged type outside a definition over stages reads as the type it
-    /// refines: no binder names its stage, and its components are the
-    /// refined type's.
+    /// A staged type reads as the type it refines: a stage is the recursion
+    /// typing's own, and its components are the refined type's.
     #[test]
     fn a_staged_type_reads_as_the_type_it_refines()
     {
