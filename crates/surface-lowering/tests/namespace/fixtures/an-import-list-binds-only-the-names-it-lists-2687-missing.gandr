@@ -1,0 +1,2 @@
+import text.greet (nothing);
+def a : Integer = 1;

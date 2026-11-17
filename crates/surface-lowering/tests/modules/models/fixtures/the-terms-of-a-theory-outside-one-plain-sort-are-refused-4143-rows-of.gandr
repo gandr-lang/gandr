@@ -1,0 +1,7 @@
+theory Pair where {
+  sort P : Type;
+  sort Q : Type;
+  oper origin : () --> P;
+  oper pair : (x : P, y : P) --> Q;
+}
+def paired : Terms(Pair) = Pair.origin;

@@ -1,0 +1,2 @@
+module M where { def bad = ( 1 ; def good = 2; }
+def good = 7;

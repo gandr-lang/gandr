@@ -1,0 +1,10 @@
+def keptView() -> Integer {
+  var s = 3;
+  handle c : std.process.Exit.Eff {
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
+    force k
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
+  }
+}

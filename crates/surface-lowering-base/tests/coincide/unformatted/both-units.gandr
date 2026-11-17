@@ -1,0 +1,8 @@
+data NatUnits : Type where {
+    | Zero : NatUnits
+    | Succ : (n : NatUnits) --> NatUnits
+    oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
+    rule : add Zero n ==> n;
+    rule : add m Zero ==> m;
+    rule : add (Succ m) n ==> Succ (add m n);
+}

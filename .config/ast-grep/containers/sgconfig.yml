@@ -1,0 +1,6 @@
+# The codemod of the containers' waves (#7378): each `Vec`, `String` and `Arc`
+# site of a wave's crates takes the type of `gandr-kernel-data` with its
+# allocator named at the site. The compiler's errors that stay are the wave's
+# second phase.
+ruleDirs:
+  - rules

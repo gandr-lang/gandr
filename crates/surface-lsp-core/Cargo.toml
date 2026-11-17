@@ -1,0 +1,64 @@
+[package]
+name = "gandr-surface-lsp-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The core of gandr's language server families: the reading of a held text, hover, completion, definitions, signature help, semantic tokens and the files of a workspace"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "lsp"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The core reads a held text through the pipeline's own faces: the session of
+# a document, the dispatcher's type table and root classification, the run
+# stage's evaluator, the incremental checker's memory store, the lowering's
+# sources, the grammar's highlighter over the parser's tree, the printer's
+# spelling of a type, the formatter's layout and the renderer seam's UTF-16
+# projection. The base holds the protocol and the positions. The pinned
+# anodized facade supplies the executable specifications. A token stream is
+# named by its BLAKE3 digest, and a relocated import is addressed by
+# `pathdiff`. With the `instrument` feature, the activity ring of the fork
+# crate is folded here.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+gandr-core-fork = { workspace = true, optional = true }
+gandr-core-incremental.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-evaluate.workspace = true
+gandr-surface-format.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-lsp-base.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+gandr-surface-session.workspace = true
+gandr-surface-syntax.workspace = true
+pathdiff.workspace = true
+quenchant-shape.workspace = true
+
+# A test of a hover reads a record store of its own; the corpus sweeps draw
+# their samples through the sweep crate; a test reads an answer as JSON.
+[dev-dependencies]
+gandr-storage-records.workspace = true
+gandr-workflow-sweep.workspace = true
+serde_json.workspace = true
+
+[features]
+default = []
+# The line finder of the tests, for the tests of the crates above.
+fixture = []
+# The instrument's layers, as in `gandr-surface-lsp`.
+instrument = [
+  "dep:gandr-core-fork",
+  "gandr-core-fork/instrument",
+  "gandr-surface-dispatcher/instrument",
+  "gandr-surface-session/instrument",
+]
+
+[lints]
+workspace = true

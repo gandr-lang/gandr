@@ -1,0 +1,40 @@
+// A recursive call can use another stuck recursive call as
+// its descent argument.
+//
+// An unfolded arm evaluates its definition argument before it recurses.
+//
+// Both sides apply the recursion at the same stuck call.
+// They compare the changed argument after the definition unfolds.
+//
+// - see: #879 — `walkTwice`
+
+// The naturals the recursion takes apart.
+import "./data-base.gandr";
+
+/// One successor over a natural.
+pub def succ(n : Nat) -> Nat =
+  Succ n
+
+/// `walk` descends through its first argument.
+/// It applies `succ` to its accumulator at each step.
+pub def rec walk(t : Nat, c : Nat) -> Nat =
+  match t where
+    | Zero => c
+    | Succ(m) => Succ (walk[<] m (succ c))
+
+/// `walkedTwo` evaluates two steps from zero.
+/// It applies `succ` to its accumulator at each step.
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
+def walkedTwo : () -> Nat = walk two Zero;
+
+/// One step at a variable.
+def walkOnce(b : Nat, c : Nat) -> Path(walk (Succ b) c, Succ (walk b (succ c))) =
+  Path.here (Succ (walk b (succ c)))
+
+/// `walkTwice` takes one step at another stuck `walk` call.
+/// Its recursive call receives that result and `succ(c2)`.
+def walkTwice(b : Nat, c1 : Nat, c2 : Nat) -> Path(
+  walk (Succ (walk b c1)) c2,
+  Succ (walk (walk b c1) (succ c2))
+) =
+  Path.here (Succ (walk (walk b c1) (succ c2)))
