@@ -1,0 +1,2 @@
+def y : +U (-F Integer);
+def y = thunk { become force 1 };

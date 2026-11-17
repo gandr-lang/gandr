@@ -1,0 +1,19 @@
+[package]
+name = "gandr-theory-spec-combinators"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Bounded specification-clause checks over accumulated state for the gandr toolchain"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "invariants", "specification"]
+categories = ["development-tools::testing", "no-std"]
+publish.workspace = true
+
+# The pinned anodized facade checks the combinators' own clauses.
+[dependencies]
+anodized.workspace = true
+
+[lints]
+workspace = true

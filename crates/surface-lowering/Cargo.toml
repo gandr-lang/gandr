@@ -1,0 +1,78 @@
+[package]
+name = "gandr-surface-lowering"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Lowering the gandr surface into the core: resolution tables, module collection, imports, the attribute side table, the origin table and the refusal classifier, over the lowering's base crate"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["call-by-push-value", "gandr", "lowering", "no-std"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies the executable specifications of the
+# readers and minters; logic/BigInt stays disabled in this no_std library.
+# The base crate holds the namespace engine, the per-node table, the form
+# stretches, the circuit readings and the module pass. self_cell holds a
+# closure's text beside its parse and its suspended lowering, which borrow it.
+# `hotpath` profiles a rule block's decision and a model slot's candidates for
+# the benchmark report.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering-base.workspace = true
+gandr-surface-lowering-capability.workspace = true
+gandr-surface-lowering-exits.workspace = true
+gandr-surface-lowering-expression.workspace = true
+gandr-surface-lowering-identity.workspace = true
+gandr-surface-lowering-model.workspace = true
+gandr-surface-lowering-native.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-cell-complexes.workspace = true
+gandr-theory-circuit-algebras.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+gandr-theory-computads.workspace = true
+gandr-theory-levitation.workspace = true
+gandr-theory-shapes.workspace = true
+hotpath = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+self_cell.workspace = true
+
+# The kernel's content digest witnesses that two spellings readmit as one
+# declaration content; the univalence witnesses name the stratum they lower.
+# The collapse probes check their matchings through the Morse crate. The
+# e-graph suite closes each corpus block under congruence. The base crate's
+# `fixture` feature gives the tests its parsed and hand-built trees. A module
+# case reads a record type's faces as finite Stone duality's orders.
+[dev-dependencies]
+gandr-core-checker.workspace = true
+gandr-kernel-core.workspace = true
+gandr-surface-lowering-base = { workspace = true, features = ["fixture"] }
+gandr-surface-parser.workspace = true
+gandr-theory-discrete-morse.workspace = true
+gandr-theory-e-graphs.workspace = true
+gandr-theory-sites.workspace = true
+gandr-theory-stone-duality.workspace = true
+gandr-workflow-sweep.workspace = true
+
+[features]
+default = []
+# A rule block's decision, its completion included, and the completion's
+# overlap queries and normalization; a model slot's candidates, each one's
+# packing, an include's reduct maps and a derived equality: timed and their
+# allocations counted for the benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "gandr-surface-lowering-base/hotpath", "gandr-surface-lowering-expression/hotpath", "gandr-surface-lowering-model/hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
+
+[lints]
+workspace = true
