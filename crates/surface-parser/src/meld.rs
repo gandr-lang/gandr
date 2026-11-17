@@ -1792,10 +1792,6 @@ const INNER_DOC_LINE: &str = "//!";
 /// takes as its argument (#5326).
 pub const MODED_TYPE: &str = "moded_type";
 
-/// The rule of a term in its parentheses, `(f x)`, which a type application
-/// takes as its argument as it takes a type (#5750).
-pub const TERM_GROUP: &str = "parenthesized_expression";
-
 /// The operator shape of a shifted tile, derived from its precedence bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OpShape
@@ -2276,9 +2272,7 @@ impl<'pbg> MeldState<'pbg>
     )
     {
         if let Ok(def) = self.pbg.mold(mold)
-            && let Some(application) = self
-                .juxtaposed(mold, def.sort)
-                .or_else(|| self.juxtaposed_term_group(mold))
+            && let Some(application) = self.juxtaposed(mold, def.sort)
         {
             self.push_molded(application, TileText::from(""));
         }
@@ -2449,31 +2443,6 @@ impl<'pbg> MeldState<'pbg>
             return None;
         }
         self.applies_next_in(sort)
-    }
-
-    /// The type application tile to push before `mold`, when `mold` opens a
-    /// term in its parentheses right after a type operand: `Path (f x) y`
-    /// applies the type to the term as it applies it to a type (#5750).
-    ///
-    /// # Specification
-    /// - ensures: the grammar's application mold in [`Sort::Type`] exactly when
-    ///   `mold` opens a [`TERM_GROUP`] and [`Self::applies_next_in`] gives that
-    ///   tile. `None` otherwise.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `Path[.A = T] (Path.step p q) (f x)` applies twice,
-    ///   and `f (x)` in an expression keeps the expression tile.
-    /// - witness: `tests::grammar::a_type_family_applies_to_a_term_in_its_parentheses_5750`
-    #[spec(ensures: |ret| ret.is_none_or(|application| Some(application) == self.pbg.application_in(Sort::Type)))]
-    fn juxtaposed_term_group(
-        &self,
-        mold: MoldId,
-    ) -> Option<MoldId>
-    {
-        bool::from(self.opens_term_group(mold))
-            .then(|| self.applies_next_in(Sort::Type))
-            .flatten()
     }
 
     /// The application tile an expression operand opening next would take:
@@ -3971,13 +3940,11 @@ impl<'pbg> MeldState<'pbg>
 
     /// Whether a fresh operand `mold` stands as the argument the head operand
     /// applies by juxtaposition: the head is an operand, its sort has an
-    /// application tile, and `mold` is of that sort (#5326), or the head is a
-    /// type and `mold` opens a term in its parentheses (#5750).
+    /// application tile, and `mold` is of that sort (#5326).
     ///
     /// # Specification
     /// - ensures: admitted exactly when `frontier`'s head is an operand whose
-    ///   sort the grammar applies by juxtaposition, and `mold` is of that sort
-    ///   or, at a type head, opens a [`TERM_GROUP`].
+    ///   sort the grammar applies by juxtaposition and `mold` is of that sort.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3985,8 +3952,7 @@ impl<'pbg> MeldState<'pbg>
     ///   type, and `f x` keeps `x` an expression: dropping the head sort reads
     ///   `A` as an expression constructor beside the type.
     /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
-    /// - witness: `tests::grammar::a_type_family_applies_to_a_term_in_its_parentheses_5750`
-    #[spec(ensures: |ret| bool::from(ret) == (bool::from(frontier.head_operand) && frontier.head_sort.is_some_and(|head| self.pbg.application_in(head).is_some() && (self.pbg.mold(mold).is_ok_and(|def| def.sort == head) || (head == Sort::Type && bool::from(self.opens_term_group(mold)))))))]
+    #[spec(ensures: |ret| bool::from(ret) == (bool::from(frontier.head_operand) && frontier.head_sort.is_some_and(|head| self.pbg.application_in(head).is_some() && self.pbg.mold(mold).is_ok_and(|def| def.sort == head))))]
     fn juxtaposes_head(
         &self,
         mold: MoldId,
@@ -3997,38 +3963,8 @@ impl<'pbg> MeldState<'pbg>
             bool::from(frontier.head_operand)
                 && frontier.head_sort.is_some_and(|head| {
                     self.pbg.application_in(head).is_some()
-                        && (self.pbg.mold(mold).is_ok_and(|def| def.sort == head)
-                            || (head == Sort::Type && bool::from(self.opens_term_group(mold))))
+                        && self.pbg.mold(mold).is_ok_and(|def| def.sort == head)
                 }),
-        )
-    }
-
-    /// Whether `mold` opens a term in its parentheses, `(f x)`: the first tile
-    /// of the rule `parenthesized_expression`. A type family applies to such
-    /// a group as it applies to a type, so `Path (Path.step p q) r` and
-    /// `Vec A (n + 1)` take the term as an argument (#5750).
-    ///
-    /// # Specification
-    /// - ensures: true exactly when `mold` is the first tile of a form of the
-    ///   rule [`TERM_GROUP`].
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `Path[.A = T] (Path.step p q) (f x)` reads two term
-    ///   groups, and `Maybe (F a)` keeps its type group: admitting no group
-    ///   leaves grout, and admitting another `(` reads a type group as a term.
-    /// - witness: `tests::grammar::a_type_family_applies_to_a_term_in_its_parentheses_5750`
-    #[spec(ensures: |ret| bool::from(ret) == (self.pbg.rule_of(mold).is_ok_and(|rule| rule.name().0 == TERM_GROUP) && bool::from(self.pbg.mold_is_form_first(mold))))]
-    fn opens_term_group(
-        &self,
-        mold: MoldId,
-    ) -> SortAdmissibility
-    {
-        SortAdmissibility::from(
-            self.pbg
-                .rule_of(mold)
-                .is_ok_and(|rule| rule.name().0 == TERM_GROUP)
-                && bool::from(self.pbg.mold_is_form_first(mold)),
         )
     }
 
