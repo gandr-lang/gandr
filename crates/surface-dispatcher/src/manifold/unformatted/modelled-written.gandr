@@ -1,0 +1,2 @@
+{program}
+import "{address}" as {SITE_ALIAS} ({modules});

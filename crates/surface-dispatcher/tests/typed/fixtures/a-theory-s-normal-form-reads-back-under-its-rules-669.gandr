@@ -1,0 +1,7 @@
+theory Pointed where {
+  sort P : Type;
+  oper pt : P;
+  oper flip : (p : P) --> P;
+  rule flipPt : flip (pt ()) <=> pt ();
+  rule flipFlip : flip (flip p) <=> p;
+}

@@ -1,0 +1,37 @@
+[package]
+name = "gandr-theory-order-maintenance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Order-maintenance structure with constant-time comparison for the gandr toolchain"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "list-labeling", "order-maintenance"]
+categories = ["data-structures"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The measurement: a `harness = false` bench timing insertion, removal and
+# comparison from a thousand to a million elements, for each group width.
+[[bench]]
+harness = false
+name = "order"
+path = "benches/order.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

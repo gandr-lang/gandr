@@ -1,0 +1,10 @@
+theory Semigroup where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+}
+theory Monoid where {
+  include Semigroup;
+  oper one : () --> M;
+}
+def multiplies(s : Model(Semigroup)) -> -F Integer { 0 }
+def asSemigroup(m : Model(Monoid)) -> -F Integer { become multiplies m }

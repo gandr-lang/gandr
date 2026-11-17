@@ -1,0 +1,16 @@
+def againAt(b : Type, w : {record}) -> -F Path[.A = {record}](w, w) {{
+  match w {{
+    | *{{.x = u, .y = v, .p = q}} => Path.here *{{u, *{{v, q}}}}
+  }}
+}}
+
+def selfEquiv(b : Type) -> -F ({record} ≃ {record}) {{
+  *{{
+    thunk {{ fun (w) {{ w }} }},
+    *{{*{{thunk {{ fun (w) {{ w }} }}, thunk {{ fun (w) {{ Path.here w }} }}}}, *{{thunk {{ fun (w) {{ w }} }}, thunk {{ fun (w) {{ Path.here w }} }}}}}}
+  }}
+}}
+
+def selfMap(b : Type) -> -F ({record} -> {record}) {{
+  thunk {{ fun (w) {{ w }} }}
+}}
