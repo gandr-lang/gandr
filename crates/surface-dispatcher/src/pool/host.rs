@@ -805,6 +805,10 @@ impl Host
     ///   tokens come back when it dies.
     /// - witness: `pool::host::tests::a_dead_holder_of_four_tokens_gives_them_back_at_the_reap`
     /// - witness: `pool::host::tests::no_process_joins_a_counter_that_no_hub_owns`
+    ///
+    /// # Cost
+    /// - allocation: the paths of the segment and of the slots' files, setup
+    /// - allocation: the host's error of a map, an open or a lock, error path
     #[inline]
     pub fn join(
         directory: &Path,
@@ -1190,6 +1194,10 @@ impl Drop for Host
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the path of the owner's file, setup
+/// - allocation: the host's error of an open or a lock, error path
 fn owned(directory: &Path) -> Owned
 {
     let Ok(owner) = File::open(directory.join(OWNER))
@@ -1217,6 +1225,9 @@ fn owned(directory: &Path) -> Owned
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the host's error of an unlock, error path
 fn let_go(file: &File)
 {
     // An unlock that fails leaves the lock to the close.
