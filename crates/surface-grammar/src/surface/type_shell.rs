@@ -672,26 +672,21 @@ fn add_type_rules(
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
     //
-    // The bracket also writes an extension type over a record's fields. The
-    // field form `Config[.port = 443, .tls = true]` fixes the fields it names.
-    // The face form `Config[secure ↦ *{.port = 443, .tls = true}]` fixes the
-    // fields of one face the record's type member names. The field form opens
-    // with `.`, where a stage opens with `<` or a name. The face form and a
-    // stage share their name, and the token after it, `↦` or `]`, decides
-    // between them. The forms are alternatives of one rule, so the `[` after
-    // a type keeps one mold. A second rule over the same `[` would tie with
-    // this one at every staged type.
+    // The bracket also reads the retired forms that fixed a record's fields,
+    // `Config[.port = 443]` and `Config[secure ↦ *{.port = 443}]`. The
+    // lowering refuses each one by name, and the reader `.#{` of
+    // `extension_type` replaces both. The field form opens with `.`, where a
+    // stage opens with `<` or a name. The face form and a stage share their
+    // name, and the token after it, `↦` or `]`, decides between them. The
+    // forms are alternatives of one rule, so the `[` after a type keeps one
+    // mold.
     //
-    // A field's value is a type hole, as a value a type takes as a call's
-    // argument is: a number, a boolean, a string, a name or a call. After `=`
-    // in a type, an expression hole lets a declaration's own `= e`, cut off by
-    // a bracket the source leaves open, read as a fixed value. The recovery
-    // then marks the open bracket at the declaration's end and not where it
-    // was left open. A face's value follows `↦`, which no declaration writes,
-    // so it is an expression: the record of the face's fields. A system
-    // writes more faces after the first, each after a `,`: `Config[secure ↦
-    // a, addr ↦ b]`. The `,` after a face's expression hole lets the recovery
-    // of a dropped token read a system in sources that write no face (#5106).
+    // A field's value is a type hole. After `=` in a type, an expression hole
+    // lets a declaration's own `= e`, cut off by a bracket the source leaves
+    // open, read as a fixed value. The recovery then marks the open bracket
+    // at the declaration's end and not where it was left open. The `,` after
+    // a face's expression hole lets the recovery of a dropped token read a
+    // system in sources that write no face (#5106).
     rules.push(rule(
         RuleName("staged_type"),
         ty,
@@ -1053,8 +1048,8 @@ fn add_type_rules(
     ));
     // A string literal is a Type-sort atom on the same terms, so a bracket
     // that fixes a field of type `String` molds with its value,
-    // `Config[.host = "localhost"]`. The printer writes the fields a system of
-    // faces fixes in that form (#5106). A type string takes no `${ E }`
+    // `Config.#{.host = "localhost"}`. The printer writes the fields a system
+    // of faces fixes in that form (#5106). A type string takes no `${ E }`
     // segment, as the pattern-position string does not. The Expression-sort
     // `string.expression` and the string of `literal_pattern` stay the other
     // realisations of the same provenance.

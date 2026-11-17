@@ -542,9 +542,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(())
     }
 
-    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, the view type
-    /// `View[m](a)` a method answering a place declares its result at, or a
-    /// record type patched by a static bracket, `T[.l = v]` or `T[f ↦ v]`.
+    /// Classify a staged type, `Nat[i]` or `Nat[< i]`, or the view type
+    /// `View[m](a)` a method answering a place declares its result at. The
+    /// retired field and face forms, `T[.l = v]` and `T[f ↦ v]`, are refused.
     ///
     /// # Specification
     /// - requires: `site` is a staged type.

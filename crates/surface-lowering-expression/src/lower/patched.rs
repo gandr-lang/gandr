@@ -1,11 +1,12 @@
-//! The static bracket after a record type in the lowering.
+//! The reader `.#{` after a record type in the lowering.
 //!
-//! The field form `T[.l = v, …]` fixes the fields it names. The face form
-//! `T[f ↦ *{.l = v, …}]` fixes the fields of the face `f` that the type member
-//! `T` names, `type T = *{…} where face f = { … }`.
+//! The field form `T.#{.l = v, …}` fixes the fields it names. The face form
+//! `T.#{f ↦ *{.l = v, …}}` fixes the fields of the face `f` that the type
+//! member `T` names, `type T = *{…} where face f = { … }`.
 //!
-//! A system of faces, `T[f ↦ v, g ↦ w]`, fixes the fields of each face it
-//! names.
+//! A system of faces, `T.#{f ↦ v, g ↦ w}`, fixes the fields of each face it
+//! names. The static bracket's forms `T[.l = v]` and `T[f ↦ v]` are retired
+//! spellings, and the lowering refuses each one by name.
 //!
 //! # A patched type is a core former over its base
 //!
@@ -119,10 +120,10 @@ pub enum Bracket<'source>
 {
     /// A stage `T[i]` or `T[< i]`, or a view's mode `View[m](a)`.
     Stage,
-    /// The field form `T[.l = v, …]`.
+    /// The field form `T.#{.l = v, …}`.
     Fields(Vec<Entry<'source>>),
-    /// The face form `T[f ↦ v]`, or a system of faces `T[f ↦ v, g ↦ w]`: each
-    /// face's name beside its value, in written order.
+    /// The face form `T.#{f ↦ v}`, or a system of faces `T.#{f ↦ v, g ↦ w}`:
+    /// each face's name beside its value, in written order.
     Faces(Vec<(Placed, Placed)>),
 }
 
@@ -297,8 +298,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
 
 impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<'host, F>
 {
-    /// Classify the field form `T[.l = v, …]` at `site` over `base`, under
-    /// the frame `frame` the staged type reads its operands in.
+    /// Classify the field form `T.#{.l = v, …}` at `site` over `base`, under
+    /// the frame `frame` the extension type reads its operands in.
     ///
     /// # Specification
     /// - requires: `site` is a staged type read as a value type under `frame`;
@@ -353,9 +354,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Ok(())
     }
 
-    /// Classify the face form `T[f ↦ v]`, or a system of faces `T[f ↦ v, g ↦
-    /// w]`, at `site` over `base`, under the frame `frame` the staged type
-    /// reads its operands in.
+    /// Classify the face form `T.#{f ↦ v}`, or a system of faces
+    /// `T.#{f ↦ v, g ↦ w}`, at `site` over `base`, under the frame `frame` the
+    /// extension type reads its operands in.
     ///
     /// # Specification
     /// - requires: `site` is a staged type read as a value type under `frame`;
@@ -887,11 +888,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     }
 
     /// Present when `declared`, the type a name's binder or declaration is
-    /// written with, is a patched type: a staged type whose bracket writes a
-    /// field form or a face form.
+    /// written with, is a patched type: an extension type `T.#{…}`.
     ///
     /// # Errors
-    /// A refusal when the form of `declared` or its pieces cannot be read.
+    /// A refusal when the form of `declared` cannot be read.
     ///
     /// # Specification
     /// trivial.
@@ -905,17 +905,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         else {
             return Ok(Maybe::Absent(()));
         };
-        let Some((_, Former::StagedType)) = self.cx().form_at(Placed::of(declared, tree))?
-        else {
-            return Ok(Maybe::Absent(()));
-        };
-        let mut pieces = Pieces::new();
-        read_pieces(self.cx().pbg, self.cx().tree, declared, &mut pieces)?;
-        Ok(if bracket_of(&pieces.pieces) == Written::Stage {
-            Maybe::Absent(())
-        }
-        else {
-            Maybe::Present(())
+        Ok(match self.cx().form_at(Placed::of(declared, tree))? {
+            Some((_, Former::ExtensionType)) => Maybe::Present(()),
+            Some(_) | None => Maybe::Absent(()),
         })
     }
 }

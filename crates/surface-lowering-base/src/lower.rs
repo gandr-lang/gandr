@@ -1783,9 +1783,9 @@ pub enum Plan
     /// A data type at a stage its function's telescope binds: the type and
     /// the stage.
     Staged(NodeIndex, gandr_kernel_term::Stage),
-    /// A record type patched by a static bracket, `T[.l = v]` or a system of
-    /// faces `T[f ↦ v, g ↦ w]`: each field of the base `T` at the type `T`
-    /// writes for it, each fixed label at the value the bracket first writes
+    /// A record type patched by the reader `.#{`, `T.#{.l = v}` or a system of
+    /// faces `T.#{f ↦ v, g ↦ w}`: each field of the base `T` at the type `T`
+    /// writes for it, each fixed label at the value the reader first writes
     /// for it, and each later face's value on a meet.
     Patched
     {

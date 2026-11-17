@@ -83,7 +83,8 @@ use crate::failure::Failure;
 /// (#6072), then by a translation's renaming after an import's signature
 /// and an offer's module, and by a flow applied to a module (#3461), then by
 /// a path between two signatures, `path p : A ≃ B` with its `into` and
-/// `from` bodies (#3487).
+/// `from` bodies (#3487), then by the reader `.#{` that fixes a record type's
+/// fields, `T.#{.l = v}` and `T.#{f ↦ v}` (#6498).
 const BUILT_IN_FINGERPRINT: u64 = 0x8090_945a_1b2b_dbd5;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form

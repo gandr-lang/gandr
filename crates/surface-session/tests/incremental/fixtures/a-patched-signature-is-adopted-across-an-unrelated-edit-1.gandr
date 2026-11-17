@@ -1,5 +1,5 @@
 type Config = *{host : String, port : Integer};
 
-def secured : Config[.port = 443] = *{.host = "localhost"};
+def secured : Config.#{.port = 443} = *{.host = "localhost"};
 
 def bystander : Integer = 1;

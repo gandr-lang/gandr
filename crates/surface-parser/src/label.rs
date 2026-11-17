@@ -1559,7 +1559,7 @@ impl LabelMode
             // by a brace or a connective's opener deepens this frame; a `}`
             // that empties it closes the interpolation and resumes the
             // containing string.
-            if matches!(text.0, b"{" | b"*{" | b"+{" | b"&{" | b".*{") {
+            if matches!(text.0, b"{" | b"*{" | b"+{" | b"&{" | b".*{" | b".#{") {
                 *depth = depth.saturating_add(1);
             }
             else if bool::from(text.equals(BytePattern(b"}"))) {
@@ -2992,7 +2992,7 @@ fn suffix_len(
 }
 
 /// Scan a lexeme led by `.`: the `..` rest token, the `.@` as-pattern alias,
-/// the selectors `.#[` and `.*{`, or a bare `.`.
+/// the selectors `.#[`, `.#{` and `.*{`, or a bare `.`.
 ///
 /// A dot before a digit stands alone too, so `.1` is the leading-dot label
 /// of a positional entry, `+{ .1 = b }`, rather than a number with no whole
@@ -3002,7 +3002,7 @@ fn suffix_len(
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; a pair `..` or `.@` is one punctuation, so is
-///   a selector `.#[` or `.*{`, and every other dot, one before a digit
+///   a selector `.#[`, `.#{` or `.*{`, and every other dot, one before a digit
 ///   included, stands alone.
 /// - panics: none.
 ///
@@ -3021,7 +3021,8 @@ fn scan_dot(
 {
     let second = bytes.byte(pos.advance(ByteWidth::ONE));
     let third = bytes.byte(pos.advance(ByteWidth::TWO));
-    if (second == Some(SourceByte::from(b'#')) && third == Some(SourceByte::from(b'[')))
+    if (second == Some(SourceByte::from(b'#'))
+        && (third == Some(SourceByte::from(b'[')) || third == Some(SourceByte::from(b'{'))))
         || (second == Some(SourceByte::from(b'*')) && third == Some(SourceByte::from(b'{')))
     {
         ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::THREE))
@@ -3693,7 +3694,7 @@ mod tests
                 (".@ x", Lexeme::Punct, 2),
                 (".x", Lexeme::Punct, 1),
                 (".#[i]", Lexeme::Punct, 3),
-                (".#{.a}", Lexeme::Punct, 1),
+                (".#{.a}", Lexeme::Punct, 3),
                 (".# q", Lexeme::Punct, 1),
                 (".*{x", Lexeme::Punct, 3),
                 (".* {", Lexeme::Punct, 1),

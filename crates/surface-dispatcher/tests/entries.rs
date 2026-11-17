@@ -590,9 +590,9 @@ enum Placed
     /// b)` reads `A` as the carrier, which answers.
     Implicit,
     /// A face form's face and the record it fixes the face at, `secure` and
-    /// `*{.port = 443}` in `Config[secure ↦ *{.port = 443}]`: the patched type
-    /// holds each of the record's values by its label, and no core node holds
-    /// the face or the record, so the type answers.
+    /// `*{.port = 443}` in `Config.#{secure ↦ *{.port = 443}}`: the patched
+    /// type holds each of the record's values by its label, and no core
+    /// node holds the face or the record, so the type answers.
     Faced,
 }
 

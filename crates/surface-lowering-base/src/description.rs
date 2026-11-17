@@ -2825,7 +2825,7 @@ fn split_members(
                 }
                 start = index;
             },
-            "(" | "[" | "#[" | ".#[" | "{" | "*{" | "+{" | "&{" | ".*{" => {
+            "(" | "[" | "#[" | ".#[" | "{" | "*{" | "+{" | "&{" | ".*{" | ".#{" => {
                 depth = depth.saturating_add(1);
             },
             ")" | "]" | "}" => depth = depth.saturating_sub(1),

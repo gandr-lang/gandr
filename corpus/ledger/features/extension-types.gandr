@@ -1,6 +1,6 @@
 /// `extension-types`: Extension types as face-theory signatures.
-/// Implemented: an extension type as a face-theory signature, a static bracket
-/// `T[.l = v]`, `T[f ↦ v]` or a system of faces `T[f ↦ v, g ↦ w]`, its
+/// Implemented: an extension type as a face-theory signature, the reader
+/// `T.#{.l = v}`, `T.#{f ↦ v}` or a system of faces `T.#{f ↦ v, g ↦ w}`, its
 /// coercions to and from the base, and the kernel's replay of its formation and
 /// of a system's meets.
 /// Not implemented: every other case.
@@ -50,7 +50,7 @@ type Config = *{host : String, port : Integer, tls : Bool} where
 
 /// A configuration on the secure face holds its host alone, and reads its
 /// fixed port back.
-def port_of(c : Config[secure ↦ *{.port = 443, .tls = true}]) -> Integer { c.port }
+def port_of(c : Config.#{secure ↦ *{.port = 443, .tls = true}}) -> Integer { c.port }
 
 /// A configuration on the secure port.
 def local : Config = *{.host = "localhost", .port = 443, .tls = true};
@@ -63,7 +63,7 @@ def local_port : Integer = port_of (local);
 def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer { c.port }
 
 /// A configuration on the secure face, by its host alone.
-def secured : Config[secure ↦ *{.port = 443, .tls = true}] = *{.host = "localhost"};
+def secured : Config.#{secure ↦ *{.port = 443, .tls = true}} = *{.host = "localhost"};
 
 /// `secured` stands at `Config` by the coercion out: its record reads the
 /// port the face fixes.

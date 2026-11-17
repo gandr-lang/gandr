@@ -190,8 +190,8 @@ pub const UNRESTRICTED: Spelled = Spelled {
     ascii: Ascii::Token(LabelText("inf")),
 };
 
-/// A type restricted along a named face, `Config[secure ↦ e]` or
-/// `Config[secure |-> e]`.
+/// A type restricted along a named face, `Config.#{secure ↦ e}` or
+/// `Config.#{secure |-> e}`.
 pub const MAPS_TO: Spelled = Spelled {
     tile: TileLabel("↦"),
     ascii: Ascii::Token(LabelText("|->")),
