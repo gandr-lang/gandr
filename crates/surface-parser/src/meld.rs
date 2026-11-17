@@ -2491,8 +2491,8 @@ impl<'pbg> MeldState<'pbg>
     ///   top when it is a complete operand of [`Sort::Type`]. The head is read
     ///   through each type application meld's first child. `None` otherwise.
     /// - panics: none.
-    /// - economy: one read of the emission log for each application of the
-    ///   spine; a path's spine holds at most two.
+    /// - bound: one read of the emission log for each application of the spine;
+    ///   a path's spine holds at most two.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Path a b` reads both endpoints as expressions, and
@@ -2531,8 +2531,8 @@ impl<'pbg> MeldState<'pbg>
     ///   of the head of `spine`, read through each type application meld's
     ///   first child, when `spine` is an operand. `None` otherwise.
     /// - panics: none.
-    /// - economy: one read of the emission log for each application of the
-    ///   spine; a path's spine holds at most two.
+    /// - bound: one read of the emission log for each application of the spine;
+    ///   a path's spine holds at most two.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::spine_operands`].
