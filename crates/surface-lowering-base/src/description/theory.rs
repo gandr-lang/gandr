@@ -1949,9 +1949,9 @@ impl Reader<'_, '_>
     ///   parentheses around the body or a codomain are read through; the grade
     ///   is `ω` or unwritten; the formers are the thunk's node at the value
     ///   sort, then each arrow's and the returner's at the computation sort.
-    ///   The box, `A -> R` or `A => R`, reads as its thunk `+U (A -> -F R)`:
-    ///   its domain the one unnamed input, its result the one output, its node
-    ///   the one former, at the value sort.
+    ///   The box, `A -> R`, reads as its thunk `+U (A -> -F R)`: its domain the
+    ///   one unnamed input, its result the one output, its node the one former,
+    ///   at the value sort.
     /// - fails: any other grade, and a body that is not arrows ending in a
     ///   returner, are malformed.
     /// - panics: none.
@@ -2198,7 +2198,7 @@ impl Reader<'_, '_>
         ))
     }
 
-    /// Read a law member, `law name : (binders) => Path[.A = C](l, r)`: the
+    /// Read a law member, `law name : (binders) -> Path[.A = C](l, r)`: the
     /// equation a model proves at the path type its statement writes, and
     /// where each of its parts is written.
     ///

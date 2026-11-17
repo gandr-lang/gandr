@@ -156,7 +156,7 @@ fn generator(
     arena.computation_ascribe(body, ty)
 }
 
-/// `(x : ℤ) => (y : ℤ) => (c : Path[.A = ℤ](x, y)) => Path[.A = ℤ](x, y)`, the
+/// `(x : ℤ) -> (y : ℤ) -> (c : Path[.A = ℤ](x, y)) -> Path[.A = ℤ](x, y)`, the
 /// one cell's pasting context, as a computation returning the curried function
 /// answering `c` ascribed that type.
 ///

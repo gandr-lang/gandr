@@ -3265,7 +3265,7 @@ fn a_one_entry_telescope_motive_is_refused_by_its_shape()
 #[test]
 fn telescope_transport_along_here_reduces()
 {
-    // In `(y : Bool, z : Bool) => Path[.A = Bool](y, z)`: `here` along both
+    // In `(y : Bool, z : Bool) -> Path[.A = Bool](y, z)`: `here` along both
     // identities returns the value; `here` along the path alone transports
     // in the fibre `z. Path[.A = Bool](T, z)`; a neutral path sticks.
     let mut arena = TermArena::new();
@@ -3333,7 +3333,7 @@ fn telescope_transport_along_here_reduces()
 #[test]
 fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
 {
-    // In `(y : Unit, z : Path[.A = Unit]((), y)) => C`, the unit's evidence
+    // In `(y : Unit, z : Path[.A = Unit]((), y)) -> C`, the unit's evidence
     // `()` is a closed path that is no reflexivity. A returned type reading
     // neither entry returns the value along it; one reading the endpoint or
     // the identity over it, at a carrier other than the unit, sticks.
@@ -3381,7 +3381,7 @@ fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
 #[test]
 fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
 {
-    // In `(y : Unit, z : Path[.A = Unit]((), y)) => Path[.A = Unit](y, ())`,
+    // In `(y : Unit, z : Path[.A = Unit]((), y)) -> Path[.A = Unit](y, ())`,
     // the family of paths back to the centre, every inhabitant of the
     // returned type is the unit: along the unit's evidence `()`, a closed
     // path that is no reflexivity, along a variable and along a constant

@@ -89,9 +89,9 @@ mod tests;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Statement
 {
-    /// `(a) => Path[.A = Bool](E(a, a), true)`.
+    /// `(a) -> Path[.A = Bool](E(a, a), true)`.
     Reflexive,
-    /// `(a, b) => Path[.A = Bool](E(a, b), E(b, a))`.
+    /// `(a, b) -> Path[.A = Bool](E(a, b), E(b, a))`.
     Symmetric,
 }
 

@@ -5269,7 +5269,7 @@ fn stuck_transports_read_their_motives_endpoints_by_unfolding_4179()
 #[test]
 fn two_stuck_telescope_transports_compare_by_motive_start_over_and_value()
 {
-    // `transport((y : N, z : N) => Path[.A = N](y, z), p, s, o, v)` along one
+    // `transport((y : N, z : N) -> Path[.A = N](y, z), p, s, o, v)` along one
     // variable path `p`, as an associator by based path induction leaves
     // it: a family reading both entries keeps it stuck. The motives, minted
     // apart, compare as codes, then the starts, the paths over and the

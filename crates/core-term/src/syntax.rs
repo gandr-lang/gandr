@@ -6278,7 +6278,7 @@ mod tests
         let returns_int = arena.comp_type_returner(int);
         let arrow = arena.comp_type_arrow(int, returns_int);
         let stated_type = arena.value_type_thunk(arrow);
-        // `(fun (q : Int) { y(q) } : Int => Int)`: under `q` and the bind's
+        // `(fun (q : Int) { y(q) } : Int -> Int)`: under `q` and the bind's
         // binder, `y` is the fourth variable out.
         let q = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let y_inside = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
