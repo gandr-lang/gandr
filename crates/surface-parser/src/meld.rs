@@ -4056,12 +4056,12 @@ impl<'pbg> MeldState<'pbg>
                 .emit
                 .get(usize::try_from(cell.emit.0).unwrap_or(usize::MAX))
             {
-                Some(EmitOp::Token { .. }) => true,
+                Some(&EmitOp::Token { .. }) => true,
                 Some(&EmitOp::Interior {
                     label: NodeLabel::Meld(form),
                     ..
                 }) => self.pbg.rule_of(form).is_ok_and(|own| own.name() == name),
-                Some(EmitOp::Interior { .. }) | None => false,
+                Some(&EmitOp::Interior { .. }) | None => false,
             }
         }))
     }
