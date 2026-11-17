@@ -1,0 +1,3 @@
+def typed(A : Type, B : Type, x : A, y : A, p : Path[.A = A](x, y), v : B) -> B {
+  Path.walk B p v
+}

@@ -1,0 +1,9 @@
+{PRELUDE}def ticking(n : Nat) -> -F [Partial] Nat {{ loop {{ tick n }} }}
+def ticking_stated(n : Nat) -> -F [Partial] Nat {{ loop {{ tick n; }} }}
+def ticking_by_hand(n : Nat) -> -F [Partial] Nat {{ loop {{ tick n; continue }} }}
+def arms(n : Nat) -> -F [Partial] Nat {{ loop {{ match n {{ | Zero => break(n) | Succ(p) => tick p }} }} }}
+def arms_stated(n : Nat) -> -F [Partial] Nat {{ loop {{ match n {{ | Zero => break(n) | Succ(p) => tick p }}; }} }}
+def arms_by_hand(n : Nat) -> -F [Partial] Nat {{ loop {{ match n {{ | Zero => break(n) | Succ(p) => {{ tick p; continue }} }} }} }}
+def inner(n : Nat) -> -F [Partial] Nat {{ loop {{ loop {{ break }} }} }}
+def inner_by_hand(n : Nat) -> -F [Partial] Nat {{ loop {{ loop {{ break }} ; continue }} }}
+def endless(n : Nat) -> -F [Partial] Nat {{ loop {{ loop {{ continue }} }} }}

@@ -1,0 +1,56 @@
+#:tombi toml-version = "v1.0.0"
+
+[alias]
+# NOTE: requires building with +nightly
+build-dist = ["build", "--config=.cargo/config.dist.toml", "--profile=dist"]
+check-dist = ["check", "--config=.cargo/config.dist.toml", "--profile=dist"]
+
+# Cargo compares sources by checksum only with both keys: `checksum-freshness`
+# of `[unstable]` below permits it, and this key selects it. Its default is
+# `"mtime"`, so with the flag alone each unit compares dates. A CI job's
+# restamp then dates a changed source before an older restored unit, and that
+# stale unit reads as fresh.
+# - see: #3206, #7775
+#
+# Each build in the tree runs the compiler through the tree's wrapper, which
+# is kache where the host has it. Cargo reads the path from the parent of this
+# directory. `RUSTC_WRAPPER` comes before this key, and its empty value gives
+# a build no wrapper.
+# - see: `.config/kache/rustc-wrapper`, #7789
+[build]
+rustc-wrapper = ".config/kache/rustc-wrapper"
+fingerprint = "content"
+
+# Each mold process uses every core. With `MOLD_JOBS=1`, concurrent links
+# take one lock of the user and run one at a time, each at full width.
+# Cargo passes this to rustc, and rustc passes it to the linker.
+[env]
+MOLD_JOBS = "1"
+
+# Cargo fetches a Git source, such as quenchant, with the `git` command.
+# libgit2 gives a TLS fault the class `Ssl`, and Cargo does not retry that
+# class, so one fault failed a CI job (#5469). Cargo retries a failure of the
+# `git` command `net.retry` times. The CI image installs `git` for this.
+[net]
+git-fetch-with-cli = true
+
+# rustc's parallel front end compiles one crate on up to 16 threads. The
+# gain stops at 16 threads on the hosts measured. The threads take their
+# tokens from Cargo's jobserver, so a build never runs more than `-j` admits.
+[target."cfg(all())"]
+rustflags = ["-Zthreads=16"]
+
+# Every Linux build of the tree links with mold, on each host and in CI.
+# GCC and clang both read `-fuse-ld=mold`, so the CI image's `cc` and a
+# host's clang take one flag. mold compresses debug sections with zstd.
+# A host's own `rustflags` come first, and Cargo joins these after them.
+# A task that sets `RUSTFLAGS` drops every `rustflags` array.
+[target.'cfg(target_os = "linux")']
+rustflags = ["-Clink-arg=-fuse-ld=mold", "-Clink-arg=-Wl,--compress-debug-sections=zstd"]
+
+[unstable]
+# Freshness is by source content, not mtime. A worktree starts with a copy of
+# another worktree's `target/` stamped after its own sources, and a CI runner
+# restores a cached one under fresh checkout mtimes; either way an artifact
+# whose source changed would otherwise pass for fresh (#1285).
+checksum-freshness = true
