@@ -1,0 +1,121 @@
+test: lower::identity::tests::a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073
+package: gandr-surface-lowering
+command: mise run debug:test gandr-surface-lowering lower::identity::tests::a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073 --break code::motives_alike$
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435' (arm64).
+(lldb) settings set -- target.run-args  "lower::identity::tests::a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex code::motives_alike$
+Breakpoint 1: where = gandr_surface_lowering-52666a784a556435`gandr_core_nbe::code::motives_alike + 68 at code.rs:3180:44, address = 0x000000010175933c
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lowering-52666a784a556435`__rustc::rust_panic + 12 at panicking.rs:875:25, address = 0x0000000101e0fe7c
+(lldb) run
+
+running 1 test
+test lower::identity::tests::a_stated_lambda_applied_in_a_motive_converts_with_its_reduct_4073 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 89615 launched: 'target/debug-trace/debug/deps/gandr_surface_lowering-52666a784a556435' (arm64)
+Process 89615 stopped
+* thread #2, name = 'lower::identity::tests::a_stated_lambda_applied_in_a_motive_con', stop reason = breakpoint 1.1
+       frame #0: 0x000000010175933c gandr_surface_lowering-52666a784a556435`gandr_core_nbe::code::motives_alike(core={values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, left={0:0}, right={0:2}) at code.rs:3180:44
+   3177	    right: ValueClosureId,
+   3178	) -> Result<Alike, ConversionFault>
+   3179	{
+-> 3180	    let (Some(one), Some(other)) = (domain.value_closure(left), domain.value_closure(right))
+    	                                           ^
+   3181	    else {
+   3182	        return Err(ConversionFault::Domain(DomainFault::Dangling));
+   3183	    };
+(lldb) bt 24
+* thread #2, name = 'lower::identity::tests::a_stated_lambda_applied_in_a_motive_con', stop reason = breakpoint 1.1
+   * frame #0: 0x000000010175933c gandr_surface_lowering-52666a784a556435`gandr_core_nbe::code::motives_alike(core={values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, left={0:0}, right={0:2}) at code.rs:3180:44
+     frame #1: 0x00000001016f4b0c gandr_surface_lowering-52666a784a556435`<gandr_core_nbe::conv::Walk>::neutrals::{closure#0} at conv.rs:1693:28
+     frame #2: 0x0000000101734268 gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Local, gandr_core_nbe::conv::ConversionFault>, <gandr_core_nbe::conv::Walk>::neutrals::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #3: 0x00000001016f8f70 gandr_surface_lowering-52666a784a556435`<gandr_core_nbe::conv::Walk>::neutrals(self={core:{values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}}, outstanding:Nothing}, left={0:20}, right={0:35}, context=Flexible(Indeterminate)) at conv.rs:1538:5
+     frame #4: 0x00000001016f1194 gandr_surface_lowering-52666a784a556435`<gandr_core_nbe::conv::Walk>::run::{closure#1} at conv.rs:678:38
+     frame #5: 0x000000010173428c gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Walked, gandr_core_nbe::conv::ConversionFault>, <gandr_core_nbe::conv::Walk>::run::{closure#1}>(closure={_ref__self:{core:{values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({…}), length:4, alloc:{value:{…}}, _marker:{}}}, outstanding:Nothing}}) at __.rs:22:5
+     frame #6: 0x00000001016f8960 gandr_surface_lowering-52666a784a556435`<gandr_core_nbe::conv::Walk>::run(self={core:{values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}}, outstanding:Nothing}) at conv.rs:657:5
+     frame #7: 0x00000001016f1b24 gandr_surface_lowering-52666a784a556435`<gandr_core_nbe::conv::Walk>::settle::{closure#0} at conv.rs:627:27
+     frame #8: 0x000000010173409c gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Settlement, gandr_core_nbe::conv::ConversionFault>, <gandr_core_nbe::conv::Walk>::settle::{closure#0}>(closure={_ref__self:{core:{values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({…}), length:4, alloc:{value:{…}}, _marker:{}}}, outstanding:Nothing}, _ref__root:Values({0:14}, {0:22}, Rigid)}) at __.rs:22:5
+     frame #9: 0x00000001016f8bb8 gandr_surface_lowering-52666a784a556435`<gandr_core_nbe::conv::Walk>::settle(self=<unavailable>, root=<unavailable>) at conv.rs:615:5
+     frame #10: 0x00000001016f6354 gandr_surface_lowering-52666a784a556435`gandr_core_nbe::conv::convert_values::{closure#0} at conv.rs:518:48
+     frame #11: 0x000000010173403c gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Settlement, gandr_core_nbe::conv::ConversionFault>, gandr_core_nbe::conv::convert_values::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #12: 0x00000001016f9528 gandr_surface_lowering-52666a784a556435`gandr_core_nbe::conv::convert_values(core={values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, left={0:14}, right={0:22}) at conv.rs:501:1
+     frame #13: 0x00000001016f6844 gandr_surface_lowering-52666a784a556435`gandr_core_nbe::machine::settle_root::{closure#0} at machine.rs:926:54
+     frame #14: 0x0000000101734104 gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::conv::Settlement, gandr_core_nbe::conv::ConversionFault>, gandr_core_nbe::machine::settle_root::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #15: 0x00000001016faa24 gandr_surface_lowering-52666a784a556435`gandr_core_nbe::machine::settle_root(core={values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, problem={left:Value({0:14}), right:Value({0:22}), depth:{0:7}}) at machine.rs:904:1
+     frame #16: 0x000000010156bf74 gandr_surface_lowering-52666a784a556435`gandr_core_nbe::machine::decide::<gandr_kernel_conversion_trace::sink::TraceLog<gandr_core_nbe::machine::TraceNode>, gandr_kernel_check_memo::memo::HashedMemo<gandr_core_nbe::resharing::GoalSupport, gandr_core_nbe::machine::ProcessId>>::{closure#0} at machine.rs:816:22
+     frame #17: 0x000000010164efec gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<core::result::Result<gandr_core_nbe::machine::MachineReport, gandr_core_nbe::conv::ConversionFault>, gandr_core_nbe::machine::decide<gandr_kernel_conversion_trace::sink::TraceLog<gandr_core_nbe::machine::TraceNode>, gandr_kernel_check_memo::memo::HashedMemo<gandr_core_nbe::resharing::GoalSupport, gandr_core_nbe::machine::ProcessId>>::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #18: 0x0000000101568db0 gandr_surface_lowering-52666a784a556435`gandr_core_nbe::machine::decide::<gandr_kernel_conversion_trace::sink::TraceLog<gandr_core_nbe::machine::TraceNode>, gandr_kernel_check_memo::memo::HashedMemo<gandr_core_nbe::resharing::GoalSupport, gandr_core_nbe::machine::ProcessId>>(core={values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain={values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, definitions=<unavailable>, settings=<unavailable>, problem={left:Value({0:14}), right:Value({0:22}), depth:{0:7}}, sink={decisions:size=0}) at machine.rs:787:1
+     frame #19: 0x00000001014f6d2c gandr_surface_lowering-52666a784a556435`<gandr_core_checker::code::CodeDefinitions>::relation::{closure#0} at code.rs:1614:22
+     frame #20: 0x000000010164ff78 gandr_surface_lowering-52666a784a556435`anodized::__::eval_once::<core::result::Result<(gandr_core_nbe::machine::MachineVerdict, alloc::vec::Vec<gandr_kernel_conversion_trace::decision::ConversionDecision<gandr_core_nbe::machine::TraceNode>>), gandr_core_checker::refusal::CheckRefusal>, <gandr_core_checker::code::CodeDefinitions>::relation::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #21: 0x00000001014fb83c gandr_surface_lowering-52666a784a556435`<gandr_core_checker::code::CodeDefinitions>::relation(self={bodies:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:3, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=3}, bodies:{root:Some({height:0, node:{…}, _marker:{…}}), length:3, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}, core={values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, point={0:1331}, endpoint={0:342}, returning=size=1) at code.rs:1595:5
+     frame #22: 0x00000001013f330c gandr_surface_lowering-52666a784a556435`gandr_core_checker::conversion::endpoints_agree(context={arena:{values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, binders:{intuitionistic:size=7, located:size=0, linear:size=0, world:Host}, signatures:size=3, data_signatures:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, codata_signatures:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, accessibility:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, admitted:Present({0:3}), atoms:{unit:{0:{0:308}}, integer:{0:{0:309}}, string:{0:{0:310}}, character:{0:{0:311}}, float64:{0:{0:312}}, u32:{0:{0:313}}, u64:{0:{0:314}}, i32:{0:{0:315}}, i64:{0:{0:316}}}, definitions:{bodies:{root:Some({height:0, node:{…}, _marker:{…}}), length:3, alloc:{value:{0:{…}}}, _marker:{}}, lowered:{chain:{entries:size=3}, bodies:{root:Some({…}), length:3, alloc:{value:{…}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, environment:{frames:size=1}}, lifts:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, funexts:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, equivalences:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, flows:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, directed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, motives:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, payloads:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, handled:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, reflexivities:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:3, alloc:{value:{0:{}}}, _marker:{}}, nesting:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:4, alloc:{value:{0:{}}}, _marker:{}}, crossings:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, updates:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, relating:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:6, alloc:{value:{0:{}}}, _marker:{}}, relations:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}, restating:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, readings:{sources:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, generalising:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, minted:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, standing:size=0}, restatements:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, laws:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, operation_rules:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, stage_signatures:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, natives:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, sealed:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, seals:{order:size=0, minted:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, budget:{0:1000000}, support:Off, deferrals:{owed:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, suspended:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, collecting:On, residue:{equations:size=0, dependencies:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}}, emission:Off, metas:{entries:size=0, by_hole:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, postponed:size=0, journal:None}, nominated:size=0, answered:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, spliced:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, forming:size=0, codata_forming:size=0, mutual:Absent(Lone), defining:size=0, kin:size=0, hindsight:size=0, foreseen:size=0, grants:Unbounded, typings:None, formations:All, stages:{parents:size=0}, supplies:size=0, own:(Absent(Unopened), Absent(Unopened)), result_stage:Declared, following:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, worlds:{declared:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, homes:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, entries:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, host:Unbounded, entered:Present({home:Host, capabilities:size=0}), spending:Unspent}, pattern_holes:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, reducts:size=0, tier:None, admitting:Derive}, left={0:1331}, right={0:342}) at conversion.rs:1101:10
+     frame #23: 0x00000001013d6798 gandr_surface_lowering-52666a784a556435`gandr_core_checker::conversion::convert::{closure#0} at conversion.rs:1264:28
+(lldb) frame variable --depth 3
+(gandr_core_term::arena::CoreArena *) core = 0x0000000170005910 {values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}
+(gandr_core_nbe::arena::DomainArena *) domain = 0x000000016ffeb008 {values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}
+(gandr_core_nbe::arena::ValueClosureId) left = {0:0}
+(gandr_core_nbe::arena::ValueClosureId) right = {0:2}
+(lldb) up
+frame #1: 0x00000001016f4b0c gandr_surface_lowering-52666a784a556435`<gandr_core_nbe::conv::Walk>::neutrals::{closure#0} at conv.rs:1693:28
+   1690	                    // Motives written apart, or over captures of different
+   1691	                    // depths, are one family when they read alike (#650).
+   1692	                    crate::identity::Motives::Unlike => {
+-> 1693	                        if crate::code::motives_alike(
+    	                           ^
+   1694	                            self.core,
+   1695	                            self.domain,
+   1696	                            left_motive,
+(lldb) frame variable --depth 3
+(gandr_core_nbe::conv::Context) context = Flexible(Indeterminate) {
+  0 = Indeterminate
+}
+(gandr_core_nbe::arena::NeutralId) right = {0:35}
+(gandr_core_nbe::arena::NeutralId) left = {0:20}
+(gandr_core_nbe::conv::Walk) self = {core:{values:{frozen:None, own:size=1333}, computations:{frozen:None, own:size=774}, value_types:{frozen:None, own:size=959}, comp_types:{frozen:None, own:size=464}, words:{words:{0:size=0}}, region_binders_from:None}, domain:{values:size=23, value_guards:size=23, computations:size=36, comp_guards:size=36, neutrals:size=37, neutral_guards:size=37, value_closures:size=4, comp_closures:size=18, levels:size=0, fields:size=0, branches:size=0}, goals:size=0, met:{map:{root:Some({height:0, node:{…}, _marker:{…}}), length:4, alloc:{value:{0:{…}}}, _marker:{}}}, outstanding:Nothing}
+(gandr_core_nbe::guard::Guard) left_guard = Flexible
+(gandr_core_nbe::guard::Guard) right_guard = Flexible
+(gandr_core_nbe::conv::Context) left_context = Flexible(Indeterminate) {
+  0 = Indeterminate
+}
+(gandr_core_nbe::conv::Context) right_context = Flexible(Indeterminate) {
+  0 = Indeterminate
+}
+(gandr_core_nbe::conv::Context) beneath = Flexible(Indeterminate) {
+  0 = Indeterminate
+}
+(gandr_core_nbe::conv::Local) mismatch = Defer(Indeterminate) {
+  0 = Indeterminate
+}
+(gandr_core_nbe::domain::Neutral *) one = 0x000000073b1d8fc0 {head:Returned({0:5}), spine:size=1, unfolding:Rigid}
+(gandr_core_nbe::domain::Neutral *) other = 0x000000073b1d9290 {head:Returned({0:23}), spine:size=1, unfolding:Rigid}
+(bool) one_head = true
+(alloc::vec::Vec<gandr_core_nbe::conv::Goal, alloc::alloc::Global>) queued = size=1 {
+  [0] = Comps({0:5}, {0:23}, Flexible(Indeterminate)) {
+    0 = {0:5}
+    1 = {0:23}
+    2 = Flexible(Indeterminate) {
+      0 = Indeterminate
+    }
+  }
+}
+(core::iter::adapters::zip::Zip<core::slice::iter::Iter<gandr_core_nbe::domain::Elimination>, core::slice::iter::Iter<gandr_core_nbe::domain::Elimination> >) iter = {a:{ptr:{pointer:OperandTransport{motive:{0:0}, path:{0:6}}}, end_or_len:DataCase({0:0}), _marker:{}}, b:{ptr:{pointer:OperandTransport{motive:{0:2}, path:{0:6}}}, end_or_len:DataCase({0:0}), _marker:{}}, index:1, len:1}
+(gandr_core_nbe::domain::Elimination) left_elimination = OperandTransport{motive:{0:0}, path:{0:6}} {
+  motive = {0:0}
+  path = {0:6}
+}
+(gandr_core_nbe::domain::Elimination) right_elimination = OperandTransport{motive:{0:2}, path:{0:6}} {
+  motive = {0:2}
+  path = {0:6}
+}
+(gandr_core_nbe::arena::ValueClosureId) left_motive = {0:0}
+(gandr_core_nbe::arena::DomainValueId) left_value = {0:6}
+(gandr_core_nbe::arena::ValueClosureId) right_motive = {0:2}
+(gandr_core_nbe::arena::DomainValueId) right_value = {0:6}

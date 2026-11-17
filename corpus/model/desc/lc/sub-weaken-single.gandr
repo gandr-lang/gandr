@@ -1,0 +1,38 @@
+//! Law 4 cancels a weakening and a single substitution.
+//!
+//! `sub(sub(b, p), single(a))` equals `b`.
+//!
+//! The law does not hold by direct computation. An induction on `b` proves
+//! the law. `substSquare` and `substId` prove the required index agreement.
+//!
+//! - see: #640
+
+// This source imports syntax, congruences and identity lemmas.
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./congruence.gandr";
+import "./subst-subst.gandr";
+import "./subst-id.gandr";
+
+/// The composites of law 4 and of the shift by zero twice agree at every
+/// index.
+def weakenSingleAgree(a : Term, n : N) -> Path(
+  subst (look n (Shift (S Z)) Z) (Cons a (Shift Z)),
+  subst (look n (Shift Z) Z) (Shift Z)
+) =
+  match n where
+    | Z => Path.here (Ix Z)
+    | S(j) => Path.here (Ix (S j))
+
+/// The composition of `wk` and a single substitution is the identity.
+pub def subWeakenSingle(
+  b : Term,
+  a : Term
+) -> Path(subst (subst b (Shift (S Z))) (Cons a (Shift Z)), b) =
+  compose[5, 7] (chain 3) (
+    substSquare b (Shift (S Z)) (Cons a (Shift Z)) (Shift Z) (Shift Z) (fun (n) {
+      weakenSingleAgree a n
+    }),
+    substCong (Shift Z) (subst b (Shift Z)) b (substId b (Shift Z) (fun (n) { shiftZeroIsId n })),
+    substId b (Shift Z) (fun (n) { shiftZeroIsId n })
+  )

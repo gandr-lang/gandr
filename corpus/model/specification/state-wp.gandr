@@ -1,0 +1,30 @@
+//! `state-wp` observes state as predicate transformers.
+//!
+//! A transformer maps a postcondition and initial state to a precondition. It
+//! has type `((A, S) -> Type, S) -> Type`. It uncurries the transformer of
+//! § 3.4 of the cited work, and it reads propositions as types.
+//!
+//! The handler maps `get` and `put` into state predicates. The scope satisfies
+//! state laws. The observation is a monad morphism from state programs. The
+//! normaliser runs no scope yet. So it computes a precondition through the
+//! fold in `tree-state-wp.gandr`.
+//!
+//! - see: #2754
+//! - cites: [Maillard-2019-dijkstra_monads_all]
+//! [Maillard-2019-dijkstra_monads_all]: https://doi.org/10.1145/3341708 "Maillard et al., Dijkstra Monads for All"
+
+// The import gives StateLaws.
+import "../effects/state.gandr";
+
+/// This increment reads the counter, stores one more and returns unit.
+/// The scope returns the increment's predicate transformer.
+def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
+  handle st : StateLaws with sort S = Integer {
+    let n = st.get ();
+    st.put (n + 1);
+    pure fun (q) { fun (s) { q *{} s } }
+  } with {
+    | pure(w) => pure w
+    | oper get(k) => pure fun (q) { fun (s) { let w = k s; w q s } }
+    | oper put(s, k) => pure fun (q) { fun (_old) { let w = k *{}; w q s } }
+  }

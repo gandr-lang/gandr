@@ -1,0 +1,127 @@
+// Dependent pairs let later fields read earlier fields.
+//
+// A match, label or position reads a pair field.
+//
+// A pair path has a first-component path and a second-component path over it.
+//
+// - cites: [HoTT-2013]
+//
+// [HoTT-2013]: https://homotopytypetheory.org/book "The Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
+
+/// A family indexed by an integer, with one element at each index.
+data Ix(n : Integer) : Type where
+  | MkIx : Ix n
+
+/// A label a later entry names binds there: the type is a dependent pair.
+def tagged : *{n : Integer, w : Ix n} = *{3, (MkIx : Ix 3)};
+
+/// The first component of a dependent pair, by a match.
+def tag_of(p : *{n : Integer, w : Ix n}) -> Integer =
+  match p where
+    | *{m, w} => m
+
+/// The tag of `tagged`.
+@[runs("3")]
+def tag() -> Integer { tag_of tagged }
+
+/// The first component of a dependent pair, selected by its label.
+def index_of(p : *{n : Integer, w : Ix n}) -> Integer =
+  p.n
+
+/// The index of `tagged`.
+@[runs("3")]
+def index() -> Integer { index_of tagged }
+
+/// A pair whose second component is a loop at its first.
+def ring : *{n : Integer, v : Path[.A = Integer](n, n)} = *{2, Path.here 2};
+
+/// The second projection's type reads the first.
+def lap(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.n, p.n) =
+  p.v
+
+/// A selection by position names the same entry: `.0` the first, `.1` the
+/// second.
+def lap_by_position(p : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(p.0, p.0) =
+  p.1
+
+/// A pair has two positions, so a third names nothing.
+@[refuses("UnresolvedName")]
+def third(p : Integer * String) -> String =
+  return p.2
+
+/// A split's answer may name its scrutinee: each arm answers it at the pair.
+def rebuilt(p : *{
+  n : Integer,
+  v : Path[.A = Integer](n, n)
+}) -> Path(p, p) =
+  match p where
+    | *{.n = m, .v = w} => Path.here (*{m, w})
+
+/// `againAt` splits a three-field record under a motive that reads its
+/// scrutinee. Its arm rebuilds the record as a pair whose second entry `y`
+/// names the rest.
+def againAt(
+  b : Type,
+  w : *{x : b, y : b, p : Path[.A = b](x, y)}
+) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)}](w, w) =
+  match w where
+    | *{.x = u, .y = v, .p = q} => Path.here (*{u, *{v, q}})
+
+/// A three-field record is equivalent to itself.
+/// Every entry reads prior entries on both sides.
+def selfEquiv(b : Type) -> *{x : b, y : b, p : Path[.A = b](x, y)} ≃ *{
+  x : b,
+  y : b,
+  p : Path[.A = b](x, y)
+} =
+  *{
+    fun (w) { w },
+    *{
+      *{fun (w) { w }, fun (w) { Path.here w }},
+      *{fun (w) { w }, fun (w) { Path.here w }}
+    }
+  }
+
+/// `middle` uses labelled binders for a three-field record.
+/// The later type reads an earlier entry.
+def middle(t : *{a : Integer, b : Integer, c : Path[.A = Integer](a, a)}) -> Integer =
+  match t where
+    | *{.a = x, .c = z} => x
+
+/// A path between pairs is a path between the first components and, over
+/// it, a path between the second.
+def both : Path[.A = *{n : Integer, v : Path[.A = Integer](n, n)}](
+  *{2, Path.here 2},
+  *{2, Path.here 2}
+) = *{
+  Path.here 2,
+  Path.here (Path.here 2)
+};
+
+/// A declared pair's path reads the pair it unfolds to.
+def ring_around : Path(ring, ring) = *{
+  Path.here 2,
+  Path.here (Path.here 2)
+};
+
+/// The constant path at `tagged`, the second component's over the first's.
+def tagged_around : Path(tagged, tagged) = *{
+  Path.here 3,
+  Path.here (MkIx : Ix 3)
+};
+
+/// Five, carried along `both` through the constant family.
+def moved() -> Integer { Path.walk (fun (s) { Integer }) both 5 }
+
+/// A later entry's type can call an earlier entry.
+/// The printed second type, `Path[.A = Integer](e.0(0), 0)`, reads back to it.
+///
+/// - see: #935
+def calledFiber(e : *{
+  cell : Integer -> Integer,
+  fix : Path[.A = Integer](cell 0, 0)
+}) -> Path[.A = *{cell : Integer -> Integer, fix : Path[.A = Integer](cell 0, 0)}](
+  *{e.cell, e.fix},
+  e
+) =
+  Path.here e
