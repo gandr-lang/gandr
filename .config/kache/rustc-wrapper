@@ -12,15 +12,17 @@
 # reads the variable before this file. A build that must compile each unit
 # sets `RUSTC_WRAPPER` to the empty string, which gives Cargo no wrapper.
 # - see: #7789, `.cargo/config.toml`, `mise.toml`, `.github/actions/setup-rust/kache-wrapper.bash`
-# macOS removes the loader path from this script's environment.
-# Cargo names the selected rustup toolchain.
+# macOS removes the Dylint driver library path from this script's environment.
+# kache's daemon owns the compile environment.
 # - see: #7861
+driver=${1-}
 case ${OSTYPE:-} in
   darwin*)
     if [[ -z ${DYLD_FALLBACK_LIBRARY_PATH:-} && -n ${RUSTUP_TOOLCHAIN:-} ]]; then
       rustup_home=${RUSTUP_HOME:-$HOME/.rustup}
       export DYLD_FALLBACK_LIBRARY_PATH=$rustup_home/toolchains/$RUSTUP_TOOLCHAIN/lib
     fi
+    if [[ ${driver##*/} == dylint-driver ]]; then exec "$@"; fi
     ;;
 esac
 if command -v kache > /dev/null 2>&1; then exec kache "$@"; fi

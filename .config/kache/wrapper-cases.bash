@@ -37,12 +37,16 @@ running() {
 }
 
 if [[ ${OSTYPE:-} == darwin* ]]; then
+  fake=$scratch/no-kache
+  mkdir -p "$fake"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fake/kache"
+  chmod +x "$fake/kache"
   read -r toolchain _ < <(rustup show active-toolchain)
   driver=$HOME/.dylint_drivers/$toolchain/dylint-driver
   rustc=$(rustup which rustc)
   if [[ ! -x $driver ]]; then
     fail "#7861: no Dylint driver matches the active toolchain"
-  elif ! RUSTUP_TOOLCHAIN=$toolchain "$tree/.config/kache/rustc-wrapper" "$driver" "$rustc" -V > /dev/null 2>&1; then
+  elif ! PATH=$fake:$PATH RUSTUP_TOOLCHAIN=$toolchain "$tree/.config/kache/rustc-wrapper" "$driver" "$rustc" -V > /dev/null 2>&1; then
     fail "#7861: the tree wrapper did not load the Dylint driver"
   fi
 else
