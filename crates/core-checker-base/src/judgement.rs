@@ -6864,15 +6864,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Computation::Lambda(body) => {
                 // A lambda against a returner of a box stands as that box
-                // returned, so it checks at the box's function type.
-                let expected = match self.boxed_expected(expected)? {
-                    Maybe::Present(function) => {
-                        self.context.record_boxed(term);
-                        function
+                // returned, so it checks at the box's function type. The box
+                // is read only where the arrow is refused, so a lambda against
+                // an arrow pays nothing for it.
+                let (domain, codomain) = match self.arrow_expected(term, expected) {
+                    Ok(parts) => parts,
+                    Err(refusal @ CheckRefusal::ShapeMismatch { .. }) => {
+                        match self.boxed_expected(expected)? {
+                            Maybe::Present(function) => {
+                                self.context.record_boxed(term);
+                                self.arrow_expected(term, function)?
+                            },
+                            Maybe::Absent(()) => return Err(refusal),
+                        }
                     },
-                    Maybe::Absent(()) => expected,
+                    Err(refusal) => return Err(refusal),
                 };
-                let (domain, codomain) = self.arrow_expected(term, expected)?;
                 self.context.open_intuitionistic(
                     CoreNode::Term(TermNode::Computation(term)),
                     domain,
