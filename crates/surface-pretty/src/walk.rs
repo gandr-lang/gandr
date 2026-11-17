@@ -12564,6 +12564,10 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_prelude_operator_is_written_as_its_operator`
     /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
     /// - witness: `tests::goldens::a_homed_former_spells_as_its_reader_reads_it_4835`
+    ///
+    /// # Cost
+    /// - allocation: the form's parts and their text, growth within the
+    ///   former's pieces
     #[spec(
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
@@ -13768,6 +13772,11 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398`
     /// - witness: `tests::goldens::a_dependent_pair_ignoring_its_binder_spells_as_the_product_771`
+    ///
+    /// # Cost
+    /// - allocation: the operands the join takes, growth within its arity
+    /// - allocation: the document the builder lays, growth within the join's
+    ///   pieces
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::OpenRow { .. } | Join::StaticLambda { .. } | Join::Lambda | Join::Thunk

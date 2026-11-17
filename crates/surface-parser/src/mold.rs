@@ -4207,6 +4207,11 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — the differential witness compares the two procedures'
     ///   admitted menus at every decision.
     /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
+    ///
+    /// # Cost
+    /// - allocation: the eligible menu, growth within the candidates
+    /// - allocation: the admission context of a menu wider than
+    ///   [`ADMISSION_MENU`], growth within the candidates
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

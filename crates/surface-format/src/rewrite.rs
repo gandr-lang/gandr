@@ -3253,6 +3253,9 @@ impl<'source> Respelling<'_, 'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the operands, growth within the application's arguments
     fn juxtaposed_type(
         &self,
         out: &mut Builder<'source>,
