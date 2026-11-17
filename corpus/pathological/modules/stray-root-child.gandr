@@ -10,7 +10,7 @@ def before : Integer = 1;
 
 /// An arm outside any match: a form of the arm's sort, not a declaration.
 @[refuses("OutOfFragment.WrongSort.declaration")]
-| x => 1 ;
+| x => 1
 
 /// An expression standing where a declaration belongs, refused at the top
 /// level.
