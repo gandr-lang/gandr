@@ -121,8 +121,7 @@ use crate::crossing::read_literal;
 /// The most nodes, and the highest constant, that one image may state: the
 /// reader refuses a count past it before it reads a node.
 ///
-/// economy: one ceiling for every reader; a caller with a tighter bound
-/// checks the counts that [`Read`] answers.
+/// A caller with a tighter bound checks the counts that [`Read`] answers.
 const MOST: u64 = 1_u64 << 24_u32;
 
 /// The image: five counts, then the nodes and the definitions.
