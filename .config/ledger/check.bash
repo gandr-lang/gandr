@@ -19,10 +19,13 @@
 # #4900).
 # The shared sources it was drawn from stay in `corpus`. An old spelling that
 # the grammar still parses, a row of `superseded` in `ledger/syntax.json`,
-# names an open issue that removes it (#6876). An old spelling that a source
-# meets as a refusal has an exemplar under `corpus/ledger/syntax/superseded/`
-# that states the refusal, and each file there is one such row's (#6896).
-# Every finding is printed before the gate fails.
+# names an open issue that removes it (#6876). Every finding is printed
+# before the gate fails.
+#
+# A source that writes a refused spelling meets its refusal. The row of the
+# spelling stays, and one file in the folder of refused spellings shows that
+# refusal. Each file in the folder belongs to one row.
+# - see: #6896, `corpus/ledger/syntax/superseded/`
 #
 # The issues the rows rest on are read through `gh` in one GraphQL query of
 # aliases, a hundred issues a request (#4263): a check that read each issue
@@ -247,10 +250,10 @@ while IFS=$'\t' read -r rule surface number; do
     failed=1
   fi
 done < <(jq -r '.superseded[] | select(has("issue")) | [.rule, .surface, (.issue | tostring)] | @tsv' ledger/syntax.json)
-# An old spelling that a source meets as a refusal keeps its row (#6896). Its
-# exemplar under `corpus/ledger/syntax/superseded/` states the refusal, so a
-# change that reads the spelling again fails `check:exemplars`. Each file
-# there is the exemplar of one such row.
+# A refused spelling keeps its row. Its file holds a declaration that meets
+# the refusal, so `check:exemplars` fails when the parser reads the spelling
+# again. The second loop finds a file that no row names.
+# - see: #6896
 while IFS=$'\t' read -r rule surface refusal exemplar; do
   path=ledger/$exemplar
   path=${path#ledger/../}

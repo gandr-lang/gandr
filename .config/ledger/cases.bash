@@ -10,11 +10,14 @@
 # bodies of a merge group's entries in the directory the queue gives (#6883),
 # and its `event` the body as a pull request's CI event holds it (#6767).
 # The scratch syntax ledger holds no old spelling, and a case's `superseded`
-# replaces its rows (#6876). A case's `files` are sources the change adds,
-# each by its path, as a refused spelling's exemplar is (#6896).
+# replaces its rows (#6876).
 # `check.bash` runs there, and its exit status and standard error are the
 # case's. The base of the change that a gate names is not the scratch
 # repository's, so the harness drops it.
+#
+# A case's `files` are the sources that the case adds, each under its path.
+# A file in the folder of refused spellings is such a source.
+# - see: #6896
 set -euo pipefail
 # The scratch repository's git reads no identity from the host, as the CI
 # image has none, and guesses none: a commit that names no author fails
