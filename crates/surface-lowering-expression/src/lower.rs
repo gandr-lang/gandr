@@ -11896,21 +11896,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let start = written.start;
         let count = written.end.saturating_sub(start);
         let first = self.cx().operands.entries().get(start).copied();
-        // A path-shaped head written where a value is read takes its three
-        // members as one parenthesized argument: `Path(A, a, b)`.
-        let tripled = |argument: NodeIndex| {
-            let cx = self.cx();
-            let parenthesized = cx.tree.node(argument).is_some_and(|node| {
-                matches!(shape_of(cx.pbg, node), Ok(Shape::Form { name, former }) if name == FormName::TUPLE || former == Former::Parenthesized)
-            });
-            let mut commas = cx.tree.children(argument).filter(|&child| {
-                cx.tree
-                    .fragment(child)
-                    .is_some_and(|text| <&str>::from(text) == ",")
-            });
-            parenthesized && commas.nth(1).is_some() && commas.next().is_none()
-        };
-        let written_first = count == 3_usize || (count == 1_usize && first.is_some_and(tripled));
         let pair = self
             .cx()
             .operands
@@ -11934,8 +11919,24 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let path_shaped = [TileName::PATH, TileName::BRIDGE, TileName::FLOW_TYPE]
             .into_iter()
             .find(|shaped| name.as_ref() == shaped.as_ref());
-        if let (Some(shaped), true) = (path_shaped, written_first) {
-            return Err(site.fault(head.span, FormFault::carrier_first(shaped)));
+        if let Some(shaped) = path_shaped {
+            // A path-shaped head written where a value is read takes its three
+            // members as one parenthesized argument: `Path(A, a, b)`.
+            let tripled = |argument: NodeIndex| {
+                let cx = self.cx();
+                let parenthesized = cx.tree.node(argument).is_some_and(|node| {
+                    matches!(shape_of(cx.pbg, node), Ok(Shape::Form { name, former }) if name == FormName::TUPLE || former == Former::Parenthesized)
+                });
+                let mut commas = cx.tree.children(argument).filter(|&child| {
+                    cx.tree
+                        .fragment(child)
+                        .is_some_and(|text| <&str>::from(text) == ",")
+                });
+                parenthesized && commas.nth(1).is_some() && commas.next().is_none()
+            };
+            if count == 3_usize || (count == 1_usize && first.is_some_and(tripled)) {
+                return Err(site.fault(head.span, FormFault::carrier_first(shaped)));
+            }
         }
         if let Some(written) = pair
             && let Some(relating) = [Relating::Path, Relating::Bridge]
