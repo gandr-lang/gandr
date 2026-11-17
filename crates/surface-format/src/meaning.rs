@@ -299,7 +299,7 @@ pub fn unelaborated(
 pub fn agree(
     arena: &CoreArena,
     (before, after): (&LoweredModule<'_>, &LoweredModule<'_>),
-    (base, sites): (ByteOffset, &Sites<'_>),
+    (base, sites): (ByteOffset, &Sites),
     elaborated: Option<&Elaborated<'_>>,
 ) -> Agreement
 {

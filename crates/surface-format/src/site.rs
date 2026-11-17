@@ -1,80 +1,52 @@
 //! The sites of two reports, compared through the map of one rewrite.
 //!
 //! A rewrite moves text. So a parser obligation or a refusal that the
-//! rewrite leaves alone can stand at another byte span in the candidate. The
-//! map of the rewrite has two levels. Its pieces give each top-level form's
-//! span in the text before the rewrite and in the candidate, in source
-//! order. Its written leaves give, for each leaf of the candidate, the span
-//! of the leaf it copies from the text before the rewrite. A leaf that the
-//! rewrite writes itself copies none.
+//! rewrite leaves alone can stand at another byte span in the candidate.
+//! Each pass of the formatter carries its own map at the leaves. The leaves
+//! it wrote pair one to one with the leaves read back from the candidate,
+//! because the formatter refuses two lists of unequal material. A leaf the
+//! pass copies keeps the span it has in the text before the rewrite, and a
+//! leaf a rewrite writes names the form it respells.
 //!
-//! A site compares as the piece that holds it and its offset inside that
-//! piece. The offset counts the leaves of the text before the rewrite, and a
-//! site of the candidate counts them through the leaves it copies. So the
-//! layout can respace a piece, and a rewrite can respell the text around a
-//! site, and the site stays. A site that no piece holds, or that starts or
-//! ends at a leaf that the rewrite writes itself, compares equal to no site.
+//! A site maps by its two ends. An end at the start, the end or an offset of
+//! a copied leaf maps to the same place of the paired leaf. An end at the
+//! start or the end of a respelled form maps to the start of the first leaf
+//! the pass wrote for the form, or to the end of the last one. An end inside
+//! a tile the pass replaces, or inside layout, has no image, so its site
+//! equals no site. The search reads the source span of each copied leaf and
+//! assumes no order of the pairs, since a rewrite can change the order of
+//! its operands.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
-use crate::Piece;
 use crate::leaf::Leaf;
+use crate::leaf::Origin;
 use crate::material_leaves;
 
-/// The map of one rewrite: its pieces, and the material leaves of the text
-/// before it and of its candidate, each candidate leaf beside the span of the
-/// leaf it copies.
+/// The map of one pass: each leaf it copies, and each form it respells.
 ///
 /// # Specification
-/// - requires: the pieces are in source order in both texts. The material
-///   leaves of `written` and of the candidate pair one to one, as the formatter
-///   checks before it compares reports.
+/// - requires: the material leaves of the written leaves and of the candidate
+///   pair one to one, as the formatter checks before it compares reports.
 /// - ensures: nothing.
-/// - witness: `site::tests::a_respaced_piece_keeps_each_site_of_its_leaves`
-#[derive(Clone, Debug)]
-pub struct Sites<'map>
+/// - witness: `site::tests::a_respaced_text_keeps_each_site_of_a_copied_leaf`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Sites
 {
-    /// Each top-level form's span before the rewrite and in the candidate.
-    pieces: &'map [Piece],
-    /// The span of each material leaf of the text before the rewrite.
-    before: Vec<ByteSpan>,
-    /// The span of each material leaf of the candidate, and the span of the
-    /// leaf of the text before the rewrite that it copies.
-    candidate: Vec<(ByteSpan, ByteSpan)>,
-}
-
-/// A site under the map.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Site
-{
-    /// The ordinal of the piece that holds it.
-    piece: usize,
-    /// The count of the piece's leaves, before the rewrite, that end at or
-    /// before the site's start.
-    start: usize,
-    /// The count of the piece's leaves, before the rewrite, that start before
-    /// the site's end.
-    end: usize,
-    /// The bytes from the start of the first leaf it reaches to its start,
-    /// where it starts inside that leaf.
-    inside_start: usize,
-    /// The bytes from its end to the end of the last leaf it reaches, where it
-    /// ends inside that leaf.
-    inside_end: usize,
-}
-
-/// Why a span has no site.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Unplaced
-{
-    /// No piece holds the span.
-    Between,
-    /// The span starts or ends at a leaf that the rewrite writes itself.
-    Written,
+    /// Each copied leaf: its span in the text before the pass and its span in
+    /// the candidate, ordered by the first.
+    copied: Vec<(ByteSpan, ByteSpan)>,
+    /// Each respelled form: its extent in the text before the pass and the
+    /// span that its leaves cover in the candidate, ordered by the extent's
+    /// start.
+    starts: Vec<(ByteSpan, ByteSpan)>,
+    /// The respelled forms again, ordered by the extent's end.
+    ends: Vec<(ByteSpan, ByteSpan)>,
 }
 
 /// Whether two sites are one site under the map.
@@ -83,193 +55,174 @@ pub enum Placement
 {
     /// One site.
     Same,
-    /// Two sites.
+    /// Two sites, or a site with no image.
     Moved,
 }
 
-/// The ordinals of the leaves that a span reaches in a list of material
-/// leaves: the first that does not end at or before its start, the count of
-/// those that start before its end, and the bytes inside the leaves at its
-/// two ends.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Reach
-{
-    /// The ordinal of the first leaf that does not end at or before the start.
-    start: usize,
-    /// The count of the leaves that start before the end.
-    end: usize,
-    /// The bytes from the first leaf's start to the span's start.
-    inside_start: usize,
-    /// The bytes from the span's end to the last leaf's end.
-    inside_end: usize,
-}
-
-/// How `span` reaches the leaves whose spans `spans` reads from `leaves`.
+/// Whether `outer` holds `inner`, its ends included.
 ///
 /// # Specification
 /// trivial.
-fn reach<Item>(
-    leaves: &[Item],
-    spans: impl Fn(&Item) -> ByteSpan,
-    span: ByteSpan,
-) -> Reach
+fn holds(
+    outer: ByteSpan,
+    inner: ByteSpan,
+) -> bool
 {
-    let start = leaves.partition_point(|leaf| spans(leaf).end() <= span.start());
-    let end = leaves.partition_point(|leaf| spans(leaf).start() < span.end());
-    let inside_start = leaves
-        .get(start)
-        .map(&spans)
-        .filter(|first| first.start() < span.start())
-        .map_or(0, |first| {
-            usize::from(span.start()).saturating_sub(usize::from(first.start()))
-        });
-    let inside_end = end
-        .checked_sub(1)
-        .and_then(|last| leaves.get(last))
-        .map(&spans)
-        .filter(|last| span.end() < last.end())
-        .map_or(0, |last| {
-            usize::from(last.end()).saturating_sub(usize::from(span.end()))
-        });
-    Reach {
-        start,
-        end,
-        inside_start,
-        inside_end,
-    }
+    outer.start() <= inner.start() && inner.end() <= outer.end()
 }
 
-impl<'map> Sites<'map>
+impl Sites
 {
-    /// The map of the rewrite whose pieces are `pieces`: `source` the leaves
-    /// of the text before it, `written` the leaves the formatter wrote for its
-    /// candidate, and `candidate` the leaves read back from the candidate.
+    /// The map of the pass whose written leaves are `written`, read back
+    /// from its candidate as `candidate`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: as [`Sites`].
+    /// - ensures: each respelled form's leaves are the run of paired leaves
+    ///   around the leaves its rewrite wrote, each copied from inside its
+    ///   extent or written for a form inside it.
+    /// - witness: `site::tests::a_respelled_form_maps_its_ends_to_its_leaves`
     pub fn new(
-        pieces: &'map [Piece],
-        (source, written, candidate): (&[Leaf<'_>], &[Leaf<'_>], &[Leaf<'_>]),
+        written: &[Leaf<'_>],
+        candidate: &[Leaf<'_>],
     ) -> Self
     {
+        let pairs: Vec<(Origin, ByteSpan, ByteSpan)> = material_leaves(written)
+            .zip(material_leaves(candidate))
+            .map(|(wrote, read)| (wrote.origin, wrote.span, read.span))
+            .collect();
+        let mut copied: Vec<(ByteSpan, ByteSpan)> = pairs
+            .iter()
+            .filter(|&&(origin, ..)| origin == Origin::Source)
+            .map(|&(_, source, read)| (source, read))
+            .collect();
+        copied.sort_unstable();
+        // The first and the last pair that each rewrite wrote a leaf of.
+        let mut anchors: BTreeMap<ByteSpan, (usize, usize)> = BTreeMap::new();
+        for (ordinal, &(origin, ..)) in pairs.iter().enumerate() {
+            if let Origin::Rewrite(form) = origin {
+                anchors
+                    .entry(form)
+                    .and_modify(|anchor| anchor.1 = ordinal)
+                    .or_insert((ordinal, ordinal));
+            }
+        }
+        let inside = |form: ByteSpan, ordinal: usize| {
+            pairs
+                .get(ordinal)
+                .is_some_and(|&(origin, source, _)| match origin {
+                    Origin::Source => holds(form, source),
+                    Origin::Rewrite(within) => holds(form, within),
+                })
+        };
+        let mut starts: Vec<(ByteSpan, ByteSpan)> = anchors
+            .into_iter()
+            .filter_map(|(form, (mut first, mut last))| {
+                while first
+                    .checked_sub(1)
+                    .is_some_and(|before| inside(form, before))
+                {
+                    first = first.saturating_sub(1);
+                }
+                while inside(form, last.saturating_add(1)) {
+                    last = last.saturating_add(1);
+                }
+                let (&(_, _, opens), &(_, _, closes)) = (pairs.get(first)?, pairs.get(last)?);
+                Some((form, ByteSpan::new(opens.start(), closes.end()).ok()?))
+            })
+            .collect();
+        starts.sort_unstable();
+        let mut ends = starts.clone();
+        ends.sort_unstable_by_key(|&(form, _)| (form.end(), form.start()));
         Self {
-            pieces,
-            before: material_leaves(source).map(|leaf| leaf.span).collect(),
-            candidate: material_leaves(candidate)
-                .zip(material_leaves(written))
-                .map(|(read, copied)| (read.span, copied.span))
-                .collect(),
+            copied,
+            starts,
+            ends,
         }
     }
 
-    /// The site of `span`, a span of the text before the rewrite in that
-    /// text's own offsets.
+    /// Whether `image`, an offset of the candidate, is an image of `place`, an
+    /// offset of the text before the pass.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `Present` exactly when one piece's source span holds `span`,
-    ///   its ends included.
-    /// - witness: `site::tests::a_site_between_pieces_has_no_place`
-    pub fn before(
+    /// - ensures: true exactly when a copied leaf's source span holds `place`
+    ///   and its candidate span holds `image` at the same offset, or a
+    ///   respelled form starts at `place` and its leaves start at `image`, or
+    ///   it ends at `place` and its leaves end at `image`.
+    /// - witness: `site::tests::a_respelled_form_maps_its_ends_to_its_leaves`
+    fn reaches(
         &self,
-        span: ByteSpan,
-    ) -> Maybe<Site, Unplaced>
+        place: ByteOffset,
+        image: ByteOffset,
+    ) -> bool
     {
-        let Maybe::Present((piece, first)) = self.piece(span, |piece| piece.source)
-        else {
-            return Maybe::Absent(Unplaced::Between);
-        };
-        let reached = reach(&self.before, |&leaf| leaf, span);
-        Maybe::Present(Site {
-            piece,
-            start: reached.start.saturating_sub(first),
-            end: reached.end.saturating_sub(first),
-            inside_start: reached.inside_start,
-            inside_end: reached.inside_end,
-        })
-    }
-
-    /// The site of `span`, a span of the candidate in its own offsets, read
-    /// through the leaves each candidate leaf copies.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Present` exactly when one piece's formatted span holds
-    ///   `span`, its ends included, and the leaves at its two ends copy leaves
-    ///   of the text before the rewrite.
-    /// - witness: `site::tests::a_respelled_piece_keeps_the_site_of_a_copied_leaf`
-    pub fn candidate(
-        &self,
-        span: ByteSpan,
-    ) -> Maybe<Site, Unplaced>
-    {
-        let Maybe::Present((piece, first)) = self.piece(span, |piece| piece.formatted)
-        else {
-            return Maybe::Absent(Unplaced::Between);
-        };
-        let reached = reach(&self.candidate, |&(read, _)| read, span);
-        let copied = |ordinal: usize| match self.candidate.get(ordinal) {
-            Some(&(_, copied)) => self
-                .before
-                .binary_search(&copied)
-                .map_or(Maybe::Absent(Unplaced::Written), Maybe::Present),
-            None => Maybe::Present(self.before.len()),
-        };
-        let start = match copied(reached.start) {
-            Maybe::Present(start) => start,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
-        let end = match reached.end.checked_sub(1) {
-            Some(last) if reached.end > reached.start => match copied(last) {
-                Maybe::Present(last) => last.saturating_add(1),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            },
-            Some(_) | None => start,
-        };
-        Maybe::Present(Site {
-            piece,
-            start: start.saturating_sub(first),
-            end: end.saturating_sub(first),
-            inside_start: reached.inside_start,
-            inside_end: reached.inside_end,
-        })
-    }
-
-    /// The ordinal of the piece whose span, as `spanned` reads it, holds
-    /// `span`, its ends included, and the ordinal of the first leaf before
-    /// the rewrite that its source span holds.
-    ///
-    /// # Specification
-    /// trivial.
-    fn piece(
-        &self,
-        span: ByteSpan,
-        spanned: impl Fn(&Piece) -> ByteSpan,
-    ) -> Maybe<(usize, usize), Unplaced>
-    {
-        let after = self
-            .pieces
-            .partition_point(|piece| spanned(piece).start() <= span.start());
-        let Some(ordinal) = after.checked_sub(1)
-        else {
-            return Maybe::Absent(Unplaced::Between);
-        };
-        let Some(piece) = self.pieces.get(ordinal)
-        else {
-            return Maybe::Absent(Unplaced::Between);
-        };
-        if span.end() > spanned(piece).end() {
-            return Maybe::Absent(Unplaced::Between);
-        }
         let first = self
-            .before
-            .partition_point(|leaf| leaf.start() < piece.source.start());
-        Maybe::Present((ordinal, first))
+            .copied
+            .partition_point(|&(source, _)| source.end() < place);
+        let copied = self
+            .copied
+            .get(first ..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|&&(source, _)| source.start() <= place)
+            .any(|&(source, read)| {
+                usize::from(place)
+                    .checked_sub(usize::from(source.start()))
+                    .and_then(|offset| usize::from(read.start()).checked_add(offset))
+                    == Some(usize::from(image))
+            });
+        let opened = {
+            let first = self
+                .starts
+                .partition_point(|&(form, _)| form.start() < place);
+            self.starts
+                .get(first ..)
+                .unwrap_or_default()
+                .iter()
+                .take_while(|&&(form, _)| form.start() == place)
+                .any(|&(_, leaves)| leaves.start() == image)
+        };
+        let closed = {
+            let first = self.ends.partition_point(|&(form, _)| form.end() < place);
+            self.ends
+                .get(first ..)
+                .unwrap_or_default()
+                .iter()
+                .take_while(|&&(form, _)| form.end() == place)
+                .any(|&(_, leaves)| leaves.end() == image)
+        };
+        copied || opened || closed
     }
 
-    /// Whether `before`, a span of a report on the text before the rewrite,
-    /// and `candidate`, a span of the candidate's report, are one site. Both
-    /// are spans of a unit's text in which each text starts at `base`, absent
+    /// Whether `before`, a span of the text before the pass, and `candidate`,
+    /// a span of the candidate, each in its text's own offsets, are one site.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Same` exactly when `candidate`'s start is an image of
+    ///   `before`'s start and its end an image of `before`'s end.
+    /// - witness: `site::tests::a_respaced_text_keeps_each_site_of_a_copied_leaf`
+    /// - witness: `site::tests::a_site_at_another_copy_or_in_layout_is_moved`
+    pub fn spanned(
+        &self,
+        before: ByteSpan,
+        candidate: ByteSpan,
+    ) -> Placement
+    {
+        if self.reaches(before.start(), candidate.start())
+            && self.reaches(before.end(), candidate.end())
+        {
+            Placement::Same
+        }
+        else {
+            Placement::Moved
+        }
+    }
+
+    /// Whether `before`, a span of a report on the text before the pass, and
+    /// `candidate`, a span of the candidate's report, are one site. Both are
+    /// spans of a unit's text in which each text starts at `base`, absent
     /// where the report names none.
     ///
     /// # Specification
@@ -279,7 +232,7 @@ impl<'map> Sites<'map>
     ///   where both are present, start at or after `base`, and
     ///   [`Sites::spanned`] places them as one in each text's own offsets.
     ///   `Moved` otherwise.
-    /// - witness: `site::tests::a_site_between_pieces_has_no_place`
+    /// - witness: `site::tests::a_site_at_another_copy_or_in_layout_is_moved`
     pub fn placed<Reason>(
         &self,
         base: ByteOffset,
@@ -317,27 +270,6 @@ impl<'map> Sites<'map>
                 Placement::Same
             },
             (Maybe::Absent(_), _) | (Maybe::Present(_), Maybe::Absent(_)) => Placement::Moved,
-        }
-    }
-
-    /// Whether `before`, a span of the text before the rewrite, and
-    /// `candidate`, a span of the candidate, each in its text's own offsets,
-    /// are one site.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `Same` exactly when both have a site and the sites are equal.
-    /// - witness: `site::tests::a_respaced_piece_keeps_each_site_of_its_leaves`
-    /// - witness: `site::tests::a_site_in_another_piece_is_moved`
-    pub fn spanned(
-        &self,
-        before: ByteSpan,
-        candidate: ByteSpan,
-    ) -> Placement
-    {
-        match (self.before(before), self.candidate(candidate)) {
-            (Maybe::Present(left), Maybe::Present(right)) if left == right => Placement::Same,
-            (Maybe::Present(_) | Maybe::Absent(_), _) => Placement::Moved,
         }
     }
 }

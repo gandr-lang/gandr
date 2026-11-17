@@ -2249,3 +2249,32 @@ mod sweeps
         );
     }
 }
+
+/// A refusal that stands after a respelled form in its own declaration is
+/// admitted, and so is a refusal whose site ends at the respelled form: the
+/// copied name keeps its site, and the end of the product maps to the end of
+/// the leaves the pass wrote for it.
+#[test]
+fn a_refusal_beside_or_at_a_respelled_form_keeps_its_site_6726()
+{
+    let grammar = grammar();
+    for (source, sugared) in [
+        (
+            "def p : *{Integer, String} = selfComposite;\n",
+            "def p : Integer * String = selfComposite;\n",
+        ),
+        (
+            "def p : -F *{Integer, Integer};\n",
+            "def p : -F (Integer * Integer);\n",
+        ),
+    ] {
+        let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+        let options = FormatOptions {
+            form: Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(formatted.withdrawn(), [], "{source}");
+        assert_eq!(formatted.into_text(), sugared);
+    }
+}

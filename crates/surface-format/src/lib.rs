@@ -1062,8 +1062,7 @@ fn format_once(
         }
         let agreement = verify_rewritten(
             grammar,
-            (parsed, &flat.leaves),
-            (&laid.leaves, &laid.respelled, &laid.pieces, text),
+            (parsed, &laid.leaves, &laid.respelled, text),
             (SourceText::from(before), unit),
             (&mut arena, lowered),
             checker.map(|checker| (checker, &mut elaborations)),
@@ -2215,18 +2214,22 @@ type Elaborations = Option<Elaboration>;
 /// Check that `text`, the source rewritten, spells the tokens and block
 /// comments of `written`, and keeps each line comment's words in its role;
 /// then compare its parser obligations with the source's, each by its class
-/// and its site through `pieces`, the map of the rewrite from the source's
-/// leaves `original`; then lower it after `before` in `unit` into `arena`
-/// beside `lowered`, and say which declarations lowered otherwise — where
-/// some did and `checked` gives a checker, those it does not elaborate alike,
-/// the source elaborated into `checked`'s slot the first time one does.
+/// and its site through the map of the pass that `written` holds; then lower
+/// it after `before` in `unit` into `arena` beside `lowered`, and say which
+/// declarations lowered otherwise — where some did and `checked` gives a
+/// checker, those it does not elaborate alike, the source elaborated into
+/// `checked`'s slot the first time one does.
 ///
 /// # Specification
 /// trivial.
 fn verify_rewritten(
     grammar: &Pbg,
-    (parsed, original): (&ParseResult<'_>, &[Leaf<'_>]),
-    (written, respelled, pieces, text): (&[Leaf<'_>], &[NodeIndex], &[Piece], SourceText<'_>),
+    (parsed, written, respelled, text): (
+        &ParseResult<'_>,
+        &[Leaf<'_>],
+        &[NodeIndex],
+        SourceText<'_>,
+    ),
     (before, unit): (SourceText<'_>, &LoweringUnit),
     (arena, lowered): (&mut CoreArena, &LoweredModule<'_>),
     checked: Option<(&dyn Elaborate, &mut Elaborations)>,
@@ -2245,7 +2248,7 @@ fn verify_rewritten(
         return Err(FormatError::Changed(Change::Attachment));
     }
     let base = ByteOffset::from(<&str>::from(before).len());
-    let sites = Sites::new(pieces, (original, written, &again.leaves));
+    let sites = Sites::new(written, &again.leaves);
     // The parser reads the text alone, so its obligations stand in the text's
     // own offsets.
     let obliged = parsed.obligations().len() == reparsed.obligations().len()

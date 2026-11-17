@@ -33,6 +33,7 @@ use crate::leaf::Documentation;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
 use crate::leaf::Offside;
+use crate::leaf::Origin;
 use crate::space::Context;
 
 /// The tokens that open a bracketed group.
@@ -236,6 +237,7 @@ pub fn separated<'source>(
     };
     let first = joined.first()?;
     let name = *declared.get(named)?;
+    let form = ByteSpan::new(first.span.start(), joined.last()?.span.end()).ok()?;
     let made = |text: &'static str, material: Material| Leaf {
         span: ByteSpan::new(name.span.start(), name.span.start()).unwrap_or(name.span),
         text: SourceFragment::from(text),
@@ -245,6 +247,7 @@ pub fn separated<'source>(
         context: Context::Written,
         offside: Offside::Written,
         branch: None,
+        origin: Origin::Rewrite(form),
     };
     let mut signed: Vec<Leaf<'source>> =
         Vec::with_capacity(head.saturating_add(last).saturating_add(3));
@@ -335,6 +338,7 @@ pub fn joined<'leaves, 'source>(
     }
     let first = signature.first()?;
     let position = ByteSpan::new(first.span.start(), first.span.start()).unwrap_or(first.span);
+    let form = ByteSpan::new(first.span.start(), definition.last()?.span.end()).ok()?;
     let made = |text: &'static str, material: Material| Leaf {
         span: position,
         text: SourceFragment::from(text),
@@ -344,6 +348,7 @@ pub fn joined<'leaves, 'source>(
         context: Context::Written,
         offside: Offside::Written,
         branch: None,
+        origin: Origin::Rewrite(form),
     };
     let mut out: Vec<Leaf<'source>> =
         Vec::with_capacity(signature.len().saturating_add(definition.len()));
@@ -508,6 +513,9 @@ pub fn members<'source>(
                 context: Context::Written,
                 offside: Offside::Written,
                 branch: None,
+                origin: Origin::Rewrite(
+                    ByteSpan::new(first.span.start(), leaves.last()?.span.end()).ok()?,
+                ),
             });
             out.extend(defined);
             copied = range.end;
@@ -675,6 +683,7 @@ pub fn merged<'leaves, 'source>(
     let (parameters, inside) = applied(body, &domains)?;
     let first = signature.first()?;
     let position = ByteSpan::new(first.span.start(), first.span.start()).unwrap_or(first.span);
+    let form = ByteSpan::new(first.span.start(), definition.last()?.span.end()).ok()?;
     let made = |text: &'static str, material: Material| Leaf {
         span: position,
         text: SourceFragment::from(text),
@@ -684,6 +693,7 @@ pub fn merged<'leaves, 'source>(
         context: Context::Written,
         offside: Offside::Written,
         branch: None,
+        origin: Origin::Rewrite(form),
     };
     let mut out: Vec<Leaf<'source>> = Vec::with_capacity(
         signature

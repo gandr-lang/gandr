@@ -10,7 +10,6 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_layout::PhysicalLineEnding;
 use gandr_surface_lowering::Unit;
 use gandr_surface_parser::parse;
-use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -21,10 +20,8 @@ use super::Rewrites;
 use super::Selection;
 use super::respell;
 use crate::Form;
-use crate::Layout;
 use crate::LayoutOptions;
 use crate::PageWidth;
-use crate::Piece;
 use crate::Withdrawal;
 use crate::Withdrawn;
 use crate::composite::Composites;
@@ -118,22 +115,9 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
         let alone = Unit::single();
         let lowered = meaning::lowered(&grammar, tree, &alone, &mut arena)
             .unwrap_or_else(|| panic!("the source lowers"));
-        let pieces = [Piece {
-            source: tree.node(form).map_or_else(
-                || panic!("the form has a span"),
-                gandr_surface_syntax::Node::span,
-            ),
-            formatted: ByteSpan::new(
-                ByteOffset::from(0_usize),
-                ByteOffset::from(text.trim_end().len()),
-            )
-            .unwrap_or_else(|error| panic!("the text's span: {error}")),
-            layout: Layout::Formatted,
-        }];
         let verdict = verify_rewritten(
             &grammar,
-            (&parsed, &flat.leaves),
-            (leaves, &respelled, &pieces, SourceText::from(text.as_str())),
+            (&parsed, leaves, &respelled, SourceText::from(text.as_str())),
             (SourceText::from(""), &alone),
             (&mut arena, &lowered),
             None,
@@ -230,22 +214,13 @@ fn a_refusal_moved_into_another_declaration_is_withdrawn_6726()
         .collect();
     let keys: Vec<_> = forms.iter().filter_map(|&form| tree.key(form)).collect();
     assert_eq!(keys.len(), 2, "two declarations");
-    let pieces: Vec<Piece> = spans
-        .iter()
-        .map(|&span| Piece {
-            source: span,
-            formatted: span,
-            layout: Layout::Formatted,
-        })
-        .collect();
     let mut arena = CoreArena::new();
     let alone = Unit::single();
     let lowered = meaning::lowered(&grammar, tree, &alone, &mut arena)
         .unwrap_or_else(|| panic!("the source lowers"));
     let verdict = verify_rewritten(
         &grammar,
-        (&parsed, &flat.leaves),
-        (&written, &forms, &pieces, SourceText::from(exchanged)),
+        (&parsed, &written, &forms, SourceText::from(exchanged)),
         (SourceText::from(""), &alone),
         (&mut arena, &lowered),
         None,
