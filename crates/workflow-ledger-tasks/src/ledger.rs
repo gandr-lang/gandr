@@ -137,10 +137,12 @@ use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
+use gandr_surface_grammar::RefusalName;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
 use gandr_surface_grammar::Removal;
 use gandr_surface_grammar::RemovalIssue;
+use gandr_surface_grammar::Replacement;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::SPELLED;
@@ -582,19 +584,32 @@ struct AttributeRow
     schema: AttributeSchema,
 }
 
-/// One old spelling that the grammar still parses, as the ledger reads it
-/// off an adaptation record.
+/// One old spelling, as the ledger reads it off an adaptation record: one
+/// that the grammar still parses, or one that a source meets as a refusal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SupersededRow
 {
-    /// The rule that still reads the old spelling.
+    /// The rule that reads the old spelling, or the rule of the spelling
+    /// that stays.
     rule: &'static str,
     /// The surface form that the old spelling writes.
     surface: &'static str,
-    /// The issue that removes the old spelling.
-    issue: RemovalIssue,
-    /// Why the grammar still parses it.
+    /// The spelling that stays.
+    replaced_by: Replacement,
+    /// How far the removal stands: the open issue, or the refusal.
+    removal: Withdrawal,
+    /// Why the record stands.
     reason: &'static str,
+}
+
+/// How far the removal of an old spelling stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Withdrawal
+{
+    /// The grammar still parses it, and this open issue removes it.
+    Open(RemovalIssue),
+    /// A source that writes it meets this refusal.
+    Refused(RefusalName),
 }
 
 /// The syntax ledger: every rule of the built-in grammar and every attribute
@@ -925,17 +940,27 @@ impl SyntaxLedger
             count: self.superseded.len(),
             noun: "spelling"
         })?;
-        out.push_str("An old spelling that the grammar still parses, so that a stale source reaches the decline of the elaborator. Each one names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open.\n");
+        out.push_str("An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.\n");
         if !self.superseded.is_empty() {
-            out.push_str("\n| Rule | Surface form | Removed by | Why the grammar keeps it |\n");
-            out.push_str("| ---- | ------------ | ---------- | ------------------------ |\n");
+            out.push_str(
+                "\n| Rule | Old spelling | Replaced by | Removal | Why the record stands |\n",
+            );
+            out.push_str(
+                "| ---- | ------------ | ----------- | ------- | --------------------- |\n",
+            );
             for row in &self.superseded {
+                let removal = match row.removal {
+                    Withdrawal::Open(issue) => format!("removed by #{}", issue.0),
+                    Withdrawal::Refused(refusal) => {
+                        format!("refused as [`{}`]({})", refusal.0, refused_exemplar(row))
+                    },
+                };
                 writeln!(
                     out,
-                    "| `{}` | `{}` | #{} | {} |",
+                    "| `{}` | `{}` | `{}` | {removal} | {} |",
                     row.rule,
                     row.surface,
-                    row.issue.0,
+                    row.replaced_by.0,
                     row.reason.replace('|', "\\|")
                 )?;
             }
@@ -1073,13 +1098,21 @@ impl SyntaxLedger
             .superseded
             .iter()
             .map(|row| {
-                json!({
-                    "rule": row.rule,
-                    "surface": row.surface,
-                    "issue": row.issue.0,
-                    "reason": row.reason,
-                })
-                .to_string()
+                let mut fields = serde_json::Map::new();
+                fields.insert("rule".to_owned(), Value::from(row.rule));
+                fields.insert("surface".to_owned(), Value::from(row.surface));
+                fields.insert("replaced_by".to_owned(), Value::from(row.replaced_by.0));
+                match row.removal {
+                    Withdrawal::Open(issue) => {
+                        fields.insert("issue".to_owned(), Value::from(issue.0));
+                    },
+                    Withdrawal::Refused(refusal) => {
+                        fields.insert("refused".to_owned(), Value::from(refusal.0));
+                        fields.insert("exemplar".to_owned(), Value::from(refused_exemplar(row)));
+                    },
+                }
+                fields.insert("reason".to_owned(), Value::from(row.reason));
+                Value::Object(fields).to_string()
             })
             .collect();
         let mut out = String::new();
@@ -1168,35 +1201,58 @@ fn elements(items: &[String]) -> String
     out
 }
 
-/// The adaptation records among `adaptations` that keep an old spelling, as
-/// ledger rows, in their order.
+/// The adaptation records among `adaptations` that record an old spelling,
+/// as ledger rows, in their order.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one row per record whose removal names an issue, carrying that
-///   issue, in the order of `adaptations`; no row for a record of a shape that
-///   the surface keeps.
+/// - ensures: one row per record of an old spelling, carrying its replacement
+///   and its open issue or its refusal, in the order of `adaptations`; no row
+///   for a record of a shape that the surface keeps.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a list that holds a kept record and a superseded one
-///   gives one row, with the issue of the superseded record.
+/// - hypothesis: L3 — a list that holds a kept record, a superseded one and a
+///   refused one gives two rows, each with its replacement, the first with its
+///   issue and the second with its refusal.
 /// - witness: `ledger::tests::an_old_spelling_writes_the_issue_that_removes_it_6876`
-#[spec(ensures: |ret| ret.len() == adaptations.iter().filter(|record| matches!(record.removal, Removal::By(_))).count())]
+/// - witness: `ledger::tests::a_refused_spelling_writes_its_refusal_and_its_exemplar_6896`
+#[spec(ensures: |ret| ret.len() == adaptations.iter().filter(|record| !matches!(record.removal, Removal::Kept)).count())]
 fn superseded(adaptations: &[Adaptation]) -> Vec<SupersededRow>
 {
     adaptations
         .iter()
-        .filter_map(|record| match record.removal {
-            Removal::By(issue) => Some(SupersededRow {
+        .filter_map(|record| {
+            let (removal, replaced_by) = match record.removal {
+                Removal::By(issue, replaced_by) => (Withdrawal::Open(issue), replaced_by),
+                Removal::Refused(refusal, replaced_by) => {
+                    (Withdrawal::Refused(refusal), replaced_by)
+                },
+                Removal::Kept => return None,
+            };
+            Some(SupersededRow {
                 rule: record.rule,
                 surface: record.surface,
-                issue,
+                replaced_by,
+                removal,
                 reason: record.reason,
-            }),
-            Removal::Kept => None,
+            })
         })
         .collect()
+}
+
+/// The path of a refused spelling's exemplar, from the ledger's folder:
+/// `../corpus/ledger/syntax/superseded/<surface>.gandr`, each `_` of the
+/// surface form a `-`.
+///
+/// # Specification
+/// trivial.
+fn refused_exemplar(row: &SupersededRow) -> String
+{
+    format!(
+        "../corpus/ledger/syntax/superseded/{}.gandr",
+        row.surface.replace('_', "-")
+    )
 }
 
 /// A rule row as a JSON object.
@@ -2157,8 +2213,10 @@ mod tests
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::PrecName;
     use gandr_surface_grammar::Provenance;
+    use gandr_surface_grammar::RefusalName;
     use gandr_surface_grammar::Regex;
     use gandr_surface_grammar::RemovalIssue;
+    use gandr_surface_grammar::Replacement;
     use gandr_surface_grammar::Rule;
     use gandr_surface_grammar::RuleName;
     use gandr_surface_grammar::Sort;
@@ -2550,8 +2608,8 @@ mod tests
     }
 
     /// #6876: an old spelling that the grammar still parses is a row of both
-    /// files, with the issue that removes it, and a shape the surface keeps is
-    /// not.
+    /// files, with the spelling that replaces it and the issue that removes
+    /// it, and a shape the surface keeps is not.
     #[test]
     fn an_old_spelling_writes_the_issue_that_removes_it_6876()
     {
@@ -2566,7 +2624,7 @@ mod tests
                 RuleName("data_declaration"),
                 SurfaceForm("bare_type_params"),
                 AdaptationReason("the bare head `(a)` | its old spelling"),
-                RemovalIssue(6876),
+                (Replacement("typed_type_params"), RemovalIssue(6876)),
             ),
         ]);
         let parsed: serde_json::Value =
@@ -2576,10 +2634,11 @@ mod tests
             Some(&serde_json::json!([{
                 "rule": "data_declaration",
                 "surface": "bare_type_params",
+                "replaced_by": "typed_type_params",
                 "issue": 6876_u32,
                 "reason": "the bare head `(a)` | its old spelling",
             }])),
-            "the JSON holds the old spelling alone, with its issue"
+            "the JSON holds the old spelling alone, with its replacement and its issue"
         );
         let markdown = ledger.markdown();
         assert!(
@@ -2588,13 +2647,47 @@ mod tests
         );
         assert!(
             markdown.contains(
-                "| `data_declaration` | `bare_type_params` | #6876 | the bare head `(a)` \\| its old spelling |"
+                "| `data_declaration` | `bare_type_params` | `typed_type_params` | removed by #6876 | the bare head `(a)` \\| its old spelling |"
             ),
-            "the row names the issue and escapes a bar"
+            "the row names the replacement and the issue, and escapes a bar"
         );
         assert!(
             !markdown.contains("`data_generator`"),
             "a shape the surface keeps has no row"
+        );
+    }
+
+    /// #6896: an old spelling that a source meets as a refusal keeps its row,
+    /// with the refusal's name and the exemplar that states it, and no issue.
+    #[test]
+    fn a_refused_spelling_writes_its_refusal_and_its_exemplar_6896()
+    {
+        let mut ledger = SyntaxLedger::build().expect("the ledger builds");
+        ledger.superseded = superseded(&[Adaptation::refused(
+            RuleName("theory_member"),
+            SurfaceForm("shape_member"),
+            AdaptationReason("the word stays the site's alone"),
+            (Replacement("boundary_member"), RefusalName("MalformedForm")),
+        )]);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&ledger.json()).expect("the ledger is JSON");
+        assert_eq!(
+            parsed.get("superseded"),
+            Some(&serde_json::json!([{
+                "rule": "theory_member",
+                "surface": "shape_member",
+                "replaced_by": "boundary_member",
+                "refused": "MalformedForm",
+                "exemplar": "../corpus/ledger/syntax/superseded/shape-member.gandr",
+                "reason": "the word stays the site's alone",
+            }])),
+            "the JSON holds the refusal and the exemplar, and no issue"
+        );
+        assert!(
+            ledger.markdown().contains(
+                "| `theory_member` | `shape_member` | `boundary_member` | refused as [`MalformedForm`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the word stays the site's alone |"
+            ),
+            "the row links the exemplar under the refusal's name"
         );
     }
 
@@ -2729,7 +2822,10 @@ mod tests
             json.lines()
                 .filter(|line| line.starts_with("    {"))
                 .count(),
-            ledger.rules.len() + ledger.attributes.len() + ledger.menus.len(),
+            ledger.rules.len()
+                + ledger.attributes.len()
+                + ledger.menus.len()
+                + ledger.superseded.len(),
             "each element is a line of its own"
         );
     }

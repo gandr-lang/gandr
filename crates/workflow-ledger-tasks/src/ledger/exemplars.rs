@@ -120,6 +120,11 @@ const ATTRIBUTES: &str = "attributes";
 /// The directory of features exemplars under the exemplar directory.
 const FEATURES: &str = "features";
 
+/// The directory of refused spellings' exemplars under the syntax
+/// directory: `check:ledger` pairs each file with its row, so the rules'
+/// bijection passes over it.
+const SUPERSEDED: &str = "superseded";
+
 /// The extension every exemplar carries.
 const EXTENSION: &str = "gandr";
 
@@ -542,6 +547,7 @@ pub(super) fn verify(
     ];
     for (folder, expected) in subjects {
         let mut present = listed(&folder)?;
+        let _superseded = present.remove(&folder.join(SUPERSEDED));
         for subject in expected {
             let path = folder.join(format!("{}.{EXTENSION}", subject.file_name()));
             if !present.remove(&path) {
