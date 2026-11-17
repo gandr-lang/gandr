@@ -1,0 +1,4 @@
+{SIGN}module Derived : Model(CatShape) where {{
+  {SETOIDS}}}
+module Written : {WRITTEN} where {{
+  {over_derived}}}

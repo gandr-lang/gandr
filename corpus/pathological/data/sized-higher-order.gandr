@@ -1,0 +1,116 @@
+// What a recursion handed through a higher-order function refuses. The
+// recursion's own parameter handed to `apply` or `applyAt` instantiates its
+// parameter or stage at that parameter's stage, which the claim does not take
+// . A helper whose signature names no type parameter and no stage
+// hands its argument on at no stage, and a helper with no recursion and no
+// stage opens none for its result to follow: the model's quantified
+// signatures lift both, `applyAt` the first and `predAt` the second. A call
+// whose arguments bound one stage binder where no stage fits is refused by
+// name, and so is a stage supplied by name, `applyAt[.i = k]`, apart from the
+// one the arguments show or for a binder they do not show. Shared
+// with `../../model/data/sized-higher-order.gandr`.
+//
+// - see: #393 — `applied_again`
+// - see: #392 — `applied_at_again`, `integerAt`, `carriedAt`
+// - see: #1227 — `disagreeing`, `suppliedApart`, `suppliedUnshown`
+// - see: #1241 — `looping_through_bound`
+
+// The naturals the recursions take apart.
+import "../../model/data/data-base.gandr";
+
+// `apply`, the higher-order function the model's recursion goes through.
+import "../../model/data/sized-higher-order.gandr";
+
+/// The parameter itself handed on: `apply`'s type parameter is the number at
+/// its own stage, not below it, and `applied_again[<]` takes only what stands
+/// below.
+@[refuses("StageNotBelow")]
+def rec applied_again(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => Succ (apply Nat Nat applied_again[<] n)
+
+/// The parameter itself handed to `applyAt`: the call instantiates `i` at
+/// the parameter's own stage, and `applied_at_again[<]` takes nothing there.
+@[refuses("StageNotBelow")]
+def rec applied_at_again(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => Succ (applyAt applied_at_again[<] n)
+
+/// A stage on an integer: the signature's marks place only data types, so the
+/// checkers refuse the stage where the kernel could not read it.
+@[refuses("OutOfFragment.Stage")]
+def integerAt[i : Size](n : Integer[i]) -> Integer =
+  n
+
+/// A stage in a path's carrier: a path places no stage, so the lowering
+/// refuses it where it is written.
+@[refuses("OutOfFragment.staged_type")]
+def carriedAt[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> Nat =
+  return a
+
+/// A function applied to a number, its signature naming no type parameter.
+def applyNat(f : Nat -> Nat, x : Nat) -> Nat =
+  f x
+
+/// The predecessor handed through `applyNat`: its signature takes any number,
+/// so `plainly_helped[<]`, which takes only numbers below the stage, does not
+/// stand for its function; the model's `helped` goes through `applyAt`.
+@[refuses("StageNotBelow")]
+def rec plainly_helped(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => Succ (applyNat plainly_helped[<] p)
+
+/// The predecessor of a number, zero's its own.
+def pred(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => p
+
+/// Half a number, recursing on its predecessor's predecessor read through
+/// `pred`: `pred` opens no stage, so its result stands at none and
+/// `halved_through_pred[<]` does not take it; a recursive definition's result
+/// can follow its argument (`../../model/data/following.gandr`), and a
+/// quantified signature states it (`predAt` and `halvedAt` in the model).
+@[refuses("StageNotBelow")]
+def rec halved_through_pred(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => { let q = pred p; Succ (halved_through_pred[<] q) }
+
+/// The number itself handed to `boundedAt` as its `k` beside its predecessor
+/// as its `j`: `k` would stand at the number's stage, not below `j`, and the
+/// result would type the number below its own stage for
+/// `looping_through_bound[<]` to take, recursing on the number forever. The
+/// call is refused where `k` is read.
+@[refuses("StageNotBelow")]
+def rec looping_through_bound(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => { let q = boundedAt p n; looping_through_bound[<] q }
+
+/// The number itself handed to `sameAt` beside the recursion's claim: the
+/// claim's domain bounds `i` from above, one below the number's stage, and
+/// the number bounds it from below at its own, which no stage under the claim
+/// reaches. The two readings disagree, refused by name at the claim, whose
+/// reading the number's stage leaves unmet.
+@[refuses("StagesDisagree")]
+def rec disagreeing(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => Succ (sameAt disagreeing[<] n)
+
+/// A stage supplied apart from the one the arguments show: they show `i` at
+/// `j`, and the supply states `k`.
+@[refuses("StagesDisagree")]
+def suppliedApart[j : Size, k : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
+  applyAt[.i = k] f x
+
+/// A stage supplied for a binder no argument shows: `n` stands at no stage,
+/// so nothing holds `i` at the `j` supplied.
+@[refuses("OutOfFragment.Stage")]
+def suppliedUnshown[j : Size](n : Nat) -> Nat =
+  let m = predAt[.i = j] n
+  m

@@ -1,0 +1,78 @@
+/// This source states the circle's loop space and its equivalence with a
+/// presentation of the integers.
+///
+/// The loop words and the integers describe the same paths at `Base`.
+/// Winding and spinning prove the round trips by induction.
+/// Both round trips need no interval and owe nothing.
+///
+/// The lowering mints the cancellation rules for loop words.
+/// The kernel checks each round trip against the path types
+/// in the presentation.
+/// `Path.step`, `Path.back` and `Path.ap` take their path type from
+/// the words of
+/// their operands, so this source annotates none of them. A cell between two
+/// distinct points would need that type written again.
+///
+/// - see: corpus/model/identity/loop-space.gandr
+import "./circle-base.gandr";
+// This import supplies the bi-invertible quasi-inverse.
+import "./equivalence.gandr";
+
+/// The loop word has one letter before the empty word.
+@[runs("loop ∷ Path.here Base")]
+def once() -> Path[.A = Circle](Base, Base) { loop }
+
+/// The inverse loop converts to `back(loop) ∷ Path.here Base`.
+def unwound : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.back loop,
+  back loop ∷ Path.here Base
+) = Path.here (back loop ∷ Path.here Base);
+
+/// The cancellation rule reduces the loop and its inverse to the empty word.
+def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.step loop (Path.back loop),
+  Path.here Base
+) = Path.here (Path.here Base);
+
+/// No rule identifies the loop with the empty word.
+@[refuses("EndpointMismatch")]
+def around_once : Path[.A = Path[.A = Circle](Base, Base)](
+  loop,
+  Path.here Base
+) = Path.here (Path.here Base);
+
+/// The checker refuses `tell` because it reads the empty word as 1.
+@[refuses("RuleNotRespected")]
+def tell(p : Path[.A = Circle](Base, Base)) -> Integer =
+  match p where
+    | here => 0
+    | loop ∷ q => 1
+    | back(loop) ∷ q => 2
+
+/// The `round` composite converts to two loops.
+def round : Path[.A = Path[.A = Circle](Base, Base)](
+  spin (wind (Path.step loop loop)),
+  loop ∷ loop ∷ Path.here Base
+) = Path.here (loop ∷ loop ∷ Path.here Base);
+
+/// The `twice` composite converts to two loops.
+def twice : Path[.A = Path[.A = Circle](Base, Base)](
+  Path.step loop loop,
+  loop ∷ loop ∷ Path.here Base
+) = Path.here (loop ∷ loop ∷ Path.here Base);
+
+/// The `wind` and `spin` composite returns two loops from two loops.
+@[runs("S (S Z)")]
+def counted : () -> Int = wind (spin (S (S Z)));
+
+/// Winding and spinning form a quasi-inverse with two round trips.
+def windingIso : Path[.A = Circle](Base, Base) ≅ Int = *{wind, *{spin, *{sect, retr}}};
+
+/// The quasi-inverse yields the stated equivalence as an `isoToEquiv` record.
+pub def winding : Path[.A = Circle](Base, Base) ≃ Int = *{wind, *{*{spin, sect}, *{spin, retr}}};
+
+/// The `isoToEquiv` form converts to `winding`.
+def windingByIso : Path[.A = Path[.A = Circle](Base, Base) ≃ Int](
+  winding,
+  isoToEquiv (type(Path[.A = Circle](Base, Base))) Int windingIso
+) = Path.here winding;

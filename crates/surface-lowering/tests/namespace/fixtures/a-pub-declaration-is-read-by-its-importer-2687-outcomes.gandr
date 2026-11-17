@@ -1,0 +1,18 @@
+import "./base.gandr";
+def a : Integer;
+def a = shown;
+def b : Integer;
+def b = hidden;
+def c : Integer;
+def c = checked;
+def d : Integer;
+def d = early;
+def e : Bit;
+def e = O;
+def f : Integer;
+def f = Open.x;
+module Pointing : Model(Pointed) where {
+  type P = Integer;
+  def pt() -> -F Integer { return 0 }
+}
+def g() -> -F Integer { var s = 1; s.width () }
