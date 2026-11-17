@@ -1,0 +1,88 @@
+/// A function's action on a path.
+def ap(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
+  F x,
+  F y
+) {
+  Path.ap F p
+}
+/// The left whisker: the action of the composite with `f`.
+def whiskerLeft(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path[.A = A](x, y),
+  g1 : Path[.A = A](y, z),
+  g2 : Path[.A = A](y, z),
+  b : Path[.A = Path[.A = A](y, z)](g1, g2)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f g1, Path.step f g2) {
+  ap
+    type(Path[.A = A](y, z))
+    type(Path[.A = A](x, z))
+    (fun (q : Path[.A = A](y, z)) { Path.step f q } : Path[.A = A](y, z) -> Path[.A = A](x, z))
+    g1
+    g2
+    b
+}
+/// The right whisker: the action of the composite with `g`.
+def whiskerRight(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
+  ap
+    type(Path[.A = A](x, y))
+    type(Path[.A = A](x, z))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+    f1
+    f2
+    a
+}
+/// The associator, by conversion.
+def assoc(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = A](x, w)](Path.step (Path.step f g) h, Path.step f (Path.step g h)) {
+  Path.here (Path.step (Path.step f g) h)
+}
+/// A whisker, an associator read back and a whisker, at reflexivities.
+def whiskered(A : Type, x : A) -> Path[.A = Path[.A = Path[.A = A](x, x)](
+  Path.here x,
+  Path.here x
+)](
+  Path.step
+    (Path.step
+      (whiskerLeft
+        A
+        x
+        x
+        x
+        (Path.here x)
+        (Path.step (Path.here x) (Path.here x))
+        (Path.step (Path.here x) (Path.here x))
+        (Path.here (Path.step (Path.here x) (Path.here x))))
+      (Path.back (assoc A x x x x (Path.here x) (Path.here x) (Path.here x))))
+    (whiskerRight
+      A
+      x
+      x
+      x
+      (Path.step (Path.here x) (Path.here x))
+      (Path.step (Path.here x) (Path.here x))
+      (Path.here (Path.step (Path.here x) (Path.here x)))
+      (Path.here x)),
+  Path.here (Path.here x)
+) {
+  Path.here (Path.here (Path.here x))
+}

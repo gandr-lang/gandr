@@ -1,0 +1,2 @@
+{STATE}{PUT_LAWS}def lawless() -> -F Integer {{ handle st : State with sort S = Integer {{ st.put 1; st.get () }} {clauses} }}
+def forgetful() -> -F Integer {{ handle st : StatePutLaws with sort S = Integer {{ st.put 1; st.get () }} {clauses} }}

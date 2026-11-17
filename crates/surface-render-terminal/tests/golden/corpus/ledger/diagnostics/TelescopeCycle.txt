@@ -1,0 +1,8 @@
+error[TelescopeCycle]: `a` and `b` mention each other in their types, so neither can come first
+  ╭▸ corpus/ledger/diagnostics/TelescopeCycle.gandr:4:1
+  │
+4 │ def tangled[a : b, b : a](x : a) -> -F a { return x }
+  │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parameters mentioning each other
+  │
+  ├ note: `tangled` is refused with TelescopeCycle, as its expectation states
+  ╰ help: order parameters so each type names only earlier parameters

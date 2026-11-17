@@ -1,0 +1,9 @@
+// A definition named like a builtin namespace shadows it: `list.each` then
+// reads the record's field, not the builtin.
+
+/// A record named `list`, with a field `each`.
+def list = *{each = 7};
+
+/// The record's field `each`, not the builtin's member.
+@[runs("7")]
+def each() -> Integer { list.each }
