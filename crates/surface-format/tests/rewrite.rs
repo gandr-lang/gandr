@@ -437,6 +437,28 @@ def spun : Path[.A = Path[.A = Circle](Base, Base)](
     }
 }
 
+/// #5750: a path type's endpoint that is a word, `loop ∷ loop`, binds looser
+/// than an argument. Written juxtaposed, it keeps its parentheses, and the
+/// juxtaposed text reads with the obligations of the call form.
+#[test]
+fn a_word_endpoint_is_juxtaposed_in_its_parentheses_5750()
+{
+    let grammar = grammar();
+    let declaration = |path: &str| format!("{CIRCLE}def twice : {path};\n");
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(
+                &grammar,
+                declaration("Path[.A = Path[.A = Circle](Base, Base)](loop ∷ loop, loop)").as_str(),
+                form,
+                Selection::Every
+            ),
+            declaration("Path[.A = Path[.A = Circle] Base Base] (loop ∷ loop) loop"),
+            "{form}"
+        );
+    }
+}
+
 /// #4645: a map's action on a path between paths, whose transport quotes its
 /// motive, `fun (b) { type(Path(…)) }`, since no expression reads a path over
 /// a path. Both forms keep the action as written and fold the quoted
@@ -1167,7 +1189,7 @@ fn a_rewrite_of_a_dependent_alias_keeps_its_readers_812()
         formatted
             .text()
             .as_ref()
-            .contains("def stay : +U ((a : Nat) -> -F Path[.A = Nat](a, a));"),
+            .contains("def stay : +U ((a : Nat) -> -F Path[.A = Nat] a a);"),
         "{}",
         formatted.text()
     );

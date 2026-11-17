@@ -800,7 +800,46 @@ impl Band
             _ => Self::Atom,
         }
     }
+
+    /// The band a form binds at whose rule, named `name` in the grammar, this
+    /// module reads by no name of its own. An expression binds as an atom
+    /// only when its own tiles close it or it is a postfix form, `f(x)` and
+    /// `r.x`. Every other expression, an operator or a keyword form such as
+    /// `x ∷ w` or `pure x`, binds loose, so an endpoint the path rewrite
+    /// juxtaposes keeps its parentheses (#5750).
+    ///
+    /// # Specification
+    /// trivial.
+    fn unread(name: &str) -> Self
+    {
+        let base = name.split('.').next().unwrap_or(name);
+        if base.ends_with("_expression") && !EXPRESSION_ATOMS.contains(&base) {
+            Self::Loose
+        }
+        else {
+            Self::Atom
+        }
+    }
 }
+
+/// The expression rules whose forms bind as atoms: the tiles of each close
+/// the form, or the form is a postfix call, index, selection or
+/// instantiation.
+const EXPRESSION_ATOMS: [&str; 13] = [
+    "parenthesized_expression",
+    "record_expression",
+    "labelled_sum_expression",
+    "list_expression",
+    "tuple_expression",
+    "lazy_record_expression",
+    "telescope_expression",
+    "call_expression",
+    "index_expression",
+    "projection_expression",
+    "record_selection_expression",
+    "instantiation_expression",
+    "type_quote_expression",
+];
 
 /// An operand of a form: a tile standing alone, or a nested form.
 #[derive(Clone, Copy, Debug)]
@@ -1661,7 +1700,18 @@ impl<'source> Respelling<'_, 'source>
                 Changed::Yes => self.parts(at).0,
                 Changed::No => parts,
             };
-            self.kept(rule, &parts, extent, (commented, open))
+            let mut kept = self.kept(rule, &parts, extent, (commented, open));
+            // A rule this module reads by no name binds as the grammar names
+            // it, which only an expression's name loosens.
+            if rule.0.is_empty()
+                && kept.band == Band::Atom
+                && let Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) =
+                    self.tree.node(at).map(gandr_surface_syntax::Node::label)
+                && let Ok(read) = self.grammar.rule_of(mold)
+            {
+                kept.band = Band::unread(read.name().0);
+            }
+            kept
         };
         let _previous = self.spelled.insert(at, spelled);
     }
