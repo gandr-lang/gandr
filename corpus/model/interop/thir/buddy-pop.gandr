@@ -230,7 +230,7 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s :
             | true => return type(*{
               w : Val,
               holds : Path[.A = Maybe Val]((Some w : Maybe Val), below path v),
-              post : k(Ends(w, Own m q v))
+              post : k(Ends w (Own m q v))
             })
             | false => return Void
     | NoneE => k (Ends NoneV s)

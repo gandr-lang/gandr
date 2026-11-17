@@ -66,7 +66,7 @@ def backTwo() -> At (Succ Zero) { back (Succ Zero) (Pre (Succ Zero)) }
 
 /// The rest of a vector at least one long. The arm learns `m = n` from the
 /// path from `Succ(m)` to `Succ(n)`.
-def tail[a : Type, n : Nat](v : Vec(a, Succ n)) -> Vec a n =
+def tail[a : Type, n : Nat](v : Vec a (Succ n)) -> Vec a n =
   match v where
     | VCons(m, _, t) => t
 

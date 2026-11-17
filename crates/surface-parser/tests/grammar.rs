@@ -276,6 +276,13 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
         ("def x : Vec a(n);", 1),
         ("def x : m (T);", 0),
         ("def x : Vec Integer plus(m, Zero);", 2),
+        ("def x : Vec a plus(m, Zero);", 2),
+        (
+            include_str!("grammar/unformatted/a-call-operand-reads-after-a-line-break-5752.gandr"),
+            2,
+        ),
+        ("def x : m plus(m, k);", 0),
+        ("def x : el[<](a);", 0),
         ("def x : m T;", 0),
         ("def x : (m n : Integer) -> Integer;", 0),
         ("def x : Vec +U Integer;", 1),

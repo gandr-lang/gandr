@@ -28,7 +28,7 @@ pub data Vec(a : Type) : Nat -> Type where
   /// The empty vector, at length zero.
   | VNil : Vec a Zero
   /// An element before a vector `n` long, at one past `n`.
-  | VCons : (n : Nat, head : a, tail : Vec a n) --> Vec(a, Succ n)
+  | VCons : (n : Nat, head : a, tail : Vec a n) --> Vec a (Succ n)
 
 /// The vector of one integer, one long.
 def single() -> Vec Integer (Succ Zero) =
@@ -46,16 +46,10 @@ def padded(m : Nat, v : Vec Integer m) -> Vec Integer plus(m, Zero) { v }
 
 /// An element before a vector `plus(m, k)` long. Its field writes the length
 /// as the sum that the types write.
-def consPlus(a : Type, m : Nat, k : Nat, x : a, v : Vec(a, plus(m, k))) -> Vec(
-  a,
-  Succ plus(m, k)
-) =
+def consPlus(a : Type, m : Nat, k : Nat, x : a, v : Vec a plus(m, k)) -> Vec a (Succ plus(m, k)) =
   VCons (plus m k) x v
 
 /// An element before a vector `plus(m, k)` long, at `plus(m, Succ(k))`. The
 /// sum computes `Succ(plus(m, k))`, the length that `VCons` states.
-def consPlusSucc(a : Type, m : Nat, k : Nat, x : a, v : Vec(a, plus(m, k))) -> Vec(
-  a,
-  plus(m, Succ k)
-) =
+def consPlusSucc(a : Type, m : Nat, k : Nat, x : a, v : Vec a plus(m, k)) -> Vec a plus(m, Succ k) =
   VCons (plus m k) x v

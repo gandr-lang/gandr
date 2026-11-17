@@ -4207,6 +4207,11 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — the differential witness compares the two procedures'
     ///   admitted menus at every decision.
     /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
+    ///
+    /// # Cost
+    /// - allocation: the eligible menu, growth within the candidates
+    /// - allocation: the admission context of a menu wider than
+    ///   [`ADMISSION_MENU`], growth within the candidates
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -4237,9 +4242,12 @@ impl<'pbg> Molder<'pbg>
                 |admission| admission.admits(mold),
             );
             let kept = match binder {
-                Some((tokens, index, source)) => bool::from(
-                    self.direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source),
-                ),
+                Some((tokens, index, source)) => {
+                    let admitted = self
+                        .direct_rule_binder_admits(mold, frontier, admitted, tokens, index, source);
+                    let admitted = MoldAdmissibility::from(bool::from(admitted));
+                    bool::from(self.type_call_head_admits(mold, admitted, tokens, index, source))
+                },
                 None => bool::from(admitted),
             };
             if kept {
@@ -4429,6 +4437,89 @@ impl<'pbg> Molder<'pbg>
             next_significant(tokens, first_index)
                 .is_some_and(|(_, colon)| AsRef::<str>::as_ref(&colon.text(source)) == ":"),
         )
+    }
+
+    /// Return whether a type-call head keeps its mold before the token after
+    /// it.
+    ///
+    /// The call form's head reads only before a glued opener: `f(x)` is a
+    /// call, and `f (x)` applies `f` to a group. So a head before a spaced
+    /// `(` is refused. In `Vec a plus(m, k)` a name follows `a`, and the `(`
+    /// of `plus` stands in the window of `a`. So `a` is refused too, reads as
+    /// an atom, and the melder pushes the application tile after it. A line
+    /// break between `a` and the name keeps that reading, since the printer
+    /// breaks a long application between its operands. A head before any
+    /// other token keeps its admission: a glued `(` or `[`, a spaced `[`, a
+    /// symbol, or a name with no `(` after it on the name's line in the
+    /// window. There the molder repairs a missing opener, and the repair
+    /// keeps its one obligation at the gap.
+    ///
+    /// # Specification
+    /// - requires: `tokens` labels `source`, and `index` names the current
+    ///   head.
+    /// - ensures: refuses an admitted `type_application` head exactly when the
+    ///   next significant token is a spaced `(`, or a name with a `(` among the
+    ///   next [`LOOKAHEAD`] significant tokens before a line break after the
+    ///   name. It keeps every other admission.
+    /// - provides: the admission of a type-call head.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a spaced operand, a glued call, a glued descent
+    ///   marker and a dropped opener distinguish a head from an operand and
+    ///   from a repair.
+    /// - witness: `tests::grammar::a_type_applies_its_family_by_juxtaposition_5326`
+    #[spec(ensures: |ret| !bool::from(ret) || bool::from(admitted))]
+    fn type_call_head_admits(
+        &self,
+        mold: MoldId,
+        admitted: MoldAdmissibility,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &SourceFragment<'_>,
+    ) -> MoldAdmissibility
+    {
+        let head = self.pbg.rule_of(mold).is_ok_and(|rule| {
+            rule.name() == RuleName("type_application")
+                && bool::from(self.pbg.mold_is_form_first(mold))
+        });
+        if !head {
+            return admitted;
+        }
+        let Some((_, next)) = next_significant(tokens, index)
+        else {
+            return admitted;
+        };
+        let opener = |token: Token| <&str>::from(token.text(source)) == "(";
+        let refused = if opener(next) {
+            spacing(tokens, index) == Spacing::Spaced
+        }
+        else if matches!(next.lexeme, Lexeme::LowerWord | Lexeme::UpperWord) {
+            let mut seen = 0_usize;
+            let mut opened = false;
+            for &token in tokens.iter().skip(usize::from(index).saturating_add(1)) {
+                if token.lexeme == Lexeme::Space {
+                    if seen > 0 && <&str>::from(token.text(source)).contains('\n') {
+                        break;
+                    }
+                    continue;
+                }
+                if opener(token) {
+                    opened = true;
+                    break;
+                }
+                seen = seen.saturating_add(1);
+                if seen >= LOOKAHEAD {
+                    break;
+                }
+            }
+            opened
+        }
+        else {
+            false
+        };
+        MoldAdmissibility::from(bool::from(admitted) && !refused)
     }
     /// Choose token `index`'s mold, breaking a shared-prefix tie by lookahead.
     ///
