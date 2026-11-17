@@ -2798,6 +2798,13 @@ description = "A build directory that another compiler filled is cleaned before 
 tools.jq = "1.8.1"
 run = ".config/mise/target-pin-cases.bash"
 
+# A scoped command whose words pass the limit of one argument (#7942):
+# `.config/mise/scope-cases.bash` runs a command of 200 KiB of words in its
+# scope, as `xargs` passes a large batch, and reads that it sees each word.
+["check:scope"]
+description = "A command of more words than one argument holds runs in its scope and sees each word"
+run = ".config/mise/scope-cases.bash"
+
 # The rows of the gates (#7021): `.config/gate-rows/cases.bash` runs the trap
 # of a gate in scratch directories. It reads the row of a pass, a failure, a
 # stop and a `SIGTERM`, of a host with a class and one with none, and of a
