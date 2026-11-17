@@ -2,7 +2,7 @@
 //! reader.
 //!
 //! A doc page or a comment that shows gandr source can keep a spelling that
-//! the grammar no longer reads. The reader refuses each retired spelling by
+//! the grammar does not read. The reader refuses each retired spelling by
 //! name, so [`check`] gives each fenced `gandr` block to the reader and keeps
 //! each refusal named `RetiredSpelling.<surface>`. The check holds no list of
 //! spellings: the retired forms are the refused rows of the syntax ledger, and
@@ -193,7 +193,7 @@ impl Fence
     ///
     /// # Specification
     /// trivial.
-    fn opened(line: &str) -> Option<Self>
+    fn opened(Line(line): Line<'_>) -> Option<Self>
     {
         let rest = line.trim_start_matches(' ');
         let indent = line.len().saturating_sub(rest.len());
@@ -225,31 +225,56 @@ impl Fence
     /// trivial.
     fn closed_by(
         self,
-        line: &str,
-    ) -> bool
+        Line(line): Line<'_>,
+    ) -> Closing
     {
         let rest = line.trim_start_matches(' ');
         let after = rest.trim_start_matches(self.mark);
-        rest.len().saturating_sub(after.len()) >= self.width && after.trim().is_empty()
+        if rest.len().saturating_sub(after.len()) >= self.width && after.trim().is_empty() {
+            Closing::Closes
+        }
+        else {
+            Closing::Holds
+        }
     }
 
     /// `line` without the spaces of the fence's indent.
     ///
     /// # Specification
     /// trivial.
-    fn unindented(
+    fn unindented<'text>(
         self,
-        line: &str,
-    ) -> &str
+        Line(line): Line<'text>,
+    ) -> Line<'text>
     {
         let spaces = line
             .bytes()
             .take(self.indent)
             .take_while(|&byte| byte == b' ')
             .count();
-        line.get(spaces ..).unwrap_or(line)
+        Line(line.get(spaces ..).unwrap_or(line))
     }
 }
+
+/// Whether a line closes an open fence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Closing
+{
+    /// The line is a closing fence of the open fence.
+    Closes,
+    /// The line stands inside the open fence.
+    Holds,
+}
+
+/// One line of a file, with no line feed.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Line<'text>(&'text str);
+
+/// The whole text of a file of the prose.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FileText<'text>(&'text str);
 
 /// One fenced `gandr` block: the line of its opening fence and its text.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -268,15 +293,15 @@ struct Block
 /// trivial.
 fn read_as(
     prose: Prose,
-    line: &str,
-) -> Option<&str>
+    Line(line): Line<'_>,
+) -> Option<Line<'_>>
 {
     match prose {
-        Prose::Markdown => Some(line),
+        Prose::Markdown => Some(Line(line)),
         Prose::Comments => {
             let rest = line.trim_start().strip_prefix("//")?;
             let rest = rest.strip_prefix(['/', '!']).unwrap_or(rest);
-            Some(rest.strip_prefix(' ').unwrap_or(rest))
+            Some(Line(rest.strip_prefix(' ').unwrap_or(rest)))
         },
         Prose::Unread => None,
     }
@@ -308,13 +333,13 @@ fn read_as(
 #[spec(ensures: |ref ret| ret.windows(2).all(|pair| pair.first().map(|block| block.line) < pair.get(1).map(|block| block.line)))]
 fn blocks(
     prose: Prose,
-    text: &str,
+    FileText(text): FileText<'_>,
 ) -> Vec<Block>
 {
     let mut blocks = Vec::new();
     let mut open: Option<(Fence, LineNumber, String)> = None;
     for (index, line) in text.lines().enumerate() {
-        let Some(read) = read_as(prose, line)
+        let Some(read) = read_as(prose, Line(line))
         else {
             open = None;
             continue;
@@ -324,7 +349,7 @@ fn blocks(
                 open = Fence::opened(read)
                     .map(|fence| (fence, LineNumber(index.saturating_add(1)), String::new()));
             },
-            Some((fence, at, body)) if fence.closed_by(read) => {
+            Some((fence, at, body)) if fence.closed_by(read) == Closing::Closes => {
                 if fence.gandr {
                     blocks.push(Block {
                         line: at,
@@ -334,7 +359,7 @@ fn blocks(
             },
             Some((fence, at, mut body)) => {
                 if fence.gandr {
-                    body.push_str(fence.unindented(read));
+                    body.push_str(fence.unindented(read).0);
                     body.push('\n');
                 }
                 open = Some((fence, at, body));
@@ -352,6 +377,8 @@ fn blocks(
 ///   module whole or of one of its declarations, is named `RetiredSpelling(f)`;
 ///   none when the block does not parse.
 /// - panics: none.
+/// - executable: none — the predicate would parse and lower the block again,
+///   which is the function's own body.
 ///
 /// # Cost
 /// - allocation: the block's parse, its arena and its module, setup
@@ -426,7 +453,7 @@ fn retired(
 fn read_into(
     pbg: &Pbg,
     path: &Path,
-    text: &str,
+    text: FileText<'_>,
     report: &mut FenceReport,
 )
 {
@@ -478,7 +505,7 @@ pub(super) fn check(
             path: path.clone(),
             error,
         })?;
-        read_into(pbg, path, &text, &mut report);
+        read_into(pbg, path, FileText(&text), &mut report);
     }
     Ok(report)
 }
@@ -491,89 +518,76 @@ mod tests
     use gandr_surface_grammar::RetiredForm;
     use gandr_surface_grammar::built_in;
 
+    use super::FenceFinding;
     use super::FenceReport;
+    use super::FileText;
     use super::LineNumber;
     use super::read_into;
 
-    /// The findings of `text`, read as the file at `path`, each as its line
-    /// and its form, with the count of the blocks read.
+    /// The report of `text`, read as the file at `path`.
     ///
     /// # Specification
     /// trivial.
-    fn found(
-        path: &str,
-        text: &str,
-    ) -> (Vec<(LineNumber, RetiredForm)>, usize)
+    fn read(
+        path: &Path,
+        text: FileText<'_>,
+    ) -> FenceReport
     {
         let pbg = built_in().expect("the grammar builds");
         let mut report = FenceReport::default();
-        read_into(&pbg, Path::new(path), text, &mut report);
-        (
-            report
-                .findings
-                .iter()
-                .map(|finding| (finding.line, finding.form))
-                .collect(),
-            report.blocks,
-        )
+        read_into(&pbg, path, text, &mut report);
+        report
     }
 
     #[test]
     fn a_retired_spelling_in_a_fenced_block_is_refused_by_name_5190()
     {
-        let text = "# Paths\n\nA path type:\n\n```gandr\ndef p : Path(Integer, 4, 4);\n```\n";
-
-        assert_eq!(
-            found("notes.md", text),
-            (vec![(LineNumber(5), RetiredForm::PositionalPathCarrier)], 1)
+        let path = Path::new("notes.md");
+        let report = read(
+            path,
+            FileText(include_str!(
+                "fences/fixtures/a-retired-spelling-in-markdown.txt"
+            )),
         );
+
+        assert_eq!(report.blocks, 1);
+        assert_eq!(report.findings, vec![FenceFinding {
+            path: path.to_owned(),
+            line: LineNumber(3),
+            form: RetiredForm::PositionalPathCarrier,
+        }]);
     }
 
     #[test]
     fn a_fragment_a_current_block_and_another_language_pass_5190()
     {
-        let text = concat!(
-            "```gandr\n",
-            "f : Integer\n",
-            "```\n",
-            "\n",
-            "  ```gandr title\n",
-            "  def p : Path[.A = Integer](4, 4);\n",
-            "  ```\n",
-            "\n",
-            "```rust\n",
-            "def p : Path(Integer, 4, 4);\n",
-            "```\n",
-            "\n",
-            "````markdown\n",
-            "```gandr\n",
-            "def p : Path(Integer, 4, 4);\n",
-            "```\n",
-            "````\n",
+        let report = read(
+            Path::new("notes.md"),
+            FileText(include_str!(
+                "fences/fixtures/a-fragment-a-current-block-and-another-language.txt"
+            )),
         );
 
-        assert_eq!(found("notes.md", text), (vec![], 2));
+        assert_eq!(report.blocks, 2);
+        assert_eq!(report.findings, vec![]);
     }
 
     #[test]
     fn a_comment_holds_its_block_at_its_fence_s_line_5190()
     {
-        let text = concat!(
-            "/// A carrier.\n",
-            "///\n",
-            "/// ```gandr\n",
-            "/// def p : Path(Integer, 4, 4);\n",
-            "/// ```\n",
-            "fn f() {}\n",
-            "// ```gandr\n",
-            "// def q : Path(Integer, 4, 4);\n",
-            "fn g() {}\n",
-            "// ```\n",
+        let path = Path::new("lib.rs");
+        let report = read(
+            path,
+            FileText(include_str!(
+                "fences/fixtures/a-comment-holds-its-block.txt"
+            )),
         );
 
-        assert_eq!(
-            found("lib.rs", text),
-            (vec![(LineNumber(3), RetiredForm::PositionalPathCarrier)], 1)
-        );
+        assert_eq!(report.blocks, 1);
+        assert_eq!(report.findings, vec![FenceFinding {
+            path: path.to_owned(),
+            line: LineNumber(3),
+            form: RetiredForm::PositionalPathCarrier,
+        }]);
     }
 }

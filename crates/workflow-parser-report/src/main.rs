@@ -513,6 +513,9 @@ fn fastest_parse(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the paths of the sweep, setup; the text of a fault, error path
 fn recovery() -> Result<RecoveryTally, Failure>
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

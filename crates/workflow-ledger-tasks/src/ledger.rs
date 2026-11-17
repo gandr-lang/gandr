@@ -436,6 +436,10 @@ impl LedgerTask
     /// or [`LedgerFault::Features`] holding what [`FeatureLedger::read`],
     /// [`FeatureLedger::listed`] and [`FeatureLedger::shown`] report.
     ///
+    /// # Cost
+    /// - allocation: the ledger, the report or the features that the task
+    ///   returns, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a run into an empty directory writes both files with
     ///   the rendered bytes, a second run writes the same bytes, and a

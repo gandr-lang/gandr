@@ -11,14 +11,11 @@
 //!
 //! The binary exits with one of three codes:
 //!
-//! - `0`: the ledger was written, every exemplar held, the sweep marked every
-//!   mutant at its mutation, the features were read, or no fenced block writes
-//!   a retired spelling; also `--help` and `--version`.
-//! - `1`: an exemplar does not hold, a mutant's first error marks other bytes
-//!   than its mutation, or a fenced block writes a retired spelling.
-//! - `2`: a ledger that cannot be generated, written, listed, read or answer, a
-//!   file of the prose that cannot be read, output that cannot be written, or a
-//!   malformed invocation.
+//! - `0`: the task found nothing that the table names; also `--help` and
+//!   `--version`.
+//! - `1`: the task found what the table names.
+//! - `2`: a ledger or a file that cannot be built, read or written, output that
+//!   cannot be written, or a malformed invocation.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -160,6 +157,9 @@ impl From<StatusName> for Status
 /// - executable: none — the map is one match over the verbs, and a predicate
 ///   would restate that match.
 ///
+/// # Cost
+/// - allocation: the default directory of the exemplars, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`main`].
 /// - witness: `tests::cli::the_syntax_ledger_is_written_and_reproduced`
@@ -253,6 +253,9 @@ fn main() -> ExitCode
 ///
 /// # Errors
 /// The [`std::io::Error`] of the first write that failed.
+///
+/// # Cost
+/// - allocation: the run of the task and the text it prints, setup
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a run into a fresh directory prints both paths, exits
