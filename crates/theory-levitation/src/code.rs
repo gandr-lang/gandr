@@ -1173,6 +1173,22 @@ mod tests
     use super::*;
     use crate::test_support::Grade;
 
+    /// A name clone shares its spelling allocation.
+    ///
+    /// # Specification
+    ///
+    /// A clone points to the same immutable spelling allocation.
+    #[test]
+    fn cloned_name_shares_text_7936()
+    {
+        let name = Name::from("constructor");
+        let copied = name.clone();
+        assert!(
+            Arc::ptr_eq(&name.0, &copied.0),
+            "the clone shares its immutable spelling allocation"
+        );
+    }
+
     /// A `Maybe`-shaped payload code for a `Some(x: a)` constructor.
     ///
     /// # Specification
