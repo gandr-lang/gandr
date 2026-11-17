@@ -28,9 +28,10 @@ path = "tests/lib.rs"
 # crossing between worlds commits to the value plane under the typed
 # chunker's constants, a lift's level read through the strata crate. A cut's
 # writer and reader run as the two halves of a join on the fork the caller
-# hands over. The block compiler keys each block by the digest of its
-# description, reads the text of the assembler's object, and keeps each
-# block in a map that a warm read takes with no lock.
+# hands over.
+#
+# The block compiler keys each block by a digest. It reads the text of each
+# object of the assembler. Its map of blocks takes no lock on a warm read.
 [dependencies]
 blake3.workspace = true
 gandr-core-fork.workspace = true
