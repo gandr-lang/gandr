@@ -4,7 +4,7 @@
 //! # One delimiter per arity-shaped former
 //!
 //! Three delimiters spell the formers over a finite arity, each at the type,
-//! the value and the pattern or observation: `#{…}` the telescope — the
+//! the value and the pattern or observation: `*{…}` the telescope — the
 //! tuple, the record and Σ — `+{…}` the sum over labels, and `&{…}` the lazy
 //! record over labels. An entry is positional, labelled by its index, or
 //! labelled. A type entry is `k : T`; a value entry `.l = v` stores a value,
@@ -25,21 +25,21 @@
 //! could say otherwise; as a hole, the word molds as the type variable it
 //! reads as, and the `:` after it makes it a key, which the lowering reads as
 //! a bare lowercase word. The highlighter gives such a key the type-variable
-//! role, and a shorthand value key `#{ x = 1, … }` the variable role, every
+//! role, and a shorthand value key `*{ x = 1, … }` the variable role, every
 //! key alike.
 //!
-//! A leading-dot value entry takes a `#{` of its own. A mold is one tile
-//! occurrence, and one `#{` followed by both a hole and a `.` would admit an
-//! operand before the `.`, so `#{ p.x, p.y }` would read its projection dot
-//! as a label's; the labelled `#{` is followed only by `.` and the hole-led
+//! A leading-dot value entry takes a `*{` of its own. A mold is one tile
+//! occurrence, and one `*{` followed by both a hole and a `.` would admit an
+//! operand before the `.`, so `*{ p.x, p.y }` would read its projection dot
+//! as a label's; the labelled `*{` is followed only by `.` and the hole-led
 //! one only by an operand or `}`, so the next token decides. A telescope
 //! value is labelled throughout or positional throughout. The `+{` and `&{`
 //! value forms open on two tiles, `+` `{` and `&` `{`, molded where an
 //! operand starts, so neither competes with the infix `+` or `&`, which
 //! follows one.
 //!
-//! - Alternatives: a prefix `=` pun `#{=n}`, a new prefix reading inside
-//!   braces; a type-directed pattern `#{n, v}` that binds positionally or puns
+//! - Alternatives: a prefix `=` pun `*{=n}`, a new prefix reading inside
+//!   braces; a type-directed pattern `*{n, v}` that binds positionally or puns
 //!   by the scrutinee's type, where renaming a label silently changes a
 //!   pattern's meaning; keys as `identifier` tiles behind a lookahead window,
 //!   which the continuation rank pre-empts.
@@ -94,7 +94,7 @@
 //! its spelling rather than an optional tail, and a tuple of two or more
 //! elements may still close on a comma. A one-element tuple pattern and a
 //! one-element parenthesised type have no reading of their own: the one-element
-//! product, value and pattern are `#{A}`, `#{a}` and `#{x}`, one delimiter per
+//! product, value and pattern are `*{A}`, `*{a}` and `*{x}`, one delimiter per
 //! arity-shaped former (`src/surface.rs`). A case or offer arm may open with
 //! `|`, so an or-pattern spread over lines can lead each line with its
 //! separator. A mold is one tile occurrence, and an occurrence a hole can

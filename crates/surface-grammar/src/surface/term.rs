@@ -393,7 +393,7 @@ fn declarations(
 
     // --- module declaration
     // ---------------------------------------------------- `module M where
-    // { … }`, optionally ascribed against a `#{ … }` signature,
+    // { … }`, optionally ascribed against a `*{ … }` signature,
     // `:` transparently or `:>` opaquely (`module_ascription_tail`); `where`
     // opens the members, as it opens every declaration block. The shared
     // `module` opener and its name own one mold. The body is a repetition of
@@ -407,7 +407,7 @@ fn declarations(
     // where the source declares none of that name.
     //
     // After the name, a functor declares its parameter in parentheses,
-    // `module MkSet(Elt : #{ … }) :> #{ … } where { … }` (`functor_parameter`),
+    // `module MkSet(Elt : *{ … }) :> *{ … } where { … }` (`functor_parameter`),
     // and a functor application binds its instance, `module IntSet =
     // MkSet(IntOrd) ;` (`functor_application_tail`). A flow applies to a
     // module the same way, `module Older = downgrade(Echo) ;`, its name
@@ -711,11 +711,11 @@ fn def_family() -> Regex
 /// signature surface is under. The body is one signature either way: sealing
 /// changes what the ascription *does*, never what it is written against.
 ///
-/// The signature is written inline, `#{ … }`, or computed by a signature
+/// The signature is written inline, `*{ … }`, or computed by a signature
 /// former applied to a declaration, `Model(CatShape)`: the signature of the
 /// models of a `theory` block, which the lowering derives from the block rather
 /// than reading it off a written list. The two are first-token-discriminated —
-/// `#{` against a type name — so the choice stays one token deep. The former is
+/// `*{` against a type name — so the choice stays one token deep. The former is
 /// a type name rather than a reserved word, so the lowering names an unknown
 /// former instead of the lexer refusing an ordinary identifier.
 ///
@@ -748,7 +748,7 @@ fn module_ascription_tail() -> Regex
     ])
 }
 
-/// Build a functor's parameter, `(Elt : #{ … })` or `(S : Model(Mag))`: the
+/// Build a functor's parameter, `(Elt : *{ … })` or `(S : Model(Mag))`: the
 /// parameter's module name and the signature it is matched against, in
 /// parentheses.
 ///
@@ -1809,8 +1809,8 @@ fn patterns(
             ]),
         ]),
     ));
-    // The telescope pattern `#{ x, y }`, `#{ .n, .v }` punning its labels and
-    // `#{ .n = m }` renaming one. An entry's shape is inlined, since a
+    // The telescope pattern `*{ x, y }`, `*{ .n, .v }` punning its labels and
+    // `*{ .n = m }` renaming one. An entry's shape is inlined, since a
     // standalone `record_pattern_field` rule would give its `identifier`
     // opener a form-first Pattern-sort mold that ties with every bare pattern
     // variable. A bare `n = m` molds too, its key a pattern hole, so the
@@ -2299,7 +2299,7 @@ fn expressions(
             ]),
         ]),
     ));
-    // A sub-record selects the entries its labels name, `r.#{ .a, .b }`: the
+    // A sub-record selects the entries its labels name, `r.*{ .a, .b }`: the
     // record of `r.a` and `r.b`. The tree-sitter grammar has no selector, so
     // the kind is in `PBG_ONLY_KINDS`.
     out.push(r(
@@ -3998,7 +3998,7 @@ fn law_admission_tail() -> Regex
 }
 
 /// Build a module type member, `type T = τ ;` or `type T(a : A, …) = τ ;`,
-/// or a record type with the faces it names over its labels, `type T = #{ … }
+/// or a record type with the faces it names over its labels, `type T = *{ … }
 /// where { face f = { a, b }; … }`.
 ///
 /// The faces block ends the member at its `}`, as a `data` or a `module`
@@ -4335,7 +4335,7 @@ fn primary_expressions(
     //
     // A labelled group of outputs, `( .l = E, … )`, has its own `(`. The next
     // tile selects it, as the next tile selects the labelled telescope
-    // `#{ .l = E }`. A `(` that takes a hole and a `.` after it reads the
+    // `*{ .l = E }`. A `(` that takes a hole and a `.` after it reads the
     // projection dot in `(p.x, p.y)` as a label. This alternative is last.
     // Thus a `(` with no next tile closes as the unit `( )`.
     let mut paren = r(
@@ -4398,7 +4398,7 @@ fn primary_expressions(
     // No other expression opens with `type(`, so the quote reads the types an
     // expression would misread — a receive `?(S). T`, where `?` opens a hole,
     // and a labelled sum `+{ … }`, where `+{` opens an injection. The opener
-    // is one tile, as `#{` and `${` are: the keyword `type` alone molds no
+    // is one tile, as `*{` and `${` are: the keyword `type` alone molds no
     // expression, so where a classifier is read it stays the stray keyword
     // that offers `Type`.
     out.push(r(
@@ -4687,14 +4687,14 @@ fn primary_expressions(
             t(TileLabel("}")),
         ]),
     ));
-    // The `#{`-opened expression forms — the telescope value `#{ }`, `#{ a, b
-    // }`, `#{ .n = E, … }`, its `#{ n = E }` shorthand, and the record update
-    // `#{ E | id = E, … }` — share the `#{` prefix. The hole-led ones diverge
+    // The `*{`-opened expression forms — the telescope value `*{ }`, `*{ a, b
+    // }`, `*{ .n = E, … }`, its `*{ n = E }` shorthand, and the record update
+    // `*{ E | id = E, … }` — share the `*{` prefix. The hole-led ones diverge
     // only at the tile after the first entry: an update's `|` versus a
-    // telescope's `,` or `}`. Declaring them as two rules would give `#{` two
+    // telescope's `,` or `}`. Declaring them as two rules would give `*{` two
     // hole-led Expression-sort molds, so the molder would decide
-    // telescope-versus-update at the `#{` — a choice whose discriminating `|`
-    // sits arbitrarily deep past nested `#{ … }` values (each carrying its own
+    // telescope-versus-update at the `*{` — a choice whose discriminating `|`
+    // sits arbitrarily deep past nested `*{ … }` values (each carrying its own
     // `|`), out of a bounded lookahead's reach (`deep-record-update-cost`).
     // They are factored into one branch whose tail alternates on the
     // discriminating tile: the first entry fills the hole, and the following
@@ -4704,10 +4704,10 @@ fn primary_expressions(
     // is an `E`, and `E = E` the shorthand whose key the lowering reads as a
     // bare label.
     //
-    // The leading-dot entries `.n = E` and `.0 = E` take a `#{` of their own,
-    // decided by the very next tile: a `#{` that admits a hole after it and
+    // The leading-dot entries `.n = E` and `.0 = E` take a `*{` of their own,
+    // decided by the very next tile: a `*{` that admits a hole after it and
     // also a `.` would let an operand stand before the form's `.`, so
-    // `#{ p.x, p.y }` would read its projection dot as a label's. Each `#{`
+    // `*{ p.x, p.y }` would read its projection dot as a label's. Each `*{`
     // instead has one kind of successor, so the dot after an operand is
     // always the projection's. A telescope is labelled throughout or
     // positional throughout; the concrete language is otherwise unchanged,
@@ -4718,7 +4718,7 @@ fn primary_expressions(
         s,
         p,
         alt([
-            // labelled: `#{ .l = E, … }`, and `.l` alone for `.l = l`
+            // labelled: `*{ .l = E, … }`, and `.l` alone for `.l = l`
             seq([
                 t(TileLabel("*{")),
                 comma1(seq([dotted_label(), opt(seq([t(TileLabel("=")), h(s)]))])),
@@ -4727,7 +4727,7 @@ fn primary_expressions(
             seq([
                 t(TileLabel("*{")),
                 alt([
-                    // the unit: `#{ }`
+                    // the unit: `*{ }`
                     t(TileLabel("}")),
                     seq([
                         // the first entry: the update source, or a positional

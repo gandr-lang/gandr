@@ -726,10 +726,10 @@ fn add_type_rules(
             tile(TileLabel(")")),
         ]),
     ));
-    // The telescope `#{ … }`: the tuple, the record and Σ are one former, so
+    // The telescope `*{ … }`: the tuple, the record and Σ are one former, so
     // one rule spells all three. An entry is a bare type, positional and
-    // labelled by its index, or a labelled `k : T`; `#{}` is the unit and
-    // `#{A}` the 1-ary product. The entry shape is inlined, its key a type
+    // labelled by its index, or a labelled `k : T`; `*{}` is the unit and
+    // `*{A}` the 1-ary product. The entry shape is inlined, its key a type
     // hole the lowering reads as a bare label; the record type it renames and
     // the folded field are recorded as adaptations.
     let mut telescope_type = rule(
