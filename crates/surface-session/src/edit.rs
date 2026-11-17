@@ -3212,8 +3212,8 @@ fn agreement(
                 declaration: ref right,
                 arguments: ref b,
             },
-        ) => left == right && a.len() == b.len(),
-        (
+        )
+        | (
             &ContentNode::Codata {
                 declaration: ref left,
                 arguments: ref a,

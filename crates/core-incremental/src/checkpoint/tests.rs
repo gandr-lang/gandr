@@ -516,7 +516,13 @@ fn a_node_s_key_moves_only_with_its_content_7403()
                         crate::content::ArenaNode::Value(body),
                     ),
                 ),
-                _ => panic!("each integer item has a body"),
+                gandr_core_checker::DeclarationContent::Value { .. }
+                | gandr_core_checker::DeclarationContent::Data(_)
+                | gandr_core_checker::DeclarationContent::Codata(_)
+                | gandr_core_checker::DeclarationContent::Abstract(_)
+                | gandr_core_checker::DeclarationContent::World(_) => {
+                    panic!("each integer item has a body")
+                },
             })
             .collect::<vec::Vec<_>>()
     };
@@ -531,12 +537,12 @@ fn a_node_s_key_moves_only_with_its_content_7403()
         (Key("two"), Digits("20")),
     ]));
     let (
-        [
+        &[
             (one_node, Maybe::Present(one)),
             (also_node, Maybe::Present(also)),
             (_, Maybe::Present(two)),
         ],
-        [
+        &[
             (edited_node, Maybe::Present(edited_one)),
             _,
             (_, Maybe::Present(edited_two)),

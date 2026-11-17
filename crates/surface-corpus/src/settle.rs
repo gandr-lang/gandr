@@ -4447,7 +4447,7 @@ data NatUnits : Type where {{
                 verdicts,
                 &gandr_core_incremental::NodeKeys::new(
                     &module.arena,
-                    &crate::fixture::layout(&module),
+                    &crate::fixture::layout(module),
                 ),
                 &mut runner,
             );
@@ -4634,7 +4634,7 @@ data NatUnits : Type where {{
                     &own.verdicts,
                     &gandr_core_incremental::NodeKeys::new(
                         &own.arena,
-                        &crate::fixture::layout(&own)
+                        &crate::fixture::layout(own)
                     ),
                     &mut ran_at,
                 )
