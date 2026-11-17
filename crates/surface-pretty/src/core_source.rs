@@ -1431,9 +1431,10 @@ impl<'arena> CoreSource<'arena>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a definition over two stages, one below the other,
-    ///   writes each parameter at its own stage and the result below the first.
-    /// - witness: `gandr-surface-dispatcher::parity::a_definition_s_stage_binders_are_printed_in_its_block_7856`
+    /// - hypothesis: L3 — a type at a binder's stage, one a step below a
+    ///   binder, one two steps below and one at a stage no binder names
+    ///   separate the three answers.
+    /// - witness: `core_source::tests::a_type_at_a_binder_s_stage_reads_as_staged_at_its_name_7906`
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|former| matches!(*former, Former::Staged { inner, .. }
         if matches!(self.arena.value_type(id), Some(&ValueType::Staged { base, .. }) if inner == CoreNode::ValueType(base)))))]
     fn staged_former(
@@ -3990,8 +3991,9 @@ mod tests
         }
     }
 
-    /// A staged type reads as the type it refines: a stage is the recursion
-    /// typing's own, and its components are the refined type's.
+    /// A staged type outside a definition over stages reads as the type it
+    /// refines: no binder names its stage, and its components are the
+    /// refined type's.
     #[test]
     fn a_staged_type_reads_as_the_type_it_refines()
     {
@@ -4012,6 +4014,60 @@ mod tests
             source.component(CoreNode::ValueType(staged), Component::from(1_usize)),
             Some(CoreNode::ValueType(string))
         );
+    }
+
+    /// #7906: inside a definition over stages, a type at a binder's stage
+    /// reads as staged at that binder's name, and one step below it as
+    /// staged below. A stage two steps below, or one no binder names, reads
+    /// as the type it refines, which the surface writes with no stage.
+    #[test]
+    fn a_type_at_a_binder_s_stage_reads_as_staged_at_its_name_7906()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let stage = |ordinal: usize| gandr_kernel_term::StageId::from(ordinal);
+        let one = gandr_kernel_term::StageDepth::ONE;
+        let two =
+            gandr_kernel_term::StageDepth::from(core::num::NonZeroU32::MIN.saturating_add(1_u32));
+        let at = arena.value_type_staged(integer, gandr_kernel_term::Stage::At(stage(1)));
+        let below = arena.value_type_staged(integer, gandr_kernel_term::Stage::Below {
+            anchor: stage(0),
+            depth: one,
+        });
+        let deeper = arena.value_type_staged(integer, gandr_kernel_term::Stage::Below {
+            anchor: stage(0),
+            depth: two,
+        });
+        let unnamed = arena.value_type_staged(integer, gandr_kernel_term::Stage::At(stage(2)));
+        let binders = [
+            super::WrittenStage {
+                name: Name::from("j"),
+                bound: gandr_kernel_term::StageBound::Unbounded,
+            },
+            super::WrittenStage {
+                name: Name::from("k"),
+                bound: gandr_kernel_term::StageBound::Below(gandr_kernel_term::StageBinder::from(
+                    0_usize,
+                )),
+            },
+        ];
+        let source = CoreSource::new(&arena, &[]).staged(&binders);
+        assert!(matches!(
+            source.read(CoreNode::ValueType(at)),
+            Former::Staged { inner, stage, reach: gandr_kernel_term::StageReach::At }
+                if inner == CoreNode::ValueType(integer) && stage.as_ref() == "k"
+        ));
+        assert!(matches!(
+            source.read(CoreNode::ValueType(below)),
+            Former::Staged { inner, stage, reach: gandr_kernel_term::StageReach::Below(depth) }
+                if inner == CoreNode::ValueType(integer) && stage.as_ref() == "j" && depth == one
+        ));
+        for unwritten in [deeper, unnamed] {
+            assert!(matches!(
+                source.read(CoreNode::ValueType(unwritten)),
+                Former::BaseType(BaseType::Integer)
+            ));
+        }
     }
 
     /// A patched type reads as its base, then each value it fixes in label
