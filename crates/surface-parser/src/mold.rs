@@ -3110,7 +3110,7 @@ impl<'pbg> Molder<'pbg>
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body gathers the candidate menu the clause walks to check it sorted"
+            reason = "parity: the body gathers the candidate menu the clause walks to check it sorted; #104 owns the cost of the clause"
         )
     )]
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
