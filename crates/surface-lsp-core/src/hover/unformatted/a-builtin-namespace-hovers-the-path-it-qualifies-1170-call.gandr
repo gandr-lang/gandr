@@ -1,0 +1,4 @@
+def quotientOf(c : Integer) -> -F Integer {{
+  let lead = ({marked_at}) c 64;
+  return lead
+}}

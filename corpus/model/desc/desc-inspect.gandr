@@ -1,0 +1,16 @@
+//! This enumeration has three constructors.
+//!
+//! [Chapman-2010-gentle_art_levitation] describes this form.
+//!
+//! The constructors describe traffic signals.
+//! The signals have stop, go and wait states.
+//!
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//!
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
+
+/// A traffic signal has stop, go and wait states.
+data Traffic : Type where
+  | Stop : Traffic
+  | Go : Traffic
+  | Wait : Traffic

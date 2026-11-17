@@ -1,0 +1,1113 @@
+//! Contracts: the melder's paper traces, totality over arbitrary streams,
+//! checkpoint resume, and the module and hole surfaces.
+
+use core::fmt::Write as _;
+
+use anodized::spec;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::Regex;
+use gandr_surface_grammar::Rule;
+use gandr_surface_grammar::RuleName;
+use gandr_surface_grammar::Sort;
+use gandr_surface_grammar::TileLabel;
+use gandr_surface_grammar::built_in;
+use gandr_surface_parser::Checkpoint;
+use gandr_surface_parser::CheckpointBytesRef;
+use gandr_surface_parser::MeldState;
+use gandr_surface_parser::MoldedTile;
+use gandr_surface_parser::Oblig;
+use gandr_surface_parser::TileText;
+use gandr_surface_parser::parse;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::MoldId;
+use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeLabel;
+use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
+use gandr_theory_graphs::Assoc;
+use gandr_theory_graphs::PrecDag;
+use gandr_theory_graphs::PrecSpec;
+use proptest::prelude::*;
+
+use crate::common::built;
+use crate::common::children;
+use crate::common::label_of;
+use crate::common::root_digest;
+use crate::common::significant_children;
+use crate::common::span;
+use crate::common::text;
+use crate::failure::Failure;
+
+/// Count of tree nodes reachable from a root.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct ReachableNodeCount(usize);
+
+impl From<ReachableNodeCount> for usize
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: ReachableNodeCount) -> Self
+    {
+        count.0
+    }
+}
+
+/// Whether a direct tile lookup found its target.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct TilePresence(bool);
+
+impl From<TilePresence> for bool
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(presence: TilePresence) -> Self
+    {
+        presence.0
+    }
+}
+
+/// Number of grammar molds available to the fuzz strategy.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct MoldCount(u32);
+
+impl From<u32> for MoldCount
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: u32) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<MoldCount> for u32
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: MoldCount) -> Self
+    {
+        count.0
+    }
+}
+
+#[test]
+fn module_declarations_mold_zero_obligation() -> Result<(), Failure>
+{
+    let pbg = built();
+    let cases = [
+        "module M where { def x = 1; def y : Integer; }",
+        include_str!("contracts/fixtures/module-declarations-mold-zero-obligation.gandr"),
+        "module Outer where { module Inner where { type T = Integer; } } def y : Outer.Inner.T -> -F Outer.Inner.T;",
+    ];
+    for src in cases {
+        let result = parse(pbg, SourceText::from(src))?;
+        assert!(
+            bool::from(result.is_clean()),
+            "module source {src:?} molds clean; obligations: {:?}",
+            result
+                .obligations()
+                .iter()
+                .map(|o| o.class)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(result.tree().grammar(), pbg.fingerprint());
+        assert_eq!(
+            Some(NodeLabel::Wald),
+            label_of(result.tree(), result.tree().root()),
+            "module source {src:?} commits to a Wald"
+        );
+    }
+    Ok(())
+}
+
+/// Prefix type formers must keep their recursive operand inside the form.
+///
+/// The positive cases separate real operands from typed-hole operands and
+/// exercise both a comma-separated generic argument list and a declaration
+/// value. The negative cases keep a missing operand loud, including inside a
+/// comma-separated list.
+#[test]
+fn prefix_type_formers_group_required_operands() -> Result<(), Failure>
+{
+    let pbg = built();
+    let cases: [(&str, bool); 9] = [
+        ("-F Integer", true),
+        ("+U Integer", true),
+        ("-F ?", true),
+        ("+U ?", true),
+        ("def suspended : +U ?;", true),
+        ("List(-F Integer, +U ?)", true),
+        ("Integer -> Integer", true),
+        ("-F", false),
+        ("List(-F, +U)", false),
+    ];
+    for (src, expected_clean) in cases {
+        let result = parse(pbg, SourceText::from(src))?;
+        assert_eq!(
+            expected_clean,
+            bool::from(result.is_clean()),
+            "prefix-former source {src:?} cleanliness mismatch; obligations: {:?}",
+            result.obligations()
+        );
+        if !expected_clean {
+            assert!(
+                !result.obligations().is_empty(),
+                "missing prefix operand {src:?} must remain an explicit obligation"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_module_members_mold_zero_obligation() -> Result<(), Failure>
+{
+    let pbg = built_in()?;
+    let src =
+        include_str!("contracts/fixtures/nested-module-members-mold-zero-obligation-src.gandr");
+    let result = parse(&pbg, SourceText::from(src))?;
+    assert!(
+        bool::from(result.is_clean()),
+        "nested module source must mold cleanly; obligations: {:?}",
+        result
+            .obligations()
+            .iter()
+            .map(|obligation| obligation.class)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        result.tree().grammar(),
+        pbg.fingerprint(),
+        "nested module parse commits against the shared built-in grammar"
+    );
+    assert_eq!(
+        Some(NodeLabel::Wald),
+        label_of(result.tree(), result.tree().root())
+    );
+    Ok(())
+}
+
+/// A typed hole written in a pattern slot molds at `Sort::Pattern`, and one
+/// written in an expression slot still molds at `Sort::Expression`.
+///
+/// **Cleanliness alone proves nothing here, which is the whole reason this test
+/// asserts the sort.** Before the pattern-position rule existed, every source
+/// below already parsed with zero obligations — the melder admitted the
+/// *expression* hole into the pattern slot, so the committed tile said
+/// `Expression` while the page said pattern. Nothing downstream could tell the
+/// difference by looking, and a sort-directed consumer would have read a
+/// pattern hole as a stray expression. So the witness is the recorded sort of
+/// the `?` tile at each position, never the obligation count.
+#[test]
+fn holes_mold_at_the_sort_of_the_slot_they_stand_in() -> Result<(), Failure>
+{
+    let pbg = built();
+    // Each case pairs a source with the sorts its `?` tiles must carry, in
+    // source order.
+    let cases: [(&str, &[Sort]); 7] = [
+        ("def f = match c { | ? => 0 };", &[Sort::Pattern]),
+        ("def f = match c { | ?arm => 0 };", &[Sort::Pattern]),
+        ("def f = match m { | Just(?) => 0 };", &[Sort::Pattern]),
+        ("def f = match c { | ? | ?other => 0 };", &[
+            Sort::Pattern,
+            Sort::Pattern,
+        ]),
+        // A bare hole closing an infix pattern's tail leaves the arm's `=>`
+        // to the case, never to a value-function type over the pattern.
+        ("def f = match c { | whole @ ? => 0 };", &[Sort::Pattern]),
+        ("def f = match c { | x ∷ ? => 0 };", &[Sort::Pattern]),
+        // The scrutinee's hole is an expression, the arm's is a pattern, and
+        // the arm body's is an expression again — one spelling, three slots.
+        ("def f = match ? { | ? => ?body };", &[
+            Sort::Expression,
+            Sort::Pattern,
+            Sort::Expression,
+        ]),
+    ];
+    for (src, expected) in cases {
+        let result = parse(pbg, SourceText::from(src))?;
+        assert!(
+            bool::from(result.is_clean()),
+            "pattern-hole source {src:?} molds clean; obligations: {:?}",
+            result
+                .obligations()
+                .iter()
+                .map(|obligation| obligation.class)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            expected,
+            hole_tile_sorts(pbg, result.tree())?.as_slice(),
+            "the `?` tiles of {src:?} carry the sorts of the slots they stand in"
+        );
+    }
+    Ok(())
+}
+
+/// The grammar sort of every `?` tile in a committed tree, in source order.
+///
+/// # Specification
+/// # Errors
+/// The grammar's refusal of a mold id the tree carries.
+fn hole_tile_sorts(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+) -> Result<Vec<Sort>, Failure>
+{
+    let mut sorts = Vec::new();
+    let mut pending = vec![tree.root()];
+    while let Some(id) = pending.pop() {
+        if let Some(NodeLabel::Tile(mold)) = label_of(tree, id)
+            && text(tree, id) == "?"
+        {
+            sorts.push(pbg.mold(mold)?.sort);
+        }
+        pending.extend(children(tree, id).into_iter().rev());
+    }
+    Ok(sorts)
+}
+
+/// The opaque ascription `:>` parses cleanly, with an abstract type component
+/// beside an ordinary value component.
+///
+/// This is the parse-gated witness the sealing surface lands first: the form is
+/// admitted by the grammar before anything elaborates it, so the syntax and its
+/// meaning arrive as separate, separately-reviewable changes.
+#[test]
+fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Failure>
+{
+    let pbg = built();
+    let src = "module Counter :> *{ type T, zero : T } where { type T = Integer; def zero = 0; }";
+    let result = parse(pbg, SourceText::from(src))?;
+    assert!(
+        bool::from(result.is_clean()),
+        "an opaque ascription with an abstract type component is in the clean grammar"
+    );
+    Ok(())
+}
+
+/// The two ascriptions differ on their **first token** and nothing else, so a
+/// transparent signature carrying the same components also parses cleanly.
+///
+/// The pair is what shows the discrimination is lookahead-free: one tile
+/// decides it, at a fixed position, with the same body either way.
+#[test]
+fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Failure>
+{
+    let pbg = built();
+    let src = "module Counter : *{ type T, zero : T } where { def zero = 0; }";
+    let result = parse(pbg, SourceText::from(src))?;
+    assert!(
+        bool::from(result.is_clean()),
+        "the same signature is admitted under transparent ascription"
+    );
+    Ok(())
+}
+
+/// A qualified type path stands as a session payload only between
+/// parentheses.
+///
+/// The path's `.` is postfix, and the send's own `.` continues the `!` still
+/// open before it. In `!(Seat.Report). end` the parentheses close over the
+/// path, so its `.` is the postfix one and the next is the send's; in the bare
+/// `!Seat.Report. end` the send claims the first `.` and reads `Seat` alone as
+/// the payload, and the second `.` meets `end` where a component name must
+/// follow. One text has one reading, and the bare one is a repair rather than
+/// a second parse.
+#[test]
+fn a_path_payload_parses_only_parenthesized() -> Result<(), Failure>
+{
+    let pbg = built();
+    let parenthesized = parse(pbg, SourceText::from("def s : !(Seat.Report). end ;"))?;
+    assert!(
+        bool::from(parenthesized.is_clean()),
+        "the parenthesized path payload molds clean; obligations: {:?}",
+        parenthesized.obligations()
+    );
+    assert_eq!(
+        [RuleName("type_path"), RuleName("send_session_type")],
+        dot_rules(pbg, parenthesized.tree())?.as_slice(),
+        "the first `.` is the path's and the second the send's"
+    );
+    let bare = parse(pbg, SourceText::from("def s : !Seat.Report. end ;"))?;
+    assert!(
+        !bool::from(bare.is_clean()),
+        "the bare path payload is a repair, not a second reading"
+    );
+    assert_eq!(
+        Some(&RuleName("send_session_type")),
+        dot_rules(pbg, bare.tree())?.first(),
+        "the send claims the first `.`, so `Seat` alone is the payload and the path never forms"
+    );
+    Ok(())
+}
+
+/// The rule of every `.` tile in a committed tree, in source order.
+///
+/// # Specification
+/// # Errors
+/// The grammar's refusal of a mold id the tree carries.
+fn dot_rules(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+) -> Result<Vec<RuleName>, Failure>
+{
+    let mut rules = Vec::new();
+    let mut pending = vec![tree.root()];
+    while let Some(id) = pending.pop() {
+        if let Some(NodeLabel::Tile(mold)) = label_of(tree, id)
+            && text(tree, id) == "."
+        {
+            rules.push(pbg.rule_of(mold)?.name());
+        }
+        pending.extend(children(tree, id).into_iter().rev());
+    }
+    Ok(rules)
+}
+
+/// Module nesting is **unbounded in the clean grammar**, not merely deeper than
+/// it was.
+///
+/// The distinction is the point of the test and the reason the depths are
+/// generated rather than written out. An unrolled grammar admits nesting to
+/// whatever depth its unrolling was written to and recovers past it, so *some*
+/// finite depth parses dirty; a recursive one has no such depth, because the
+/// nested form inhabits the very sort its own body repeats. Sweeping a range
+/// that straddles and far exceeds any plausible unrolling separates the two:
+/// under an unrolled grammar at least one of these depths reports an
+/// obligation.
+#[test]
+fn module_nesting_is_unbounded_in_the_clean_grammar() -> Result<(), Failure>
+{
+    let pbg = built();
+    for depth in [1_usize, 2, 3, 4, 8, 16, 32] {
+        let mut src = String::from("module Outer where {");
+        for level in 0 .. depth {
+            write!(src, " module level{level} where {{")?;
+        }
+        src.push_str(" def innermost = 1;");
+        for _level in 0 .. depth {
+            src.push_str(" }");
+        }
+        src.push_str(" }");
+        let result = parse(pbg, SourceText::from(src.as_str()))?;
+        assert!(
+            bool::from(result.is_clean()),
+            "nesting depth {depth} must parse clean, with no recovery obligation: {:?}",
+            result.obligations()
+        );
+        assert_eq!(
+            Some(NodeLabel::Wald),
+            label_of(result.tree(), result.tree().root()),
+            "nesting depth {depth} commits a whole tree"
+        );
+    }
+    Ok(())
+}
+#[test]
+fn malformed_module_member_uses_ordinary_recovery() -> Result<(), Failure>
+{
+    let pbg = built();
+    let src = "module M where { def bad = 1 ′ 2; def good = 1; }";
+    let result = parse(pbg, SourceText::from(src))?;
+    assert!(
+        !bool::from(result.is_clean()),
+        "a malformed module member must flag an ordinary repair obligation"
+    );
+    assert!(
+        result.obligations().iter().any(|o| matches!(
+            o.class,
+            Oblig::MissingMeld | Oblig::MissingTile | Oblig::UnmoldedTok
+        )),
+        "module member repair should be an ordinary missing-meld/tile/unmolded obligation; got {:?}",
+        result
+            .obligations()
+            .iter()
+            .map(|o| o.class)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        result
+            .obligations()
+            .iter()
+            .all(|o| o.class != Oblig::AmbiguousPrec),
+        "malformed module member recovery must not introduce precedence ambiguity"
+    );
+    assert_eq!(
+        Some(NodeLabel::Wald),
+        label_of(result.tree(), result.tree().root()),
+        "malformed module source still commits"
+    );
+    Ok(())
+}
+#[test]
+fn trace_left_associates_like_figure_24() -> Result<(), Failure>
+{
+    // `n + n + n` left-associates to `((n + n) + n)`: the first `+` Reduces
+    // when the second (equal, left-associative) `+` arrives.
+    let pbg = arith_pbg()?;
+    let tiles = stream(&pbg, &[
+        TileLabel("n"),
+        TileLabel("+"),
+        TileLabel("n"),
+        TileLabel("+"),
+        TileLabel("n"),
+    ]);
+    let source = assembled(&tiles);
+    let tree = commit_stream(&pbg, &tiles, SourceText::from(source.as_str()))?;
+
+    let outer = sole_meld(&tree);
+    assert!(bool::from(has_tile(&tree, outer, TileText::from("+"))));
+    let outer_children = children(&tree, outer);
+    assert_eq!(3, outer_children.len());
+    // Left child is the inner `(n + n)` meld; right child is the bare atom.
+    let inner = outer_children[0];
+    assert!(matches!(label_of(&tree, inner), Some(NodeLabel::Meld(_))));
+    assert!(bool::from(has_tile(&tree, inner, TileText::from("+"))));
+    assert!(matches!(
+        label_of(&tree, outer_children[2]),
+        Some(NodeLabel::Tile(_))
+    ));
+    Ok(())
+}
+#[test]
+fn no_obligations_on_well_formed_fragments() -> Result<(), Failure>
+{
+    let pbg = arith_pbg()?;
+    for labels in [
+        vec![TileLabel("n")],
+        vec![
+            TileLabel("n"),
+            TileLabel("+"),
+            TileLabel("n"),
+            TileLabel("*"),
+            TileLabel("n"),
+        ],
+        vec![
+            TileLabel("n"),
+            TileLabel("+"),
+            TileLabel("n"),
+            TileLabel("+"),
+            TileLabel("n"),
+        ],
+        vec![
+            TileLabel("("),
+            TileLabel("n"),
+            TileLabel("+"),
+            TileLabel("n"),
+            TileLabel(")"),
+            TileLabel("*"),
+            TileLabel("n"),
+        ],
+    ] {
+        let mut state = MeldState::new(&pbg);
+        let tiles = stream(&pbg, &labels);
+        for tile in &tiles {
+            state.push(tile);
+        }
+        assert!(
+            state.obligations().is_empty(),
+            "well-formed fragment {labels:?} melds without obligations"
+        );
+        let _tree = state.commit(SourceText::from(assembled(&tiles).as_str()))?;
+    }
+    Ok(())
+}
+
+/// The number of handles visited from `id`, including the starting handle.
+///
+/// # Specification
+/// - ensures: counts the starting handle and every reachable child, saturating
+///   at `usize::MAX`; an absent starting handle counts once.
+///
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — synthesized real-mold and bracket streams compare
+///   reachable counts with the committed storage count, including empty
+///   streams; skipping a subtree or double-visiting a child changes the
+///   equality. Saturation is not exercised because no addressable tree reaches
+///   it.
+/// - witness: `tests::contracts::arbitrary_real_mold_streams_parse_totally`
+/// - witness: `tests::contracts::arbitrary_bracket_streams_parse_totally`
+#[spec(ensures: |ret| usize::from(ret) >= 1 && (id != tree.root() || usize::from(ret) == usize::from(tree.node_count())) && (tree.node(id).is_some() || usize::from(ret) == 1))]
+fn count_nodes(
+    tree: &SyntaxTree<'_>,
+    id: NodeIndex,
+) -> ReachableNodeCount
+{
+    let mut total = 0_usize;
+    let mut pending = vec![id];
+    while let Some(next) = pending.pop() {
+        total = total.saturating_add(1);
+        pending.extend(children(tree, next).into_iter().rev());
+    }
+    ReachableNodeCount(total)
+}
+
+#[test]
+fn trace_brackets_reset_precedence_like_figure_33() -> Result<(), Failure>
+{
+    // `( n + n ) * n` melds to `((n + n) * n)`: the bracket closes on its
+    // matching delimiter (a `≐` step) and resets precedence, so `+` binds
+    // inside the parens despite being looser than the enclosing `*`.
+    let pbg = arith_pbg()?;
+    let tiles = stream(&pbg, &[
+        TileLabel("("),
+        TileLabel("n"),
+        TileLabel("+"),
+        TileLabel("n"),
+        TileLabel(")"),
+        TileLabel("*"),
+        TileLabel("n"),
+    ]);
+    let source = assembled(&tiles);
+    let tree = commit_stream(&pbg, &tiles, SourceText::from(source.as_str()))?;
+
+    let mul = sole_meld(&tree);
+    assert!(
+        bool::from(has_tile(&tree, mul, TileText::from("*"))),
+        "the outer meld is the `*` term"
+    );
+    let mul_children = children(&tree, mul);
+    assert_eq!(3, mul_children.len());
+    let paren = mul_children[0];
+    // The paren meld's direct tiles are `(` and `)`, enclosing the `+` meld.
+    assert_eq!(direct_tiles(&tree, paren), vec![
+        "(".to_owned(),
+        ")".to_owned()
+    ]);
+    assert!(
+        bool::from(has_tile(
+            &tree,
+            children(&tree, paren)[1],
+            TileText::from("+")
+        )),
+        "the `+` term nests inside the parens"
+    );
+    Ok(())
+}
+#[test]
+fn trace_precedence_climbs_like_figure_23() -> Result<(), Failure>
+{
+    // `n + n * n` melds to `(n + (n * n))`: Shift, then Reduce the tighter
+    // `*` handle before the looser `+` — no stuck states, no grout. Atoms
+    // stay bare tokens, so the `+` meld's children are `[n, +, (n * n)]`.
+    let pbg = arith_pbg()?;
+    let tiles = stream(&pbg, &[
+        TileLabel("n"),
+        TileLabel("+"),
+        TileLabel("n"),
+        TileLabel("*"),
+        TileLabel("n"),
+    ]);
+    let source = assembled(&tiles);
+    let tree = commit_stream(&pbg, &tiles, SourceText::from(source.as_str()))?;
+
+    let add = sole_meld(&tree);
+    assert!(matches!(label_of(&tree, add), Some(NodeLabel::Meld(_))));
+    assert!(
+        bool::from(has_tile(&tree, add, TileText::from("+"))),
+        "the outer meld is the `+` term"
+    );
+    assert!(
+        !bool::from(has_tile(&tree, add, TileText::from("*"))),
+        "`*` binds tighter, one level down"
+    );
+    let add_children = children(&tree, add);
+    assert_eq!(3, add_children.len());
+    // The right operand is the `*` meld; the left operand is the bare atom.
+    assert!(matches!(
+        label_of(&tree, add_children[0]),
+        Some(NodeLabel::Tile(_))
+    ));
+    let mul = add_children[2];
+    assert!(matches!(label_of(&tree, mul), Some(NodeLabel::Meld(_))));
+    assert!(
+        bool::from(has_tile(&tree, mul, TileText::from("*"))),
+        "the nested meld is the `*` term"
+    );
+    Ok(())
+}
+
+/// A synthetic arithmetic grammar: atoms, `*` (tight), `+` (loose), parens.
+///
+/// # Specification
+/// - ensures: the checked fixture has one mold for each arithmetic terminal.
+/// - fails: a precedence or grammar construction refusal.
+///
+/// # Errors
+/// A refusal from the precedence or grammar build, which this fixed grammar
+/// never meets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact committed arithmetic trees distinguish
+///   multiplication from addition precedence, left association and parenthesis
+///   reset. Singleton terminal menus are required by stream construction;
+///   missing or duplicate molds fail before a trace can masquerade as the
+///   intended fixture.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_left_associates_like_figure_24`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["n", "*", "+", "(", ")"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
+fn arith_pbg() -> Result<Pbg, Failure>
+{
+    let mut spec = PrecSpec::new();
+    let atom = spec.insert("atom", Assoc::Non)?;
+    let mul = spec.insert("mul", Assoc::Left)?;
+    let add = spec.insert("add", Assoc::Left)?;
+    spec.add_edge(atom, mul)?;
+    spec.add_edge(mul, add)?;
+    let dag = PrecDag::build(&spec)?;
+    let pbg = Pbg::build(dag, vec![
+        Rule::new(
+            RuleName("num"),
+            Sort::Expression,
+            atom,
+            Regex::tile(TileLabel("n")),
+        ),
+        Rule::new(
+            RuleName("paren"),
+            Sort::Expression,
+            atom,
+            Regex::seq([
+                Regex::tile(TileLabel("(")),
+                Regex::sort(Sort::Expression),
+                Regex::tile(TileLabel(")")),
+            ]),
+        ),
+        Rule::new(
+            RuleName("mul"),
+            Sort::Expression,
+            mul,
+            Regex::seq([
+                Regex::sort(Sort::Expression),
+                Regex::tile(TileLabel("*")),
+                Regex::sort(Sort::Expression),
+            ]),
+        ),
+        Rule::new(
+            RuleName("add"),
+            Sort::Expression,
+            add,
+            Regex::seq([
+                Regex::sort(Sort::Expression),
+                Regex::tile(TileLabel("+")),
+                Regex::sort(Sort::Expression),
+            ]),
+        ),
+    ])?;
+    Ok(pbg)
+}
+/// Push a whole stream and commit it over `source`, the text its tiles
+/// assemble.
+///
+/// # Specification
+/// - ensures: a successful tree retains source and pbg identity and has a Wald
+///   root after pushing every supplied tile in order.
+/// - fails: propagates a melder commit refusal.
+///
+/// # Errors
+/// The melder's refusal at commit, which an assembled source never meets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact arithmetic trees observe operand order, precedence
+///   and parenthesis boundaries after whole-stream commits. These fixtures
+///   cover success; source-mismatch refusal is witnessed at the public commit
+///   API.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == pbg.fingerprint() && tree.node(tree.root()).map(gandr_surface_syntax::Node::label) == Some(NodeLabel::Wald)))]
+fn commit_stream<'source>(
+    pbg: &Pbg,
+    tiles: &[MoldedTile],
+    source: SourceText<'source>,
+) -> Result<SyntaxTree<'source>, Failure>
+{
+    let mut state = MeldState::new(pbg);
+    for tile in tiles {
+        state.push(tile);
+    }
+    let tree = state.commit(source)?;
+    Ok(tree)
+}
+
+/// The source a stream of tiles assembles: their texts, abutting.
+///
+/// # Specification
+/// - ensures: concatenates every tile text in input order without separators;
+///   an empty stream produces empty text.
+///
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — empty and bracket-heavy generated streams commit
+///   against the assembled source and retain exactly its text-carrying byte
+///   coverage. Reordering, dropping or inserting text changes source agreement.
+/// - witness: `tests::contracts::arbitrary_bracket_streams_parse_totally`
+#[spec(ensures: |ret| tiles.iter().try_fold(ret.as_str(), |rest, tile| rest.strip_prefix(<&str>::from(tile.text()))) == Some(""))]
+fn assembled(tiles: &[MoldedTile]) -> String
+{
+    tiles.iter().map(|tile| <&str>::from(tile.text())).collect()
+}
+
+/// Build a molded-tile stream from `(label)` pairs over `pbg`.
+///
+/// # Specification
+/// - requires: every label has exactly one candidate mold in pbg.
+/// - ensures: one tile per input label, in order, with that sole mold and text.
+/// - panics: when a label has no unique mold.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — unequal arithmetic operators and parentheses are
+///   committed into exact expected trees. Replacing a mold, reordering a tile
+///   or changing its text changes precedence, source agreement or direct child
+///   observations.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[spec(requires: labels.iter().all(|&label| pbg.candidates(label).len() == 1), ensures: |ret| ret.len() == labels.len() && ret.iter().zip(labels).all(|(tile, &label)| Some(&tile.mold()) == pbg.candidates(label).first() && <&str>::from(tile.text()) == label.0))]
+fn stream(
+    pbg: &Pbg,
+    labels: &[TileLabel],
+) -> Vec<MoldedTile>
+{
+    labels
+        .iter()
+        .map(|&label| MoldedTile::new(only(pbg, label), TileText::from(label.0)))
+        .collect()
+}
+
+/// The sole mold id declared for `label`.
+///
+/// # Specification
+/// - requires: label has exactly one candidate mold.
+/// - ensures: returns that mold.
+/// - panics: when the candidate count is not one.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct arithmetic terminals select distinct operator
+///   roles in exact precedence and association trees; selecting another
+///   terminal or an invalid mold changes those trees. Invalid fixture menus are
+///   excluded by the documented precondition and the fixture predicate.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_left_associates_like_figure_24`
+#[spec(requires: pbg.candidates(label).len() == 1, ensures: |ret| pbg.candidates(label).first() == Some(&ret))]
+fn only(
+    pbg: &Pbg,
+    label: TileLabel,
+) -> MoldId
+{
+    let molds = pbg.candidates(label);
+    assert_eq!(1, molds.len(), "label {} must have one mold", label.0);
+    molds[0]
+}
+
+/// The single child of the root.
+///
+/// # Specification
+/// - requires: the root has exactly one child.
+/// - ensures: returns that child.
+/// - panics: when the root has other than one child.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — arithmetic witnesses inspect the returned node as the
+///   outer operator and its nested operand tree; returning the root or a
+///   descendant changes its direct tiles. Multi-root trees are outside this
+///   helper.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[spec(requires: tree.children(tree.root()).len() == 1, ensures: |ret| tree.children(tree.root()).next() == Some(ret))]
+fn sole_meld(tree: &SyntaxTree<'_>) -> NodeIndex
+{
+    let top = children(tree, tree.root());
+    assert_eq!(1, top.len(), "one top-level term");
+    top[0]
+}
+
+/// Whether the direct tile children of `id` include `wanted`.
+///
+/// # Specification
+/// - ensures: true exactly when a direct Tile child has wanted text; nested
+///   descendants and non-tile children do not qualify.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — the outer addition contains + but not its nested
+///   multiplication operator; parenthesized addition is likewise absent from
+///   outer direct tiles. Positive and negative observations reject descendant
+///   leakage.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[spec(ensures: |ret| bool::from(ret) == tree.children(id).any(|child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_))) && tree.fragment(child).map_or("", <&str>::from) == <&str>::from(wanted)))]
+fn has_tile(
+    tree: &SyntaxTree<'_>,
+    id: NodeIndex,
+    wanted: TileText<'_>,
+) -> TilePresence
+{
+    let wanted = <&str>::from(wanted);
+    TilePresence(direct_tiles(tree, id).iter().any(|tile| tile == wanted))
+}
+
+/// The texts of a form's direct tile children, left to right.
+///
+/// # Specification
+/// - ensures: returns direct Tile fragments in child order, excluding layout
+///   and all nested tiles.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — parenthesis tiles remain the exact pair around a nested
+///   addition; including descendant operators or reversing direct children
+///   changes the pair. Arithmetic precedence witnesses also inspect mixed
+///   children.
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+#[spec(ensures: |ret| ret.iter().map(String::as_str).eq(tree.children(id).filter(|&child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).map(|child| tree.fragment(child).map_or("", <&str>::from))))]
+fn direct_tiles(
+    tree: &SyntaxTree<'_>,
+    id: NodeIndex,
+) -> Vec<String>
+{
+    children(tree, id)
+        .into_iter()
+        .filter(|&child| matches!(label_of(tree, child), Some(NodeLabel::Tile(_))))
+        .map(|child| text(tree, child))
+        .collect()
+}
+
+// Totality / panic-freedom over arbitrary molded-tile streams.
+
+/// A biased tile-index strategy over the real mold table plus out-of-range
+/// sentinels (boundary bias: extremes and the out-of-range edge).
+///
+/// # Specification
+/// - requires: `mold_count` is positive and below `u32::MAX`, so both index
+///   ranges are nonempty.
+/// - ensures: samples real mold indices and nearby out-of-range sentinels.
+/// - executable: none — anodized wraps the body in a closure whose impl
+///   Strategy return type is rejected by Rust (E0562).
+///
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded streams sample the real grammar and sentinel
+///   edge, then compare reachable storage, grammar identity and deterministic
+///   replay. This is sampled evidence, not proof that every index or
+///   probability is visited; the precondition keeps both generated ranges
+///   meaningful.
+/// - witness: `tests::contracts::arbitrary_real_mold_streams_parse_totally`
+fn tile_index(mold_count: MoldCount) -> impl Strategy<Value = MoldId>
+{
+    let mold_count = u32::from(mold_count);
+    prop_oneof![
+        6 => 0_u32 .. mold_count,
+        1 => Just(0_u32),
+        1 => Just(mold_count.saturating_sub(1)),
+        2 => mold_count .. mold_count.saturating_add(8),
+    ]
+    .prop_map(MoldId::from)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn arbitrary_real_mold_streams_parse_totally(
+        indices in {
+            let count = match u32::try_from(built().mold_count().0) {
+                | Ok(count) => count,
+                | Err(_error) => u32::MAX,
+            };
+            prop::collection::vec(tile_index(MoldCount::from(count)), 0 .. 48)
+        }
+    ) {
+        let pbg = built();
+        let tiles: Vec<MoldedTile> = indices
+            .iter()
+            .map(|&mold| {
+                let label = pbg.mold(mold).map_or("?", |def| def.label);
+                MoldedTile::new(mold, TileText::from(label))
+            })
+            .collect();
+
+        // Every push is total; finalize is a non-destructive query.
+        let mut state = MeldState::new(pbg);
+        for tile in &tiles {
+            state.push(tile);
+            let _completion = state.finalize();
+        }
+
+        // Commit yields a well-formed tree recording the grammar fingerprint.
+        let obligations = state.obligations().to_vec();
+        let source = assembled(&tiles);
+        let tree = state
+            .commit(SourceText::from(source.as_str()))
+            .expect("commit is total on a well-formed slope");
+        prop_assert_eq!(tree.grammar(), pbg.fingerprint());
+        let reachable = count_nodes(&tree, tree.root());
+        prop_assert_eq!(usize::from(reachable), usize::from(tree.node_count()));
+        let covered: usize = tree.positions().filter_map(|at| tree.node(at))
+            .filter(|node| bool::from(node.label().carries_text()))
+            .map(|node| usize::from(node.span().length())).sum();
+        prop_assert_eq!(covered, source.len());
+
+        // Determinism: an identical run yields an identical committed tree.
+        let mut replay = MeldState::new(pbg);
+        for tile in &tiles {
+            replay.push(tile);
+        }
+        prop_assert_eq!(replay.obligations().to_vec(), obligations);
+        let replayed = replay
+            .commit(SourceText::from(source.as_str()))
+            .expect("replay commits");
+        prop_assert_eq!(root_digest(&tree), root_digest(&replayed));
+    }
+
+    /// The declaration boundary is a property of the grammar, not of the
+    /// whitespace that happens to sit on it: every layout separating the two
+    /// declarations must yield the same two items and confine the repair to
+    /// the first of them.
+    #[test]
+    fn declaration_boundary_stays_stable_under_layout(
+        separator in prop_oneof![
+            Just(" "),
+            Just("\n"),
+            Just(include_str!("contracts/unformatted/declaration-boundary-stays-stable-under-layout-blank-line.gandr")),
+            Just(include_str!("contracts/unformatted/declaration-boundary-stays-stable-under-layout.gandr")),
+        ]
+    ) {
+        let source = format!("def bad = ( 1 ;{separator}def good = 2;");
+        let boundary = ByteOffset::from(source.find("def good").unwrap_or(source.len()));
+        let result = parse(built(), SourceText::from(source.as_str()))
+            .expect("total parser commit");
+        let significant = significant_children(result.tree(), result.tree().root());
+        prop_assert_eq!(significant.len(), 2);
+        prop_assert!(!bool::from(result.is_clean()));
+        let damaged = span(result.tree(), significant[0]).expect("first item");
+        prop_assert!(damaged.end() <= boundary);
+        let survivor = span(result.tree(), significant[1]).expect("second item");
+        prop_assert_eq!(survivor.start(), boundary);
+        prop_assert!(
+            result
+                .obligations()
+                .iter()
+                .all(|obligation| obligation.span.end() <= boundary)
+        );
+    }
+}
+
+/// A bracket-heavy vocabulary strategy over the arithmetic grammar.
+///
+/// # Specification
+/// - ensures: samples only n, +, *, ( and ).
+/// - executable: none — an opaque Strategy exposes values only by running a
+///   random value tree; a predicate would consume a separate sample rather than
+///   inspect the returned strategy.
+///
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded generated bracket streams and checkpoint splits
+///   exercise the arithmetic vocabulary through committed source coverage and
+///   resume equality. Sampling is not an exhaustive or probability-distribution
+///   claim; the deterministic figure trees cover every terminal role.
+/// - witness: `tests::contracts::arbitrary_bracket_streams_parse_totally`
+/// - witness: `tests::contracts::checkpoint_resume_equals_uninterrupted`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+fn arith_label() -> impl Strategy<Value = TileLabel>
+{
+    prop_oneof![
+        3 => Just(TileLabel("n")),
+        2 => Just(TileLabel("+")),
+        2 => Just(TileLabel("*")),
+        2 => Just(TileLabel("(")),
+        2 => Just(TileLabel(")")),
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn arbitrary_bracket_streams_parse_totally(
+        labels in prop::collection::vec(arith_label(), 0 .. 32)
+    ) {
+        let pbg = arith_pbg().expect("arith grammar");
+        let tiles: Vec<MoldedTile> = labels
+            .iter()
+            .map(|&label| MoldedTile::new(only(&pbg, label), TileText::from(label.0)))
+            .collect();
+        let mut state = MeldState::new(&pbg);
+        for tile in &tiles {
+            state.push(tile);
+        }
+        let source = assembled(&tiles);
+        let tree = state
+            .commit(SourceText::from(source.as_str()))
+            .expect("bracket stream commits");
+        let reachable = count_nodes(&tree, tree.root());
+        prop_assert_eq!(usize::from(reachable), usize::from(tree.node_count()));
+        let covered: usize = tree.positions().filter_map(|at| tree.node(at))
+            .filter(|node| bool::from(node.label().carries_text()))
+            .map(|node| usize::from(node.span().length())).sum();
+        prop_assert_eq!(covered, source.len());
+    }
+}
+
+// Checkpoint round-trip and resume-equivalence over synthesized streams.
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    #[test]
+    fn checkpoint_resume_equals_uninterrupted(
+        labels in prop::collection::vec(arith_label(), 0 .. 24),
+        split in 0_usize .. 24
+    ) {
+        let pbg = arith_pbg().expect("arith grammar");
+        let tiles: Vec<MoldedTile> = labels
+            .iter()
+            .map(|&label| MoldedTile::new(only(&pbg, label), TileText::from(label.0)))
+            .collect();
+        let cut = split.min(tiles.len());
+
+        // Uninterrupted run.
+        let mut plain = MeldState::new(&pbg);
+        for tile in &tiles {
+            plain.push(tile);
+        }
+        let plain_obligations = plain.obligations().to_vec();
+        let source = assembled(&tiles);
+        let plain_tree = plain
+            .commit(SourceText::from(source.as_str()))
+            .expect("plain commits");
+
+        // Checkpoint at the split, round-trip through bytes, resume.
+        let mut prefix = MeldState::new(&pbg);
+        for tile in tiles.get(.. cut).unwrap_or(&[]) {
+            prefix.push(tile);
+        }
+        let checkpoint = prefix.checkpoint();
+        let bytes = checkpoint.to_bytes();
+        let restored = Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes))
+            .expect("round-trips");
+        prop_assert_eq!(&restored, &checkpoint);
+
+        let mut resumed = MeldState::resume(&pbg, &restored);
+        for tile in tiles.get(cut ..).unwrap_or(&[]) {
+            resumed.push(tile);
+        }
+        prop_assert_eq!(resumed.obligations().to_vec(), plain_obligations);
+        let resumed_tree = resumed
+            .commit(SourceText::from(source.as_str()))
+            .expect("resumed commits");
+        prop_assert_eq!(root_digest(&resumed_tree), root_digest(&plain_tree));
+    }
+}

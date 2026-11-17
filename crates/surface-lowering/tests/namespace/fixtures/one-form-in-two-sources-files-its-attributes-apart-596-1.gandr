@@ -1,0 +1,2 @@
+def zero : Integer;
+def zero = 0;
