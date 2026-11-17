@@ -1,7 +1,12 @@
-// What a motive refuses when its body writes a type with no `return`. A type
-// is a value, and a body is a computation. So a type family's application in
-// the body refuses by its sort, as a type atom does. The refusal advises
-// `return`.
+// What a motive refuses when its body writes a type with no `return`.
+//
+// A type family's application in a computation's place must refuse by its
+// sort, as a type atom does. A refusal by name or by a constructor's arity
+// sends the reader to the wrong fix.
+//
+// Each definition below writes a family's application as its body with no
+// `return`. Each refuses as `OutOfFragment.WrongSort`, and the refusal
+// advises `return`.
 //
 // - see: #6491
 

@@ -1,9 +1,11 @@
 // A motive that names a path type, a bridge type or a flow type.
 //
-// A motive is a function from an index to a type. Its body is a computation,
-// and a type is a value. So the body writes `return` before the type, as it
-// does before any value. The function itself is a value too, so the
-// definition returns its thunk.
+// A motive maps each index to a type. An eliminator reads its motive at each
+// index, so the motive must be a function value.
+//
+// The body of a function is a computation, and a type is a value. So the body
+// writes `return` before the type, as it does before any value. The function
+// is a value too, so the definition returns its thunk.
 //
 // - see: #6491
 
