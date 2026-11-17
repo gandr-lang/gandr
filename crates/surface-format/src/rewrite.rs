@@ -2890,6 +2890,13 @@ impl<'source> Respelling<'_, 'source>
     ///   `;` after the `}`, both braces left out when they hold one operand
     ///   alone.
     /// - panics: none.
+    /// - executable: none — the clause names the roles of the form's parts,
+    ///   which no predicate on the arguments and the result states more simply.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a brace body moves after `=`, a recursive one too,
+    ///   and a body that holds a comment keeps its braces.
+    /// - witness: `tests::rewrite::a_brace_body_moves_after_the_equals_6318`
     ///
     /// # Cost
     /// - allocation: the written leaves, growth within the form's parts

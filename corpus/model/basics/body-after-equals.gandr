@@ -11,13 +11,13 @@
 /// A count that is zero or one more than a count.
 data Count : Type where { | None : Count | More : (n : Count) --> Count }
 
-/// Twice its argument, one expression after `=`.
-def twice(n : Integer) -> Integer = n + n;
+/// Two times its argument, one expression after `=`.
+def summedTwice(n : Integer) -> Integer = n + n;
 
 /// Four times its argument, statements in a block after `=`.
 def quadruple(n : Integer) -> Integer = {
-  let m = twice n;
-  twice m
+  let m = summedTwice n;
+  summedTwice m
 };
 
 /// The size of a count, a recursive body after `=`.
@@ -25,4 +25,4 @@ def rec size(n : Count) -> Integer = match n { | None => 0 | More(m) => 1 + size
 
 /// Each body reads as the brace body that it replaces.
 @[runs("12")]
-def total() -> Integer = quadruple 2 + size (More (More (More (More None))));
+def bodies() -> Integer = quadruple 2 + size (More (More (More (More None))));

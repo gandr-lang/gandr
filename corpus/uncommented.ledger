@@ -134,6 +134,8 @@ fragment/unmarked-self-reference.gandr:idle:a9e31edf0a5ffafd uncommented
 fragment/unmarked-self-reference.gandr:marked:c76ad1e14aa996a2 uncommented
 model/attributes/long-attribute-blocks.gandr:Color.Green:c8acc2cf9cc09c91 uncommented
 model/attributes/long-attribute-blocks.gandr:Color.Red:01b71845157070ab uncommented
+model/basics/body-after-equals.gandr:Count.More:036d2798dea6c06d uncommented
+model/basics/body-after-equals.gandr:Count.None:85102b9e4aa34384 uncommented
 model/builtins/list-patterns.gandr:Grade.Met:1e02176973cebde2 uncommented
 model/builtins/list-patterns.gandr:Grade.Unmet:51f9cbd323e94662 uncommented
 model/circuit/circuit-feed-wheel.gandr:Wheel.Nat:766735245ec8870b uncommented

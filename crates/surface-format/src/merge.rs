@@ -1048,6 +1048,13 @@ enum Alone
 ///   holds no `;`, `=`, `+=`, `-=` or `*=` token and no whitespace with a line
 ///   break; [`Alone::No`] otherwise.
 /// - panics: none.
+/// - executable: none — the clause names the leaves' bracket depth at each
+///   token, which no predicate on `body` and the result states more simply.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a body of one operand moves alone after `=`, and a body
+///   of statements moves in a block after `=`.
+/// - witness: `tests::rewrite::a_brace_body_moves_after_the_equals_6318`
 fn alone(body: &[Leaf<'_>]) -> Alone
 {
     let mut depth = 0_usize;
@@ -1182,9 +1189,7 @@ fn tokens<'leaves>(leaves: &'leaves [Leaf<'_>]) -> Vec<Token<'leaves>>
 ///
 /// # Specification
 /// trivial.
-pub(crate) fn trimmed<'leaves, 'source>(
-    leaves: &'leaves [Leaf<'source>]
-) -> &'leaves [Leaf<'source>]
+pub fn trimmed<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> &'leaves [Leaf<'source>]
 {
     let start = leaves
         .iter()

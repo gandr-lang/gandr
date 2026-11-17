@@ -1690,12 +1690,7 @@ pub fn present_whole(
     // One line with no statement is the body alone after `=`. Any other
     // body is a block after `=`, written a line at a time, two columns in: a
     // name moves by where its line lands.
-    if !spelled.as_ref().contains(['\n', ';']) {
-        text.push_str(" = ");
-        appended(&mut text, &mut written, &spelled);
-        text.push(';');
-    }
-    else {
+    if spelled.as_ref().contains(['\n', ';']) {
         text.push_str(" = {");
         let mut line_from = 0_u64;
         for line in spelled.as_ref().lines() {
@@ -1718,6 +1713,11 @@ pub fn present_whole(
             line_from = line_end.saturating_add(1_u64);
         }
         text.push_str("\n};");
+    }
+    else {
+        text.push_str(" = ");
+        appended(&mut text, &mut written, &spelled);
+        text.push(';');
     }
     parts.push(returned);
     parts.push(spelled);
