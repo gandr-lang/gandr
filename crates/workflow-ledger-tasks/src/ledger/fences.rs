@@ -242,10 +242,10 @@ impl Fence
     ///
     /// # Specification
     /// trivial.
-    fn unindented<'text>(
+    fn unindented(
         self,
-        Line(line): Line<'text>,
-    ) -> Line<'text>
+        Line(line): Line<'_>,
+    ) -> Line<'_>
     {
         let spaces = line
             .bytes()
