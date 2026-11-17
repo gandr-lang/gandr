@@ -72,6 +72,10 @@ case "${1:-} ${2:-}" in
     ;;
   'run check')
     touch "$HOME/gated"
+    if [[ -e $HOME/hold ]]; then
+      : > "$HOME/held"
+      until [[ -e $HOME/release ]]; do sleep 0.1; done
+    fi
     if [[ -e $HOME/red ]]; then echo 'check: a check is red' >&2; exit 1; fi
     case ${GH_TOKEN:-} in
       read-token | handed-token) printf '%s\n' "$GH_TOKEN" > "$HOME/token" ;;
@@ -112,6 +116,7 @@ git checkout --quiet -b flex-a-6996-case
 commit file own own
 printf '{"reader": "reader", "hosts": {"far": {"ssh": ["%s", "far"], "checkout": "%s"}}}\n' "$scratch/bin/ssh" "$scratch/far-checkout" > "$scratch/hosts.json"
 export GANDR_GATE_HOSTS=$scratch/hosts.json
+export GANDR_HOST_LOCK_DIR=$scratch/locks
 records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate
 
 # With no token of the reader here, a far gate that passes reads with the
@@ -164,6 +169,45 @@ tree=$(git rev-parse 'HEAD^{tree}')
   || fail "#7127: a far host that lacks a tool stops before its gate and records no pass" "exit $status, gated $([[ -e $scratch/home-far/gated ]] && echo yes || echo no): $(< "$scratch/out")"
 rm "$scratch/home-far/lacks"
 
+# A second far gate waits before it moves the shared lane clone. The first
+# check holds at its first tree until the test releases it.
+far_gate() {
+  local commit=$1
+  env GH_TOKEN=read-token HOME="$scratch/home-far" XDG_STATE_HOME="$scratch/home-far/state" \
+    PATH="$scratch/far-bin:$PATH" bash "$here/far.bash" gate "$scratch/far-checkout" \
+    "$scratch/origin.git" landing flex-a-6996-case "$commit" flex-a
+}
+touch "$scratch/home-far/hold"
+commit file lane-first lane-first
+git push --quiet origin HEAD
+first=$(git rev-parse HEAD)
+far_gate "$first" > "$scratch/first-gate.out" 2>&1 &
+first_gate=$!
+pids+=("$first_gate")
+tries=0
+until [[ -e $scratch/home-far/held ]]; do
+  (( ++tries < 100 )) || { fail "#7758: the first far gate never reached its check" "$(< "$scratch/first-gate.out")"; break; }
+  sleep 0.1
+done
+clone=$scratch/home-far/state/gandr/gate-remote/flex-a
+commit file lane-second lane-second
+git push --quiet origin HEAD
+second=$(git rev-parse HEAD)
+far_gate "$second" > "$scratch/second-gate.out" 2>&1 &
+second_gate=$!
+pids+=("$second_gate")
+sleep 1
+[[ $(git -C "$clone" rev-parse HEAD) == "$first" ]] \
+  || fail "#7758: a second far gate moved the clone before its first gate ended" "$(git -C "$clone" rev-parse HEAD)"
+[[ $(< "$scratch/second-gate.out") == "gate-lane-flex-a: waiting on gate:remote of $first (pid"* ]] \
+  || fail "#7758: a second far gate named no first gate while it waited" "$(< "$scratch/second-gate.out")"
+touch "$scratch/home-far/release"
+wait "$first_gate" || fail "#7758: the first far gate did not finish after release" "$(< "$scratch/first-gate.out")"
+wait "$second_gate" || fail "#7758: the second far gate did not finish after the first" "$(< "$scratch/second-gate.out")"
+[[ $(git -C "$clone" rev-parse HEAD) == "$second" ]] \
+  || fail "#7758: the second far gate did not move the clone after the first ended" "$(git -C "$clone" rev-parse HEAD)"
+rm -f "$scratch/home-far/held" "$scratch/home-far/hold" "$scratch/home-far/release"
+
 # Work that HEAD does not hold is refused before any push.
 printf 'more\n' >> file
 status=0
@@ -193,4 +237,4 @@ held=$(probe other)
   || fail "#6996: the probe counts the free gate slots and reads whether the host gives the reader's token" "free $free, then $held with the slot held and another reader"
 
 (( failed == 0 )) || exit 1
-echo "remote gate OK: a far pass with a reader's token lands here with its host after the push, this host's token goes to the far gate in no argument and no line, a far red records nothing, a far host that lacks a tool stops before its gate, work beyond HEAD is refused, and the probe counts the free slots and reads the reader's token"
+echo "remote gate OK: a far pass with a reader's token lands here with its host after the push, this host's token goes to the far gate in no argument and no line, a far red records nothing, a far host that lacks a tool stops before its gate, a second far gate waits before it moves a shared clone, work beyond HEAD is refused, and the probe counts the free slots and reads the reader's token"
