@@ -39,7 +39,7 @@
 656..663 StringLit "machine"
 663..664 StringLit "\""
 664..665 Other ")"
-665..666 Operator ";"
+665..666 Other ";"
 668..728 Comment "/// `same` compares `slogan` with itself through `EqString`."
 729..731 Other "@["
 731..735 Other "runs"
