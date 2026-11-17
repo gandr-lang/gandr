@@ -917,7 +917,7 @@ fn width_word(width: IntegerWidth) -> CanonicalWord
 /// # Adequacy
 /// - hypothesis: L2 — every literal kind round-trips.
 /// - witness: `tests::crossing::every_crossing_head_commits_and_derefs_back_equal`
-fn emit_literal<Sink>(
+pub(crate) fn emit_literal<Sink>(
     literal: &Literal,
     sink: &mut Sink,
 ) -> Result<(), ValueError>
@@ -961,13 +961,98 @@ where
     }
 }
 
+/// Write the open and the payload of `head`, as a crossing writes them.
+///
+/// # Specification
+/// - requires: nothing; a head that does not cross is refused.
+/// - ensures: on success the head's open, then its payload.
+/// - fails: the sink's refusal, and [`Uncrossable`] for a recorded run, a
+///   dialogue or a web.
+/// - panics: none.
+/// - executable: none — as [`Crossed::emit`].
+///
+/// # Errors
+/// The head's [`Uncrossable`] form, or the first [`ValueError`] the sink
+/// returns.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`Crossed::emit`]; each head of the corpus's commands
+///   makes the round trip in a command's image.
+/// - witness: `tests::crossing::every_crossing_head_commits_and_derefs_back_equal`
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
+pub(crate) fn emit_head<Sink>(
+    head: &Head,
+    sink: &mut Sink,
+) -> Result<Result<(), ValueError>, Uncrossable>
+where
+    Sink: TokenSink + ?Sized,
+{
+    Ok(Crossed::of(head)?.emit(sink))
+}
+
+/// Read the open and the payload of a constructor head, as a crossing writes
+/// them.
+///
+/// # Specification
+/// - requires: the reader stands at an open record.
+/// - ensures: on success the head that the tag and the payload name.
+/// - fails: as [`Opened::read`], and this constructor's for a literal's tag or
+///   a thunk's tag.
+/// - panics: none.
+/// - executable: none — as [`Opened::read`].
+///
+/// # Errors
+/// [`ValueError`]: as listed above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`emit_head`].
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
+///
+/// # Cost
+/// - allocation: a record's labels or a lift's atoms, durable by the head
+pub(crate) fn read_head<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Head, ValueError>
+where
+    Store: ChunkStore,
+{
+    let opened = Opened::open(reader)?;
+    Ok(opened.crossed(reader)?.into_head())
+}
+
+/// Read a literal's open and payload, as a crossing writes them.
+///
+/// # Specification
+/// - requires: the reader stands at an open record.
+/// - ensures: on success the literal that the tag and the payload name.
+/// - fails: as [`Opened::literal`].
+/// - panics: none.
+/// - executable: none — as [`Opened::read`].
+///
+/// # Errors
+/// [`ValueError`]: as listed above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`emit_literal`].
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
+///
+/// # Cost
+/// - allocation: the literal's payload, durable by the literal
+pub(crate) fn read_literal<Store>(
+    reader: &mut TokenReader<'_, Store>
+) -> Result<Literal, ValueError>
+where
+    Store: ChunkStore,
+{
+    let opened = Opened::open(reader)?;
+    opened.literal(reader)
+}
+
 /// A constructor's open record, read: its tag and where it stands, which a
 /// refusal of its payload names.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug)]
-struct Opened
+pub(crate) struct Opened
 {
     /// The record position of the open.
     at: TokenOffset,
@@ -977,6 +1062,36 @@ struct Opened
 
 impl Opened
 {
+    /// Read an open record.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The reader's refusal.
+    ///
+    /// # Cost
+    /// - allocation: a suspended frame of the reader, growth within the decode
+    ///   budget
+    pub(crate) fn open<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: ChunkStore,
+    {
+        Ok(Self {
+            at: reader.position(),
+            tag: reader.read_tag()?,
+        })
+    }
+
+    /// The tag it opened with.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn tag(self) -> ConstructorTag
+    {
+        self.tag
+    }
+
     /// Read an open record and the payload its tag states, and answer its
     /// node.
     ///
@@ -1008,36 +1123,64 @@ impl Opened
     where
         Store: ChunkStore,
     {
-        let opened = Self {
-            at: reader.position(),
-            tag: reader.read_tag()?,
-        };
-        let crossed = match u8::from(opened.tag) {
+        let opened = Self::open(reader)?;
+        match u8::from(opened.tag) {
             INTEGER | TEXT | NUMERIC | CHARACTER | FLOAT | FIXED => {
-                return Ok(Node::Literal(Cow::Owned(opened.literal(reader)?)));
-            },
-            TUPLE => Crossed::Tuple(ProducerArity::from(opened.count(reader)?.0)),
-            RECORD => Crossed::Record(opened.labels(reader)?),
-            NIL => Crossed::Nil,
-            CONS => Crossed::Cons,
-            INJECTION => Crossed::Injection(Summand::from(opened.count(reader)?.0)),
-            LIFT => Crossed::Lift(Cow::Owned(opened.level(reader)?)),
-            FAMILY_DATA => {
-                let tag = gandr_kernel_term::ConstructorTag::from(opened.count(reader)?.0);
-                let arity = ProducerArity::from(opened.count(reader)?.0);
-                let family = ConstantIndex::from(opened.count(reader)?.0);
-                Crossed::Data { tag, arity, family }
+                Ok(Node::Literal(Cow::Owned(opened.literal(reader)?)))
             },
             THUNK => {
                 let body = u32::try_from(opened.count(reader)?.0)
                     .map(CommandId::from)
                     .map_err(|_wider| opened.refused())?;
                 let captures = opened.count(reader)?;
-                return Ok(Node::Thunk { body, captures });
+                Ok(Node::Thunk { body, captures })
             },
-            _ => return Err(opened.refused()),
-        };
-        Ok(Node::Constructed(crossed))
+            _ => Ok(Node::Constructed(opened.crossed(reader)?)),
+        }
+    }
+
+    /// Read the payload of a constructor head.
+    ///
+    /// # Specification
+    /// - requires: the reader stands after the open record.
+    /// - ensures: on success the head that the tag and the payload name, the
+    ///   reader after the payload.
+    /// - fails: as [`Opened::read`], and this constructor's for a tag that
+    ///   names no head.
+    /// - panics: none.
+    /// - executable: none — the tag table is its own specification.
+    ///
+    /// # Errors
+    /// [`ValueError`]: as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every head round-trips.
+    /// - witness: `tests::crossing::every_crossing_head_commits_and_derefs_back_equal`
+    ///
+    /// # Cost
+    /// - allocation: a record's labels or a lift's atoms, durable by the head
+    fn crossed<Store>(
+        self,
+        reader: &mut TokenReader<'_, Store>,
+    ) -> Result<Crossed<'static>, ValueError>
+    where
+        Store: ChunkStore,
+    {
+        Ok(match u8::from(self.tag) {
+            TUPLE => Crossed::Tuple(ProducerArity::from(self.count(reader)?.0)),
+            RECORD => Crossed::Record(self.labels(reader)?),
+            NIL => Crossed::Nil,
+            CONS => Crossed::Cons,
+            INJECTION => Crossed::Injection(Summand::from(self.count(reader)?.0)),
+            LIFT => Crossed::Lift(Cow::Owned(self.level(reader)?)),
+            FAMILY_DATA => {
+                let tag = gandr_kernel_term::ConstructorTag::from(self.count(reader)?.0);
+                let arity = ProducerArity::from(self.count(reader)?.0);
+                let family = ConstantIndex::from(self.count(reader)?.0);
+                Crossed::Data { tag, arity, family }
+            },
+            _ => return Err(self.refused()),
+        })
     }
 
     /// The refusal of this constructor: its tag or its payload is not one the
@@ -1045,7 +1188,7 @@ impl Opened
     ///
     /// # Specification
     /// trivial.
-    const fn refused(self) -> ValueError
+    pub(crate) const fn refused(self) -> ValueError
     {
         ValueError::UnexpectedConstructor {
             found: self.tag,
@@ -1182,7 +1325,7 @@ impl Opened
     ///
     /// # Cost
     /// - allocation: the text, durable by the literal
-    fn text<Store>(
+    pub(crate) fn text<Store>(
         self,
         reader: &mut TokenReader<'_, Store>,
     ) -> Result<String, ValueError>

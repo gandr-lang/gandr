@@ -16,6 +16,8 @@ mod exits;
 #[cfg(test)]
 mod generate;
 #[cfg(test)]
+mod image;
+#[cfg(test)]
 mod layout;
 #[cfg(test)]
 mod support;

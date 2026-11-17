@@ -248,7 +248,7 @@ fn a_fused_program_answers_what_its_unfused_lowering_answers()
 }
 
 /// The roots the agreement walks, each a path from the workspace root.
-const ROOTS: [&str; 7] = [
+pub const ROOTS: [&str; 7] = [
     "crates/surface-corpus/strict",
     "corpus/classifier",
     "corpus/fragment",
