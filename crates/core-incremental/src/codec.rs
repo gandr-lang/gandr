@@ -66,7 +66,6 @@ use gandr_core_content::Opacity;
 use gandr_core_content::Reference;
 use gandr_core_content::Sort;
 use gandr_core_content::SupportedNode;
-use gandr_core_content::TablePlace;
 use gandr_core_content::TypeContent;
 use gandr_core_content::codec::Bytes;
 use gandr_core_content::codec::CodataWrite;
@@ -89,6 +88,7 @@ use gandr_core_content::codec::read_pasting;
 use gandr_core_content::codec::read_reference;
 use gandr_core_content::codec::read_row_tail;
 use gandr_core_content::codec::read_selection;
+use gandr_core_content::codec::read_table_place;
 use gandr_core_content::codec::read_type;
 use gandr_core_content::codec::read_world;
 use gandr_core_content::codec::write_effect_row;
@@ -1641,35 +1641,6 @@ impl Places<'_>
             _ => Err(CodecError::Corrupt),
         }
     }
-}
-
-/// Read a place in the table `nodes`: a node of it and its support, read
-/// against the node's scope.
-///
-/// # Specification
-/// - fails: [`CodecError::Corrupt`] for a node past the table, and as
-///   [`read_selection`].
-/// - panics: none.
-/// - executable: none — the witness reads the bytes back.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`write_report`].
-/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
-///
-/// # Cost
-/// - allocation: the decoded table place, growth within the bytes
-fn read_table_place(
-    reader: &mut Reader<'_>,
-    nodes: &[SupportedNode],
-) -> Result<TablePlace, CodecError>
-{
-    let node = read_index(reader)?;
-    let scope = nodes
-        .get(usize::from(node))
-        .map(SupportedNode::scope)
-        .ok_or(CodecError::Corrupt)?;
-    let support = read_selection(reader, scope)?;
-    Ok(TablePlace { node, support })
 }
 
 /// Write why a univalence statement's stratum is not certified.
