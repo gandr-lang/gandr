@@ -537,6 +537,13 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns a located malformed-head diagnostic.
     ///
+    /// # Cost
+    /// - allocation: the block's path, its members, parts, placement, scope and
+    ///   written forms, growth within the block's members and its includes.
+    /// - allocation: the diagnostics of the members, diagnostic.
+    /// - allocation: the presentation and the description, durable by the
+    ///   declaration.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a declined rule member between readable ones leaves
     ///   both neighbours read, and an unreadable member keeps its own report; a
@@ -958,6 +965,9 @@ impl Reader<'_, '_>
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
+        // A constant's bare name is that constant, in a rule side and in a
+        // sort's index alike.
+        parts.read_constants();
         // An abstraction a rule writes at a binding port is the binding field
         // that port binds, read against every operation the parts hold.
         parts.bind_fields();

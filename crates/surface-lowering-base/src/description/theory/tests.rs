@@ -540,6 +540,60 @@ fn the_cat_shape_laws_are_written_faces()
 }
 
 #[test]
+fn a_constant_s_bare_name_reads_as_the_constant_7913()
+{
+    // `oper bot : Grade; oper cut : M bot`: the rule `orBot cut y ==> cut`
+    // and the index `M bot` name the constants, and `e` and `y` stay
+    // variables.
+    let report = described(include_str!(
+        "tests/fixtures/a-constant-s-bare-name-reads-as-the-constant-7913-report.gandr"
+    ));
+    assert_eq!(report.diagnostics, []);
+    let description = &report.declarations[0].description;
+    let constant = |name: &str| FreeTerm::op(name, []);
+    assert_eq!(
+        description
+            .rules
+            .iter()
+            .map(|face| (face.lhs.clone(), face.rhs.clone()))
+            .collect::<Vec<_>>(),
+        [(
+            FreeTerm::op("orBot", [constant("cut"), FreeTerm::var("y")]),
+            constant("cut"),
+        )],
+        "the rule rewrites at the constant, not at any term"
+    );
+    assert_eq!(
+        description
+            .opers
+            .iter()
+            .map(|operation| {
+                (
+                    operation.name.as_ref(),
+                    operation
+                        .arity
+                        .inputs
+                        .iter()
+                        .chain(&operation.arity.outputs)
+                        .map(|port| port.arguments.to_vec())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>(),
+        [
+            ("bot", vec![vec![]]),
+            ("cut", vec![vec![constant("bot")]]),
+            ("orBot", vec![
+                vec![constant("bot")],
+                vec![FreeTerm::var("e")],
+                vec![constant("bot")],
+            ]),
+        ],
+        "each index names the constant, and the free `e` stays a variable"
+    );
+}
+
+#[test]
 fn a_pinned_rewrite_endpoint_reads_as_a_variable()
 {
     let report = described(include_str!(
