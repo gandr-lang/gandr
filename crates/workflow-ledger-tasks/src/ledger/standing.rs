@@ -547,19 +547,24 @@ fn shadowed(
 }
 
 /// [`Internal::Captured`] when `rule` requires one word the labeler also
-/// offers as a class a one-tile rule of its sort reads.
+/// offers as a class a one-tile rule of its sort reads, and the molder reads
+/// that word to the class rule.
 ///
 /// # Specification
 /// - requires: `rule` is a rule of `pbg`.
 /// - ensures: internal exactly when the form, its options and repetitions left
-///   out, is one literal tile whose text labels as one word token, and the
-///   labeler offers that token a label other than its own text that the only
-///   tile of another rule of the same sort carries.
+///   out, is one literal tile whose text labels as one word token, the labeler
+///   offers that token a label other than its own text that the only tile of
+///   another rule of the same sort carries, and the word alone in its sort's
+///   slot molds no tile of `rule`. The labeler offers the labels, and the
+///   molder decides among them, so a rule the molder picks by its head word
+///   stays committed.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a shell form whose word reads as an identifier is
 ///   captured; the reserved `unit`, whose word the labeler reads as itself, is
+///   not; the path type's head, which the molder reads as the path type, is
 ///   not.
 /// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
@@ -618,6 +623,10 @@ fn captured(
                 && matches!(other.regex().view().shape(), RegexShape::Sym(Sym::Tile(only)) if only.label == offered)
         });
         if let Some(reader) = reader {
+            if molds(pbg, rule, SourceText::from(slot(rule.sort, text).as_str())) == Probed::Molded
+            {
+                return Standing::Committed;
+            }
             return Standing::Internal(Internal::Captured {
                 tile,
                 by: reader.name,
