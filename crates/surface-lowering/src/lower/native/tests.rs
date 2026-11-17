@@ -6441,6 +6441,26 @@ fn a_here_pattern_reads_the_words_its_stated_type_names_6805()
     assert_checked(&module, &mut arena);
 }
 
+/// #5750: a path type whose spine writes its endpoints, `Path[.A = Circle]
+/// Base Base`, states its words as the form `Path[.A = Circle](Base, Base)`
+/// does. A bare `here` reads the circle's empty word, and a match of no arms
+/// switches on the path between two apart words.
+#[test]
+fn a_juxtaposed_path_type_states_its_endpoints_5750()
+{
+    let source =
+        include_str!("tests/fixtures/a-juxtaposed-path-type-states-its-endpoints-5750.gandr");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert!(
+        arena
+            .computation(tail_of(&arena, body_named(&module, SurfaceName::from("apart"))))
+            .is_some_and(|held| matches!(*held, Computation::DataCase { ref branches, .. } if branches.is_empty())),
+        "`apart` switches on its path with no branch"
+    );
+    assert_checked(&module, &mut arena);
+}
+
 /// #6805: a `here` at the second circle's point, beside the first circle's
 /// letters, reads the second circle's words, and the letter arm is refused
 /// as a pattern of another type.
