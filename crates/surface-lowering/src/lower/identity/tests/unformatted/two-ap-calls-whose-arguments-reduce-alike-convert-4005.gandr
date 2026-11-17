@@ -1,0 +1,18 @@
+def ap(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](F x, F y) {{
+  Path.ap F p
+}}
+def whiskerRight(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {{
+  ap (type(Path[.A = A](x, y))) (type(Path[.A = A](x, z))) {pre} f1 f2 a
+}}
+def apAp(A : Type, B : Type, C : Type, F : A -> B, G : B -> C, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = C](G (F x), G (F y)) {{
+  ap B C G (F x) (F y) (ap A B F x y p)
+}}
+def underAp{telescope} -> Path[.A = {square}]({under_ap_left}, {under_ap_right}) {{
+  Path.here ({under_ap_right})
+}}
+def underWhisker{telescope} -> Path[.A = {square}]({under_whisker_left}, {under_whisker_right}) {{
+  Path.here ({under_whisker_right})
+}}
+def nestedAtLambdas{telescope} -> Path[.A = {square}]({under_ap_left}, apAp{at_lambdas}) {{
+  Path.here ({under_ap_left})
+}}

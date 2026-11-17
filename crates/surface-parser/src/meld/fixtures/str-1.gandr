@@ -1,0 +1,2 @@
+def bad : +U[1] Integer;
+def bad = pure 1;

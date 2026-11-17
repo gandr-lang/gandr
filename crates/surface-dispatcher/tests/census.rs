@@ -1,0 +1,977 @@
+//! The presentation census: every entry of every corpus source's type table
+//! and every value a corpus declaration states it runs to, spelled, and each
+//! `?` the printer writes counted by why.
+//!
+//! The census, in a `cfg(test)` module so the crate's lint wall reads it as
+//! test code rather than as shipping code.
+
+use alloc::collections::BTreeMap;
+use core::convert::Infallible;
+use core::ops::ControlFlow;
+use std::path::Path;
+use std::path::PathBuf;
+
+use anodized::spec;
+use gandr_kernel_term::ConstantIndex;
+use gandr_surface_corpus::Outcome;
+use gandr_surface_corpus::Stated;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Declared;
+use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::RoundTrip;
+use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::TypeTable;
+use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::classify;
+use gandr_surface_dispatcher::lay_out;
+use gandr_surface_dispatcher::reprinted;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_evaluate::Runs as _;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::built_in;
+use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Name;
+use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::Style;
+use gandr_surface_pretty::Unreadable;
+use gandr_surface_pretty::Unspelled;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+/// The page a hover spells on.
+const PAGE: u32 = 80;
+
+/// The corpus directory `name`, under the corpus crate.
+///
+/// # Specification
+/// trivial.
+fn root(name: &Path) -> PathBuf
+{
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../surface-corpus")
+        .join(name)
+}
+
+/// The honest set: the reasons whose `?` says what the checker knows. A hole
+/// is not among them: its `?` is written faithfully. An implicit a call omits
+/// is, where a refused declaration's type still holds it: the checker left it
+/// unsolved.
+const HONEST: [Unspelled; 5] = [
+    Unspelled::Unreadable(Unreadable::UnknownType),
+    Unspelled::Unreadable(Unreadable::Mark),
+    Unspelled::Unreadable(Unreadable::Lift),
+    Unspelled::Unreadable(Unreadable::NumericAtom),
+    Unspelled::Unreadable(Unreadable::Omitted),
+];
+
+/// Where a presentation was read.
+#[derive(Clone, Copy, Debug)]
+enum Site
+{
+    /// A type-table entry starting at this byte.
+    Entry(ByteOffset),
+    /// A declaration's type.
+    Declaration,
+    /// The value the declaration at this admission position runs to.
+    Run(ConstantIndex),
+}
+
+impl core::fmt::Display for Site
+{
+    /// The byte, the declaration or the run position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Entry(at) => write!(f, "{}", usize::from(at)),
+            Self::Declaration => f.write_str("declaration"),
+            Self::Run(constant) => write!(f, "run {}", usize::from(constant)),
+        }
+    }
+}
+
+/// What the census counted.
+#[derive(Debug, Default)]
+struct Census
+{
+    /// Presentations read.
+    read: usize,
+    /// Presentations holding a `?`, by why.
+    reasons: BTreeMap<String, usize>,
+    /// Each presentation holding a `?` outside the honest set: the
+    /// source, the offset and the reasons.
+    dishonest: Vec<String>,
+}
+
+impl Census
+{
+    /// Count `presentation`, read at `site` of `path`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn count(
+        &mut self,
+        path: &Path,
+        site: Site,
+        presentation: &Presentation,
+    )
+    {
+        self.read = self.read.saturating_add(1);
+        for &reason in presentation.unspelled() {
+            let tally = self.reasons.entry(format!("{reason:?}")).or_default();
+            *tally = tally.saturating_add(1);
+        }
+        // A former in the printer's notation or a part left out writes no
+        // `?`: only a reason behind a `?` can be dishonest.
+        if presentation.unspelled().iter().any(|reason| {
+            !matches!(*reason, Unspelled::Notation(_) | Unspelled::Elided(_))
+                && !HONEST.contains(reason)
+        }) {
+            self.dishonest.push(format!(
+                "{}@{site}: `{presentation}` {:?}",
+                path.display(),
+                presentation.unspelled()
+            ));
+        }
+    }
+}
+
+/// `text` with every run of whitespace collapsed to one space and the ends
+/// stripped: the spelling a fixed point compares.
+///
+/// # Specification
+/// trivial.
+fn collapsed(text: SourceText<'_>) -> String
+{
+    text.as_ref()
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ")
+}
+
+/// The table of the walk's source at `path`, typed beside the prelude and
+/// the siblings it imports: the walk's `text` lays out the source's
+/// component, its own text from `base`, and read as one source the
+/// importer's imports resolve to nothing and refuse every declaration of it
+/// (#552). The source is laid out again alone: the walk's text before
+/// `base` holds the component's earlier members, whose imports are not its
+/// own (#625).
+///
+/// # Specification
+/// trivial.
+fn typed(
+    grammar: &Pbg,
+    path: &Path,
+    root: SourceRoot,
+    (text, base): (SourceText<'_>, ByteOffset),
+) -> Option<TypeTable>
+{
+    let own = SourceText::from(text.as_ref().get(usize::from(base) ..)?);
+    let laid = lay_out(grammar, path, root, own);
+    TypeTable::of_unit(
+        grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .ok()
+}
+
+/// The printer as a fixed point over the values the corpus states: each
+/// run value, printed, read back in its source and printed again, and each
+/// normal form, read back under its block's rules and spelled again, is
+/// the same spelling after whitespace collapses. A spelling the grammar
+/// reads as another value prints otherwise.
+#[derive(Debug, Default)]
+struct Fixed
+{
+    /// Spellings read back and printed again.
+    read: usize,
+    /// Each spelling that printed otherwise or did not read back: the
+    /// source, the spelling and what came back.
+    moved: Vec<String>,
+}
+
+impl Fixed
+{
+    /// Compare `spelled` with `again`, its reprint.
+    ///
+    /// # Specification
+    /// trivial.
+    fn compare(
+        &mut self,
+        path: &Path,
+        spelled: SourceText<'_>,
+        again: &Maybe<String, reprinted::Absent>,
+    )
+    {
+        self.read = self.read.saturating_add(1);
+        if !matches!(*again, Maybe::Present(ref again) if collapsed(SourceText::from(again.as_str())) == collapsed(spelled))
+        {
+            self.moved.push(format!(
+                "{}: `{spelled}` reprints as {again:?}",
+                path.display()
+            ));
+        }
+    }
+}
+
+/// How many tests share the census, each taking every fourth corpus source:
+/// the whole corpus is nine seconds of one core where specifications are
+/// enforced, past the per-test limit on a loaded machine, and a quarter of it
+/// stays inside.
+const SHARDS: usize = 4;
+
+/// Which of the `SHARDS` tests a corpus source's census runs in.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Shard(usize);
+
+#[test]
+fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0()
+{
+    spell(Shard(0));
+}
+
+#[test]
+fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_1()
+{
+    spell(Shard(1));
+}
+
+#[test]
+fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2()
+{
+    spell(Shard(2));
+}
+
+#[test]
+fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3()
+{
+    spell(Shard(3));
+}
+
+/// #2429: the comparisons a corpus source states at a path type read back at
+/// every type its table prints, laid out after its import closure as the
+/// census reads it: a comparison whose model the body's judgement resolved is
+/// written by its operator, and the read-back judges it to the same model.
+/// Each declaration's type is the one the checker entered, filled.
+#[test]
+fn the_resolved_comparisons_read_back_2429()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/identity/here-congruence.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+        form: Form::Sugared,
+        spelling: Spelling::Unicode,
+    });
+    assert!(
+        reads.iter().any(|read| read.spelled.contains("x == y")),
+        "a resolved comparison is written by its operator"
+    );
+    let unread: Vec<(&str, &RoundTrip)> = reads
+        .iter()
+        .filter(|read| read.trip != RoundTrip::Equal)
+        .map(|read| (read.spelled.as_str(), &read.trip))
+        .collect();
+    assert_eq!(
+        unread,
+        Vec::<(&str, &RoundTrip)>::new(),
+        "every printed type reads back to its certificate"
+    );
+}
+
+/// #6229: a comparison through a model in a stated type that the checker
+/// decodes is written by its operator, and reads back to its certificate. The
+/// read-back judges the probe, so the model the operands resolve is the model
+/// the table holds.
+#[test]
+fn a_comparison_in_a_decoded_type_reads_back_6229()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/modules/model-stated-type.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+        form: Form::Sugared,
+        spelling: Spelling::Unicode,
+    });
+    let compared: Vec<(&str, &RoundTrip)> = reads
+        .iter()
+        .filter(|read| read.spelled.contains("decoded(ofFlag("))
+        .map(|read| (read.spelled.as_str(), &read.trip))
+        .collect();
+    assert!(
+        !compared.is_empty()
+            && compared.iter().all(|&(spelled, trip)| {
+                spelled.contains("Yes == No") && *trip == RoundTrip::Equal
+            }),
+        "a decoded comparison is written by its operator and reads back: {compared:?}"
+    );
+}
+
+/// #5383: a type that a `match` on a parameter computes reads back to its
+/// certificate. `stlc.gandr`'s `rec` block of `reflectDepth` and
+/// `reifyDepth` types each recursive call at such a type.
+#[test]
+fn a_type_a_match_computes_reads_back_5383()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/desc/stlc.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    for spelling in [Spelling::Unicode, Spelling::Ascii] {
+        let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+            form: Form::Sugared,
+            spelling,
+        });
+        let unread: Vec<(&str, &RoundTrip)> = reads
+            .iter()
+            .filter(|read| read.spelled.contains("match") && read.trip == RoundTrip::Unparsed)
+            .map(|read| (read.spelled.as_str(), &read.trip))
+            .collect();
+        assert_eq!(
+            unread,
+            Vec::<(&str, &RoundTrip)>::new(),
+            "no type of `stlc.gandr` spells a match where a type is read"
+        );
+    }
+}
+
+/// #7564: a type that a `match` stuck on its scrutinee computes reads back to
+/// its certificate. Each stuck-arm source prints such a match where a type is
+/// read, and the reader takes it as the decode of the code that it returns.
+#[test]
+fn a_type_a_stuck_match_computes_reads_back_7564()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let mut unread = Vec::new();
+    for source in [
+        "stuck-arm-constant-fold.gandr",
+        "stuck-arm-record-code.gandr",
+    ] {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/data")
+            .join(source)
+            .canonicalize()
+            .expect("the source resolves");
+        let text = std::fs::read_to_string(&path).expect("the source reads");
+        let laid = lay_out(
+            &grammar,
+            &path,
+            classify(&path),
+            SourceText::from(text.as_str()),
+        );
+        let table = TypeTable::of_unit(
+            &grammar,
+            SourceText::from(laid.text.as_str()),
+            &laid.unit,
+            laid.base,
+        )
+        .expect("the source types");
+        let mut matched = 0_usize;
+        for (form, spelling) in [
+            (Form::Sugared, Spelling::Unicode),
+            (Form::Sugared, Spelling::Ascii),
+            (Form::Explicit, Spelling::Unicode),
+        ] {
+            let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style { form, spelling });
+            for read in reads.iter().filter(|read| read.spelled.contains("match")) {
+                matched = matched.saturating_add(1);
+                if matches!(
+                    read.trip,
+                    RoundTrip::Unparsed | RoundTrip::Different | RoundTrip::Refused(_)
+                ) {
+                    unread.push((
+                        source,
+                        read.spelled.clone(),
+                        read.trip.clone(),
+                        read.reprinted.clone(),
+                    ));
+                }
+            }
+        }
+        assert!(matched > 0, "{source} prints a match where a type is read");
+    }
+    assert!(
+        unread.is_empty(),
+        "each type a match computes reads back: {unread:#?}"
+    );
+}
+
+/// #5392: the types an inner case binds for its index equations read back to
+/// their certificates. `stlc.gandr`'s `lookVar` cases on `rho` inside a case
+/// on `x`, and both arms bind `_h`.
+#[test]
+fn an_inner_case_s_equation_types_read_back_5392()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/desc/stlc.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    for spelling in [Spelling::Unicode, Spelling::Ascii] {
+        let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+            form: Form::Sugared,
+            spelling,
+        });
+        let unread: Vec<(&str, &RoundTrip, String)> = reads
+            .iter()
+            .filter(|read| read.trip == RoundTrip::Different)
+            .map(|read| {
+                (
+                    read.spelled.as_str(),
+                    &read.trip,
+                    format!("{:?}", read.reprinted),
+                )
+            })
+            .collect();
+        assert_eq!(
+            unread,
+            Vec::<(&str, &RoundTrip, String)>::new(),
+            "every printed type of `stlc.gandr` reads back to its certificate"
+        );
+    }
+}
+
+/// #5519: a call through a mutual block's joint types no name at the joint's
+/// type. `rose.gandr`'s block of `bumpTree` and `bumpForest` returns two
+/// types, so a `match` on the sum computes the joint's result, and no type
+/// reads that `match` back.
+#[test]
+fn a_call_through_a_joint_reads_back_5519()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/data/rose.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    for spelling in [Spelling::Unicode, Spelling::Ascii] {
+        let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+            form: Form::Sugared,
+            spelling,
+        });
+        let unread: Vec<(&str, &RoundTrip)> = reads
+            .iter()
+            .filter(|read| {
+                matches!(
+                    read.trip,
+                    RoundTrip::Different
+                        | RoundTrip::Refused(_)
+                        | RoundTrip::Unparsed
+                        | RoundTrip::Unspelled
+                )
+            })
+            .map(|read| (read.spelled.as_str(), &read.trip))
+            .collect();
+        assert_eq!(
+            unread,
+            Vec::<(&str, &RoundTrip)>::new(),
+            "every printed type of `rose.gandr` reads back to its certificate"
+        );
+    }
+}
+
+/// Every typed entry, declared type and stated run value of the corpus
+/// sources of `shard` (every fourth source the walk visits), spelled and
+/// counted, and every stated value and normal form printed, read back and
+/// printed again.
+///
+/// # Specification
+/// - requires: `shard` is below `SHARDS`.
+/// - ensures: every `?` written for a source of `shard` is in the honest set,
+///   and every value it states prints as a fixed point.
+/// - panics: when a `?` is dishonest, a value moves, or the sources of `shard`
+///   state no typed entry, no run value or no value to print again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the four shards together take every source the walk
+///   visits, each in one shard; a shard past `SHARDS` would take none.
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_0`
+/// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
+#[spec(requires: shard.0 < SHARDS)]
+fn spell(shard: Shard)
+{
+    let Shard(shard) = shard;
+    let grammar = built_in().expect("the built-in grammar builds");
+    let page = PageWidth::from(PAGE);
+    let mut census = Census::default();
+    let mut fixed = Fixed::default();
+    let mut values = 0_usize;
+    let mut walked = 0_usize;
+    let walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
+    let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
+        &Pool::new(Width::SERIAL),
+        |step| -> ControlFlow<Infallible> {
+            let Step::Source {
+                path,
+                root,
+                text,
+                base,
+                composed,
+                ..
+            } = step
+            else {
+                return ControlFlow::Continue(());
+            };
+            walked = walked.saturating_add(1);
+            if walked.rem_euclid(SHARDS) != shard {
+                return ControlFlow::Continue(());
+            }
+            let table = typed(&grammar, path, root, (text, base));
+            if let Some(ref table) = table {
+                for entry in table.entries(page, Form::Sugared.into()) {
+                    let Maybe::Present(entry) = entry
+                    else {
+                        continue;
+                    };
+                    let site = Site::Entry(entry.span().start());
+                    census.count(path, site, entry.ty());
+                    if let Maybe::Present(expected) = entry.expected() {
+                        census.count(path, site, expected);
+                    }
+                }
+                for (_, declared) in table.declarations(page, Form::Sugared.into()) {
+                    if let Maybe::Present(Declared::Typed(ty)) = declared {
+                        census.count(path, Site::Declaration, &ty);
+                    }
+                }
+            }
+            if let Composed::Settled {
+                report,
+                mut program,
+                ..
+            } = composed
+            {
+                // Each normal form the corpus states, as the engine spelled
+                // it: the side after `~>`, read back under the rules of the
+                // block that states it (#669).
+                let mut named = String::new();
+                if let Some(ref table) = table {
+                    for declaration in report.declarations() {
+                        if let Stated::Verdict(Outcome::Normalizes(ref spelled)) =
+                            *declaration.stated()
+                            && let Some((_, normal)) = spelled.as_ref().split_once("~>")
+                        {
+                            named.clear();
+                            core::fmt::Write::write_fmt(
+                                &mut named,
+                                format_args!("{}", declaration.name()),
+                            )
+                            .expect("a name writes");
+                            let normal = SourceText::from(normal.trim());
+                            let again = table.reprint_normal_form::<Evaluator>(
+                                &grammar,
+                                Name::from(named.as_str()),
+                                normal,
+                            );
+                            fixed.compare(path, normal, &again);
+                        }
+                    }
+                }
+                // Each run the source states, evaluated at its declaration's
+                // own constant: the walk numbers the whole component's
+                // constants, and two sources of one component may state runs
+                // under one name.
+                for declaration in report.declarations() {
+                    if !matches!(declaration.stated(), Stated::Verdict(Outcome::Runs(_))) {
+                        continue;
+                    }
+                    let constant = declaration.constant();
+                    named.clear();
+                    core::fmt::Write::write_fmt(&mut named, format_args!("{}", declaration.name()))
+                        .expect("a name writes");
+                    if let Evaluation::Value(value) = program.evaluate(constant) {
+                        values = values.saturating_add(1);
+                        census.count(path, Site::Run(constant), value.presentation());
+                        if let Some(ref table) = table
+                            && value.presentation().unspelled().is_empty()
+                        {
+                            // The name, not the walk's constant, crosses
+                            // over: the walk numbers the whole component's
+                            // constants, the table its source's unit (#610).
+                            let spelled = SourceText::from(value.presentation().as_ref());
+                            let again = table.reprint_value::<Evaluator>(
+                                &grammar,
+                                Maybe::Present(Name::from(named.as_str())),
+                                spelled,
+                            );
+                            fixed.compare(path, spelled, &again);
+                        }
+                    }
+                }
+            }
+            ControlFlow::Continue(())
+        },
+    );
+    eprintln!("presentations read: {}", census.read);
+    eprintln!("run values read: {values}");
+    eprintln!("values read back and printed again: {}", fixed.read);
+    for (reason, count) in &census.reasons {
+        eprintln!("| {reason} | {count} |");
+    }
+    assert!(
+        values > 0_usize,
+        "the sources of shard {shard} state run values"
+    );
+    assert!(
+        census.read > 0_usize,
+        "the sources of shard {shard} hold typed entries"
+    );
+    assert_eq!(
+        census.dishonest,
+        Vec::<String>::new(),
+        "every `?` is a member of the honest set"
+    );
+    assert!(
+        fixed.read > 0_usize,
+        "the sources of shard {shard} state values to print again"
+    );
+    assert_eq!(
+        fixed.moved,
+        Vec::<String>::new(),
+        "every printed value reads back to a value printed alike"
+    );
+}
+
+/// The read-back sweep: every printed type of each corpus source read back
+/// against its certificate, counted by how the trip ends and printed as a
+/// report. The counts are a measurement, not a gate (#467): a regression
+/// in the printer or the reading is pinned by a witness named for its
+/// issue, never by a count every landing must move. The classes:
+///
+/// - `Equal`: the spelling reads back to the certificate's type.
+/// - `Different`: a spelling that reads back as another type.
+/// - `Open`: a type naming a binder or a capability scope of its context that
+///   no parameter list declares: a binder the table keeps no type for, a
+///   capability scope, or a context the read under it refuses.
+/// - `Refused`: a spelling that parses and refuses to lower.
+/// - `Unknown`: a type the printer writes with `?`, which the census of honest
+///   `?` holds; nothing to read back.
+/// - `Wildcard`: a type holding a wildcard `_` the checker left unsolved, which
+///   reads back as that wildcard only where it was written.
+/// - `Unparsed`: a spelling the grammar refuses.
+/// - `Unspelled`: a type the printer could not spell at all.
+///
+/// A visited type that reads back as another, does not parse, refuses to
+/// lower or cannot be laid out fails the sweep by name, as does one whose
+/// reading prints again otherwise (the printer as a fixed point): every
+/// printed type is a written type that reads back to its certificate, in
+/// either spelling (#782) — the Unicode glyphs and their ASCII spellings.
+///
+/// The sweep visits its sample under every pull-request profile, every
+/// source under the `sweeps` profile and the night's slice of them under the
+/// nightly one, as every sweep does (`gandr-workflow-sweep`), but a pull
+/// request reads back no source past `READ_BYTES`; the nightly run prints its
+/// slice's counts.
+mod sweeps
+{
+    use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Nights;
+    use gandr_workflow_sweep::Portion;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use gandr_workflow_sweep::Sweep;
+
+    use super::*;
+
+    /// The sample: sixty-four sources, ranked by their BLAKE3 digest under
+    /// this name, at least one of each corpus class — `strict` and each
+    /// directory below `fixture` — and, in the companion, every source the
+    /// change adds or modifies beside them (`gandr-workflow-sweep`).
+    const SAMPLE: Sample = Sample {
+        name: SampleName("every_printed_type_reads_back_to_its_certificate"),
+        size: SampleSize(64),
+    };
+
+    /// The nights the nightly profile takes to read back every source: a
+    /// seventh a night, the count the nightly's sweeps share (#3013). A third
+    /// of the corpus read back for 73 s on the nightly runner (run
+    /// 40602657172).
+    const NIGHTS: Nights = Nights(7);
+
+    /// The most a sampled run lets one source's read-back lower: its printed
+    /// types times the bytes its check reads. Each type read back is appended
+    /// to the source laid out after its import closure, and the whole is
+    /// lowered once in each spelling, so a source costs with both: the record
+    /// of the λ-calculus's models, 34 M by this measure, took 2.8 s a spelling
+    /// with specifications enforced, where the corpus's median source takes a
+    /// few milliseconds. The nine λ-calculus sources past it and, of the
+    /// sources before them, `model/identity/univalence.gandr` (18 M),
+    /// `loop-space.gandr` (8.5 M) and `set-fold.gandr` (7.8 M) are read back
+    /// under the `sweeps` and nightly profiles, which read every source they
+    /// visit whole.
+    const READ_BYTES: usize = 0x0060_0000;
+
+    /// The bytes one check of a source reads.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct Checked(usize);
+
+    /// The bytes a check of the walk's source at `path` reads: its text laid
+    /// out after the prelude and its import closure.
+    ///
+    /// # Specification
+    /// trivial.
+    fn checked(
+        grammar: &Pbg,
+        path: &Path,
+        root: SourceRoot,
+        (text, base): (SourceText<'_>, ByteOffset),
+    ) -> Checked
+    {
+        let own = text.as_ref().get(usize::from(base) ..).unwrap_or_default();
+        Checked(
+            lay_out(grammar, path, root, SourceText::from(own))
+                .text
+                .len(),
+        )
+    }
+
+    #[test]
+    fn every_printed_type_reads_back_to_its_certificate()
+    {
+        reads_back(&Sweep::asked().expect("the run's sweep resolves"));
+    }
+
+    /// The change's sources beside the fixed set (#4654).
+    #[test]
+    fn every_printed_type_reads_back_to_its_certificate_changed()
+    {
+        reads_back(&Sweep::asked().expect("the run's sweep resolves").changed());
+    }
+
+    /// Every printed type of every source `sweep` visits reads back to its
+    /// certificate.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reads_back(sweep: &Sweep)
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let page = PageWidth::from(PAGE);
+        let sources = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
+        eprintln!("{}", sweep.rotation());
+        let visited = sweep.visit_rotating(SAMPLE, NIGHTS, &sources);
+        assert!(
+            visited.len() >= sweep.drawn(SAMPLE).0,
+            "the sample is drawn: {}",
+            visited.len()
+        );
+        // The walk composes the visited sources alone, each with its import
+        // closure, so the sweep's cost is linear in its sample (#5217).
+        let walk = Walk::new(visited.into_iter().map(|source| source.path).collect());
+        let mut trips: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut unread: Vec<String> = Vec::new();
+        let mut moved: Vec<String> = Vec::new();
+        let mut over = 0_usize;
+        let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path,
+                    root,
+                    text,
+                    base,
+                    ..
+                } = step
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let Some(table) = typed(&grammar, path, root, (text, base))
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let Checked(checked) = checked(&grammar, path, root, (text, base));
+                let work = table.spans().count().saturating_mul(checked);
+                if sweep.coverage() == Coverage::Sampled && work > READ_BYTES {
+                    over = over.saturating_add(1);
+                    return ControlFlow::Continue(());
+                }
+                let reads = [Spelling::Unicode, Spelling::Ascii]
+                    .into_iter()
+                    .flat_map(|spelling| {
+                        let style = Style {
+                            form: Form::Sugared,
+                            spelling,
+                        };
+                        table
+                            .read_back(&grammar, page, style)
+                            .into_iter()
+                            .map(move |read| (spelling, read))
+                    });
+                let mut at = String::new();
+                let mut spelled = String::new();
+                for (spelling, read) in reads {
+                    at.clear();
+                    core::fmt::Write::write_fmt(
+                        &mut at,
+                        format_args!("{} ({spelling:?})", path.display()),
+                    )
+                    .expect("a string accepts every write");
+                    // The spelling with each run of whitespace collapsed, the
+                    // form the fixed point compares.
+                    spelled.clear();
+                    for (index, word) in read.spelled.split_whitespace().enumerate() {
+                        if index > 0 {
+                            spelled.push(' ');
+                        }
+                        spelled.push_str(word);
+                    }
+                    let class = match read.trip {
+                        RoundTrip::Equal => "Equal",
+                        RoundTrip::Open => "Open",
+                        RoundTrip::Unknown => "Unknown",
+                        RoundTrip::Wildcard => "Wildcard",
+                        RoundTrip::Different => {
+                            unread.push(format!(
+                                "{}: `{}` reads back as another type",
+                                at, read.spelled
+                            ));
+                            "Different"
+                        },
+                        RoundTrip::Refused(ref refusal) => {
+                            unread.push(format!("{}: `{}` refuses: {refusal}", at, read.spelled));
+                            "Refused"
+                        },
+                        RoundTrip::Unparsed => {
+                            unread.push(format!("{}: `{}` does not parse", at, read.spelled));
+                            "Unparsed"
+                        },
+                        RoundTrip::Unspelled => {
+                            unread.push(format!("{}: {:?} is unspelled", at, read.site));
+                            "Unspelled"
+                        },
+                    };
+                    let count = trips.entry(class).or_default();
+                    *count = count.saturating_add(1);
+                    // The fixed point: the spelling's reading, printed again,
+                    // is the spelling.
+                    match read.reprinted {
+                        Maybe::Present(ref again)
+                            if collapsed(SourceText::from(again.as_str())) != spelled =>
+                        {
+                            moved.push(format!("{}: `{}` reprints as `{again}`", at, read.spelled));
+                        },
+                        Maybe::Absent(reprinted::Absent::Unspelled) => {
+                            moved.push(format!(
+                                "{}: `{}` reads back to a type the printer cannot lay out",
+                                at, read.spelled
+                            ));
+                        },
+                        Maybe::Present(_)
+                        | Maybe::Absent(reprinted::Absent::Unlowered | reprinted::Absent::Unrun) =>
+                            {},
+                    }
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        for (class, count) in &trips {
+            eprintln!("| {class} | {count} |");
+        }
+        eprintln!("{over} sources past the read-back ceiling, read whole by the `sweeps` profile");
+        assert!(
+            sweep.portion() == Portion::Changed
+                || trips.get("Equal").is_some_and(|&equal| equal > 0_usize),
+            "the corpus's printed types read back"
+        );
+        assert_eq!(
+            moved,
+            Vec::<String>::new(),
+            "every printed type is the printer's fixed point"
+        );
+        assert_eq!(
+            unread,
+            Vec::<String>::new(),
+            "every printed type reads back to its certificate"
+        );
+    }
+}

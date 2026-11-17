@@ -1,0 +1,6 @@
+theory Counter where {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+}
