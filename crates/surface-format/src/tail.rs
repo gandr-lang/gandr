@@ -56,6 +56,10 @@ impl Tails
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the spans of the elidable exits, growth within the
+    ///   lowering's exits
     pub fn of(
         module: &LoweredModule<'_>,
         base: ByteOffset,

@@ -208,6 +208,10 @@ pub fn defines(
 /// - hypothesis: L3 — a joined definition, documented or not, splits into the
 ///   pair it joins.
 /// - witness: `tests::rewrite::an_adjacent_pair_joins_into_one_definition_2228`
+///
+/// # Cost
+/// - allocation: the leaves of the two halves, growth within the joined
+///   definition's leaves
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref signed, ref defined)| !signed.is_empty() && !defined.is_empty()))]
 #[must_use]
 pub fn separated<'source>(
@@ -290,6 +294,10 @@ pub fn separated<'source>(
 ///   documentation, a commented signature and a pair under two names stay
 ///   apart.
 /// - witness: `tests::rewrite::an_adjacent_pair_joins_into_one_definition_2228`
+///
+/// # Cost
+/// - allocation: the leaves of the joined definition, growth within the pair's
+///   leaves
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|leaves| !leaves.is_empty()))]
 #[must_use]
 pub fn joined<'leaves, 'source>(
@@ -453,6 +461,10 @@ fn members_of(
 /// - hypothesis: L3 — a member pair joins and a joined member splits, in a
 ///   nested module too; a pair a comment parts stays apart.
 /// - witness: `tests::rewrite::a_module_member_pair_joins_as_a_top_level_one_2255`
+///
+/// # Cost
+/// - allocation: the module's leaves and its members' spans, growth within the
+///   module's leaves
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref leaves, ref ones)| !leaves.is_empty() && !ones.is_empty()))]
 #[must_use]
 pub fn members<'source>(
@@ -603,6 +615,9 @@ pub fn members<'source>(
 /// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
 /// - witness: `tests::rewrite::a_signed_lambda_merges_into_its_function_form_1899`
 /// - witness: `tests::rewrite::a_lambda_the_checker_thunks_merges_into_its_function_form_2228`
+///
+/// # Cost
+/// - allocation: the leaves of the merged form, growth within the pair's leaves
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|leaves| !leaves.is_empty()))]
 #[must_use]
 pub fn merged<'leaves, 'source>(

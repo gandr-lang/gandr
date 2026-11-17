@@ -225,6 +225,10 @@ impl Leaves<'_>
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 /// - witness: `tests::format::a_repaired_form_is_copied_as_written`
 /// - witness: `tests::format::strings_shell_blocks_and_holes_are_copied_as_written`
+///
+/// # Cost
+/// - allocation: the leaves and the repaired spans, growth within the tree's
+///   leaves
 #[spec(ensures: |ret| ret.leaves.windows(2).all(|pair| matches!(pair, [left, right] if left.span.end() <= right.span.start()))
     && ret.repaired.windows(2).all(|pair| matches!(pair, [left, right] if left < right)))]
 pub fn flatten<'source>(

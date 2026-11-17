@@ -192,6 +192,10 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the obligations of each text and the differing declarations,
+///   growth within the parser's obligations
 pub fn parser_obligations(
     module: &LoweredModule<'_>,
     base: ByteOffset,
@@ -295,6 +299,10 @@ pub fn unelaborated(
 /// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
 /// - witness: `tests::rewrite::a_rewrite_is_checked_beside_every_kind_of_declaration`
 /// - witness: `tests::rewrite::a_rewrite_that_moves_a_refusal_keeps_its_site_6726`
+///
+/// # Cost
+/// - allocation: the differing declarations, growth within the module's
+///   declarations
 #[spec(ensures: |ret| !matches!(ret, Agreement::Declarations(ref keys) if keys.is_empty()))]
 pub fn agree(
     arena: &CoreArena,
@@ -471,6 +479,9 @@ fn own(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the text of the reason, diagnostic
 fn reason(
     written: DeclarationOutcome<'_>,
     outcome: DeclarationOutcome<'_>,

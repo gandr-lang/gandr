@@ -823,6 +823,10 @@ pub fn declared_form(
 /// - witness: `tests::rewrite::a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255`
 /// - witness: `tests::rewrite::an_inserted_thunk_follows_the_checker_s_elaborations`
 /// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
+///
+/// # Cost
+/// - allocation: the text, the pieces and the withdrawals of each pass, growth
+///   within the source's leaves
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format_beside(
@@ -866,6 +870,10 @@ pub fn format_beside(
 /// # Specification
 ///
 /// trivial.
+///
+/// # Cost
+/// - allocation: the leaves, the text, the pieces and the withdrawals of the
+///   pass, growth within the source's leaves
 fn format_once(
     grammar: &Pbg,
     parsed: &ParseResult<'_>,
@@ -1266,6 +1274,9 @@ fn format_once(
 /// # Specification
 ///
 /// trivial.
+///
+/// # Cost
+/// - allocation: the composed pieces, growth within the pieces of the passes
 fn compose_pieces(
     previous: &[Piece],
     next: &[Piece],
@@ -2222,6 +2233,10 @@ type Elaborations = Option<Elaboration>;
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the candidate's parse and lowering, the map and the
+///   elaborations, growth within the candidate's leaves
 fn verify_rewritten(
     grammar: &Pbg,
     (parsed, written, respelled, text): (

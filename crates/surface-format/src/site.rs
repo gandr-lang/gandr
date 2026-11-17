@@ -79,6 +79,10 @@ impl Sites
     ///   its ends to the ends of its leaves, and an end inside the tile it
     ///   replaces has no image.
     /// - witness: `site::tests::a_respelled_form_maps_its_ends_to_its_leaves`
+    ///
+    /// # Cost
+    /// - allocation: the pairs, the copied leaves and the respelled forms,
+    ///   growth within the candidate's leaves
     pub fn new(
         written: &[Leaf<'_>],
         candidate: &[Leaf<'_>],

@@ -3919,6 +3919,9 @@ impl<'source> Builder<'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the operand's leaves, growth within the form's leaves
     fn place(
         &mut self,
         operand: &Operand<'source>,

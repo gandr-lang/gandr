@@ -55,6 +55,10 @@ impl Composites
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the spans of the composites and the transports, growth
+    ///   within the lowering's derivations
     pub fn of(
         module: &LoweredModule<'_>,
         arena: &CoreArena,
