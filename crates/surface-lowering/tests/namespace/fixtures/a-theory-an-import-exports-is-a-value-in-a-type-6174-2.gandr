@@ -1,0 +1,10 @@
+import "./base.gandr";
+
+def shapeOf(presented : Theory) -> -F Type =
+  match presented where
+    | Theory.Presents(sorts, opers, rules) => return String
+    | _ => return Bool
+
+def qualified : shapeOf(M.Shape) = "a";
+
+def absent : shapeOf(M.Absent) = "a";

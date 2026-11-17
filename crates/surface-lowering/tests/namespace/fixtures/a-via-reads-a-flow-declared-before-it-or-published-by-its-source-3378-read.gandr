@@ -1,0 +1,2 @@
+def relayed : Integer;
+def relayed = old.answer;

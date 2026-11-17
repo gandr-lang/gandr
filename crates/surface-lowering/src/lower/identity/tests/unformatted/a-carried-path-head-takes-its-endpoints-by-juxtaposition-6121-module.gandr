@@ -1,0 +1,5 @@
+def spaced : Path[.A = Integer] 4 4;
+def listed : Path[.A = Integer](4, 4);
+def bridged : Bridge[.A = Integer] 4 4;
+def called : Bridge[.A = Integer](4, 4);
+def short : Path[.A = Integer] 4;
