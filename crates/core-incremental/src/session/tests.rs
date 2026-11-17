@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Polled;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
 use gandr_core_term::CoreArena;
 use quenchant_shape::shape::Maybe;
 
@@ -33,7 +34,6 @@ use crate::persistence::RestoreFrom;
 use crate::persistence::address_of;
 use crate::persistence::restore;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
 use crate::stream::SynthesisEvent;
 

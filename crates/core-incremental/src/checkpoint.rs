@@ -179,6 +179,11 @@ use gandr_core_checker::trace::StepBuffer;
 #[cfg(feature = "instrument")]
 use gandr_core_checker::trace::untraced;
 use gandr_core_checker::unfolding;
+use gandr_core_content::ArenaNode;
+use gandr_core_content::Opacity;
+use gandr_core_content::Reference;
+use gandr_core_content::TypeContent;
+use gandr_core_content::seating;
 #[cfg(feature = "instrument")]
 use gandr_core_term::ArenaWatermark;
 use gandr_core_term::CompTypeId;
@@ -205,15 +210,11 @@ use crate::boundary::ItemCount;
 use crate::boundary::ItemOrdinal;
 use crate::codec::write_item_content;
 use crate::codec::write_node_content;
-use crate::content::ArenaNode;
 use crate::content::Encoded;
 use crate::content::ItemContent;
-use crate::content::Opacity;
 #[cfg(feature = "instrument")]
 use crate::content::Sites;
-use crate::content::TypeContent;
 use crate::content::encode_item;
-use crate::content::seating;
 use crate::entry::EntryContent;
 use crate::entry::elaborated;
 use crate::failure::FailureContent;
@@ -228,7 +229,6 @@ use crate::persistence::CheckpointObserver;
 use crate::region::Layout;
 use crate::region::Opened;
 use crate::region::Program;
-use crate::region::Reference;
 use crate::report::ReportContent;
 use crate::report::SeatedReport;
 use crate::report::TableContent;

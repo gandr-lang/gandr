@@ -32,20 +32,20 @@ use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::Endpoint;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
+use gandr_core_content::ArenaNode;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Reference;
+use gandr_core_content::TypeContent;
+use gandr_core_content::TypeMemo;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemOrdinal;
-use crate::boundary::NodeIndex;
-use crate::content::ArenaNode;
 use crate::content::Sites;
-use crate::content::TypeContent;
-use crate::content::TypeMemo;
 use crate::content::encode_item;
 use crate::region::Layout;
 use crate::region::Program;
-use crate::region::Reference;
 
 /// Where in its item a refusal stood.
 ///

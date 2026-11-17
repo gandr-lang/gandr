@@ -15,6 +15,7 @@ use gandr_core_checker::OriginToken;
 use gandr_core_checker::Retirement;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
@@ -44,7 +45,6 @@ use quenchant_shape::shape::Maybe;
 use crate::checkpoint::Checkpoints;
 use crate::checkpoint::check_program;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
 
 /// A scratch directory's label, unique among the tests.

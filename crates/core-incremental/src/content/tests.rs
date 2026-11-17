@@ -6,6 +6,10 @@ use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Occurrence;
+use gandr_core_content::Reference;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -26,12 +30,8 @@ use super::TypeContent;
 use super::encode_item;
 use super::seating;
 use crate::boundary::ItemOrdinal;
-use crate::boundary::NodeIndex;
-use crate::boundary::Occurrence;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
-use crate::region::Reference;
 
 /// The formers of `nodes`, in table order.
 ///

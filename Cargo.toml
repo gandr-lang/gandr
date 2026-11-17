@@ -4,6 +4,7 @@ members = [
   "crates/core-checker",
   "crates/core-checker-base",
   "crates/core-checker-bridge",
+  "crates/core-content",
   "crates/core-fork",
   "crates/core-incremental",
   "crates/core-nbe",
@@ -476,6 +477,13 @@ path = "crates/core-checker-base"
 # - core-checker-base (dev)
 [workspace.dependencies.gandr-core-checker-bridge]
 path = "crates/core-checker-bridge"
+
+# The content form of a core node: its canonical table, numbered by
+# discovery, free of arena ids and admission positions, and its mint.
+# consumers:
+# - core-incremental
+[workspace.dependencies.gandr-core-content]
+path = "crates/core-content"
 
 # The fork a check hands its independent jobs to, and its serial reference.
 # consumers:

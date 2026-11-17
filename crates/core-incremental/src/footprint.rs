@@ -25,14 +25,14 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_content::Opacity;
+use gandr_core_content::Reference;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemOrdinal;
 use crate::content::ItemContent;
-use crate::content::Opacity;
 use crate::content::encode_item;
 use crate::region::Program;
-use crate::region::Reference;
 
 /// Whether an item's body is a hole.
 ///

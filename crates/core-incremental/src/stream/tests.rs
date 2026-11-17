@@ -6,6 +6,7 @@ use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
@@ -25,7 +26,6 @@ use crate::boundary::SubmissionOrdinal;
 use crate::checkpoint::Resume;
 use crate::checkpoint::check_program;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
 
 /// A coordinate of a fixture origin.

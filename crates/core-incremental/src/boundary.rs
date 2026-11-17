@@ -51,23 +51,6 @@ copy_wrapper!(
     usize
 );
 copy_wrapper!(
-    /// How many items of the same key precede an item in its program.
-    Occurrence,
-    usize
-);
-copy_wrapper!(
-    /// The index of a node in one content table.
-    NodeIndex,
-    usize
-);
-copy_wrapper!(
-    /// The place of an arena node in the order that its item's walk discovers
-    /// the arena nodes: one place for each node, where a table index names one
-    /// entry for each content.
-    Discovery,
-    usize
-);
-copy_wrapper!(
     /// The index of a node outside its item in a failure's table of such
     /// nodes.
     OutsideIndex,
@@ -77,12 +60,6 @@ copy_wrapper!(
     /// The place of a root among the roots of its item's declaration, in the
     /// order that `content::item_roots` lists them.
     RootOrdinal,
-    usize
-);
-copy_wrapper!(
-    /// The place of a child among the children of its content node, in the
-    /// order that the node lists them.
-    ChildPosition,
     usize
 );
 copy_wrapper!(

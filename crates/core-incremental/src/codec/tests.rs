@@ -2802,13 +2802,12 @@ fn a_modelled_value_root_round_trips_and_its_candidates_are_content_739()
 #[test]
 fn a_type_of_words_round_trips_its_cells()
 {
+    use gandr_core_content::CellsRoots;
+    use gandr_core_content::PresentationRoots;
     use gandr_core_term::RuleNode;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::FreeCell;
     use gandr_kernel_term::FreeCells;
-
-    use crate::content::CellsRoots;
-    use crate::content::PresentationRoots;
 
     let point = |tag: usize| -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(tag))].into()
@@ -3828,9 +3827,9 @@ fn a_failure_content_round_trips()
     use gandr_core_checker::judged;
     use gandr_core_checker::kept;
     use gandr_core_checker::session::ForkSide;
+    use gandr_core_content::Discovery;
     use gandr_core_term::LinearUse;
 
-    use crate::boundary::Discovery;
     use crate::boundary::OutsideIndex;
     use crate::failure::ComparedContent;
     use crate::failure::EndpointContent;
@@ -4043,7 +4042,7 @@ fn an_elaborated_entry_round_trips()
 #[test]
 fn world_formers_round_trip_under_their_own_tags_3381()
 {
-    use crate::content::WorldContent;
+    use gandr_core_content::WorldContent;
     let [a, b] = [1_usize, 2].map(NodeIndex::from);
     let seat = WorldContent::Declared(Reference::Item {
         key: ItemKey::from("seat"),
@@ -4109,9 +4108,9 @@ fn world_formers_round_trip_under_their_own_tags_3381()
 fn located_answers_round_trip_and_refuse_the_host_s_3381()
 {
     use gandr_core_checker::worlds::Spending;
+    use gandr_core_content::WorldContent;
 
     use crate::content::EntryRoots;
-    use crate::content::WorldContent;
     let seat = WorldContent::Declared(Reference::Item {
         key: ItemKey::from("seat"),
         occurrence: Occurrence::from(0_usize),

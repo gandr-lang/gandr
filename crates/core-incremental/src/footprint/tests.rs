@@ -6,6 +6,10 @@ use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
+use gandr_core_content::Occurrence;
+use gandr_core_content::Opacity;
+use gandr_core_content::Reference;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -20,13 +24,9 @@ use super::Footprint;
 use super::HoleMark;
 use super::footprint_of;
 use crate::boundary::ItemOrdinal;
-use crate::boundary::Occurrence;
-use crate::content::Opacity;
 use crate::content::encode_item;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
-use crate::region::Reference;
 
 /// The reference of the first item of `key`.
 ///

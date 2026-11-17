@@ -77,7 +77,7 @@ use crate::content::ContentNode;
 use crate::content::Opacity;
 use crate::content::Sort;
 use crate::content::map_children;
-use crate::region::Reference;
+use crate::reference::Reference;
 
 /// One compact former, its cover and scope, and the references beneath it.
 ///
@@ -212,7 +212,7 @@ impl SupportedNode
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn unresolved(sort: Sort) -> Self
+    pub fn unresolved(sort: Sort) -> Self
     {
         Self {
             former: ContentNode::Unresolved(sort),
@@ -229,7 +229,7 @@ impl SupportedNode
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn hole_renamed<Name>(
+    pub fn hole_renamed<Name>(
         mut self,
         name: Name,
     ) -> Self

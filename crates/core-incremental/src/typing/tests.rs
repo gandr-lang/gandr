@@ -11,6 +11,11 @@ use gandr_core_checker::Verdict;
 use gandr_core_checker::body;
 use gandr_core_checker::check_declaration_supported;
 use gandr_core_checker::signature;
+use gandr_core_content::ContentNode;
+use gandr_core_content::ItemKey;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Reference;
+use gandr_core_content::TypeContent;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
@@ -32,14 +37,9 @@ use super::Refusal;
 use super::Site;
 use super::Typing;
 use crate::boundary::ItemOrdinal;
-use crate::boundary::NodeIndex;
-use crate::content::ContentNode;
-use crate::content::TypeContent;
 use crate::content::encode_item;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
-use crate::region::Reference;
 
 /// A one-item program's verdict and its projection, judged under
 /// `budget` in a fresh context.
@@ -691,6 +691,7 @@ fn a_located_refusal_projects_its_worlds_and_types()
     use gandr_core_checker::SealingSite;
     use gandr_core_checker::worlds::Mobility;
     use gandr_core_checker::worlds::Predicate;
+    use gandr_core_content::ArenaNode;
     use gandr_core_term::Sort;
     use gandr_core_term::world::World;
     use gandr_core_term::world::WorldForm;
@@ -700,7 +701,6 @@ fn a_located_refusal_projects_its_worlds_and_types()
 
     use super::Located;
     use super::Place;
-    use crate::content::ArenaNode;
     // `world seat ;`, a declaration migrating to it with no capability, and
     // an abstract type marked mobile over a thunk.
     let mut arena = CoreArena::new();

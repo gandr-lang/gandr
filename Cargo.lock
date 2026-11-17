@@ -1349,6 +1349,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-core-content"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "foldhash 0.2.0",
+ "gandr-core-term",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "hashbrown 0.17.1",
+ "quenchant-anodized",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-core-fork"
 version = "0.0.0"
 dependencies = [
@@ -1367,6 +1381,7 @@ dependencies = [
  "blake3",
  "foldhash 0.2.0",
  "gandr-core-checker",
+ "gandr-core-content",
  "gandr-core-nbe",
  "gandr-core-publish",
  "gandr-core-term",

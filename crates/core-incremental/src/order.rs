@@ -34,13 +34,13 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use anodized::spec;
+use gandr_core_content::Reference;
 use gandr_theory_order_maintenance::OrderError;
 use gandr_theory_order_maintenance::OrderMaintenance;
 use gandr_theory_order_maintenance::Pos;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemCount;
-use crate::region::Reference;
 
 quenchant_shape::reason_enum! {
     /// Why a handle answers nothing.

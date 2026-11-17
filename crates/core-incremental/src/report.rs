@@ -55,6 +55,15 @@ use gandr_core_checker::elaboration::Suspension;
 use gandr_core_checker::program::RowRecord;
 use gandr_core_checker::program::Rows;
 use gandr_core_checker::untabled;
+use gandr_core_content::ArenaNode;
+use gandr_core_content::Discovery;
+use gandr_core_content::Minted;
+use gandr_core_content::Placer;
+use gandr_core_content::Reference;
+use gandr_core_content::SupportedNode;
+use gandr_core_content::TablePlace;
+use gandr_core_content::TypeContent;
+use gandr_core_content::seating;
 use gandr_core_nbe::DomainCompId;
 use gandr_core_nbe::DomainValueId;
 use gandr_core_nbe::TraceNode;
@@ -73,17 +82,10 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
-use crate::boundary::Discovery;
 use crate::boundary::ItemOrdinal;
 use crate::boundary::OutsideIndex;
-use crate::content::ArenaNode;
-use crate::content::Minted;
-use crate::content::Placer;
 use crate::content::Sites;
-use crate::content::TablePlace;
-use crate::content::TypeContent;
 use crate::content::place;
-use crate::content::seating;
 use crate::entry::written;
 use crate::failure::comp_type_of;
 use crate::failure::computation_of;
@@ -93,8 +95,6 @@ use crate::failure::value_of;
 use crate::failure::value_type_of;
 use crate::region::Layout;
 use crate::region::Program;
-use crate::region::Reference;
-use crate::support::SupportedNode;
 
 quenchant_shape::reason_enum! {
     /// Why a checkpoint keeps no report of its item.

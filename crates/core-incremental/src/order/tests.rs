@@ -2,14 +2,14 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use anodized::spec;
+use gandr_core_content::ItemKey;
+use gandr_core_content::Occurrence;
+use gandr_core_content::Reference;
 use quenchant_shape::shape::Maybe;
 
 use super::ItemOrder;
 use super::handle;
 use crate::boundary::ItemCount;
-use crate::boundary::Occurrence;
-use crate::region::ItemKey;
-use crate::region::Reference;
 
 /// A fixture item's name.
 #[repr(transparent)]
