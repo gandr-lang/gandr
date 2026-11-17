@@ -3341,6 +3341,20 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             Former::TypeHead => self.type_head(site, cursor),
             Former::TypePath => self.type_path(site, pieces),
             Former::Universe => self.universe(site, cursor),
+            // A juxtaposed application of a qualified type, `M.T a`, reads
+            // as the path's call form `M.T(a)` its spine spells (#5753).
+            Former::TypeApplication
+                if matches!(pieces.pieces.as_slice(), [
+                    Piece::Operand(_),
+                    Piece::Tile {
+                        label: TileName::DOT,
+                        ..
+                    },
+                    ..
+                ]) =>
+            {
+                self.type_path(site, pieces)
+            },
             Former::TypeApplication => self.type_application(site, cursor),
             Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
             Former::ArrowType => self.arrow(site, cursor),

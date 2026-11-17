@@ -3822,6 +3822,32 @@ fn a_module_s_family_is_applied_through_its_name_3051()
     counted("flat", "M.T(Integer)", 1_usize);
 }
 
+/// A module's family applied by juxtaposition through the module's name reads
+/// as its call form: `M.F Integer` is `Maybe Integer`, and `M.Box Integer` is
+/// the type `M.Box(Integer)` names (#5753).
+#[test]
+fn a_module_s_family_applies_by_juxtaposition_5753()
+{
+    let source =
+        include_str!("modules/fixtures/a-module-s-family-applies-by-juxtaposition-5753.gandr");
+    let mut lowered = lower(source);
+    let judged: Vec<Judgement> = verdicts(&mut lowered)
+        .into_iter()
+        .map(|(_, judgement)| judgement)
+        .filter(|&judgement| judgement != Judgement::Declared)
+        .collect();
+    assert_eq!(
+        judged,
+        [
+            Judgement::Checked,
+            Judgement::Checked,
+            Judgement::Mismatched
+        ],
+        "`M.F Integer` is `Maybe Integer` and `M.Box Integer` is `M.Box(Integer)`, so each \
+         body checks, and `Maybe String` is another type"
+    );
+}
+
 /// A module's function called where a type is read through the module's
 /// name reads as the call the bare name gives: `M.same(Integer)` is the type
 /// its code decodes to, `M.empty()` calls a function of no arguments, and
