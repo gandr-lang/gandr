@@ -44,7 +44,7 @@ pub trait Naming: Copy + Debug + Eq + Hash + Ord
 /// The naming of the checker: each node by its id in the arena that it judges
 /// over.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Arena {}
+pub struct Arena;
 
 impl Naming for Arena
 {
@@ -57,7 +57,7 @@ impl Naming for Arena
 
 /// The naming of a report: each node by its content key.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Keyed {}
+pub struct Keyed;
 
 impl Naming for Keyed
 {
