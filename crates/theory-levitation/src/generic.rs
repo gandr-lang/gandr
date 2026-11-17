@@ -837,6 +837,10 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
 ///   the colon; both empty tuples are explicit otherwise.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the member's text, durable by the serialized description
+/// - allocation: the text of each port, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — zero, one named, one anonymous and two output ports have
 ///   exact text; omitted parentheses, named/anonymous confusion and reversed
