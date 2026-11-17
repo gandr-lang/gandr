@@ -216,10 +216,13 @@ fn a_closure_judged_once_judges_each_document_alike_776()
                 let compared = match produced.refusal() {
                     Maybe::Present(Refusal::Checking(refusal)) => {
                         let compared = refusal.compared();
+                        let place = spelled.place_of(declaration.constant());
                         [compared.expected, compared.found]
                             .into_iter()
                             .map(|side| match side {
-                                Maybe::Present(node) => match spelled.get(node) {
+                                Maybe::Present(node) => match spelled
+                                    .get(gandr_surface_diagnostics::SpelledNode { node, place })
+                                {
                                     Maybe::Present(spelling) => String::from(spelling.as_ref()),
                                     Maybe::Absent(_) => String::from("unspelled"),
                                 },

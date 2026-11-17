@@ -159,28 +159,91 @@ quenchant_shape::reason_enum! {
 /// wide as the transcript a session prints.
 const SPELLING_WIDTH: u32 = 100;
 
-/// Where a type a failure names stands: the failure's hypotheses and regions,
-/// by its position among the failures spelled, and how many of each, outermost
-/// first, it stands under.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Scoped
+/// Where a type a failure names stands: the failure, by its declaration, and
+/// how many of its hypotheses and regions, outermost first, the type stands
+/// under.
+///
+/// A spelling reads the names of this place, so a spelling is keyed by its
+/// node and its place. Two nodes of one content share a key, and the place
+/// spells each under the names of its own context.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SpellingPlace
 {
-    /// The failure's position among those spelled.
-    scope: usize,
+    /// The refused declaration that names the type. Its failure gives the
+    /// hypotheses and regions the type stands under, and its source reads
+    /// the constants the type names.
+    pub scope: ConstantIndex,
     /// How many of its hypotheses the type stands under.
-    depth: usize,
+    pub depth: usize,
     /// How many of its regions the type stands in.
-    regions: usize,
+    pub regions: usize,
+    /// What the type is read as. A binder's name is not in a node's content,
+    /// so a hypothesis and a type checked against at one depth spell apart:
+    /// each keeps the binder names that its own node writes.
+    pub reading: Reading,
 }
 
-impl Scoped
+impl SpellingPlace
 {
-    /// A type standing under no binder and in no region.
-    const CLOSED: Self = Self {
-        scope: usize::MAX,
-        depth: 0_usize,
-        regions: 0_usize,
-    };
+    /// A compared type of the refused declaration at `scope`, standing under
+    /// no binder and in no region.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn closed(scope: ConstantIndex) -> Self
+    {
+        Self {
+            scope,
+            depth: 0_usize,
+            regions: 0_usize,
+            reading: Reading::Checked,
+        }
+    }
+}
+
+/// What a spelled type is read as, at its place.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Reading
+{
+    /// The type of a hypothesis or a binder.
+    Hypothesis,
+    /// A type an obligation checks against, or one the refusal compares,
+    /// pursues or carries at an endpoint.
+    Checked,
+}
+
+/// A spelled node at its place: the key of a spelling.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SpelledNode
+{
+    /// The node's content key.
+    pub node: TypeNodeOf<Keyed>,
+    /// The place whose names the spelling reads.
+    pub place: SpellingPlace,
+}
+
+/// A spelled side of a loop refusal at its place: the key of its spelling.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SpelledLoop
+{
+    /// The side's content key.
+    pub node: NodeKey,
+    /// The place whose names the spelling reads.
+    pub place: SpellingPlace,
 }
 
 /// The failure each refused body of a module kept, by the declaration's
@@ -278,9 +341,12 @@ impl Failures
 pub struct Spellings
 {
     /// The types a refusal compares.
-    types: BTreeMap<TypeNodeOf<Keyed>, Presentation>,
+    types: BTreeMap<SpelledNode, Presentation>,
     /// The sides a loop refusal compares.
-    loops: BTreeMap<NodeKey, Presentation>,
+    loops: BTreeMap<SpelledLoop, Presentation>,
+    /// The place of each refused declaration's failure: where its compared
+    /// types and the sides of its loop refusal stand.
+    places: BTreeMap<ConstantIndex, SpellingPlace>,
 }
 
 /// A module's [`Spellings`] in each [`Spelling`].
@@ -366,11 +432,11 @@ impl TypeSpellings
     /// - witness: `tests::diagnostics::a_trace_spells_a_kept_region_by_its_name_1494`
     /// - witness: `tests::diagnostics::a_mismatch_between_two_region_binders_names_both_2138`
     /// - witness: `tests::diagnostics::a_refusal_is_spelled_as_its_own_source_reads_it_4813`
-    #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.types.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
+    #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.types.iter().all(|(spelled_node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
-                if [refusal.compared().expected, refusal.compared().found, refusal.compared().unfolded].contains(&Maybe::Present(*node))))
-            || verdicts.failures().values().any(|failure| failure.types().iter().any(|&written| written.keyed(keys) == *node))))))]
+                if [refusal.compared().expected, refusal.compared().found, refusal.compared().unfolded].contains(&Maybe::Present(spelled_node.node))))
+            || verdicts.failures().values().any(|failure| failure.types().iter().any(|&written| written.keyed(keys) == spelled_node.node))))))]
     #[inline]
     #[must_use]
     pub fn of<K>(
@@ -461,6 +527,11 @@ impl TypeSpellings
                     .iter()
                     .map(|(&node, spelled)| (node, spelled.clone())),
             );
+            into.places.extend(
+                from.places
+                    .iter()
+                    .map(|(&constant, &place)| (constant, place)),
+            );
         }
         later
     }
@@ -537,15 +608,18 @@ where
     // Each failure's definition's region binders, by ordinal, named as its
     // telescope writes them.
     let mut bindings: Vec<Vec<Option<Name<'_>>>> = Vec::new();
+    // The declaration of each failure, ascending: the failure's ordinal in
+    // the three lists above.
+    let mut constants: Vec<ConstantIndex> = Vec::new();
     // Each type named, with the source that reads it: the one holding the
     // declaration whose refusal or failure names it.
-    let mut named: Vec<(TypeNode, Scoped, SourceIndex)> = Vec::new();
+    let mut named: Vec<(TypeNode, SpellingPlace, SourceIndex)> = Vec::new();
     // Each compared type a failure reads through the solver's solutions:
     // keyed as written, spelled as solved.
     let mut solved: BTreeMap<TypeNode, TypeNode> = BTreeMap::new();
     // Each refused declaration's first failure, as the scope its loop
     // refusal's sides stand in: the case's context at the refusal.
-    let mut failed: BTreeMap<ConstantIndex, Scoped> = BTreeMap::new();
+    let mut failed: BTreeMap<ConstantIndex, SpellingPlace> = BTreeMap::new();
     let unit = module.unit();
     let holders: BTreeMap<ConstantIndex, SourceIndex> = module
         .declarations()
@@ -582,7 +656,8 @@ where
                 .map(|name| name.map(|name| Name::from(<&str>::from(SourceFragment::from(name)))))
                 .collect(),
         );
-        let scope = scopes.len();
+        constants.push(constant);
+        let scope = constant;
         let first = named.len();
         let mut names: Vec<Option<String>> = Vec::with_capacity(failure.hypotheses().len());
         // A data declaration's binders stand outside every obligation, named
@@ -593,10 +668,11 @@ where
         }));
         let mut around: Vec<Option<String>> = Vec::new();
         for obligation in failure.obligations() {
-            let standing = Scoped {
+            let standing = SpellingPlace {
                 scope,
                 depth: names.len(),
                 regions: around.len(),
+                reading: Reading::Checked,
             };
             if let Maybe::Present(expected) = obligation.expected() {
                 named.push((expected, standing, reader));
@@ -614,8 +690,9 @@ where
             for (name, &ty) in binders.into_iter().zip(obligation.binders()) {
                 named.push((
                     TypeNode::Value(ty),
-                    Scoped {
+                    SpellingPlace {
                         depth: names.len(),
+                        reading: Reading::Hypothesis,
                         ..standing
                     },
                     reader,
@@ -636,10 +713,11 @@ where
         }
         let full = names.len();
         let enclosed = around.len();
-        let _first = failed.entry(constant).or_insert(Scoped {
+        let _first = failed.entry(constant).or_insert(SpellingPlace {
             scope,
             depth: full,
             regions: enclosed,
+            reading: Reading::Checked,
         });
         let compared = failure.refusal().compared();
         let pursued = match failure.pursuit().expected() {
@@ -663,10 +741,11 @@ where
                 .map(|node| {
                     (
                         node,
-                        Scoped {
+                        SpellingPlace {
                             scope,
                             depth: full,
                             regions: enclosed,
+                            reading: Reading::Checked,
                         },
                         reader,
                     )
@@ -678,10 +757,11 @@ where
         named.extend(failure.hypotheses().iter().enumerate().map(|(at, &ty)| {
             (
                 TypeNode::Value(ty),
-                Scoped {
+                SpellingPlace {
                     scope,
                     depth: at.min(full),
                     regions: enclosed,
+                    reading: Reading::Hypothesis,
                 },
                 reader,
             )
@@ -695,9 +775,19 @@ where
             .filter_map(|declaration| match declaration.produced().refusal() {
                 Maybe::Present(Refusal::Checking(_)) => {
                     match checker_refusal(module, verdicts, declaration.constant()) {
-                        Maybe::Present(refusal) => {
-                            Some((refusal.compared(), reader_of(declaration.constant())))
-                        },
+                        // A declaration's compared types stand where its
+                        // failure stands, so a refused body's compared
+                        // types read its failure's names.
+                        Maybe::Present(refusal) => Some((
+                            refusal.compared(),
+                            (
+                                failed
+                                    .get(&declaration.constant())
+                                    .copied()
+                                    .unwrap_or(SpellingPlace::closed(declaration.constant())),
+                                reader_of(declaration.constant()),
+                            ),
+                        )),
                         Maybe::Absent(_) => None,
                     }
                 },
@@ -705,15 +795,15 @@ where
                     None
                 },
             })
-            .flat_map(|(compared, reader)| {
-                [compared.expected, compared.found, compared.unfolded].map(|side| (side, reader))
+            .flat_map(|(compared, at)| {
+                [compared.expected, compared.found, compared.unfolded].map(|side| (side, at))
             })
-            .filter_map(|(side, reader)| match side {
-                Maybe::Present(node) => Some((node, Scoped::CLOSED, reader)),
+            .filter_map(|(side, (place, reader))| match side {
+                Maybe::Present(node) => Some((node, place, reader)),
                 Maybe::Absent(_) => None,
             }),
     );
-    let named_loops: Vec<(ComputationId, Scoped, SourceIndex)> = declarations
+    let named_loops: Vec<(ComputationId, SpellingPlace, SourceIndex)> = declarations
         .iter()
         .filter(|declaration| {
             matches!(
@@ -728,7 +818,7 @@ where
                     failed
                         .get(&declaration.constant())
                         .copied()
-                        .unwrap_or(Scoped::CLOSED),
+                        .unwrap_or(SpellingPlace::closed(declaration.constant())),
                     reader_of(declaration.constant()),
                 )),
                 Maybe::Present(_) | Maybe::Absent(_) => None,
@@ -797,17 +887,22 @@ where
                 .operating(module.operators())
         })
         .collect();
-    for (
-        node,
-        Scoped {
+    // A place's scope names its failure by declaration, so the place is one
+    // value in a session that takes and in a fresh one. Its ordinal in the
+    // lists of names is local to this spelling.
+    let ordinal = |scope: ConstantIndex| constants.binary_search(&scope).ok();
+    for (node, place, reader) in named {
+        let SpellingPlace {
             scope,
             depth,
             regions: within,
-        },
-        reader,
-    ) in named
-    {
-        let key = node.keyed(keys);
+            ..
+        } = place;
+        let scope = ordinal(scope);
+        let key = SpelledNode {
+            node: node.keyed(keys),
+            place,
+        };
         if !seen.insert(key) {
             continue;
         }
@@ -822,15 +917,17 @@ where
             TypeNode::Value(id) => CoreNode::ValueType(id),
             TypeNode::Computation(id) => CoreNode::CompType(id),
         };
-        let context = contexts
-            .get(scope)
+        let context = scope
+            .and_then(|scope| contexts.get(scope))
             .and_then(|context| context.get(.. depth))
             .unwrap_or_default();
-        let around = enclosing
-            .get(scope)
+        let around = scope
+            .and_then(|scope| enclosing.get(scope))
             .and_then(|around| around.get(.. within))
             .unwrap_or_default();
-        let bound = bindings.get(scope).map_or_default(Vec::as_slice);
+        let bound = scope
+            .and_then(|scope| bindings.get(scope))
+            .map_or_default(Vec::as_slice);
         for (spelling, spelled) in [
             (Spelling::Unicode, &mut unicode),
             (Spelling::Ascii, &mut ascii),
@@ -854,17 +951,18 @@ where
             }
         }
     }
-    for (
-        node,
-        Scoped {
+    for (node, place, reader) in named_loops {
+        let SpellingPlace {
             scope,
             depth,
             regions: within,
-        },
-        reader,
-    ) in named_loops
-    {
-        let key = keys.computation(node);
+            ..
+        } = place;
+        let scope = ordinal(scope);
+        let key = SpelledLoop {
+            node: keys.computation(node),
+            place,
+        };
         if !seen_loops.insert(key) {
             continue;
         }
@@ -875,15 +973,17 @@ where
         else {
             continue;
         };
-        let context = contexts
-            .get(scope)
+        let context = scope
+            .and_then(|scope| contexts.get(scope))
             .and_then(|context| context.get(.. depth))
             .unwrap_or_default();
-        let around = enclosing
-            .get(scope)
+        let around = scope
+            .and_then(|scope| enclosing.get(scope))
             .and_then(|around| around.get(.. within))
             .unwrap_or_default();
-        let bound = bindings.get(scope).map_or_default(Vec::as_slice);
+        let bound = scope
+            .and_then(|scope| bindings.get(scope))
+            .map_or_default(Vec::as_slice);
         for (spelling, spelled) in [
             (Spelling::Unicode, &mut unicode_loops),
             (Spelling::Ascii, &mut ascii_loops),
@@ -906,24 +1006,26 @@ where
         unicode: Spellings {
             types: unicode,
             loops: unicode_loops,
+            places: failed.clone(),
         },
         ascii: Spellings {
             types: ascii,
             loops: ascii_loops,
+            places: failed,
         },
     }
 }
 
 impl Spellings
 {
-    /// The spelling of `node`.
+    /// The spelling of `node` at its place.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn get(
         &self,
-        node: TypeNodeOf<Keyed>,
+        node: SpelledNode,
     ) -> Maybe<&Presentation, spelling::Absent>
     {
         let Some(presentation) = self.types.get(&node)
@@ -933,7 +1035,26 @@ impl Spellings
         Maybe::Present(presentation)
     }
 
-    /// The printed side `node` of a loop refusal: on one line where it fits a
+    /// The place of the failure that the refused declaration at `constant`
+    /// kept: where its compared types stand. A declaration with no failure
+    /// spells its compared types closed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn place_of(
+        &self,
+        constant: ConstantIndex,
+    ) -> SpellingPlace
+    {
+        self.places
+            .get(&constant)
+            .copied()
+            .unwrap_or(SpellingPlace::closed(constant))
+    }
+
+    /// The printed side `side` of a loop refusal: on one line where it fits a
     /// page of [`SPELLING_WIDTH`] columns, laid out on that page otherwise.
     ///
     /// # Specification
@@ -941,14 +1062,14 @@ impl Spellings
     #[inline]
     pub fn loop_side(
         &self,
-        node: NodeKey,
+        side: SpelledLoop,
     ) -> Maybe<&Presentation, spelling::Absent>
     {
-        let Some(side) = self.loops.get(&node)
+        let Some(presentation) = self.loops.get(&side)
         else {
             return Maybe::Absent(spelling::Absent::Unspelled);
         };
-        Maybe::Present(side)
+        Maybe::Present(presentation)
     }
 }
 

@@ -88,6 +88,8 @@ use crate::location::Located;
 use crate::location::locating;
 use crate::report::Unsettlement;
 use crate::report::report_span;
+use crate::spelled::SpelledNode;
+use crate::spelled::SpellingPlace;
 use crate::spelled::Spellings;
 use crate::spelled::spelling;
 
@@ -270,14 +272,15 @@ const UNCOMPARED: Comparison<'static> = Comparison {
 
 impl<'step> Comparison<'step>
 {
-    /// The types `refusal` compares, read from `spellings`.
+    /// The types `refusal` compares, read from `spellings` at `place`.
     ///
     /// # Specification
-    /// - requires: `spellings` was spelled over the arena `refusal` names.
+    /// - requires: `spellings` was spelled over the arena `refusal` names, and
+    ///   `place` is [`Spellings::place_of`] the refused declaration.
     /// - ensures: a checker refusal's expected, found and unfolded sides are
-    ///   the spellings of the nodes [`CheckRefusal::compared`] names, each
-    ///   absent where it names none or the spellings hold none; a lowering or
-    ///   corpus refusal compares no types.
+    ///   the spellings at `place` of the nodes [`CheckRefusal::compared`]
+    ///   names, each absent where it names none or the spellings hold none; a
+    ///   lowering or corpus refusal compares no types.
     /// - provides: the comparison a primary label carries.
     /// - fails: never.
     /// - panics: none.
@@ -290,7 +293,7 @@ impl<'step> Comparison<'step>
     #[spec(ensures: |ret| match refusal {
         Refusal::Checking(checked) => {
             let side = |node: Maybe<TypeNodeOf<Keyed>, _>| match node {
-                Maybe::Present(node) => spellings.get(node).map(AsRef::as_ref),
+                Maybe::Present(node) => spellings.get(SpelledNode { node, place }).map(AsRef::as_ref),
                 Maybe::Absent(_) => Maybe::Absent(spelling::Absent::Unspelled),
             };
             ret.expected == side(checked.compared().expected) && ret.found == side(checked.compared().found) && ret.unfolded == side(checked.compared().unfolded)
@@ -300,6 +303,7 @@ impl<'step> Comparison<'step>
     pub(crate) fn of(
         refusal: Refusal<'_>,
         spellings: &'step Spellings,
+        place: SpellingPlace,
     ) -> Self
     {
         let Refusal::Checking(checked) = refusal
@@ -308,7 +312,9 @@ impl<'step> Comparison<'step>
         };
         let compared = checked.compared();
         let side = |node: Maybe<TypeNodeOf<Keyed>, compared::Absent>| match node {
-            Maybe::Present(node) => spellings.get(node).map(AsRef::as_ref),
+            Maybe::Present(node) => spellings
+                .get(SpelledNode { node, place })
+                .map(AsRef::as_ref),
             Maybe::Absent(_) => Maybe::Absent(spelling::Absent::Unspelled),
         };
         Self {

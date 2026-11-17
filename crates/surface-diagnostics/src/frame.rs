@@ -71,6 +71,9 @@ use crate::model::Binding;
 use crate::model::DiagnosticContext;
 use crate::model::Judged;
 use crate::model::binding;
+use crate::spelled::Reading;
+use crate::spelled::SpelledNode;
+use crate::spelled::SpellingPlace;
 use crate::spelled::Spellings;
 
 /// What a rule of the checking machine was doing to the term it was pushed
@@ -334,41 +337,78 @@ pub fn sentence(role: FrameRole) -> Sentence
 pub fn contexts<Reason>(
     failure: &FailureOf<Keyed>,
     located: &Located,
-    spellings: &Spellings,
+    (spellings, place): (&Spellings, SpellingPlace),
     primary: Maybe<ByteSpan, Reason>,
 ) -> (Vec<DiagnosticContext>, Vec<Binding>)
 where
     Reason: Copy + PartialEq,
 {
+    // Each type is read at the place that `TypeSpellings::of` spelled it
+    // at: under the hypotheses and regions before it. When the obligations
+    // do not account for every hypothesis, no name is known to stand at a
+    // position, and each is read under none.
+    let accounted = place.depth == failure.hypotheses().len();
+    let checked = |depth: usize, regions: usize| SpellingPlace {
+        depth: if accounted { depth } else { 0 },
+        regions,
+        reading: Reading::Checked,
+        ..place
+    };
+    let hypothesis = |depth: usize| SpellingPlace {
+        depth: depth.min(place.depth),
+        reading: Reading::Hypothesis,
+        ..place
+    };
     let mut contexts: Vec<DiagnosticContext> = Vec::new();
     let mut named: Vec<Binding> = located
         .framed
         .iter()
         .cloned()
         .zip(failure.hypotheses())
-        .map(|(name, &ty)| Binding {
+        .enumerate()
+        .map(|(depth, (name, &ty))| Binding {
             name,
-            ty: spelled(spellings, ty),
+            ty: spelled(spellings, ty, hypothesis(depth)),
         })
         .collect();
     named.reserve(failure.hypotheses().len().saturating_sub(named.len()));
+    let mut regions = 0_usize;
     for (obligation, frame) in failure.obligations().iter().zip(&located.frames) {
+        let standing = checked(named.len(), regions);
+        if matches!(
+            obligation.role(),
+            FrameRole::ScopeSubject | FrameRole::HoldBody
+        ) {
+            regions = regions.saturating_add(1);
+        }
+        let first = named.len();
         let binders: Vec<Binding> = frame
             .binders
             .iter()
             .cloned()
             .zip(obligation.binders())
-            .map(|(name, &ty)| Binding {
+            .enumerate()
+            .map(|(offset, (name, &ty))| Binding {
                 name,
-                ty: spelled(spellings, ty),
+                ty: spelled(spellings, ty, SpellingPlace {
+                    reading: Reading::Hypothesis,
+                    ..checked(first.saturating_add(offset), standing.regions)
+                }),
             })
             .collect();
         named.extend(binders.iter().cloned());
         let judged = match obligation.expected() {
-            Maybe::Present(expected) => Judged::Checked(match spellings.get(expected) {
-                Maybe::Present(presentation) => Maybe::Present(String::from(presentation.as_ref())),
-                Maybe::Absent(reason) => Maybe::Absent(reason),
-            }),
+            Maybe::Present(expected) => Judged::Checked(
+                match spellings.get(SpelledNode {
+                    node: expected,
+                    place: standing,
+                }) {
+                    Maybe::Present(presentation) => {
+                        Maybe::Present(String::from(presentation.as_ref()))
+                    },
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                },
+            ),
             Maybe::Absent(judged::Absent::Synthesised) => Judged::Synthesised,
             Maybe::Absent(judged::Absent::Formed) => Judged::Formed,
         };
@@ -411,9 +451,10 @@ where
         failure
             .hypotheses()
             .iter()
-            .map(|&ty| Binding {
+            .enumerate()
+            .map(|(depth, &ty)| Binding {
                 name: Maybe::Absent(binding::Absent::Unnamed),
-                ty: spelled(spellings, ty),
+                ty: spelled(spellings, ty, hypothesis(depth)),
             })
             .collect()
     };
@@ -654,9 +695,13 @@ where
 fn spelled(
     spellings: &Spellings,
     ty: NodeKey,
+    place: SpellingPlace,
 ) -> Maybe<String, crate::spelled::spelling::Absent>
 {
-    match spellings.get(TypeNodeOf::Value(ty)) {
+    match spellings.get(SpelledNode {
+        node: TypeNodeOf::Value(ty),
+        place,
+    }) {
         Maybe::Present(presentation) => Maybe::Present(String::from(presentation.as_ref())),
         Maybe::Absent(reason) => Maybe::Absent(reason),
     }

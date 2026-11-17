@@ -115,7 +115,7 @@ error[CapabilityAmplified]: this capability grants less than the one expected he
 127 │ ┌  def amplifiedAtImplicit() -> Integer =
 128 │ │┌   handle s : State.Eff with sort S = Bool {
 129 │ ││     readGivenAt 0
-    │ ││     ━━━━━━━━━━━━━ a capability granting less: expected `Cap {get, put} at s`, found `Cap {get, put}`
+    │ ││     ━━━━━━━━━━━━━ a capability granting less: expected `Cap {get, put} at s`, found `Cap {get, put} at s`
 130 │ ││   } with {
 131 │ ││     | pure(y) => pure y
 132 │ ││     | oper get(k) => k true

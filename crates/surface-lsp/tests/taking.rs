@@ -62,6 +62,11 @@ const RECORDS: &str = include_str!(
     "taking/fixtures/a-taking-session-composes-as-a-fresh-one-past-a-prepended-definition-7403.gandr"
 );
 
+/// The refusal fixture: an arm whose binder's type has one content with a
+/// hypothesis of the function, under another context.
+const SPELLED: &str =
+    include_str!("taking/fixtures/a-taken-refusal-spells-each-context-s-name-7403.gandr");
+
 /// A fresh session over memory stores, for a fixture source.
 ///
 /// # Specification
@@ -521,6 +526,22 @@ fn a_taking_session_composes_as_a_fresh_one_past_a_prepended_definition_7403()
         taken_past_a_prepending(SourceText::from(RECORDS)),
         ItemCount::from(1_usize),
         "one standing declaration is taken; the others and the definition put first are decided"
+    );
+}
+
+/// A refusal that a taking session judges past a prepended definition spells
+/// as a fresh one's (#7403). `v : Pred (Succ n)` and the arm's
+/// `w : Pred (Succ m)` have one content key, so each spelling is keyed by its
+/// node and its place. The place names its failure by declaration, and the
+/// prepended definition moves that declaration in both sessions alike.
+#[test]
+fn a_taken_refusal_spells_each_place_as_a_fresh_session_7403()
+{
+    assert_eq!(
+        taken_past_a_prepending(SourceText::from(SPELLED)),
+        ItemCount::from(5_usize),
+        "the five data declarations are taken; the refused function and the definition put \
+         first are decided"
     );
 }
 

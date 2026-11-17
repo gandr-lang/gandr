@@ -170,6 +170,8 @@ use crate::model::producer;
 use crate::model::repair;
 use crate::obstruction::PartingPair;
 use crate::obstruction::obstructed;
+use crate::spelled::SpelledLoop;
+use crate::spelled::SpelledNode;
 use crate::spelled::Spellings;
 use crate::spelled::kept;
 
@@ -576,11 +578,17 @@ impl Report<'_>
         }
         let (contexts, hypotheses) = match self.subject {
             Subject::Refused {
+                declaration,
                 located: Maybe::Present(located),
                 spellings,
                 failure: Maybe::Present(failure),
                 ..
-            } => contexts(failure, located, spellings, span),
+            } => contexts(
+                failure,
+                located,
+                (spellings, spellings.place_of(declaration.constant())),
+                span,
+            ),
             Subject::Refused { .. }
             | Subject::Unsettled { .. }
             | Subject::Goal(_)
@@ -655,10 +663,18 @@ impl Report<'_>
         };
         let notes = match self.subject {
             Subject::Refused {
+                declaration,
                 refusal: Refusal::Checking(CheckRefusalOf::LoopNotRespected { left, right, .. }),
                 spellings,
                 ..
-            } => match (spellings.loop_side(left), spellings.loop_side(right)) {
+            } => match {
+                let place = spellings.place_of(declaration.constant());
+                let side = |node| SpelledLoop { node, place };
+                (
+                    spellings.loop_side(side(left)),
+                    spellings.loop_side(side(right)),
+                )
+            } {
                 (Maybe::Present(left), Maybe::Present(right)) => Vec::from([
                     LoopSide::Carried.noted(left),
                     LoopSide::AtPoint.noted(right),
@@ -1088,15 +1104,22 @@ impl Report<'_>
     ///   compares none.
     /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match self.subject {
-        Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
+        Subject::Refused { declaration, refusal, spellings, .. } => ret == Comparison::of(refusal, spellings, spellings.place_of(declaration.constant())),
         Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) | Subject::Deprecated(_) | Subject::Ledger { .. } => ret == Comparison::none(),
     })]
     fn comparison(&self) -> Comparison<'_>
     {
         match self.subject {
             Subject::Refused {
-                refusal, spellings, ..
-            } => Comparison::of(refusal, spellings),
+                declaration,
+                refusal,
+                spellings,
+                ..
+            } => Comparison::of(
+                refusal,
+                spellings,
+                spellings.place_of(declaration.constant()),
+            ),
             Subject::Unsettled { .. }
             | Subject::Goal(_)
             | Subject::Source(_)
@@ -1528,6 +1551,7 @@ impl fmt::Display for MessageText<'_>
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused {
+                declaration,
                 refusal: refusal @ Refusal::Checking(CheckRefusalOf::ModelUnanswered { forced, .. }),
                 located: Maybe::Present(located),
                 spellings,
@@ -1545,7 +1569,10 @@ impl fmt::Display for MessageText<'_>
                     )?;
                     let forced = match forced {
                         gandr_core_checker::ForcedOf::Type(ty) => {
-                            match spellings.get(gandr_core_checker::TypeNodeOf::Value(ty)) {
+                            match spellings.get(SpelledNode {
+                                node: gandr_core_checker::TypeNodeOf::Value(ty),
+                                place: spellings.place_of(declaration.constant()),
+                            }) {
                                 Maybe::Present(spelled) => Some(spelled.as_ref()),
                                 Maybe::Absent(_) => None,
                             }

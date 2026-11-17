@@ -36,8 +36,11 @@ use gandr_surface_diagnostics::Fix;
 use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Naming;
+use gandr_surface_diagnostics::Reading;
 use gandr_surface_diagnostics::Renaming;
 use gandr_surface_diagnostics::Severity;
+use gandr_surface_diagnostics::SpelledNode;
+use gandr_surface_diagnostics::SpellingPlace;
 use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::Unsettlement;
 use gandr_surface_diagnostics::Verbosity;
@@ -1333,19 +1336,31 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
         };
         let mut nodes = Vec::new();
         for declaration in report.declarations() {
+            let place = spellings
+                .spelled(Spelling::Unicode)
+                .place_of(declaration.constant());
             if let Maybe::Present(Refusal::Checking(refusal)) = declaration.produced().refusal() {
                 let compared = refusal.compared();
                 nodes.extend(
                     [compared.expected, compared.found]
                         .into_iter()
                         .filter_map(|side| match side {
-                            Maybe::Present(node) => Some(node),
+                            Maybe::Present(node) => Some(SpelledNode { node, place }),
                             Maybe::Absent(_) => None,
                         }),
                 );
             }
             if let Maybe::Present(failure) = failures.get(declaration.constant()) {
-                nodes.extend(failure.hypotheses().iter().map(|&ty| TypeNodeOf::Value(ty)));
+                nodes.extend(failure.hypotheses().iter().enumerate().map(|(depth, &ty)| {
+                    SpelledNode {
+                        node: TypeNodeOf::Value(ty),
+                        place: SpellingPlace {
+                            depth: depth.min(place.depth),
+                            reading: Reading::Hypothesis,
+                            ..place
+                        },
+                    }
+                }));
             }
         }
         nodes
@@ -1479,7 +1494,17 @@ fn a_sealed_type_is_spelled_by_its_path()
     else {
         panic!("the leak is a value mismatch");
     };
-    let spelled = |node| match spellings.spelled(Spelling::Unicode).get(node) {
+    let place = spellings.spelled(Spelling::Unicode).place_of(
+        report
+            .declarations()
+            .last()
+            .expect("the leak is reported")
+            .constant(),
+    );
+    let spelled = |node| match spellings
+        .spelled(Spelling::Unicode)
+        .get(SpelledNode { node, place })
+    {
         Maybe::Present(presentation) => presentation.as_ref().to_owned(),
         Maybe::Absent(reason) => format!("{reason:?}"),
     };
@@ -1544,10 +1569,18 @@ fn a_refusal_spells_its_types_in_either_spelling_782()
         else {
             panic!("the literal is a value mismatch");
         };
-        let spelled = |spelling, node| match spellings.spelled(spelling).get(node) {
-            Maybe::Present(presentation) => presentation.as_ref().to_owned(),
-            Maybe::Absent(reason) => format!("{reason:?}"),
-        };
+        let place = spellings.spelled(Spelling::Unicode).place_of(
+            report
+                .declarations()
+                .last()
+                .expect("the literal is reported")
+                .constant(),
+        );
+        let spelled =
+            |spelling, node| match spellings.spelled(spelling).get(SpelledNode { node, place }) {
+                Maybe::Present(presentation) => presentation.as_ref().to_owned(),
+                Maybe::Absent(reason) => format!("{reason:?}"),
+            };
         for (spelling, relation) in [(Spelling::Unicode, unicode), (Spelling::Ascii, ascii)] {
             assert_eq!(
                 [
@@ -3781,12 +3814,20 @@ fn a_refusal_is_spelled_as_its_own_source_reads_it_4813()
         .declarations()
         .iter()
         .filter_map(|declaration| match declaration.produced().refusal() {
-            Maybe::Present(Refusal::Checking(refusal)) => Some(refusal.compared()),
+            Maybe::Present(Refusal::Checking(refusal)) => Some((
+                refusal.compared(),
+                spellings
+                    .spelled(Spelling::Unicode)
+                    .place_of(declaration.constant()),
+            )),
             Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => None,
         })
-        .map(|compared| {
+        .map(|(compared, place)| {
             [compared.expected, compared.found].map(|side| match side {
-                Maybe::Present(node) => match spellings.spelled(Spelling::Unicode).get(node) {
+                Maybe::Present(node) => match spellings
+                    .spelled(Spelling::Unicode)
+                    .get(SpelledNode { node, place })
+                {
                     Maybe::Present(presentation) => Some(presentation.to_string()),
                     Maybe::Absent(_) => None,
                 },
@@ -3845,6 +3886,39 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
     assert!(
         split.ends_with("binds s : Theory, n : counted_at(s)"),
         "the split's binding note names its binders as the pattern writes them: {split}"
+    );
+}
+
+/// Two hypotheses of one content under two contexts spell each under the
+/// names of its own context. `v : Pred (Succ n)` and `w : Pred (Succ m)` take
+/// one content key, because a de Bruijn index hides the name it reads. A
+/// spelling is keyed by the node and its place, so `w` names `m` and never
+/// `n` (#7403).
+#[test]
+fn one_content_under_two_contexts_spells_each_context_s_name_7403()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/one-content-under-two-contexts-spells-each-context-s-name-7403.gandr"
+    ));
+    let diagnostic = only(Path::new("injective.gandr"), text);
+    let hypotheses: Vec<String> = diagnostic
+        .hypotheses
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        hypotheses.get(1 ..= 1),
+        Some([String::from("v : Pred (Succ n)")].as_slice()),
+        "the outer hypothesis reads the outer binder: {hypotheses:?}"
+    );
+    let split = contexts(text, &diagnostic)
+        .into_iter()
+        .find(|&(ref at, _)| at.starts_with("match h"))
+        .map(|(_, note)| note)
+        .expect("the split is a context");
+    assert!(
+        split.contains("w : Pred (Succ m)"),
+        "the arm's binder reads the arm's own binder: {split}"
     );
 }
 
