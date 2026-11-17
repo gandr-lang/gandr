@@ -1172,10 +1172,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     ///   as the codes of the types they spell. A carrier the form leaves out is
     ///   a hole it nominates for the implicit `A` of `head`.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a supply naming an
-    ///   implicit other than `A`; the retired carrier of [`FormFault::Retired`] at the head
-    ///   of a bare form over three operands, its carrier written first; a
-    ///   misplaced-tile or extra-operand fault for a form out of shape; the
-    ///   budget refusal once no hole name is left.
+    ///   implicit other than `A`; the retired carrier of [`FormFault::Retired`]
+    ///   at the head of a bare form over three operands, its carrier written
+    ///   first; a misplaced-tile or extra-operand fault for a form out of
+    ///   shape; the budget refusal once no hole name is left.
     /// - panics: none.
     ///
     /// # Errors

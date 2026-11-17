@@ -2970,11 +2970,8 @@ impl<'source> RefusalOf<'source, Arena>
         ret == RefusalName::UndescribedMember(member_tag(fault))
     } else if let LoweringRefusal::SignatureMismatch { fault, .. } = refusal {
         ret == RefusalName::SignatureMismatch(signature_tag(fault))
-    } else if let LoweringRefusal::MalformedForm { fault, .. } = refusal {
-        ret == match fault {
-            FormFault::Retired(form) => RefusalName::RetiredSpelling(form),
-            _ => RefusalName::MalformedForm,
-        }
+    } else if let LoweringRefusal::MalformedForm { fault: FormFault::Retired(form), .. } = refusal {
+        ret == RefusalName::RetiredSpelling(form)
     } else if let LoweringRefusal::RetiredName { form, .. } = refusal {
         ret == RefusalName::RetiredSpelling(form)
     } else if let LoweringRefusal::GenericUncovered { fault, .. } = refusal {
@@ -2988,7 +2985,6 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 {
     match refusal {
         LoweringRefusal::UnresolvedName { .. } => RefusalName::UnresolvedName,
-        LoweringRefusal::RetiredName { form, .. } => RefusalName::RetiredSpelling(form),
         LoweringRefusal::UnresolvedDocLink { .. } => RefusalName::UnresolvedDocLink,
         LoweringRefusal::UnresolvedTypeHead { .. } => RefusalName::UnresolvedTypeHead,
         LoweringRefusal::DuplicateSignature { .. } => RefusalName::DuplicateSignature,
@@ -3007,7 +3003,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
             ..
         } => RefusalName::OutOfFragment(fragment(FragmentFeature::of(form, sort, boundary))),
         LoweringRefusal::BareFeedback { .. } => RefusalName::BareFeedback,
-        LoweringRefusal::MalformedForm {
+        LoweringRefusal::RetiredName { form, .. }
+        | LoweringRefusal::MalformedForm {
             fault: FormFault::Retired(form),
             ..
         } => RefusalName::RetiredSpelling(form),

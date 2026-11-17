@@ -483,7 +483,11 @@ fn add_type_rules(
     // takes its carrier by name, `Path[.A = A](a, b)`.
     for (name, head, retired) in [
         ("path_type", "Path", RetiredForm::PositionalPathCarrier),
-        ("bridge_type", "Bridge", RetiredForm::PositionalBridgeCarrier),
+        (
+            "bridge_type",
+            "Bridge",
+            RetiredForm::PositionalBridgeCarrier,
+        ),
     ] {
         let mut carried = rule(
             RuleName(name),
