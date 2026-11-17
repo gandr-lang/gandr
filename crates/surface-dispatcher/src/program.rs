@@ -1064,6 +1064,9 @@ impl Parts<'_, '_>
 /// - intension: a module with no coerced structure is skipped without a walk;
 ///   otherwise one walk of each declared type.
 ///
+/// # Cost
+/// - allocation: the kept members, growth within the declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — a run answering a secret, one answering it in a list, one
 ///   answering a marked report and a member run inside its own seal.

@@ -101,16 +101,20 @@ use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
-use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Arena;
+use gandr_core_checker::CheckRefusalOf;
+use gandr_core_checker::Keyed;
+use gandr_core_checker::Keying;
+use gandr_core_checker::Naming;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
-use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::LinearityDefectOf;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::Crossed;
-use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_checker::worlds::LocatedDefectOf;
 use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::FailureClass;
 use gandr_core_term::generic::Uncovered;
@@ -589,9 +593,9 @@ impl fmt::Display for RefusalSpelling
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a `fill` asking for a square its generator does not make is the
-///   written ask, the checker's [`CheckRefusal::NoFiller`]; a model's law its
+///   written ask, the checker's [`CheckRefusalOf::NoFiller`]; a model's law its
 ///   module omits, which no source discharges, is the omitted one, the
-///   checker's [`CheckRefusal::UndischargedLaw`].
+///   checker's [`CheckRefusalOf::UndischargedLaw`].
 /// - provides: one family for both, since both ask for a filler none of its
 ///   sources gives; the qualifier says who asked.
 /// - panics: none.
@@ -2704,17 +2708,21 @@ impl fmt::Display for RefusalName
 ///   stage and exact identity for the cases the fixtures reach.
 /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Refusal<'source>
+pub enum RefusalOf<'source, N>
+where
+    N: Naming,
 {
     /// The lowering refused the declaration.
     Lowering(LoweringRefusal<'source>),
     /// The checker refused the declaration.
-    Checking(CheckRefusal),
+    Checking(CheckRefusalOf<N>),
     /// The corpus root refused an expectation the declaration carries.
     Corpus(CorpusRefusal),
 }
 
-impl Refusal<'_>
+impl<N> RefusalOf<'_, N>
+where
+    N: Naming,
 {
     /// The vocabulary name of this refusal.
     ///
@@ -2797,6 +2805,33 @@ impl Refusal<'_>
             Self::Lowering(ref refusal) => refusal.classify(),
             Self::Checking(ref refusal) => refusal.classify(),
             Self::Corpus(ref refusal) => refusal.classify(),
+        }
+    }
+}
+
+/// A refusal as a report reads it: a checker refusal names each node by its
+/// content key.
+pub type Refusal<'source> = RefusalOf<'source, Keyed>;
+
+impl<'source> RefusalOf<'source, Arena>
+{
+    /// The same refusal, a checker refusal's nodes named by their content keys.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> Refusal<'source>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Lowering(refusal) => RefusalOf::Lowering(refusal),
+            Self::Checking(refusal) => RefusalOf::Checking(refusal.keyed(keys)),
+            Self::Corpus(refusal) => RefusalOf::Corpus(refusal),
         }
     }
 }
@@ -3058,238 +3093,240 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 #[spec(
     ensures: |ret| {
     matches!(
-        (refusal, ret), (CheckRefusal::TypeMismatch(_), RefusalName::TypeMismatch) |
-        (CheckRefusal::ShapeMismatch { .. }, RefusalName::ShapeMismatch) |
-        (CheckRefusal::NotSynthesisable { .. }, RefusalName::NotSynthesisable) |
-        (CheckRefusal::UnknownConstant { .. }, RefusalName::UnknownConstant) |
-        (CheckRefusal::OutOfFragment { .. }, RefusalName::OutOfFragment(_)) |
-        (CheckRefusal::UnboundIndex { .. }, RefusalName::UnboundIndex) |
-        (CheckRefusal::BudgetExceeded { .. }, RefusalName::BudgetExceeded) |
-        (CheckRefusal::DanglingNode { .. }, RefusalName::DanglingNode) |
-        (CheckRefusal::AdmissionOrder { .. }, RefusalName::AdmissionOrder) |
-        (CheckRefusal::MachineInvariant, RefusalName::MachineInvariant) |
-        (CheckRefusal::SortMismatch { .. }, RefusalName::SortMismatch) |
-        (CheckRefusal::LevelMismatch { .. }, RefusalName::LevelMismatch) |
-        (CheckRefusal::DependentBind { .. }, RefusalName::DependentBind) |
-        (CheckRefusal::Undecided { .. }, RefusalName::Undecided) |
-        (CheckRefusal::FamilyArity { .. }, RefusalName::FamilyArity) |
-        (CheckRefusal::FamilyArgumentClassifier { .. },
-        RefusalName::FamilyArgumentClassifier) | (CheckRefusal::StaticLambdaArgument { ..
-        }, RefusalName::StaticLambdaArgument) | (CheckRefusal::StaticClassifierExpected {
-        .. }, RefusalName::StaticClassifierExpected) | (CheckRefusal::PathCode(_), RefusalName::PathCode)
-        | (CheckRefusal::NotADataType(_), RefusalName::NotADataType)
-        | (CheckRefusal::DataKindNotUniverse(_), RefusalName::DataKindNotUniverse)
-        | (CheckRefusal::DataFieldLevel { .. }, RefusalName::DataFieldLevel)
-        | (CheckRefusal::RuleNotPresentable { .. }, RefusalName::RuleNotPresentable)
-        | (CheckRefusal::RuleNotRespected { .. }, RefusalName::RuleNotRespected)
-        | (CheckRefusal::NotApart { .. }, RefusalName::NotApart)
-        | (CheckRefusal::LoopNotRespected { .. }, RefusalName::LoopNotRespected)
-        | (CheckRefusal::LoopUndecided { .. }, RefusalName::LoopUndecided)
-        | (CheckRefusal::AbstractKindNotUniverse(_), RefusalName::AbstractKindNotUniverse)
-        | (CheckRefusal::RepresentationAboveKind { .. }, RefusalName::RepresentationAboveKind)
-        | (CheckRefusal::NotAnAbstractType(_), RefusalName::NotAnAbstractType)
-        | (CheckRefusal::AtomTransport { .. }, RefusalName::AtomTransport)
-        | (CheckRefusal::BridgeAtSealedType { .. }, RefusalName::BridgeAtSealedType)
-        | (CheckRefusal::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
-        | (CheckRefusal::BuiltinRepeated { .. }, RefusalName::BuiltinRepeated)
-        | (CheckRefusal::BuiltinMisplaced(_), RefusalName::BuiltinMisplaced)
-        | (CheckRefusal::BuiltinNotCanonical { .. }, RefusalName::BuiltinNotCanonical)
-        | (CheckRefusal::DataArgumentArity(_), RefusalName::DataArgumentArity)
-        | (CheckRefusal::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
-        | (CheckRefusal::ConstructorArity(_), RefusalName::ConstructorArity)
-        | (CheckRefusal::NonExhaustiveDataCase(_), RefusalName::NonExhaustiveDataCase)
-        | (CheckRefusal::UndecidedCoverage(_), RefusalName::UndecidedCoverage)
-        | (CheckRefusal::AbsentRecordField(_), RefusalName::AbsentRecordField)
-        | (CheckRefusal::AbsentTupleComponent(_), RefusalName::AbsentTupleComponent)
-        | (CheckRefusal::MissingRecordField { .. }, RefusalName::MissingRecordField)
-        | (CheckRefusal::PatchOutsideBase { .. }, RefusalName::PatchOutsideBase)
-        | (CheckRefusal::FixedFieldDiffers { .. }, RefusalName::FixedFieldDiffers)
-        | (CheckRefusal::NegativeOccurrence(_), RefusalName::NegativeOccurrence)
-        | (CheckRefusal::NestedOccurrence(_), RefusalName::NestedOccurrence)
-        | (CheckRefusal::IndexOccurrence(_), RefusalName::IndexOccurrence)
-        | (CheckRefusal::NonUniformOccurrence(_), RefusalName::NonUniformOccurrence)
-        | (CheckRefusal::CrossBlockReference { .. }, RefusalName::CrossBlockReference)
-        | (CheckRefusal::StageNotBelow { .. }, RefusalName::StageNotBelow)
-        | (CheckRefusal::StagesDisagree { .. }, RefusalName::StagesDisagree)
-        | (CheckRefusal::StageNotCarried { .. }, RefusalName::StageNotCarried)
-        | (CheckRefusal::EffectSignatureConflict { .. }, RefusalName::EffectSignatureConflict)
-        | (CheckRefusal::UnknownOperation { .. }, RefusalName::UnknownOperation)
-        | (CheckRefusal::HandlerCoverage { .. }, RefusalName::HandlerCoverage)
-        | (CheckRefusal::HandlerUnlawful { .. }, RefusalName::HandlerUnlawful)
-        | (CheckRefusal::ShiftWithoutReset { .. }, RefusalName::ShiftWithoutReset)
-        | (CheckRefusal::DependentStack { .. }, RefusalName::DependentStack)
-        | (CheckRefusal::EndpointMismatch { .. }, RefusalName::EndpointMismatch)
-        | (CheckRefusal::CompoundEndpoint { .. }, RefusalName::CompoundEndpoint)
-        | (CheckRefusal::FunextUnsupported { .. }, RefusalName::FunextUnsupported)
-        | (CheckRefusal::PointwiseDistinct { .. }, RefusalName::PointwiseDistinct)
-        | (CheckRefusal::EquivUnsupported { .. }, RefusalName::EquivUnsupported)
-        | (CheckRefusal::UncertifiedStratum { .. }, RefusalName::UncertifiedStratum)
-        | (CheckRefusal::OutsideFold { .. }, RefusalName::OutsideFold)
-        | (CheckRefusal::RoundTripDistinct { .. }, RefusalName::RoundTripDistinct)
-        | (CheckRefusal::NotOver { .. }, RefusalName::NotOver)
-        | (CheckRefusal::UaUncertified { stratum: StratumDefect::Degree { .. }, .. }, RefusalName::UncertifiedDegree)
-        | (CheckRefusal::UaUncertified { stratum: StratumDefect::Condition { .. }, .. }, RefusalName::UncertifiedCondition)
-        | (CheckRefusal::UaUncertified { stratum: StratumDefect::Allowance { .. }, .. }, RefusalName::UncertifiedAllowance)
-        | (CheckRefusal::UaUncertified { stratum: StratumDefect::Budget { .. }, .. }, RefusalName::UncertifiedBudget)
-        | (CheckRefusal::UaInequivalent { defect: UaDefect::UnknownGenerator { .. }, .. }, RefusalName::UnknownGenerator)
-        | (CheckRefusal::UaInequivalent { defect: UaDefect::PastTheBound { .. }, .. }, RefusalName::PastTheBound)
-        | (CheckRefusal::UaInequivalent { defect: UaDefect::Cardinality { .. }, .. }, RefusalName::CorollaCardinality)
-        | (CheckRefusal::UaInequivalent { defect: UaDefect::Tables { .. }, .. }, RefusalName::CorollaTables)
-        | (CheckRefusal::UaInequivalent { defect: UaDefect::NotInverse { .. }, .. }, RefusalName::NotInverse)
-        | (CheckRefusal::UaInequivalent { defect: UaDefect::NotNatural { .. }, .. }, RefusalName::NotNatural)
-        | (CheckRefusal::UaInequivalent { defect: UaDefect::Stuck { .. }, .. }, RefusalName::TranslatorStuck)
-        | (CheckRefusal::ComposeUncertified { .. }, RefusalName::ComposeUncertified)
-        | (CheckRefusal::ComposeNotAShape { .. }, RefusalName::ComposeNotAShape)
-        | (CheckRefusal::ComposeDoesNotFill { .. }, RefusalName::ComposeDoesNotFill)
-        | (CheckRefusal::FillUncertified { .. }, RefusalName::FillUncertified)
-        | (CheckRefusal::NoFiller { .. }, RefusalName::NoFiller(FillerAsk::Written))
-        | (CheckRefusal::UndischargedLaw { .. }, RefusalName::NoFiller(FillerAsk::Omitted))
-        | (CheckRefusal::GeneratorFamilyUnsupported { .. }, RefusalName::GeneratorFamilyUnsupported)
-        | (CheckRefusal::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
-        | (CheckRefusal::ImplicitUnsolved { .. }, RefusalName::ImplicitUnsolved)
-        | (CheckRefusal::ModelUnanswered { .. }, RefusalName::ModelUnanswered)
-        | (CheckRefusal::ModelAmbiguous { .. }, RefusalName::ModelAmbiguous)
-        | (CheckRefusal::TacticRefused { .. }, RefusalName::TacticRefused)
-        | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Action { .. }, .. }, RefusalName::SessionMismatch)
-        | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Label, .. }, RefusalName::UnofferedLabel)
-        | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Arms, .. }, RefusalName::OfferArms)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::Residue { .. }, .. }, RefusalName::LinearResidue)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::Closed { .. }, .. }, RefusalName::UsedAfterClose)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::UsedTwice { .. }, .. }, RefusalName::EndpointUsedTwice)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::Captured { .. }, .. }, RefusalName::CapturedEndpoint)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::AsValue { .. }, .. }, RefusalName::EndpointAsValue)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::ArmsDisagree { .. }, .. }, RefusalName::ArmsDisagree)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::Unrestricted, .. }, RefusalName::UnrestrictedEndpoint)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::Unbound { .. }, .. }, RefusalName::UnboundEndpoint)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::BufferUnreturned { .. }, .. }, RefusalName::BufferUnreturned)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::BufferReturnedTwice { .. }, .. }, RefusalName::BufferReturnedTwice)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::BufferRead { .. }, .. }, RefusalName::BufferRead)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationUnspent { .. }, .. }, RefusalName::ContinuationUnspent)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationUsedTwice { .. }, .. }, RefusalName::ContinuationUsedTwice)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationCaptured { .. }, .. }, RefusalName::ContinuationCaptured)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::ContinuationAsValue { .. }, .. }, RefusalName::ContinuationAsValue)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::LinearSlotConsumed { .. }, .. }, RefusalName::LinearSlotConsumed)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::LinearSlotUnconsumed { .. }, .. }, RefusalName::LinearSlotUnconsumed)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::ShadowCaptured { .. }, .. }, RefusalName::ShadowCaptured)
-        | (CheckRefusal::Linearity { defect: LinearityDefect::ComonoidAbsent { .. }, .. }, RefusalName::ComonoidAbsent)
-        | (CheckRefusal::Access { defect: AccessDefect::NotHeld, .. }, RefusalName::NotHeld)
-        | (CheckRefusal::Access { defect: AccessDefect::Lent, .. }, RefusalName::HeldLent)
-        | (CheckRefusal::Access { defect: AccessDefect::HeldCaptured { .. }, .. }, RefusalName::HeldCaptured)
-        | (CheckRefusal::Access { defect: AccessDefect::Escaped { .. }, .. }, RefusalName::ViewEscaped)
-        | (CheckRefusal::Access { defect: AccessDefect::Unended, .. }, RefusalName::ViewUnended)
-        | (CheckRefusal::Access { defect: AccessDefect::Spent, .. }, RefusalName::ViewSpent)
-        | (CheckRefusal::Access { defect: AccessDefect::NotAView, .. }, RefusalName::NotAView)
-        | (CheckRefusal::Access { defect: AccessDefect::ReadOnly, .. }, RefusalName::ViewReadOnly)
-        | (CheckRefusal::Access { defect: AccessDefect::UnwindEffect, .. }, RefusalName::UnwindEffect)
-        | (CheckRefusal::Access { defect: AccessDefect::Unindexed, .. }, RefusalName::PlaceUnindexed)
-        | (CheckRefusal::Access { defect: AccessDefect::HeldShared, .. }, RefusalName::HeldShared)
-        | (CheckRefusal::Access { defect: AccessDefect::HeldCopied, .. }, RefusalName::HeldCopied)
-        | (CheckRefusal::Access { defect: AccessDefect::Moved, .. }, RefusalName::ViewMoved)
-        | (CheckRefusal::Access { defect: AccessDefect::Kept, .. }, RefusalName::HeldKept)
-        | (CheckRefusal::Access { defect: AccessDefect::KeptEscaped, .. }, RefusalName::KeptEscaped)
-        | (CheckRefusal::Access { defect: AccessDefect::Consumed, .. }, RefusalName::HeldConsumed)
-        | (CheckRefusal::Codata { fault: CodataFault::Undeclared, .. }, RefusalName::CodataUndeclared)
-        | (CheckRefusal::Codata { fault: CodataFault::KindNotUniverse, .. }, RefusalName::CodataKindNotUniverse)
-        | (CheckRefusal::Codata { fault: CodataFault::WithoutObservations, .. }, RefusalName::CodataWithoutObservations)
-        | (CheckRefusal::Codata { fault: CodataFault::Occurrence, .. }, RefusalName::CodataOccurrence)
-        | (CheckRefusal::Codata { fault: CodataFault::ObservationLevel, .. }, RefusalName::CodataObservationLevel)
-        | (CheckRefusal::Codata { fault: CodataFault::Arity, .. }, RefusalName::CodataArity)
-        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { predicate: Predicate::Mobile, .. }, .. }, RefusalName::Immobile(_))
-        | (CheckRefusal::Located { defect: LocatedDefect::Immobile { predicate: Predicate::Open, .. }, .. }, RefusalName::NotOpen(_))
-        | (CheckRefusal::Located { defect: LocatedDefect::CapabilityMissing { .. }, .. }, RefusalName::CapabilityMissing)
-        | (CheckRefusal::Located { defect: LocatedDefect::CapabilityCaptured { .. }, .. }, RefusalName::CapabilityCaptured)
-        | (CheckRefusal::Located { defect: LocatedDefect::Elsewhere { .. }, .. }, RefusalName::Elsewhere)
-        | (CheckRefusal::Located { defect: LocatedDefect::HoldElsewhere { .. }, .. }, RefusalName::HoldElsewhere)
-        | (CheckRefusal::Located { defect: LocatedDefect::OpenedElsewhere { .. }, .. }, RefusalName::OpenedElsewhere)
-        | (CheckRefusal::Located { defect: LocatedDefect::Unlocated, .. }, RefusalName::Unlocated)
-        | (CheckRefusal::Located { defect: LocatedDefect::UndeclaredWorld { .. }, .. }, RefusalName::UndeclaredWorld)
-        | (CheckRefusal::Located { defect: LocatedDefect::HostWorldUndeclared, .. }, RefusalName::HostWorldUndeclared)
-        | (CheckRefusal::Located { defect: LocatedDefect::MarkUnfounded { .. }, .. }, RefusalName::MarkUnfounded)
-        | (CheckRefusal::Located { defect: LocatedDefect::EntryNamed { .. }, .. }, RefusalName::EntryNamed)
-        | (CheckRefusal::Located { defect: LocatedDefect::EntryUngranted { .. }, .. }, RefusalName::EntryUngranted)
-        | (CheckRefusal::Located { defect: LocatedDefect::NotAHandle { .. }, .. }, RefusalName::NotAHandle)
-        | (CheckRefusal::CapabilityForged { .. }, RefusalName::CapabilityForged)
-        | (CheckRefusal::LiteralAmbiguous { .. }, RefusalName::LiteralAmbiguous)
-        | (CheckRefusal::CapabilityAmplified(_), RefusalName::CapabilityAmplified)
-        | (CheckRefusal::CapabilityOutsideAuthority { .. }, RefusalName::CapabilityOutsideAuthority)
-        | (CheckRefusal::CapabilityEscaped { .. }, RefusalName::CapabilityEscaped)
-        | (CheckRefusal::CapabilityConsumable(_), RefusalName::CapabilityConsumable)
-        | (CheckRefusal::CapabilityUngranted { .. }, RefusalName::CapabilityUngranted)
-        | (CheckRefusal::FootprintsOverlap { .. }, RefusalName::FootprintsOverlap)
-        | (CheckRefusal::SessionNotEquivalent { .. }, RefusalName::SessionNotEquivalent)
-        | (CheckRefusal::SessionNotSubtype { .. }, RefusalName::SessionNotSubtype)
-        | (CheckRefusal::SessionCodeExpected { .. }, RefusalName::SessionCodeExpected)
-        | (CheckRefusal::OpenSessionPayload { .. }, RefusalName::OpenSessionPayload)
-        | (CheckRefusal::UnassertedLaw { .. }, RefusalName::UnprovenLaw)
-        | (CheckRefusal::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
-        | (CheckRefusal::RideUnsupported { .. }, RefusalName::RideUnsupported)
-        | (CheckRefusal::MultiplicityUnsupported { .. }, RefusalName::MultiplicityUnsupported)
-        | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
-        | (CheckRefusal::DialogueUnmatched { .. }, RefusalName::DialogueUnmatched)
-        | (CheckRefusal::DialogueInverted { .. }, RefusalName::DialogueInverted)
-        | (CheckRefusal::ForwardUnsupported { .. }, RefusalName::ForwardUnsupported)
-        | (CheckRefusal::Boundary { .. }, RefusalName::Boundary)
-    ) && (!matches!(refusal, CheckRefusal::OutOfFragment { .. })
-        || matches!((refusal, ret), (CheckRefusal::OutOfFragment { former, .. },
+        (refusal, ret), (CheckRefusalOf::TypeMismatch(_), RefusalName::TypeMismatch) |
+        (CheckRefusalOf::ShapeMismatch { .. }, RefusalName::ShapeMismatch) |
+        (CheckRefusalOf::NotSynthesisable { .. }, RefusalName::NotSynthesisable) |
+        (CheckRefusalOf::UnknownConstant { .. }, RefusalName::UnknownConstant) |
+        (CheckRefusalOf::OutOfFragment { .. }, RefusalName::OutOfFragment(_)) |
+        (CheckRefusalOf::UnboundIndex { .. }, RefusalName::UnboundIndex) |
+        (CheckRefusalOf::BudgetExceeded { .. }, RefusalName::BudgetExceeded) |
+        (CheckRefusalOf::DanglingNode { .. }, RefusalName::DanglingNode) |
+        (CheckRefusalOf::AdmissionOrder { .. }, RefusalName::AdmissionOrder) |
+        (CheckRefusalOf::MachineInvariant, RefusalName::MachineInvariant) |
+        (CheckRefusalOf::SortMismatch { .. }, RefusalName::SortMismatch) |
+        (CheckRefusalOf::LevelMismatch { .. }, RefusalName::LevelMismatch) |
+        (CheckRefusalOf::DependentBind { .. }, RefusalName::DependentBind) |
+        (CheckRefusalOf::Undecided { .. }, RefusalName::Undecided) |
+        (CheckRefusalOf::FamilyArity { .. }, RefusalName::FamilyArity) |
+        (CheckRefusalOf::FamilyArgumentClassifier { .. },
+        RefusalName::FamilyArgumentClassifier) | (CheckRefusalOf::StaticLambdaArgument { ..
+        }, RefusalName::StaticLambdaArgument) | (CheckRefusalOf::StaticClassifierExpected {
+        .. }, RefusalName::StaticClassifierExpected) | (CheckRefusalOf::PathCode(_), RefusalName::PathCode)
+        | (CheckRefusalOf::NotADataType(_), RefusalName::NotADataType)
+        | (CheckRefusalOf::DataKindNotUniverse(_), RefusalName::DataKindNotUniverse)
+        | (CheckRefusalOf::DataFieldLevel { .. }, RefusalName::DataFieldLevel)
+        | (CheckRefusalOf::RuleNotPresentable { .. }, RefusalName::RuleNotPresentable)
+        | (CheckRefusalOf::RuleNotRespected { .. }, RefusalName::RuleNotRespected)
+        | (CheckRefusalOf::NotApart { .. }, RefusalName::NotApart)
+        | (CheckRefusalOf::LoopNotRespected { .. }, RefusalName::LoopNotRespected)
+        | (CheckRefusalOf::LoopUndecided { .. }, RefusalName::LoopUndecided)
+        | (CheckRefusalOf::AbstractKindNotUniverse(_), RefusalName::AbstractKindNotUniverse)
+        | (CheckRefusalOf::RepresentationAboveKind { .. }, RefusalName::RepresentationAboveKind)
+        | (CheckRefusalOf::NotAnAbstractType(_), RefusalName::NotAnAbstractType)
+        | (CheckRefusalOf::AtomTransport { .. }, RefusalName::AtomTransport)
+        | (CheckRefusalOf::BridgeAtSealedType { .. }, RefusalName::BridgeAtSealedType)
+        | (CheckRefusalOf::SealSiteRepeated(_), RefusalName::SealSiteRepeated)
+        | (CheckRefusalOf::BuiltinRepeated { .. }, RefusalName::BuiltinRepeated)
+        | (CheckRefusalOf::BuiltinMisplaced(_), RefusalName::BuiltinMisplaced)
+        | (CheckRefusalOf::BuiltinNotCanonical { .. }, RefusalName::BuiltinNotCanonical)
+        | (CheckRefusalOf::DataArgumentArity(_), RefusalName::DataArgumentArity)
+        | (CheckRefusalOf::UnknownConstructor { .. }, RefusalName::UnknownConstructor)
+        | (CheckRefusalOf::ConstructorArity(_), RefusalName::ConstructorArity)
+        | (CheckRefusalOf::NonExhaustiveDataCase(_), RefusalName::NonExhaustiveDataCase)
+        | (CheckRefusalOf::UndecidedCoverage(_), RefusalName::UndecidedCoverage)
+        | (CheckRefusalOf::AbsentRecordField(_), RefusalName::AbsentRecordField)
+        | (CheckRefusalOf::AbsentTupleComponent(_), RefusalName::AbsentTupleComponent)
+        | (CheckRefusalOf::MissingRecordField { .. }, RefusalName::MissingRecordField)
+        | (CheckRefusalOf::PatchOutsideBase { .. }, RefusalName::PatchOutsideBase)
+        | (CheckRefusalOf::FixedFieldDiffers { .. }, RefusalName::FixedFieldDiffers)
+        | (CheckRefusalOf::NegativeOccurrence(_), RefusalName::NegativeOccurrence)
+        | (CheckRefusalOf::NestedOccurrence(_), RefusalName::NestedOccurrence)
+        | (CheckRefusalOf::IndexOccurrence(_), RefusalName::IndexOccurrence)
+        | (CheckRefusalOf::NonUniformOccurrence(_), RefusalName::NonUniformOccurrence)
+        | (CheckRefusalOf::CrossBlockReference { .. }, RefusalName::CrossBlockReference)
+        | (CheckRefusalOf::StageNotBelow { .. }, RefusalName::StageNotBelow)
+        | (CheckRefusalOf::StagesDisagree { .. }, RefusalName::StagesDisagree)
+        | (CheckRefusalOf::StageNotCarried { .. }, RefusalName::StageNotCarried)
+        | (CheckRefusalOf::EffectSignatureConflict { .. }, RefusalName::EffectSignatureConflict)
+        | (CheckRefusalOf::UnknownOperation { .. }, RefusalName::UnknownOperation)
+        | (CheckRefusalOf::HandlerCoverage { .. }, RefusalName::HandlerCoverage)
+        | (CheckRefusalOf::HandlerUnlawful { .. }, RefusalName::HandlerUnlawful)
+        | (CheckRefusalOf::ShiftWithoutReset { .. }, RefusalName::ShiftWithoutReset)
+        | (CheckRefusalOf::DependentStack { .. }, RefusalName::DependentStack)
+        | (CheckRefusalOf::EndpointMismatch { .. }, RefusalName::EndpointMismatch)
+        | (CheckRefusalOf::CompoundEndpoint { .. }, RefusalName::CompoundEndpoint)
+        | (CheckRefusalOf::FunextUnsupported { .. }, RefusalName::FunextUnsupported)
+        | (CheckRefusalOf::PointwiseDistinct { .. }, RefusalName::PointwiseDistinct)
+        | (CheckRefusalOf::EquivUnsupported { .. }, RefusalName::EquivUnsupported)
+        | (CheckRefusalOf::UncertifiedStratum { .. }, RefusalName::UncertifiedStratum)
+        | (CheckRefusalOf::OutsideFold { .. }, RefusalName::OutsideFold)
+        | (CheckRefusalOf::RoundTripDistinct { .. }, RefusalName::RoundTripDistinct)
+        | (CheckRefusalOf::NotOver { .. }, RefusalName::NotOver)
+        | (CheckRefusalOf::UaUncertified { stratum: StratumDefect::Degree { .. }, .. }, RefusalName::UncertifiedDegree)
+        | (CheckRefusalOf::UaUncertified { stratum: StratumDefect::Condition { .. }, .. }, RefusalName::UncertifiedCondition)
+        | (CheckRefusalOf::UaUncertified { stratum: StratumDefect::Allowance { .. }, .. }, RefusalName::UncertifiedAllowance)
+        | (CheckRefusalOf::UaUncertified { stratum: StratumDefect::Budget { .. }, .. }, RefusalName::UncertifiedBudget)
+        | (CheckRefusalOf::UaInequivalent { defect: UaDefect::UnknownGenerator { .. }, .. }, RefusalName::UnknownGenerator)
+        | (CheckRefusalOf::UaInequivalent { defect: UaDefect::PastTheBound { .. }, .. }, RefusalName::PastTheBound)
+        | (CheckRefusalOf::UaInequivalent { defect: UaDefect::Cardinality { .. }, .. }, RefusalName::CorollaCardinality)
+        | (CheckRefusalOf::UaInequivalent { defect: UaDefect::Tables { .. }, .. }, RefusalName::CorollaTables)
+        | (CheckRefusalOf::UaInequivalent { defect: UaDefect::NotInverse { .. }, .. }, RefusalName::NotInverse)
+        | (CheckRefusalOf::UaInequivalent { defect: UaDefect::NotNatural { .. }, .. }, RefusalName::NotNatural)
+        | (CheckRefusalOf::UaInequivalent { defect: UaDefect::Stuck { .. }, .. }, RefusalName::TranslatorStuck)
+        | (CheckRefusalOf::ComposeUncertified { .. }, RefusalName::ComposeUncertified)
+        | (CheckRefusalOf::ComposeNotAShape { .. }, RefusalName::ComposeNotAShape)
+        | (CheckRefusalOf::ComposeDoesNotFill { .. }, RefusalName::ComposeDoesNotFill)
+        | (CheckRefusalOf::FillUncertified { .. }, RefusalName::FillUncertified)
+        | (CheckRefusalOf::NoFiller { .. }, RefusalName::NoFiller(FillerAsk::Written))
+        | (CheckRefusalOf::UndischargedLaw { .. }, RefusalName::NoFiller(FillerAsk::Omitted))
+        | (CheckRefusalOf::GeneratorFamilyUnsupported { .. }, RefusalName::GeneratorFamilyUnsupported)
+        | (CheckRefusalOf::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
+        | (CheckRefusalOf::ImplicitUnsolved { .. }, RefusalName::ImplicitUnsolved)
+        | (CheckRefusalOf::ModelUnanswered { .. }, RefusalName::ModelUnanswered)
+        | (CheckRefusalOf::ModelAmbiguous { .. }, RefusalName::ModelAmbiguous)
+        | (CheckRefusalOf::TacticRefused { .. }, RefusalName::TacticRefused)
+        | (CheckRefusalOf::SessionMismatch { defect: ProtocolDefect::Action { .. }, .. }, RefusalName::SessionMismatch)
+        | (CheckRefusalOf::SessionMismatch { defect: ProtocolDefect::Label, .. }, RefusalName::UnofferedLabel)
+        | (CheckRefusalOf::SessionMismatch { defect: ProtocolDefect::Arms, .. }, RefusalName::OfferArms)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::Residue { .. }, .. }, RefusalName::LinearResidue)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::Closed { .. }, .. }, RefusalName::UsedAfterClose)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::UsedTwice { .. }, .. }, RefusalName::EndpointUsedTwice)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::Captured { .. }, .. }, RefusalName::CapturedEndpoint)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::AsValue { .. }, .. }, RefusalName::EndpointAsValue)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::ArmsDisagree { .. }, .. }, RefusalName::ArmsDisagree)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::Unrestricted, .. }, RefusalName::UnrestrictedEndpoint)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::Unbound { .. }, .. }, RefusalName::UnboundEndpoint)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::BufferUnreturned { .. }, .. }, RefusalName::BufferUnreturned)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::BufferReturnedTwice { .. }, .. }, RefusalName::BufferReturnedTwice)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::BufferRead { .. }, .. }, RefusalName::BufferRead)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::ContinuationUnspent { .. }, .. }, RefusalName::ContinuationUnspent)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::ContinuationUsedTwice { .. }, .. }, RefusalName::ContinuationUsedTwice)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::ContinuationCaptured { .. }, .. }, RefusalName::ContinuationCaptured)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::ContinuationAsValue { .. }, .. }, RefusalName::ContinuationAsValue)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::LinearSlotConsumed { .. }, .. }, RefusalName::LinearSlotConsumed)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::LinearSlotUnconsumed { .. }, .. }, RefusalName::LinearSlotUnconsumed)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::ShadowCaptured { .. }, .. }, RefusalName::ShadowCaptured)
+        | (CheckRefusalOf::Linearity { defect: LinearityDefectOf::ComonoidAbsent { .. }, .. }, RefusalName::ComonoidAbsent)
+        | (CheckRefusalOf::Access { defect: AccessDefect::NotHeld, .. }, RefusalName::NotHeld)
+        | (CheckRefusalOf::Access { defect: AccessDefect::Lent, .. }, RefusalName::HeldLent)
+        | (CheckRefusalOf::Access { defect: AccessDefect::HeldCaptured { .. }, .. }, RefusalName::HeldCaptured)
+        | (CheckRefusalOf::Access { defect: AccessDefect::Escaped { .. }, .. }, RefusalName::ViewEscaped)
+        | (CheckRefusalOf::Access { defect: AccessDefect::Unended, .. }, RefusalName::ViewUnended)
+        | (CheckRefusalOf::Access { defect: AccessDefect::Spent, .. }, RefusalName::ViewSpent)
+        | (CheckRefusalOf::Access { defect: AccessDefect::NotAView, .. }, RefusalName::NotAView)
+        | (CheckRefusalOf::Access { defect: AccessDefect::ReadOnly, .. }, RefusalName::ViewReadOnly)
+        | (CheckRefusalOf::Access { defect: AccessDefect::UnwindEffect, .. }, RefusalName::UnwindEffect)
+        | (CheckRefusalOf::Access { defect: AccessDefect::Unindexed, .. }, RefusalName::PlaceUnindexed)
+        | (CheckRefusalOf::Access { defect: AccessDefect::HeldShared, .. }, RefusalName::HeldShared)
+        | (CheckRefusalOf::Access { defect: AccessDefect::HeldCopied, .. }, RefusalName::HeldCopied)
+        | (CheckRefusalOf::Access { defect: AccessDefect::Moved, .. }, RefusalName::ViewMoved)
+        | (CheckRefusalOf::Access { defect: AccessDefect::Kept, .. }, RefusalName::HeldKept)
+        | (CheckRefusalOf::Access { defect: AccessDefect::KeptEscaped, .. }, RefusalName::KeptEscaped)
+        | (CheckRefusalOf::Access { defect: AccessDefect::Consumed, .. }, RefusalName::HeldConsumed)
+        | (CheckRefusalOf::Codata { fault: CodataFault::Undeclared, .. }, RefusalName::CodataUndeclared)
+        | (CheckRefusalOf::Codata { fault: CodataFault::KindNotUniverse, .. }, RefusalName::CodataKindNotUniverse)
+        | (CheckRefusalOf::Codata { fault: CodataFault::WithoutObservations, .. }, RefusalName::CodataWithoutObservations)
+        | (CheckRefusalOf::Codata { fault: CodataFault::Occurrence, .. }, RefusalName::CodataOccurrence)
+        | (CheckRefusalOf::Codata { fault: CodataFault::ObservationLevel, .. }, RefusalName::CodataObservationLevel)
+        | (CheckRefusalOf::Codata { fault: CodataFault::Arity, .. }, RefusalName::CodataArity)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::Immobile { predicate: Predicate::Mobile, .. }, .. }, RefusalName::Immobile(_))
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::Immobile { predicate: Predicate::Open, .. }, .. }, RefusalName::NotOpen(_))
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::CapabilityMissing { .. }, .. }, RefusalName::CapabilityMissing)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::CapabilityCaptured { .. }, .. }, RefusalName::CapabilityCaptured)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::Elsewhere { .. }, .. }, RefusalName::Elsewhere)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::HoldElsewhere { .. }, .. }, RefusalName::HoldElsewhere)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::OpenedElsewhere { .. }, .. }, RefusalName::OpenedElsewhere)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::Unlocated, .. }, RefusalName::Unlocated)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::UndeclaredWorld { .. }, .. }, RefusalName::UndeclaredWorld)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::HostWorldUndeclared, .. }, RefusalName::HostWorldUndeclared)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::MarkUnfounded { .. }, .. }, RefusalName::MarkUnfounded)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::EntryNamed { .. }, .. }, RefusalName::EntryNamed)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::EntryUngranted { .. }, .. }, RefusalName::EntryUngranted)
+        | (CheckRefusalOf::Located { defect: LocatedDefectOf::NotAHandle { .. }, .. }, RefusalName::NotAHandle)
+        | (CheckRefusalOf::CapabilityForged { .. }, RefusalName::CapabilityForged)
+        | (CheckRefusalOf::LiteralAmbiguous { .. }, RefusalName::LiteralAmbiguous)
+        | (CheckRefusalOf::CapabilityAmplified(_), RefusalName::CapabilityAmplified)
+        | (CheckRefusalOf::CapabilityOutsideAuthority { .. }, RefusalName::CapabilityOutsideAuthority)
+        | (CheckRefusalOf::CapabilityEscaped { .. }, RefusalName::CapabilityEscaped)
+        | (CheckRefusalOf::CapabilityConsumable(_), RefusalName::CapabilityConsumable)
+        | (CheckRefusalOf::CapabilityUngranted { .. }, RefusalName::CapabilityUngranted)
+        | (CheckRefusalOf::FootprintsOverlap { .. }, RefusalName::FootprintsOverlap)
+        | (CheckRefusalOf::SessionNotEquivalent { .. }, RefusalName::SessionNotEquivalent)
+        | (CheckRefusalOf::SessionNotSubtype { .. }, RefusalName::SessionNotSubtype)
+        | (CheckRefusalOf::SessionCodeExpected { .. }, RefusalName::SessionCodeExpected)
+        | (CheckRefusalOf::OpenSessionPayload { .. }, RefusalName::OpenSessionPayload)
+        | (CheckRefusalOf::UnassertedLaw { .. }, RefusalName::UnprovenLaw)
+        | (CheckRefusalOf::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
+        | (CheckRefusalOf::RideUnsupported { .. }, RefusalName::RideUnsupported)
+        | (CheckRefusalOf::MultiplicityUnsupported { .. }, RefusalName::MultiplicityUnsupported)
+        | (CheckRefusalOf::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
+        | (CheckRefusalOf::DialogueUnmatched { .. }, RefusalName::DialogueUnmatched)
+        | (CheckRefusalOf::DialogueInverted { .. }, RefusalName::DialogueInverted)
+        | (CheckRefusalOf::ForwardUnsupported { .. }, RefusalName::ForwardUnsupported)
+        | (CheckRefusalOf::Boundary { .. }, RefusalName::Boundary)
+    ) && (!matches!(refusal, CheckRefusalOf::OutOfFragment { .. })
+        || matches!((refusal, ret), (CheckRefusalOf::OutOfFragment { former, .. },
             RefusalName::OutOfFragment(Qualifier::Named(tag))) if tag.0 == former_tag(former).0))
-    && (!matches!(refusal, CheckRefusal::Located { defect: LocatedDefect::Immobile { .. }, .. })
-        || matches!((refusal, ret), (CheckRefusal::Located { defect: LocatedDefect::Immobile { crossed, .. }, .. },
+    && (!matches!(refusal, CheckRefusalOf::Located { defect: LocatedDefectOf::Immobile { .. }, .. })
+        || matches!((refusal, ret), (CheckRefusalOf::Located { defect: LocatedDefectOf::Immobile { crossed, .. }, .. },
             RefusalName::Immobile(read) | RefusalName::NotOpen(read)) if read == CrossingRead::of(crossed)))
 },
 )]
-fn checking_name(refusal: CheckRefusal) -> RefusalName
+fn checking_name<N>(refusal: CheckRefusalOf<N>) -> RefusalName
+where
+    N: Naming,
 {
     match refusal {
-        CheckRefusal::NotADataType(_) => RefusalName::NotADataType,
-        CheckRefusal::DataKindNotUniverse(_) => RefusalName::DataKindNotUniverse,
-        CheckRefusal::DataFieldLevel { .. } => RefusalName::DataFieldLevel,
-        CheckRefusal::RuleNotPresentable { .. } => RefusalName::RuleNotPresentable,
-        CheckRefusal::RuleNotRespected { .. } => RefusalName::RuleNotRespected,
-        CheckRefusal::NotApart { .. } => RefusalName::NotApart,
-        CheckRefusal::LoopNotRespected { .. } => RefusalName::LoopNotRespected,
-        CheckRefusal::LoopUndecided { .. } => RefusalName::LoopUndecided,
-        CheckRefusal::AbstractKindNotUniverse(_) => RefusalName::AbstractKindNotUniverse,
-        CheckRefusal::RepresentationAboveKind { .. } => RefusalName::RepresentationAboveKind,
-        CheckRefusal::NotAnAbstractType(_) => RefusalName::NotAnAbstractType,
-        CheckRefusal::AtomTransport { .. } => RefusalName::AtomTransport,
-        CheckRefusal::BridgeAtSealedType { .. } => RefusalName::BridgeAtSealedType,
-        CheckRefusal::SealSiteRepeated(_) => RefusalName::SealSiteRepeated,
-        CheckRefusal::BuiltinRepeated { .. } => RefusalName::BuiltinRepeated,
-        CheckRefusal::BuiltinMisplaced(_) => RefusalName::BuiltinMisplaced,
-        CheckRefusal::BuiltinNotCanonical { .. } => RefusalName::BuiltinNotCanonical,
-        CheckRefusal::DataArgumentArity(_) => RefusalName::DataArgumentArity,
-        CheckRefusal::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
-        CheckRefusal::ConstructorArity(_) => RefusalName::ConstructorArity,
-        CheckRefusal::NonExhaustiveDataCase(_) => RefusalName::NonExhaustiveDataCase,
-        CheckRefusal::UndecidedCoverage(_) => RefusalName::UndecidedCoverage,
-        CheckRefusal::AbsentRecordField(_) => RefusalName::AbsentRecordField,
-        CheckRefusal::AbsentTupleComponent(_) => RefusalName::AbsentTupleComponent,
-        CheckRefusal::MissingRecordField { .. } => RefusalName::MissingRecordField,
-        CheckRefusal::PatchOutsideBase { .. } => RefusalName::PatchOutsideBase,
-        CheckRefusal::FixedFieldDiffers { .. } => RefusalName::FixedFieldDiffers,
-        CheckRefusal::UnknownOperation { .. } => RefusalName::UnknownOperation,
-        CheckRefusal::HandlerCoverage { .. } => RefusalName::HandlerCoverage,
-        CheckRefusal::HandlerUnlawful { .. } => RefusalName::HandlerUnlawful,
-        CheckRefusal::ShiftWithoutReset { .. } => RefusalName::ShiftWithoutReset,
-        CheckRefusal::DependentStack { .. } => RefusalName::DependentStack,
-        CheckRefusal::EffectSignatureConflict { .. } => RefusalName::EffectSignatureConflict,
-        CheckRefusal::PathCode(_) => RefusalName::PathCode,
-        CheckRefusal::EndpointMismatch { .. } => RefusalName::EndpointMismatch,
-        CheckRefusal::CompoundEndpoint { .. } => RefusalName::CompoundEndpoint,
-        CheckRefusal::FunextUnsupported { .. } => RefusalName::FunextUnsupported,
-        CheckRefusal::PointwiseDistinct { .. } => RefusalName::PointwiseDistinct,
-        CheckRefusal::EquivUnsupported { .. } => RefusalName::EquivUnsupported,
-        CheckRefusal::UncertifiedStratum { .. } => RefusalName::UncertifiedStratum,
-        CheckRefusal::OutsideFold { .. } => RefusalName::OutsideFold,
-        CheckRefusal::RoundTripDistinct { .. } => RefusalName::RoundTripDistinct,
-        CheckRefusal::NotOver { .. } => RefusalName::NotOver,
-        CheckRefusal::UaUncertified { stratum, .. } => match stratum {
+        CheckRefusalOf::NotADataType(_) => RefusalName::NotADataType,
+        CheckRefusalOf::DataKindNotUniverse(_) => RefusalName::DataKindNotUniverse,
+        CheckRefusalOf::DataFieldLevel { .. } => RefusalName::DataFieldLevel,
+        CheckRefusalOf::RuleNotPresentable { .. } => RefusalName::RuleNotPresentable,
+        CheckRefusalOf::RuleNotRespected { .. } => RefusalName::RuleNotRespected,
+        CheckRefusalOf::NotApart { .. } => RefusalName::NotApart,
+        CheckRefusalOf::LoopNotRespected { .. } => RefusalName::LoopNotRespected,
+        CheckRefusalOf::LoopUndecided { .. } => RefusalName::LoopUndecided,
+        CheckRefusalOf::AbstractKindNotUniverse(_) => RefusalName::AbstractKindNotUniverse,
+        CheckRefusalOf::RepresentationAboveKind { .. } => RefusalName::RepresentationAboveKind,
+        CheckRefusalOf::NotAnAbstractType(_) => RefusalName::NotAnAbstractType,
+        CheckRefusalOf::AtomTransport { .. } => RefusalName::AtomTransport,
+        CheckRefusalOf::BridgeAtSealedType { .. } => RefusalName::BridgeAtSealedType,
+        CheckRefusalOf::SealSiteRepeated(_) => RefusalName::SealSiteRepeated,
+        CheckRefusalOf::BuiltinRepeated { .. } => RefusalName::BuiltinRepeated,
+        CheckRefusalOf::BuiltinMisplaced(_) => RefusalName::BuiltinMisplaced,
+        CheckRefusalOf::BuiltinNotCanonical { .. } => RefusalName::BuiltinNotCanonical,
+        CheckRefusalOf::DataArgumentArity(_) => RefusalName::DataArgumentArity,
+        CheckRefusalOf::UnknownConstructor { .. } => RefusalName::UnknownConstructor,
+        CheckRefusalOf::ConstructorArity(_) => RefusalName::ConstructorArity,
+        CheckRefusalOf::NonExhaustiveDataCase(_) => RefusalName::NonExhaustiveDataCase,
+        CheckRefusalOf::UndecidedCoverage(_) => RefusalName::UndecidedCoverage,
+        CheckRefusalOf::AbsentRecordField(_) => RefusalName::AbsentRecordField,
+        CheckRefusalOf::AbsentTupleComponent(_) => RefusalName::AbsentTupleComponent,
+        CheckRefusalOf::MissingRecordField { .. } => RefusalName::MissingRecordField,
+        CheckRefusalOf::PatchOutsideBase { .. } => RefusalName::PatchOutsideBase,
+        CheckRefusalOf::FixedFieldDiffers { .. } => RefusalName::FixedFieldDiffers,
+        CheckRefusalOf::UnknownOperation { .. } => RefusalName::UnknownOperation,
+        CheckRefusalOf::HandlerCoverage { .. } => RefusalName::HandlerCoverage,
+        CheckRefusalOf::HandlerUnlawful { .. } => RefusalName::HandlerUnlawful,
+        CheckRefusalOf::ShiftWithoutReset { .. } => RefusalName::ShiftWithoutReset,
+        CheckRefusalOf::DependentStack { .. } => RefusalName::DependentStack,
+        CheckRefusalOf::EffectSignatureConflict { .. } => RefusalName::EffectSignatureConflict,
+        CheckRefusalOf::PathCode(_) => RefusalName::PathCode,
+        CheckRefusalOf::EndpointMismatch { .. } => RefusalName::EndpointMismatch,
+        CheckRefusalOf::CompoundEndpoint { .. } => RefusalName::CompoundEndpoint,
+        CheckRefusalOf::FunextUnsupported { .. } => RefusalName::FunextUnsupported,
+        CheckRefusalOf::PointwiseDistinct { .. } => RefusalName::PointwiseDistinct,
+        CheckRefusalOf::EquivUnsupported { .. } => RefusalName::EquivUnsupported,
+        CheckRefusalOf::UncertifiedStratum { .. } => RefusalName::UncertifiedStratum,
+        CheckRefusalOf::OutsideFold { .. } => RefusalName::OutsideFold,
+        CheckRefusalOf::RoundTripDistinct { .. } => RefusalName::RoundTripDistinct,
+        CheckRefusalOf::NotOver { .. } => RefusalName::NotOver,
+        CheckRefusalOf::UaUncertified { stratum, .. } => match stratum {
             StratumDefect::Degree { .. } => RefusalName::UncertifiedDegree,
             StratumDefect::Condition { .. } => RefusalName::UncertifiedCondition,
             StratumDefect::Allowance { .. } => RefusalName::UncertifiedAllowance,
             StratumDefect::Budget { .. } => RefusalName::UncertifiedBudget,
         },
-        CheckRefusal::UaInequivalent { defect, .. } => match defect {
+        CheckRefusalOf::UaInequivalent { defect, .. } => match defect {
             UaDefect::UnknownGenerator { .. } => RefusalName::UnknownGenerator,
             UaDefect::PastTheBound { .. } => RefusalName::PastTheBound,
             UaDefect::Cardinality { .. } => RefusalName::CorollaCardinality,
@@ -3298,49 +3335,53 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             UaDefect::NotNatural { .. } => RefusalName::NotNatural,
             UaDefect::Stuck { .. } => RefusalName::TranslatorStuck,
         },
-        CheckRefusal::ComposeUncertified { .. } => RefusalName::ComposeUncertified,
-        CheckRefusal::ComposeNotAShape { .. } => RefusalName::ComposeNotAShape,
-        CheckRefusal::ComposeDoesNotFill { .. } => RefusalName::ComposeDoesNotFill,
-        CheckRefusal::FillUncertified { .. } => RefusalName::FillUncertified,
-        CheckRefusal::NoFiller { .. } => RefusalName::NoFiller(FillerAsk::Written),
-        CheckRefusal::UndischargedLaw { .. } => RefusalName::NoFiller(FillerAsk::Omitted),
-        CheckRefusal::GeneratorFamilyUnsupported { .. } => RefusalName::GeneratorFamilyUnsupported,
-        CheckRefusal::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
-        CheckRefusal::ImplicitUnsolved { .. } => RefusalName::ImplicitUnsolved,
-        CheckRefusal::ModelUnanswered { .. } => RefusalName::ModelUnanswered,
-        CheckRefusal::ModelAmbiguous { .. } => RefusalName::ModelAmbiguous,
-        CheckRefusal::TacticRefused { .. } => RefusalName::TacticRefused,
-        CheckRefusal::SessionMismatch { defect, .. } => match defect {
+        CheckRefusalOf::ComposeUncertified { .. } => RefusalName::ComposeUncertified,
+        CheckRefusalOf::ComposeNotAShape { .. } => RefusalName::ComposeNotAShape,
+        CheckRefusalOf::ComposeDoesNotFill { .. } => RefusalName::ComposeDoesNotFill,
+        CheckRefusalOf::FillUncertified { .. } => RefusalName::FillUncertified,
+        CheckRefusalOf::NoFiller { .. } => RefusalName::NoFiller(FillerAsk::Written),
+        CheckRefusalOf::UndischargedLaw { .. } => RefusalName::NoFiller(FillerAsk::Omitted),
+        CheckRefusalOf::GeneratorFamilyUnsupported { .. } => {
+            RefusalName::GeneratorFamilyUnsupported
+        },
+        CheckRefusalOf::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
+        CheckRefusalOf::ImplicitUnsolved { .. } => RefusalName::ImplicitUnsolved,
+        CheckRefusalOf::ModelUnanswered { .. } => RefusalName::ModelUnanswered,
+        CheckRefusalOf::ModelAmbiguous { .. } => RefusalName::ModelAmbiguous,
+        CheckRefusalOf::TacticRefused { .. } => RefusalName::TacticRefused,
+        CheckRefusalOf::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { .. } => RefusalName::SessionMismatch,
             ProtocolDefect::Label => RefusalName::UnofferedLabel,
             ProtocolDefect::Arms => RefusalName::OfferArms,
         },
-        CheckRefusal::CapabilityForged { .. } => RefusalName::CapabilityForged,
-        CheckRefusal::LiteralAmbiguous { .. } => RefusalName::LiteralAmbiguous,
-        CheckRefusal::CapabilityAmplified(_) => RefusalName::CapabilityAmplified,
-        CheckRefusal::CapabilityOutsideAuthority { .. } => RefusalName::CapabilityOutsideAuthority,
-        CheckRefusal::Linearity { defect, .. } => match defect {
-            LinearityDefect::Residue { .. } => RefusalName::LinearResidue,
-            LinearityDefect::Closed { .. } => RefusalName::UsedAfterClose,
-            LinearityDefect::UsedTwice { .. } => RefusalName::EndpointUsedTwice,
-            LinearityDefect::Captured { .. } => RefusalName::CapturedEndpoint,
-            LinearityDefect::AsValue { .. } => RefusalName::EndpointAsValue,
-            LinearityDefect::ArmsDisagree { .. } => RefusalName::ArmsDisagree,
-            LinearityDefect::Unrestricted => RefusalName::UnrestrictedEndpoint,
-            LinearityDefect::Unbound { .. } => RefusalName::UnboundEndpoint,
-            LinearityDefect::BufferUnreturned { .. } => RefusalName::BufferUnreturned,
-            LinearityDefect::BufferReturnedTwice { .. } => RefusalName::BufferReturnedTwice,
-            LinearityDefect::BufferRead { .. } => RefusalName::BufferRead,
-            LinearityDefect::ContinuationUnspent { .. } => RefusalName::ContinuationUnspent,
-            LinearityDefect::ContinuationUsedTwice { .. } => RefusalName::ContinuationUsedTwice,
-            LinearityDefect::ContinuationCaptured { .. } => RefusalName::ContinuationCaptured,
-            LinearityDefect::ContinuationAsValue { .. } => RefusalName::ContinuationAsValue,
-            LinearityDefect::LinearSlotConsumed { .. } => RefusalName::LinearSlotConsumed,
-            LinearityDefect::LinearSlotUnconsumed { .. } => RefusalName::LinearSlotUnconsumed,
-            LinearityDefect::ShadowCaptured { .. } => RefusalName::ShadowCaptured,
-            LinearityDefect::ComonoidAbsent { .. } => RefusalName::ComonoidAbsent,
+        CheckRefusalOf::CapabilityForged { .. } => RefusalName::CapabilityForged,
+        CheckRefusalOf::LiteralAmbiguous { .. } => RefusalName::LiteralAmbiguous,
+        CheckRefusalOf::CapabilityAmplified(_) => RefusalName::CapabilityAmplified,
+        CheckRefusalOf::CapabilityOutsideAuthority { .. } => {
+            RefusalName::CapabilityOutsideAuthority
         },
-        CheckRefusal::Access { defect, .. } => match defect {
+        CheckRefusalOf::Linearity { defect, .. } => match defect {
+            LinearityDefectOf::Residue { .. } => RefusalName::LinearResidue,
+            LinearityDefectOf::Closed { .. } => RefusalName::UsedAfterClose,
+            LinearityDefectOf::UsedTwice { .. } => RefusalName::EndpointUsedTwice,
+            LinearityDefectOf::Captured { .. } => RefusalName::CapturedEndpoint,
+            LinearityDefectOf::AsValue { .. } => RefusalName::EndpointAsValue,
+            LinearityDefectOf::ArmsDisagree { .. } => RefusalName::ArmsDisagree,
+            LinearityDefectOf::Unrestricted => RefusalName::UnrestrictedEndpoint,
+            LinearityDefectOf::Unbound { .. } => RefusalName::UnboundEndpoint,
+            LinearityDefectOf::BufferUnreturned { .. } => RefusalName::BufferUnreturned,
+            LinearityDefectOf::BufferReturnedTwice { .. } => RefusalName::BufferReturnedTwice,
+            LinearityDefectOf::BufferRead { .. } => RefusalName::BufferRead,
+            LinearityDefectOf::ContinuationUnspent { .. } => RefusalName::ContinuationUnspent,
+            LinearityDefectOf::ContinuationUsedTwice { .. } => RefusalName::ContinuationUsedTwice,
+            LinearityDefectOf::ContinuationCaptured { .. } => RefusalName::ContinuationCaptured,
+            LinearityDefectOf::ContinuationAsValue { .. } => RefusalName::ContinuationAsValue,
+            LinearityDefectOf::LinearSlotConsumed { .. } => RefusalName::LinearSlotConsumed,
+            LinearityDefectOf::LinearSlotUnconsumed { .. } => RefusalName::LinearSlotUnconsumed,
+            LinearityDefectOf::ShadowCaptured { .. } => RefusalName::ShadowCaptured,
+            LinearityDefectOf::ComonoidAbsent { .. } => RefusalName::ComonoidAbsent,
+        },
+        CheckRefusalOf::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => RefusalName::NotHeld,
             AccessDefect::Lent => RefusalName::HeldLent,
             AccessDefect::HeldCaptured { .. } => RefusalName::HeldCaptured,
@@ -3358,7 +3399,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             AccessDefect::KeptEscaped => RefusalName::KeptEscaped,
             AccessDefect::Consumed => RefusalName::HeldConsumed,
         },
-        CheckRefusal::Codata { fault, .. } => match fault {
+        CheckRefusalOf::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => RefusalName::CodataUndeclared,
             CodataFault::KindNotUniverse => RefusalName::CodataKindNotUniverse,
             CodataFault::WithoutObservations => RefusalName::CodataWithoutObservations,
@@ -3366,75 +3407,75 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
             CodataFault::ObservationLevel => RefusalName::CodataObservationLevel,
             CodataFault::Arity => RefusalName::CodataArity,
         },
-        CheckRefusal::Located { defect, .. } => match defect {
-            LocatedDefect::Immobile {
+        CheckRefusalOf::Located { defect, .. } => match defect {
+            LocatedDefectOf::Immobile {
                 predicate: Predicate::Mobile,
                 crossed,
                 ..
             } => RefusalName::Immobile(CrossingRead::of(crossed)),
-            LocatedDefect::Immobile {
+            LocatedDefectOf::Immobile {
                 predicate: Predicate::Open,
                 crossed,
                 ..
             } => RefusalName::NotOpen(CrossingRead::of(crossed)),
-            LocatedDefect::CapabilityMissing { .. } => RefusalName::CapabilityMissing,
-            LocatedDefect::CapabilityCaptured { .. } => RefusalName::CapabilityCaptured,
-            LocatedDefect::Elsewhere { .. } => RefusalName::Elsewhere,
-            LocatedDefect::HoldElsewhere { .. } => RefusalName::HoldElsewhere,
-            LocatedDefect::OpenedElsewhere { .. } => RefusalName::OpenedElsewhere,
-            LocatedDefect::Unlocated => RefusalName::Unlocated,
-            LocatedDefect::UndeclaredWorld { .. } => RefusalName::UndeclaredWorld,
-            LocatedDefect::HostWorldUndeclared => RefusalName::HostWorldUndeclared,
-            LocatedDefect::MarkUnfounded { .. } => RefusalName::MarkUnfounded,
-            LocatedDefect::EntryNamed { .. } => RefusalName::EntryNamed,
-            LocatedDefect::EntryUngranted { .. } => RefusalName::EntryUngranted,
-            LocatedDefect::NotAHandle { .. } => RefusalName::NotAHandle,
+            LocatedDefectOf::CapabilityMissing { .. } => RefusalName::CapabilityMissing,
+            LocatedDefectOf::CapabilityCaptured { .. } => RefusalName::CapabilityCaptured,
+            LocatedDefectOf::Elsewhere { .. } => RefusalName::Elsewhere,
+            LocatedDefectOf::HoldElsewhere { .. } => RefusalName::HoldElsewhere,
+            LocatedDefectOf::OpenedElsewhere { .. } => RefusalName::OpenedElsewhere,
+            LocatedDefectOf::Unlocated => RefusalName::Unlocated,
+            LocatedDefectOf::UndeclaredWorld { .. } => RefusalName::UndeclaredWorld,
+            LocatedDefectOf::HostWorldUndeclared => RefusalName::HostWorldUndeclared,
+            LocatedDefectOf::MarkUnfounded { .. } => RefusalName::MarkUnfounded,
+            LocatedDefectOf::EntryNamed { .. } => RefusalName::EntryNamed,
+            LocatedDefectOf::EntryUngranted { .. } => RefusalName::EntryUngranted,
+            LocatedDefectOf::NotAHandle { .. } => RefusalName::NotAHandle,
         },
-        CheckRefusal::CapabilityEscaped { .. } => RefusalName::CapabilityEscaped,
-        CheckRefusal::CapabilityConsumable(_) => RefusalName::CapabilityConsumable,
-        CheckRefusal::CapabilityUngranted { .. } => RefusalName::CapabilityUngranted,
-        CheckRefusal::FootprintsOverlap { .. } => RefusalName::FootprintsOverlap,
-        CheckRefusal::SessionNotEquivalent { .. } => RefusalName::SessionNotEquivalent,
-        CheckRefusal::SessionNotSubtype { .. } => RefusalName::SessionNotSubtype,
-        CheckRefusal::SessionCodeExpected { .. } => RefusalName::SessionCodeExpected,
-        CheckRefusal::OpenSessionPayload { .. } => RefusalName::OpenSessionPayload,
-        CheckRefusal::UnassertedLaw { .. } => RefusalName::UnprovenLaw,
-        CheckRefusal::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
-        CheckRefusal::RideUnsupported { .. } => RefusalName::RideUnsupported,
-        CheckRefusal::MultiplicityUnsupported { .. } => RefusalName::MultiplicityUnsupported,
-        CheckRefusal::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,
-        CheckRefusal::DialogueUnmatched { .. } => RefusalName::DialogueUnmatched,
-        CheckRefusal::DialogueInverted { .. } => RefusalName::DialogueInverted,
-        CheckRefusal::ForwardUnsupported { .. } => RefusalName::ForwardUnsupported,
-        CheckRefusal::Boundary { .. } => RefusalName::Boundary,
-        CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
-        CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
-        CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,
-        CheckRefusal::UnknownConstant { .. } => RefusalName::UnknownConstant,
-        CheckRefusal::OutOfFragment { former, .. } => {
+        CheckRefusalOf::CapabilityEscaped { .. } => RefusalName::CapabilityEscaped,
+        CheckRefusalOf::CapabilityConsumable(_) => RefusalName::CapabilityConsumable,
+        CheckRefusalOf::CapabilityUngranted { .. } => RefusalName::CapabilityUngranted,
+        CheckRefusalOf::FootprintsOverlap { .. } => RefusalName::FootprintsOverlap,
+        CheckRefusalOf::SessionNotEquivalent { .. } => RefusalName::SessionNotEquivalent,
+        CheckRefusalOf::SessionNotSubtype { .. } => RefusalName::SessionNotSubtype,
+        CheckRefusalOf::SessionCodeExpected { .. } => RefusalName::SessionCodeExpected,
+        CheckRefusalOf::OpenSessionPayload { .. } => RefusalName::OpenSessionPayload,
+        CheckRefusalOf::UnassertedLaw { .. } => RefusalName::UnprovenLaw,
+        CheckRefusalOf::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
+        CheckRefusalOf::RideUnsupported { .. } => RefusalName::RideUnsupported,
+        CheckRefusalOf::MultiplicityUnsupported { .. } => RefusalName::MultiplicityUnsupported,
+        CheckRefusalOf::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,
+        CheckRefusalOf::DialogueUnmatched { .. } => RefusalName::DialogueUnmatched,
+        CheckRefusalOf::DialogueInverted { .. } => RefusalName::DialogueInverted,
+        CheckRefusalOf::ForwardUnsupported { .. } => RefusalName::ForwardUnsupported,
+        CheckRefusalOf::Boundary { .. } => RefusalName::Boundary,
+        CheckRefusalOf::TypeMismatch(_) => RefusalName::TypeMismatch,
+        CheckRefusalOf::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
+        CheckRefusalOf::NotSynthesisable { .. } => RefusalName::NotSynthesisable,
+        CheckRefusalOf::UnknownConstant { .. } => RefusalName::UnknownConstant,
+        CheckRefusalOf::OutOfFragment { former, .. } => {
             RefusalName::OutOfFragment(Qualifier::Named(former_tag(former)))
         },
-        CheckRefusal::UnboundIndex { .. } => RefusalName::UnboundIndex,
-        CheckRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
-        CheckRefusal::DanglingNode { .. } => RefusalName::DanglingNode,
-        CheckRefusal::AdmissionOrder { .. } => RefusalName::AdmissionOrder,
-        CheckRefusal::MachineInvariant => RefusalName::MachineInvariant,
-        CheckRefusal::SortMismatch { .. } => RefusalName::SortMismatch,
-        CheckRefusal::LevelMismatch { .. } => RefusalName::LevelMismatch,
-        CheckRefusal::DependentBind { .. } => RefusalName::DependentBind,
-        CheckRefusal::Undecided { .. } => RefusalName::Undecided,
-        CheckRefusal::FamilyArity { .. } => RefusalName::FamilyArity,
-        CheckRefusal::FamilyArgumentClassifier { .. } => RefusalName::FamilyArgumentClassifier,
-        CheckRefusal::StaticLambdaArgument { .. } => RefusalName::StaticLambdaArgument,
-        CheckRefusal::StaticClassifierExpected { .. } => RefusalName::StaticClassifierExpected,
-        CheckRefusal::NegativeOccurrence(_) => RefusalName::NegativeOccurrence,
-        CheckRefusal::NestedOccurrence(_) => RefusalName::NestedOccurrence,
-        CheckRefusal::IndexOccurrence(_) => RefusalName::IndexOccurrence,
-        CheckRefusal::NonUniformOccurrence(_) => RefusalName::NonUniformOccurrence,
-        CheckRefusal::CrossBlockReference { .. } => RefusalName::CrossBlockReference,
-        CheckRefusal::StageNotBelow { .. } => RefusalName::StageNotBelow,
-        CheckRefusal::StagesDisagree { .. } => RefusalName::StagesDisagree,
-        CheckRefusal::StageNotCarried { .. } => RefusalName::StageNotCarried,
+        CheckRefusalOf::UnboundIndex { .. } => RefusalName::UnboundIndex,
+        CheckRefusalOf::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
+        CheckRefusalOf::DanglingNode { .. } => RefusalName::DanglingNode,
+        CheckRefusalOf::AdmissionOrder { .. } => RefusalName::AdmissionOrder,
+        CheckRefusalOf::MachineInvariant => RefusalName::MachineInvariant,
+        CheckRefusalOf::SortMismatch { .. } => RefusalName::SortMismatch,
+        CheckRefusalOf::LevelMismatch { .. } => RefusalName::LevelMismatch,
+        CheckRefusalOf::DependentBind { .. } => RefusalName::DependentBind,
+        CheckRefusalOf::Undecided { .. } => RefusalName::Undecided,
+        CheckRefusalOf::FamilyArity { .. } => RefusalName::FamilyArity,
+        CheckRefusalOf::FamilyArgumentClassifier { .. } => RefusalName::FamilyArgumentClassifier,
+        CheckRefusalOf::StaticLambdaArgument { .. } => RefusalName::StaticLambdaArgument,
+        CheckRefusalOf::StaticClassifierExpected { .. } => RefusalName::StaticClassifierExpected,
+        CheckRefusalOf::NegativeOccurrence(_) => RefusalName::NegativeOccurrence,
+        CheckRefusalOf::NestedOccurrence(_) => RefusalName::NestedOccurrence,
+        CheckRefusalOf::IndexOccurrence(_) => RefusalName::IndexOccurrence,
+        CheckRefusalOf::NonUniformOccurrence(_) => RefusalName::NonUniformOccurrence,
+        CheckRefusalOf::CrossBlockReference { .. } => RefusalName::CrossBlockReference,
+        CheckRefusalOf::StageNotBelow { .. } => RefusalName::StageNotBelow,
+        CheckRefusalOf::StagesDisagree { .. } => RefusalName::StagesDisagree,
+        CheckRefusalOf::StageNotCarried { .. } => RefusalName::StageNotCarried,
     }
 }
 

@@ -119,6 +119,9 @@ impl Naming
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the names of the binders the module writes, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a binder or use left out spells `?` where a node
     ///   under it is spelled, which the test fails on.
@@ -753,6 +756,9 @@ pub fn named_forms<'source>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the spelled model type, diagnostic
 #[inline]
 #[must_use]
 pub fn modelled(model: &WrittenModel) -> Modelled<'_>
@@ -780,6 +786,9 @@ pub fn modelled(model: &WrittenModel) -> Modelled<'_>
 /// - ensures: every list keeps its entries in order and grows only at its end,
 ///   by a copy whose source it holds and which it held no entry for.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the name each carried node takes, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a copy, a copy of a copy, a copy already labelled and a

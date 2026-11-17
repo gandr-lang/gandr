@@ -160,6 +160,21 @@ fn noop_edit_adopts_everything()
     );
 }
 
+/// An identity edit judges a codata declaration and an item that reads a
+/// codata type again, and adopts the rest (#7403). A codata application has
+/// content for its key, but its declaration has none, so reuse reads the
+/// reader as opaque, as it does where the application has no content.
+#[test]
+fn a_codata_reader_is_judged_again_7403()
+{
+    let source = include_str!("incremental/fixtures/a-codata-reader-is-judged-again-7403.gandr");
+    assert_eq!(
+        gate(source, source),
+        vec![Adoption::Judged, Adoption::Judged, Adoption::Adopted],
+        "`Stream` and `peek` are judged again; `plain` is adopted"
+    );
+}
+
 #[test]
 fn append_sequence_counts_reused_prefixes()
 {

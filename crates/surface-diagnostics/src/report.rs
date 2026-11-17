@@ -104,10 +104,11 @@ use core::fmt;
 use std::path::Path;
 
 use anodized::spec;
-use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckRefusalOf;
 use gandr_core_checker::ExpectedShape;
-use gandr_core_checker::Failure;
+use gandr_core_checker::FailureOf;
 use gandr_core_checker::FrameRole;
+use gandr_core_checker::Keyed;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
 use gandr_core_term::effect::Purity;
@@ -123,7 +124,6 @@ use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Omitted;
-use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::RunOperand;
 use gandr_surface_lowering::RunSpelling;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
@@ -140,6 +140,8 @@ use crate::advice::help;
 use crate::culprit::Culprit;
 use crate::frame::contexts;
 use crate::lint::Lint;
+use crate::location::Located;
+use crate::location::locating;
 use crate::locus::Annotation;
 use crate::locus::Annotations;
 use crate::locus::Checked;
@@ -168,6 +170,8 @@ use crate::model::producer;
 use crate::model::repair;
 use crate::obstruction::PartingPair;
 use crate::obstruction::obstructed;
+use crate::spelled::SpelledLoop;
+use crate::spelled::SpelledNode;
 use crate::spelled::Spellings;
 use crate::spelled::kept;
 
@@ -414,12 +418,13 @@ pub enum Subject<'step>
         declaration: &'step DeclarationReport<'step>,
         /// The refusal it produced.
         refusal: Refusal<'step>,
-        /// The table its core nodes are located through.
-        origins: &'step OriginTable,
+        /// What the composition located of its checker refusal, through the
+        /// origin table.
+        located: Maybe<&'step Located, locating::Absent>,
         /// The spellings of the types it and its failure name.
         spellings: &'step Spellings,
         /// The failure the checking machine kept, when it refused the body.
-        failure: Maybe<&'step Failure, kept::Absent>,
+        failure: Maybe<&'step FailureOf<Keyed>, kept::Absent>,
         /// The unsettled declaration the refusal names, when it names one: the
         /// refusal follows from that declaration's and is a note, not an
         /// error of its own.
@@ -531,6 +536,9 @@ impl Report<'_>
     /// # Specification
     /// trivial.
     ///
+    /// # Cost
+    /// - allocation: the diagnostic's text and annotations, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a term on one line and over two, and a lint finding
     ///   inside the text and past it, observe the expression and fix guards.
@@ -570,11 +578,17 @@ impl Report<'_>
         }
         let (contexts, hypotheses) = match self.subject {
             Subject::Refused {
-                origins,
+                declaration,
+                located: Maybe::Present(located),
                 spellings,
                 failure: Maybe::Present(failure),
                 ..
-            } => contexts(failure, origins, spellings, self.text, span),
+            } => contexts(
+                failure,
+                located,
+                (spellings, spellings.place_of(declaration.constant())),
+                span,
+            ),
             Subject::Refused { .. }
             | Subject::Unsettled { .. }
             | Subject::Goal(_)
@@ -589,7 +603,7 @@ impl Report<'_>
         let lambda_tail_help = 'help: {
             let Subject::Refused {
                 refusal:
-                    Refusal::Checking(CheckRefusal::ShapeMismatch {
+                    Refusal::Checking(CheckRefusalOf::ShapeMismatch {
                         wanted: ExpectedShape::Arrow,
                         ..
                     }),
@@ -649,15 +663,24 @@ impl Report<'_>
         };
         let notes = match self.subject {
             Subject::Refused {
-                refusal: Refusal::Checking(CheckRefusal::LoopNotRespected { left, right, .. }),
+                declaration,
+                refusal: Refusal::Checking(CheckRefusalOf::LoopNotRespected { left, right, .. }),
                 spellings,
                 ..
-            } => match (spellings.loop_side(left), spellings.loop_side(right)) {
-                (Maybe::Present(left), Maybe::Present(right)) => Vec::from([
-                    LoopSide::Carried.noted(left),
-                    LoopSide::AtPoint.noted(right),
-                ]),
-                _ => Vec::new(),
+            } => {
+                let place = spellings.place_of(declaration.constant());
+                let side = |node| SpelledLoop { node, place };
+                let sides = (
+                    spellings.loop_side(side(left)),
+                    spellings.loop_side(side(right)),
+                );
+                match sides {
+                    (Maybe::Present(left), Maybe::Present(right)) => Vec::from([
+                        LoopSide::Carried.noted(left),
+                        LoopSide::AtPoint.noted(right),
+                    ]),
+                    _ => Vec::new(),
+                }
             },
             Subject::Refused { .. }
             | Subject::Unsettled { .. }
@@ -763,10 +786,10 @@ impl Report<'_>
                     } => Maybe::Absent(help::Absent::Upstream),
                     Subject::Refused {
                         refusal:
-                            refusal @ Refusal::Checking(CheckRefusal::ImplicitUnsolved { at, .. }),
-                        origins,
+                            refusal @ Refusal::Checking(CheckRefusalOf::ImplicitUnsolved { .. }),
+                        located: Maybe::Present(located),
                         ..
-                    } => match origins.omitted(at) {
+                    } => match located.omitted() {
                         Maybe::Present(
                             &Omitted::Implicit {
                                 ref function,
@@ -877,7 +900,7 @@ impl Report<'_>
     /// - requires: `span` and `contexts` are the report's primary span and
     ///   contexts.
     /// - ensures: when the subject is a refused declaration that rests on no
-    ///   upstream refusal, its refusal is a [`CheckRefusal::ShapeMismatch`]
+    ///   upstream refusal, its refusal is a [`CheckRefusalOf::ShapeMismatch`]
     ///   that wants a thunk or an arrow, its innermost context synthesises the
     ///   head of an application that starts at `span` and runs past it, and
     ///   `span` lies on one line: the repair [`juxtaposed`] names at `span`,
@@ -886,6 +909,9 @@ impl Report<'_>
     /// - panics: none.
     /// - executable: none — the clause restates the match the body makes on the
     ///   subject and the innermost context.
+    ///
+    /// # Cost
+    /// - allocation: the help text and the repair, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two list items with no `,` between them name the `,`;
@@ -900,7 +926,7 @@ impl Report<'_>
     {
         let Subject::Refused {
             refusal:
-                Refusal::Checking(CheckRefusal::ShapeMismatch {
+                Refusal::Checking(CheckRefusalOf::ShapeMismatch {
                     wanted: ExpectedShape::Thunk | ExpectedShape::Arrow,
                     ..
                 }),
@@ -1079,15 +1105,22 @@ impl Report<'_>
     ///   compares none.
     /// - witness: `tests::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match self.subject {
-        Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
+        Subject::Refused { declaration, refusal, spellings, .. } => ret == Comparison::of(refusal, spellings, spellings.place_of(declaration.constant())),
         Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) | Subject::InferredExit(_) | Subject::InferredRun(_) | Subject::Deprecated(_) | Subject::Ledger { .. } => ret == Comparison::none(),
     })]
     fn comparison(&self) -> Comparison<'_>
     {
         match self.subject {
             Subject::Refused {
-                refusal, spellings, ..
-            } => Comparison::of(refusal, spellings),
+                declaration,
+                refusal,
+                spellings,
+                ..
+            } => Comparison::of(
+                refusal,
+                spellings,
+                spellings.place_of(declaration.constant()),
+            ),
             Subject::Unsettled { .. }
             | Subject::Goal(_)
             | Subject::Source(_)
@@ -1142,11 +1175,8 @@ impl Report<'_>
     {
         let annotations = match self.subject {
             Subject::Refused {
-                declaration,
-                refusal,
-                origins,
-                ..
-            } => Annotations::refusal(refusal, declaration.span(), origins),
+                refusal, located, ..
+            } => Annotations::reported(refusal, located),
             Subject::Unsettled {
                 declaration,
                 unsettlement: Unsettlement::Obligations,
@@ -1327,6 +1357,9 @@ impl fmt::Display for TitleText<'_>
     /// - panics: none.
     /// - executable: none — the formatter exposes no output buffer.
     ///
+    /// # Cost
+    /// - allocation: the outcome that the message compares, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — unresolved-name and goal titles retain source names
     ///   and numeric roles; mismatch titles expose no core addresses; a
@@ -1452,10 +1485,11 @@ impl fmt::Display for MessageText<'_>
     {
         match self.0 {
             Subject::Refused {
-                refusal: refusal @ Refusal::Checking(CheckRefusal::ImplicitUnsolved { at, reason }),
-                origins,
+                refusal:
+                    refusal @ Refusal::Checking(CheckRefusalOf::ImplicitUnsolved { reason, .. }),
+                located: Maybe::Present(located),
                 ..
-            } => match origins.omitted(at) {
+            } => match located.omitted() {
                 Maybe::Present(
                     &Omitted::Implicit {
                         ref function,
@@ -1518,11 +1552,12 @@ impl fmt::Display for MessageText<'_>
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused {
-                refusal: refusal @ Refusal::Checking(CheckRefusal::ModelUnanswered { at, forced }),
-                origins,
+                declaration,
+                refusal: refusal @ Refusal::Checking(CheckRefusalOf::ModelUnanswered { forced, .. }),
+                located: Maybe::Present(located),
                 spellings,
                 ..
-            } => match origins.omitted(at) {
+            } => match located.omitted() {
                 Maybe::Present(&Omitted::Model {
                     ref function,
                     ref implicit,
@@ -1534,13 +1569,16 @@ impl fmt::Display for MessageText<'_>
                          `{function}` omits"
                     )?;
                     let forced = match forced {
-                        gandr_core_checker::Forced::Type(ty) => {
-                            match spellings.get(gandr_core_checker::TypeNode::Value(ty)) {
+                        gandr_core_checker::ForcedOf::Type(ty) => {
+                            match spellings.get(SpelledNode {
+                                node: gandr_core_checker::TypeNodeOf::Value(ty),
+                                place: spellings.place_of(declaration.constant()),
+                            }) {
                                 Maybe::Present(spelled) => Some(spelled.as_ref()),
                                 Maybe::Absent(_) => None,
                             }
                         },
-                        gandr_core_checker::Forced::Unforced => None,
+                        gandr_core_checker::ForcedOf::Unforced => None,
                     };
                     match forced {
                         Some(spelled) => write!(f, " at `{spelled}`")?,
@@ -1590,10 +1628,11 @@ impl fmt::Display for MessageText<'_>
                 | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused {
-                refusal: refusal @ Refusal::Checking(CheckRefusal::ModelAmbiguous { at, survivors }),
-                origins,
+                refusal:
+                    refusal @ Refusal::Checking(CheckRefusalOf::ModelAmbiguous { survivors, .. }),
+                located: Maybe::Present(located),
                 ..
-            } => match origins.omitted(at) {
+            } => match located.omitted() {
                 Maybe::Present(&Omitted::Model {
                     ref function,
                     ref implicit,
@@ -1648,10 +1687,10 @@ impl fmt::Display for MessageText<'_>
                 | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
             Subject::Refused {
-                refusal: refusal @ Refusal::Checking(CheckRefusal::HandlerUnlawful { at, rule, .. }),
-                origins,
+                refusal: refusal @ Refusal::Checking(CheckRefusalOf::HandlerUnlawful { .. }),
+                located: Maybe::Present(located),
                 ..
-            } => match origins.scope_law(at, rule) {
+            } => match located.law() {
                 Maybe::Present(law) => write!(
                     f,
                     "this handler is not shown to satisfy the law `{law}` of the theory it handles"

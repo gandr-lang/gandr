@@ -19,7 +19,10 @@
 //! checkpoint is adopted only when its support — the signature answers its
 //! judgement consulted — holds pointwise in the edited program and no type
 //! position of it reads a definition whose value changed. [`check_program`]
-//! is the same pass with a memo that recalls nothing.
+//! is the same pass with a memo that recalls nothing. A resume restored from
+//! a store whose first checkpoints are the state that [`lead`] keeps recalls
+//! its own items after them, as one held after that state does (witness:
+//! `tests::incremental::a_restored_set_resumes_after_the_leading_items_it_holds_1816`).
 //!
 //! **Content-addressed checkpoints.** [`Checkpoints`] persist under their
 //! program's BLAKE3 address in a [`MemoryCheckpointStore`] or an atomic
@@ -211,6 +214,7 @@ pub use crate::checkpoint::ContentKey;
 pub use crate::checkpoint::ItemCheckpoint;
 pub use crate::checkpoint::Judgement;
 pub use crate::checkpoint::Leading;
+pub use crate::checkpoint::NodeKeys;
 #[cfg(feature = "instrument")]
 pub use crate::checkpoint::PassedItem;
 pub use crate::checkpoint::Resume;
@@ -220,6 +224,7 @@ pub use crate::checkpoint::check_program;
 pub use crate::checkpoint::content_key;
 pub use crate::checkpoint::lead;
 pub use crate::checkpoint::leading;
+pub use crate::checkpoint::node_key;
 pub use crate::checkpoint::recall;
 pub use crate::checkpoint::resume;
 pub use crate::checkpoint::resume_after;
@@ -279,6 +284,7 @@ pub use crate::region::Item;
 pub use crate::region::ItemKey;
 pub use crate::region::ItemSource;
 pub use crate::region::KeyName;
+pub use crate::region::Layout;
 pub use crate::region::Opened;
 pub use crate::region::Opener;
 pub use crate::region::Program;

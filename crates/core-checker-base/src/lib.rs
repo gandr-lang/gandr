@@ -30,6 +30,16 @@
         reason = "module documentation that predates the shape lint"
     )
 )]
+// 342 functions in 43 files of this crate allocate with no `# Cost`
+// declaration. A verdict's naming changes their MIR, so the lint holds them.
+// #7752 declares each one, and this allow leaves with it.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        allocation_free_region,
+        reason = "#7752 declares the allocations of the 342 functions held here"
+    )
+)]
 #![no_std]
 
 extern crate alloc;
@@ -69,6 +79,7 @@ pub mod judgement;
 pub mod ledger;
 pub mod loops;
 pub mod module;
+pub mod naming;
 pub mod nested;
 pub mod occurrence;
 pub mod product;
@@ -141,10 +152,13 @@ pub use crate::declaration::law;
 pub use crate::declaration::signature;
 pub use crate::equiv::Equivalence;
 pub use crate::failure::Failure;
+pub use crate::failure::FailureOf;
 pub use crate::failure::FoldPremise;
 pub use crate::failure::FrameRole;
 pub use crate::failure::Obligation;
+pub use crate::failure::ObligationOf;
 pub use crate::failure::Pursuit;
+pub use crate::failure::PursuitOf;
 pub use crate::failure::Stage;
 pub use crate::failure::judged;
 pub use crate::flow::Statement;
@@ -186,6 +200,10 @@ pub use crate::module::check_declaration_supported;
 pub use crate::module::check_module;
 pub use crate::module::taken;
 pub use crate::module::type_module;
+pub use crate::naming::Arena;
+pub use crate::naming::Keyed;
+pub use crate::naming::Keying;
+pub use crate::naming::Naming;
 pub use crate::nested::NestedElaboration;
 pub use crate::nested::Nesting;
 pub use crate::record::Formed;

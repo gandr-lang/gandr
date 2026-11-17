@@ -15,11 +15,12 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckRefusalOf;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::FrameRole;
-use gandr_core_checker::Mismatch;
+use gandr_core_checker::MismatchOf;
 use gandr_core_checker::TermNode;
-use gandr_core_checker::TypeNode;
+use gandr_core_checker::TypeNodeOf;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
@@ -35,8 +36,11 @@ use gandr_surface_diagnostics::Fix;
 use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Naming;
+use gandr_surface_diagnostics::Reading;
 use gandr_surface_diagnostics::Renaming;
 use gandr_surface_diagnostics::Severity;
+use gandr_surface_diagnostics::SpelledNode;
+use gandr_surface_diagnostics::SpellingPlace;
 use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::Unsettlement;
 use gandr_surface_diagnostics::Verbosity;
@@ -441,20 +445,31 @@ enum Kept
 #[spec(ensures: |ref ret| matches!(ret.span, Maybe::Present(_)) == (kept == Kept::Primary))]
 fn force_without_rules(kept: Kept) -> Diagnostic
 {
+    let path = Path::new("force.gandr");
     let text = SourceText::from(FORCE);
-    let step = unsettled(Path::new("force.gandr"), SourceRoot::Strict, text);
-    let Step::Source {
-        path,
-        composed:
-            Composed::Settled {
-                ref report,
-                ref origins,
-                ref spellings,
-                ref failures,
-                ..
-            },
+    let grammar = built_in().expect("the built-in grammar builds");
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the force source lowers")
+            .into_lowered()
+    else {
+        panic!("the force source is one module");
+    };
+    let (settled, admission) = gandr_surface_dispatcher::judge_member::<Evaluator>(
+        gandr_surface_corpus::CorpusRoot::Strict,
+        (module, text),
+        arena,
+        &gandr_core_checker::HostGrant::UNBOUNDED,
+        gandr_surface_syntax::ByteOffset::from(0_usize),
+    )
+    .into_parts();
+    let Ok(Composed::Settled {
+        ref report,
+        ref origins,
+        ref spellings,
+        ref failures,
         ..
-    } = step
+    }) = settled
     else {
         panic!("the force source settles");
     };
@@ -463,14 +478,30 @@ fn force_without_rules(kept: Kept) -> Diagnostic
         .iter()
         .find(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(_)))
         .expect("one declaration refuses");
-    let Maybe::Present(refusal @ Refusal::Checking(CheckRefusal::ShapeMismatch { at, .. })) =
+    let Maybe::Present(refusal @ Refusal::Checking(CheckRefusalOf::ShapeMismatch { .. })) =
         declaration.produced().refusal()
     else {
         panic!("the force refuses its operand's shape");
     };
-    let TermNode::Value(value) = at
+    // The checker's own refusal and failure name their nodes by place: the
+    // record is located from them, as a composition locates it.
+    let verdicts = admission.verdicts();
+    let judged = verdicts.judged();
+    let Some(gandr_core_checker::Verdict::Refused(
+        checked @ CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(value),
+            ..
+        },
+    )) = judged
+        .binary_search_by_key(
+            &declaration.constant(),
+            gandr_core_checker::Judged::constant,
+        )
+        .ok()
+        .and_then(|at| judged.get(at))
+        .map(gandr_core_checker::Judged::verdict)
     else {
-        panic!("the operand is a value");
+        panic!("the force refuses a value operand's shape");
     };
     let mut table = OriginTable::new();
     if kept == Kept::Primary {
@@ -480,10 +511,16 @@ fn force_without_rules(kept: Kept) -> Diagnostic
         };
         table.record_value(value, origin);
     }
+    let located = gandr_surface_diagnostics::Located::of(
+        checked,
+        verdicts.failures().get(&declaration.constant()),
+        declaration.span(),
+        (&table, text),
+    );
     diagnose(path, text, Subject::Refused {
         declaration,
         refusal,
-        origins: &table,
+        located: Maybe::Present(&located),
         spellings: spellings.spelled(Spelling::Unicode),
         failure: failures.get(declaration.constant()),
         upstream: Maybe::Absent(upstream::Absent::Own),
@@ -516,7 +553,8 @@ fn a_conversion_past_its_step_budget_is_a_budget_miss_not_endpoints_apart_3139()
                 Maybe::Absent(_) => None,
             })
             .collect();
-        let [Refusal::Checking(CheckRefusal::EndpointMismatch { miss, .. })] = *refusals.as_slice()
+        let [Refusal::Checking(CheckRefusalOf::EndpointMismatch { miss, .. })] =
+            *refusals.as_slice()
         else {
             panic!("the claim alone is refused, as an endpoint mismatch: {refusals:?}");
         };
@@ -1298,19 +1336,31 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
         };
         let mut nodes = Vec::new();
         for declaration in report.declarations() {
+            let place = spellings
+                .spelled(Spelling::Unicode)
+                .place_of(declaration.constant());
             if let Maybe::Present(Refusal::Checking(refusal)) = declaration.produced().refusal() {
                 let compared = refusal.compared();
                 nodes.extend(
                     [compared.expected, compared.found]
                         .into_iter()
                         .filter_map(|side| match side {
-                            Maybe::Present(node) => Some(node),
+                            Maybe::Present(node) => Some(SpelledNode { node, place }),
                             Maybe::Absent(_) => None,
                         }),
                 );
             }
             if let Maybe::Present(failure) = failures.get(declaration.constant()) {
-                nodes.extend(failure.hypotheses().iter().map(|&ty| TypeNode::Value(ty)));
+                nodes.extend(failure.hypotheses().iter().enumerate().map(|(depth, &ty)| {
+                    SpelledNode {
+                        node: TypeNodeOf::Value(ty),
+                        place: SpellingPlace {
+                            depth: depth.min(place.depth),
+                            reading: Reading::Hypothesis,
+                            ..place
+                        },
+                    }
+                }));
             }
         }
         nodes
@@ -1433,7 +1483,7 @@ fn a_sealed_type_is_spelled_by_its_path()
     else {
         panic!("the module settles");
     };
-    let Some(Maybe::Present(Refusal::Checking(CheckRefusal::TypeMismatch(Mismatch::Value {
+    let Some(Maybe::Present(Refusal::Checking(CheckRefusalOf::TypeMismatch(MismatchOf::Value {
         synthesised,
         expected,
         ..
@@ -1444,14 +1494,24 @@ fn a_sealed_type_is_spelled_by_its_path()
     else {
         panic!("the leak is a value mismatch");
     };
-    let spelled = |node| match spellings.spelled(Spelling::Unicode).get(node) {
+    let place = spellings.spelled(Spelling::Unicode).place_of(
+        report
+            .declarations()
+            .last()
+            .expect("the leak is reported")
+            .constant(),
+    );
+    let spelled = |node| match spellings
+        .spelled(Spelling::Unicode)
+        .get(SpelledNode { node, place })
+    {
         Maybe::Present(presentation) => presentation.as_ref().to_owned(),
         Maybe::Absent(reason) => format!("{reason:?}"),
     };
     assert_eq!(
         (
-            spelled(TypeNode::Value(expected)),
-            spelled(TypeNode::Value(synthesised))
+            spelled(TypeNodeOf::Value(expected)),
+            spelled(TypeNodeOf::Value(synthesised))
         ),
         ("Integer".to_owned(), "Counter.T".to_owned()),
         "the atom is named as a client writes it"
@@ -1496,26 +1556,36 @@ fn a_refusal_spells_its_types_in_either_spelling_782()
         else {
             panic!("the module settles");
         };
-        let Some(Maybe::Present(Refusal::Checking(CheckRefusal::TypeMismatch(Mismatch::Value {
-            synthesised,
-            expected,
-            ..
-        })))) = report
+        let Some(Maybe::Present(Refusal::Checking(CheckRefusalOf::TypeMismatch(
+            MismatchOf::Value {
+                synthesised,
+                expected,
+                ..
+            },
+        )))) = report
             .declarations()
             .last()
             .map(|declaration| declaration.produced().refusal())
         else {
             panic!("the literal is a value mismatch");
         };
-        let spelled = |spelling, node| match spellings.spelled(spelling).get(node) {
-            Maybe::Present(presentation) => presentation.as_ref().to_owned(),
-            Maybe::Absent(reason) => format!("{reason:?}"),
-        };
+        let place = spellings.spelled(Spelling::Unicode).place_of(
+            report
+                .declarations()
+                .last()
+                .expect("the literal is reported")
+                .constant(),
+        );
+        let spelled =
+            |spelling, node| match spellings.spelled(spelling).get(SpelledNode { node, place }) {
+                Maybe::Present(presentation) => presentation.as_ref().to_owned(),
+                Maybe::Absent(reason) => format!("{reason:?}"),
+            };
         for (spelling, relation) in [(Spelling::Unicode, unicode), (Spelling::Ascii, ascii)] {
             assert_eq!(
                 [
-                    spelled(spelling, TypeNode::Value(expected)),
-                    spelled(spelling, TypeNode::Value(synthesised))
+                    spelled(spelling, TypeNodeOf::Value(expected)),
+                    spelled(spelling, TypeNodeOf::Value(synthesised))
                 ],
                 [String::from(relation), String::from("Integer")],
                 "{source:?} in {spelling:?}"
@@ -3744,12 +3814,20 @@ fn a_refusal_is_spelled_as_its_own_source_reads_it_4813()
         .declarations()
         .iter()
         .filter_map(|declaration| match declaration.produced().refusal() {
-            Maybe::Present(Refusal::Checking(refusal)) => Some(refusal.compared()),
+            Maybe::Present(Refusal::Checking(refusal)) => Some((
+                refusal.compared(),
+                spellings
+                    .spelled(Spelling::Unicode)
+                    .place_of(declaration.constant()),
+            )),
             Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => None,
         })
-        .map(|compared| {
+        .map(|(compared, place)| {
             [compared.expected, compared.found].map(|side| match side {
-                Maybe::Present(node) => match spellings.spelled(Spelling::Unicode).get(node) {
+                Maybe::Present(node) => match spellings
+                    .spelled(Spelling::Unicode)
+                    .get(SpelledNode { node, place })
+                {
                     Maybe::Present(presentation) => Some(presentation.to_string()),
                     Maybe::Absent(_) => None,
                 },
@@ -3808,6 +3886,62 @@ fn a_later_binder_of_one_split_spells_under_the_earlier()
     assert!(
         split.ends_with("binds s : Theory, n : counted_at(s)"),
         "the split's binding note names its binders as the pattern writes them: {split}"
+    );
+}
+
+/// Two hypotheses of one content under two contexts spell each under the
+/// names of its own context. `v : Pred (Succ n)` and `w : Pred (Succ m)` take
+/// one content key, because a de Bruijn index hides the name it reads. A
+/// spelling is keyed by the node and its place, so `w` names `m` and never
+/// `n` (#7403).
+#[test]
+fn one_content_under_two_contexts_spells_each_context_s_name_7403()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/one-content-under-two-contexts-spells-each-context-s-name-7403.gandr"
+    ));
+    let diagnostic = only(Path::new("injective.gandr"), text);
+    let hypotheses: Vec<String> = diagnostic
+        .hypotheses
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        hypotheses.get(1 ..= 1),
+        Some([String::from("v : Pred (Succ n)")].as_slice()),
+        "the outer hypothesis reads the outer binder: {hypotheses:?}"
+    );
+    let split = contexts(text, &diagnostic)
+        .into_iter()
+        .find(|&(ref at, _)| at.starts_with("match h"))
+        .map(|(_, note)| note)
+        .expect("the split is a context");
+    assert!(
+        split.contains("w : Pred (Succ m)"),
+        "the arm's binder reads the arm's own binder: {split}"
+    );
+}
+
+/// Two codata types that one mismatch compares spell apart (#7403). A codata
+/// application has no content form, so its key is the key of its sort alone.
+/// The two sides stand at one place, and each keeps its own name.
+#[test]
+fn two_codata_types_of_one_mismatch_spell_apart_7403()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/two-codata-types-spell-apart-7403.gandr"
+    ));
+    let diagnostic = only(Path::new("codata.gandr"), text);
+    assert_eq!(
+        (
+            diagnostic.detail.compared.expected,
+            diagnostic.detail.compared.found
+        ),
+        (
+            Maybe::Present(String::from("Spot")),
+            Maybe::Present(String::from("Stream"))
+        ),
+        "each side names its own codata type"
     );
 }
 

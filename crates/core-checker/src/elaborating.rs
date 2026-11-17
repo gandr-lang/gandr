@@ -190,6 +190,10 @@ impl<'arena> Session<'arena>
     /// - fails: never; each refusal is an entry's outcome.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the checking context, the declarations, the entries and
+    ///   the batch report, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L1/L3 — kernel replay checks output typing; exact residual
     ///   and refused-subterm observations separate the outcomes.
@@ -291,6 +295,10 @@ impl<'arena> Session<'arena>
     ///
     /// # Errors
     /// Returns the corresponding `ResumeError` without installing the filling.
+    ///
+    /// # Cost
+    /// - allocation: the declarations with the filling and the context that
+    ///   judges it, setup
     ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — batch equality and work counts witness
@@ -561,6 +569,9 @@ impl<'arena> Session<'arena>
     ///
     /// # Errors
     /// Returns the prefix's `ResumeError::Refused`.
+    ///
+    /// # Cost
+    /// - allocation: the checking context and the prefix that it adopts, setup
     ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — batch equality checks prefix reconstruction, and

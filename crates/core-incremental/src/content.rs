@@ -1147,6 +1147,16 @@ pub enum ContentNode
     },
     /// The unknown computation type.
     UnknownComputationType,
+    /// A nominal codata instance, preserving its declaration identity. A
+    /// codata declaration has no content form, so an item that reads one is
+    /// opaque to reuse; the application keys its node by content alone.
+    Codata
+    {
+        /// The declaration's stable item reference.
+        declaration: Reference,
+        /// Value arguments in telescope order.
+        arguments: Vec<NodeIndex>,
+    },
     /// An id of this sort the arena resolves to nothing.
     Unresolved(Sort),
 }
@@ -1627,7 +1637,8 @@ impl ContentNode
         | Self::Pi { .. }
         | Self::LinearArrow { .. }
         | Self::ComputationElement { .. }
-        | Self::UnknownComputationType => matches!(ret, Sort::CompType),
+        | Self::UnknownComputationType
+        | Self::Codata { .. } => matches!(ret, Sort::CompType),
         | Self::Unresolved(sort) => matches!(
             (sort, ret),
             (Sort::Value, Sort::Value)
@@ -1764,7 +1775,8 @@ impl ContentNode
             | Self::Pi { .. }
             | Self::LinearArrow { .. }
             | Self::ComputationElement { .. }
-            | Self::UnknownComputationType => Sort::CompType,
+            | Self::UnknownComputationType
+            | Self::Codata { .. } => Sort::CompType,
             Self::Unresolved(sort) => sort,
         }
     }
@@ -1791,7 +1803,7 @@ impl ContentNode
         use Sort::ValueType as A;
         let actual = ret.slots.get(.. ret.count);
         (matches!(*self, Self::Returner { .. } | Self::Returns { .. } | Self::Capability { .. } | Self::RowValue(_)) || ret.effects.is_none()) && match *self {
-            Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
+            Self::Data { ref arguments,.. } | Self::Codata { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
             Self::Patched { base, ref fixed, ref meets } => ret.iter().eq(core::iter::once((base,A)).chain(fixed.values().map(|&value| (value,V))).chain(meets.iter().map(|met| (met.1,V)))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
@@ -1933,7 +1945,9 @@ impl ContentNode
             Crossing::of(Zone::Intuitionistic, BinderDepth::from(usize::from(arity)))
         };
         match *self {
-            Self::Data { ref arguments, .. } => Children::default().followed_by(arguments, V),
+            Self::Data { ref arguments, .. } | Self::Codata { ref arguments, .. } => {
+                Children::default().followed_by(arguments, V)
+            },
             Self::RecordType(ref fields) => Children::fields(fields, A),
             Self::Patched {
                 base,
@@ -2318,7 +2332,7 @@ impl ContentNode
     ///   borrowed payload identity in a const expression.
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
-        Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
+        Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } | Self::Codata { .. } => matches!(ret, Maybe::Present(_)),
         Self::Leta { ref world, .. } | Self::Migrate { ref world, .. } | Self::HeldType { ref world, .. } | Self::CapabilityType(ref world) => matches!(ret, Maybe::Present(_)) == matches!(*world, WorldContent::Declared(_)),
         Self::Hold(_) => matches!(ret, Maybe::Absent(_)),
         Self::Compose { .. } | Self::Fill { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
@@ -2332,6 +2346,10 @@ impl ContentNode
             Self::Constant(ref reference)
             | Self::Abstract(ref reference)
             | Self::Data {
+                declaration: ref reference,
+                ..
+            }
+            | Self::Codata {
                 declaration: ref reference,
                 ..
             } => Maybe::Present(reference),
@@ -4261,6 +4279,46 @@ impl TypeContent
         Self::tabulated(&encoder.nodes, raw)
     }
 
+    /// The content of the node `root` of `arena` as a page reads it: each
+    /// staged type as its base, constants resolved through `layout`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`TypeContent::of`] the node with each staged type read as
+    ///   its base, so it holds no staged type. The root is of the sort of
+    ///   `root`, and each child names a node of the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Encoder::read_as`].
+    /// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    #[spec(ensures: |ret| {
+            ret.nodes.first().is_some_and(|node| {
+                node.sort()
+                    == match root {
+                        | ArenaNode::Value(_) => Sort::Value,
+                        | ArenaNode::Computation(_) => Sort::Computation,
+                        | ArenaNode::ValueType(_) => Sort::ValueType,
+                        | ArenaNode::CompType(_) => Sort::CompType,
+                    }
+            }) && ret.nodes.iter().all(|node| {
+                node.former().children()
+                    .iter()
+                    .all(|(child, _)| usize::from(child) < ret.nodes.len())
+            })
+        })]
+    pub(crate) fn unstaged(
+        arena: &CoreArena,
+        layout: &Layout,
+        root: ArenaNode,
+    ) -> Self
+    {
+        let mut encoder = Encoder::unstaging(arena, layout);
+        let raw = encoder.discover(root);
+        encoder.drain();
+        Self::tabulated(&encoder.nodes, raw)
+    }
+
     /// The content of the node `root` of `arena`, as [`TypeContent::of`]
     /// builds it, beside the place in it of each node it was built from.
     ///
@@ -4951,6 +5009,21 @@ fn local_site(site: gandr_core_checker::SealSite) -> gandr_core_checker::SealSit
     )
 }
 
+/// How the encoder reads a staged type.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stages
+{
+    /// A staged type stays opaque. A stage is minted by one judgement and
+    /// names nothing past it, so stored content holds none.
+    Opaque,
+    /// A staged type reads as its base, as a page spells it. A report keys
+    /// its nodes so.
+    Erased,
+}
+
 /// The breadth-first walk that numbers an arena graph by discovery.
 ///
 /// # Specification
@@ -4979,6 +5052,8 @@ struct Encoder<'arena, 'layout>
     /// The children of the node being read, by family. A read empties the
     /// queues and leaves them here, so a read past the first allocates none.
     found: Discovered,
+    /// How a staged type reads.
+    stages: Stages,
 }
 
 impl<'arena, 'layout> Encoder<'arena, 'layout>
@@ -4999,27 +5074,81 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             queue: VecDeque::new(),
             nodes: Vec::new(),
             found: Discovered::new(),
+            stages: Stages::Opaque,
         }
     }
 
-    /// The number of `node`, numbering and queueing it on first discovery.
+    /// An empty walk over `arena` that reads each staged type as its base.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn unstaging(
+        arena: &'arena CoreArena,
+        layout: &'layout Layout,
+    ) -> Self
+    {
+        Self {
+            arena,
+            layout,
+            seen: BTreeMap::new(),
+            queue: VecDeque::new(),
+            nodes: Vec::new(),
+            found: Discovered::new(),
+            stages: Stages::Erased,
+        }
+    }
+
+    /// The node a discovery numbers for `node`: the base of a staged type
+    /// under [`Stages::Erased`], and `node` itself otherwise.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the number `node` took when first discovered; a node
-    ///   discovered now takes the next number and joins the queue.
+    /// - ensures: `node`, but for a value type under [`Stages::Erased`], which
+    ///   reads as [`gandr_core_term::unstaged`] gives it, never staged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a staged type, a former over one, and two staged
+    ///   types over two bases separate the reading from the stage.
+    /// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    #[spec(ensures: |ret| ret == node || (self.stages == Stages::Erased && matches!(node, ArenaNode::ValueType(_))))]
+    fn read_as(
+        &self,
+        node: ArenaNode,
+    ) -> ArenaNode
+    {
+        match (self.stages, node) {
+            (Stages::Erased, ArenaNode::ValueType(id)) => {
+                ArenaNode::ValueType(gandr_core_term::unstaged(self.arena, id))
+            },
+            (Stages::Erased | Stages::Opaque, _) => node,
+        }
+    }
+
+    /// The number of `node`, numbering and queueing it on first discovery. A
+    /// node is discovered as [`Self::read_as`] reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the number the node `node` reads as took when first
+    ///   discovered; a node discovered now takes the next number and joins the
+    ///   queue.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — a shared node retains one number; separately
     ///   allocated equal nodes retain distinct numbers.
     /// - witness: `content::tests::a_shared_node_is_listed_once`
+    ///
+    /// # Cost
+    /// - allocation: the number and the queue entry of a node discovered now,
+    ///   growth within the nodes the root reaches
     #[spec(
-        captures: [old = self.seen.get(&node).copied(), count = self.seen.len(), queued = self.queue.len()],
-        ensures: |ret| self.seen.get(&node) == Some(&ret) && match old {
+        captures: [old = self.seen.get(&self.read_as(node)).copied(), count = self.seen.len(), queued = self.queue.len()],
+        ensures: |ret| self.seen.get(&self.read_as(node)) == Some(&ret) && match old {
             Some(index) => ret == index && self.seen.len() == count && self.queue.len() == queued,
             None => usize::from(ret) == count && self.seen.len() == count.saturating_add(1)
-                && self.queue.len() == queued.saturating_add(1) && self.queue.back() == Some(&node),
+                && self.queue.len() == queued.saturating_add(1) && self.queue.back() == Some(&self.read_as(node)),
         },
     )]
     fn discover(
@@ -5027,6 +5156,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         node: ArenaNode,
     ) -> NodeIndex
     {
+        let node = self.read_as(node);
         let next = NodeIndex::from(self.seen.len());
         let index = *self.seen.entry(node).or_insert(next);
         if index == next {
@@ -5336,8 +5466,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - requires: nothing.
     /// - ensures: the corresponding former over its children's discovery
     ///   indices, the children discovered as [`gandr_core_term::children`]
-    ///   lists them; a codata application discovers no child and is the
-    ///   unresolved node. The predicate bounds the sort and child indices.
+    ///   lists them; a codata application is its declaration's reference over
+    ///   its arguments. The predicate bounds the sort and child indices.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5345,21 +5475,18 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   formers and sharing. [`comp_type_content`] checks every child's place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::CompType
-        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*comp_type, CompType::Codata { .. }))
+        && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_comp_type(
         &mut self,
         comp_type: &CompType,
     ) -> ContentNode
     {
+        let layout = self.layout;
         self.read_former(
             Sort::CompType,
-            |walk| {
-                if !matches!(*comp_type, CompType::Codata { .. }) {
-                    gandr_core_term::children::of_comp_type(comp_type, walk);
-                }
-            },
-            |found| comp_type_content(comp_type, found),
+            |walk| gandr_core_term::children::of_comp_type(comp_type, walk),
+            |found| comp_type_content(layout, comp_type, found),
         )
     }
 }
@@ -6254,8 +6381,8 @@ fn value_type_content(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a computation-type former whose children of each sort are exactly
-///   that family's numbers, in order; a codata application is the unresolved
-///   node.
+///   that family's numbers, in order; a codata application is its declaration's
+///   reference over its arguments.
 /// - fails: [`Short`] when a family runs out before the former's last slot.
 /// - panics: none.
 ///
@@ -6267,10 +6394,15 @@ fn value_type_content(
 ///   against the enumeration; a slot filled from the wrong family or out of
 ///   order fails the postcondition.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the former's lists of children, growth within the children
+///   `found` holds
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::CompType && found.placed(node).0),
 )]
 fn comp_type_content(
+    layout: &Layout,
     comp_type: &CompType,
     found: &Discovered,
 ) -> Result<ContentNode, Short>
@@ -6309,8 +6441,13 @@ fn comp_type_content(
             target: target.clone(),
         },
         CompType::Unknown => ContentNode::UnknownComputationType,
-        // A codata application has no content form, and stays opaque.
-        CompType::Codata { .. } => ContentNode::Unresolved(Sort::CompType),
+        CompType::Codata {
+            declaration,
+            ref arguments,
+        } => ContentNode::Codata {
+            declaration: layout.resolve(declaration),
+            arguments: found.take(Sort::Value, arguments)?,
+        },
     })
 }
 
@@ -6331,6 +6468,10 @@ fn comp_type_content(
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `content::tests::factoring_closes_dangling_and_cyclic_tables`
 /// - witness: `content::tests::renumbering_carries_every_frame_and_clause_body_to_its_image`
+///
+/// # Cost
+/// - allocation: the image's lists of children, growth within the children of
+///   `node`
 #[spec(ensures: |ret| {
         core::mem::discriminant(&ret) == core::mem::discriminant(node)
             && ret.sort() == node.sort()
@@ -6353,6 +6494,13 @@ where
             ref declaration,
             ref arguments,
         } => ContentNode::Data {
+            declaration: declaration.clone(),
+            arguments: arguments.iter().map(|&argument| image(argument)).collect(),
+        },
+        ContentNode::Codata {
+            ref declaration,
+            ref arguments,
+        } => ContentNode::Codata {
             declaration: declaration.clone(),
             arguments: arguments.iter().map(|&argument| image(argument)).collect(),
         },
@@ -7522,6 +7670,10 @@ where
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
 /// - witness: `content::tests::every_dependent_former_mints_back_as_its_own_table`
 /// - witness: `content::tests::a_data_type_mints_with_its_arguments`
+///
+/// # Cost
+/// - allocation: the minted node and its lists of children, durable by the
+///   arena that holds the mint
 #[spec(
     requires: node.children().iter().all(|(child, _)| matches!(states.get(usize::from(child)), Some(&MintState::Done(_)))),
     ensures: |ret| match ret {
@@ -7554,6 +7706,12 @@ fn mint_node(
             ref arguments,
         } => ArenaNode::ValueType(
             arena.value_type_data(placed(declaration)?, seats(states, arguments)?),
+        ),
+        ContentNode::Codata {
+            ref declaration,
+            ref arguments,
+        } => ArenaNode::CompType(
+            arena.comp_type_codata(placed(declaration)?, seats(states, arguments)?),
         ),
         ContentNode::RecordType(ref fields) => {
             ArenaNode::ValueType(arena.value_type_record(seat_fields(states, fields)?))

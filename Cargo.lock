@@ -1787,6 +1787,7 @@ version = "0.0.0"
 dependencies = [
  "blake3",
  "gandr-core-checker",
+ "gandr-core-incremental",
  "gandr-core-term",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-core",
@@ -1823,6 +1824,7 @@ dependencies = [
  "gandr-surface-syntax",
  "gandr-theory-dynamic-graphs",
  "gandr-theory-graphs",
+ "gandr-theory-levitation",
  "gandr-theory-sites",
  "gandr-workflow-sweep",
  "quenchant-anodized",

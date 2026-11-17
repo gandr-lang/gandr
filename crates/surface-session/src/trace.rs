@@ -585,6 +585,9 @@ impl TraceColumn
     /// - executable: none — the tree is a projection of the steps, which a
     ///   predicate would fold again.
     ///
+    /// # Cost
+    /// - allocation: the column's steps, growth within the buffer
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Trace`].
     /// - witness: `tests::trace::each_judged_declaration_keeps_the_tree_its_judgement_visited`
@@ -1067,6 +1070,9 @@ impl<'account> Derivation<'account>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the rule's name, diagnostic
     #[inline]
     #[must_use]
     pub fn rule(
@@ -1144,6 +1150,9 @@ impl Goals<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the written goal, diagnostic
     #[inline]
     pub fn goal(
         &self,
@@ -1203,6 +1212,9 @@ impl Goals<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the written type, diagnostic
     #[inline]
     pub fn ty(
         &self,
@@ -1240,6 +1252,9 @@ impl Goals<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the names of the binders, diagnostic
     fn context(
         &self,
         node: &DerivationNode,

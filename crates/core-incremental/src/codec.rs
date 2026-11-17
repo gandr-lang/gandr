@@ -405,6 +405,66 @@ pub trait Sink
         &mut self,
         bytes: Bytes<'_>,
     );
+
+    /// Whether a codata application may be written to the sink. A codata
+    /// application has content for its key alone, so only a sink that keys
+    /// content and stores nothing writes one. A stored form that holds one
+    /// needs a version of its own.
+    const CODATA: CodataWrite = CodataWrite::Refused;
+}
+
+/// Whether a sink takes a codata application.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CodataWrite
+{
+    /// The sink stores what it takes, and refuses a codata application.
+    Refused,
+    /// The sink keys content and stores nothing.
+    Keyed,
+}
+
+/// A hasher that keys one node's content: the one sink that takes a codata
+/// application.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub struct ContentKeyHasher(blake3::Hasher);
+
+impl ContentKeyHasher
+{
+    /// The hasher, fed with each byte of the content written so far.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn hasher(&self) -> &blake3::Hasher
+    {
+        &self.0
+    }
+}
+
+impl Sink for ContentKeyHasher
+{
+    /// Feed the hasher.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn put(
+        &mut self,
+        bytes: Bytes<'_>,
+    )
+    {
+        let _hasher = self.0.update(bytes.0);
+    }
+
+    const CODATA: CodataWrite = CodataWrite::Keyed;
 }
 
 impl Sink for CheckpointBytes
@@ -2880,7 +2940,8 @@ fn read_region(
 /// Write one content node.
 ///
 /// # Specification
-/// - fails: [`CodecError::Unsupported`] for an unresolved node.
+/// - fails: [`CodecError::Unsupported`] for an unresolved node, and for a
+///   codata application unless the sink keys content and stores nothing.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2896,6 +2957,9 @@ fn read_region(
             ret == Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(
                 sort,
             )))
+        },
+        | ContentNode::Codata { .. } if Out::CODATA == CodataWrite::Refused => {
+            ret == Err(CodecError::Unsupported(UnsupportedPersistence::Codata))
         },
         | _ => matches!(ret, Ok(()) | Err(CodecError::Unrepresentable)),
     },
@@ -2913,6 +2977,17 @@ where
             ref arguments,
         } => {
             writer.tag(Tag(0x50));
+            write_reference(writer, declaration)?;
+            write_indices(writer, arguments)?;
+        },
+        ContentNode::Codata {
+            ref declaration,
+            ref arguments,
+        } => {
+            if Out::CODATA == CodataWrite::Refused {
+                return Err(CodecError::Unsupported(UnsupportedPersistence::Codata));
+            }
+            writer.tag(Tag(0x99));
             write_reference(writer, declaration)?;
             write_indices(writer, arguments)?;
         },
@@ -5595,6 +5670,10 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `codec::tests::every_node_former_round_trips_under_its_own_frame`
 /// - witness: `codec::tests::a_patched_frame_that_fixes_no_label_is_refused`
+///
+/// # Cost
+/// - allocation: the node's own lists of children and fields, growth within the
+///   stored table
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -5603,6 +5682,7 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
                 && reader.cursor <= reader.bytes.len()
                 && reader.bytes.get(before).is_some_and(|&tag| match *node {
                     ContentNode::Data { .. } => tag == 0x50,
+                    ContentNode::Codata { .. } => tag == 0x99,
                     ContentNode::RecordType(_) => tag == 0x51,
                     ContentNode::Patched { ref meets, .. } => tag == if meets.is_empty() { 0x8F } else { 0x90 },
                     ContentNode::Constructor { .. } => tag == 0x52,
@@ -5753,6 +5833,10 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
     let tag = reader.tag()?;
     let node = match tag.0 {
         0x50 => ContentNode::Data {
+            declaration: read_reference(reader)?,
+            arguments: read_indices(reader)?,
+        },
+        0x99 => ContentNode::Codata {
             declaration: read_reference(reader)?,
             arguments: read_indices(reader)?,
         },
@@ -6565,8 +6649,9 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
 ///
 /// # Specification
 /// - ensures: successful tables contain no unresolved node; an unsupported
-///   refusal names the first one. The references each node carries are not
-///   written: a reader rebuilds them.
+///   refusal names the first one. A sink that stores refuses a codata
+///   application, which a table then holds. The references each node carries
+///   are not written: a reader rebuilds them.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nested unresolved nodes in all four sorts retain the
@@ -6574,6 +6659,7 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
 ///   is a reader responsibility.
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 /// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `codec::tests::a_stored_form_refuses_a_codata_application_7403`
 #[spec(
     ensures: |ret| match ret {
         | Ok(()) => nodes
@@ -6584,6 +6670,10 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
                 | ContentNode::Unresolved(found) => Some(found),
                 | _ => None,
             }) == Some(sort)
+        },
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
+            Out::CODATA == CodataWrite::Refused
+                && nodes.iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. }))
         },
         | Err(CodecError::Unrepresentable) => true,
         | _ => false,
@@ -6798,6 +6888,10 @@ where
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+///
+/// # Cost
+/// - allocation: the nodes and their lists of children, growth within the
+///   stored table
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref nodes) => {
@@ -6968,6 +7062,21 @@ where
     write_item_content_with(&mut writer, content)
 }
 
+/// Write the content of one node: its table, then its root's support.
+///
+/// # Specification
+/// trivial.
+pub fn write_node_content<Out>(
+    sink: &mut Out,
+    content: &TypeContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let mut writer = Writer { sink };
+    write_type(&mut writer, content)
+}
+
 /// Write an item's content.
 ///
 /// # Specification
@@ -6985,9 +7094,10 @@ where
         | Ok(()) => content
                 .nodes()
                 .iter()
-                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
+                .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_)) && (Out::CODATA == CodataWrite::Keyed || !matches!(*node.former(), ContentNode::Codata { .. }))),
         | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
             matches!(*content.declaration(), crate::content::DeclarationRoots::Codata)
+                || content.nodes().iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. }))
         },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
             content.nodes().iter().find_map(|node| match *node.former() {
@@ -7287,6 +7397,10 @@ fn read_operation_side(reader: &mut Reader<'_>)
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 /// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
 /// - witness: `codec::tests::an_atom_interface_round_trips_with_and_without_its_law`
+///
+/// # Cost
+/// - allocation: the tables and the roots of the item's content, growth within
+///   the stored item
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {
@@ -9554,7 +9668,7 @@ fn first_unresolved(nodes: &[SupportedNode]) -> Result<(), Sort>
         match ret {
             | Ok(()) => first.is_ok(),
             | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
-            | Err(CodecError::Unrepresentable) => true,
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
             | _ => false,
         }
     },
@@ -9715,7 +9829,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             match ret {
                 | Ok(()) => first.is_ok(),
                 | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
-                | Err(CodecError::Unrepresentable) => true,
+                | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
                 | _ => false,
             }
         },
@@ -9820,20 +9934,22 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 /// Write an answer.
 ///
 /// # Specification
-/// - ensures: untyped answers always encode; typed answers refuse their first
-///   unresolved node.
+/// - ensures: untyped answers always encode; typed answers refuse a codata
+///   application, then their first unresolved node.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — structured support answers survive persistence, and a
 ///   malformed support type is refused before a later malformed verdict.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+/// - witness: `codec::tests::a_stored_form_refuses_a_codata_application_7403`
 #[spec(
     ensures: |ret| match ret {
-        Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_))),
+        Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_)) && (Out::CODATA == CodataWrite::Keyed || !matches!(*node.former(), ContentNode::Codata { .. }))),
+        Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => answer.nodes().iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. })),
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
-ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
+ContentNode::Codata { .. } | ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
 ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } | ContentNode::Patched { .. } |
 ContentNode::LinearLambda(_) | ContentNode::LinearArrow { .. } |
 ContentNode::Hold(_) | ContentNode::Leta { .. } | ContentNode::Migrate { .. } | ContentNode::HeldType { .. } | ContentNode::CapabilityType(_) |
@@ -10021,7 +10137,8 @@ fn read_spending(
 ///
 /// # Specification
 /// - ensures: the first unresolved node is sought in content, then support,
-///   then verdict field order.
+///   then verdict field order. A codata declaration, or a codata application in
+///   any plane, is refused as codata: [`write_node`] states the second.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — separate malformed content, support, synthesised and
@@ -10043,11 +10160,8 @@ fn read_spending(
             });
         match ret {
             | Ok(()) => first.is_ok(),
-            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
-                matches!(*checkpoint.content().declaration(), crate::content::DeclarationRoots::Codata)
-            },
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
             | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
-            | Err(CodecError::Unrepresentable) => true,
             | _ => false,
         }
     },
@@ -11161,7 +11275,8 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
                 .flat_map(ItemContent::nodes)
                 .all(|node| !matches!(*node.former(), ContentNode::Unresolved(_))),
         | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
-            contents.iter().map(Borrow::borrow).any(|content: &ItemContent| matches!(*content.declaration(), crate::content::DeclarationRoots::Codata))
+            contents.iter().map(Borrow::borrow).any(|content: &ItemContent| matches!(*content.declaration(), crate::content::DeclarationRoots::Codata)
+                || content.nodes().iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. })))
         },
         | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
             contents

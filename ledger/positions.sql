@@ -3,9 +3,10 @@ BEGIN TRANSACTION;
 CREATE TABLE position(
   -- The source that declares the struct: a source of a kernel or a storage
   -- crate, or the core term arena, whose ids a session's report holds, or a
-  -- source of the ring crate, whose arguments the kernel reads; outside the
+  -- source of the ring crate, whose arguments the kernel reads, or a source
+  -- of the dispatcher or the corpus, which compose that report; outside the
   -- tests.
-  file   TEXT NOT NULL CONSTRAINT "file is a source of a kernel or a storage crate, of the ring crate, or the core term arena" CHECK((file GLOB 'crates/kernel-*/src/*.rs' OR file GLOB 'crates/storage-*/src/*.rs' OR file GLOB 'crates/runtime-uring/src/*.rs' OR file = 'crates/core-term/src/arena.rs') AND file NOT GLOB '*[^A-Za-z0-9_/.-]*'),
+  file   TEXT NOT NULL CONSTRAINT "file is a source of a kernel or a storage crate, of the ring crate, the core term arena, the dispatcher or the corpus" CHECK((file GLOB 'crates/kernel-*/src/*.rs' OR file GLOB 'crates/storage-*/src/*.rs' OR file GLOB 'crates/runtime-uring/src/*.rs' OR file = 'crates/core-term/src/arena.rs' OR file GLOB 'crates/surface-dispatcher/src/*.rs' OR file GLOB 'crates/surface-corpus/src/*.rs') AND file NOT GLOB '*[^A-Za-z0-9_/.-]*'),
   -- The struct's name, as `.config/positions/hits.jq` reads it.
   name   TEXT NOT NULL CONSTRAINT "name is an identifier" CHECK(name GLOB '[A-Z]*' AND name NOT GLOB '*[^A-Za-z0-9_]*'),
   -- The key, the name or the byte form that writes the struct, as the path
@@ -30,10 +31,10 @@ CREATE TABLE position(
   PRIMARY KEY(file, name, reader)
 ) WITHOUT ROWID;
 INSERT INTO position VALUES('crates/core-term/src/arena.rs','ArenaIndex','','local',NULL,'An index into one session''s arena.');
-INSERT INTO position VALUES('crates/core-term/src/arena.rs','CompTypeId','','local',NULL,'A node''s id in one session''s arena, which no report holds.');
-INSERT INTO position VALUES('crates/core-term/src/arena.rs','ComputationId','','local',NULL,'A node''s id in one session''s arena, which the module report holds raw and which no diagnostic, language server source or kept record holds, by the triage of #6620.');
-INSERT INTO position VALUES('crates/core-term/src/arena.rs','ValueId','','local',NULL,'A node''s id in one session''s arena, which the module report holds raw and which no diagnostic, language server source or kept record holds, by the triage of #6620.');
-INSERT INTO position VALUES('crates/core-term/src/arena.rs','ValueTypeId','','local',NULL,'A node''s id in one session''s arena, which the module report holds raw and which no diagnostic, language server source or kept record holds, by the triage of #6620.');
+INSERT INTO position VALUES('crates/core-term/src/arena.rs','CompTypeId','','local',NULL,'A node''s id in one session''s arena, which no report holds; the origin table of a composition holds it, owed by #7731.');
+INSERT INTO position VALUES('crates/core-term/src/arena.rs','ComputationId','','local',NULL,'A node''s id in one session''s arena, which the settle report names by its content key since #7403; the origin table of a composition holds it, owed by #7731.');
+INSERT INTO position VALUES('crates/core-term/src/arena.rs','ValueId','','local',NULL,'A node''s id in one session''s arena, which the settle report names by its content key since #7403; the origin table of a composition holds it, owed by #7731.');
+INSERT INTO position VALUES('crates/core-term/src/arena.rs','ValueTypeId','','local',NULL,'A node''s id in one session''s arena, which the settle report names by its content key since #7403; the origin table of a composition holds it, owed by #7731.');
 INSERT INTO position VALUES('crates/kernel-check-memo/src/accounting.rs','MemoBucketCount','','none',NULL,'A count of memo buckets.');
 INSERT INTO position VALUES('crates/kernel-check-memo/src/accounting.rs','MemoEntryCount','','none',NULL,'A count of memo entries.');
 INSERT INTO position VALUES('crates/kernel-check-memo/src/digest.rs','DigestWord','','none',NULL,'A word of a content digest.');
@@ -318,4 +319,45 @@ INSERT INTO position VALUES('crates/storage-values/src/units.rs','DecodeWork',''
 INSERT INTO position VALUES('crates/storage-values/src/units.rs','EditDepth','','none',NULL,'A depth.');
 INSERT INTO position VALUES('crates/storage-values/src/units.rs','SeamDepth','','none',NULL,'A depth.');
 INSERT INTO position VALUES('crates/storage-values/src/units.rs','ValueManifestVersion','','none',NULL,'A version of the value manifest.');
+INSERT INTO position VALUES('crates/surface-corpus/src/distribution.rs','Bits','','none',NULL,'A count of fair bits.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/cells/fusion.rs','HoleCount','','none',NULL,'A count of occurrences.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/component.rs','ParsedBytes','','none',NULL,'A count of parsed bytes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/component.rs','Position','','local',NULL,'A source''s place in the order that one run first reads the sources in, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/compose.rs','LoweringCount','','none',NULL,'A count of lowered sources.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/compose.rs','SpellingCount','','none',NULL,'A count of spelling passes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/entry/console.rs','Asked','','none',NULL,'A count of the lines and the reads asked of a console.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/entry/entered.rs','ExitStatus','','none',NULL,'The status that a process leaves with.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/entry/report.rs','SourceCount','','none',NULL,'A count of sources or paths.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/entry/worlds.rs','MigrationCount','','none',NULL,'A count of answered migrations.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/entry/worlds.rs','ProgramKey','','none',NULL,'A digest of the text that a program''s source composes to.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/generation.rs','Generation','','local',NULL,'A submission''s place in the order of one process''s submissions, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/manifold.rs','Position','','local',NULL,'An entry''s place in its row, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/package.rs','PackageAddress','','none',NULL,'A digest of what a package is.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/package/fetch.rs','Revision','','none',NULL,'The object name of a commit, a digest.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/package/lock.rs','Digest','','none',NULL,'A digest that a lock file spells.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/package/lock.rs','SignatureKey','','none',NULL,'A digest of the paths that a package''s root exports.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool.rs','ItemIndex','','local',NULL,'An item''s place in the slice of one fork in one process.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool.rs','Spin','','none',NULL,'A budget of polls.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/grant.rs','Token','','none',NULL,'A carrier of the byte that a jobserver gives.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/host.rs','Count','','none',NULL,'A count of tokens.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/host.rs','Place','','local',NULL,'A slot''s place in one host''s segment, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/host.rs','Wakes','','none',NULL,'A count of wakes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/host/porter.rs','Reaped','','none',NULL,'A count of tokens that a holder did not write back.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','Bucket','','local',NULL,'A bucket''s place among the latency buckets of one process.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','Mask','','none',NULL,'A mask of idle bits.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','Part','','local',NULL,'A part''s place in the frame of one fork.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','Posts','','none',NULL,'A count of the parts that went to a worker.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','SeatState','','none',NULL,'A carrier of a seat''s count of posts and of what it holds.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/pool/workers.rs','WorkerIndex','','local',NULL,'A worker''s place in one pool.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/reader.rs','Crossover','','none',NULL,'A budget: the size at and above which the reader maps a file.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/receipts.rs','DamagedCount','','none',NULL,'A count of passed-over receipts.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/schedule.rs','Level','','local',NULL,'A variable''s binder level inside one term, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/stage.rs','RunDigest','','none',NULL,'A digest of what a run decided.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/stored.rs','InDegree','','none',NULL,'A count of the values that hold a chunk.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/typed.rs','Before','','local',NULL,'A place inside one pattern, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/typed.rs','NamedContext','','local',NULL,'A context''s place in one type table, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/typed.rs','ScopeIndex','','local',NULL,'A module''s place in one type table, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/unfolding.rs','UnfoldingEvents','','none',NULL,'A count of global-body read events.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/unfolding.rs','UnfoldingPairs','','none',NULL,'A count of global-body pairs.');
+INSERT INTO position VALUES('crates/surface-dispatcher/src/width.rs','Cpu','','local',NULL,'A logical CPU''s number in one host''s kernel, which no key, name or byte form writes.');
 COMMIT;

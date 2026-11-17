@@ -3042,8 +3042,8 @@ mod sweeps
     }
 
     /// The diagnostic of `declaration`'s checker refusal `refusal` in `text`
-    /// at `path`, its types spelled by `spellings` and its failure kept in
-    /// `failures`.
+    /// at `path`, its types spelled by `spellings`, its failure kept in
+    /// `failures` and its loci in `locations`.
     ///
     /// # Specification
     /// trivial.
@@ -3053,7 +3053,7 @@ mod sweeps
             &gandr_surface_corpus::DeclarationReport<'_>,
             gandr_surface_corpus::Refusal<'_>,
         ),
-        origins: &gandr_surface_lowering::OriginTable,
+        locations: &gandr_surface_diagnostics::Locations,
         (spellings, failures): (
             &gandr_surface_diagnostics::TypeSpellings,
             &gandr_surface_diagnostics::Failures,
@@ -3066,7 +3066,7 @@ mod sweeps
             gandr_surface_diagnostics::Subject::Refused {
                 declaration,
                 refusal,
-                origins,
+                located: locations.get(declaration.constant()),
                 spellings: spellings.spelled(gandr_surface_pretty::Spelling::Unicode),
                 failure: failures.get(declaration.constant()),
                 upstream: Maybe::Absent(gandr_surface_diagnostics::upstream::Absent::Own),
@@ -3100,6 +3100,7 @@ mod sweeps
         use gandr_core_incremental::seating;
         use gandr_surface_corpus::Refusal;
         use gandr_surface_diagnostics::Failures;
+        use gandr_surface_diagnostics::Locations;
         use gandr_surface_diagnostics::TypeSpellings;
         use gandr_surface_dispatcher::Checking;
         use gandr_surface_dispatcher::Recording;
@@ -3182,6 +3183,7 @@ mod sweeps
             let Ok(Composed::Settled {
                 ref report,
                 ref origins,
+                ref locations,
                 ref spellings,
                 ref failures,
                 ..
@@ -3200,7 +3202,7 @@ mod sweeps
                             diagnosed(
                                 (path, text),
                                 (declaration, refusal),
-                                origins,
+                                locations,
                                 (spellings, failures),
                             ),
                         ),
@@ -3281,18 +3283,24 @@ mod sweeps
             else {
                 return;
             };
+            let layout = gandr_surface_dispatcher::item_layout(&module, &arena)
+                .expect("a lowered module lays out");
+            let keys = gandr_core_incremental::NodeKeys::new(&arena, &layout);
             let Ok(report) = gandr_surface_corpus::settle(
                 root.corpus_root(),
                 &arena,
                 &module,
                 &verdicts,
+                &keys,
                 &mut Unrun,
             )
             else {
                 return;
             };
-            let failures = Failures::of(&verdicts);
-            let spellings = TypeSpellings::of(&arena, &module, &report, &failures, (origins, text));
+            let failures = Failures::of(&verdicts, &keys);
+            let spellings =
+                TypeSpellings::of(&arena, &module, &report, &verdicts, (origins, text), &keys);
+            let seated = Locations::of(&module, &report, &verdicts, (origins, text));
             tally.seated = tally.seated.saturating_add(seats.len());
             for declaration in report.declarations() {
                 let constant = declaration.constant();
@@ -3316,7 +3324,7 @@ mod sweeps
                 let mut seat = diagnosed(
                     (path, text),
                     (judged_declaration, refusal),
-                    origins,
+                    &seated,
                     (&spellings, &failures),
                 );
                 seat.detail.producer.clone_from(&judged.detail.producer);

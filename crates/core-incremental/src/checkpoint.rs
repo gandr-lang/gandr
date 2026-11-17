@@ -138,6 +138,9 @@
 //!   arc-zero-drift-differential — the incremental-equals-batch law. So the
 //!   support records each register read of a located judgement, and a changed
 //!   home or grant judges again the items that read it.
+//! - `vault:01a178aa-7772-7e72-a3d0-5855883d3db1` — anchor: § Decisions, item 2
+//!   — an arena id is not canonical. So `NodeKeys` keys a node by its canonical
+//!   content, never by its id.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -154,6 +157,7 @@ use gandr_core_checker::Demand;
 use gandr_core_checker::Entered;
 use gandr_core_checker::Failure;
 use gandr_core_checker::FormedValueType;
+use gandr_core_checker::Keying;
 use gandr_core_checker::Membership;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Polled;
@@ -177,8 +181,12 @@ use gandr_core_checker::trace::untraced;
 use gandr_core_checker::unfolding;
 #[cfg(feature = "instrument")]
 use gandr_core_term::ArenaWatermark;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::key::NodeKey;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
@@ -196,6 +204,7 @@ use quenchant_shape::shape::Maybe;
 use crate::boundary::ItemCount;
 use crate::boundary::ItemOrdinal;
 use crate::codec::write_item_content;
+use crate::codec::write_node_content;
 use crate::content::ArenaNode;
 use crate::content::Encoded;
 use crate::content::ItemContent;
@@ -2280,6 +2289,19 @@ fn identity_of(content: &ItemContent) -> Maybe<ItemIdentity<'_>, recall::Absent>
     if write_item_content(&mut hasher, content).is_err() {
         return Maybe::Absent(recall::Absent::Opaque);
     }
+    Maybe::Present(ItemIdentity {
+        content,
+        digest: digest_of(&hasher),
+    })
+}
+
+/// The first sixteen bytes of the BLAKE3 digest that `hasher` holds: its high
+/// word, then its low word, each little-endian.
+///
+/// # Specification
+/// trivial.
+fn digest_of(hasher: &blake3::Hasher) -> ContentDigest
+{
     let [
         h0,
         h1,
@@ -2299,13 +2321,10 @@ fn identity_of(content: &ItemContent) -> Maybe<ItemIdentity<'_>, recall::Absent>
         l7,
         ..,
     ] = *hasher.finalize().as_bytes();
-    Maybe::Present(ItemIdentity {
-        content,
-        digest: ContentDigest::new(
-            DigestWord::from(u64::from_le_bytes([h0, h1, h2, h3, h4, h5, h6, h7])),
-            DigestWord::from(u64::from_le_bytes([l0, l1, l2, l3, l4, l5, l6, l7])),
-        ),
-    })
+    ContentDigest::new(
+        DigestWord::from(u64::from_le_bytes([h0, h1, h2, h3, h4, h5, h6, h7])),
+        DigestWord::from(u64::from_le_bytes([l0, l1, l2, l3, l4, l5, l6, l7])),
+    )
 }
 
 /// An item's content key: the digest of its canonical content.
@@ -2448,6 +2467,204 @@ pub fn content_key(
 ) -> Maybe<ContentKey, recall::Absent>
 {
     content_key_of(&encode_item(program.arena(), program.layout(), ordinal).content)
+}
+
+/// The content key of the node `node` of `arena`: the digest of its canonical
+/// content, each constant named by the item that `layout` gives it, and each
+/// staged type read as its base.
+///
+/// A page spells a staged type as its base, and a stage names nothing past
+/// the judgement that mints it. So the key of a staged type is the key of its
+/// base, and a recursive binder's type keys apart from the binder's own type.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the digest of the bytes of [`TypeContent::unstaged`] `node`, as a
+///   key; absent as [`recall::Absent::Opaque`] for a node whose content holds
+///   an unresolved node, which no key names.
+/// - panics: none.
+/// - executable: none — a clause would encode the node's content a second time,
+///   which is the body itself.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two nodes of one content minted apart share a key, in one
+///   arena and in two arenas numbered apart; nodes of different content do not;
+///   a staged type keys as its base.
+/// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
+/// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+#[inline]
+pub fn node_key(
+    (arena, layout): (&CoreArena, &Layout),
+    node: ArenaNode,
+) -> Maybe<NodeKey, recall::Absent>
+{
+    let mut hasher = crate::codec::ContentKeyHasher::default();
+    if write_node_content(&mut hasher, &TypeContent::unstaged(arena, layout, node)).is_err() {
+        return Maybe::Absent(recall::Absent::Opaque);
+    }
+    Maybe::Present(NodeKey::from(digest_of(hasher.hasher())))
+}
+
+/// The key of a node whose content holds an unresolved node: the digest of a
+/// tag of its sort alone, which every such node of the sort shares.
+///
+/// A node of this kind has no content to name it, so no other key is faithful.
+/// Its admission position or its place is not a key: an edit moves both.
+///
+/// # Specification
+/// trivial.
+fn opaque_key(node: ArenaNode) -> NodeKey
+{
+    let tag: &[u8] = match node {
+        ArenaNode::Value(_) => b"gandr: an opaque value node",
+        ArenaNode::Computation(_) => b"gandr: an opaque computation node",
+        ArenaNode::ValueType(_) => b"gandr: an opaque value-type node",
+        ArenaNode::CompType(_) => b"gandr: an opaque computation-type node",
+    };
+    NodeKey::from(digest_of(blake3::Hasher::new().update(tag)))
+}
+
+/// The content key of each node of one arena, each constant named by the item
+/// that a layout gives it.
+///
+/// It takes a verdict to its keyed form. A session that takes an edit and a
+/// fresh one judge one text into two arenas, and the keyed forms agree. It
+/// keeps the key of each node that it keys, so a node that two parts of a
+/// report name is encoded once.
+#[derive(Debug)]
+pub struct NodeKeys<'program>
+{
+    /// The arena whose nodes it keys.
+    arena: &'program CoreArena,
+    /// The items that name the constants.
+    layout: &'program Layout,
+    /// The key of each node keyed so far.
+    memo: core::cell::RefCell<BTreeMap<ArenaNode, NodeKey>>,
+}
+
+impl<'program> NodeKeys<'program>
+{
+    /// The keys of the nodes of `arena`, each constant named by the item that
+    /// `layout` gives it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        arena: &'program CoreArena,
+        layout: &'program Layout,
+    ) -> Self
+    {
+        Self {
+            arena,
+            layout,
+            memo: core::cell::RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    /// The keys of the nodes of `program`'s arena, under its layout.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn of_program(program: &'program Program) -> Self
+    {
+        Self::new(program.arena(), program.layout())
+    }
+
+    /// The key of `node`, encoded on its first request.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`node_key`] of `node`; for a node whose content holds an
+    ///   unresolved node, the key of its sort alone.
+    /// - panics: none; the memo is never borrowed across an encoding.
+    ///
+    /// # Cost
+    /// - allocation: the memo's entry for a node keyed first, growth within the
+    ///   nodes that a report names
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`node_key`].
+    /// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
+    #[spec(ensures: |ret| match node_key((self.arena, self.layout), node) {
+        | Maybe::Present(key) => ret == key,
+        | Maybe::Absent(_) => ret == opaque_key(node),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        &self,
+        node: ArenaNode,
+    ) -> NodeKey
+    {
+        if let Some(&key) = self.memo.borrow().get(&node) {
+            return key;
+        }
+        let key = match node_key((self.arena, self.layout), node) {
+            Maybe::Present(key) => key,
+            Maybe::Absent(_) => opaque_key(node),
+        };
+        let _replaced = self.memo.borrow_mut().insert(node, key);
+        key
+    }
+}
+
+impl Keying for NodeKeys<'_>
+{
+    /// The key of the value node `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn value(
+        &self,
+        value: ValueId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::Value(value))
+    }
+
+    /// The key of the computation node `computation`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn computation(
+        &self,
+        computation: ComputationId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::Computation(computation))
+    }
+
+    /// The key of the value-type node `value_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn value_type(
+        &self,
+        value_type: ValueTypeId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::ValueType(value_type))
+    }
+
+    /// The key of the computation-type node `comp_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn comp_type(
+        &self,
+        comp_type: CompTypeId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::CompType(comp_type))
+    }
 }
 
 /// A choice of memo for the pass: the type parameter that separates batch
@@ -2898,6 +3115,10 @@ impl<'judged> Judgement<'judged>
     /// - provides: the reason the item is decided again, checked in the order
     ///   of [`taken::Absent`].
     /// - panics: in the enforcing build, where the requires clause fails.
+    ///
+    /// # Cost
+    /// - allocation: the taken item's support, typing and report, durable by
+    ///   the session's checkpoint
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Judgement`]; a pass that holds another answer
@@ -3802,6 +4023,10 @@ where
 /// - executable: none — a predicate would decide the item again, and the
 ///   function exists to decide it once.
 ///
+/// # Cost
+/// - allocation: the judgement's run and the projected typing, support and
+///   answer, durable by the session's checkpoint
+///
 /// # Adequacy
 /// - hypothesis: L2 — as [`pass`].
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
@@ -3983,6 +4208,9 @@ fn wait_on(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the candidate references and the failure's content, error path
 fn failure_of(
     projection: &Projection<'_, '_, '_, '_>,
     (verdict, failure): (Verdict, Maybe<&Failure, kept::Absent>),
@@ -4287,6 +4515,10 @@ fn adopt(
 /// - executable: none — a clause over the context after the settlement. Such a
 ///   clause resolves the entry again.
 ///
+/// # Cost
+/// - allocation: the resolved entry and the register's entry for the item,
+///   growth within the module's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — a reader of an adopted located declaration is adopted
 ///   against the home the earlier judgement settled.
@@ -4370,6 +4602,10 @@ struct Seating<'input>
 /// - provides: the reason the typing does not seat: `Opaque`, `Derived` or
 ///   `Unseated`.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the seated type and the item's admission, growth within the
+///   module's declarations
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`adopt`].
@@ -4802,6 +5038,10 @@ fn support_holds(
 /// - executable: none — the walk itself, over the register and the grant of
 ///   `context`.
 ///
+/// # Cost
+/// - allocation: the resolved entry and its roots, which the walk compares,
+///   setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a reader of a declaration whose home changes is judged
 ///   again; under a changed grant, each declaration whose resolved entry moves
@@ -5001,6 +5241,10 @@ fn answered(
 ///   item's own reference beside the resolved entry, or none for a refused one,
 ///   and the spending.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the roots of the resolved entry in the answer, durable by the
+///   session's checkpoint
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a declaration stating no entry records none under no

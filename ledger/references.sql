@@ -540,6 +540,8 @@ INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theor
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-computads','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-ordered-algebras','usage','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-7772-7e72-a3d0-5855883d3db1','core-incremental','checkpoint','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-7772-7e72-a3d0-5855883d3db1','core-term','key','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-corpus','refusal','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-diagnostics','advice','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-dispatcher','typed','background',NULL,NULL,NULL);

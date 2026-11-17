@@ -192,7 +192,7 @@ use anodized::spec;
 use gandr_core_checker::AbstractType;
 use gandr_core_checker::AtomInterface;
 use gandr_core_checker::CheckBudget;
-use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckRefusalOf;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Checkpoint;
 use gandr_core_checker::ComponentOrdinal;
@@ -214,7 +214,7 @@ use gandr_core_checker::SealingSite;
 use gandr_core_checker::Taking;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Unretired;
-use gandr_core_checker::Verdict;
+use gandr_core_checker::VerdictOf;
 use gandr_core_checker::body;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
@@ -223,6 +223,8 @@ use gandr_core_checker::worlds::Entry;
 use gandr_core_checker::worlds::HostEntry;
 use gandr_core_checker::worlds::Mobility;
 use gandr_core_checker::worlds::WorldName;
+use gandr_core_incremental::NodeKeys;
+use gandr_core_incremental::ProgramError;
 use gandr_core_incremental::SourceTag;
 use gandr_core_sequent::Writers;
 use gandr_core_term::Carried;
@@ -252,6 +254,7 @@ use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
 use gandr_surface_corpus::settle_after;
 use gandr_surface_diagnostics::Failures;
+use gandr_surface_diagnostics::Locations;
 use gandr_surface_diagnostics::TypeSpellings;
 use gandr_surface_diagnostics::parting;
 use gandr_surface_grammar::Pbg;
@@ -480,6 +483,10 @@ pub enum Composed<'source>
         /// admission position: the rules it stood inside and the hypotheses
         /// in scope.
         failures: Failures,
+        /// What the report of each checker refusal reads through the origin
+        /// table, located while the arena was at hand: a refusal names its
+        /// nodes by their content keys, and a key does not locate a node.
+        locations: Locations,
         /// Every builtin the source's declarations and binders shadowed, in
         /// the order shadowed: under the warn-and-allow policy the source's
         /// binding wins and each is a warning, not a refusal. The composition
@@ -629,6 +636,7 @@ impl Composed<'_>
                 origins,
                 spellings,
                 failures,
+                locations,
                 shadowed,
                 inferred,
                 runs,
@@ -647,6 +655,7 @@ impl Composed<'_>
                     origins,
                     spellings,
                     failures,
+                    locations,
                     shadowed,
                     inferred,
                     runs,
@@ -2430,6 +2439,9 @@ struct ClosureJudgement<'held>
     settled: Result<Vec<DeclarationReport<'held>>, SettleFault>,
     /// The types their checker refusals compare and their failures name.
     spellings: TypeSpellings,
+    /// What the reports of their checker refusals read through the origin
+    /// table.
+    locations: Locations,
     /// What readmitting their declarations built, or why it holds nothing,
     /// kept by the first admission of a module judged after them
     /// ([`judge_component`]): every later one resumes from it rather than
@@ -2665,28 +2677,46 @@ where
     // rows frozen so each revision copies only its own.
     let mut focused = program.clone().into_focused();
     focused.freeze();
-    let settled = settle(
-        root,
-        &closing,
-        &module,
-        &verdicts,
-        &mut E::runs(&mut program),
-    );
-    let first = ConstantIndex::from(0_usize);
-    let minted = elaborated(&verdicts, first);
-    let spellings = settled.as_ref().map_or_else(
-        |_| TypeSpellings::default(),
-        |report| {
-            module.origins_mut().carry(&minted.0, &minted.1);
-            TypeSpellings::of(
+    // A settled report names each node by its content key, each constant
+    // named by the item the closure's layout gives it.
+    let settled = item_layout(&module, &closing)
+        .map_err(unordered)
+        .and_then(|layout| {
+            let report = settle(
+                root,
                 &closing,
                 &module,
-                report,
-                &Failures::of(&verdicts),
-                (module.origins(), closure.text()),
+                &verdicts,
+                &NodeKeys::new(&closing, &layout),
+                &mut E::runs(&mut program),
+            )?;
+            Ok((report, layout))
+        });
+    let first = ConstantIndex::from(0_usize);
+    let minted = elaborated(&verdicts, first);
+    let (spellings, locations) = match settled {
+        Ok((ref report, ref layout)) => {
+            module.origins_mut().carry(&minted.0, &minted.1);
+            let keys = NodeKeys::new(&closing, layout);
+            (
+                TypeSpellings::of(
+                    &closing,
+                    &module,
+                    report,
+                    &verdicts,
+                    (module.origins(), closure.text()),
+                    &keys,
+                ),
+                Locations::of(
+                    &module,
+                    report,
+                    &verdicts,
+                    (module.origins(), closure.text()),
+                ),
             )
         },
-    );
+        Err(_) => (TypeSpellings::default(), Locations::default()),
+    };
     let boundary = module
         .declarations()
         .iter()
@@ -2706,8 +2736,9 @@ where
         elaborated: minted,
         origins: OnceLock::new(),
         program: focused,
-        settled: settled.map(|report| report.declarations().to_vec()),
+        settled: settled.map(|(report, _)| report.declarations().to_vec()),
         spellings,
+        locations,
         crossed: OnceLock::new(),
         first: Mutex::new(()),
     })
@@ -3676,31 +3707,42 @@ where
     let laid = Laid { earlier, last };
     // The reports a closure settled lead the module's; without a closure, none
     // lead. Each arm settles with its own runner, so the runner is a generic.
-    let settled_report = after
-        .map_or(Ok(&[][..]), |closure| {
-            closure.settled.as_deref().map_err(|&fault| fault)
-        })
-        .and_then(|earlier| match scheduling {
-            Scheduling::Sequential => settle_after(
-                laid,
-                &arena,
-                &module,
-                &verdicts,
-                &mut E::runs(&mut program),
-                earlier,
-            ),
-            Scheduling::Concurrent(pool) => settle_after(
-                laid,
-                &arena,
-                &module,
-                &verdicts,
-                &mut E::scheduled(&mut program, pool),
-                earlier,
-            ),
+    // A settled report names each node by its content key, each constant named
+    // by the item the module's layout gives it.
+    let settled_report = item_layout(&module, &arena)
+        .map_err(unordered)
+        .and_then(|layout| {
+            let keys = NodeKeys::new(&arena, &layout);
+            let report = after
+                .map_or(Ok(&[][..]), |closure| {
+                    closure.settled.as_deref().map_err(|&fault| fault)
+                })
+                .and_then(|earlier| match scheduling {
+                    Scheduling::Sequential => settle_after(
+                        laid,
+                        &arena,
+                        &module,
+                        &verdicts,
+                        &keys,
+                        &mut E::runs(&mut program),
+                        earlier,
+                    ),
+                    Scheduling::Concurrent(pool) => settle_after(
+                        laid,
+                        &arena,
+                        &module,
+                        &verdicts,
+                        &keys,
+                        &mut E::scheduled(&mut program, pool),
+                        earlier,
+                    ),
+                })?;
+            Ok((report, layout))
         });
     let projected = match settled_report {
-        Ok(report) => {
-            let failures = Failures::of(&verdicts);
+        Ok((report, layout)) => {
+            let keys = NodeKeys::new(&arena, &layout);
+            let failures = Failures::of(&verdicts, &keys);
             located(
                 module.origins_mut(),
                 &verdicts,
@@ -3712,8 +3754,9 @@ where
                         &arena,
                         &module,
                         &report,
-                        &failures,
+                        &verdicts,
                         (module.origins(), text),
+                        &keys,
                     )
                 },
                 |closure| {
@@ -3721,7 +3764,20 @@ where
                         &closure.spellings,
                         closure.boundary,
                         (&arena, &module),
-                        (&report, &failures),
+                        (&report, &verdicts),
+                        (module.origins(), text),
+                        &keys,
+                    )
+                },
+            );
+            let locations = after.map_or_else(
+                || Locations::of(&module, &report, &verdicts, (module.origins(), text)),
+                |closure| {
+                    Locations::after(
+                        &closure.locations,
+                        closure.boundary,
+                        &module,
+                        (&report, &verdicts),
                         (module.origins(), text),
                     )
                 },
@@ -3737,12 +3793,22 @@ where
                 .iter()
                 .map(|&member| {
                     let own = owned(&report, (&module, &verdicts), member);
-                    let held = share(member, (own, spellings.clone()), (&arena, &module), &unit);
+                    let held = share(
+                        member,
+                        (own, spellings.clone()),
+                        (&arena, &module, &verdicts),
+                        &unit,
+                    );
                     let mut program = program.clone();
                     program.run_within(own_constants(&module, member));
                     Ok(settled(
                         held,
-                        (module.origins().clone(), failures.clone(), program),
+                        (
+                            module.origins().clone(),
+                            failures.clone(),
+                            locations.clone(),
+                            program,
+                        ),
                     ))
                 })
                 .collect();
@@ -3753,12 +3819,12 @@ where
                 program.run_within(own_constants(&module, last));
                 owned(&report, (&module, &verdicts), last)
             };
-            let last_share = share(last, (own, spellings), (&arena, &module), &unit);
+            let last_share = share(last, (own, spellings), (&arena, &module, &verdicts), &unit);
             Projected {
                 earlier,
                 last: Ok(settled(
                     last_share,
-                    (module.into_origins(), failures, program),
+                    (module.into_origins(), failures, locations, program),
                 )),
             }
         },
@@ -3884,6 +3950,9 @@ fn own_constants(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the member's report, growth within its declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — an importer reports its own declarations, its sibling's
 ///   obligations left to the sibling; each source of a component, separated by
@@ -3921,6 +3990,10 @@ fn owned<'source>(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the member's share of the report, growth within its
+///   declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`judge_members`].
 /// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
@@ -3934,12 +4007,12 @@ fn owned<'source>(
 fn share<'source>(
     member: Member,
     (report, spellings): (SettleReport<'source>, TypeSpellings),
-    (arena, module): (&CoreArena, &LoweredModule<'source>),
+    (arena, module, verdicts): (&CoreArena, &LoweredModule<'source>, &ModuleReport),
     unit: &Unitwide<'source>,
 ) -> Share<'source>
 {
     let own = |span: ByteSpan| member.start <= span.start() && span.start() <= member.end;
-    let exercised = Exercised::of(arena, module, &report);
+    let exercised = Exercised::of((arena, verdicts), module, &report);
     let unstatable = unit
         .unstatable
         .iter()
@@ -4013,7 +4086,7 @@ fn share<'source>(
 /// dropped whatever the judgement made of their declaration: accepted, owed,
 /// suspended or refused. The one binder such an opener could hold that may
 /// not be dropped is a consumable capability, which never forms: the checker
-/// refuses its type as [`CheckRefusal::CapabilityConsumable`], and a
+/// refuses its type as [`CheckRefusalOf::CapabilityConsumable`], and a
 /// declaration so refused answers nothing. Nor does one the lowering refused
 /// or the corpus guarded. Both halves of an answered declaration are read. A
 /// use is a written variable, or a name the lowering resolved to the binder: a
@@ -4024,12 +4097,16 @@ fn share<'source>(
 ///   whose every opener is a lambda or a bind, `own` holds of it, no written
 ///   variable and no binder resolution reads it, and it lies within a half of a
 ///   declaration `report` reports as judged, other than refused as
-///   [`CheckRefusal::CapabilityConsumable`]; the spans ascend without repeats.
+///   [`CheckRefusalOf::CapabilityConsumable`]; the spans ascend without
+///   repeats.
 /// - fails: never.
 /// - panics: none.
 /// - intension: one pass over the module's declarations, binders, bindings and
 ///   resolutions; every table it keeps holds only spans `own` holds of, so a
 ///   member judged after a large closure builds tables its own size.
+///
+/// # Cost
+/// - allocation: the unused binders, growth within the declarations
 ///
 /// # Adequacy
 /// - hypothesis: L3 — parameters, `let` binders, pattern variables and lambda
@@ -4055,14 +4132,14 @@ where
         .iter()
         .filter(|declaration| match declaration.produced() {
             Produced::Judged(
-                Verdict::Data
-                | Verdict::Checked { .. }
-                | Verdict::Synthesised { .. }
-                | Verdict::Owed(_)
-                | Verdict::Suspended(_),
+                VerdictOf::Data
+                | VerdictOf::Checked { .. }
+                | VerdictOf::Synthesised { .. }
+                | VerdictOf::Owed(_)
+                | VerdictOf::Suspended(_),
             ) => true,
-            Produced::Judged(Verdict::Refused(refusal)) => {
-                !matches!(refusal, CheckRefusal::CapabilityConsumable(_))
+            Produced::Judged(VerdictOf::Refused(refusal)) => {
+                !matches!(refusal, CheckRefusalOf::CapabilityConsumable(_))
             },
             Produced::Unlowered(_) | Produced::Guarded(_) => false,
         })
@@ -4188,7 +4265,7 @@ fn unreached_imports(
 }
 
 /// The settled composition of one source's `share`, joined by the unit-wide
-/// origins, failures and program, its kernel artifact pending.
+/// origins, failures, locations and program, its kernel artifact pending.
 ///
 /// # Specification
 /// trivial.
@@ -4197,7 +4274,7 @@ fn unreached_imports(
 /// - allocation: the empty names of a pending export, setup
 fn settled<'source>(
     share: Share<'source>,
-    (origins, failures, program): (OriginTable, Failures, Program<'source>),
+    (origins, failures, locations, program): (OriginTable, Failures, Locations, Program<'source>),
 ) -> Composed<'source>
 {
     Composed::Settled {
@@ -4207,6 +4284,7 @@ fn settled<'source>(
         origins,
         spellings: share.spellings,
         failures,
+        locations,
         shadowed: share.shadowed,
         inferred: share.inferred,
         unused: share.unused,
@@ -4218,6 +4296,22 @@ fn settled<'source>(
         keys: Names::default(),
         positions: Maybe::Absent(positioned::Absent::Pending),
         program,
+    }
+}
+
+/// The settle fault of a layout whose admission positions are out of order.
+///
+/// # Specification
+/// trivial.
+const fn unordered(fault: ProgramError) -> SettleFault
+{
+    match fault {
+        ProgramError::PositionOrder {
+            position, previous, ..
+        } => SettleFault::Unordered {
+            constant: position,
+            previous,
+        },
     }
 }
 
@@ -5421,6 +5515,45 @@ pub fn item_program(
     arena: CoreArena,
 ) -> Result<gandr_core_incremental::Program, gandr_core_incremental::ProgramError>
 {
+    let layout = item_layout(module, &arena)?;
+    let mut program = gandr_core_incremental::Program::over(arena, layout);
+    program.open_contexts_with(module_opener(module));
+    Ok(program)
+}
+
+/// The layout of `module`'s items over `arena`, as [`item_program`] lays them
+/// out: each declaration the lowering kept, keyed by its source's tag and its
+/// name.
+///
+/// # Specification
+/// - requires: as [`item_program`].
+/// - ensures: the layout of [`item_program`]'s items, in their order.
+/// - provides: the layout that keys a composition's nodes by their content
+///   ([`gandr_core_incremental::NodeKeys`]), where no program is at hand.
+/// - fails: as [`item_program`].
+/// - panics: none.
+///
+/// # Errors
+/// - [`gandr_core_incremental::ProgramError::PositionOrder`]: the lowering
+///   assigned positions out of order.
+///
+/// # Cost
+/// - allocation: the items, their tags and the layout's maps, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`item_program`], which lays its items out here.
+/// - witness: `tests::package::each_unrefused_declaration_is_one_item_keyed_by_its_name`
+#[spec(ensures: |ret| !matches!(
+    ret,
+    Err(gandr_core_incremental::ProgramError::PositionOrder { position, previous, .. })
+        if position > previous
+))]
+#[inline]
+pub fn item_layout(
+    module: &LoweredModule<'_>,
+    arena: &CoreArena,
+) -> Result<gandr_core_incremental::Layout, gandr_core_incremental::ProgramError>
+{
     let unit = module.unit();
     // Each source's tag, digested once for all the items it declares.
     let tags: Vec<Option<SourceTag>> = unit
@@ -5431,7 +5564,7 @@ pub fn item_program(
             Maybe::Absent(_) => None,
         })
         .collect();
-    let declarations = adapt(module, &arena);
+    let declarations = adapt(module, arena);
     let items = module
         .declarations()
         .iter()
@@ -5448,9 +5581,7 @@ pub fn item_program(
             gandr_core_incremental::Item::new(key, declaration)
         })
         .collect();
-    let mut program = gandr_core_incremental::Program::new(arena, items)?;
-    program.open_contexts_with(module_opener(module));
-    Ok(program)
+    gandr_core_incremental::Layout::new(items)
 }
 
 /// The sources of the program that [`item_program`] keys `module` into.

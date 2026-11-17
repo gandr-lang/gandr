@@ -2958,6 +2958,10 @@ enum Agreement
 /// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
 /// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_grade_mode_place_and_slot`
 /// - witness: `edit::tests::every_node_family_agrees_exactly_on_its_payload`
+///
+/// # Cost
+/// - allocation: the copies of the field labels that the predicate compares,
+///   diagnostic
 #[spec(
     ensures: |ret| {
     (ret == Agreement::Same)
@@ -2965,6 +2969,7 @@ enum Agreement
             && children(old).count() == children(new).count()
             && match *old {
                 ContentNode::Data {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Data {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
+                ContentNode::Codata {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Codata {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
                 ContentNode::Constructor {family:ref left,tag,ref fields,..} => matches!(*new,ContentNode::Constructor {family:ref right,tag:other,fields:ref theirs,..} if left == right && tag == other && fields.len() == theirs.len()),
                 ContentNode::Record(ref fields) => matches!(*new,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
                 ContentNode::RecordType(ref fields) => matches!(*new,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
@@ -3208,6 +3213,16 @@ fn agreement(
                 arguments: ref a,
             },
             &ContentNode::Data {
+                declaration: ref right,
+                arguments: ref b,
+            },
+        )
+        | (
+            &ContentNode::Codata {
+                declaration: ref left,
+                arguments: ref a,
+            },
+            &ContentNode::Codata {
                 declaration: ref right,
                 arguments: ref b,
             },
@@ -3531,6 +3546,10 @@ fn read(
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children and labels, growth
+///   within the arena's node
 #[spec(
     ensures: |ret| {
     program
@@ -3889,6 +3908,10 @@ where
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children and labels, growth
+///   within the arena's node
 #[spec(
     ensures: |ret| {
     program
@@ -4317,6 +4340,10 @@ fn world_content(
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children, growth within the
+///   arena's node
 #[spec(
     ensures: |ret| {
     program
@@ -4585,6 +4612,10 @@ where
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children, growth within the
+///   arena's node
 #[spec(
     ensures: |ret| {
     program
@@ -4606,7 +4637,7 @@ where
                     )
                 }
                 CompType::Unknown => ret == ContentNode::UnknownComputationType,
-                CompType::Codata { .. } => ret == ContentNode::Unresolved(Sort::CompType),
+                CompType::Codata { declaration, ref arguments } => matches!(ret, ContentNode::Codata { declaration: ref found, arguments: ref other } if *found == program.resolve(declaration) && arguments.len() == other.len()),
             },
         )
 },
@@ -4681,8 +4712,17 @@ where
             target: target.clone(),
         },
         Some(&CompType::Unknown) => ContentNode::UnknownComputationType,
-        // A codata application has no content form, and stays opaque.
-        Some(&CompType::Codata { .. }) | None => ContentNode::Unresolved(Sort::CompType),
+        Some(&CompType::Codata {
+            declaration,
+            ref arguments,
+        }) => ContentNode::Codata {
+            declaration: program.resolve(declaration),
+            arguments: arguments
+                .iter()
+                .map(|&argument| child(Root::Value(argument)))
+                .collect(),
+        },
+        None => ContentNode::Unresolved(Sort::CompType),
     }
 }
 

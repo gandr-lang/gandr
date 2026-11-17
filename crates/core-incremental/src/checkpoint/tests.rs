@@ -494,6 +494,122 @@ fn an_item_s_content_key_moves_only_with_its_content_1547()
     assert_ne!(first_two, edited_two, "the edited item's key moves");
 }
 
+/// #7403: a node's content key moves with its content and nothing else. The
+/// bodies of two items that hold one literal are two nodes of one content,
+/// and they share a key, in one arena and over an arena numbered apart. The
+/// key of an edited literal moves.
+#[test]
+fn a_node_s_key_moves_only_with_its_content_7403()
+{
+    let bodies = |program: &Program| {
+        program
+            .items()
+            .iter()
+            .map(|item| match *item.declaration().content() {
+                gandr_core_checker::DeclarationContent::Value {
+                    body: Maybe::Present(body),
+                    ..
+                } => (
+                    body,
+                    super::node_key(
+                        (program.arena(), program.layout()),
+                        crate::content::ArenaNode::Value(body),
+                    ),
+                ),
+                gandr_core_checker::DeclarationContent::Value { .. }
+                | gandr_core_checker::DeclarationContent::Data(_)
+                | gandr_core_checker::DeclarationContent::Codata(_)
+                | gandr_core_checker::DeclarationContent::Abstract(_)
+                | gandr_core_checker::DeclarationContent::World(_) => {
+                    panic!("each integer item has a body")
+                },
+            })
+            .collect::<vec::Vec<_>>()
+    };
+    let first = bodies(&integers(CoreArena::new(), &[
+        (Key("one"), Digits("1")),
+        (Key("also"), Digits("1")),
+        (Key("two"), Digits("2")),
+    ]));
+    let edited = bodies(&integers(noisy(Noise(3)), &[
+        (Key("one"), Digits("1")),
+        (Key("also"), Digits("1")),
+        (Key("two"), Digits("20")),
+    ]));
+    let (
+        &[
+            (one_node, Maybe::Present(one)),
+            (also_node, Maybe::Present(also)),
+            (_, Maybe::Present(two)),
+        ],
+        &[
+            (edited_node, Maybe::Present(edited_one)),
+            _,
+            (_, Maybe::Present(edited_two)),
+        ],
+    ) = (first.as_slice(), edited.as_slice())
+    else {
+        panic!("each literal body has a key: {first:?} {edited:?}");
+    };
+    assert_ne!(one_node, also_node, "the two bodies are two nodes");
+    assert_eq!(one, also, "two nodes of one content share a key");
+    assert_ne!(
+        one_node, edited_node,
+        "the arena numbered apart mints the body elsewhere"
+    );
+    assert_eq!(
+        one, edited_one,
+        "the key holds over an arena numbered apart"
+    );
+    assert_ne!(two, edited_two, "the edited literal's key moves");
+}
+
+/// #7403: a staged type keys as its base, as a page spells it. A recursive
+/// binder's type and the binder's own type are two staged contents, and a
+/// key of the sort alone gave both one spelling.
+#[test]
+fn a_staged_type_keys_as_its_base_7403()
+{
+    let program = integers(CoreArena::new(), &[]);
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let row = arena.value_type_row();
+    let stage = gandr_kernel_term::Stage::At(gandr_kernel_term::StageId::from(0_usize));
+    let staged_unit = arena.value_type_staged(unit, stage);
+    let staged_row = arena.value_type_staged(row, stage);
+    let returns_unit = arena.comp_type_returner(unit);
+    let thunk = arena.value_type_thunk(returns_unit);
+    let returns_staged = arena.comp_type_returner(staged_unit);
+    let staged_thunk = arena.value_type_thunk(returns_staged);
+    let key = |node| match super::node_key(
+        (&arena, program.layout()),
+        crate::content::ArenaNode::ValueType(node),
+    ) {
+        Maybe::Present(key) => key,
+        Maybe::Absent(absent) => panic!("each type here has a key: {absent:?}"),
+    };
+    assert_eq!(
+        key(staged_unit),
+        key(unit),
+        "a staged type keys as its base"
+    );
+    assert_ne!(
+        key(staged_unit),
+        key(staged_row),
+        "two staged types over two bases key apart"
+    );
+    assert_eq!(
+        key(staged_thunk),
+        key(thunk),
+        "a former over a staged type keys as the former over its base"
+    );
+    assert_ne!(
+        key(staged_thunk),
+        key(staged_unit),
+        "a thunk over a staged type keys apart from the staged type"
+    );
+}
+
 /// #6286: each checkpoint keeps the content key of its item, from a fresh
 /// pass and from a resume after an edit alike, so a reader keys the item's
 /// outcomes without a second hash, and an edit moves the key of the edited

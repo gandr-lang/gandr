@@ -79,12 +79,17 @@ use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_checker::Arena;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::Judged;
+use gandr_core_checker::Keyed;
+use gandr_core_checker::Keying;
 use gandr_core_checker::ModuleReport;
+use gandr_core_checker::Naming;
 use gandr_core_checker::ObligationCount;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Verdict;
+use gandr_core_checker::VerdictOf;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
@@ -111,6 +116,7 @@ use crate::expectation::reads_as_stated;
 use crate::expectation::web_as_stated;
 use crate::refusal::CorpusRefusal;
 use crate::refusal::Refusal;
+use crate::refusal::RefusalOf;
 use crate::report::SettleReport;
 use crate::root::CorpusRoot;
 use crate::root::Rooted;
@@ -317,10 +323,12 @@ impl fmt::Display for Settlement
 /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
 /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Produced<'source>
+pub enum ProducedOf<'source, N>
+where
+    N: Naming,
 {
     /// The checker's verdict.
-    Judged(Verdict),
+    Judged(VerdictOf<N>),
     /// The lowering refused the declaration, so the checker never saw it.
     Unlowered(LoweringRefusal<'source>),
     /// This crate refused the declaration, and the refusal stands in place of
@@ -329,7 +337,9 @@ pub enum Produced<'source>
     Guarded(CorpusRefusal),
 }
 
-impl<'source> Produced<'source>
+impl<'source, N> ProducedOf<'source, N>
+where
+    N: Naming,
 {
     /// The refusal produced, when the declaration was refused.
     ///
@@ -355,29 +365,59 @@ impl<'source> Produced<'source>
     #[spec(
         ensures: |ret| {
     matches!(
-        (* self, ret), (Self::Judged(Verdict::Refused(_)),
-        Maybe::Present(Refusal::Checking(_))) | (Self::Judged(Verdict::Checked { .. } |
-        Verdict::Data | Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Suspended(_)),
+        (* self, ret), (Self::Judged(VerdictOf::Refused(_)),
+        Maybe::Present(RefusalOf::Checking(_))) | (Self::Judged(VerdictOf::Checked { .. } |
+        VerdictOf::Data | VerdictOf::Synthesised { .. } | VerdictOf::Owed(_) | VerdictOf::Suspended(_)),
         Maybe::Absent(produced_refusal::Absent::Unrefused)) | (Self::Unlowered(_),
-        Maybe::Present(Refusal::Lowering(_))) | (Self::Guarded(_),
-        Maybe::Present(Refusal::Corpus(_)))
+        Maybe::Present(RefusalOf::Lowering(_))) | (Self::Guarded(_),
+        Maybe::Present(RefusalOf::Corpus(_)))
     )
 },
     )]
     #[inline]
-    pub const fn refusal(&self) -> Maybe<Refusal<'source>, produced_refusal::Absent>
+    pub const fn refusal(&self) -> Maybe<RefusalOf<'source, N>, produced_refusal::Absent>
     {
         match *self {
-            Self::Judged(Verdict::Refused(refusal)) => Maybe::Present(Refusal::Checking(refusal)),
+            Self::Judged(VerdictOf::Refused(refusal)) => {
+                Maybe::Present(RefusalOf::Checking(refusal))
+            },
             Self::Judged(
-                Verdict::Data
-                | Verdict::Checked { .. }
-                | Verdict::Synthesised { .. }
-                | Verdict::Owed(_)
-                | Verdict::Suspended(_),
+                VerdictOf::Data
+                | VerdictOf::Checked { .. }
+                | VerdictOf::Synthesised { .. }
+                | VerdictOf::Owed(_)
+                | VerdictOf::Suspended(_),
             ) => Maybe::Absent(produced_refusal::Absent::Unrefused),
-            Self::Unlowered(refusal) => Maybe::Present(Refusal::Lowering(refusal)),
-            Self::Guarded(refusal) => Maybe::Present(Refusal::Corpus(refusal)),
+            Self::Unlowered(refusal) => Maybe::Present(RefusalOf::Lowering(refusal)),
+            Self::Guarded(refusal) => Maybe::Present(RefusalOf::Corpus(refusal)),
+        }
+    }
+}
+
+/// What a declaration produced, as a report reads it: a checker verdict names
+/// each node by its content key.
+pub type Produced<'source> = ProducedOf<'source, Keyed>;
+
+impl<'source> ProducedOf<'source, Arena>
+{
+    /// The same production, a checker verdict's nodes named by their content
+    /// keys.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> Produced<'source>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Judged(verdict) => ProducedOf::Judged(verdict.keyed(keys)),
+            Self::Unlowered(refusal) => ProducedOf::Unlowered(refusal),
+            Self::Guarded(refusal) => ProducedOf::Guarded(refusal),
         }
     }
 }
@@ -641,6 +681,9 @@ impl<'source> DeclarationReport<'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copy of the report at the face's span, diagnostic
     #[inline]
     #[must_use]
     pub fn at(
@@ -786,6 +829,9 @@ impl<'source> DeclarationReport<'source>
     ///   against.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the produced outcome's text and channels, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — checked, owed, refused, guarded and requested-run
@@ -1189,6 +1235,15 @@ pub enum SettleFault
         /// The bytes the attribute covers.
         span: ByteSpan,
     },
+    /// A declaration's admission position does not follow its predecessor's,
+    /// so no layout names the constants that key its nodes.
+    Unordered
+    {
+        /// The declaration's admission position.
+        constant: ConstantIndex,
+        /// Its predecessor's admission position.
+        previous: ConstantIndex,
+    },
 }
 
 impl fmt::Display for SettleFault
@@ -1241,6 +1296,12 @@ impl fmt::Display for SettleFault
             Self::UnreadablePayload { span } => write!(
                 f,
                 "the payload of the attribute at {span} is not its schema's literal in the arena given"
+            ),
+            Self::Unordered { constant, previous } => write!(
+                f,
+                "the declaration at admission position {} follows position {}, out of order",
+                usize::from(constant),
+                usize::from(previous)
             ),
         }
     }
@@ -1348,19 +1409,19 @@ impl Error for SettleFault
                                     declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..) | Outcome::Distributes(_))
                                 )
                                     && matches!(
-                                        declaration.produced, Produced::Judged(Verdict::Checked { ..
-                                        } | Verdict::Synthesised { .. })
+                                        declaration.produced, Produced::Judged(VerdictOf::Checked { ..
+                                        } | VerdictOf::Synthesised { .. })
                                     ))
                                     || (matches!(
                                         declaration.stated, Stated::Verdict(Outcome::Normalizes(_) | Outcome::Reads(_))
                                     ) && matches!(
-                                        declaration.produced, Produced::Judged(Verdict::Data
-                                        | Verdict::Checked { .. } | Verdict::Synthesised { .. })
+                                        declaration.produced, Produced::Judged(VerdictOf::Data
+                                        | VerdictOf::Checked { .. } | VerdictOf::Synthesised { .. })
                                     ))
                                     || (matches!(
                                         declaration.stated, Stated::Verdict(Outcome::RefusesRunning(..))
                                     ) && matches!(
-                                        declaration.produced, Produced::Judged(Verdict::Refused(_))
+                                        declaration.produced, Produced::Judged(VerdictOf::Refused(_))
                                     ))
                             }
                             Maybe::Absent(ran::Absent::Unaccepted) => {
@@ -1368,21 +1429,21 @@ impl Error for SettleFault
                                     declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_) | Outcome::RunsTracing(..) | Outcome::Distributes(_))
                                 )
                                     && !matches!(
-                                        declaration.produced, Produced::Judged(Verdict::Checked { ..
-                                        } | Verdict::Synthesised { .. })
+                                        declaration.produced, Produced::Judged(VerdictOf::Checked { ..
+                                        } | VerdictOf::Synthesised { .. })
                                     ))
                                     || (matches!(
                                         declaration.stated, Stated::Verdict(Outcome::Normalizes(_) | Outcome::Reads(_))
                                     ) && !matches!(
-                                        declaration.produced, Produced::Judged(Verdict::Data
-                                        | Verdict::Checked { .. } | Verdict::Synthesised { .. })
+                                        declaration.produced, Produced::Judged(VerdictOf::Data
+                                        | VerdictOf::Checked { .. } | VerdictOf::Synthesised { .. })
                                     ))
                             }
                             Maybe::Absent(ran::Absent::Unrefused) => {
                                 matches!(
                                     declaration.stated, Stated::Verdict(Outcome::RefusesRunning(..))
                                 ) && !matches!(
-                                    declaration.produced, Produced::Judged(Verdict::Refused(_))
+                                    declaration.produced, Produced::Judged(VerdictOf::Refused(_))
                                 )
                             }
                             Maybe::Absent(ran::Absent::Unstated) => {
@@ -1418,11 +1479,11 @@ impl Error for SettleFault
                             || (lowered.role() == Role::Admitted
                                 && matches!(answer.verdict(), Verdict::Owed(_))
                                 && usize::from(declaration.owed) == 0_usize))
-                        && (declaration.produced == Produced::Judged(answer.verdict())
+                        && (declaration.produced == Produced::Judged(answer.verdict().keyed(keys))
                             || matches!(
                                 (answer.verdict(), declaration.produced),
-                                (Verdict::Refused(refusal), Produced::Judged(Verdict::Refused(cause)))
-                                    if cause == caused(module, verdicts, refusal)
+                                (Verdict::Refused(refusal), Produced::Judged(VerdictOf::Refused(cause)))
+                                    if cause == caused(module, verdicts, refusal).keyed(keys)
                             )
                             || matches!(declaration.produced, Produced::Guarded(_)))
                 })
@@ -1474,21 +1535,24 @@ impl Error for SettleFault
                     .any(|entry| entry.span() == span)
             })
     }
+    Err(SettleFault::Unordered { .. }) => false,
 },
 )]
 #[inline]
-pub fn settle<'source, Roots, Run>(
+pub fn settle<'source, Roots, Run, K>(
     roots: Roots,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
+    keys: &K,
     runner: &mut Run,
 ) -> Result<SettleReport<'source>, SettleFault>
 where
     Roots: Rooted + Copy,
     Run: Runner,
+    K: Keying,
 {
-    settle_after(roots, arena, module, verdicts, runner, &[])
+    settle_after(roots, arena, module, verdicts, keys, runner, &[])
 }
 
 /// [`settle`], the reports of `module`'s leading declarations given as
@@ -1529,17 +1593,19 @@ where
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
-pub fn settle_after<'source, Roots, Run>(
+pub fn settle_after<'source, Roots, Run, K>(
     roots: Roots,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
+    keys: &K,
     runner: &mut Run,
     earlier: &[DeclarationReport<'source>],
 ) -> Result<SettleReport<'source>, SettleFault>
 where
     Roots: Rooted + Copy,
     Run: Runner,
+    K: Keying,
 {
     // The declarations the earlier report settled lead the module's, the
     // closure's; the rest are settled here.
@@ -1595,7 +1661,7 @@ where
                 }
                 match answer.verdict() {
                     Verdict::Refused(refusal) => {
-                        Some(Refusal::Checking(caused(module, verdicts, refusal)).name())
+                        Some(RefusalOf::Checking(caused(module, verdicts, refusal)).name())
                     },
                     Verdict::Data
                     | Verdict::Checked { .. }
@@ -1626,9 +1692,10 @@ where
     for lowered in later {
         let root = roots.root_at(lowered.span().start());
         let (produced, owed) = match lowered.outcome() {
-            DeclarationOutcome::Refused(refusal) => {
-                (Produced::Unlowered(refusal), ObligationCount::from(0_usize))
-            },
+            DeclarationOutcome::Refused(refusal) => (
+                ProducedOf::Unlowered(refusal),
+                ObligationCount::from(0_usize),
+            ),
             DeclarationOutcome::Completed { .. }
             | DeclarationOutcome::Uncompleted { .. }
             | DeclarationOutcome::Bodied { .. }
@@ -1648,25 +1715,25 @@ where
                     });
                 }
                 let verdict = answer.verdict();
-                (Produced::Judged(verdict), owed_by(verdicts, answer))
+                (ProducedOf::Judged(verdict), owed_by(verdicts, answer))
             },
         };
         // A declaration refused at a theory's terms the checker refused is
         // refused by the terms' cause: a refusal names its cause, never its
         // consequence.
         let produced = match produced {
-            Produced::Judged(Verdict::Refused(refusal)) => {
-                Produced::Judged(Verdict::Refused(caused(module, verdicts, refusal)))
+            ProducedOf::Judged(Verdict::Refused(refusal)) => {
+                ProducedOf::Judged(Verdict::Refused(caused(module, verdicts, refusal)))
             },
-            Produced::Unlowered(_)
-            | Produced::Judged(
+            ProducedOf::Unlowered(_)
+            | ProducedOf::Judged(
                 Verdict::Data
                 | Verdict::Checked { .. }
                 | Verdict::Synthesised { .. }
                 | Verdict::Owed(_)
                 | Verdict::Suspended(_),
             )
-            | Produced::Guarded(_) => produced,
+            | ProducedOf::Guarded(_) => produced,
         };
         let family = data_refusals
             .range(..= lowered.span().start())
@@ -1689,7 +1756,7 @@ where
         // theory's terms write no form of their own: refused, they state what
         // the first declaration asking for them states.
         let expectations = match produced {
-            Produced::Judged(Verdict::Refused(_)) if lowered.role() == Role::Terms => {
+            ProducedOf::Judged(Verdict::Refused(_)) if lowered.role() == Role::Terms => {
                 match asker(module, verdicts, lowered.constant()) {
                     Maybe::Present(asker) => {
                         expected(roots.root_at(asker.span().start()), arena, module, asker)?
@@ -1697,20 +1764,20 @@ where
                     Maybe::Absent(_) => expectations,
                 }
             },
-            Produced::Unlowered(_) | Produced::Judged(Verdict::Refused(_))
+            ProducedOf::Unlowered(_) | ProducedOf::Judged(Verdict::Refused(_))
                 if !header(module.attributes(), lowered).is_empty() =>
             {
                 refused_expected(root, arena, module, lowered)?
             },
-            Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. })
+            ProducedOf::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. })
                 if expectations.membership == Membership::Fixture
                     && (function_s_form(module, lowered).is_some()
                         || refused_witness_s_form(module, verdicts, lowered).is_some()) =>
             {
                 Expectations::unattributed()
             },
-            Produced::Unlowered(_)
-            | Produced::Judged(
+            ProducedOf::Unlowered(_)
+            | ProducedOf::Judged(
                 Verdict::Data
                 | Verdict::Checked { .. }
                 | Verdict::Synthesised { .. }
@@ -1718,10 +1785,10 @@ where
                 | Verdict::Suspended(_)
                 | Verdict::Refused(_),
             )
-            | Produced::Guarded(_) => expectations,
+            | ProducedOf::Guarded(_) => expectations,
         };
         let produced = match expectations.guard {
-            Maybe::Present(refusal) => Produced::Guarded(refusal),
+            Maybe::Present(refusal) => ProducedOf::Guarded(refusal),
             Maybe::Absent(expectation::guard::Absent::Admitted) => produced,
         };
         // A boundary check stands as its run answers: a clause its members
@@ -1729,9 +1796,9 @@ where
         let produced = match (boundary_at(module.attributes(), lowered), produced) {
             (
                 Some(span),
-                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+                ProducedOf::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => match CorpusRefusal::unrealised(&runner.run(lowered.constant()), span) {
-                Maybe::Present(refusal) => Produced::Guarded(refusal),
+                Maybe::Present(refusal) => ProducedOf::Guarded(refusal),
                 Maybe::Absent(_) => produced,
             },
             (Some(_) | None, _) => produced,
@@ -1740,7 +1807,7 @@ where
         let ran = match (&expectations.stated, produced) {
             (
                 &Stated::Verdict(Outcome::RunsTracing(_, ref stated)),
-                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+                ProducedOf::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => {
                 let TracedRun { run, channels } = runner.run_traced(lowered.constant());
                 traced = played(stated, &channels);
@@ -1748,41 +1815,41 @@ where
             },
             (
                 &Stated::Verdict(Outcome::Runs(_)),
-                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+                ProducedOf::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(runner.run(lowered.constant())),
             (
                 &Stated::Verdict(Outcome::Distributes(_)),
-                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+                ProducedOf::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(crate::distribution::distributed(runner, lowered.constant())),
             (
                 &Stated::Verdict(Outcome::Decomposes(_)),
-                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+                ProducedOf::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(runner.decompose(lowered.constant())),
             (
                 &Stated::Verdict(Outcome::RefusesRunning(..)),
-                Produced::Judged(Verdict::Refused(_)),
+                ProducedOf::Judged(Verdict::Refused(_)),
             ) => Maybe::Present(runner.run_refused(lowered.constant())),
             (
                 &Stated::Verdict(Outcome::RefusesRunning(..)),
-                Produced::Judged(
+                ProducedOf::Judged(
                     Verdict::Data
                     | Verdict::Checked { .. }
                     | Verdict::Synthesised { .. }
                     | Verdict::Owed(_)
                     | Verdict::Suspended(_),
                 )
-                | Produced::Unlowered(_)
-                | Produced::Guarded(_),
+                | ProducedOf::Unlowered(_)
+                | ProducedOf::Guarded(_),
             ) => Maybe::Absent(ran::Absent::Unrefused),
             (
                 &Stated::Verdict(Outcome::Normalizes(ref line)),
-                Produced::Judged(
+                ProducedOf::Judged(
                     Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
                 ),
             ) => Maybe::Present(normalized(module, lowered, line)),
             (
                 &Stated::Verdict(Outcome::Reads(_)),
-                Produced::Judged(
+                ProducedOf::Judged(
                     Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
                 ),
             ) => Maybe::Present(runner.reads(lowered.constant())),
@@ -1793,17 +1860,17 @@ where
                     | Outcome::RunsTracing(..)
                     | Outcome::Distributes(_),
                 ),
-                Produced::Judged(
+                ProducedOf::Judged(
                     Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_),
                 )
-                | Produced::Unlowered(_)
-                | Produced::Guarded(_),
+                | ProducedOf::Unlowered(_)
+                | ProducedOf::Guarded(_),
             )
             | (
                 &Stated::Verdict(Outcome::Normalizes(_) | Outcome::Reads(_)),
-                Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_))
-                | Produced::Unlowered(_)
-                | Produced::Guarded(_),
+                ProducedOf::Judged(Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_))
+                | ProducedOf::Unlowered(_)
+                | ProducedOf::Guarded(_),
             ) => Maybe::Absent(ran::Absent::Unaccepted),
             (
                 &Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_)) | &Stated::Malformed(_),
@@ -1811,25 +1878,27 @@ where
             ) => Maybe::Absent(ran::Absent::Unstated),
         };
         let waits = match produced {
-            Produced::Judged(Verdict::Suspended(_)) => waits(module, verdicts, lowered.constant()),
-            Produced::Judged(
+            ProducedOf::Judged(Verdict::Suspended(_)) => {
+                waits(module, verdicts, lowered.constant())
+            },
+            ProducedOf::Judged(
                 Verdict::Data
                 | Verdict::Checked { .. }
                 | Verdict::Synthesised { .. }
                 | Verdict::Owed(_)
                 | Verdict::Refused(_),
             )
-            | Produced::Unlowered(_)
-            | Produced::Guarded(_) => Vec::new(),
+            | ProducedOf::Unlowered(_)
+            | ProducedOf::Guarded(_) => Vec::new(),
         };
         // A law the host admits crosses as the axiom it is: the audit lists
         // it in place of an obligation.
         let (owed, admitted) = match produced {
-            Produced::Judged(Verdict::Owed(_)) if lowered.role() == Role::Admitted => (
+            ProducedOf::Judged(Verdict::Owed(_)) if lowered.role() == Role::Admitted => (
                 ObligationCount::from(0_usize),
                 Maybe::Present(module.path_of(lowered)),
             ),
-            Produced::Judged(
+            ProducedOf::Judged(
                 Verdict::Data
                 | Verdict::Checked { .. }
                 | Verdict::Synthesised { .. }
@@ -1837,16 +1906,16 @@ where
                 | Verdict::Suspended(_)
                 | Verdict::Refused(_),
             )
-            | Produced::Unlowered(_)
-            | Produced::Guarded(_) => (owed, Maybe::Absent(admitted::Absent::Unadmitted)),
+            | ProducedOf::Unlowered(_)
+            | ProducedOf::Guarded(_) => (owed, Maybe::Absent(admitted::Absent::Unadmitted)),
         };
         // A law its module omits, checked at the body the checker minted, is a
         // cell the cells report lists beside its source.
         let discharged = match produced {
-            Produced::Judged(Verdict::Checked { .. }) if lowered.role() == Role::Discharged => {
+            ProducedOf::Judged(Verdict::Checked { .. }) if lowered.role() == Role::Discharged => {
                 Maybe::Present((module.path_of(lowered), Filler::Here))
             },
-            Produced::Judged(
+            ProducedOf::Judged(
                 Verdict::Data
                 | Verdict::Checked { .. }
                 | Verdict::Synthesised { .. }
@@ -1854,8 +1923,8 @@ where
                 | Verdict::Suspended(_)
                 | Verdict::Refused(_),
             )
-            | Produced::Unlowered(_)
-            | Produced::Guarded(_) => Maybe::Absent(discharged::Absent::Undischarged),
+            | ProducedOf::Unlowered(_)
+            | ProducedOf::Guarded(_) => Maybe::Absent(discharged::Absent::Undischarged),
         };
         declarations.push(DeclarationReport {
             name: lowered.name(),
@@ -1863,7 +1932,7 @@ where
             constant: lowered.constant(),
             membership: expectations.membership,
             stated: expectations.stated,
-            produced,
+            produced: produced.keyed(keys),
             owed,
             waits,
             ran,
@@ -2373,6 +2442,53 @@ fn caused(
         .unwrap_or(refusal)
 }
 
+/// The checker refusal that [`settle`] reports for the declaration at
+/// `constant`, in the form of the arena that `verdicts` judged over: its
+/// verdict's refusal, or the cause that the refusal names.
+///
+/// # Specification
+/// - requires: `verdicts` is the report the checker gave `module`.
+/// - ensures: for a declaration that `verdicts` refuses, the refusal whose
+///   keyed form [`settle`] reports as what the declaration produced, where no
+///   corpus refusal stands in its place;
+///   [`produced_refusal::Absent::Unrefused`] for every other declaration.
+/// - provides: the arena form that a composition locates and spells a report's
+///   refusal through, while the arena is at hand.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the precondition names the report that the checker gave
+///   `module`, and no value of the call holds that relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration refused at refused terms states their
+///   cause, and a declaration refused at formed data keeps its own.
+/// - witness: `settle::tests::a_declaration_refused_at_refused_terms_states_their_cause_4143`
+#[inline]
+pub fn checker_refusal(
+    module: &LoweredModule<'_>,
+    verdicts: &ModuleReport,
+    constant: ConstantIndex,
+) -> Maybe<CheckRefusal, produced_refusal::Absent>
+{
+    let judged = verdicts.judged();
+    match judged
+        .binary_search_by_key(&constant, Judged::constant)
+        .ok()
+        .and_then(|at| judged.get(at))
+        .map(Judged::verdict)
+    {
+        Some(Verdict::Refused(refusal)) => Maybe::Present(caused(module, verdicts, refusal)),
+        Some(
+            Verdict::Data
+            | Verdict::Checked { .. }
+            | Verdict::Synthesised { .. }
+            | Verdict::Owed(_)
+            | Verdict::Suspended(_),
+        )
+        | None => Maybe::Absent(produced_refusal::Absent::Unrefused),
+    }
+}
+
 /// The first declaration of `module` asking for the terms at `terms`: the
 /// first `verdicts` refuses `NotADataType` at them.
 ///
@@ -2398,7 +2514,7 @@ fn asker<'module, 'source>(
     terms: ConstantIndex,
 ) -> Maybe<&'module LoweredDeclaration<'source>, asked::Absent>
 {
-    verdicts
+    let Some(declaration) = verdicts
         .judged()
         .iter()
         .find(|answer| answer.verdict() == Verdict::Refused(CheckRefusal::NotADataType(terms)))
@@ -2408,7 +2524,10 @@ fn asker<'module, 'source>(
                 .iter()
                 .find(|declaration| declaration.constant() == answer.constant())
         })
-        .map_or(Maybe::Absent(asked::Absent::Unasked), Maybe::Present)
+    else {
+        return Maybe::Absent(asked::Absent::Unasked);
+    };
+    Maybe::Present(declaration)
 }
 
 /// What the declaration `lowered` of `module` states under `root`: the
@@ -2619,7 +2738,7 @@ mod tests
 
     use anodized::spec;
     use gandr_core_checker::ObligationCount;
-    use gandr_core_checker::Verdict;
+    use gandr_core_checker::VerdictOf;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
     use gandr_kernel_term::ConstantIndex;
@@ -3139,7 +3258,7 @@ mod tests
             panic!("four declarations: {:?}", report.declarations());
         };
         assert!(
-            matches!(three.produced(), Produced::Judged(Verdict::Suspended(_))),
+            matches!(three.produced(), Produced::Judged(VerdictOf::Suspended(_))),
             "a value at an owed code's decode waits: {:?}",
             three.produced()
         );
@@ -3157,7 +3276,7 @@ mod tests
         assert!(
             matches!(
                 resumed.produced(),
-                Produced::Judged(Verdict::Checked { .. })
+                Produced::Judged(VerdictOf::Checked { .. })
             ),
             "the same value at a filled code's decode checks: {:?}",
             resumed.produced()
@@ -3182,7 +3301,7 @@ mod tests
             .find(|declaration| declaration.name() == SurfaceName::from("refl"))
             .unwrap_or_else(|| panic!("`refl` is declared: {:?}", report.declarations()));
         assert!(
-            matches!(refl.produced(), Produced::Judged(Verdict::Owed(_))),
+            matches!(refl.produced(), Produced::Judged(VerdictOf::Owed(_))),
             "the admission is owed to the checker: {:?}",
             refl.produced()
         );
@@ -3221,11 +3340,11 @@ mod tests
             .collect::<Vec<_>>();
         let [
             (
-                Produced::Judged(Verdict::Checked { .. }),
+                Produced::Judged(VerdictOf::Checked { .. }),
                 &Maybe::Present((ref converts, Filler::Here)),
             ),
             (
-                Produced::Judged(Verdict::Refused(_)),
+                Produced::Judged(VerdictOf::Refused(_)),
                 &Maybe::Absent(discharged::Absent::Undischarged),
             ),
         ] = *cells
@@ -3314,6 +3433,7 @@ mod tests
             &module.arena,
             &module.module,
             &module.verdicts,
+            &gandr_core_incremental::NodeKeys::new(&module.arena, &crate::fixture::layout(&module)),
             &mut runner,
         )
         .expect("the verdicts are the module's own");
@@ -3391,6 +3511,10 @@ mod tests
                 &module.arena,
                 &module.module,
                 &module.verdicts,
+                &gandr_core_incremental::NodeKeys::new(
+                    &module.arena,
+                    &crate::fixture::layout(&module),
+                ),
                 &mut runner,
             )
             .expect("the verdicts are the module's own");
@@ -3581,6 +3705,10 @@ mod tests
                 &module.arena,
                 &module.module,
                 &module.verdicts,
+                &gandr_core_incremental::NodeKeys::new(
+                    &module.arena,
+                    &crate::fixture::layout(&module),
+                ),
                 &mut asked,
             )
             .expect("the verdicts are the module's own");
@@ -3660,6 +3788,10 @@ mod tests
                 &module.arena,
                 &module.module,
                 &module.verdicts,
+                &gandr_core_incremental::NodeKeys::new(
+                    &module.arena,
+                    &crate::fixture::layout(&module),
+                ),
                 &mut asked,
             )
             .expect("the verdicts are the module's own");
@@ -3754,6 +3886,10 @@ mod tests
                 &module.arena,
                 &module.module,
                 &module.verdicts,
+                &gandr_core_incremental::NodeKeys::new(
+                    &module.arena,
+                    &crate::fixture::layout(&module),
+                ),
                 &mut asked,
             )
             .expect("the verdicts are the module's own");
@@ -3825,6 +3961,7 @@ mod tests
             &module.arena,
             &module.module,
             &module.verdicts,
+            &gandr_core_incremental::NodeKeys::new(&module.arena, &crate::fixture::layout(&module)),
             &mut asked,
         )
         .expect("the verdicts are the module's own");
@@ -4224,6 +4361,7 @@ data NatUnits : Type where {{
             &module.arena,
             &module.module,
             &module.verdicts,
+            &gandr_core_incremental::NodeKeys::new(&module.arena, &crate::fixture::layout(&module)),
             &mut ran_at,
         )
         .expect("the verdicts are the module's own");
@@ -4240,6 +4378,10 @@ data NatUnits : Type where {{
                 &module.arena,
                 &module.module,
                 &module.verdicts,
+                &gandr_core_incremental::NodeKeys::new(
+                    &module.arena,
+                    &crate::fixture::layout(&module),
+                ),
                 &mut runner,
                 earlier,
             )
@@ -4303,6 +4445,10 @@ data NatUnits : Type where {{
                 &module.arena,
                 &module.module,
                 verdicts,
+                &gandr_core_incremental::NodeKeys::new(
+                    &module.arena,
+                    &crate::fixture::layout(module),
+                ),
                 &mut runner,
             );
             assert_eq!(result, Err(fault));
@@ -4417,6 +4563,10 @@ data NatUnits : Type where {{
                     &two.arena,
                     &two.module,
                     &one.verdicts,
+                    &gandr_core_incremental::NodeKeys::new(
+                        &two.arena,
+                        &crate::fixture::layout(&two),
+                    ),
                     &mut ran_at,
                 ),
                 SettleFault::MissingVerdict {
@@ -4429,6 +4579,10 @@ data NatUnits : Type where {{
                     &one.arena,
                     &one.module,
                     &two.verdicts,
+                    &gandr_core_incremental::NodeKeys::new(
+                        &one.arena,
+                        &crate::fixture::layout(&one),
+                    ),
                     &mut ran_at,
                 ),
                 SettleFault::SurplusVerdict {
@@ -4441,6 +4595,10 @@ data NatUnits : Type where {{
                     &shifted.arena,
                     &shifted.module,
                     &one.verdicts,
+                    &gandr_core_incremental::NodeKeys::new(
+                        &shifted.arena,
+                        &crate::fixture::layout(&shifted),
+                    ),
                     &mut ran_at,
                 ),
                 SettleFault::MisalignedVerdict {
@@ -4454,6 +4612,10 @@ data NatUnits : Type where {{
                     &CoreArena::new(),
                     &owed.module,
                     &owed.verdicts,
+                    &gandr_core_incremental::NodeKeys::new(
+                        &CoreArena::new(),
+                        &crate::fixture::layout(&owed),
+                    ),
                     &mut ran_at,
                 ),
                 SettleFault::UnreadablePayload { span: at(3, 10) },
@@ -4470,6 +4632,10 @@ data NatUnits : Type where {{
                     &own.arena,
                     &own.module,
                     &own.verdicts,
+                    &gandr_core_incremental::NodeKeys::new(
+                        &own.arena,
+                        &crate::fixture::layout(own)
+                    ),
                     &mut ran_at,
                 )
                 .is_ok(),

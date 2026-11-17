@@ -897,13 +897,16 @@ fn find<Id>(
 where
     Id: Copy + Ord,
 {
-    let found = entries
+    // The variant is named in a branch: `Maybe::Present` passed as a function
+    // reads to `allocation_free_region` as a call that allocates.
+    let Some(&(_held, held)) = entries
         .binary_search_by_key(&id, |&(held, _origin)| held)
         .ok()
         .and_then(|position| entries.get(position))
-        .map(|&(_held, held)| held);
-
-    found.map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
+    else {
+        return Maybe::Absent(origin::Absent::Unrecorded);
+    };
+    Maybe::Present(held)
 }
 
 /// The labels one family of written labels holds for `id`.

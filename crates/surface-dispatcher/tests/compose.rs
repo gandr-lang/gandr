@@ -11,7 +11,7 @@ use gandr_core_checker::Polled;
 use gandr_core_checker::Retirement;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::Unretired;
-use gandr_core_checker::Verdict;
+use gandr_core_checker::VerdictOf;
 use gandr_core_checker::bridge;
 use gandr_core_checker::check_module;
 use gandr_core_checker::worlds::WorldName;
@@ -133,7 +133,7 @@ fn a_closure_judged_once_judges_each_document_alike_776()
         Vec<SurfaceName<'source>>,
         (
             Discriminant<Produced<'source>>,
-            Option<Discriminant<Verdict>>,
+            Option<Discriminant<VerdictOf<gandr_core_checker::Keyed>>>,
         ),
         (Outcome, Vec<String>),
     );
@@ -216,10 +216,13 @@ fn a_closure_judged_once_judges_each_document_alike_776()
                 let compared = match produced.refusal() {
                     Maybe::Present(Refusal::Checking(refusal)) => {
                         let compared = refusal.compared();
+                        let place = spelled.place_of(declaration.constant());
                         [compared.expected, compared.found]
                             .into_iter()
                             .map(|side| match side {
-                                Maybe::Present(node) => match spelled.get(node) {
+                                Maybe::Present(node) => match spelled
+                                    .get(gandr_surface_diagnostics::SpelledNode { node, place })
+                                {
                                     Maybe::Present(spelling) => String::from(spelling.as_ref()),
                                     Maybe::Absent(_) => String::from("unspelled"),
                                 },
@@ -447,14 +450,14 @@ fn a_module_settles_every_declaration_once()
     assert!(
         matches!(
             report.declarations()[0].produced(),
-            Produced::Judged(Verdict::Checked { .. })
+            Produced::Judged(VerdictOf::Checked { .. })
         ),
         "a signed body checks"
     );
     assert!(
         matches!(
             report.declarations()[1].produced(),
-            Produced::Judged(Verdict::Synthesised { .. })
+            Produced::Judged(VerdictOf::Synthesised { .. })
         ),
         "an unsigned body synthesises"
     );
@@ -1037,17 +1040,21 @@ fn a_judged_module_renders_before_its_admission()
         let kernel = readmission.export(module.structured_names());
         let keys = readmission.export_names();
         let mut program = fixture::program(&arena, &module, &verdicts);
+        let layout =
+            gandr_surface_dispatcher::item_layout(&module, &arena).expect("the positions ascend");
+        let node_keys = gandr_core_incremental::NodeKeys::new(&arena, &layout);
         let report = settle(
             CorpusRoot::Fixture,
             &arena,
             &module,
             &verdicts,
+            &node_keys,
             &mut gandr_surface_evaluate::Machine::new(&mut program),
         )
         .expect("the verdicts settle");
-        let exercised = fixture::exercised(&arena, &module, &report);
+        let exercised = fixture::exercised((&arena, &verdicts), &module, &report);
         let unstatable = fixture::unstatable(&module);
-        let failures = gandr_surface_diagnostics::Failures::of(&verdicts);
+        let failures = gandr_surface_diagnostics::Failures::of(&verdicts, &node_keys);
         fixture::located(
             module.origins_mut(),
             &verdicts,
@@ -1057,7 +1064,14 @@ fn a_judged_module_renders_before_its_admission()
             &arena,
             &module,
             &report,
-            &failures,
+            &verdicts,
+            (module.origins(), SourceText::from(source)),
+            &node_keys,
+        );
+        let locations = gandr_surface_diagnostics::Locations::of(
+            &module,
+            &report,
+            &verdicts,
             (module.origins(), SourceText::from(source)),
         );
         let shadowed = module.recognition().shadowed().to_vec();
@@ -1072,6 +1086,7 @@ fn a_judged_module_renders_before_its_admission()
             origins: module.into_origins(),
             spellings,
             failures,
+            locations,
             shadowed,
             inferred,
             runs,
@@ -1445,7 +1460,7 @@ fn a_sealed_module_settles_its_abstract_type()
     assert!(
         matches!(
             report.declarations()[0].produced(),
-            Produced::Judged(Verdict::Data)
+            Produced::Judged(VerdictOf::Data)
         ),
         "the abstract type is judged as a type former, with no axiom behind it"
     );

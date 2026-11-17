@@ -26,6 +26,10 @@
 //! - [`Context`] is the two-zone typing context `Γ; Σ`: flat, de Bruijn,
 //!   id-addressed and name-free. Names live in the surface syntax and in
 //!   diagnostics, above this crate.
+//! - [`TypeImporter`] copies the graph that type roots reach into another
+//!   arena, and keeps the children that the imports share shared.
+//!   [`instantiate_value_type_under`] closes the ambient variables and keeps a
+//!   chosen number of local binders.
 //! - [`DefinitionChain`] records each definition's body, as a canonical
 //!   subterm-table entry index, and its unfolding height.
 //! - [`DefinitionalEnvironment`] decides, scope by scope, whether a definition
@@ -232,6 +236,7 @@ pub mod handler;
 pub mod hole;
 pub mod identity;
 mod import;
+pub mod key;
 pub mod memory;
 pub mod model;
 pub mod pattern;
@@ -370,4 +375,5 @@ pub use crate::syntax::equal_type_reading;
 pub use crate::syntax::equal_type_syntax;
 pub use crate::syntax::folded_computation;
 pub use crate::syntax::identified_words;
+pub use crate::syntax::unstaged;
 pub use crate::syntax::unworded;

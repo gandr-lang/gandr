@@ -559,6 +559,59 @@ fn a_data_type_mints_with_its_arguments()
     );
 }
 
+/// A codata application mints as a data application does: at its
+/// declaration, with its arguments, and it reads back as its own table. A
+/// renumbering carries its arguments to their images and keeps its
+/// declaration (#7403).
+#[test]
+fn a_codata_type_mints_and_renumbers_with_its_arguments_7403()
+{
+    let it = || Reference::Item {
+        key: ItemKey::from("it"),
+        occurrence: Occurrence::from(0_usize),
+    };
+    let mut program = single(
+        CoreArena::new(),
+        Maybe::Absent(signature::Absent::Unsigned),
+        Maybe::Absent(body::Absent::Hole),
+    );
+    let applied = crate::fixture::type_content(&[
+        ContentNode::Codata {
+            declaration: it(),
+            arguments: vec![NodeIndex::from(1_usize)],
+        },
+        ContentNode::Literal(zero()),
+    ]);
+    let Maybe::Present(minted) = applied.mint_in(&mut program)
+    else {
+        panic!("a codata type seats at its declaration");
+    };
+    assert!(
+        matches!(minted, ArenaNode::CompType(_)),
+        "a codata type is a computation type: {minted:?}"
+    );
+    assert_eq!(
+        TypeContent::of_node(&program, minted),
+        applied,
+        "a codata type reads back as its table"
+    );
+    let mut shifted = |child: NodeIndex| NodeIndex::from(usize::from(child).saturating_add(10));
+    assert_eq!(
+        super::map_children(
+            &ContentNode::Codata {
+                declaration: it(),
+                arguments: vec![NodeIndex::from(1_usize), NodeIndex::from(2_usize)],
+            },
+            &mut shifted
+        ),
+        ContentNode::Codata {
+            declaration: it(),
+            arguments: vec![NodeIndex::from(11_usize), NodeIndex::from(12_usize)],
+        },
+        "the arguments move to their images and the declaration stays"
+    );
+}
+
 /// The variable the bind of [`lambda_bind`] returns.
 ///
 /// # Specification

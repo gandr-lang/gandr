@@ -55,7 +55,7 @@ use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_core_checker::Verdict;
+use gandr_core_checker::VerdictOf;
 #[cfg(feature = "instrument")]
 use gandr_core_checker::bridge::Spent;
 use gandr_core_incremental::ContentKey;
@@ -164,24 +164,24 @@ impl CheckerVerdict
     ///   refused one and a data declaration shows each class in its row.
     /// - witness: `tests::account::each_row_holds_the_verdict_and_then_the_kernel_tier`
     #[spec(ensures: |ret| match *produced {
-        Produced::Judged(Verdict::Data) => matches!(ret, Self::Data),
-        Produced::Judged(Verdict::Checked { .. }) => matches!(ret, Self::Checked),
-        Produced::Judged(Verdict::Synthesised { .. }) => matches!(ret, Self::Synthesised),
-        Produced::Judged(Verdict::Owed(_)) => matches!(ret, Self::Owed),
-        Produced::Judged(Verdict::Suspended(_)) => matches!(ret, Self::Suspended),
-        Produced::Judged(Verdict::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => matches!(ret, Self::Refused),
+        Produced::Judged(VerdictOf::Data) => matches!(ret, Self::Data),
+        Produced::Judged(VerdictOf::Checked { .. }) => matches!(ret, Self::Checked),
+        Produced::Judged(VerdictOf::Synthesised { .. }) => matches!(ret, Self::Synthesised),
+        Produced::Judged(VerdictOf::Owed(_)) => matches!(ret, Self::Owed),
+        Produced::Judged(VerdictOf::Suspended(_)) => matches!(ret, Self::Suspended),
+        Produced::Judged(VerdictOf::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => matches!(ret, Self::Refused),
     })]
     #[inline]
     #[must_use]
     pub const fn of(produced: &Produced<'_>) -> Self
     {
         match *produced {
-            Produced::Judged(Verdict::Data) => Self::Data,
-            Produced::Judged(Verdict::Checked { .. }) => Self::Checked,
-            Produced::Judged(Verdict::Synthesised { .. }) => Self::Synthesised,
-            Produced::Judged(Verdict::Owed(_)) => Self::Owed,
-            Produced::Judged(Verdict::Suspended(_)) => Self::Suspended,
-            Produced::Judged(Verdict::Refused(_))
+            Produced::Judged(VerdictOf::Data) => Self::Data,
+            Produced::Judged(VerdictOf::Checked { .. }) => Self::Checked,
+            Produced::Judged(VerdictOf::Synthesised { .. }) => Self::Synthesised,
+            Produced::Judged(VerdictOf::Owed(_)) => Self::Owed,
+            Produced::Judged(VerdictOf::Suspended(_)) => Self::Suspended,
+            Produced::Judged(VerdictOf::Refused(_))
             | Produced::Unlowered(_)
             | Produced::Guarded(_) => Self::Refused,
         }

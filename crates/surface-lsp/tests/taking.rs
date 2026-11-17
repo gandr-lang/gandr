@@ -1,6 +1,7 @@
 //! A keystroke's judgement takes each standing declaration from the last
 //! pass, and a taken declaration keeps the entries that its judgement added
-//! to the tables that the bridge reads (#7373, #7399, #7428).
+//! to the tables that the bridge reads (#7373, #7399, #7428). A judgement
+//! that takes composes as a fresh one (#7403).
 
 use gandr_core_checker_base::CheckBudget;
 use gandr_core_checker_base::CheckingContext;
@@ -54,6 +55,21 @@ const FUNEXT: &str = include_str!("taking/fixtures/a-taken-funext-keeps-its-step
 /// The reopened fixture: a law whose right endpoint unfolds under a thunk.
 const REOPENED: &str =
     include_str!("taking/fixtures/a-reopened-take-replays-a-kept-dialogue-7399.gandr");
+
+/// The records fixture: record updates inside path types, whose take mints
+/// their nodes in another order than a fresh judgement.
+const RECORDS: &str = include_str!(
+    "taking/fixtures/a-taking-session-composes-as-a-fresh-one-past-a-prepended-definition-7403.gandr"
+);
+
+/// The refusal fixture: an arm whose binder's type has one content with a
+/// hypothesis of the function, under another context.
+const SPELLED: &str =
+    include_str!("taking/fixtures/a-taken-refusal-spells-each-context-s-name-7403.gandr");
+
+/// The codata fixture: a mismatch between two codata types.
+const CODATA: &str =
+    include_str!("taking/fixtures/a-taken-codata-refusal-spells-each-type-7403.gandr");
 
 /// A fresh session over memory stores, for a fixture source.
 ///
@@ -163,6 +179,78 @@ fn taken_past_a_reopening(base: SourceText<'_>) -> (ItemCount, ItemCount)
         "the reopened session that takes composes as a fresh session"
     );
     (restored, taking.taken())
+}
+
+/// The parts of `composed` that name a node by its content key: each part but
+/// the origin table and the program, which name a node by place (#7731,
+/// #7732).
+///
+/// # Specification
+/// trivial.
+fn keyed<'composed>(
+    composed: &'composed gandr_surface_dispatcher::Composed<'_>
+) -> impl core::fmt::Debug + PartialEq + 'composed
+{
+    let gandr_surface_dispatcher::Composed::Settled {
+        ref report,
+        ref exercised,
+        ref unstatable,
+        ref spellings,
+        ref failures,
+        ref locations,
+        ref shadowed,
+        ref inferred,
+        ref runs,
+        ref deprecated,
+        ref parted,
+        ref unused,
+        ref unreached,
+        ref kernel,
+        ref keys,
+        ref positions,
+        ..
+    } = *composed
+    else {
+        panic!("the fixture settles");
+    };
+    (
+        (
+            report, exercised, unstatable, spellings, failures, locations,
+        ),
+        (shadowed, inferred, runs, deprecated, parted, unused),
+        (unreached, kernel, keys, positions),
+    )
+}
+
+/// How many declarations a judgement of `base` with a definition put first
+/// takes from the last pass, once its kernel checkpoint and the keyed parts
+/// of its composition equal a fresh session's.
+///
+/// # Specification
+/// trivial.
+fn taken_past_a_prepending(base: SourceText<'_>) -> ItemCount
+{
+    let mut edited = String::from("def prepended = 1;");
+    edited.push('\n');
+    edited.push_str(<&str>::from(base));
+    let mut taking = session();
+    taking.reuse(Reusing::Standing);
+    let _base = submit(&mut taking, base);
+    let submission = submit(&mut taking, SourceText::from(edited.as_str()));
+    let mut whole = session();
+    let fresh = submit(&mut whole, SourceText::from(edited.as_str()));
+    assert_eq!(
+        submission.kernel(),
+        fresh.kernel(),
+        "a judgement that takes past a prepended definition gives a fresh session's kernel \
+         checkpoint"
+    );
+    assert_eq!(
+        keyed(submission.composed()),
+        keyed(fresh.composed()),
+        "a judgement that takes past a prepended definition composes as a fresh session"
+    );
+    taking.taken()
 }
 
 /// A taken declaration at a row and a taken handler keep the entries that
@@ -427,6 +515,51 @@ fn a_reopened_take_replays_a_kept_dialogue_7399()
         taken_past_a_reopening(SourceText::from(REOPENED)),
         (ItemCount::from(3_usize), ItemCount::from(3_usize)),
         "`k`, `j` and the law are restored and taken; the definition put first is decided"
+    );
+}
+
+/// A judgement that takes composes as a fresh one when an edit puts a
+/// definition first (#7403). The take mints a value type of the record updates
+/// in another order than a fresh judgement, so a verdict names another id of
+/// the arena in each. The verdicts, spellings, failures and located records
+/// name each node by its content key, and the two compositions agree.
+#[test]
+fn a_taking_session_composes_as_a_fresh_one_past_a_prepended_definition_7403()
+{
+    assert_eq!(
+        taken_past_a_prepending(SourceText::from(RECORDS)),
+        ItemCount::from(1_usize),
+        "one standing declaration is taken; the others and the definition put first are decided"
+    );
+}
+
+/// A refusal that a taking session judges past a prepended definition spells
+/// as a fresh one's (#7403). `v : Pred (Succ n)` and the arm's
+/// `w : Pred (Succ m)` have one content key, so each spelling is keyed by its
+/// node and its place. The place names its failure by declaration, and the
+/// prepended definition moves that declaration in both sessions alike.
+#[test]
+fn a_taken_refusal_spells_each_place_as_a_fresh_session_7403()
+{
+    assert_eq!(
+        taken_past_a_prepending(SourceText::from(SPELLED)),
+        ItemCount::from(5_usize),
+        "the five data declarations are taken; the refused function and the definition put \
+         first are decided"
+    );
+}
+
+/// A refusal between two codata types composes as a fresh session's past a
+/// prepended definition (#7403). A codata application keys by its
+/// declaration's item reference and its arguments, so `Spot` and `Stream`
+/// key apart, and the reference names one item in both sessions.
+#[test]
+fn a_taken_codata_refusal_spells_each_type_as_a_fresh_session_7403()
+{
+    assert_eq!(
+        taken_past_a_prepending(SourceText::from(CODATA)),
+        ItemCount::from(0_usize),
+        "an item that reads a codata type is opaque, so nothing is taken"
     );
 }
 

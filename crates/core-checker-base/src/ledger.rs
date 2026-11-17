@@ -29,22 +29,29 @@ use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 
 use crate::declaration::OriginToken;
-use crate::formation::FormedValueType;
+use crate::naming::Arena;
+use crate::naming::Keyed;
+use crate::naming::Keying;
+use crate::naming::Naming;
 
 /// A hole met in checking position: the declaration it stands for, the type
 /// it owes, and the declaration's origin.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Absence
+pub struct AbsenceOf<N>
+where
+    N: Naming,
 {
     /// The admission position of the declaration whose body is the hole.
     constant: ConstantIndex,
     /// The declared type the hole absorbed.
-    declared: FormedValueType,
+    declared: N::Formed,
     /// The declaration's origin.
     origin: OriginToken,
 }
 
-impl Absence
+impl<N> AbsenceOf<N>
+where
+    N: Naming,
 {
     /// The hole of the declaration at `constant`, owing `declared`.
     ///
@@ -64,7 +71,7 @@ impl Absence
     #[spec(ensures: |ret| ret.constant() == constant && ret.declared() == declared && ret.origin() == origin)]
     pub(crate) fn new(
         constant: ConstantIndex,
-        declared: FormedValueType,
+        declared: N::Formed,
         origin: OriginToken,
     ) -> Self
     {
@@ -92,7 +99,7 @@ impl Absence
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn declared(&self) -> FormedValueType
+    pub const fn declared(&self) -> N::Formed
     {
         self.declared
     }
@@ -106,6 +113,37 @@ impl Absence
     pub const fn origin(&self) -> OriginToken
     {
         self.origin
+    }
+}
+
+/// A hole of the checker's arena.
+pub type Absence = AbsenceOf<Arena>;
+
+impl Absence
+{
+    /// The same hole, its declared type named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> AbsenceOf<Keyed>
+    where
+        K: Keying,
+    {
+        let Self {
+            constant,
+            declared,
+            origin,
+        } = self;
+        AbsenceOf {
+            constant,
+            declared: keys.formed(declared),
+            origin,
+        }
     }
 }
 
@@ -146,26 +184,32 @@ impl Absence
 /// witnesses.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ObligationEntry
+pub struct ObligationEntryOf<N>
+where
+    N: Naming,
 {
     /// The absence the entry records.
-    absence: Absence,
+    absence: AbsenceOf<N>,
 }
 
-impl From<Absence> for ObligationEntry
+impl<N> From<AbsenceOf<N>> for ObligationEntryOf<N>
+where
+    N: Naming,
 {
     /// The entry recording `absence`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(absence: Absence) -> Self
+    fn from(absence: AbsenceOf<N>) -> Self
     {
         Self { absence }
     }
 }
 
-impl ObligationEntry
+impl<N> ObligationEntryOf<N>
+where
+    N: Naming,
 {
     /// The absence the entry records.
     ///
@@ -173,9 +217,33 @@ impl ObligationEntry
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn absence(&self) -> Absence
+    pub const fn absence(&self) -> AbsenceOf<N>
     {
         self.absence
+    }
+}
+
+/// An obligation of the checker's arena.
+pub type ObligationEntry = ObligationEntryOf<Arena>;
+
+impl ObligationEntry
+{
+    /// The same obligation, its declared type named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> ObligationEntryOf<Keyed>
+    where
+        K: Keying,
+    {
+        ObligationEntryOf {
+            absence: self.absence.keyed(keys),
+        }
     }
 }
 
@@ -257,6 +325,9 @@ impl ObligationLedger
     /// - ensures: `entry` is the last of [`Self::entries`], and the count is
     ///   one higher.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the entry's slot, growth within the module's owed holes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the surface is the append order, separated by two

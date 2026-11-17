@@ -519,6 +519,87 @@ fn every_footprint_stance_and_answer_round_trips()
     }
 }
 
+/// Bytes that key content and store nothing: the sink that takes a codata
+/// application, over a buffer that a test reads back.
+///
+/// # Specification
+/// trivial.
+#[derive(Default)]
+#[repr(transparent)]
+struct KeyedBytes(CheckpointBytes);
+
+impl Sink for KeyedBytes
+{
+    /// Append to the buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn put(
+        &mut self,
+        bytes: Bytes<'_>,
+    )
+    {
+        self.0.put(bytes);
+    }
+
+    const CODATA: super::CodataWrite = super::CodataWrite::Keyed;
+}
+
+/// A codata application takes its own tag after the tags that stand, and it
+/// round-trips through a sink that keys content. A stored node and a stored
+/// answer refuse it as codata and write nothing of it (#7403).
+#[test]
+fn a_stored_form_refuses_a_codata_application_7403()
+{
+    let stream = Reference::Item {
+        key: ItemKey::from("Stream"),
+        occurrence: Occurrence::from(0_usize),
+    };
+    let node = ContentNode::Codata {
+        declaration: stream,
+        arguments: vec![NodeIndex::from(1_usize), NodeIndex::from(2_usize)],
+    };
+    let mut keyed = KeyedBytes::default();
+    super::write_node(&mut Writer { sink: &mut keyed }, &node).expect("a key takes codata");
+    assert_eq!(
+        keyed.0.as_ref().first(),
+        Some(&0x99_u8),
+        "the codata tag follows the last tag that stands"
+    );
+    let mut reader = Reader {
+        bytes: keyed.0.as_ref(),
+        cursor: 0,
+    };
+    assert_eq!(
+        super::read_node(&mut reader),
+        Ok(node.clone()),
+        "the node reads back"
+    );
+    assert_eq!(reader.finish(), Ok(()), "and nothing is left over");
+    let refused = Err(CodecError::Unsupported(UnsupportedPersistence::Codata));
+    let mut stored = CheckpointBytes::default();
+    assert_eq!(
+        super::write_node(&mut Writer { sink: &mut stored }, &node),
+        refused,
+        "a stored node refuses codata"
+    );
+    assert!(stored.as_ref().is_empty(), "and writes nothing of it");
+    let ty = crate::fixture::type_content(&[ContentNode::Codata {
+        declaration: Reference::Unoccupied,
+        arguments: Vec::new(),
+    }]);
+    assert_eq!(
+        super::write_answer(
+            &mut Writer {
+                sink: &mut CheckpointBytes::default()
+            },
+            &Answer::Typed(ty)
+        ),
+        refused,
+        "a stored answer refuses codata"
+    );
+}
+
 use gandr_kernel_term::BaseType;
 
 use super::Answer;

@@ -251,6 +251,10 @@ impl Taking for Reuse<'_>
     /// - executable: none — the decision's agreement with a judgement is the
     ///   witness's claim.
     ///
+    /// # Cost
+    /// - allocation: the taken answer and the adopted tables, growth within the
+    ///   pass's supplied answers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Reuse`].
     /// - witness: `tests::incremental::a_judgement_takes_each_standing_item_from_the_last_pass_6620`

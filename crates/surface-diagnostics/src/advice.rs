@@ -34,25 +34,26 @@
 use alloc::format;
 use alloc::string::String;
 
-use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckRefusalOf;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::Naming;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::ForkSide;
-use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::LinearityDefectOf;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::Crossed;
-use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_checker::worlds::LocatedDefectOf;
 use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::compose::Form;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::host;
 use gandr_surface_corpus::BoundaryClause;
 use gandr_surface_corpus::CorpusRefusal;
-use gandr_surface_corpus::Refusal;
+use gandr_surface_corpus::RefusalOf;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
@@ -93,7 +94,8 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The help of `refusal`: what its reader does about it.
+/// The help of `refusal`: what its reader does about it. It names no node, so
+/// it reads a refusal under any naming of its nodes.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -105,47 +107,52 @@ quenchant_shape::reason_enum! {
 /// - panics: none.
 /// - executable: none — the sentence's mood is the prose check's to judge.
 ///
+/// # Cost
+/// - allocation: the help text, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — one refusal of every vocabulary name is either worded,
 ///   with a one-line help, or unworded; the most-seen names are worded.
 /// - witness: `advice::tests::the_most_seen_names_are_worded_on_one_line`
 #[inline]
-pub fn advice(refusal: Refusal<'_>) -> Maybe<String, help::Absent>
+pub fn advice<N>(refusal: RefusalOf<'_, N>) -> Maybe<String, help::Absent>
+where
+    N: Naming,
 {
     match refusal {
-        Refusal::Lowering(refusal) => lowered(refusal),
-        Refusal::Checking(refusal) => checked(refusal),
-        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+        RefusalOf::Lowering(refusal) => lowered(refusal),
+        RefusalOf::Checking(refusal) => checked(refusal),
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
             clause: BoundaryClause::Size,
             ..
         }) => Maybe::Present(String::from(
             "make each member type have the size its boundary row states",
         )),
-        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
             clause: BoundaryClause::Align,
             ..
         }) => Maybe::Present(String::from(
             "make each member type align with its boundary row",
         )),
-        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
             clause: BoundaryClause::Arity,
             ..
         }) => Maybe::Present(String::from(
             "give each member the number of arguments its boundary row states",
         )),
-        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
             clause: BoundaryClause::Members,
             ..
         }) => Maybe::Present(String::from(
             "declare the number of members the boundary attribute names",
         )),
-        Refusal::Corpus(CorpusRefusal::BoundaryUnrealised {
+        RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised {
             clause: BoundaryClause::Niche,
             ..
         }) => Maybe::Present(String::from(
             "make each member type use the niche its boundary row states",
         )),
-        Refusal::Corpus(_) => Maybe::Absent(help::Absent::Unworded),
+        RefusalOf::Corpus(_) => Maybe::Absent(help::Absent::Unworded),
     }
 }
 
@@ -153,6 +160,9 @@ pub fn advice(refusal: Refusal<'_>) -> Maybe<String, help::Absent>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the help text of a lowering refusal, diagnostic
 fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
 {
     Maybe::Present(match refusal {
@@ -693,6 +703,9 @@ fn malformed(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the help text of an ill-formed description, diagnostic
 fn ill_formed(kind: WfKind) -> String
 {
     String::from(match kind {
@@ -766,63 +779,68 @@ fn ill_formed(kind: WfKind) -> String
 ///
 /// # Specification
 /// trivial.
-fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
+///
+/// # Cost
+/// - allocation: the help text of a checker refusal, diagnostic
+fn checked<N>(refusal: CheckRefusalOf<N>) -> Maybe<String, help::Absent>
+where
+    N: Naming,
 {
     Maybe::Present(match refusal {
-        CheckRefusal::TypeMismatch(_) => String::from(
+        CheckRefusalOf::TypeMismatch(_) => String::from(
             "change the term or the type it is checked against, so that the two types agree",
         ),
-        CheckRefusal::CapabilityAmplified(_) => String::from("use the required capability"),
-        CheckRefusal::EndpointMismatch {
+        CheckRefusalOf::CapabilityAmplified(_) => String::from("use the required capability"),
+        CheckRefusalOf::EndpointMismatch {
             miss: EndpointMiss::Unshown,
             ..
         } => String::from(
             "give `Path.here` a point that both endpoints convert to, or change the endpoints",
         ),
-        CheckRefusal::EndpointMismatch {
+        CheckRefusalOf::EndpointMismatch {
             miss: EndpointMiss::Budget,
             ..
         } => String::from(
             "state the equation through lemmas that each unfold less, or split the computation \
              into steps the conversion settles one at a time",
         ),
-        CheckRefusal::StageNotBelow { .. } => String::from(
+        CheckRefusalOf::StageNotBelow { .. } => String::from(
             "recurse on a field of the parameter, which a match takes apart, and not on the \
              parameter itself",
         ),
-        CheckRefusal::OutOfFragment {
+        CheckRefusalOf::OutOfFragment {
             former: UnadmittedFormer::Stage,
             ..
         } => String::from("write the kernel-visible type without a stage"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::Escaped { by },
             ..
         } => format!(
             "use the view outside {}, or open the `access` inside it",
             Captor(by)
         ),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::Lent,
             ..
         } => String::from("use the held value only after the `access` that lends it ends"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::HeldCopied,
             ..
         } => String::from("wrap the `var[1]` read in `access ... resume`"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::HeldShared,
             ..
         } => String::from("assign an in-place value to the `var[1]` hold"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::KeptEscaped,
             ..
         } => String::from("return a value that the scope's own region does not keep"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::AsValue { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::AsValue { .. },
             ..
         } => String::from("use the endpoint only in a session action"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::Residue { endpoint, .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::Residue { endpoint, .. },
             ..
         } => String::from(match endpoint.side {
             ForkSide::Placed => {
@@ -832,58 +850,58 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
                 "close the endpoint before the fork half or receive body that bound it ends"
             },
         }),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::ArmsDisagree { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ArmsDisagree { .. },
             ..
         } => String::from("leave each arm with the same endpoint states"),
-        CheckRefusal::RuleNotRespected { .. } => String::from(
+        CheckRefusalOf::RuleNotRespected { .. } => String::from(
             "give the arms equal results on the terms that each of the datatype's rules \
              identifies",
         ),
-        CheckRefusal::LoopNotRespected { .. } => {
+        CheckRefusalOf::LoopNotRespected { .. } => {
             String::from("make the case respect each loop of its sort")
         },
-        CheckRefusal::NotApart { .. } => {
+        CheckRefusalOf::NotApart { .. } => {
             String::from("write an arm for the path, because its endpoints can be equal")
         },
-        CheckRefusal::CompoundEndpoint { .. } => {
+        CheckRefusalOf::CompoundEndpoint { .. } => {
             String::from("return a value without effects from the path endpoint")
         },
-        CheckRefusal::NegativeOccurrence(_) => String::from(
+        CheckRefusalOf::NegativeOccurrence(_) => String::from(
             "apply the datatype there only to its own parameters, one stage below its \
              constructor",
         ),
-        CheckRefusal::NestedOccurrence(_) => String::from(
+        CheckRefusalOf::NestedOccurrence(_) => String::from(
             "place the datatype only where each enclosing type holds it strictly positively",
         ),
-        CheckRefusal::PointwiseDistinct { .. } => {
+        CheckRefusalOf::PointwiseDistinct { .. } => {
             String::from("make both functions return the same value at every input")
         },
-        CheckRefusal::UaInequivalent {
+        CheckRefusalOf::UaInequivalent {
             defect: UaDefect::Cardinality { .. },
             ..
         } => String::from("give both descriptions the same number of generators at each corolla"),
-        CheckRefusal::UaInequivalent {
+        CheckRefusalOf::UaInequivalent {
             defect: UaDefect::Tables { .. },
             ..
         } => String::from("give each corolla exactly one translator on each side"),
-        CheckRefusal::UaInequivalent {
+        CheckRefusalOf::UaInequivalent {
             defect: UaDefect::NotNatural { .. },
             ..
         } => String::from("make each `ua` translator commute with every corolla symmetry"),
-        CheckRefusal::RunNotAdmitted { .. } => String::from(
+        CheckRefusalOf::RunNotAdmitted { .. } => String::from(
             "change the run so that each move is one that the protocol admits at that point",
         ),
-        CheckRefusal::UndecidedCoverage(_) => {
+        CheckRefusalOf::UndecidedCoverage(_) => {
             String::from("replace the pattern hole with a pattern")
         },
-        CheckRefusal::AbsentRecordField(_) => String::from("select a declared record field"),
-        CheckRefusal::ImplicitUnsolved { .. } => {
+        CheckRefusalOf::AbsentRecordField(_) => String::from("select a declared record field"),
+        CheckRefusalOf::ImplicitUnsolved { .. } => {
             String::from("supply the implicit by name in brackets before the parentheses")
         },
-        CheckRefusal::Located {
+        CheckRefusalOf::Located {
             defect:
-                LocatedDefect::Immobile {
+                LocatedDefectOf::Immobile {
                     crossed: Crossed::Result | Crossed::Constant,
                     predicate: Predicate::Mobile,
                     ..
@@ -893,9 +911,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "return data or a handle from the migration, or mark the abstract type `mobile` in \
              its signature",
         ),
-        CheckRefusal::Located {
+        CheckRefusalOf::Located {
             defect:
-                LocatedDefect::Immobile {
+                LocatedDefectOf::Immobile {
                     crossed: Crossed::Result | Crossed::Constant,
                     predicate: Predicate::Open,
                     ..
@@ -904,9 +922,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         } => String::from(
             "hold data in the handle, or an abstract type that its signature marks `mobile`",
         ),
-        CheckRefusal::Located {
+        CheckRefusalOf::Located {
             defect:
-                LocatedDefect::Immobile {
+                LocatedDefectOf::Immobile {
                     crossed: Crossed::Capture,
                     ..
                 },
@@ -915,9 +933,9 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             "capture only data in a thunk the migration returns, or mark the abstract type \
              `mobile` in its signature",
         ),
-        CheckRefusal::Located {
+        CheckRefusalOf::Located {
             defect:
-                LocatedDefect::Immobile {
+                LocatedDefectOf::Immobile {
                     crossed: Crossed::Homed,
                     ..
                 },
@@ -925,23 +943,23 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
         } => String::from(
             "call the declaration before the migration returns, and return what it answers",
         ),
-        CheckRefusal::Located {
-            defect: LocatedDefect::Elsewhere { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::Elsewhere { .. },
             ..
         } => String::from("open the value at its binder with `let x at w`"),
-        CheckRefusal::Located {
-            defect: LocatedDefect::OpenedElsewhere { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::OpenedElsewhere { .. },
             ..
         } => String::from("write the handle's own world after `at`"),
-        CheckRefusal::Located {
-            defect: LocatedDefect::NotAHandle { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::NotAHandle { .. },
             ..
         } => String::from("give `let x at w` a value that has a handle type"),
-        CheckRefusal::BridgeAtSealedType { .. } => String::from(
+        CheckRefusalOf::BridgeAtSealedType { .. } => String::from(
             "give the abstract type an `identity` attribute that names its relation, or relate \
              points of a type that is not sealed",
         ),
-        CheckRefusal::ComposeNotAShape { pasting, .. } => String::from(match pasting.form() {
+        CheckRefusalOf::ComposeNotAShape { pasting, .. } => String::from(match pasting.form() {
             Form::Chain(_) => {
                 "write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain \
                  of m cells"
@@ -955,425 +973,431 @@ fn checked(refusal: CheckRefusal) -> Maybe<String, help::Absent>
             },
             Form::Tree { .. } => "write the pasting at level four or below",
         }),
-        CheckRefusal::ComposeDoesNotFill {
+        CheckRefusalOf::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,
             ..
         } => String::from("start each cell at the point where the cell before it ends"),
-        CheckRefusal::ComposeDoesNotFill {
+        CheckRefusalOf::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Column(_),
             defect: gandr_theory_sites::Unfilled::Profile { .. },
             ..
         } => String::from(
             "write a 2-cell at this place, or give its column the height 0 to hold one 1-cell",
         ),
-        CheckRefusal::ComposeDoesNotFill {
+        CheckRefusalOf::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Column(_),
             ..
         } => String::from(
             "start each 2-cell of a column at the 1-cell where the 2-cell before it ends",
         ),
-        CheckRefusal::NoFiller { .. } => String::from(
+        CheckRefusalOf::NoFiller { .. } => String::from(
             "ask for the square the generator makes, with its sides composites of the cells and \
              at least one cell a path of paths",
         ),
-        CheckRefusal::UndischargedLaw { .. } => String::from(
+        CheckRefusalOf::UndischargedLaw { .. } => String::from(
             "prove the law by a definition at its type, or admit it where the host asserts it",
         ),
-        CheckRefusal::UnassertedLaw { .. } => String::from("prove the law"),
-        CheckRefusal::ShapeMismatch {
+        CheckRefusalOf::UnassertedLaw { .. } => String::from("prove the law"),
+        CheckRefusalOf::ShapeMismatch {
             wanted: ExpectedShape::EmptySum,
             ..
         } => String::from("delete the injection, because the empty sum has no summand to name"),
-        CheckRefusal::ShapeMismatch {
+        CheckRefusalOf::ShapeMismatch {
             wanted: ExpectedShape::Summand,
             ..
         } => String::from("name a summand that the sum declares"),
-        CheckRefusal::ShapeMismatch {
+        CheckRefusalOf::ShapeMismatch {
             wanted: ExpectedShape::Positional,
             ..
         } => String::from("split the record by label, as `*{.label = name, …}`"),
-        CheckRefusal::ShapeMismatch { .. } => String::from(
+        CheckRefusalOf::ShapeMismatch { .. } => String::from(
             "change the term or the type it is checked against, so that the type has the required \
              shape",
         ),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::Closed { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::Closed { .. },
             ..
         } => String::from("move the action before the `close`, or delete it"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::BufferUnreturned { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::BufferUnreturned { .. },
             ..
         } => String::from(
             "hand the buffer back with a `send`, an operation or a resumption before the body ends",
         ),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::Captured { by, .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::Captured { by, .. },
             ..
         } => format!("use the endpoint outside {}", Captor(by)),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::BufferReturnedTwice { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::BufferReturnedTwice { .. },
             ..
         } => String::from("return the buffer only once"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::HeldCaptured { by },
             ..
         } => format!(
             "use the held value outside {}, or declare its `var` inside it",
             Captor(by)
         ),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::Kept,
             ..
         } => String::from("write the value only after the scope that keeps its shared view ends"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::Consumed,
             ..
         } => String::from("use the held value before the consumed method call"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::Unindexed,
             ..
         } => String::from("access a list before indexing it"),
-        CheckRefusal::HandlerUnlawful { .. } => {
+        CheckRefusalOf::HandlerUnlawful { .. } => {
             String::from("change the handler's clauses so that they satisfy the law")
         },
-        CheckRefusal::ModelUnanswered { .. } => String::from(
+        CheckRefusalOf::ModelUnanswered { .. } => String::from(
             "declare a module that is a model of the theory at these types, or supply one by name \
              in brackets",
         ),
-        CheckRefusal::RuleNotPresentable { .. } => String::from(
+        CheckRefusalOf::RuleNotPresentable { .. } => String::from(
             "write each rule with a declared constructor at its head and its declared field count",
         ),
-        CheckRefusal::NotSynthesisable { .. } => {
+        CheckRefusalOf::NotSynthesisable { .. } => {
             String::from("write a type ascription for this form")
         },
-        CheckRefusal::ModelAmbiguous { .. } => {
+        CheckRefusalOf::ModelAmbiguous { .. } => {
             String::from("supply the intended model by name in brackets before the parentheses")
         },
-        CheckRefusal::NonCovariantMotive { .. } => {
+        CheckRefusalOf::NonCovariantMotive { .. } => {
             String::from("use the moving endpoint only where a run of it is produced")
         },
-        CheckRefusal::Codata {
+        CheckRefusalOf::Codata {
             fault: CodataFault::KindNotUniverse,
             ..
         } => String::from("give the codata declaration a computation universe as its kind"),
-        CheckRefusal::Codata {
+        CheckRefusalOf::Codata {
             fault: CodataFault::Occurrence,
             ..
         } => String::from(
             "write the codata type only as an observation's result, with its parameters in order",
         ),
-        CheckRefusal::Located {
-            defect: LocatedDefect::CapabilityMissing { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::CapabilityMissing { .. },
             ..
         } => String::from("migrate with the target world's capability"),
-        CheckRefusal::TacticRefused { .. } => String::from("replace the tactic with a proof term"),
-        CheckRefusal::CapabilityEscaped { .. } => {
+        CheckRefusalOf::TacticRefused { .. } => {
+            String::from("replace the tactic with a proof term")
+        },
+        CheckRefusalOf::CapabilityEscaped { .. } => {
             String::from("keep the capability inside its scope")
         },
-        CheckRefusal::UnenclosedRun { .. } => {
+        CheckRefusalOf::UnenclosedRun { .. } => {
             String::from("write the run in a function's body, where the body can run its effects")
         },
-        CheckRefusal::StagesDisagree { .. } => {
+        CheckRefusalOf::StagesDisagree { .. } => {
             String::from("change the call's arguments so that they stand at one stage")
         },
-        CheckRefusal::SessionMismatch {
+        CheckRefusalOf::SessionMismatch {
             defect: ProtocolDefect::Action { .. },
             ..
         } => String::from("change the endpoint action or protocol so that they agree"),
-        CheckRefusal::SessionMismatch {
+        CheckRefusalOf::SessionMismatch {
             defect: ProtocolDefect::Arms,
             ..
         } => String::from("handle every label of the endpoint's protocol exactly once"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::Spent,
             ..
         } => String::from("use the view before its `resume` or `abort`"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::ReadOnly,
             ..
         } => String::from("end the shared view with its body, without `resume` or `abort`"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::UnwindEffect,
             ..
         } => String::from("remove the effect from the `unwind`"),
-        CheckRefusal::SessionNotEquivalent { .. } => {
+        CheckRefusalOf::SessionNotEquivalent { .. } => {
             String::from("make the two protocols bisimilar at every step")
         },
-        CheckRefusal::RoundTripDistinct { .. } => {
+        CheckRefusalOf::RoundTripDistinct { .. } => {
             String::from("make each `equiv` round trip return its input")
         },
-        CheckRefusal::SessionNotSubtype { .. } => String::from(
+        CheckRefusalOf::SessionNotSubtype { .. } => String::from(
             "make the source protocol select no more and offer no less than the target",
         ),
-        CheckRefusal::OpenSessionPayload { .. } => {
+        CheckRefusalOf::OpenSessionPayload { .. } => {
             String::from("bind the session payload inside the run's protocol")
         },
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::Unended,
             ..
         } => String::from("end the access body with `resume` or `abort`"),
-        CheckRefusal::AtomTransport { .. } => {
+        CheckRefusalOf::AtomTransport { .. } => {
             String::from("add a transport law to the abstract type's identity attribute")
         },
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::BufferRead { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::BufferRead { .. },
             ..
         } => String::from("return the buffer with `send`, the operation or `resume`"),
-        CheckRefusal::Located {
-            defect: LocatedDefect::CapabilityCaptured { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::CapabilityCaptured { .. },
             ..
         } => String::from("move the `migrate` outside the thunk that captures its capability"),
-        CheckRefusal::CapabilityForged { .. } => {
+        CheckRefusalOf::CapabilityForged { .. } => {
             String::from("pass a capability that a hold binds or the host grants")
         },
-        CheckRefusal::CapabilityConsumable(_) => {
+        CheckRefusalOf::CapabilityConsumable(_) => {
             String::from("remove the capability's `[1]` grade")
         },
-        CheckRefusal::Boundary { .. } => {
+        CheckRefusalOf::Boundary { .. } => {
             String::from("write the boundary flow in the direction its position's variance permits")
         },
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::ContinuationAsValue { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ContinuationAsValue { .. },
             ..
         } => String::from("use the continuation only with `resume` or `abandon`"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::ContinuationCaptured { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ContinuationCaptured { .. },
             ..
         } => String::from("move the continuation outside the construct that captures it"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::ContinuationUnspent { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ContinuationUnspent { .. },
             ..
         } => String::from("end the continuation once with `resume` or `abandon`"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::ContinuationUsedTwice { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ContinuationUsedTwice { .. },
             ..
         } => String::from("end the continuation only once"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::LinearSlotConsumed { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::LinearSlotConsumed { .. },
             ..
         } => String::from("use the linear parameter once, or take it at `->` instead of `⊸`"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::LinearSlotUnconsumed { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::LinearSlotUnconsumed { .. },
             ..
         } => String::from("use the linear parameter exactly once on every path through the body"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::ShadowCaptured { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ShadowCaptured { .. },
             ..
         } => String::from(
             "use the linear parameter outside the thunk, loop or fold that captures it",
         ),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::ComonoidAbsent { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::ComonoidAbsent { .. },
             ..
         } => String::from(
             "take the qubit as a linear function's parameter, `(q : Qubit) ⊸ …`. Only a measurement gives a value that a binder can copy",
         ),
-        CheckRefusal::MultiplicityUnsupported { .. } => {
+        CheckRefusalOf::MultiplicityUnsupported { .. } => {
             String::from("write the linear arrow with no multiplicity, which is one")
         },
-        CheckRefusal::DataFieldLevel { .. } => {
+        CheckRefusalOf::DataFieldLevel { .. } => {
             String::from("lower each constructor field to its datatype's universe")
         },
-        CheckRefusal::DataKindNotUniverse(_) => {
+        CheckRefusalOf::DataKindNotUniverse(_) => {
             String::from("give the data declaration a universe kind")
         },
-        CheckRefusal::DependentBind { .. } => {
+        CheckRefusalOf::DependentBind { .. } => {
             String::from("bind a computation whose result type ignores its value")
         },
-        CheckRefusal::DialogueInverted { .. } => {
+        CheckRefusalOf::DialogueInverted { .. } => {
             String::from("log each send before its matching receipt")
         },
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::UsedTwice { .. },
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::UsedTwice { .. },
             ..
         } => String::from("use the endpoint only once in this action"),
-        CheckRefusal::Located {
-            defect: LocatedDefect::EntryNamed { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::EntryNamed { .. },
             ..
         } => String::from("call a non-entry declaration instead"),
-        CheckRefusal::Located {
-            defect: LocatedDefect::HoldElsewhere { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::HoldElsewhere { .. },
             ..
         } => String::from("migrate to the handle's world before using `hold`"),
-        CheckRefusal::DialogueUnmatched { .. } => {
+        CheckRefusalOf::DialogueUnmatched { .. } => {
             String::from("make each dialogue receipt match its sent value")
         },
-        CheckRefusal::MissingRecordField { .. } => String::from("add the record's missing field"),
-        CheckRefusal::PatchOutsideBase { .. } => {
+        CheckRefusalOf::MissingRecordField { .. } => String::from("add the record's missing field"),
+        CheckRefusalOf::PatchOutsideBase { .. } => {
             String::from("fix only the fields that the base record holds")
         },
-        CheckRefusal::FixedFieldDiffers { .. } => {
+        CheckRefusalOf::FixedFieldDiffers { .. } => {
             String::from("state the value the type fixes, or omit the field")
         },
-        CheckRefusal::LevelMismatch { .. } => {
+        CheckRefusalOf::LevelMismatch { .. } => {
             String::from("lower the code to the expected universe")
         },
-        CheckRefusal::IndexOccurrence(_) => {
+        CheckRefusalOf::IndexOccurrence(_) => {
             String::from("remove the datatype from the field's index")
         },
-        CheckRefusal::Located {
-            defect: LocatedDefect::MarkUnfounded { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::MarkUnfounded { .. },
             ..
         } => String::from("remove `mobile` or use a representation that crosses"),
-        CheckRefusal::Undecided { .. } => {
+        CheckRefusalOf::Undecided { .. } => {
             String::from("write code whose unfolding the checker can decide")
         },
-        CheckRefusal::Located {
-            defect: LocatedDefect::UndeclaredWorld { .. },
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::UndeclaredWorld { .. },
             ..
         } => String::from("declare the named world with `world w ;`"),
-        CheckRefusal::Linearity {
-            defect: LinearityDefect::Unrestricted,
+        CheckRefusalOf::Linearity {
+            defect: LinearityDefectOf::Unrestricted,
             ..
         } => String::from("open the endpoint with `fork` or `recv`"),
-        CheckRefusal::SessionMismatch {
+        CheckRefusalOf::SessionMismatch {
             defect: ProtocolDefect::Label,
             ..
         } => String::from("select a label the endpoint's protocol offers"),
-        CheckRefusal::Located {
-            defect: LocatedDefect::Unlocated,
+        CheckRefusalOf::Located {
+            defect: LocatedDefectOf::Unlocated,
             ..
         } => String::from("give the declaration a world with `@[ entry(w) ]`"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::Moved,
             ..
         } => String::from("end the view with `resume` after reading its value"),
-        CheckRefusal::AbsentTupleComponent(_) => {
+        CheckRefusalOf::AbsentTupleComponent(_) => {
             String::from("select a component that the tuple has")
         },
-        CheckRefusal::AbstractKindNotUniverse(_) => {
+        CheckRefusalOf::AbstractKindNotUniverse(_) => {
             String::from("give the abstract type a universe as its kind")
         },
-        CheckRefusal::CapabilityOutsideAuthority { .. } => {
+        CheckRefusalOf::CapabilityOutsideAuthority { .. } => {
             String::from("use an operation the capability grants")
         },
-        CheckRefusal::Codata {
+        CheckRefusalOf::Codata {
             fault: CodataFault::ObservationLevel,
             ..
         } => String::from("lower each observation type to the codata declaration's universe"),
-        CheckRefusal::FamilyArgumentClassifier { .. } => {
+        CheckRefusalOf::FamilyArgumentClassifier { .. } => {
             String::from("give each type operator argument its parameter's kind")
         },
-        CheckRefusal::CrossBlockReference { .. } => {
+        CheckRefusalOf::CrossBlockReference { .. } => {
             String::from("declare the referenced datatype before this datatype")
         },
-        CheckRefusal::Codata {
+        CheckRefusalOf::Codata {
             fault: CodataFault::Undeclared,
             ..
         } => String::from("declare the codata type before naming it"),
-        CheckRefusal::Codata {
+        CheckRefusalOf::Codata {
             fault: CodataFault::WithoutObservations,
             ..
         } => String::from("declare at least one codata observation"),
-        CheckRefusal::FamilyArity { .. } => {
+        CheckRefusalOf::FamilyArity { .. } => {
             String::from("give the type operator its declared number of arguments")
         },
-        CheckRefusal::FootprintsOverlap { .. } => {
+        CheckRefusalOf::FootprintsOverlap { .. } => {
             String::from("give each fork half separate authority")
         },
-        CheckRefusal::HandlerCoverage { .. } => {
+        CheckRefusalOf::HandlerCoverage { .. } => {
             String::from("handle each interface operation exactly once")
         },
-        CheckRefusal::LiteralAmbiguous { .. } => {
+        CheckRefusalOf::LiteralAmbiguous { .. } => {
             String::from("apply the intended literal model reader by name")
         },
-        CheckRefusal::LoopUndecided { .. } => {
+        CheckRefusalOf::LoopUndecided { .. } => {
             String::from("simplify the loop obligation until the checker decides it")
         },
-        CheckRefusal::NonUniformOccurrence(_) => {
+        CheckRefusalOf::NonUniformOccurrence(_) => {
             String::from("apply the datatype only to its own parameters")
         },
-        CheckRefusal::NotADataType(_) => String::from("use a declared datatype"),
-        CheckRefusal::NotAnAbstractType(_) => {
+        CheckRefusalOf::NotADataType(_) => String::from("use a declared datatype"),
+        CheckRefusalOf::NotAnAbstractType(_) => {
             String::from("admit the abstract type before using it")
         },
-        CheckRefusal::NotOver { .. } => {
+        CheckRefusalOf::NotOver { .. } => {
             String::from("start `Path.walk` with an identity over the path")
         },
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::NotAView,
             ..
         } => String::from("open the value with `access` before resuming it"),
-        CheckRefusal::Access {
+        CheckRefusalOf::Access {
             defect: AccessDefect::NotHeld,
             ..
         } => String::from("open a value with `var` before accessing it"),
-        CheckRefusal::UaInequivalent {
+        CheckRefusalOf::UaInequivalent {
             defect: UaDefect::NotInverse { .. },
             ..
         } => String::from("make the `ua` translators inverse"),
-        CheckRefusal::RepresentationAboveKind { .. } => {
+        CheckRefusalOf::RepresentationAboveKind { .. } => {
             String::from("seal a representation within its abstract type's universe")
         },
-        CheckRefusal::PathCode(_) => {
+        CheckRefusalOf::PathCode(_) => {
             String::from("use a quoted closed first-order code at each end")
         },
-        CheckRefusal::SessionCodeExpected { .. } => {
+        CheckRefusalOf::SessionCodeExpected { .. } => {
             String::from("give the session identity two session types")
         },
-        CheckRefusal::SortMismatch { .. } => String::from("use a code of the expected sort"),
-        CheckRefusal::StageNotCarried { .. } => {
+        CheckRefusalOf::SortMismatch { .. } => String::from("use a code of the expected sort"),
+        CheckRefusalOf::StageNotCarried { .. } => {
             String::from("transport the recursive value only along a set")
         },
-        CheckRefusal::UaInequivalent {
+        CheckRefusalOf::UaInequivalent {
             defect: UaDefect::PastTheBound { .. },
             ..
         } => String::from("use a corolla within the `ua` catalogue bound"),
-        CheckRefusal::StaticClassifierExpected { .. } => {
+        CheckRefusalOf::StaticClassifierExpected { .. } => {
             String::from("give each type parameter a universe or kind")
         },
-        CheckRefusal::StaticLambdaArgument { .. } => {
+        CheckRefusalOf::StaticLambdaArgument { .. } => {
             String::from("pass a value instead of a type operator")
         },
-        CheckRefusal::UnknownConstant { .. } => String::from("use a declaration with a known type"),
-        CheckRefusal::UaInequivalent {
+        CheckRefusalOf::UnknownConstant { .. } => {
+            String::from("use a declaration with a known type")
+        },
+        CheckRefusalOf::UaInequivalent {
             defect: UaDefect::Stuck { .. },
             ..
         } => String::from("make each `ua` translator return a target element"),
-        CheckRefusal::UaInequivalent {
+        CheckRefusalOf::UaInequivalent {
             defect: UaDefect::UnknownGenerator { .. },
             ..
         } => String::from("name only generators of the `ua` description"),
-        CheckRefusal::BuiltinRepeated { .. } => {
+        CheckRefusalOf::BuiltinRepeated { .. } => {
             String::from("remove the `builtin` mark from one of the two declarations")
         },
-        CheckRefusal::BuiltinMisplaced(_) => String::from(
+        CheckRefusalOf::BuiltinMisplaced(_) => String::from(
             "mark a datatype with `irSignature` or `irPair`, and a definition with `irArgs` or \
              `irDecode`",
         ),
-        CheckRefusal::BuiltinNotCanonical { .. } => {
+        CheckRefusalOf::BuiltinNotCanonical { .. } => {
             String::from("write the holder in the canonical form of its role")
         },
         // Unworded: a later slice words each, most-seen first.
-        CheckRefusal::SealSiteRepeated(_)
-        | CheckRefusal::DataArgumentArity(_)
-        | CheckRefusal::UnknownConstructor { .. }
-        | CheckRefusal::ConstructorArity(_)
-        | CheckRefusal::NonExhaustiveDataCase(_)
-        | CheckRefusal::UnknownOperation { .. }
-        | CheckRefusal::ShiftWithoutReset { .. }
-        | CheckRefusal::DependentStack { .. }
-        | CheckRefusal::FunextUnsupported { .. }
-        | CheckRefusal::EquivUnsupported { .. }
-        | CheckRefusal::UncertifiedStratum { .. }
-        | CheckRefusal::OutsideFold { .. }
-        | CheckRefusal::UaUncertified { .. }
-        | CheckRefusal::ComposeUncertified { .. }
-        | CheckRefusal::FillUncertified { .. }
-        | CheckRefusal::GeneratorFamilyUnsupported { .. }
-        | CheckRefusal::EffectSignatureConflict { .. }
-        | CheckRefusal::OutOfFragment { .. }
-        | CheckRefusal::UnboundIndex { .. }
-        | CheckRefusal::BudgetExceeded { .. }
-        | CheckRefusal::DanglingNode { .. }
-        | CheckRefusal::AdmissionOrder { .. }
-        | CheckRefusal::MachineInvariant
-        | CheckRefusal::Linearity { .. }
-        | CheckRefusal::Codata { .. }
-        | CheckRefusal::Located { .. }
-        | CheckRefusal::CapabilityUngranted { .. }
-        | CheckRefusal::RideUnsupported { .. }
-        | CheckRefusal::ForwardUnsupported { .. } => return Maybe::Absent(help::Absent::Unworded),
+        CheckRefusalOf::SealSiteRepeated(_)
+        | CheckRefusalOf::DataArgumentArity(_)
+        | CheckRefusalOf::UnknownConstructor { .. }
+        | CheckRefusalOf::ConstructorArity(_)
+        | CheckRefusalOf::NonExhaustiveDataCase(_)
+        | CheckRefusalOf::UnknownOperation { .. }
+        | CheckRefusalOf::ShiftWithoutReset { .. }
+        | CheckRefusalOf::DependentStack { .. }
+        | CheckRefusalOf::FunextUnsupported { .. }
+        | CheckRefusalOf::EquivUnsupported { .. }
+        | CheckRefusalOf::UncertifiedStratum { .. }
+        | CheckRefusalOf::OutsideFold { .. }
+        | CheckRefusalOf::UaUncertified { .. }
+        | CheckRefusalOf::ComposeUncertified { .. }
+        | CheckRefusalOf::FillUncertified { .. }
+        | CheckRefusalOf::GeneratorFamilyUnsupported { .. }
+        | CheckRefusalOf::EffectSignatureConflict { .. }
+        | CheckRefusalOf::OutOfFragment { .. }
+        | CheckRefusalOf::UnboundIndex { .. }
+        | CheckRefusalOf::BudgetExceeded { .. }
+        | CheckRefusalOf::DanglingNode { .. }
+        | CheckRefusalOf::AdmissionOrder { .. }
+        | CheckRefusalOf::MachineInvariant
+        | CheckRefusalOf::Linearity { .. }
+        | CheckRefusalOf::Codata { .. }
+        | CheckRefusalOf::Located { .. }
+        | CheckRefusalOf::CapabilityUngranted { .. }
+        | CheckRefusalOf::RideUnsupported { .. }
+        | CheckRefusalOf::ForwardUnsupported { .. } => {
+            return Maybe::Absent(help::Absent::Unworded);
+        },
     })
 }
 

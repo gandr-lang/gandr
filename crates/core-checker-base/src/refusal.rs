@@ -57,48 +57,129 @@
 
 use anodized::spec;
 use gandr_core_term::BinderDepth;
-use gandr_core_term::CompTypeId;
-use gandr_core_term::ComputationId;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
-use gandr_core_term::ValueId;
-use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckBudget;
+use crate::naming::Arena;
+use crate::naming::Keyed;
+use crate::naming::Keying;
+use crate::naming::Naming;
 use crate::seal::SealSite;
 
-/// A term node of the core arena.
+/// A term node of the core.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum TermNode
+pub enum TermNodeOf<N>
+where
+    N: Naming,
 {
     /// A value node.
-    Value(ValueId),
+    Value(N::Value),
     /// A computation node.
-    Computation(ComputationId),
+    Computation(N::Computation),
 }
 
-/// A type node of the core arena.
+/// A term node of the checker's arena.
+pub type TermNode = TermNodeOf<Arena>;
+
+impl TermNode
+{
+    /// The same term node, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> TermNodeOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Value(node) => TermNodeOf::Value(keys.value(node)),
+            Self::Computation(node) => TermNodeOf::Computation(keys.computation(node)),
+        }
+    }
+}
+
+/// A type node of the core.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum TypeNode
+pub enum TypeNodeOf<N>
+where
+    N: Naming,
 {
     /// A value-type node.
-    Value(ValueTypeId),
+    Value(N::ValueType),
     /// A computation-type node.
-    Computation(CompTypeId),
+    Computation(N::CompType),
 }
 
-/// Any node of the core arena.
+/// A type node of the checker's arena.
+pub type TypeNode = TypeNodeOf<Arena>;
+
+impl TypeNode
+{
+    /// The same type node, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> TypeNodeOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Value(node) => TypeNodeOf::Value(keys.value_type(node)),
+            Self::Computation(node) => TypeNodeOf::Computation(keys.comp_type(node)),
+        }
+    }
+}
+
+/// Any node of the core.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CoreNode
+pub enum CoreNodeOf<N>
+where
+    N: Naming,
 {
     /// A term node.
-    Term(TermNode),
+    Term(TermNodeOf<N>),
     /// A type node.
-    Type(TypeNode),
+    Type(TypeNodeOf<N>),
+}
+
+/// A node of the checker's arena.
+pub type CoreNode = CoreNodeOf<Arena>;
+
+impl CoreNode
+{
+    /// The same node, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> CoreNodeOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Term(node) => CoreNodeOf::Term(node.keyed(keys)),
+            Self::Type(node) => CoreNodeOf::Type(node.keyed(keys)),
+        }
+    }
 }
 
 /// The former a rule required of the type it met.
@@ -173,48 +254,91 @@ pub enum ExpectedShape
 
 /// A checking-only form, met where a type had to be synthesised.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckingForm
+pub enum CheckingFormOf<N>
+where
+    N: Naming,
 {
     /// A first-class stack literal needs its input and output types.
-    Reify(ValueId),
+    Reify(N::Value),
     /// A deep handler needs its answer type.
-    Handle(ComputationId),
+    Handle(N::Computation),
     /// A reset establishes an answer type from its expected type.
-    Reset(ComputationId),
+    Reset(N::Computation),
     /// A shift needs the type of the captured continuation.
-    Shift(ComputationId),
+    Shift(N::Computation),
     /// A lazy product needs its expected computation types.
-    With(ComputationId),
+    With(N::Computation),
     /// A sum injection needs its other summand from the expected type.
-    Injection(ValueId),
+    Injection(N::Value),
     /// A native List introduction needs its element classifier.
-    List(ValueId),
+    List(N::Value),
     /// A sum case or a list case is checked against a common result type.
-    Case(ComputationId),
+    Case(N::Computation),
     /// A thunk value.
-    Thunk(ValueId),
+    Thunk(N::Value),
     /// A lambda.
-    Lambda(ComputationId),
+    Lambda(N::Computation),
     /// A fixpoint: its type is the type it is checked at.
-    Fixpoint(ComputationId),
+    Fixpoint(N::Computation),
     /// A hole: the body of the declaration at this admission position, which
     /// no definition supplies.
     Hole(ConstantIndex),
     /// A static lambda.
-    StaticLambda(ValueId),
+    StaticLambda(N::Value),
     /// A computation written where a value is read: the type expected there
     /// decides whether it is suspended or run, so there is nothing to decide
     /// by without one.
-    Nested(ValueId),
+    Nested(N::Value),
     /// An offer is checked against the type its arms share.
-    Offer(ComputationId),
+    Offer(N::Computation),
     /// A capability scope needs its answer type.
-    Scope(ComputationId),
+    Scope(N::Computation),
     /// A recorded run is checked against the run type naming its protocol.
-    Run(ValueId),
+    Run(N::Value),
     /// A decimal literal is checked against the type it reads at: the float
     /// it rounds to at `f64`, a reader's carrier elsewhere (#4807).
-    Decimal(ValueId),
+    Decimal(N::Value),
+}
+
+/// A checking-only form, each node named by its id in the checker's arena.
+pub type CheckingForm = CheckingFormOf<Arena>;
+
+impl CheckingForm
+{
+    /// The same form, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> CheckingFormOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Reify(node) => CheckingFormOf::Reify(keys.value(node)),
+            Self::Handle(node) => CheckingFormOf::Handle(keys.computation(node)),
+            Self::Reset(node) => CheckingFormOf::Reset(keys.computation(node)),
+            Self::Shift(node) => CheckingFormOf::Shift(keys.computation(node)),
+            Self::With(node) => CheckingFormOf::With(keys.computation(node)),
+            Self::Injection(node) => CheckingFormOf::Injection(keys.value(node)),
+            Self::List(node) => CheckingFormOf::List(keys.value(node)),
+            Self::Case(node) => CheckingFormOf::Case(keys.computation(node)),
+            Self::Thunk(node) => CheckingFormOf::Thunk(keys.value(node)),
+            Self::Lambda(node) => CheckingFormOf::Lambda(keys.computation(node)),
+            Self::Fixpoint(node) => CheckingFormOf::Fixpoint(keys.computation(node)),
+            Self::Hole(node) => CheckingFormOf::Hole(node),
+            Self::StaticLambda(node) => CheckingFormOf::StaticLambda(keys.value(node)),
+            Self::Nested(node) => CheckingFormOf::Nested(keys.value(node)),
+            Self::Offer(node) => CheckingFormOf::Offer(keys.computation(node)),
+            Self::Scope(node) => CheckingFormOf::Scope(keys.computation(node)),
+            Self::Run(node) => CheckingFormOf::Run(keys.value(node)),
+            Self::Decimal(node) => CheckingFormOf::Decimal(keys.value(node)),
+        }
+    }
 }
 
 /// A former of the core vocabulary the judgement has no rule for.
@@ -469,28 +593,71 @@ pub enum RunFault
 /// A synthesised type that does not convert to the type it was checked
 /// against.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Mismatch
+pub enum MismatchOf<N>
+where
+    N: Naming,
 {
     /// At a value: the value bridge.
     Value
     {
         /// The synthesising value checked.
-        at: ValueId,
+        at: N::Value,
         /// The type it synthesised.
-        synthesised: ValueTypeId,
+        synthesised: N::ValueType,
         /// The type it was checked against.
-        expected: ValueTypeId,
+        expected: N::ValueType,
     },
     /// At a computation: the computation bridge.
     Computation
     {
         /// The synthesising computation checked.
-        at: ComputationId,
+        at: N::Computation,
         /// The type it synthesised.
-        synthesised: CompTypeId,
+        synthesised: N::CompType,
         /// The type it was checked against.
-        expected: CompTypeId,
+        expected: N::CompType,
     },
+}
+
+/// A mismatch, each node named by its id in the checker's arena.
+pub type Mismatch = MismatchOf<Arena>;
+
+impl Mismatch
+{
+    /// The same mismatch, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> MismatchOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Value {
+                at,
+                synthesised,
+                expected,
+            } => MismatchOf::Value {
+                at: keys.value(at),
+                synthesised: keys.value_type(synthesised),
+                expected: keys.value_type(expected),
+            },
+            Self::Computation {
+                at,
+                synthesised,
+                expected,
+            } => MismatchOf::Computation {
+                at: keys.computation(at),
+                synthesised: keys.comp_type(synthesised),
+                expected: keys.comp_type(expected),
+            },
+        }
+    }
 }
 
 /// Why a case over a looped sort is not shown to respect one of its loops.
@@ -660,26 +827,28 @@ impl From<gandr_core_nbe::DeclineReason> for EndpointMiss
 
 /// Why the judgement refused a term, a type or a declaration.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckRefusal
+pub enum CheckRefusalOf<N>
+where
+    N: Naming,
 {
     /// The nominal identity has no successfully admitted data signature.
     NotADataType(ConstantIndex),
     /// A data declaration's kind is not a value universe.
-    DataKindNotUniverse(ValueTypeId),
+    DataKindNotUniverse(N::ValueType),
     /// A constructor field exceeds the declared universe.
     DataFieldLevel
     {
         /// The offending field classifier.
-        field: ValueTypeId,
+        field: N::ValueType,
         /// The declaration's universe.
-        kind: ValueTypeId,
+        kind: N::ValueType,
     },
     /// A data declaration's rules do not present its type: a rule is not
     /// constructor-headed, linear and decreasing over its constructor table.
     RuleNotPresentable
     {
         /// The declaration's universe, which locates the declaration.
-        kind: ValueTypeId,
+        kind: N::ValueType,
         /// The first rule that does not present the type, and why.
         refusal: gandr_kernel_term::RuleRefusal,
     },
@@ -689,14 +858,14 @@ pub enum CheckRefusal
     RuleNotRespected
     {
         /// The case.
-        at: ComputationId,
+        at: N::Computation,
         /// The first rule the case is not shown to respect.
         rule: gandr_kernel_term::RuleIndex,
         /// The rule's left side, built over one fresh variable per pattern
         /// variable.
-        left: ValueId,
+        left: N::Value,
         /// The rule's right side, over the same variables.
-        right: ValueId,
+        right: N::Value,
     },
     /// A case of no branches over a path type whose endpoints are not shown
     /// apart: the apartness rule admits it only between two terms of a data
@@ -704,7 +873,7 @@ pub enum CheckRefusal
     NotApart
     {
         /// The case.
-        at: ComputationId,
+        at: N::Computation,
         /// Why the endpoints are not apart: they agree, differ only at a
         /// subterm of another type, are open, or the type's rules diverge.
         reason: gandr_kernel_term::Apartness,
@@ -717,14 +886,14 @@ pub enum CheckRefusal
     LoopNotRespected
     {
         /// The case.
-        at: ComputationId,
+        at: N::Computation,
         /// The first loop the case is not shown to respect, its position
         /// among its words' cells.
         cell: gandr_kernel_term::CellIndex,
         /// The answer at the point carried along the loop.
-        left: ComputationId,
+        left: N::Computation,
         /// The answer at the point.
-        right: ComputationId,
+        right: N::Computation,
         /// Why the loop is not shown respected.
         reason: LoopRespect,
     },
@@ -734,20 +903,20 @@ pub enum CheckRefusal
     LoopUndecided
     {
         /// The case.
-        at: ComputationId,
+        at: N::Computation,
         /// The loop whose obligation was left undecided, its position among
         /// its words' cells.
         cell: gandr_kernel_term::CellIndex,
     },
     /// An abstract type's kind is not a value universe.
-    AbstractKindNotUniverse(ValueTypeId),
+    AbstractKindNotUniverse(N::ValueType),
     /// A sealed representation forms above its abstract type's universe.
     RepresentationAboveKind
     {
         /// The representation.
-        representation: ValueTypeId,
+        representation: N::ValueType,
         /// The abstract type's universe.
-        kind: ValueTypeId,
+        kind: N::ValueType,
     },
     /// A sealed atom names no admitted abstract type: none was declared at
     /// the position, or its declaration was refused.
@@ -760,7 +929,7 @@ pub enum CheckRefusal
     AtomTransport
     {
         /// The introduction.
-        at: ValueId,
+        at: N::Value,
         /// The atom's admission position.
         atom: ConstantIndex,
     },
@@ -770,7 +939,7 @@ pub enum CheckRefusal
     BridgeAtSealedType
     {
         /// The bridge type.
-        at: ValueTypeId,
+        at: N::ValueType,
         /// The atom's admission position.
         atom: ConstantIndex,
     },
@@ -781,9 +950,9 @@ pub enum CheckRefusal
     OutsideFold
     {
         /// The introduction.
-        at: ValueId,
+        at: N::Value,
         /// The code outside the fold.
-        code: ValueTypeId,
+        code: N::ValueType,
     },
     /// Two abstract types claimed one sealing site. The producer issues one
     /// site per abstract component of each ascription, so this is its fault.
@@ -810,45 +979,45 @@ pub enum CheckRefusal
         departure: gandr_kernel_term::Departure,
     },
     /// A nominal application supplies the wrong number of parameters.
-    DataArgumentArity(ValueTypeId),
+    DataArgumentArity(N::ValueType),
     /// The constructor tag is not in the nominal declaration.
     UnknownConstructor
     {
         /// The constructor value.
-        at: ValueId,
+        at: N::Value,
         /// Its unknown tag.
         tag: gandr_core_term::ConstructorTag,
     },
     /// A constructor supplies the wrong number of fields.
-    ConstructorArity(ValueId),
+    ConstructorArity(N::Value),
     /// A case omits or adds constructor branches.
-    NonExhaustiveDataCase(ComputationId),
+    NonExhaustiveDataCase(N::Computation),
     /// A leaf of a match's tree is one of its pattern holes: which arm runs
     /// for some value is left undecided, so the match is not shown to cover
     /// its scrutinee.
-    UndecidedCoverage(ComputationId),
+    UndecidedCoverage(N::Computation),
     /// A projection names no field in its operand's record type.
-    AbsentRecordField(ComputationId),
+    AbsentRecordField(N::Computation),
     /// A tuple projection names a component past its operand's product
     /// arity.
-    AbsentTupleComponent(ComputationId),
+    AbsentTupleComponent(N::Computation),
     /// A record literal lacks a required field.
     MissingRecordField
     {
         /// The record literal.
-        at: ValueId,
+        at: N::Value,
         /// The required record type.
-        expected: ValueTypeId,
+        expected: N::ValueType,
     },
     /// A patched type fixes a label its base does not hold: the base is a
     /// record type without the label, or no record type.
     PatchOutsideBase
     {
         /// The patched type.
-        at: ValueTypeId,
+        at: N::ValueType,
         /// The value the patched type fixes at the label its base does not
         /// hold; the label is the one the patched type keys it by.
-        value: ValueId,
+        value: N::Value,
     },
     /// A record literal at a patched type, or a value coerced in to one, holds
     /// a field at a label the type fixes, and the field does not convert with
@@ -857,21 +1026,21 @@ pub enum CheckRefusal
     {
         /// The field the literal holds, or the value coerced in; the label is
         /// the one the patched type keys `fixed` by.
-        at: ValueId,
+        at: N::Value,
         /// The value the patched type fixes at the label.
-        fixed: ValueId,
+        fixed: N::Value,
     },
     /// A perform names no operation in its supplied interface.
     UnknownOperation
     {
         /// The operation request.
-        at: ComputationId,
+        at: N::Computation,
     },
     /// Handler clauses do not cover the interface exactly once.
     HandlerCoverage
     {
         /// The handler with a missing, repeated or unknown clause.
-        at: ComputationId,
+        at: N::Computation,
     },
     /// A capability scope over a theory is not shown to be a model of it:
     /// read through the scope's clauses, the two sides of one of the
@@ -879,41 +1048,41 @@ pub enum CheckRefusal
     HandlerUnlawful
     {
         /// The scope.
-        at: ComputationId,
+        at: N::Computation,
         /// The first law its clauses are not shown to satisfy.
         rule: gandr_kernel_term::RuleIndex,
         /// The law's left side read through the clauses, beneath its
         /// metavariables.
-        left: ComputationId,
+        left: N::Computation,
         /// Its right side, beneath the same metavariables.
-        right: ComputationId,
+        right: N::Computation,
     },
     /// A shift has no enclosing reset answer type.
     ShiftWithoutReset
     {
         /// The shift.
-        at: ComputationId,
+        at: N::Computation,
     },
     /// A stack bind's result type depends on the value it binds.
     DependentStack
     {
         /// The stack literal.
-        at: ValueId,
+        at: N::Value,
         /// The body type before its binder is removed.
-        synthesised: CompTypeId,
+        synthesised: N::CompType,
     },
     /// A native path endpoint was not a quoted closed first-order code.
-    PathCode(ValueId),
+    PathCode(N::Value),
     /// Reflexivity was checked against a path type whose endpoints its point
     /// is not shown to both convert to.
     EndpointMismatch
     {
         /// The reflexivity.
-        at: ValueId,
+        at: N::Value,
         /// The path type's left endpoint.
-        left: ValueId,
+        left: N::Value,
         /// The path type's right endpoint.
-        right: ValueId,
+        right: N::Value,
         /// Why the first endpoint that failed is not shown to convert.
         miss: EndpointMiss,
     },
@@ -922,9 +1091,9 @@ pub enum CheckRefusal
     CompoundEndpoint
     {
         /// The compound endpoint.
-        at: ValueId,
+        at: N::Value,
         /// The type its computation synthesised.
-        synthesised: CompTypeId,
+        synthesised: N::CompType,
     },
     /// A function extensionality past the first-order boundary. The
     /// description-code fragment is first order by a decidability choice, so
@@ -940,9 +1109,9 @@ pub enum CheckRefusal
     FunextUnsupported
     {
         /// The `funext`.
-        at: ValueId,
+        at: N::Value,
         /// The type its first function synthesised.
-        classifier: ValueTypeId,
+        classifier: N::ValueType,
     },
     /// A function extensionality whose two functions are not identified: at
     /// some input the coverage reaches they return values that do not convert,
@@ -951,7 +1120,7 @@ pub enum CheckRefusal
     PointwiseDistinct
     {
         /// The `funext`.
-        at: ValueId,
+        at: N::Value,
     },
     /// A universe equivalence the rule does not decide: its translators are
     /// open, its forward classifier is no thunk of a pure non-dependent arrow,
@@ -961,9 +1130,9 @@ pub enum CheckRefusal
     EquivUnsupported
     {
         /// The `equiv`.
-        at: ValueId,
+        at: N::Value,
         /// The forward translator's type, or the code the coverage stopped at.
-        classifier: ValueTypeId,
+        classifier: N::ValueType,
     },
     /// A universe equivalence one of whose round trips does not convert at a
     /// list cell whose tail is a fresh variable: the cell is lost, or the
@@ -972,16 +1141,16 @@ pub enum CheckRefusal
     UncertifiedStratum
     {
         /// The `equiv`.
-        at: ValueId,
+        at: N::Value,
         /// The List code whose tail the pattern leaves unobserved.
-        code: ValueTypeId,
+        code: N::ValueType,
     },
     /// A universe equivalence one of whose round trips does not return its
     /// input at some pattern the coverage reaches.
     RoundTripDistinct
     {
         /// The `equiv`.
-        at: ValueId,
+        at: N::Value,
     },
     /// A telescope transport's second identity does not lie over its path: it
     /// does not synthesise the identity, in the family's fibre at the path's
@@ -989,11 +1158,11 @@ pub enum CheckRefusal
     NotOver
     {
         /// The identity over the path.
-        at: ValueId,
+        at: N::Value,
         /// The type it synthesised.
-        synthesised: ValueTypeId,
+        synthesised: N::ValueType,
         /// The identity over the path the transport owes.
-        expected: ValueTypeId,
+        expected: N::ValueType,
     },
     /// Univalence at a stratum the checker does not certify: a degree no
     /// shape of the catalogue reaches, a catalogue whose site fails the
@@ -1002,7 +1171,7 @@ pub enum CheckRefusal
     UaUncertified
     {
         /// The `ua`.
-        at: ValueId,
+        at: N::Value,
         /// Why the stratum is not certified.
         stratum: crate::ua::StratumDefect,
     },
@@ -1011,7 +1180,7 @@ pub enum CheckRefusal
     UaInequivalent
     {
         /// The `ua`.
-        at: ValueId,
+        at: N::Value,
         /// What the translators fail.
         defect: crate::ua::UaDefect,
     },
@@ -1019,7 +1188,7 @@ pub enum CheckRefusal
     ComposeUncertified
     {
         /// The `compose`.
-        at: ValueId,
+        at: N::Value,
         /// Why the stratum is not certified.
         stratum: crate::ua::StratumDefect,
     },
@@ -1029,7 +1198,7 @@ pub enum CheckRefusal
     ComposeNotAShape
     {
         /// The `compose`.
-        at: ValueId,
+        at: N::Value,
         /// The pasting it names.
         pasting: gandr_core_term::compose::Pasting,
     },
@@ -1037,7 +1206,7 @@ pub enum CheckRefusal
     ComposeDoesNotFill
     {
         /// The `compose`.
-        at: ValueId,
+        at: N::Value,
         /// The chain the defect sits in: the outer one, or a column's.
         seam: gandr_core_term::compose::Seam,
         /// The first defect of that chain's diagram.
@@ -1047,7 +1216,7 @@ pub enum CheckRefusal
     FillUncertified
     {
         /// The `fill`.
-        at: ValueId,
+        at: N::Value,
         /// Why the stratum is not certified.
         stratum: crate::ua::StratumDefect,
     },
@@ -1056,11 +1225,11 @@ pub enum CheckRefusal
     NoFiller
     {
         /// The `fill`.
-        at: ValueId,
+        at: N::Value,
         /// The left side the generator is asked to relate.
-        left: ValueId,
+        left: N::Value,
         /// The right side.
-        right: ValueId,
+        right: N::Value,
         /// The stratum the fill names.
         stratum: gandr_core_term::ua::Stratum,
     },
@@ -1069,24 +1238,24 @@ pub enum CheckRefusal
     GeneratorFamilyUnsupported
     {
         /// The `fill`.
-        at: ValueId,
+        at: N::Value,
         /// The first cell of the family.
-        cell: ValueId,
+        cell: N::Value,
         /// The family.
         family: crate::fill::UnsupportedFamily,
     },
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
-    TypeMismatch(Mismatch),
+    TypeMismatch(MismatchOf<N>),
     /// Two rows give incompatible operation types to the same effect name.
     EffectSignatureConflict
     {
         /// The sequencing computation.
-        at: ComputationId,
+        at: N::Computation,
         /// The bound computation's type.
-        first: CompTypeId,
+        first: N::CompType,
         /// The continuation's type.
-        second: CompTypeId,
+        second: N::CompType,
     },
     /// A rule met a type of another former than the one it requires: a thunk,
     /// lambda or return checked against the wrong former, a forced value
@@ -1095,20 +1264,20 @@ pub enum CheckRefusal
     ShapeMismatch
     {
         /// The term whose type lacks the shape.
-        at: TermNode,
+        at: TermNodeOf<N>,
         /// The former the rule required.
         wanted: ExpectedShape,
         /// The type met instead, as written.
-        found: TypeNode,
+        found: TypeNodeOf<N>,
         /// The type met at its weak head: `found` itself when it is already
         /// in weak head, the type its definitions unfold to otherwise.
-        unfolded: TypeNode,
+        unfolded: TypeNodeOf<N>,
     },
     /// A checking-only form stands where a type must be synthesised.
     NotSynthesisable
     {
         /// The form.
-        form: CheckingForm,
+        form: CheckingFormOf<N>,
     },
     /// A constant names no declaration the checking context holds a type for:
     /// one not yet admitted, one whose body synthesised nothing, or one the
@@ -1116,7 +1285,7 @@ pub enum CheckRefusal
     UnknownConstant
     {
         /// The constant value.
-        at: ValueId,
+        at: N::Value,
         /// The admission position it names.
         constant: ConstantIndex,
     },
@@ -1124,7 +1293,7 @@ pub enum CheckRefusal
     OutOfFragment
     {
         /// The node carrying the former.
-        at: CoreNode,
+        at: CoreNodeOf<N>,
         /// The former.
         former: UnadmittedFormer,
     },
@@ -1134,7 +1303,7 @@ pub enum CheckRefusal
     UnboundIndex
     {
         /// The variable.
-        at: ValueId,
+        at: N::Value,
         /// The zone the index counts in.
         zone: Zone,
         /// The index.
@@ -1153,7 +1322,7 @@ pub enum CheckRefusal
     DanglingNode
     {
         /// The id.
-        node: CoreNode,
+        node: CoreNodeOf<N>,
     },
     /// A declaration's admission position is not above every position already
     /// admitted, so resolution by position would be unsound.
@@ -1175,11 +1344,11 @@ pub enum CheckRefusal
     SortMismatch
     {
         /// The code.
-        at: ValueId,
+        at: N::Value,
         /// The universe it synthesised, naming its sort and level.
-        synthesised: ValueTypeId,
+        synthesised: N::ValueType,
         /// The universe it was checked at.
-        expected: ValueTypeId,
+        expected: N::ValueType,
     },
     /// A code was checked at a universe of its own sort whose level it does
     /// not fit: above the universe's level, or below a computation universe's,
@@ -1187,11 +1356,11 @@ pub enum CheckRefusal
     LevelMismatch
     {
         /// The code.
-        at: ValueId,
+        at: N::Value,
         /// The universe it synthesised, naming its sort and level.
-        synthesised: ValueTypeId,
+        synthesised: N::ValueType,
         /// The universe it was checked at.
-        expected: ValueTypeId,
+        expected: N::ValueType,
     },
     /// A bind's body synthesised a type that mentions the value the bind
     /// introduced: the binder is opaque to types, so the type has no reading
@@ -1199,9 +1368,9 @@ pub enum CheckRefusal
     DependentBind
     {
         /// The bind.
-        at: ComputationId,
+        at: N::Computation,
         /// The type its body synthesised, under the binder.
-        synthesised: CompTypeId,
+        synthesised: N::CompType,
     },
     /// The normaliser's conversion did not certify the unfolding of a code
     /// constant to its body or the static step at a code, which hold by
@@ -1209,14 +1378,14 @@ pub enum CheckRefusal
     Undecided
     {
         /// The code.
-        at: ValueId,
+        at: N::Value,
     },
     /// A static application applies its head to more arguments than the
     /// head's static Pis take.
     FamilyArity
     {
         /// The static application, outermost.
-        at: ValueId,
+        at: N::Value,
         /// How many static Pis the head's type opens.
         expected: StaticArity,
         /// How many arguments the application passes.
@@ -1227,13 +1396,13 @@ pub enum CheckRefusal
     FamilyArgumentClassifier
     {
         /// The argument.
-        at: ValueId,
+        at: N::Value,
         /// Its position among the application's arguments, from zero.
         position: ArgumentPosition,
         /// The classifier it synthesised.
-        synthesised: ValueTypeId,
+        synthesised: N::ValueType,
         /// The domain it was passed at.
-        expected: ValueTypeId,
+        expected: N::ValueType,
     },
     /// A dynamic application passes a type operator that does not normalize
     /// away: a static lambda, or a code that reduces to one, is a value the
@@ -1241,16 +1410,16 @@ pub enum CheckRefusal
     StaticLambdaArgument
     {
         /// The argument.
-        at: ValueId,
+        at: N::Value,
     },
     /// A static Pi stands over a type that classifies no codes: neither a
     /// universe nor a static Pi at its weak head.
     StaticClassifierExpected
     {
         /// The static Pi.
-        at: ValueTypeId,
+        at: N::ValueType,
         /// The child that classifies no codes.
-        found: ValueTypeId,
+        found: N::ValueType,
     },
     /// A data declaration's own family occurs under a function's domain where
     /// no stage reaches it: at other arguments, inside a term, or through a
@@ -1283,7 +1452,7 @@ pub enum CheckRefusal
     StageNotBelow
     {
         /// The value.
-        at: ValueId,
+        at: N::Value,
         /// Where it stands.
         found: gandr_kernel_term::Standing,
         /// The stage it was wanted at or below.
@@ -1294,7 +1463,7 @@ pub enum CheckRefusal
     StagesDisagree
     {
         /// The argument whose reading the solved stage does not satisfy.
-        at: ValueId,
+        at: N::Value,
         /// The binder, by its position in the signature.
         binder: gandr_kernel_term::StageBinder,
     },
@@ -1304,17 +1473,17 @@ pub enum CheckRefusal
     StageNotCarried
     {
         /// The transport.
-        at: ComputationId,
+        at: N::Computation,
     },
     /// A session action the session type of its endpoint does not admit.
     SessionMismatch
     {
         /// The action.
-        at: ComputationId,
+        at: N::Computation,
         /// The endpoint it acts on.
-        endpoint: crate::session::Endpoint,
+        endpoint: crate::session::EndpointOf<N>,
         /// The endpoint's session type when it acted.
-        state: ValueTypeId,
+        state: N::ValueType,
         /// What the state refuses.
         defect: crate::session::ProtocolDefect,
     },
@@ -1324,9 +1493,9 @@ pub enum CheckRefusal
     Linearity
     {
         /// The node the discipline breaks at.
-        at: CoreNode,
+        at: CoreNodeOf<N>,
         /// How it breaks.
-        defect: crate::session::LinearityDefect,
+        defect: crate::session::LinearityDefectOf<N>,
     },
     /// A held value or a view broke the access discipline: a held value
     /// read or accessed while lent, or captured; a view escaped, left live,
@@ -1335,7 +1504,7 @@ pub enum CheckRefusal
     Access
     {
         /// The node the discipline breaks at.
-        at: CoreNode,
+        at: CoreNodeOf<N>,
         /// How it breaks.
         defect: crate::access::AccessDefect,
     },
@@ -1347,7 +1516,7 @@ pub enum CheckRefusal
     Codata
     {
         /// The declaration's kind, its observation or the application refused.
-        at: CoreNode,
+        at: CoreNodeOf<N>,
         /// Why it is refused.
         fault: crate::codata::CodataFault,
     },
@@ -1358,9 +1527,9 @@ pub enum CheckRefusal
     Located
     {
         /// The node the judgement breaks at.
-        at: CoreNode,
+        at: CoreNodeOf<N>,
         /// How it breaks.
-        defect: crate::worlds::LocatedDefect,
+        defect: crate::worlds::LocatedDefectOf<N>,
     },
     /// A computation written where a value is read and run there, which
     /// performs effects, with no computation enclosing it to run before: one
@@ -1369,7 +1538,7 @@ pub enum CheckRefusal
     UnenclosedRun
     {
         /// The nested computation or written run.
-        at: ValueId,
+        at: N::Value,
     },
     /// A call omits an implicit that neither its arguments nor the type it is
     /// checked against determine: the solver bound no solution to the hole
@@ -1377,7 +1546,7 @@ pub enum CheckRefusal
     ImplicitUnsolved
     {
         /// The hole the call nominated.
-        at: ValueId,
+        at: N::Value,
         /// Why the solver bound it nothing.
         reason: Unsolved,
     },
@@ -1387,17 +1556,17 @@ pub enum CheckRefusal
     ModelUnanswered
     {
         /// The hole the call nominated for the slot's first component.
-        at: ValueId,
+        at: N::Value,
         /// The type the call's arguments force a component of the slot to
         /// code, when they force one: what no model in scope answers at.
-        forced: Forced,
+        forced: ForcedOf<N>,
     },
     /// A call omits a model slot more than one model in scope answers once
     /// the call's arguments force what they force.
     ModelAmbiguous
     {
         /// The hole the call nominated for the slot's first component.
-        at: ValueId,
+        at: N::Value,
         /// The candidates left, by their place among the slot's.
         survivors: gandr_core_term::model::Survivors,
     },
@@ -1405,7 +1574,7 @@ pub enum CheckRefusal
     TacticRefused
     {
         /// The hole the splice wrote.
-        at: ValueId,
+        at: N::Value,
         /// The tactic it ran.
         tactic: gandr_core_term::tactic::Tactic,
         /// Why its answer is refused.
@@ -1417,9 +1586,9 @@ pub enum CheckRefusal
     CapabilityForged
     {
         /// The term at the capability type.
-        at: ValueId,
+        at: N::Value,
         /// The capability type it stands at.
-        expected: ValueTypeId,
+        expected: N::ValueType,
     },
     /// A numeric literal stands at a type two models of the prelude's
     /// `FromNat`, or for a negative literal `FromNeg`, or for a decimal
@@ -1428,21 +1597,21 @@ pub enum CheckRefusal
     LiteralAmbiguous
     {
         /// The literal.
-        at: ValueId,
+        at: N::Value,
         /// The type it is checked at.
-        expected: ValueTypeId,
+        expected: N::ValueType,
     },
     /// A capability stands where one granting an operation its own authority
     /// does not grant is expected: authority only narrows.
-    CapabilityAmplified(Mismatch),
+    CapabilityAmplified(MismatchOf<N>),
     /// An operation is exercised through a capability whose authority does
     /// not grant it.
     CapabilityOutsideAuthority
     {
         /// The exercise.
-        at: ComputationId,
+        at: N::Computation,
         /// The capability's type.
-        capability: ValueTypeId,
+        capability: N::ValueType,
     },
     /// A capability would outlive the scope that introduced it: it stands
     /// where one of a longer region is expected, or a scope's answer type
@@ -1450,14 +1619,14 @@ pub enum CheckRefusal
     CapabilityEscaped
     {
         /// The term the capability escapes through.
-        at: TermNode,
+        at: TermNodeOf<N>,
         /// The type that carries the scoped capability out.
-        found: TypeNode,
+        found: TypeNodeOf<N>,
     },
     /// A consumable capability, which belongs in the linear zone that no
     /// former binds into: it could be neither spent nor kept from being
     /// dropped.
-    CapabilityConsumable(ValueTypeId),
+    CapabilityConsumable(N::ValueType),
     /// A held capability claims authority the host did not grant at the
     /// checker's entry.
     CapabilityUngranted
@@ -1465,7 +1634,7 @@ pub enum CheckRefusal
         /// The held capability's declaration.
         constant: ConstantIndex,
         /// Its declared capability type.
-        declared: ValueTypeId,
+        declared: N::ValueType,
     },
     /// The two halves of a fork may both use one host interface, and one of
     /// them may change what it reaches: the halves run as peers, so nothing
@@ -1474,27 +1643,27 @@ pub enum CheckRefusal
     FootprintsOverlap
     {
         /// The fork.
-        at: ComputationId,
+        at: N::Computation,
         /// The child's footprint.
-        child: ValueTypeId,
+        child: N::ValueType,
         /// The parent's footprint.
-        parent: ValueTypeId,
+        parent: N::ValueType,
         /// What both may use where one may change it.
-        shared: ValueTypeId,
+        shared: N::ValueType,
     },
     /// A bisimilarity statement `bisim(A, B)` whose two sessions are not
     /// bisimilar: some observation of one is no observation of the other.
     SessionNotEquivalent
     {
         /// The statement.
-        at: ValueId,
+        at: N::Value,
     },
     /// A simulation `sim(A, B)` whose source session is no Gay–Hole subtype of
     /// its target, or a ride along a flow whose sessions are not so related.
     SessionNotSubtype
     {
         /// The statement, or the flow ridden.
-        at: ValueId,
+        at: N::Value,
     },
     /// A session statement's operand, a run's protocol or a flow endpoint a
     /// run rides from or to that is no closed session code at its protocol's
@@ -1502,7 +1671,7 @@ pub enum CheckRefusal
     SessionCodeExpected
     {
         /// The code.
-        at: ValueId,
+        at: N::Value,
     },
     /// A session type whose payload reads a binder outside it, formed
     /// anywhere but a run's protocol: a session's payload codes form in the
@@ -1511,7 +1680,7 @@ pub enum CheckRefusal
     OpenSessionPayload
     {
         /// The session type.
-        at: ValueTypeId,
+        at: N::ValueType,
     },
     /// A law admitted on the host's word whose statement converts with none
     /// the host's law table holds: the host does not assert it, so the model
@@ -1519,7 +1688,7 @@ pub enum CheckRefusal
     UnassertedLaw
     {
         /// The law's declared type.
-        at: ValueTypeId,
+        at: N::ValueType,
     },
     /// A model's law its module omits that no source of a filler answers:
     /// its sides do not convert, so `here` does not fill it. Named
@@ -1527,14 +1696,14 @@ pub enum CheckRefusal
     UndischargedLaw
     {
         /// The law's declared type.
-        at: ValueTypeId,
+        at: N::ValueType,
     },
     /// A ride whose motive reads its code variable anywhere but a covariant
     /// position: a flow moves forward only, so no ride derives its reverse.
     NonCovariantMotive
     {
         /// The ride.
-        at: ComputationId,
+        at: N::Computation,
     },
     /// A ride the checker cannot move: along a flow between distinct session
     /// codes, a motive that is no run over the code — the recorded-run
@@ -1544,16 +1713,16 @@ pub enum CheckRefusal
     RideUnsupported
     {
         /// The ride.
-        at: ComputationId,
+        at: N::Computation,
     },
     /// A linear arrow at a multiplicity other than the literal `1`, which the
     /// linear function does not admit yet.
     MultiplicityUnsupported
     {
         /// The linear arrow.
-        at: CompTypeId,
+        at: N::CompType,
         /// Its multiplicity.
-        multiplicity: ValueId,
+        multiplicity: N::Value,
     },
     /// A recorded run its session does not admit: a literal checked at a
     /// protocol whose moves it breaks, or a run ridden to a target that does
@@ -1561,7 +1730,7 @@ pub enum CheckRefusal
     RunNotAdmitted
     {
         /// The run.
-        at: ValueId,
+        at: N::Value,
         /// What the session refuses.
         fault: RunFault,
     },
@@ -1572,7 +1741,7 @@ pub enum CheckRefusal
     DialogueUnmatched
     {
         /// The dialogue.
-        at: ValueId,
+        at: N::Value,
         /// The unmatched move's position in the log.
         step: RunStep,
     },
@@ -1581,7 +1750,7 @@ pub enum CheckRefusal
     DialogueInverted
     {
         /// The dialogue.
-        at: ValueId,
+        at: N::Value,
         /// The log position of the move the web orders first, logged second.
         earlier: RunStep,
         /// The log position of the move the web orders second, logged first.
@@ -1596,7 +1765,7 @@ pub enum CheckRefusal
     ForwardUnsupported
     {
         /// The `forward`.
-        at: ValueId,
+        at: N::Value,
     },
     /// A function flow's boundary that runs against the variance its position
     /// fixes: the domain flow must run from the target's argument code to the
@@ -1605,12 +1774,512 @@ pub enum CheckRefusal
     Boundary
     {
         /// The boundary flow.
-        at: ValueId,
+        at: N::Value,
     },
 }
 
+/// A refusal of the judgement, each node named by its id in the checker's
+/// arena.
+pub type CheckRefusal = CheckRefusalOf<Arena>;
+
 impl CheckRefusal
 {
+    /// The same refusal, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> CheckRefusalOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::NotADataType(node) => CheckRefusalOf::NotADataType(node),
+            Self::DataKindNotUniverse(node) => {
+                CheckRefusalOf::DataKindNotUniverse(keys.value_type(node))
+            },
+            Self::DataFieldLevel { field, kind } => CheckRefusalOf::DataFieldLevel {
+                field: keys.value_type(field),
+                kind: keys.value_type(kind),
+            },
+            Self::RuleNotPresentable { kind, refusal } => CheckRefusalOf::RuleNotPresentable {
+                kind: keys.value_type(kind),
+                refusal,
+            },
+            Self::RuleNotRespected {
+                at,
+                rule,
+                left,
+                right,
+            } => CheckRefusalOf::RuleNotRespected {
+                at: keys.computation(at),
+                rule,
+                left: keys.value(left),
+                right: keys.value(right),
+            },
+            Self::NotApart { at, reason } => CheckRefusalOf::NotApart {
+                at: keys.computation(at),
+                reason,
+            },
+            Self::LoopNotRespected {
+                at,
+                cell,
+                left,
+                right,
+                reason,
+            } => CheckRefusalOf::LoopNotRespected {
+                at: keys.computation(at),
+                cell,
+                left: keys.computation(left),
+                right: keys.computation(right),
+                reason,
+            },
+            Self::LoopUndecided { at, cell } => CheckRefusalOf::LoopUndecided {
+                at: keys.computation(at),
+                cell,
+            },
+            Self::AbstractKindNotUniverse(node) => {
+                CheckRefusalOf::AbstractKindNotUniverse(keys.value_type(node))
+            },
+            Self::RepresentationAboveKind {
+                representation,
+                kind,
+            } => CheckRefusalOf::RepresentationAboveKind {
+                representation: keys.value_type(representation),
+                kind: keys.value_type(kind),
+            },
+            Self::NotAnAbstractType(node) => CheckRefusalOf::NotAnAbstractType(node),
+            Self::AtomTransport { at, atom } => CheckRefusalOf::AtomTransport {
+                at: keys.value(at),
+                atom,
+            },
+            Self::BridgeAtSealedType { at, atom } => CheckRefusalOf::BridgeAtSealedType {
+                at: keys.value_type(at),
+                atom,
+            },
+            Self::OutsideFold { at, code } => CheckRefusalOf::OutsideFold {
+                at: keys.value(at),
+                code: keys.value_type(code),
+            },
+            Self::SealSiteRepeated(node) => CheckRefusalOf::SealSiteRepeated(node),
+            Self::BuiltinRepeated { role, holder } => {
+                CheckRefusalOf::BuiltinRepeated { role, holder }
+            },
+            Self::BuiltinMisplaced(node) => CheckRefusalOf::BuiltinMisplaced(node),
+            Self::BuiltinNotCanonical { role, departure } => {
+                CheckRefusalOf::BuiltinNotCanonical { role, departure }
+            },
+            Self::DataArgumentArity(node) => {
+                CheckRefusalOf::DataArgumentArity(keys.value_type(node))
+            },
+            Self::UnknownConstructor { at, tag } => CheckRefusalOf::UnknownConstructor {
+                at: keys.value(at),
+                tag,
+            },
+            Self::ConstructorArity(node) => CheckRefusalOf::ConstructorArity(keys.value(node)),
+            Self::NonExhaustiveDataCase(node) => {
+                CheckRefusalOf::NonExhaustiveDataCase(keys.computation(node))
+            },
+            Self::UndecidedCoverage(node) => {
+                CheckRefusalOf::UndecidedCoverage(keys.computation(node))
+            },
+            Self::AbsentRecordField(node) => {
+                CheckRefusalOf::AbsentRecordField(keys.computation(node))
+            },
+            Self::AbsentTupleComponent(node) => {
+                CheckRefusalOf::AbsentTupleComponent(keys.computation(node))
+            },
+            Self::MissingRecordField { at, expected } => CheckRefusalOf::MissingRecordField {
+                at: keys.value(at),
+                expected: keys.value_type(expected),
+            },
+            Self::PatchOutsideBase { at, value } => CheckRefusalOf::PatchOutsideBase {
+                at: keys.value_type(at),
+                value: keys.value(value),
+            },
+            Self::FixedFieldDiffers { at, fixed } => CheckRefusalOf::FixedFieldDiffers {
+                at: keys.value(at),
+                fixed: keys.value(fixed),
+            },
+            Self::UnknownOperation { at } => CheckRefusalOf::UnknownOperation {
+                at: keys.computation(at),
+            },
+            Self::HandlerCoverage { at } => CheckRefusalOf::HandlerCoverage {
+                at: keys.computation(at),
+            },
+            Self::HandlerUnlawful {
+                at,
+                rule,
+                left,
+                right,
+            } => CheckRefusalOf::HandlerUnlawful {
+                at: keys.computation(at),
+                rule,
+                left: keys.computation(left),
+                right: keys.computation(right),
+            },
+            Self::ShiftWithoutReset { at } => CheckRefusalOf::ShiftWithoutReset {
+                at: keys.computation(at),
+            },
+            Self::DependentStack { at, synthesised } => CheckRefusalOf::DependentStack {
+                at: keys.value(at),
+                synthesised: keys.comp_type(synthesised),
+            },
+            Self::PathCode(node) => CheckRefusalOf::PathCode(keys.value(node)),
+            Self::EndpointMismatch {
+                at,
+                left,
+                right,
+                miss,
+            } => CheckRefusalOf::EndpointMismatch {
+                at: keys.value(at),
+                left: keys.value(left),
+                right: keys.value(right),
+                miss,
+            },
+            Self::CompoundEndpoint { at, synthesised } => CheckRefusalOf::CompoundEndpoint {
+                at: keys.value(at),
+                synthesised: keys.comp_type(synthesised),
+            },
+            Self::FunextUnsupported { at, classifier } => CheckRefusalOf::FunextUnsupported {
+                at: keys.value(at),
+                classifier: keys.value_type(classifier),
+            },
+            Self::PointwiseDistinct { at } => {
+                CheckRefusalOf::PointwiseDistinct { at: keys.value(at) }
+            },
+            Self::EquivUnsupported { at, classifier } => CheckRefusalOf::EquivUnsupported {
+                at: keys.value(at),
+                classifier: keys.value_type(classifier),
+            },
+            Self::UncertifiedStratum { at, code } => CheckRefusalOf::UncertifiedStratum {
+                at: keys.value(at),
+                code: keys.value_type(code),
+            },
+            Self::RoundTripDistinct { at } => {
+                CheckRefusalOf::RoundTripDistinct { at: keys.value(at) }
+            },
+            Self::NotOver {
+                at,
+                synthesised,
+                expected,
+            } => CheckRefusalOf::NotOver {
+                at: keys.value(at),
+                synthesised: keys.value_type(synthesised),
+                expected: keys.value_type(expected),
+            },
+            Self::UaUncertified { at, stratum } => CheckRefusalOf::UaUncertified {
+                at: keys.value(at),
+                stratum,
+            },
+            Self::UaInequivalent { at, defect } => CheckRefusalOf::UaInequivalent {
+                at: keys.value(at),
+                defect,
+            },
+            Self::ComposeUncertified { at, stratum } => CheckRefusalOf::ComposeUncertified {
+                at: keys.value(at),
+                stratum,
+            },
+            Self::ComposeNotAShape { at, pasting } => CheckRefusalOf::ComposeNotAShape {
+                at: keys.value(at),
+                pasting,
+            },
+            Self::ComposeDoesNotFill { at, seam, defect } => CheckRefusalOf::ComposeDoesNotFill {
+                at: keys.value(at),
+                seam,
+                defect,
+            },
+            Self::FillUncertified { at, stratum } => CheckRefusalOf::FillUncertified {
+                at: keys.value(at),
+                stratum,
+            },
+            Self::NoFiller {
+                at,
+                left,
+                right,
+                stratum,
+            } => CheckRefusalOf::NoFiller {
+                at: keys.value(at),
+                left: keys.value(left),
+                right: keys.value(right),
+                stratum,
+            },
+            Self::GeneratorFamilyUnsupported { at, cell, family } => {
+                CheckRefusalOf::GeneratorFamilyUnsupported {
+                    at: keys.value(at),
+                    cell: keys.value(cell),
+                    family,
+                }
+            },
+            Self::TypeMismatch(node) => CheckRefusalOf::TypeMismatch(node.keyed(keys)),
+            Self::EffectSignatureConflict { at, first, second } => {
+                CheckRefusalOf::EffectSignatureConflict {
+                    at: keys.computation(at),
+                    first: keys.comp_type(first),
+                    second: keys.comp_type(second),
+                }
+            },
+            Self::ShapeMismatch {
+                at,
+                wanted,
+                found,
+                unfolded,
+            } => CheckRefusalOf::ShapeMismatch {
+                at: at.keyed(keys),
+                wanted,
+                found: found.keyed(keys),
+                unfolded: unfolded.keyed(keys),
+            },
+            Self::NotSynthesisable { form } => CheckRefusalOf::NotSynthesisable {
+                form: form.keyed(keys),
+            },
+            Self::UnknownConstant { at, constant } => CheckRefusalOf::UnknownConstant {
+                at: keys.value(at),
+                constant,
+            },
+            Self::OutOfFragment { at, former } => CheckRefusalOf::OutOfFragment {
+                at: at.keyed(keys),
+                former,
+            },
+            Self::UnboundIndex {
+                at,
+                zone,
+                index,
+                depth,
+            } => CheckRefusalOf::UnboundIndex {
+                at: keys.value(at),
+                zone,
+                index,
+                depth,
+            },
+            Self::BudgetExceeded { budget } => CheckRefusalOf::BudgetExceeded { budget },
+            Self::DanglingNode { node } => CheckRefusalOf::DanglingNode {
+                node: node.keyed(keys),
+            },
+            Self::AdmissionOrder { constant, admitted } => {
+                CheckRefusalOf::AdmissionOrder { constant, admitted }
+            },
+            Self::MachineInvariant => CheckRefusalOf::MachineInvariant,
+            Self::SortMismatch {
+                at,
+                synthesised,
+                expected,
+            } => CheckRefusalOf::SortMismatch {
+                at: keys.value(at),
+                synthesised: keys.value_type(synthesised),
+                expected: keys.value_type(expected),
+            },
+            Self::LevelMismatch {
+                at,
+                synthesised,
+                expected,
+            } => CheckRefusalOf::LevelMismatch {
+                at: keys.value(at),
+                synthesised: keys.value_type(synthesised),
+                expected: keys.value_type(expected),
+            },
+            Self::DependentBind { at, synthesised } => CheckRefusalOf::DependentBind {
+                at: keys.computation(at),
+                synthesised: keys.comp_type(synthesised),
+            },
+            Self::Undecided { at } => CheckRefusalOf::Undecided { at: keys.value(at) },
+            Self::FamilyArity {
+                at,
+                expected,
+                actual,
+            } => CheckRefusalOf::FamilyArity {
+                at: keys.value(at),
+                expected,
+                actual,
+            },
+            Self::FamilyArgumentClassifier {
+                at,
+                position,
+                synthesised,
+                expected,
+            } => CheckRefusalOf::FamilyArgumentClassifier {
+                at: keys.value(at),
+                position,
+                synthesised: keys.value_type(synthesised),
+                expected: keys.value_type(expected),
+            },
+            Self::StaticLambdaArgument { at } => {
+                CheckRefusalOf::StaticLambdaArgument { at: keys.value(at) }
+            },
+            Self::StaticClassifierExpected { at, found } => {
+                CheckRefusalOf::StaticClassifierExpected {
+                    at: keys.value_type(at),
+                    found: keys.value_type(found),
+                }
+            },
+            Self::NegativeOccurrence(node) => CheckRefusalOf::NegativeOccurrence(node),
+            Self::NestedOccurrence(node) => CheckRefusalOf::NestedOccurrence(node),
+            Self::IndexOccurrence(node) => CheckRefusalOf::IndexOccurrence(node),
+            Self::NonUniformOccurrence(node) => CheckRefusalOf::NonUniformOccurrence(node),
+            Self::CrossBlockReference { site, index } => {
+                CheckRefusalOf::CrossBlockReference { site, index }
+            },
+            Self::StageNotBelow { at, found, bound } => CheckRefusalOf::StageNotBelow {
+                at: keys.value(at),
+                found,
+                bound,
+            },
+            Self::StagesDisagree { at, binder } => CheckRefusalOf::StagesDisagree {
+                at: keys.value(at),
+                binder,
+            },
+            Self::StageNotCarried { at } => CheckRefusalOf::StageNotCarried {
+                at: keys.computation(at),
+            },
+            Self::SessionMismatch {
+                at,
+                endpoint,
+                state,
+                defect,
+            } => CheckRefusalOf::SessionMismatch {
+                at: keys.computation(at),
+                endpoint: endpoint.keyed(keys),
+                state: keys.value_type(state),
+                defect,
+            },
+            Self::Linearity { at, defect } => CheckRefusalOf::Linearity {
+                at: at.keyed(keys),
+                defect: defect.keyed(keys),
+            },
+            Self::Access { at, defect } => CheckRefusalOf::Access {
+                at: at.keyed(keys),
+                defect,
+            },
+            Self::Codata { at, fault } => CheckRefusalOf::Codata {
+                at: at.keyed(keys),
+                fault,
+            },
+            Self::Located { at, defect } => CheckRefusalOf::Located {
+                at: at.keyed(keys),
+                defect: defect.keyed(keys),
+            },
+            Self::UnenclosedRun { at } => CheckRefusalOf::UnenclosedRun { at: keys.value(at) },
+            Self::ImplicitUnsolved { at, reason } => CheckRefusalOf::ImplicitUnsolved {
+                at: keys.value(at),
+                reason,
+            },
+            Self::ModelUnanswered { at, forced } => CheckRefusalOf::ModelUnanswered {
+                at: keys.value(at),
+                forced: forced.keyed(keys),
+            },
+            Self::ModelAmbiguous { at, survivors } => CheckRefusalOf::ModelAmbiguous {
+                at: keys.value(at),
+                survivors,
+            },
+            Self::TacticRefused { at, tactic, fault } => CheckRefusalOf::TacticRefused {
+                at: keys.value(at),
+                tactic,
+                fault,
+            },
+            Self::CapabilityForged { at, expected } => CheckRefusalOf::CapabilityForged {
+                at: keys.value(at),
+                expected: keys.value_type(expected),
+            },
+            Self::LiteralAmbiguous { at, expected } => CheckRefusalOf::LiteralAmbiguous {
+                at: keys.value(at),
+                expected: keys.value_type(expected),
+            },
+            Self::CapabilityAmplified(node) => {
+                CheckRefusalOf::CapabilityAmplified(node.keyed(keys))
+            },
+            Self::CapabilityOutsideAuthority { at, capability } => {
+                CheckRefusalOf::CapabilityOutsideAuthority {
+                    at: keys.computation(at),
+                    capability: keys.value_type(capability),
+                }
+            },
+            Self::CapabilityEscaped { at, found } => CheckRefusalOf::CapabilityEscaped {
+                at: at.keyed(keys),
+                found: found.keyed(keys),
+            },
+            Self::CapabilityConsumable(node) => {
+                CheckRefusalOf::CapabilityConsumable(keys.value_type(node))
+            },
+            Self::CapabilityUngranted { constant, declared } => {
+                CheckRefusalOf::CapabilityUngranted {
+                    constant,
+                    declared: keys.value_type(declared),
+                }
+            },
+            Self::FootprintsOverlap {
+                at,
+                child,
+                parent,
+                shared,
+            } => CheckRefusalOf::FootprintsOverlap {
+                at: keys.computation(at),
+                child: keys.value_type(child),
+                parent: keys.value_type(parent),
+                shared: keys.value_type(shared),
+            },
+            Self::SessionNotEquivalent { at } => {
+                CheckRefusalOf::SessionNotEquivalent { at: keys.value(at) }
+            },
+            Self::SessionNotSubtype { at } => {
+                CheckRefusalOf::SessionNotSubtype { at: keys.value(at) }
+            },
+            Self::SessionCodeExpected { at } => {
+                CheckRefusalOf::SessionCodeExpected { at: keys.value(at) }
+            },
+            Self::OpenSessionPayload { at } => CheckRefusalOf::OpenSessionPayload {
+                at: keys.value_type(at),
+            },
+            Self::UnassertedLaw { at } => CheckRefusalOf::UnassertedLaw {
+                at: keys.value_type(at),
+            },
+            Self::UndischargedLaw { at } => CheckRefusalOf::UndischargedLaw {
+                at: keys.value_type(at),
+            },
+            Self::NonCovariantMotive { at } => CheckRefusalOf::NonCovariantMotive {
+                at: keys.computation(at),
+            },
+            Self::RideUnsupported { at } => CheckRefusalOf::RideUnsupported {
+                at: keys.computation(at),
+            },
+            Self::MultiplicityUnsupported { at, multiplicity } => {
+                CheckRefusalOf::MultiplicityUnsupported {
+                    at: keys.comp_type(at),
+                    multiplicity: keys.value(multiplicity),
+                }
+            },
+            Self::RunNotAdmitted { at, fault } => CheckRefusalOf::RunNotAdmitted {
+                at: keys.value(at),
+                fault,
+            },
+            Self::DialogueUnmatched { at, step } => CheckRefusalOf::DialogueUnmatched {
+                at: keys.value(at),
+                step,
+            },
+            Self::DialogueInverted { at, earlier, later } => CheckRefusalOf::DialogueInverted {
+                at: keys.value(at),
+                earlier,
+                later,
+            },
+            Self::ForwardUnsupported { at } => {
+                CheckRefusalOf::ForwardUnsupported { at: keys.value(at) }
+            },
+            Self::Boundary { at } => CheckRefusalOf::Boundary { at: keys.value(at) },
+        }
+    }
+}
+
+impl<N> CheckRefusalOf<N>
+where
+    N: Naming,
+{
+    /// No type on a side of a comparison.
+    const UNNAMED: Maybe<TypeNodeOf<N>, compared::Absent> =
+        Maybe::Absent(compared::Absent::Unnamed);
+
     /// Whose fact this refusal records.
     ///
     /// # Specification
@@ -1853,43 +2522,43 @@ impl CheckRefusal
     /// - witness: `refusal::tests::a_refusal_compares_the_types_it_names`
     /// - witness: `refusal::tests::each_refusal_naming_types_reports_them_on_its_own_sides`
     #[spec(ensures: |ret| match *self {
-        | Self::TypeMismatch(Mismatch::Value { synthesised, expected, .. })
-        | Self::CapabilityAmplified(Mismatch::Value { synthesised, expected, .. })
+        | Self::TypeMismatch(MismatchOf::Value { synthesised, expected, .. })
+        | Self::CapabilityAmplified(MismatchOf::Value { synthesised, expected, .. })
         | Self::SortMismatch { synthesised, expected, .. }
         | Self::LevelMismatch { synthesised, expected, .. }
         | Self::FamilyArgumentClassifier { synthesised, expected, .. }
         | Self::NotOver { synthesised, expected, .. } =>
-            ret == Compared { expected: Maybe::Present(TypeNode::Value(expected)), found: Maybe::Present(TypeNode::Value(synthesised)), unfolded: UNNAMED },
-        | Self::TypeMismatch(Mismatch::Computation { synthesised, expected, .. })
-        | Self::CapabilityAmplified(Mismatch::Computation { synthesised, expected, .. }) =>
-            ret == Compared { expected: Maybe::Present(TypeNode::Computation(expected)), found: Maybe::Present(TypeNode::Computation(synthesised)), unfolded: UNNAMED },
-        | Self::ShapeMismatch { found, unfolded, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED
+            ret == ComparedOf { expected: Maybe::Present(TypeNodeOf::Value(expected)), found: Maybe::Present(TypeNodeOf::Value(synthesised)), unfolded: Self::UNNAMED },
+        | Self::TypeMismatch(MismatchOf::Computation { synthesised, expected, .. })
+        | Self::CapabilityAmplified(MismatchOf::Computation { synthesised, expected, .. }) =>
+            ret == ComparedOf { expected: Maybe::Present(TypeNodeOf::Computation(expected)), found: Maybe::Present(TypeNodeOf::Computation(synthesised)), unfolded: Self::UNNAMED },
+        | Self::ShapeMismatch { found, unfolded, .. } => ret.found == Maybe::Present(found) && ret.expected == Self::UNNAMED
             && ret.unfolded == if unfolded == found { Maybe::Absent(compared::Absent::InWeakHead) } else { Maybe::Present(unfolded) },
-        | Self::CapabilityEscaped { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
-        | Self::CapabilityForged { expected, .. } | Self::LiteralAmbiguous { expected, .. } => ret.expected == Maybe::Present(TypeNode::Value(expected)) && ret.found == UNNAMED,
+        | Self::CapabilityEscaped { found, .. } => ret.found == Maybe::Present(found) && ret.expected == Self::UNNAMED,
+        | Self::CapabilityForged { expected, .. } | Self::LiteralAmbiguous { expected, .. } => ret.expected == Maybe::Present(TypeNodeOf::Value(expected)) && ret.found == Self::UNNAMED,
         | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } | Self::CompoundEndpoint { synthesised, .. } =>
-            ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
+            ret.found == Maybe::Present(TypeNodeOf::Computation(synthesised)) && ret.expected == Self::UNNAMED,
         | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
         | Self::CapabilityOutsideAuthority { capability: found, .. } | Self::CapabilityConsumable(found) | Self::CapabilityUngranted { declared: found, .. } | Self::FootprintsOverlap { shared: found, .. }
         | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. } | Self::OutsideFold { code: found, .. } | Self::BridgeAtSealedType { at: found, .. }
         | Self::SessionMismatch { state: found, .. } | Self::UnassertedLaw { at: found } | Self::UndischargedLaw { at: found }
-        | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. }
-        | Self::Located { defect: crate::worlds::LocatedDefect::Immobile { former: found, .. }, .. }
-        | Self::ModelUnanswered { forced: Forced::Type(found), .. } =>
-            ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
-        | _ => ret == Compared { expected: UNNAMED, found: UNNAMED, unfolded: UNNAMED },
+        | Self::Linearity { defect: crate::session::LinearityDefectOf::Residue { state: found, .. }, .. }
+        | Self::Located { defect: crate::worlds::LocatedDefectOf::Immobile { former: found, .. }, .. }
+        | Self::ModelUnanswered { forced: ForcedOf::Type(found), .. } =>
+            ret.found == Maybe::Present(TypeNodeOf::Value(found)) && ret.expected == Self::UNNAMED,
+        | _ => ret == ComparedOf { expected: Self::UNNAMED, found: Self::UNNAMED, unfolded: Self::UNNAMED },
     })]
     #[inline]
     #[must_use]
-    pub fn compared(&self) -> Compared
+    pub fn compared(&self) -> ComparedOf<N>
     {
         let (expected, found) = match *self {
-            Self::TypeMismatch(Mismatch::Value {
+            Self::TypeMismatch(MismatchOf::Value {
                 synthesised,
                 expected,
                 ..
             })
-            | Self::CapabilityAmplified(Mismatch::Value {
+            | Self::CapabilityAmplified(MismatchOf::Value {
                 synthesised,
                 expected,
                 ..
@@ -1914,33 +2583,34 @@ impl CheckRefusal
                 expected,
                 ..
             } => (
-                Maybe::Present(TypeNode::Value(expected)),
-                Maybe::Present(TypeNode::Value(synthesised)),
+                Maybe::Present(TypeNodeOf::Value(expected)),
+                Maybe::Present(TypeNodeOf::Value(synthesised)),
             ),
-            Self::TypeMismatch(Mismatch::Computation {
+            Self::TypeMismatch(MismatchOf::Computation {
                 synthesised,
                 expected,
                 ..
             })
-            | Self::CapabilityAmplified(Mismatch::Computation {
+            | Self::CapabilityAmplified(MismatchOf::Computation {
                 synthesised,
                 expected,
                 ..
             }) => (
-                Maybe::Present(TypeNode::Computation(expected)),
-                Maybe::Present(TypeNode::Computation(synthesised)),
+                Maybe::Present(TypeNodeOf::Computation(expected)),
+                Maybe::Present(TypeNodeOf::Computation(synthesised)),
             ),
             Self::ShapeMismatch { found, .. } | Self::CapabilityEscaped { found, .. } => {
-                (UNNAMED, Maybe::Present(found))
+                (Self::UNNAMED, Maybe::Present(found))
             },
             Self::CapabilityForged { expected, .. } | Self::LiteralAmbiguous { expected, .. } => {
-                (Maybe::Present(TypeNode::Value(expected)), UNNAMED)
+                (Maybe::Present(TypeNodeOf::Value(expected)), Self::UNNAMED)
             },
             Self::DependentBind { synthesised, .. }
             | Self::DependentStack { synthesised, .. }
-            | Self::CompoundEndpoint { synthesised, .. } => {
-                (UNNAMED, Maybe::Present(TypeNode::Computation(synthesised)))
-            },
+            | Self::CompoundEndpoint { synthesised, .. } => (
+                Self::UNNAMED,
+                Maybe::Present(TypeNodeOf::Computation(synthesised)),
+            ),
             Self::StaticClassifierExpected { found, .. }
             | Self::CapabilityOutsideAuthority {
                 capability: found, ..
@@ -1964,17 +2634,17 @@ impl CheckRefusal
             | Self::UnassertedLaw { at: found }
             | Self::UndischargedLaw { at: found }
             | Self::Linearity {
-                defect: crate::session::LinearityDefect::Residue { state: found, .. },
+                defect: crate::session::LinearityDefectOf::Residue { state: found, .. },
                 ..
             }
             | Self::Located {
-                defect: crate::worlds::LocatedDefect::Immobile { former: found, .. },
+                defect: crate::worlds::LocatedDefectOf::Immobile { former: found, .. },
                 ..
             }
             | Self::ModelUnanswered {
-                forced: Forced::Type(found),
+                forced: ForcedOf::Type(found),
                 ..
-            } => (UNNAMED, Maybe::Present(TypeNode::Value(found))),
+            } => (Self::UNNAMED, Maybe::Present(TypeNodeOf::Value(found))),
             Self::NotADataType(_)
             | Self::DataKindNotUniverse(_)
             | Self::DataFieldLevel { .. }
@@ -2056,7 +2726,7 @@ impl CheckRefusal
             | Self::ComposeDoesNotFill { .. }
             | Self::FillUncertified { .. }
             | Self::NoFiller { .. }
-            | Self::GeneratorFamilyUnsupported { .. } => (UNNAMED, UNNAMED),
+            | Self::GeneratorFamilyUnsupported { .. } => (Self::UNNAMED, Self::UNNAMED),
         };
         let unfolded = if let Self::ShapeMismatch {
             found, unfolded, ..
@@ -2070,9 +2740,9 @@ impl CheckRefusal
             }
         }
         else {
-            UNNAMED
+            Self::UNNAMED
         };
-        Compared {
+        ComparedOf {
             expected,
             found,
             unfolded,
@@ -2085,12 +2755,39 @@ impl CheckRefusal
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Forced
+pub enum ForcedOf<N>
+where
+    N: Naming,
 {
     /// The type the call's arguments force a component of the slot to code.
-    Type(ValueTypeId),
+    Type(N::ValueType),
     /// The call's arguments solve no component of the slot to a type's code.
     Unforced,
+}
+
+/// A forcing of a model slot, each type named by its id in the checker's arena.
+pub type Forced = ForcedOf<Arena>;
+
+impl Forced
+{
+    /// The same forcing, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> ForcedOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Type(node) => ForcedOf::Type(keys.value_type(node)),
+            Self::Unforced => ForcedOf::Unforced,
+        }
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -2109,21 +2806,51 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// No type on a side of a comparison.
-const UNNAMED: Maybe<TypeNode, compared::Absent> = Maybe::Absent(compared::Absent::Unnamed);
-
 /// The types a refusal sets against each other: the one its rule expected,
 /// the one it found, and the one the found type unfolds to.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Compared
+pub struct ComparedOf<N>
+where
+    N: Naming,
 {
     /// The type the rule required.
-    pub expected: Maybe<TypeNode, compared::Absent>,
+    pub expected: Maybe<TypeNodeOf<N>, compared::Absent>,
     /// The type the rule met, as written.
-    pub found: Maybe<TypeNode, compared::Absent>,
+    pub found: Maybe<TypeNodeOf<N>, compared::Absent>,
     /// The type the rule met at its weak head, where that differs from
     /// `found`.
-    pub unfolded: Maybe<TypeNode, compared::Absent>,
+    pub unfolded: Maybe<TypeNodeOf<N>, compared::Absent>,
+}
+
+/// The types that a refusal of the checker sets against each other, each named
+/// by its id in the checker's arena.
+pub type Compared = ComparedOf<Arena>;
+
+impl Compared
+{
+    /// The same comparison, each type named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> ComparedOf<Keyed>
+    where
+        K: Keying,
+    {
+        let side = |side: Maybe<TypeNode, compared::Absent>| match side {
+            Maybe::Present(node) => Maybe::Present(node.keyed(keys)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        ComparedOf {
+            expected: side(self.expected),
+            found: side(self.found),
+            unfolded: side(self.unfolded),
+        }
+    }
 }
 
 #[cfg(test)]

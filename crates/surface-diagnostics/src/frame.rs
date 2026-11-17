@@ -47,13 +47,16 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::Failure;
+use gandr_core_checker::FailureOf;
 use gandr_core_checker::FoldPremise;
 use gandr_core_checker::FrameRole;
+use gandr_core_checker::Keyed;
 use gandr_core_checker::Obligation;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
+use gandr_core_checker::TypeNodeOf;
 use gandr_core_checker::judged;
-use gandr_core_term::ValueTypeId;
+use gandr_core_term::key::NodeKey;
 use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
@@ -62,13 +65,15 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::location::Located;
 use crate::locus::node;
 use crate::model::Binding;
 use crate::model::DiagnosticContext;
 use crate::model::Judged;
-use crate::model::Locus;
 use crate::model::binding;
-use crate::model::context_locus;
+use crate::spelled::Reading;
+use crate::spelled::SpelledNode;
+use crate::spelled::SpellingPlace;
 use crate::spelled::Spellings;
 
 /// What a rule of the checking machine was doing to the term it was pushed
@@ -292,12 +297,13 @@ pub fn sentence(role: FrameRole) -> Sentence
 }
 
 /// The contexts `failure` gives a diagnostic whose primary annotation spans
-/// `primary`, and the hypotheses in scope where it was refused, read through
-/// `origins`, `spellings` and `text`.
+/// `primary`, and the hypotheses in scope where it was refused, each binder
+/// named and each node located as `located` records, each type read through
+/// `spellings`.
 ///
 /// # Specification
-/// - requires: `origins` and `spellings` were built over the arena `failure`
-///   names; `text` is the source `origins` measures.
+/// - requires: `located` is [`Located::of`] the arena form of `failure`, and
+///   `spellings` keys the types that `failure` names.
 /// - ensures: the obligations in order, outermost first, folded as the module
 ///   states: one located context per span the text holds, at its first
 ///   obligation's place, judged as its outermost obligation there and read as
@@ -310,6 +316,9 @@ pub fn sentence(role: FrameRole) -> Sentence
 /// - provides: what a diagnostic says the refusal stood inside.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the context annotations and their names, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a force inside a thunk reads as the thunk checked against
@@ -326,51 +335,85 @@ pub fn sentence(role: FrameRole) -> Sentence
     Maybe::Absent(_) => true,
 }) && ret.1.len() == failure.hypotheses().len())]
 pub fn contexts<Reason>(
-    failure: &Failure,
-    origins: &OriginTable,
-    spellings: &Spellings,
-    text: SourceText<'_>,
+    failure: &FailureOf<Keyed>,
+    located: &Located,
+    (spellings, place): (&Spellings, SpellingPlace),
     primary: Maybe<ByteSpan, Reason>,
 ) -> (Vec<DiagnosticContext>, Vec<Binding>)
 where
     Reason: Copy + PartialEq,
 {
+    // Each type is read at the place that `TypeSpellings::of` spelled it
+    // at: under the hypotheses and regions before it. When the obligations
+    // do not account for every hypothesis, no name is known to stand at a
+    // position, and each is read under none.
+    let accounted = place.depth == failure.hypotheses().len();
+    let checked = |depth: usize, regions: usize| SpellingPlace {
+        depth: if accounted { depth } else { 0 },
+        regions,
+        reading: Reading::Checked,
+        ..place
+    };
+    let hypothesis = |depth: usize| SpellingPlace {
+        depth: depth.min(place.depth),
+        reading: Reading::Hypothesis,
+        ..place
+    };
     let mut contexts: Vec<DiagnosticContext> = Vec::new();
-    let mut named: Vec<Binding> = framed(failure, origins)
-        .into_iter()
+    let mut named: Vec<Binding> = located
+        .framed
+        .iter()
+        .cloned()
         .zip(failure.hypotheses())
-        .map(|(name, &ty)| Binding {
+        .enumerate()
+        .map(|(depth, (name, &ty))| Binding {
             name,
-            ty: spelled(spellings, ty),
+            ty: spelled(spellings, ty, hypothesis(depth)),
         })
         .collect();
     named.reserve(failure.hypotheses().len().saturating_sub(named.len()));
-    for obligation in failure.obligations() {
-        let binders: Vec<Binding> = opened(obligation, origins, text)
-            .into_iter()
+    let mut regions = 0_usize;
+    for (obligation, frame) in failure.obligations().iter().zip(&located.frames) {
+        let standing = checked(named.len(), regions);
+        if matches!(
+            obligation.role(),
+            FrameRole::ScopeSubject | FrameRole::HoldBody
+        ) {
+            regions = regions.saturating_add(1);
+        }
+        let first = named.len();
+        let binders: Vec<Binding> = frame
+            .binders
+            .iter()
+            .cloned()
             .zip(obligation.binders())
-            .map(|(name, &ty)| Binding {
+            .enumerate()
+            .map(|(offset, (name, &ty))| Binding {
                 name,
-                ty: spelled(spellings, ty),
+                ty: spelled(spellings, ty, SpellingPlace {
+                    reading: Reading::Hypothesis,
+                    ..checked(first.saturating_add(offset), standing.regions)
+                }),
             })
             .collect();
         named.extend(binders.iter().cloned());
         let judged = match obligation.expected() {
-            Maybe::Present(expected) => Judged::Checked(match spellings.get(expected) {
-                Maybe::Present(presentation) => Maybe::Present(String::from(presentation.as_ref())),
-                Maybe::Absent(reason) => Maybe::Absent(reason),
-            }),
+            Maybe::Present(expected) => Judged::Checked(
+                match spellings.get(SpelledNode {
+                    node: expected,
+                    place: standing,
+                }) {
+                    Maybe::Present(presentation) => {
+                        Maybe::Present(String::from(presentation.as_ref()))
+                    },
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                },
+            ),
             Maybe::Absent(judged::Absent::Synthesised) => Judged::Synthesised,
             Maybe::Absent(judged::Absent::Formed) => Judged::Formed,
         };
         let role = obligation.role();
-        let locus = match node(origins, obligation.at()) {
-            Maybe::Present(span) => match Locus::of(text, span) {
-                Maybe::Present(locus) => Maybe::Present(locus),
-                Maybe::Absent(_) => Maybe::Absent(context_locus::Absent::OutsideText),
-            },
-            Maybe::Absent(_) => Maybe::Absent(context_locus::Absent::Unrecorded),
-        };
+        let locus = frame.locus;
         if let Maybe::Present(locus) = locus {
             if let Maybe::Present(span) = primary
                 && span == locus.span
@@ -408,9 +451,10 @@ where
         failure
             .hypotheses()
             .iter()
-            .map(|&ty| Binding {
+            .enumerate()
+            .map(|(depth, &ty)| Binding {
                 name: Maybe::Absent(binding::Absent::Unnamed),
-                ty: spelled(spellings, ty),
+                ty: spelled(spellings, ty, hypothesis(depth)),
             })
             .collect()
     };
@@ -433,6 +477,9 @@ where
 ///   the spelling of every type under them read ([`crate::TypeSpellings::of`]).
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the names of the opened binders, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a `let` binder and a function's parameters are named, and
@@ -474,6 +521,9 @@ pub fn opened(
 ///   type under them read before the obligations' own ([`opened`]).
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the names of the binders, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a refusal in a field's type, in an index's type and at a
@@ -533,6 +583,9 @@ pub fn framed(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the written name, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`opened`].
 /// - witness: `tests::diagnostics::a_later_binder_of_one_split_spells_under_the_earlier`
@@ -578,6 +631,9 @@ fn split_binder(
 ///   hypotheses or, a hold's slot, linear.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the written name, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`opened`]; a type kept at a hold spells the hold's
@@ -633,12 +689,19 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the spelled type, diagnostic
 fn spelled(
     spellings: &Spellings,
-    ty: ValueTypeId,
+    ty: NodeKey,
+    place: SpellingPlace,
 ) -> Maybe<String, crate::spelled::spelling::Absent>
 {
-    match spellings.get(TypeNode::Value(ty)) {
+    match spellings.get(SpelledNode {
+        node: TypeNodeOf::Value(ty),
+        place,
+    }) {
         Maybe::Present(presentation) => Maybe::Present(String::from(presentation.as_ref())),
         Maybe::Absent(reason) => Maybe::Absent(reason),
     }
