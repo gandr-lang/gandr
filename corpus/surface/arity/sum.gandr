@@ -80,9 +80,9 @@ def chained(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
 @[runs("8")]
 def outer() -> -F Integer { chained (*{+{.1 = 8}, 9}) }
 
-/// A pattern variable holds the type its position states: `s`, bound at the
-/// first component of `*{+{Integer, Integer}, Integer}`, is matched as the sum
-/// that component states, the shape the printer writes `nested` in.
+/// The pattern variable `s` at the first component of `*{+{Integer, Integer},
+/// Integer}` holds the sum that this component states. The printer writes
+/// `nested` in this shape.
 @[checks]
 def split(t : *{+{Integer, Integer}, Integer}) -> -F Integer =
   match t where

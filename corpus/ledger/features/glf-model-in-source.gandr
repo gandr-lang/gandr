@@ -11,10 +11,10 @@
 //! first-order signature, Kaposi and Xie's first-order models
 //! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
 //! are its algebras: a carrier for the sort and a function per operation.
-//! Written in source, the models of `Nat` are the record type `*{nat : Type,
-//! zero : () -> nat, succ : nat -> nat}`, one field per component of
-//! `Model(Nat)` in the order the derivation mints them, and the syntax model, a
-//! counting model and a `Model(Nat)` module each inhabit it.
+//! In source, the models of `Nat` are the record type `*{nat : Type, zero :
+//! () -> nat, succ : nat -> nat}`. It has one field for each component of
+//! `Model(Nat)`, in the order that the derivation mints them. The syntax
+//! model, a counting model and a `Model(Nat)` module each inhabit it.
 //!
 //! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
 //!

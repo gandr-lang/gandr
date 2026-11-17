@@ -410,7 +410,6 @@ corpus/ledger/features/function-extensionality.gandr STE-8.1 670dc78ada63e5cd
 corpus/ledger/features/glf-model-in-source.gandr STE-3.2 c66281339a05b990
 corpus/ledger/features/glf-model-in-source.gandr STE-3.5 c305ca6b46ff41c2
 corpus/ledger/features/glf-model-in-source.gandr STE-6.3 7d83061867113072
-corpus/ledger/features/glf-model-in-source.gandr STE-6.3 9094b4e6aec39b85
 corpus/ledger/features/glf-model-in-source.gandr STE-6.3 c305ca6b46ff41c2
 corpus/ledger/features/glf-model-in-source.gandr STE-8.1 d4d837875ab5473a
 corpus/ledger/features/grade-algebra.gandr STE-3.2 849b3e39c8f6fea1
@@ -2413,9 +2412,7 @@ corpus/surface/arity/lazy-record.gandr STE-3.5 6384d545e6672061
 corpus/surface/arity/records.gandr STE-3.6 454e7a2fd19b45ea
 corpus/surface/arity/records.gandr STE-3.6 a6fe5a3005429419
 corpus/surface/arity/records.gandr STE-3.5 32f0cfcfc2cf076c
-corpus/surface/arity/sum.gandr STE-3.6 bf3fcdff5920f015
 corpus/surface/arity/sum.gandr STE-3.2 39ed3c25f6ac78ff
-corpus/surface/arity/sum.gandr STE-6.3 bf3fcdff5920f015
 corpus/surface/comparisons.gandr STE-3.5 5e324d457b3315df
 corpus/surface/comparisons.gandr STE-6.3 5e324d457b3315df
 corpus/surface/comparisons.gandr STE-6.4 7ffeb0f63edb2700
