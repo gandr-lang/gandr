@@ -25,6 +25,6 @@ theory ZeroFiber where
   oper outp : (e : Ext) --> Val;
   oper outq : (e : Ext) --> Val;
 
-  rule boundary : outp e ==> zero ();
+  rule boundary : outp e ==> zero;
   rule beta : outq (ins y) ==> y;
   rule eta : ins (outq e) ==> e;

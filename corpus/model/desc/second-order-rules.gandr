@@ -33,21 +33,21 @@ theory LetPair where
 /// Completion joins the two `f` rules independently from ζ.
 theory LetBeside where
   sort Tm : Type+;
-  oper zero : () --> Tm;
-  oper one : () --> Tm;
+  oper zero : Tm;
+  oper one : Tm;
   oper f : (a : Tm) --> Tm;
   oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
   rule zeta : let u t <=> t u;
-  rule fZero : f a <=> zero ();
-  rule fOne : f a <=> one ();
+  rule fZero : f a <=> zero;
+  rule fOne : f a <=> one;
 
-/// ζ and `zetaZero` join at `t(zero())`.
+/// ζ and `zetaZero` join at `t(zero)`.
 theory LetOverlap where
   sort Tm : Type+;
-  oper zero : () --> Tm;
+  oper zero : Tm;
   oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
   rule zeta : let u t <=> t u;
-  rule zetaZero : let (zero ()) t <=> t (zero ());
+  rule zetaZero : let zero t <=> t zero;
 
 /// The presentation stores ζ's right side as an `Inst` node.
 @[runs("1")]

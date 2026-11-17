@@ -37,7 +37,7 @@ pub theory CwF where
   sort Tm(g : Con, a : Ty g) : Type;
 
   /// The empty context.
-  oper empty : () --> Con;
+  oper empty : Con;
   /// Comprehension: a context extended by a type in it.
   oper ext : (g : Con, a : Ty g) --> Con;
   /// The identity substitution.
@@ -45,7 +45,7 @@ pub theory CwF where
   /// Composition: `s` after `t`.
   oper comp : (s : Sub d g, t : Sub e d) --> Sub e g;
   /// The substitution into the empty context.
-  oper eps : (g : Con) --> Sub g empty();
+  oper eps : (g : Con) --> Sub g empty;
   /// Substitution in a type: it moves the type along `s`.
   oper subTy : (a : Ty g, s : Sub d g) --> Ty d;
   /// Substitution in a term: it moves the term along `s`, to its moved type.
@@ -81,7 +81,7 @@ pub module Standard : Model(CwF) where
   type Tm(g : Con, a : Ty g) = (x : g) -> a(x);
 
   /// The empty context has one point.
-  def empty() -> Type { return Unit }
+  def empty : Type = Unit;
 
   /// Comprehension pairs a point with a point of its type.
   def ext(g : Type, a : g -> Type) -> Type { return type(*{x : g, y : a(x)}) }

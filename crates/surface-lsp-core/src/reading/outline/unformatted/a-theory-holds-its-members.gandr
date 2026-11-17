@@ -10,7 +10,7 @@ theory Shapes where {
 }
 theory Monoid where {
   include Shapes;
-  oper one : () --> M;
+  oper one : M;
 }
 codata Stream : Type where {
   head : M;

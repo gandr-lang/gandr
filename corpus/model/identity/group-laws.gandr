@@ -24,9 +24,9 @@ pub theory Group where
   oper inv : (x : G) --> G;
   oper mul : (x : G, y : G) --> G;
 
-  rule unitL : mul (e ()) x <=> x;
-  rule unitR : mul x (e ()) <=> x;
+  rule unitL : mul e x <=> x;
+  rule unitR : mul x e <=> x;
   rule assoc : mul (mul x y) z <=> mul x (mul y z);
   rule invInv : inv (inv x) <=> x;
-  rule invE : inv (e ()) <=> e ();
-  rule invL : mul (inv x) x <=> e ();
+  rule invE : inv e <=> e;
+  rule invL : mul (inv x) x <=> e;

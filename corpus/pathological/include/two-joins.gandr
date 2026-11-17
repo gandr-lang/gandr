@@ -9,7 +9,7 @@
 /// `Pointed` defines a carrier with a unit.
 theory Pointed where
   sort M : Type;
-  oper point : () --> M;
+  oper point : M;
 
 /// `Magma` defines a carrier with multiplication.
 theory Magma where

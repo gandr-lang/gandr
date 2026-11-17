@@ -49,7 +49,7 @@ theory Clock where
   sort Instant : Type;
   sort Duration : Type;
   sort Token : Type;
-  oper now : () --> Instant;
+  oper now : Instant;
   oper deadline : (d : Duration) --> Token;
 
 /// `Random` samples a distribution.

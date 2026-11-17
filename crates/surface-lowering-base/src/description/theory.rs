@@ -1747,11 +1747,11 @@ impl Reader<'_, '_>
         // `oper next : +U[ω] (T -> -F T)`, a thunk of curried arrows, is the
         // operation of those inputs and that output, as is the box standing
         // for it, `oper next : T -> T`; `oper inner : Model(T)`
-        // a model of the theory `T` nested in this one; `oper zero : T`, a type
-        // alone with no arrow and no port group, a constant of `T`; and `oper
-        // zero : () --> T` an operation of no inputs. A listed domain opens
-        // the judgment's own port group, so the operation of two inputs the
-        // box `(T, T) -> T` stands for is written `(T, T) --> T` here.
+        // a model of the theory `T` nested in this one; and `oper zero : T`, a
+        // type alone with no arrow and no port group, a constant of `T`. A
+        // listed domain opens the judgment's own port group, so the operation
+        // of two inputs the box `(T, T) -> T` stands for is written
+        // `(T, T) --> T` here.
         let thunked = self.thunked(run)?;
         let modeled = match kind {
             OperationKind::Operation if thunked.is_none() => self.modeled(run)?,
@@ -1791,11 +1791,12 @@ impl Reader<'_, '_>
         }
         // An operation of no input and one unnamed result is a constant,
         // `oper c : T`: the reader refuses the empty input list `() -->` by its
-        // name.
+        // name. An unnamed port carries an empty or `_`-led minted name.
         if kind == OperationKind::Operation
             && thunked.is_none()
             && boundary.inputs.is_empty()
-            && matches!(boundary.outputs.as_slice(), [only] if only.name.as_ref().is_empty())
+            && matches!(boundary.outputs.as_slice(), [only]
+                if only.name.as_ref().is_empty() || only.name.as_ref().starts_with('_'))
         {
             return Err(run.signature_fault(SignatureFault::Retired(
                 gandr_surface_grammar::RetiredForm::EmptyOperationInputs,

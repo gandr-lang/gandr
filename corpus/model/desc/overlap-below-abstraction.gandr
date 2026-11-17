@@ -8,13 +8,13 @@
 // - see: #1709
 
 /// `inner` rewrites the inner restriction to a normal form, and `outer`
-/// rewrites the whole term to `z()`. Completion derives a rule that joins the
+/// rewrites the whole term to `z`. Completion derives a rule that joins the
 /// two reducts.
 theory Nested where
   sort Name : Atom;
   sort P : Type;
-  oper z : () --> P;
-  oper w : () --> P;
+  oper z : P;
+  oper w : P;
   oper nu : (p : bind (a : Name). P) --> P;
-  rule inner : nu (bind a. (z ())) ==> w ();
+  rule inner : nu (bind a. z) ==> w;
   rule outer : nu (bind a. (nu (bind b. p))) ==> p where {| a # p | b # p};

@@ -38,10 +38,10 @@
 theory Unheard where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule unheard : nu (bind a. (out a p)) ==> nil ();
+  rule unheard : nu (bind a. (out a p)) ==> nil;
 
 /// The law below a second restriction, sending on the outer channel: the
 /// occurrence counts past one abstraction to its binder and the law's counts
@@ -51,10 +51,10 @@ theory Unheard where
 theory Overheard where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule unheard : nu (bind a. (out a p)) ==> nil ();
+  rule unheard : nu (bind a. (out a p)) ==> nil;
 
 /// An inner restriction of the outer one's name shadows it: the channel sent
 /// on is the inner one, and the law applies below the outer restriction.
@@ -62,10 +62,10 @@ theory Overheard where
 theory Shadowed where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule unheard : nu (bind a. (out a p)) ==> nil ();
+  rule unheard : nu (bind a. (out a p)) ==> nil;
 
 /// Scope extrusion where `out` takes a channel: `q` moves under the
 /// restriction stated fresh for it, so the rule counts each channel `q` names
@@ -75,7 +75,7 @@ theory Shadowed where
 theory Extruding where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
@@ -89,7 +89,7 @@ theory Extruding where
 theory Collected where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule gc : nu (bind a. p) <=> p where {| a # p};
@@ -115,7 +115,7 @@ theory Collected where
 theory Collecting where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
@@ -130,8 +130,8 @@ theory Collecting where
 theory Quiet where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule gc : nu (bind a. p) <=> p where {| a # p};
-  rule quiet : nu (bind a. (out a (nil ()))) <=> nil ();
+  rule quiet : nu (bind a. (out a nil)) <=> nil;

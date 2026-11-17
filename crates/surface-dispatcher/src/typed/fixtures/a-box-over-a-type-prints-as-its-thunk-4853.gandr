@@ -1,6 +1,6 @@
 theory Counter where
   sort C : Type;
-  oper start : () --> C;
+  oper start : C;
   oper step : (c : C) --> C;
 
 def countersOn(x : Type) -> Type =

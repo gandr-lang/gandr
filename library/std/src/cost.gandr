@@ -55,7 +55,7 @@ pub theory Cost.Eff where
   /// Two costs, one after the other.
   oper plus : (a : N, b : N) --> N;
   /// Charging nothing is the identity.
-  rule chargeZero : charge (zero ()) k <=> k;
+  rule chargeZero : charge zero k <=> k;
   /// Two charges are one charge of their sum.
   rule chargeTwice : charge a (charge b k) <=> charge (plus a b) k;
 

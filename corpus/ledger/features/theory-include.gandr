@@ -27,16 +27,16 @@ theory Semigroup where
 @[checks]
 theory Monoid where
   include Semigroup;
-  oper one : () --> M;
-  rule unitL : mul (one ()) x ==> x;
-  rule unitR : mul x (one ()) ==> x;
+  oper one : M;
+  rule unitL : mul one x ==> x;
+  rule unitR : mul x one ==> x;
 
 /// The semigroup with a zero that absorbs on the left.
 @[checks]
 theory LeftZero where
   include Semigroup;
-  oper zero : () --> M;
-  rule absorb : mul (zero ()) x ==> zero ();
+  oper zero : M;
+  rule absorb : mul zero x ==> zero;
 
 /// Both extensions at once: one carrier, one multiplication, its unit and
 /// its zero.
@@ -68,7 +68,7 @@ module Endo : Model(Monoid) where {
   ) -> Integer -> Integer =
     thunk { andThen f g }
 
-  def one() -> Integer -> Integer { ident }
+  def one : Integer -> Integer = ident;
 
   /// Associativity, the included law.
   @[checks]
@@ -82,7 +82,7 @@ module Endo : Model(Monoid) where {
   /// The left unit law.
   @[checks]
   def unitL(f : Integer -> Integer) -> Path(
-    mul (one ()) f,
+    mul one f,
     f
   ) =
     Path.here f
@@ -90,7 +90,7 @@ module Endo : Model(Monoid) where {
   /// The right unit law.
   @[checks]
   def unitR(f : Integer -> Integer) -> Path(
-    mul f (one ()),
+    mul f one,
     f
   ) =
     Path.here f

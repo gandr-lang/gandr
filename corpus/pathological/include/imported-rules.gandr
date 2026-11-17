@@ -3,7 +3,7 @@
 //! The checker completes the imported `Monoid` rules and the local rules as
 //! one block, as for rules of one source. `Swapping` leaves a critical pair
 //! with incomparable normal forms. With the imported left unit rule,
-//! `mul (one ()) (pair x y)` reads `pair x y` and `pair y x`. The path order
+//! `mul one (pair x y)` reads `pair x y` and `pair y x`. The path order
 //! orients neither form. The checker refuses it.
 //!
 //! - see: #1224
@@ -16,10 +16,10 @@ import "../../model/include/monoid.gandr";
 theory Swapping where
   include Monoid;
   oper pair : (x : M, y : M) --> M;
-  rule swap : mul (one ()) (pair x y) ==> pair y x;
+  rule swap : mul one (pair x y) ==> pair y x;
 
 /// `Orphan` includes a theory that no source presents.
 @[refuses("MalformedForm")]
 theory Orphan where
   include Unwritten;
-  oper one : () --> M;
+  oper one : M;

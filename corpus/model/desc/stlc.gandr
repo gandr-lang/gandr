@@ -24,11 +24,11 @@ pub theory STLC where
   sort Tm(g : Con, a : Ty) : Type;
 
   /// The base type.
-  oper base : () --> Ty;
+  oper base : Ty;
   /// The function type.
   oper arr : (a : Ty, b : Ty) --> Ty;
   /// The empty context.
-  oper empty : () --> Con;
+  oper empty : Con;
   /// A context extended by a type.
   oper ext : (g : Con, a : Ty) --> Con;
   /// The newest variable.
@@ -113,11 +113,11 @@ pub module Syntax : Model(STLC) where
   type Tm(g : Con, a : Ty) = Tm g a;
 
   /// The base type.
-  def base() -> ObjTy { Base }
+  def base : ObjTy = Base;
   /// The function type.
   def arr(a : ObjTy, b : ObjTy) -> ObjTy { Arr a b }
   /// The empty context.
-  def empty() -> Ctx { Empty }
+  def empty : Ctx = Empty;
   /// One more entry.
   def ext(g : Ctx, a : ObjTy) -> Ctx { Extend g a }
   /// The variable of the last entry.

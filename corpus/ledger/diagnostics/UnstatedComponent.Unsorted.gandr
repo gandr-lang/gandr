@@ -5,7 +5,7 @@
 @[refuses("UndescribedMember.LhsNotOperation")]
 theory T where
   sort Nat : Type;
-  oper zero : () --> Nat;
+  oper zero : Nat;
   rule loose : x ==> x;
 
 @[refuses("UnstatedComponent.Unsorted")]

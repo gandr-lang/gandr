@@ -34,8 +34,8 @@ pub theory Strings where
   oper concat : (a : S, b : S) --> S;
 
   /// The empty string on the left of a join leaves the other string.
-  rule unitLeft : concat (empty ()) s <=> s;
+  rule unitLeft : concat empty s <=> s;
   /// The empty string on the right of a join leaves the other string.
-  rule unitRight : concat s (empty ()) <=> s;
+  rule unitRight : concat s empty <=> s;
   /// Joining is associative: a join of three strings is one string.
   rule assoc : concat (concat x y) z <=> concat x (concat y z);

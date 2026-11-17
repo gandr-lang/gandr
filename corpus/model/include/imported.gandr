@@ -14,7 +14,7 @@ import "./monoid.gandr";
 /// `PointedMonoid` adds a chosen element to `Monoid`.
 theory PointedMonoid where
   include Monoid;
-  oper point : () --> M;
+  oper point : M;
 
 /// `Successor` models `PointedMonoid` with the integer successor.
 module Successor : Model(PointedMonoid) where
@@ -40,9 +40,9 @@ module Successor : Model(PointedMonoid) where
   ) -> Integer -> Integer =
     thunk { andThen f g }
 
-  def one() -> Integer -> Integer { ident }
+  def one : Integer -> Integer = ident;
 
-  def point() -> Integer -> Integer { succ }
+  def point : Integer -> Integer = succ;
 
   /// `assoc` verifies the included associativity law.
   def assoc(
@@ -54,14 +54,14 @@ module Successor : Model(PointedMonoid) where
 
   /// `unitL` verifies the included left unit law.
   def unitL(f : Integer -> Integer) -> Path(
-    mul (one ()) f,
+    mul one f,
     f
   ) =
     Path.here f
 
   /// `unitR` verifies the included right unit law.
   def unitR(f : Integer -> Integer) -> Path(
-    mul f (one ()),
+    mul f one,
     f
   ) =
     Path.here f
@@ -69,6 +69,6 @@ module Successor : Model(PointedMonoid) where
 /// `pointed` applies the chosen element, then doubles it.
 @[runs("8")]
 def pointed() -> Integer =
-  let p = Successor.point ()
+  let p = Successor.point
   let h = Successor.mul p (fun (n) { n * 2 })
   h 3
