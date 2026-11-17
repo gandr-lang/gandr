@@ -1641,7 +1641,9 @@ pub(super) fn strayed<'source>(
     let alone = repaired.obligations.len() == strays.len()
         && repaired.obligations.iter().all(|obligation| {
             obligation.class == Oblig::UnmoldedTok
-                && strays.contains(&usize::from(obligation.span.start()))
+                && strays
+                    .binary_search(&usize::from(obligation.span.start()))
+                    .is_ok()
                 && usize::from(obligation.span.end())
                     == usize::from(obligation.span.start()).saturating_add(1)
         });
@@ -2282,12 +2284,16 @@ mod tests
             "the `;` stands as a token that no mold takes"
         );
         assert_eq!(
-            owed(SourceText::from("1 ;\ndef a = 2;\n"))?,
+            owed(SourceText::from(include_str!(
+                "gap/unformatted/a-separator-after-a-root-stray-owes-itself-alone-1057-number.gandr"
+            )))?,
             [(Oblig::UnmoldedTok, Line(1))],
             "a number before a `;` at the top level owes the `;` alone"
         );
         assert_eq!(
-            owed(SourceText::from("def x = 1;;\ndef y = 2;\n;\n"))?,
+            owed(SourceText::from(include_str!(
+                "gap/unformatted/a-separator-after-a-root-stray-owes-itself-alone-1057-doubled.gandr"
+            )))?,
             [(Oblig::UnmoldedTok, Line(1)), (Oblig::UnmoldedTok, Line(3))],
             "a `;` that begins a form at the top level owes itself alone"
         );

@@ -802,6 +802,11 @@ fn headed<'source>(
                 })
         })
     });
+    // The keywords of members that a `;` after a stray member leaves inside
+    // it, and the nodes the walk under the strays still reads: one buffer
+    // each for every declaration.
+    let mut nested: Vec<SourceText<'static>> = Vec::new();
+    let mut pending: Vec<NodeIndex> = Vec::new();
     for declaration in repaired {
         block.clear();
         let mut opened = false;
@@ -859,13 +864,15 @@ fn headed<'source>(
         );
         // A `;` after a stray member closes no member, so the members after
         // it stand inside the stray. Their keywords count as the block's.
-        let mut nested: Vec<SourceText<'static>> = Vec::new();
+        nested.clear();
         if block.iter().any(|&(_, _, _, stray)| stray) {
-            let mut pending: Vec<NodeIndex> = block
-                .iter()
-                .filter(|&&(_, _, _, stray)| stray)
-                .map(|&(child, ..)| child)
-                .collect();
+            pending.clear();
+            pending.extend(
+                block
+                    .iter()
+                    .filter(|&&(_, _, _, stray)| stray)
+                    .map(|&(child, ..)| child),
+            );
             while let Some(position) = pending.pop() {
                 if let Some(node) = tree.node(position)
                     && let NodeLabel::Meld(mold) = node.label()
