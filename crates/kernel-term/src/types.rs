@@ -138,7 +138,7 @@
 //! projections, so every computation of `⊤` is the empty pairing.
 //!
 //! The former is native rather than the record of thunks the
-//! call-by-push-value isomorphism `U(&{l : C_l}) ≅ #{l : U C_l}` would derive
+//! call-by-push-value isomorphism `U(&{l : C_l}) ≅ *{l : U C_l}` would derive
 //! it as. Under that encoding a computation of the lazy product is a value of
 //! a record type, so `With`'s η fails, and a pattern can match the
 //! record where only an observation should reach a component.

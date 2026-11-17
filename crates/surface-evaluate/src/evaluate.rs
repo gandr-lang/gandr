@@ -26,7 +26,7 @@
 //! **The value spelling is the shared printer's.** A run's value is the
 //! computation the printer presents: constructors by their declared names,
 //! constants by their paths, a function as its `fun`, a thunk as its body, a
-//! tuple as `#{a, b}`, an injection as `+{.0 = v}` and a record as `#{.l =
+//! tuple as `*{a, b}`, an injection as `+{.0 = v}` and a record as `*{.l =
 //! v}` — the grammar's own spellings, laid out on one line. The focused
 //! command IL carries a data constructor's family when the core names one,
 //! so the read-back value names its constructors. The alternative was the
@@ -441,7 +441,7 @@ impl<'source> Machine<'_, 'source>
     ///   terminal with no core reading or one the printer cannot lay out is
     ///   [`Evaluation::Unfinished`]; otherwise the terminal is read back and
     ///   spelled as the grammar writes it: an integer in decimal, a text quoted
-    ///   with its escapes, `unit`, a tuple as `#{a, b}`, an injection as `+{.i
+    ///   with its escapes, `unit`, a tuple as `*{a, b}`, an injection as `+{.i
     ///   = v}`, a constructor by its name, a thunk as `thunk { … }` and a
     ///   function as its `fun`; a read-back terminal that mentions a member its
     ///   module's signature hides is instead [`Evaluation::Sealed`] at that

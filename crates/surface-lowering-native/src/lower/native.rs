@@ -893,7 +893,7 @@ enum Matcher
     Boolean(bool),
     /// An integer literal.
     Integer(Literal),
-    /// A positional telescope `#{p, …}` or a tuple `(p, …)`: its components,
+    /// A positional telescope `*{p, …}` or a tuple `(p, …)`: its components,
     /// in index order.
     Tuple
     {
@@ -903,7 +903,7 @@ enum Matcher
         /// dependent record whose label a later entry names.
         dependent: Dependent,
     },
-    /// A labelled telescope `#{.l = p, …}`: the fields it names.
+    /// A labelled telescope `*{.l = p, …}`: the fields it names.
     Record
     {
         /// The labels, one per field.

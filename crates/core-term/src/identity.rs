@@ -218,8 +218,8 @@ fn round_trip(
 ///
 /// # Specification
 /// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the core the written `#{into : +U (A -> -F B), from : +U (B -> -F
-///   A), sect : (a : A) => Path[.A = A](from(into(a)), a), retr : (b : B) =>
+/// - ensures: the core the written `*{into : +U (A -> -F B), from : +U (B -> -F
+///   A), sect : (a : A) -> Path[.A = A](from(into(a)), a), retr : (b : B) ->
 ///   Path[.A = B]( into(from(b)), b)}` lowers to: `Σ into. Σ from. sect ×
 ///   retr`, each occurrence of `A` and `B` shifted past the binders it stands
 ///   under.
@@ -255,9 +255,9 @@ pub fn quasi_inverse(
 ///
 /// # Specification
 /// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the core the written `#{into : +U (A -> -F B), linv : #{from : +U
-///   (B -> -F A), sect : (a : A) => Path[.A = A](from(into(a)), a)}, rinv :
-///   #{from : +U (B -> -F A), retr : (b : B) => Path[.A = B](into(from(b)),
+/// - ensures: the core the written `*{into : +U (A -> -F B), linv : *{from : +U
+///   (B -> -F A), sect : (a : A) -> Path[.A = A](from(into(a)), a)}, rinv :
+///   *{from : +U (B -> -F A), retr : (b : B) -> Path[.A = B](into(from(b)),
 ///   b)}}` lowers to: `Σ into. (Σ from. sect) × (Σ from. retr)`, each
 ///   occurrence of `A` and `B` shifted past the binders it stands under.
 /// - fails: never.

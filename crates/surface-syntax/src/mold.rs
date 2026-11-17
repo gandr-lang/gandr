@@ -17,7 +17,7 @@
 //! `GroutSort` is a sort tag, decoded by the grammar that assigned it; a
 //! `GroutShape` says which sides a piece of grout faces, convex for a missing
 //! term and postfix for a missing closer. `ClosingClass` has three families —
-//! parentheses, brackets and braces, the record opener `#{` among the braces —
+//! parentheses, brackets and braces, the record opener `*{` among the braces —
 //! and a closer answers its own family only.
 
 use core::num::TryFromIntError;
@@ -257,7 +257,7 @@ impl<'text> From<&'text str> for DelimSpelling<'text>
 
 /// The bracketing family a paired delimiter belongs to.
 ///
-/// A closer stands in for its own family only: a `}` answers a `{` or a `#{`
+/// A closer stands in for its own family only: a `}` answers a `{` or a `*{`
 /// and says nothing about a `(` still waiting for its `)`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ClosingClass
@@ -266,7 +266,7 @@ pub enum ClosingClass
     Paren,
     /// `[` … `]`.
     Bracket,
-    /// `{` … `}`, the record opener `#{` included.
+    /// `{` … `}`, the record opener `*{` included.
     Brace,
 }
 

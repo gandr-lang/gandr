@@ -110,7 +110,7 @@ enum Placement
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Holder
 {
-    /// `#{a = c}`.
+    /// `*{a = c}`.
     Record,
     /// `c ⊗ c`.
     PathProduct,
@@ -767,7 +767,7 @@ fn chain(consumer: Consumer) -> Result<CheckedId, KernelError>
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Wrapper
 {
-    /// `#{t : test}`, read by `w.t`.
+    /// `*{t : test}`, read by `w.t`.
     Record,
     /// `test × 1`, read by `w.0`.
     Product,

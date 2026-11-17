@@ -1552,7 +1552,7 @@ enum Represented
     Unit,
 }
 
-/// `module Counter :> #{ type T, seed : T } where { type T = R ; def seed = r ;
+/// `module Counter :> *{ type T, seed : T } where { type T = R ; def seed = r ;
 /// }` as the lowering admits it — the atom, the body member, the witness
 /// exporting it at the atom — then a client at the atom, a leak at the
 /// representation and a bystander, the atom standing for `represented`.

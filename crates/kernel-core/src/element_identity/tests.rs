@@ -614,7 +614,7 @@ fn a_tuple_at_a_function_identity_is_refused_719()
 #[test]
 fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
 {
-    // Σ (b : Bool). Path[.A = Bool](b, b), between #{true, here(true)} and
+    // Σ (b : Bool). Path[.A = Bool](b, b), between *{true, here(true)} and
     // itself.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
@@ -746,8 +746,8 @@ fn a_declared_pair_relates_by_its_body_s_components_337()
     );
 }
 
-/// Admit `c : Σ (b : Bool). Path[.A = Bool](b, b)` — as `#{true, here(true)}`,
-/// or as an axiom — then `Path[.A = Σ…](c, c)` as `#{here(true),
+/// Admit `c : Σ (b : Bool). Path[.A = Bool](b, b)` — as `*{true, here(true)}`,
+/// or as an axiom — then `Path[.A = Σ…](c, c)` as `*{here(true),
 /// here(here(true))}`.
 ///
 /// # Specification
@@ -3660,7 +3660,7 @@ fn a_decoded_endpoint_passes_exactly_where_its_code_reads_as_the_other_type()
     }
 }
 
-/// `ua(#{f, #{#{g, ()}, #{h, ()}}})` over three maps on the booleans — the
+/// `ua(*{f, *{*{g, ()}, *{h, ()}}})` over three maps on the booleans — the
 /// forward map, the left inverse and the right inverse — each given by its
 /// images of `truth` and `falsity`. The laws are the unit, which no reduct
 /// runs.

@@ -51,7 +51,7 @@ fn label(name: &Name) -> FieldLabel
 #[repr(transparent)]
 struct Name(&'static str);
 
-/// The record `#{fields}`, each field at its label.
+/// The record `*{fields}`, each field at its label.
 ///
 /// # Specification
 /// trivial.
@@ -68,7 +68,7 @@ fn record<const N: usize>(
     )
 }
 
-/// The record type `#{fields}`, each field at its label.
+/// The record type `*{fields}`, each field at its label.
 ///
 /// # Specification
 /// trivial.

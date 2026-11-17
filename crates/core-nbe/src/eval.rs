@@ -7688,7 +7688,7 @@ fn back_along(
 {
     let dangling = EvalFault::Domain(DomainFault::Dangling);
     match *domain.value(along).ok_or(dangling)? {
-        // `#{f, #{#{g, s}, #{h, r}}}`: the left inverse is `g`, projected
+        // `*{f, *{*{g, s}, *{h, r}}}`: the left inverse is `g`, projected
         // one component at a time and forced at the operand.
         DomainValue::Univalence { record, .. } => {
             let first = gandr_core_term::Component::from(0_usize);

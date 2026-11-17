@@ -58,7 +58,7 @@
 //! component at its member.
 //!
 //! **An opaque ascription mints one atom per abstract component.** `module M
-//! :> #{ type T, … } { type T = τ ; … }` checks its body against `τ`, declares
+//! :> *{ type T, … } { type T = τ ; … }` checks its body against `τ`, declares
 //! one abstract type per abstract component when the module opens — keyed by
 //! its site, the module and the component's place in the signature, never a
 //! name — and exports every type naming `T` at that atom, which past the

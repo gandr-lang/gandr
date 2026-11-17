@@ -235,13 +235,13 @@
 //! Beside `Path[.A = A](a, b)` and `Flow[.A = Type](A, B)`, three infix formers
 //! relate two types, in one band just above the arrow:
 //!
-//! - `A ≅ B`, also written `Iso(A, B)`, the quasi-inverse: the record `#{into :
-//!   +U (A -> -F B), from : +U (B -> -F A), sect : (a : A) => Path[.A = A](
-//!   from(into(a)), a), retr : (b : B) => Path[.A = B](into(from(b)), b)}`.
+//! - `A ≅ B`, also written `Iso(A, B)`, the quasi-inverse: the record `*{into :
+//!   +U (A -> -F B), from : +U (B -> -F A), sect : (a : A) -> Path[.A = A](
+//!   from(into(a)), a), retr : (b : B) -> Path[.A = B](into(from(b)), b)}`.
 //! - `A ≃ B`, also written `A <~> B`, the equivalence as the bi-invertible map:
-//!   `#{into : +U (A -> -F B), linv : #{from : +U (B -> -F A), sect : (a : A)
-//!   => Path[.A = A](from(into(a)), a)}, rinv : #{from : +U (B -> -F A), retr :
-//!   (b : B) => Path[.A = B](into(from(b)), b)}}`. Every pair of translators is
+//!   `*{into : +U (A -> -F B), linv : *{from : +U (B -> -F A), sect : (a : A)
+//!   -> Path[.A = A](from(into(a)), a)}, rinv : *{from : +U (B -> -F A), retr :
+//!   (b : B) -> Path[.A = B](into(from(b)), b)}}`. Every pair of translators is
 //!   named `into` and `from`, each inverse's `from` inside its own record.
 //! - `A ⇝ B`, also written `A ~~> B`, the flow `Flow[.A = Type](A, B)` between
 //!   two codes at the universe a bare `Type` names; `Flow.into(f)` introduces
@@ -263,8 +263,8 @@
 //! Segal type (`isIso`; Gratzer, Weinberger and Buchholtz, _Directed
 //! univalence in simplicial homotopy type theory_, arXiv:2407.09146,
 //! Definition 2.7 and Remark 2.9), so a directed reading takes the same
-//! record. The alternative was contractible fibres, `#{into, fibres : (b : B)
-//! => <the fibre over b is contractible>}`. From a quasi-inverse, its
+//! record. The alternative was contractible fibres, `*{into, fibres : (b : B)
+//! -> <the fibre over b is contractible>}`. From a quasi-inverse, its
 //! contraction needs the half-adjoint coherence and path algebra under a
 //! transport's motive, and the identity fragment reads neither: the motive's
 //! composite refuses as needing a type annotation. Both records are

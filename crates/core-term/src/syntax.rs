@@ -480,7 +480,7 @@ pub enum Value
     Then(ValueId, ValueId),
     /// The componentwise product `flowProduct(p, q)` of two universe flows:
     /// from `p : Flow[.A = Type](a, a')` and `q : Flow[.A = Type](b, b')` an
-    /// element of `Flow[.A = Type](#{a, b}, #{a', b'})`, the directed twin
+    /// element of `Flow[.A = Type](*{a, b}, *{a', b'})`, the directed twin
     /// of [`Self::PathProduct`].
     FlowProduct(ValueId, ValueId),
     /// A forward flow `forward(f)`: an element of `Flow[.A = Type](a, b)` for a
@@ -533,7 +533,7 @@ pub enum Value
     /// synthesises; elaboration replaces it by the variable of the bind it
     /// mints.
     Run(ComputationId),
-    /// A record update `#{ base | l = v, … }`: before elaboration only. It
+    /// A record update `*{ base | l = v, … }`: before elaboration only. It
     /// synthesises `base`'s record classifier with each of `overlay`'s fields
     /// laid over it — a label `base` lacks extends the record, a label it has
     /// takes the overlay's field and that field's type — and elaboration

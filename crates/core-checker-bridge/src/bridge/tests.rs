@@ -3147,7 +3147,7 @@ fn an_unbound_sealed_atom_is_refused()
 #[test]
 fn a_bound_sealed_atom_lowers_to_the_kernel_atom()
 {
-    // module Counter :> #{ type T, seed : T } { type T = Integer ;
+    // module Counter :> *{ type T, seed : T } { type T = Integer ;
     //                                           def seed = 7 ; }
     // def client : Counter.T = Counter.seed ;
     //
@@ -3254,7 +3254,7 @@ fn a_bound_sealed_atom_lowers_to_the_kernel_atom()
 fn a_readmission_keeps_a_sealed_module_whose_seal_stays_whole_7200()
 {
     // def lead : Integer = 1 ;
-    // module Counter :> #{ type T, seed : T } { type T = Integer ;
+    // module Counter :> *{ type T, seed : T } { type T = Integer ;
     //                                           def seed = 7 ; }
     // def client : Counter.T = Counter.seed ;
     //
@@ -3731,7 +3731,7 @@ fn a_formation_takes_one_name_in_each_readmission_7245()
 fn a_formation_over_two_twins_forms_as_a_whole_readmission_forms_it_7261()
 {
     // def lead : Integer = 1 ;
-    // module M :> #{ type T, one : Integer, two : Integer } { type T = Integer
+    // module M :> *{ type T, one : Integer, two : Integer } { type T = Integer
     // ;                                     def one = 7 ; def two = 7 ; }
     // def first : *{port, tls}[.port = M.one] = {tls = 1} ;
     // def second : *{port, tls}[.port = M.two] = {tls = 1} ;
@@ -4004,7 +4004,7 @@ fn a_recheck_names_each_formation_in_one_walk_7456()
 #[test]
 fn a_seal_ending_at_a_skipped_position_closes_before_its_client_2004()
 {
-    // module Counter :> #{ type T, seed : T, type Alias = T } {
+    // module Counter :> *{ type T, seed : T, type Alias = T } {
     //   type T = Integer ; def seed = 7 ; }
     // def client : Counter.T = Counter.seed ;
     //
@@ -6620,13 +6620,13 @@ fn a_reflexive_transport_at_a_path_motive_is_readmitted_336()
 #[test]
 fn a_dependent_pair_and_its_identity_are_readmitted()
 {
-    // def ring   : Σ (n : Integer). Path[.A = Integer](n, n) = #{0, here(0)} ;
+    // def ring   : Σ (n : Integer). Path[.A = Integer](n, n) = *{0, here(0)} ;
     // def lap    : U (Π (p : Σ…). F Path[.A = Integer](⟨p.0⟩, ⟨p.0⟩))
     //            = thunk { \p. split p under F Path(…) as (m, w). return w } ;
     // def second : U (Π (p : Σ…). F Path[.A = Integer](⟨p.0⟩, ⟨p.0⟩))
     //            = thunk { \p. p.1 } ;
-    // def both   : Path[.A = Σ…](#{0, here(0)}, #{0, here(0)})
-    //            = #{here(0), here(here(0))} ;
+    // def both   : Path[.A = Σ…](*{0, here(0)}, *{0, here(0)})
+    //            = *{here(0), here(here(0))} ;
     // def moved  : U (F Integer) = thunk { tr(s. Integer, both, 0) } ;
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
@@ -7375,12 +7375,12 @@ fn a_ride_along_a_named_flow_crosses_with_the_flows_unfolding()
 fn a_ride_through_named_translators_crosses_with_their_unfoldings_308()
 {
     // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
-    // def both : Path[.A = #{Bool, Bool}](
-    //   ride(fun (X) { X }, flowProduct(forward(not), forward(not)), #{.0,
-    // .1}),   #{.1, .0}) = here(#{.1, .0}) ;
-    // def each : Path[.A = #{Bool, Bool}](
-    //   ride(fun (X) { type(#{X, X}) }, forward(not), #{.0, .1}), #{.1, .0})
-    //   = here(#{.1, .0}) ;
+    // def both : Path[.A = *{Bool, Bool}](
+    //   ride(fun (X) { X }, flowProduct(forward(not), forward(not)), *{.0,
+    // .1}),   *{.1, .0}) = here(*{.1, .0}) ;
+    // def each : Path[.A = *{Bool, Bool}](
+    //   ride(fun (X) { type(*{X, X}) }, forward(not), *{.0, .1}), *{.1, .0})
+    //   = here(*{.1, .0}) ;
     // Each component's translator is the definition `not`, which unfolds
     // only once the components before it have returned.
     let mut arena = CoreArena::new();
