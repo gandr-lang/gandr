@@ -1,0 +1,4600 @@
+//! The core arena as a [`Source`]: checked types, the values evaluation and
+//! readback leave in the arena, and bodies, an elaborated one read as written
+//! through its [`Restoration`].
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::Carried;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Sources;
+use gandr_core_term::SplitMotive;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::compose::Composite;
+use gandr_core_term::hole::HoleOrigin;
+use gandr_core_term::identity::Relation;
+use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::World;
+use gandr_core_term::world::WorldForm;
+use gandr_core_term::world::WorldType;
+use gandr_kernel_term::ConstantIndex;
+use quenchant_shape::shape::Maybe;
+
+use crate::former::Answered;
+use crate::former::Arity;
+use crate::former::Component;
+use crate::former::ForgetCall;
+use crate::former::Forgotten;
+use crate::former::Former;
+use crate::former::Manifest;
+use crate::former::ModelSlot;
+use crate::former::Name;
+use crate::former::Recursion;
+use crate::former::Recursive;
+use crate::former::Returned;
+use crate::former::Source;
+use crate::former::Unreadable;
+
+/// A node of a core arena, of any of its four families.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CoreNode
+{
+    /// A value.
+    Value(ValueId),
+    /// A computation.
+    Computation(ComputationId),
+    /// A value type.
+    ValueType(ValueTypeId),
+    /// A computation type.
+    CompType(CompTypeId),
+}
+
+/// The nodes an elaboration rebuilt, each read as the node it rebuilt it
+/// from.
+///
+/// The checker elaborates a body by rebuilding the nodes above every
+/// computation written where a value is read; [`Carried`] pairs each
+/// rebuilt node with its original. A [`CoreSource`] restoring them reads an
+/// elaborated body as the body the checker read, whose inferred runs are
+/// written as the computations they run.
+///
+/// # Specification
+/// - requires: the pairs come from one elaboration of one arena.
+/// - ensures: each rebuilt node answers the node it was rebuilt from, the first
+///   pair naming it when several do; every other node answers itself.
+/// - provides: the reading [`crate::present_computation`] prints an elaborated
+///   body's canonical form through.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an elaborated call nested in an argument, read with and
+///   without its restoration, distinguishes a lost restoration from a restored
+///   minted bind.
+/// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Restoration(Sources);
+
+impl Restoration
+{
+    /// The restoration of the nodes `carried` pairs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each node a pair rebuilt maps to the node it was rebuilt
+    ///   from, the first pair winning.
+    /// - provides: the restoration of a checker's recorded elaboration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Restoration`].
+    /// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
+    #[spec(ensures: |ret| carried.iter().all(|pair| match *pair {
+        | Carried::Value(_, rebuilt) => ret.0.values().contains_key(&rebuilt),
+        | Carried::Computation(_, rebuilt) => ret.0.computations().contains_key(&rebuilt),
+        | Carried::ValueType(_, rebuilt) => ret.0.value_types().contains_key(&rebuilt),
+        | Carried::CompType(_, rebuilt) => ret.0.comp_types().contains_key(&rebuilt),
+    }))]
+    #[inline]
+    #[must_use]
+    pub fn of(carried: &[Carried]) -> Self
+    {
+        Self(Sources::of(carried))
+    }
+
+    /// The node `node` was rebuilt from, or `node` itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn restored(
+        &self,
+        node: CoreNode,
+    ) -> CoreNode
+    {
+        match node {
+            CoreNode::Value(id) => CoreNode::Value(self.0.value(id)),
+            CoreNode::Computation(id) => CoreNode::Computation(self.0.computation(id)),
+            CoreNode::ValueType(id) => CoreNode::ValueType(self.0.value_type(id)),
+            CoreNode::CompType(id) => CoreNode::CompType(self.0.comp_type(id)),
+        }
+    }
+}
+
+/// The restoration that restores nothing.
+const UNRESTORED: &Restoration = &Restoration(Sources::new());
+
+/// The key a [`Constructors`] table holds a family under.
+///
+/// A source that reads a data type's declaration keys its family by that
+/// declaration, so two families of one name stay apart. A source that knows a
+/// family by its name alone, as a content source does, keys it by the name.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum FamilyKey<'text>
+{
+    /// The family the declaration at this admission position declares.
+    Declared(ConstantIndex),
+    /// The family a source knows by this name alone.
+    Named(Name<'text>),
+}
+
+/// The constructor names of the data families a presentation meets, and the
+/// family each data case eliminates.
+///
+/// The core names a constructor by its family and its tag, and a data case
+/// matches by tag alone, so neither holds a constructor's name. A source
+/// reads them here: a family's constructors by its [`FamilyKey`], in tag
+/// order with each one's field count, and a data case's family by the case.
+/// Two families under one key keep the first one recorded. A family of words
+/// is recorded consed: each of its one-field constructors is a letter, written
+/// before the rest of the word, and its nullary constructor, the empty word,
+/// is written as a value at its point, `Path.here(a)`, and as a pattern bare. A
+/// family with loops records them after its constructors: a data case over it
+/// takes one branch per constructor and then one per loop, each loop arm
+/// written under the loop's name.
+///
+/// # Specification
+/// - requires: the families are keyed as the source keys a family and the cases
+///   are computations of the source's arena.
+/// - ensures: a recorded family answers its constructors by tag, and its loops
+///   past them; a recorded case answers its family; everything else answers
+///   nothing.
+/// - provides: the patterns a data case is written in and the head a
+///   constructor value is written under.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family of a nullary and a unary constructor names a
+///   constructor value and both branches of a case over it; a shifted tag
+///   changes the golden.
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Constructors<'text>
+{
+    /// Each family's constructors in tag order, with their field counts.
+    families: BTreeMap<FamilyKey<'text>, Vec<(Name<'text>, Arity)>>,
+    /// The families whose one-field constructors are letters of a word, each
+    /// with its empty word as a value is written.
+    consed: BTreeMap<FamilyKey<'text>, Name<'text>>,
+    /// The family each data case eliminates.
+    cases: BTreeMap<ComputationId, FamilyKey<'text>>,
+    /// Each family's loops, in the order a data case's branches take them
+    /// after the constructors'.
+    loops: BTreeMap<FamilyKey<'text>, Vec<Name<'text>>>,
+    /// The families that take arguments, parameters or indices: a
+    /// constructor of one at a type a definition computes is written against
+    /// that type.
+    applied: BTreeSet<FamilyKey<'text>>,
+}
+
+impl<'text> Constructors<'text>
+{
+    /// The family `family`'s constructors, in tag order with their field
+    /// counts, recorded unless a family under that key already is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family answers the constructors of its first record.
+    /// - provides: the constructor names a source reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Constructors`].
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    #[spec(ensures: self.families.contains_key(&family))]
+    #[inline]
+    pub fn family<I>(
+        &mut self,
+        family: FamilyKey<'text>,
+        constructors: I,
+    ) where
+        I: IntoIterator<Item = (Name<'text>, Arity)>,
+    {
+        let _first = self
+            .families
+            .entry(family)
+            .or_insert_with(|| constructors.into_iter().collect());
+    }
+
+    /// The family `family` of words, its constructors in tag order with
+    /// their field counts: each one-field constructor is a letter, consed
+    /// onto the rest of the word, and the nullary one the empty word, which
+    /// a value writes as `empty`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::family`]; the family is consed, its empty word
+    ///   written `empty` as a value.
+    /// - provides: the letters a source spells a word with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Placement`](crate::Placement).
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::a_case_over_words_writes_each_arm_as_the_surface_does_815`
+    #[spec(ensures: self.families.contains_key(&family) && self.consed.contains_key(&family))]
+    #[inline]
+    pub fn words<I>(
+        &mut self,
+        family: FamilyKey<'text>,
+        constructors: I,
+        empty: Name<'text>,
+    ) where
+        I: IntoIterator<Item = (Name<'text>, Arity)>,
+    {
+        self.family(family, constructors);
+        let _first = self.consed.entry(family).or_insert(empty);
+    }
+
+    /// The data case `match` eliminates a value of `family`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the case answers `family`, the first record winning.
+    /// - provides: the family a case's patterns are named from.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Constructors`].
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(ensures: self.cases.contains_key(&case))]
+    #[inline]
+    pub fn case(
+        &mut self,
+        case: ComputationId,
+        family: FamilyKey<'text>,
+    )
+    {
+        let _first = self.cases.entry(case).or_insert(family);
+    }
+
+    /// The family `family`'s loops, in the order a data case over it takes
+    /// their branches after its constructors', recorded unless the family's
+    /// loops already are.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family answers the loops of its first record.
+    /// - provides: the names a data case's loop arms are written under.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case over the circle names its loop arm.
+    /// - witness: `tests::goldens::a_loop_arm_is_written_under_its_loop_813`
+    #[spec(ensures: self.loops.contains_key(&family))]
+    #[inline]
+    pub fn loops<I>(
+        &mut self,
+        family: FamilyKey<'text>,
+        loops: I,
+    ) where
+        I: IntoIterator<Item = Name<'text>>,
+    {
+        let _first = self
+            .loops
+            .entry(family)
+            .or_insert_with(|| loops.into_iter().collect());
+    }
+
+    /// The family `family` takes arguments, parameters or indices: a
+    /// constructor of it at a type a definition computes is written against
+    /// that type, which its lowering needs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family takes arguments.
+    /// - provides: the families whose constructors a computed type classifies.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor at a computed type carries it where its
+    ///   family takes arguments, and carries nothing where it takes none.
+    /// - witness: `core_source::tests::a_constructor_at_a_computed_type_carries_it_where_its_family_takes_arguments_6230`
+    #[spec(ensures: self.applied.contains(&family))]
+    #[inline]
+    pub fn applied(
+        &mut self,
+        family: FamilyKey<'text>,
+    )
+    {
+        let _first = self.applied.insert(family);
+    }
+
+    /// The constructor of `family` at `tag` as a value is written under, and
+    /// its field count: a word's empty word at its point.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn constructor(
+        &self,
+        family: FamilyKey<'text>,
+        tag: Component,
+    ) -> Option<(Name<'text>, Arity)>
+    {
+        let (name, arity) = self.pattern(family, tag)?;
+        match self.consed.get(&family) {
+            Some(&empty) if usize::from(arity) == 0_usize => Some((empty, arity)),
+            Some(_) | None => Some((name, arity)),
+        }
+    }
+
+    /// The constructor of `family` at `tag` as a pattern names it, and its
+    /// field count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pattern(
+        &self,
+        family: FamilyKey<'text>,
+        tag: Component,
+    ) -> Option<(Name<'text>, Arity)>
+    {
+        self.families.get(&family)?.get(usize::from(tag)).copied()
+    }
+
+    /// The pattern a data case over `family` writes its branch at `index`
+    /// under, and the fields it binds: a constructor by its tag, and past the
+    /// constructors a loop, which binds none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn arm(
+        &self,
+        family: FamilyKey<'text>,
+        index: Component,
+    ) -> Option<(Name<'text>, Arity)>
+    {
+        let constructors = self.families.get(&family)?;
+        if let Some(&constructor) = constructors.get(usize::from(index)) {
+            return Some(constructor);
+        }
+        let looped = usize::from(index).checked_sub(constructors.len())?;
+        let &name = self.loops.get(&family)?.get(looped)?;
+        Some((name, Arity::from(0_usize)))
+    }
+
+    /// How a constructor of `family` taking `arity` fields is laid out: consed
+    /// when it is a letter of a word — one field, of a family registered by
+    /// [`Self::words`] — and applied otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn placement(
+        &self,
+        family: FamilyKey<'text>,
+        arity: Arity,
+    ) -> crate::Placement
+    {
+        if usize::from(arity) == 1 && self.consed.contains_key(&family) {
+            crate::Placement::Consed
+        }
+        else {
+            crate::Placement::Applied
+        }
+    }
+}
+
+/// The constructor table that names nothing.
+const UNNAMED: &Constructors<'static> = &Constructors {
+    families: BTreeMap::new(),
+    consed: BTreeMap::new(),
+    cases: BTreeMap::new(),
+    loops: BTreeMap::new(),
+    applied: BTreeSet::new(),
+};
+
+/// The forgetting map the checker applies at a value a source records: the
+/// theory whose model it returns, and each sort it puts back, by name, with
+/// the type node of its carrier, in the theory's order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Forgetting<'arena>
+{
+    /// The theory, by admission position.
+    pub theory: ConstantIndex,
+    /// Each sort and its carrier's type.
+    pub sorts: Vec<(Name<'arena>, CoreNode)>,
+}
+
+/// A model type as a source writes it: the theory's name, and each sort the
+/// type fixes beside the type node it fixes it to, in the order written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Modelled<'arena>
+{
+    /// The theory, as written.
+    pub theory: Name<'arena>,
+    /// Each sort and its type.
+    pub sorts: Vec<(Name<'arena>, CoreNode)>,
+}
+
+/// A forgetting map a source's calls may name: the theory whose model it
+/// returns, and each sort it puts back, by name, in the theory's order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForgetMap<'arena>
+{
+    /// The theory, by admission position.
+    pub theory: ConstantIndex,
+    /// Each sort, by name.
+    pub sorts: Vec<Name<'arena>>,
+}
+
+/// One stage binder of a function's written block, which no arrow of its
+/// type carries: the name the source writes, and the bound the checker's
+/// declaration holds at the same stage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WrittenStage<'arena>
+{
+    /// The binder's name, `i` in `[i : Size]`.
+    pub name: Name<'arena>,
+    /// Its bound: `Below(n)` writes the entry `i < n` after it.
+    pub bound: gandr_kernel_term::StageBound,
+}
+
+/// The forms a source writes that the core erases, each beside its node.
+///
+/// The record holds the name each dependent arrow binds, the labels of each
+/// dependent pair, the labels each sum and lazy product is written over, the
+/// relation and the model type each type is written as, and the type member
+/// each record is written by.
+///
+/// A `Label` is one written name: where the source writes it, its text, or
+/// the name a printer writes. A `Model` is one written model type. Each
+/// reader of the forms keeps them in this one record and reads it whole.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenForms<Label, Model>
+{
+    /// Each dependent arrow with the name it binds.
+    pub arrows: Vec<(CompTypeId, Label)>,
+    /// Each dependent pair a dependent record's field opens, with the
+    /// field's label.
+    pub pairs: Vec<(ValueTypeId, Label)>,
+    /// Each such pair with the label of its second component.
+    pub seconds: Vec<(ValueTypeId, Label)>,
+    /// Each sum written over labels, with its labels in written order.
+    pub sum_labels: Vec<(ValueTypeId, Vec<Label>)>,
+    /// Each lazy product written over labels, with its labels in written
+    /// order.
+    pub with_labels: Vec<(CompTypeId, Vec<Label>)>,
+    /// Each type written as a relation between types, `A ≅ B`, `A ≃ B` or
+    /// `A ⇝ B`, with the relation.
+    pub relations: Vec<(ValueTypeId, Relation)>,
+    /// Each type written as a model type, `Model(T)` or `Model(T) with sort
+    /// C = A …`, with the model type.
+    pub models: Vec<(ValueTypeId, Model)>,
+    /// Each record type written by the name of a type member, with the name:
+    /// the base of a patched type.
+    pub members: Vec<(ValueTypeId, Label)>,
+}
+
+impl<Label, Model> Default for WrittenForms<Label, Model>
+{
+    /// The record of no form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new()
+    }
+}
+
+impl<Label, Model> WrittenForms<Label, Model>
+{
+    /// The record of no form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self {
+            arrows: Vec::new(),
+            pairs: Vec::new(),
+            seconds: Vec::new(),
+            sum_labels: Vec::new(),
+            with_labels: Vec::new(),
+            relations: Vec::new(),
+            models: Vec::new(),
+            members: Vec::new(),
+        }
+    }
+
+    /// Sort each list by its node. The entries of one node keep their order,
+    /// so the first entry of a node stays first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn sort(&mut self)
+    {
+        self.arrows.sort_by_key(|&(arrow, _)| arrow);
+        self.pairs.sort_by_key(|&(pair, _)| pair);
+        self.seconds.sort_by_key(|&(pair, _)| pair);
+        self.sum_labels.sort_by_key(|&(sum, _)| sum);
+        self.with_labels.sort_by_key(|&(with, _)| with);
+        self.relations.sort_by_key(|&(related, _)| related);
+        self.models.sort_by_key(|&(modelled, _)| modelled);
+        self.members.sort_by_key(|&(member, _)| member);
+    }
+
+    /// Move each entry of `other` to the end of its list in this record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn append(
+        &mut self,
+        other: &mut Self,
+    )
+    {
+        self.arrows.append(&mut other.arrows);
+        self.pairs.append(&mut other.pairs);
+        self.seconds.append(&mut other.seconds);
+        self.sum_labels.append(&mut other.sum_labels);
+        self.with_labels.append(&mut other.with_labels);
+        self.relations.append(&mut other.relations);
+        self.models.append(&mut other.models);
+        self.members.append(&mut other.members);
+    }
+
+    /// This record with each label read through `label` and each model type
+    /// through `model`, in order. An entry whose label, one of whose labels,
+    /// or whose model type reads as nothing is left out. A reading may borrow
+    /// what it reads for as long as the record lives.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn map<'record, ToLabel, ToModel, Labelling, Modelling>(
+        &'record self,
+        mut label: Labelling,
+        mut model: Modelling,
+    ) -> WrittenForms<ToLabel, ToModel>
+    where
+        Labelling: FnMut(&'record Label) -> Option<ToLabel>,
+        Modelling: FnMut(&'record Model) -> Option<ToModel>,
+    {
+        WrittenForms {
+            arrows: read_each(&self.arrows, &mut label),
+            pairs: read_each(&self.pairs, &mut label),
+            seconds: read_each(&self.seconds, &mut label),
+            sum_labels: read_entries(&self.sum_labels, &mut label),
+            with_labels: read_entries(&self.with_labels, &mut label),
+            relations: self.relations.clone(),
+            models: read_each(&self.models, &mut model),
+            members: read_each(&self.members, &mut label),
+        }
+    }
+
+    /// This record with each node taken to its image through `value` or
+    /// `comp`, in order. An entry whose node has no image is left out.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn imaged<Values, Comps>(
+        self,
+        mut value: Values,
+        mut comp: Comps,
+    ) -> Self
+    where
+        Values: FnMut(ValueTypeId) -> Option<ValueTypeId>,
+        Comps: FnMut(CompTypeId) -> Option<CompTypeId>,
+    {
+        Self {
+            arrows: image_each(self.arrows, &mut comp),
+            pairs: image_each(self.pairs, &mut value),
+            seconds: image_each(self.seconds, &mut value),
+            sum_labels: image_each(self.sum_labels, &mut value),
+            with_labels: image_each(self.with_labels, &mut comp),
+            relations: image_each(self.relations, &mut value),
+            models: image_each(self.models, &mut value),
+            members: image_each(self.members, &mut value),
+        }
+    }
+}
+
+/// The record of no written form.
+const UNWRITTEN: &WrittenForms<Name<'static>, Modelled<'static>> = &WrittenForms::new();
+
+/// Each entry of `kept` with what it holds read through `read`, in order. An
+/// entry that reads as nothing is left out.
+///
+/// # Specification
+/// trivial.
+fn read_each<'record, Id, Held, Read, Reading>(
+    kept: &'record [(Id, Held)],
+    read: &mut Reading,
+) -> Vec<(Id, Read)>
+where
+    Id: Copy,
+    Reading: FnMut(&'record Held) -> Option<Read>,
+{
+    kept.iter()
+        .filter_map(|&(id, ref held)| read(held).map(|read| (id, read)))
+        .collect()
+}
+
+/// Each entry of `kept` with each label it holds read through `read`, in
+/// order. An entry one of whose labels reads as nothing is left out.
+///
+/// # Specification
+/// trivial.
+fn read_entries<'record, Id, Held, Read, Reading>(
+    kept: &'record [(Id, Vec<Held>)],
+    read: &mut Reading,
+) -> Vec<(Id, Vec<Read>)>
+where
+    Id: Copy,
+    Reading: FnMut(&'record Held) -> Option<Read>,
+{
+    kept.iter()
+        .filter_map(|&(id, ref held)| {
+            let labels: Option<Vec<Read>> = held.iter().map(&mut *read).collect();
+            labels.map(|labels| (id, labels))
+        })
+        .collect()
+}
+
+/// Each entry of `kept` at the image `image` gives its node, in order. An
+/// entry whose node has no image is left out.
+///
+/// # Specification
+/// trivial.
+fn image_each<Id, Held, Imaging>(
+    kept: Vec<(Id, Held)>,
+    image: &mut Imaging,
+) -> Vec<(Id, Held)>
+where
+    Imaging: FnMut(Id) -> Option<Id>,
+{
+    kept.into_iter()
+        .filter_map(|(id, held)| image(id).map(|image| (image, held)))
+        .collect()
+}
+
+/// A core arena read through the names of the constants it mentions.
+///
+/// A core node names a constant or an abstract type by its admission
+/// position; `names` spells position `i` as its `i`-th entry. A position past
+/// the table reads as [`Former::Unreadable`]. A source restoring an
+/// elaboration reads every node the elaboration rebuilt as its original; one
+/// naming constructors reads them from its [`Constructors`]; one within a
+/// context reads a variable past the root's binders by the context's names.
+///
+/// # Specification
+/// - requires: `names` is indexed by admission position.
+/// - ensures: arena nodes retain their formers; missing naming-table entries
+///   read as unreadable; a restored node reads as its original.
+/// - provides: the printer's input over checked types, readback values and
+///   bodies.
+/// - panics: none.
+/// - executable: none — admission-order correctness relates this naming table
+///   to declarations the arena does not store. The per-node conversion
+///   obligations are executable on the reader methods.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct admission names, the exact table end and handles
+///   dropped by truncation distinguish shifted naming and stale reads. External
+///   declaration-to-name correspondence is outside these fixtures because the
+///   adapter does not own declarations.
+/// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+/// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+/// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
+#[derive(Clone, Copy, Debug)]
+pub struct CoreSource<'arena>
+{
+    /// The arena whose nodes are read.
+    arena: &'arena CoreArena,
+    /// The constants' names, by admission position.
+    names: &'arena [Name<'arena>],
+    /// The rebuilt nodes read as their originals.
+    restoration: &'arena Restoration,
+    /// The constructors' names, by family.
+    constructors: &'arena Constructors<'arena>,
+    /// The names of the binders the root stands under, outermost first.
+    context: &'arena [Option<Name<'arena>>],
+    /// The types the binders of `context` bind, outermost first.
+    context_types: &'arena [Option<CoreNode>],
+    /// The binder of `context` that is a recursive definition's own, and the
+    /// claim its calls write.
+    recursive: Option<Recursive>,
+    /// The telescope of the recursive definition `recursive` names, as
+    /// [`Source::recursive_telescope`] reads it.
+    recursive_telescope: &'arena [Option<Name<'arena>>],
+    /// The names of the capability scopes the root stands in, outermost
+    /// first.
+    regions: &'arena [Option<Name<'arena>>],
+    /// The names of the region binders of the definition the root belongs
+    /// to, by ordinal.
+    binders: &'arena [Option<Name<'arena>>],
+    /// The stage binders of the definition the root belongs to, in stage
+    /// order: what a staged type's stage is read by.
+    staged: &'arena [WrittenStage<'arena>],
+    /// The forms the source writes that the core erases, each list ascending
+    /// by its node: the binders' names and labels the source writes, and the
+    /// relation, the model type and the type member each type is written as.
+    forms: &'arena WrittenForms<Name<'arena>, Modelled<'arena>>,
+    /// The name the source writes for the binder each lambda and each bind
+    /// opens, ascending by the opener.
+    openers: &'arena [(ComputationId, Name<'arena>)],
+    /// The theory each capability scope the source writes as `handle c : T
+    /// with sort C = A … { … }` handles, with the sorts its manifest fixes,
+    /// ascending by the scope.
+    scopes: &'arena [(ComputationId, Modelled<'arena>)],
+    /// The model answering each capability scope the source writes as
+    /// `handle c : T … { … } with N`, or with no `with`, as written,
+    /// ascending by the scope.
+    answers: &'arena [(ComputationId, Answered<'arena>)],
+    /// Each returner's row entries over a theory as the source writes them,
+    /// `-F [st : T with sort C = A …] B`, ascending by the returner.
+    rows: &'arena [(CompTypeId, Vec<Manifest<'arena, CoreNode>>)],
+    /// The reduct the checker applies at each value it crosses at, ascending
+    /// by the value.
+    crossings: &'arena [(ValueId, ConstantIndex)],
+    /// The forgetting map the checker applies at each value it crosses at,
+    /// ascending by the value.
+    forgettings: &'arena [(ValueId, Forgetting<'arena>)],
+    /// The forgetting map each constant is, which a written call of it applies,
+    /// ascending by the constant.
+    maps: &'arena [(ConstantIndex, ForgetMap<'arena>)],
+    /// The reducts and forgetting maps whose written calls the checker would
+    /// apply itself, ascending.
+    implied: &'arena [ConstantIndex],
+    /// The parameters of each function whose telescope writes an implicit,
+    /// in the order the core applies them, an implicit's name and none for
+    /// an explicit one, ascending by the function's constant.
+    telescopes: &'arena [(ConstantIndex, Vec<Option<Name<'arena>>>)],
+    /// The names of each such function's written `[ … ]` block, in written
+    /// order, ascending by the function's constant.
+    blocks: &'arena [(ConstantIndex, Vec<Name<'arena>>)],
+    /// The stage binders of each function quantified over stages, in stage
+    /// order, ascending by the function's constant.
+    stages: &'arena [(ConstantIndex, Vec<WrittenStage<'arena>>)],
+    /// The model implicits of each function whose telescope writes one, in
+    /// telescope order, ascending by the function's constant.
+    slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
+    /// The infix operator of the comparison that calls each constant a
+    /// comparison calls, ascending by the constant.
+    operators: &'arena [(ConstantIndex, gandr_core_term::primitive::Operator)],
+    /// The name the source writes for each homed type head it does not write
+    /// bare, by the head's bare spelling.
+    homes: &'arena [(Name<'arena>, Name<'arena>)],
+}
+
+impl<'arena> CoreSource<'arena>
+{
+    /// `arena`, its constants named by `names`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        arena: &'arena CoreArena,
+        names: &'arena [Name<'arena>],
+    ) -> Self
+    {
+        Self {
+            arena,
+            names,
+            restoration: UNRESTORED,
+            constructors: UNNAMED,
+            context: &[],
+            context_types: &[],
+            recursive: None,
+            recursive_telescope: &[],
+            regions: &[],
+            binders: &[],
+            staged: &[],
+            forms: UNWRITTEN,
+            openers: &[],
+            scopes: &[],
+            answers: &[],
+            rows: &[],
+            crossings: &[],
+            forgettings: &[],
+            maps: &[],
+            implied: &[],
+            telescopes: &[],
+            blocks: &[],
+            stages: &[],
+            slots: &[],
+            operators: &[],
+            homes: &[],
+        }
+    }
+
+    /// This source, reading each node `restoration` restores as its
+    /// original.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn restoring(
+        self,
+        restoration: &'arena Restoration,
+    ) -> Self
+    {
+        Self {
+            restoration,
+            ..self
+        }
+    }
+
+    /// This source, naming constructors and data cases from `constructors`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming(
+        self,
+        constructors: &'arena Constructors<'arena>,
+    ) -> Self
+    {
+        Self {
+            constructors,
+            ..self
+        }
+    }
+
+    /// This source, its roots standing under binders named by `context`,
+    /// outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn within(
+        self,
+        context: &'arena [Option<Name<'arena>>],
+    ) -> Self
+    {
+        Self { context, ..self }
+    }
+
+    /// This source, the binders of its context binding the types `types`,
+    /// outermost first, at the positions [`Self::within`] names them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn typing(
+        self,
+        types: &'arena [Option<CoreNode>],
+    ) -> Self
+    {
+        Self {
+            context_types: types,
+            ..self
+        }
+    }
+
+    /// This source, the binder of its context at `recursive`'s position a
+    /// recursive definition's own, each call of which writes its claim after
+    /// the uniform parameters bound before it, over the parameters
+    /// `telescope` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn recursing(
+        self,
+        recursive: Recursive,
+        telescope: &'arena [Option<Name<'arena>>],
+    ) -> Self
+    {
+        Self {
+            recursive: Some(recursive),
+            recursive_telescope: telescope,
+            ..self
+        }
+    }
+
+    /// The claim the calls of the fixpoint at `node` write: a descent where
+    /// it claims structural recursion on any parameter, productive where it
+    /// claims nothing; none for a node that is no fixpoint.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn recursion(
+        &self,
+        node: CoreNode,
+    ) -> Option<Recursion>
+    {
+        let CoreNode::Computation(id) = node
+        else {
+            return None;
+        };
+        let &Computation::Fixpoint { evidence, .. } = self.arena.computation(id)?
+        else {
+            return None;
+        };
+        Some(Recursion::from(evidence))
+    }
+
+    /// This source, its roots standing in capability scopes named by
+    /// `regions`, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn scoped(
+        self,
+        regions: &'arena [Option<Name<'arena>>],
+    ) -> Self
+    {
+        Self { regions, ..self }
+    }
+
+    /// This source, its roots in a definition over region binders named by
+    /// `binders`, by ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn bounding(
+        self,
+        binders: &'arena [Option<Name<'arena>>],
+    ) -> Self
+    {
+        Self { binders, ..self }
+    }
+
+    /// This source, its roots in a definition over the stage binders
+    /// `staged`, in stage order: a type at one of their stages is written at
+    /// it, `Nat[i]`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn staged(
+        self,
+        staged: &'arena [WrittenStage<'arena>],
+    ) -> Self
+    {
+        Self { staged, ..self }
+    }
+
+    /// This source, spelling each form `forms` records as the source writes
+    /// it, each list ascending by its node: a dependent arrow's or pair's
+    /// binder by its name, a sum or a lazy product under its labels, and a
+    /// type as the relation, the model type or the type member it was written
+    /// as.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn writing(
+        self,
+        forms: &'arena WrittenForms<Name<'arena>, Modelled<'arena>>,
+    ) -> Self
+    {
+        Self { forms, ..self }
+    }
+
+    /// This source, naming the binder each lambda and each bind of `openers`
+    /// opens as the source writes it, ascending by the opener.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn opening(
+        self,
+        openers: &'arena [(ComputationId, Name<'arena>)],
+    ) -> Self
+    {
+        Self { openers, ..self }
+    }
+
+    /// This source, writing each capability scope `scopes` records over the
+    /// theory it handles with the sorts its manifest fixes, ascending by the
+    /// scope.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn scoping(
+        self,
+        scopes: &'arena [(ComputationId, Modelled<'arena>)],
+    ) -> Self
+    {
+        Self { scopes, ..self }
+    }
+
+    /// This source, writing each capability scope `answers` records as
+    /// answered by the model it names, or by the one in scope, ascending by
+    /// the scope: `with N`, or no `with`, in place of its clauses.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn answering(
+        self,
+        answers: &'arena [(ComputationId, Answered<'arena>)],
+    ) -> Self
+    {
+        Self { answers, ..self }
+    }
+
+    /// This source, writing each row entry over a theory `rows` records with
+    /// the sorts it fixes, ascending by the returner.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn manifesting(
+        self,
+        rows: &'arena [(CompTypeId, Vec<Manifest<'arena, CoreNode>>)],
+    ) -> Self
+    {
+        Self { rows, ..self }
+    }
+
+    /// This source, writing the reduct `crossings` records at each value the
+    /// checker crosses at, ascending by the value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn crossing(
+        self,
+        crossings: &'arena [(ValueId, ConstantIndex)],
+    ) -> Self
+    {
+        Self { crossings, ..self }
+    }
+
+    /// This source, writing the forgetting map `forgettings` records at each
+    /// value the checker crosses at, ascending by the value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn forgetting(
+        self,
+        forgettings: &'arena [(ValueId, Forgetting<'arena>)],
+    ) -> Self
+    {
+        Self {
+            forgettings,
+            ..self
+        }
+    }
+
+    /// This source, writing each call of a forgetting map `maps` records,
+    /// ascending by the map's constant, as the map's form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn forgetting_maps(
+        self,
+        maps: &'arena [(ConstantIndex, ForgetMap<'arena>)],
+    ) -> Self
+    {
+        Self { maps, ..self }
+    }
+
+    /// This source, leaving each written call of a reduct or a forgetting map
+    /// `implied` holds, ascending, to the checker that would apply it where
+    /// the call stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn implying(
+        self,
+        implied: &'arena [ConstantIndex],
+    ) -> Self
+    {
+        Self { implied, ..self }
+    }
+
+    /// This source, writing the implicits of each function `telescopes`
+    /// records, ascending by the function's constant, by name: a call's as
+    /// residents and a definition's in its telescope.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming_implicits(
+        self,
+        telescopes: &'arena [(ConstantIndex, Vec<Option<Name<'arena>>>)],
+    ) -> Self
+    {
+        Self { telescopes, ..self }
+    }
+
+    /// The telescope this source records for the function `constant`: one
+    /// entry per parameter, an implicit's name and none for an explicit
+    /// one; the empty slice for a function that writes no implicit.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn telescope(
+        &self,
+        constant: ConstantIndex,
+    ) -> &'arena [Option<Name<'arena>>]
+    {
+        self.telescopes
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.telescopes.get(at))
+            .map_or(&[], |&(_, ref names)| names.as_slice())
+    }
+
+    /// This source, writing a call's implicits by position in the written
+    /// block of each function `blocks` records, ascending by the function's
+    /// constant, where the block's order serves.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn ordering_implicits(
+        self,
+        blocks: &'arena [(ConstantIndex, Vec<Name<'arena>>)],
+    ) -> Self
+    {
+        Self { blocks, ..self }
+    }
+
+    /// The written block this source records for the function `constant`:
+    /// the name of each entry, in written order; the empty slice for a
+    /// function it records none for.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn block(
+        &self,
+        constant: ConstantIndex,
+    ) -> &'arena [Name<'arena>]
+    {
+        self.blocks
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.blocks.get(at))
+            .map_or(&[], |&(_, ref names)| names.as_slice())
+    }
+
+    /// This source, writing the stage binders of each function `stages`
+    /// records, ascending by the function's constant, first in the written
+    /// block of its definition.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn staging(
+        self,
+        stages: &'arena [(ConstantIndex, Vec<WrittenStage<'arena>>)],
+    ) -> Self
+    {
+        Self { stages, ..self }
+    }
+
+    /// The stage binders this source records for the function `constant`,
+    /// in stage order; the empty slice for a function it records none for.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn stages(
+        &self,
+        constant: ConstantIndex,
+    ) -> &'arena [WrittenStage<'arena>]
+    {
+        self.stages
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.stages.get(at))
+            .map_or(&[], |&(_, ref stages)| stages.as_slice())
+    }
+
+    /// This source, writing the model implicits of each function `slots`
+    /// records, ascending by the function's constant, each whole: a call's
+    /// as one resident and a definition's as one implicit.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn flattening(
+        self,
+        slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
+    ) -> Self
+    {
+        Self { slots, ..self }
+    }
+
+    /// This source, writing a call of each constant `operators` records,
+    /// ascending by the constant, as the comparison its operator writes:
+    /// `(eq, ==)` writes the prelude's `eq` on `a` and `b` as `a == b`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operating(
+        self,
+        operators: &'arena [(ConstantIndex, gandr_core_term::primitive::Operator)],
+    ) -> Self
+    {
+        Self { operators, ..self }
+    }
+
+    /// This source, writing each homed type head `homes` holds by the name
+    /// beside its bare spelling: `(List, std.list.List)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn homing(
+        self,
+        homes: &'arena [(Name<'arena>, Name<'arena>)],
+    ) -> Self
+    {
+        Self { homes, ..self }
+    }
+
+    /// The model implicits this source records for the function `constant`,
+    /// in telescope order; the empty slice for a function that writes none.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn slots(
+        &self,
+        constant: ConstantIndex,
+    ) -> &'arena [ModelSlot<'arena, CoreNode>]
+    {
+        self.slots
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.slots.get(at))
+            .map_or(&[], |&(_, ref slots)| slots.as_slice())
+    }
+
+    /// The name at admission position `constant`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the table's entry for `constant`; none past the table.
+    /// - provides: the constant, abstract-type and family readings.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the constant and abstract-type readings at a live
+    ///   admission position and the exact table end expose shifted names or a
+    ///   missing-entry fallback.
+    /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    #[spec(ensures: |ret| ret == self.names.get(usize::from(constant)).copied())]
+    fn name(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<Name<'arena>>
+    {
+        self.names.get(usize::from(constant)).copied()
+    }
+
+    /// The name a world is written by: a declared world's own name; none for
+    /// the host's, which the surface never names.
+    ///
+    /// # Specification
+    /// trivial.
+    fn world_name(
+        &self,
+        world: World,
+    ) -> Option<Name<'arena>>
+    {
+        match world {
+            World::Host => None,
+            World::Declared(constant) => self.name(constant),
+        }
+    }
+
+    /// The key the family `declaration` is held under.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the declaration itself where the constructor table holds a
+    ///   family under it, and otherwise its declaration name; nothing for a
+    ///   declaration the source holds no name for.
+    /// - provides: the family a constructor is looked up in.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the two lookups.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor spells by its own family's declaration,
+    ///   which no unnamed or misnamed family finds, and no other family of the
+    ///   same name shadows.
+    /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+    /// - witness: `tests::goldens::a_family_spells_by_its_declaration_past_a_namesake_3125`
+    fn family(
+        &self,
+        declaration: ConstantIndex,
+    ) -> Option<FamilyKey<'arena>>
+    {
+        let declared = FamilyKey::Declared(declaration);
+        if self.constructors.families.contains_key(&declared) {
+            Some(declared)
+        }
+        else {
+            self.name(declaration).map(FamilyKey::Named)
+        }
+    }
+
+    /// The type the staged type `id` refines, or `id` itself: a stage no
+    /// binder of the definition names has no spelling, so a staged type reads
+    /// as the type it refines where [`Self::staged_former`] reads none.
+    ///
+    /// # Specification
+    /// - ensures: never a staged type, since the arena holds no stage over a
+    ///   stage.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a staged type spells as the type it refines.
+    /// - witness: `core_source::tests::a_staged_type_reads_as_the_type_it_refines`
+    #[spec(ensures: |ret| !matches!(self.arena.value_type(ret), Some(ValueType::Staged { .. })))]
+    fn unstaged(
+        &self,
+        id: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        match self.arena.value_type(id) {
+            Some(&ValueType::Staged { base, .. }) => base,
+            Some(_) | None => id,
+        }
+    }
+
+    /// The staged type `id` as the definition's stage binders write it, at
+    /// its binder's stage, `Nat[i]`, or one step below it, `Nat[< i]`; none
+    /// for a type at no stage, for a stage no binder names and for a stage
+    /// more than one step below its binder, which the surface cannot write.
+    ///
+    /// # Specification
+    /// - ensures: [`Former::Staged`] over the refined type exactly when `id` is
+    ///   a staged type whose anchor is the ordinal of a binder of
+    ///   [`Self::staged`], at that binder's stage or one step below it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type at a binder's stage, one a step below a
+    ///   binder, one two steps below and one at a stage no binder names
+    ///   separate the three answers.
+    /// - witness: `core_source::tests::a_type_at_a_binder_s_stage_reads_as_staged_at_its_name_7906`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|former| matches!(*former, Former::Staged { inner, .. }
+        if matches!(self.arena.value_type(id), Some(&ValueType::Staged { base, .. }) if inner == CoreNode::ValueType(base)))))]
+    fn staged_former(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<Former<'arena, CoreNode>>
+    {
+        let &ValueType::Staged { base, stage } = self.arena.value_type(id)?
+        else {
+            return None;
+        };
+        let (anchor, reach) = match stage {
+            gandr_kernel_term::Stage::At(anchor) => (anchor, gandr_kernel_term::StageReach::At),
+            gandr_kernel_term::Stage::Below { anchor, depth }
+                if depth == gandr_kernel_term::StageDepth::ONE =>
+            {
+                (anchor, gandr_kernel_term::StageReach::Below(depth))
+            },
+            gandr_kernel_term::Stage::Below { .. } => return None,
+        };
+        let binder = self.staged.get(usize::from(anchor))?;
+        Some(Former::Staged {
+            inner: CoreNode::ValueType(base),
+            stage: binder.name,
+            reach,
+        })
+    }
+
+    /// The carrier `carrier` as the source wrote it, or nothing where the
+    /// source omitted it: the decoding of a hole a type nominated, as
+    /// `Path(x, y)`, `Bridge(x, y)` and `Flow(x, y)` lower their carrier. A
+    /// source cannot write a nominated hole, so an omitted carrier reads back
+    /// as nothing.
+    ///
+    /// # Specification
+    /// - ensures: nothing exactly for the decoding of a nominated hole, and the
+    ///   carrier itself otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path-shaped type whose carrier the source omitted
+    ///   spells without it, and one whose carrier the source wrote spells with
+    ///   it.
+    /// - witness: `core_source::tests::an_omitted_flow_carrier_reads_as_nothing_4932`
+    #[spec(ensures: |ret| ret.is_none_or(|node| node == CoreNode::ValueType(carrier)))]
+    fn written_carrier(
+        &self,
+        carrier: ValueTypeId,
+    ) -> Option<CoreNode>
+    {
+        let omitted = matches!(self.arena.value_type(carrier), Some(&ValueType::Element { code, .. })
+            if matches!(self.arena.value(code), Some(Value::Hole(hole)) if hole.origin() == HoleOrigin::Nominated));
+        (!omitted).then_some(CoreNode::ValueType(carrier))
+    }
+
+    /// The computation `id` is written as: the fold a returned binary
+    /// composite realises, since `Path.step(p, q)` writes it, and `id`
+    /// otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        &self,
+        id: ComputationId,
+    ) -> ComputationId
+    {
+        if let Some(&Computation::Return(returned)) = self.arena.computation(id)
+            && let Some(&Value::Compose {
+                composite,
+                realised,
+                ..
+            }) = self.arena.value(returned)
+            && composite == Composite::binary()
+        {
+            realised
+        }
+        else {
+            id
+        }
+    }
+
+    /// The relation the type `id` was written as, when the source records
+    /// one, its operands read off the record or the flow it abbreviates.
+    ///
+    /// # Specification
+    /// - requires: `relations` is ascending by the type.
+    /// - ensures: for a recorded quasi-inverse or equivalence, the relation
+    ///   over the forward map's domain and result, read off the record's first
+    ///   component `+U (A -> -F B)`; for a recorded flow, the relation over the
+    ///   flow's two codes; nothing for an unrecorded type, or a recorded one
+    ///   whose node is not that shape.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each relation over its record or its flow spells as
+    ///   written; the same record unrecorded spells as the record.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    #[spec(ensures: |ret| ret.is_none() || self.forms.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
+    fn related(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<Former<'arena, CoreNode>>
+    {
+        let relations = &self.forms.relations;
+        let at = relations
+            .binary_search_by_key(&id, |&(held, _)| held)
+            .ok()?;
+        let &(_, relation) = relations.get(at)?;
+        let (left, right) = match (relation, self.arena.value_type(id)?) {
+            (Relation::Flow, &ValueType::Flow { source, target, .. }) => {
+                (CoreNode::Value(source), CoreNode::Value(target))
+            },
+            (Relation::Isomorphism | Relation::Equivalence, &ValueType::Sigma { first, .. }) => {
+                let &ValueType::Thunk(arrow) = self.arena.value_type(first)?
+                else {
+                    return None;
+                };
+                let &CompType::Arrow { domain, codomain } = self.arena.comp_type(arrow)?
+                else {
+                    return None;
+                };
+                let &CompType::Returner { result, .. } = self.arena.comp_type(codomain)?
+                else {
+                    return None;
+                };
+                (CoreNode::ValueType(domain), CoreNode::ValueType(result))
+            },
+            _ => return None,
+        };
+
+        Some(Former::Relation {
+            relation,
+            left,
+            right,
+        })
+    }
+
+    /// The model type the type `id` was written as, when the source records
+    /// one.
+    ///
+    /// # Specification
+    /// - requires: `models` is ascending by the type.
+    /// - ensures: the recorded theory and its sorts, each at its type; nothing
+    ///   for an unrecorded type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model type and a manifest one spell as written; the
+    ///   same record unrecorded spells as the record.
+    /// - witness: `tests::goldens::a_model_type_spells_as_written_2246`
+    #[spec(ensures: |ret| ret.is_none() || self.forms.models.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
+    fn modelled(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<Former<'arena, CoreNode>>
+    {
+        let forms = self.forms;
+        let models = &forms.models;
+        let at = models.binary_search_by_key(&id, |&(held, _)| held).ok()?;
+        let &(_, ref model) = models.get(at)?;
+        Some(Former::Model {
+            theory: model.theory,
+            sorts: model.sorts.as_slice(),
+        })
+    }
+
+    /// The value `id` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each value former read as its [`Former`], a constructor by
+    ///   its own family whatever type classifies it, the binary composite,
+    ///   returned or not, as the fold `Path.step(p, q)` writes, any other
+    ///   composite as [`Former::Compose`] and a fill as [`Former::Fill`];
+    ///   [`Former::Unreadable`] for an id the arena does not hold.
+    /// - provides: the value half of [`Source::read`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete value formers retain their spellings; a pair
+    ///   with distinct children and a truncated value handle distinguish
+    ///   swapped child addresses and stale reads. Unrendered thunk bodies and
+    ///   lift targets are deliberately not exposed by the adapter.
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
+    /// - witness: `core_source::tests::only_a_parameterised_constructor_carries_its_classifier`
+    /// - witness: `core_source::tests::a_constructor_at_a_computed_type_reads_by_its_family_3669`
+    /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
+    #[spec(ensures: |ret| match (self.arena.value(id), ret) {
+        | (Some(&Value::ListCons(head, tail)), Former::ListCons(h, t)) => h == CoreNode::Value(head) && t == CoreNode::Value(tail),
+        | (Some(&Value::Primitive { primitive, .. }), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
+        | (Some(&Value::PathRefl(code)), Former::PathRefl(actual)) => actual == CoreNode::Value(code),
+        | (Some(&Value::Here(point)), Former::Here(actual))
+        | (Some(&Value::Stay(point)), Former::Stay(actual))
+        | (Some(&Value::Forward(point)), Former::Forward(actual)) => actual == CoreNode::Value(point),
+        | (Some(&Value::Univalence(record, _)), Former::Univalence(actual)) => actual == CoreNode::Value(record),
+        | (Some(&Value::Funext(left, right)), Former::Funext(actual_left, actual_right))
+        | (Some(&Value::Then(left, right)), Former::Then(actual_left, actual_right))
+        | (Some(&Value::FlowProduct(left, right)), Former::FlowProduct(actual_left, actual_right))
+        | (Some(&Value::FunctionFlow(left, right)), Former::FunctionFlow(actual_left, actual_right)) =>
+            actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
+        | (Some(&Value::Equiv(forward, backward)), Former::Equiv(actual_forward, actual_backward))
+        | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) =>
+            actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
+        | (Some(&Value::SessionRelated { relation, source, target, payloads }), Former::SessionRelated(actual, actual_source, actual_target, actual_paths)) =>
+            relation == actual && actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target)
+                && actual_paths == match self.arena.value(payloads) {
+                    Some(&Value::Tuple(ref components)) if components.is_empty() => None,
+                    _ => Some(CoreNode::Value(payloads)),
+                },
+        | (Some(&Value::Ua { stratum, ref sides, forward, backward }), Former::Ua { stratum: actual_stratum, source, target, forward: actual_forward, backward: actual_backward }) =>
+            stratum == actual_stratum && source.as_ref() == sides.source.name.as_ref() && target.as_ref() == sides.target.name.as_ref()
+                && actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
+        | (Some(&Value::Compose { composite, realised, .. }), Former::Returned(actual)) if composite == Composite::binary() =>
+            actual == CoreNode::Computation(realised),
+        | (Some(&Value::Compose { composite, ref cells, .. }), Former::Compose { composite: actual, cells: arity }) if composite != Composite::binary() =>
+            composite == actual && usize::from(arity) == cells.len(),
+        | (Some(&Value::Fill { composite, ref cells, .. }), Former::Fill { composite: actual, cells: arity }) =>
+            composite == actual && usize::from(arity) == cells.len(),
+        | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
+            zone == actual_zone && index == actual_index,
+        | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
+            .is_some_and(|held| held.as_ref() == name.as_ref()),
+        | (Some(&Value::Constant(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
+        | (Some(&Value::Constructor { family, datatype, tag, ref fields }), Former::Constructor { name, arity, placement, classifier }) =>
+            usize::from(arity) == fields.len() && name == self.family(family)
+                .and_then(|family| self.constructors.constructor(family, Component::from(usize::from(tag))))
+                .map(|(held, _)| held)
+                && placement == self.family(family).map_or(crate::Placement::Applied, |family| self.constructors.placement(family, arity))
+                && classifier.is_some() == match self.arena.value_type(datatype) {
+                    Some(&ValueType::Data { ref arguments, .. }) => !arguments.is_empty(),
+                    Some(&ValueType::Element { .. }) => self.family(family).is_some_and(|family| self.constructors.applied.contains(&family)),
+                    Some(_) | None => false,
+                },
+        | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
+            usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
+        | (Some(&Value::Dialogue(ref moves)), Former::Dialogue { payloads, .. }) =>
+            usize::from(payloads) == moves.iter().filter(|turn| matches!(turn.movement.payload(), Maybe::Present(_))).count(),
+        | (Some(&Value::Web(ref pieces)), Former::Web(actual)) => core::ptr::eq(pieces.as_ptr(), actual.as_ptr()),
+        (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Hole)) => hole.origin() == HoleOrigin::Written,
+        (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Omitted)) => hole.origin() == HoleOrigin::Nominated,
+        (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Wildcard)) => hole.origin() == HoleOrigin::Wildcard,
+        (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Splice(tactic))) => hole.tactic() == Some(tactic),
+        (Some(&Value::Mark { .. }), Former::Unreadable(Unreadable::Mark))
+            | (Some(&Value::Lift { .. }), Former::Unreadable(Unreadable::Lift)) | (None, Former::Unreadable(Unreadable::Dangling))
+            | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) => true,
+
+        | (Some(&Value::Thunk(body)), Former::Thunk(actual))
+        | (Some(&Value::Nested(body)), Former::Nested(actual))
+        | (Some(&Value::Run(body)), Former::Run(actual)) => actual == CoreNode::Computation(body),
+        | (Some(&Value::Returned(body)), Former::Returned(actual)) => actual == CoreNode::Computation(self.written(body)),
+        | (Some(&Value::Record(ref fields)), Former::Unit) => fields.is_empty(),
+        | (Some(&Value::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
+        | (Some(&Value::RecordUpdate { base, overlay }), Former::RecordUpdate(actual, arity)) => actual == CoreNode::Value(base)
+            && usize::from(arity) == match self.arena.value(overlay) { Some(&Value::Record(ref fields)) => fields.len(), _ => 0_usize },
+        | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
+            core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
+        | (Some(&Value::Tuple(ref components)), Former::Unit) => components.is_empty(),
+        | (Some(&Value::Tuple(ref components)), Former::Tuple(arity)) => !components.is_empty() && usize::from(arity) == components.len(),
+        | (Some(&Value::PathProduct(first, second)), Former::PathProduct(actual_first, actual_second)) =>
+            actual_first == CoreNode::Value(first) && actual_second == CoreNode::Value(second),
+        | (Some(&Value::Injection(summand, body)), Former::Injection(actual_summand, actual_body)) =>
+            usize::from(summand) == usize::from(actual_summand) && actual_body == CoreNode::Value(body),
+        | (Some(&Value::Quote(quoted)), Former::Quote(actual)) => actual == CoreNode::ValueType(quoted),
+        | (Some(&Value::QuoteComputation(quoted)), Former::QuoteComputation(actual)) => actual == CoreNode::CompType(quoted),
+        | (Some(&Value::Row(ref row)), Former::Row { tail, .. }) => tail == row.tail().map(CoreNode::ValueType),
+        | (Some(&Value::StaticLambda(body)), Former::StaticLambda(actual)) => actual == CoreNode::Value(body),
+        | (Some(&Value::StaticApplication(operator, argument)), Former::StaticApplication(actual_operator, actual_argument)) =>
+            actual_operator == CoreNode::Value(operator) && actual_argument == CoreNode::Value(argument),
+        | (Some(&Value::Ascribe { value, ty }), Former::Annotated { value: actual_value, ty: actual_ty }) =>
+            actual_value == CoreNode::Value(value) && actual_ty == CoreNode::ValueType(ty),
+        | _ => false,
+    })]
+    fn value(
+        &self,
+        id: ValueId,
+    ) -> Former<'arena, CoreNode>
+    {
+        let Some(value) = self.arena.value(id)
+        else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a handle that names no node: a malformed source, with no term to \
+                              spell"
+                )
+            )]
+            return Former::Unreadable(Unreadable::Dangling);
+        };
+        match *value {
+            Value::Constructor {
+                family,
+                datatype,
+                tag,
+                ref fields,
+            } => {
+                let family = self.family(family);
+                Former::Constructor {
+                    name: family
+                        .and_then(|family| {
+                            self.constructors
+                                .constructor(family, Component::from(usize::from(tag)))
+                        })
+                        .map(|(name, _)| name),
+                    arity: Arity::from(fields.len()),
+                    placement: family.map_or(crate::Placement::Applied, |family| {
+                        self.constructors
+                            .placement(family, Arity::from(fields.len()))
+                    }),
+                    // A family's application classifies its constructor. So
+                    // does a type a definition computes where the family
+                    // takes arguments: the lowering reads such a constructor
+                    // only against a type (#6230).
+                    classifier: match self.arena.value_type(datatype) {
+                        Some(&ValueType::Data { ref arguments, .. }) if !arguments.is_empty() => {
+                            Some(CoreNode::ValueType(datatype))
+                        },
+                        Some(&ValueType::Element { .. })
+                            if family.is_some_and(|family| {
+                                self.constructors.applied.contains(&family)
+                            }) =>
+                        {
+                            Some(CoreNode::ValueType(datatype))
+                        },
+                        Some(_) | None => None,
+                    },
+                }
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a metavariable a call nominated for an implicit it omits: a call \
+                              leaves it out, and anywhere else it is unsolved"
+                )
+            )]
+            Value::Hole(hole) if hole.origin() == HoleOrigin::Nominated => {
+                Former::Unreadable(Unreadable::Omitted)
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a metavariable the elaborator nominated for a wildcard the text \
+                              writes: the walk writes it back as the grammar's `_`"
+                )
+            )]
+            Value::Hole(hole) if hole.origin() == HoleOrigin::Wildcard => {
+                Former::Unreadable(Unreadable::Wildcard)
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a metavariable the elaborator nominated for a splice the text \
+                              writes, which its tactic has not filled: written as the splice \
+                              its name carries"
+                )
+            )]
+            Value::Hole(hole) if hole.origin() == HoleOrigin::Spliced => hole
+                .tactic()
+                .map_or(Former::Unreadable(Unreadable::Hole), |tactic| {
+                    Former::Unreadable(Unreadable::Splice(tactic))
+                }),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a hole, a term the author has not written: the walk writes it as \
+                              the grammar's hole `?`"
+                )
+            )]
+            Value::Hole(_) => Former::Unreadable(Unreadable::Hole),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a mark, a term the elaborator could not type: the grammar has no \
+                              spelling for a mark"
+                )
+            )]
+            Value::Mark { .. } => Former::Unreadable(Unreadable::Mark),
+            Value::Returned(body) => Former::Returned(CoreNode::Computation(self.written(body))),
+            // The binary composite is written `Path.step(p, q)`, the fold it realises.
+            Value::Compose {
+                composite,
+                realised,
+                ..
+            } if composite == Composite::binary() => {
+                Former::Returned(CoreNode::Computation(realised))
+            },
+            Value::Compose {
+                composite,
+                ref cells,
+                ..
+            } => Former::Compose {
+                composite,
+                cells: Arity::from(cells.len()),
+            },
+            Value::Fill {
+                composite,
+                ref cells,
+                ..
+            } => Former::Fill {
+                composite,
+                cells: Arity::from(cells.len()),
+            },
+            Value::Ascribe { value, ty } => Former::Annotated {
+                value: CoreNode::Value(value),
+                ty: CoreNode::ValueType(ty),
+            },
+            Value::Recorded(ref moves) => Former::Recorded {
+                moves,
+                payloads: Arity::from(
+                    moves
+                        .iter()
+                        .filter(|step| matches!(step.payload(), Maybe::Present(_)))
+                        .count(),
+                ),
+            },
+            Value::Dialogue(ref moves) => Former::Dialogue {
+                moves,
+                payloads: Arity::from(
+                    moves
+                        .iter()
+                        .filter(|turn| matches!(turn.movement.payload(), Maybe::Present(_)))
+                        .count(),
+                ),
+            },
+            Value::Web(ref pieces) => Former::Web(pieces),
+            Value::SessionRelated {
+                relation,
+                source,
+                target,
+                payloads,
+            } => Former::SessionRelated(
+                relation,
+                CoreNode::Value(source),
+                CoreNode::Value(target),
+                match self.arena.value(payloads) {
+                    Some(&Value::Tuple(ref components)) if components.is_empty() => None,
+                    _ => Some(CoreNode::Value(payloads)),
+                },
+            ),
+            Value::Stay(point) => Former::Stay(CoreNode::Value(point)),
+            Value::Then(first, second) => {
+                Former::Then(CoreNode::Value(first), CoreNode::Value(second))
+            },
+            Value::FlowProduct(first, second) => {
+                Former::FlowProduct(CoreNode::Value(first), CoreNode::Value(second))
+            },
+            Value::Forward(translator) => Former::Forward(CoreNode::Value(translator)),
+            Value::FunctionFlow(domain, codomain) => {
+                Former::FunctionFlow(CoreNode::Value(domain), CoreNode::Value(codomain))
+            },
+            Value::Here(point) => Former::Here(CoreNode::Value(point)),
+            Value::Nested(body) => Former::Nested(CoreNode::Computation(body)),
+            Value::Run(body) => Former::Run(CoreNode::Computation(body)),
+            Value::Funext(left, right) => {
+                Former::Funext(CoreNode::Value(left), CoreNode::Value(right))
+            },
+            Value::Equiv(forward, backward) => {
+                Former::Equiv(CoreNode::Value(forward), CoreNode::Value(backward))
+            },
+            Value::Univalence(record, _) => Former::Univalence(CoreNode::Value(record)),
+            Value::Ua {
+                stratum,
+                ref sides,
+                forward,
+                backward,
+            } => Former::Ua {
+                stratum,
+                source: Name::from(sides.source.name.as_ref()),
+                target: Name::from(sides.target.name.as_ref()),
+                forward: CoreNode::Value(forward),
+                backward: CoreNode::Value(backward),
+            },
+            Value::Record(ref fields) if fields.is_empty() => Former::Unit,
+            Value::Record(ref fields) => Former::Record(Arity::from(fields.len())),
+            Value::RecordUpdate { base, overlay } => {
+                let written = if let Some(&Value::Record(ref fields)) = self.arena.value(overlay) {
+                    fields.len()
+                }
+                else {
+                    0_usize
+                };
+                Former::RecordUpdate(CoreNode::Value(base), Arity::from(written))
+            },
+            Value::Reify(_) => Former::Reify,
+            Value::Primitive { primitive, .. } => {
+                Former::Constant(Name::from(<&'static str>::from(primitive.name())))
+            },
+            Value::PathRefl(code) => Former::PathRefl(CoreNode::Value(code)),
+            Value::PathProduct(first, second) => {
+                Former::PathProduct(CoreNode::Value(first), CoreNode::Value(second))
+            },
+            Value::PathEquiv {
+                forward, backward, ..
+            } => Former::PathEquiv(CoreNode::Value(forward), CoreNode::Value(backward)),
+            Value::Variable { zone, index } => Former::Variable { zone, index },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a name the naming table does not hold: a malformed table, with no \
+                              name to write"
+                )
+            )]
+            Value::Constant(constant) => self
+                .name(constant)
+                .map_or(Former::Unreadable(Unreadable::Unnamed), Former::Constant),
+            Value::ListNil => Former::ListNil,
+            Value::ListCons(head, tail) => {
+                Former::ListCons(CoreNode::Value(head), CoreNode::Value(tail))
+            },
+            Value::Literal(ref literal) => Former::Literal(literal),
+            Value::Tuple(ref components) if components.is_empty() => Former::Unit,
+            Value::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
+            Value::Injection(summand, body) => {
+                Former::Injection(Component::from(usize::from(summand)), CoreNode::Value(body))
+            },
+            Value::Thunk(body) => Former::Thunk(CoreNode::Computation(body)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a universe lift: the core's explicit cumulativity, which the \
+                              surface grammar has no syntax for"
+                )
+            )]
+            Value::Lift { .. } => Former::Unreadable(Unreadable::Lift),
+            Value::Quote(quoted) => Former::Quote(CoreNode::ValueType(quoted)),
+            Value::QuoteComputation(quoted) => Former::QuoteComputation(CoreNode::CompType(quoted)),
+            Value::Row(ref row) => Former::Row {
+                effects: row,
+                tail: row.tail().map(CoreNode::ValueType),
+            },
+            Value::StaticLambda(body) => Former::StaticLambda(CoreNode::Value(body)),
+            Value::StaticApplication(operator, argument) => {
+                Former::StaticApplication(CoreNode::Value(operator), CoreNode::Value(argument))
+            },
+        }
+    }
+
+    /// The value type `id` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each value-type former read as its [`Former`], a type a type
+    ///   member names read as [`Former::Member`] by that name once no model or
+    ///   relation reads it; [`Former::Unreadable`] for an id the arena does not
+    ///   hold.
+    /// - provides: the value-type half of [`Source::read`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the golden type, universe and static-operator
+    ///   fixtures observe constructor choice, child order and levels; exact-end
+    ///   names and truncated handles observe absence. Lift targets remain
+    ///   outside the former exposed here, and arbitrary type trees are not
+    ///   enumerated by these fixtures.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::universes_spell_their_sort_and_level`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
+    /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
+    /// - witness: `tests::goldens::session_types_spell_their_protocol_and_payloads`
+    #[spec(ensures: |ret| match (self.arena.value_type(self.unstaged(id)), ret) {
+        | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
+        | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
+        | (Some(&ValueType::Data { declaration, ref arguments }), Former::Data { name, arity }) =>
+            usize::from(arity) == arguments.len() && self.name(declaration) == name,
+        | (Some(&ValueType::Path { carrier, left, right }), Former::Path { carrier: actual_carrier, left: actual_left, right: actual_right })
+        | (Some(&ValueType::Bridge { carrier, left, right }), Former::Bridge { carrier: actual_carrier, left: actual_left, right: actual_right })
+        | (Some(&ValueType::Flow { carrier, source: left, target: right }), Former::Flow { carrier: actual_carrier, left: actual_left, right: actual_right }) =>
+            actual_carrier == self.written_carrier(carrier) && actual_left == CoreNode::Value(left) && actual_right == CoreNode::Value(right),
+        (Some(&ValueType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&ValueType::Lift { .. }), Former::Unreadable(Unreadable::Lift))
+            | (Some(&ValueType::World(WorldType::Capability(_))), Former::Unreadable(Unreadable::WorldCapability))
+            | (None, Former::Unreadable(Unreadable::Dangling))
+            | (Some(&ValueType::Buffer), Former::BufferType)
+            | (Some(&ValueType::Qubit), Former::QubitType)
+            | (Some(&ValueType::Row), Former::RowType)
+            | (Some(&ValueType::Web), Former::WebType) => true,
+        | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
+        | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
+        | (Some(&ValueType::Patched { base, ref fixed, .. }), Former::Patched(actual, arity)) =>
+            actual == CoreNode::ValueType(base) && usize::from(arity) == fixed.len(),
+        | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
+        | (Some(&ValueType::Product(ref parts)), Former::Product(arity))
+        | (Some(&ValueType::Sum(ref parts)), Former::Sum(arity)) => usize::from(arity) == parts.len(),
+        | (Some(&ValueType::List(element)), Former::List(actual)) => actual == CoreNode::ValueType(element),
+        | (Some(&ValueType::Thunk(body)), Former::ThunkType(actual)) => actual == CoreNode::CompType(body),
+        | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
+            sort == actual_sort && core::ptr::eq(core::ptr::from_ref(level), core::ptr::from_ref(actual_level)),
+        | (Some(&ValueType::Element { code, .. } | &ValueType::RowTail(code)), Former::Element(actual))
+        | (Some(&ValueType::Run(code)), Former::RunType(actual))
+        | (Some(&ValueType::Prefix(code)), Former::PrefixType(actual))
+        | (Some(&ValueType::Dialogue(code)), Former::DialogueType(actual)) => actual == CoreNode::Value(code),
+        | (Some(&ValueType::Abstract(index)), Former::Abstract(name)) => self.names.get(usize::from(index))
+            .is_some_and(|held| held.as_ref() == name.as_ref()),
+        | (Some(&ValueType::Abstract(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
+        | (Some(&ValueType::StaticPi { domain, codomain }), Former::StaticPi { domain: actual_domain, codomain: actual_codomain })
+        | (Some(&ValueType::Sigma { first: domain, second: codomain }), Former::Sigma { first: actual_domain, second: actual_codomain }) =>
+            actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::ValueType(codomain),
+        | (Some(&ValueType::Session(ref session)), Former::Session { protocol, state, payloads }) =>
+            core::ptr::eq(core::ptr::from_ref(protocol), core::ptr::from_ref(session.protocol())) && state == session.state() && usize::from(payloads) == session.payloads().len(),
+        | (Some(&ValueType::Capability { grade, region, .. }), Former::Capability { grade: actual_grade, region: actual_region, .. }) =>
+            grade == actual_grade && region == actual_region,
+        | (Some(&ValueType::World(WorldType::At { inner, world })), Former::Located { inner: actual, world: named }) =>
+            actual == CoreNode::ValueType(inner) && named == self.world_name(world),
+        | (Some(&ValueType::Kept { value, region }), Former::Kept { inner: actual, region: named }) =>
+            actual == CoreNode::ValueType(value) && named == region,
+        | (Some(&(ValueType::Sigma { .. } | ValueType::Flow { .. })), Former::Relation { .. }) =>
+            self.forms.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
+        | (_, Former::Model { .. }) => self.forms.models.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
+        | (_, Former::Member(name)) => written(&self.forms.members, id) == Some(name),
+        | (_, Former::Staged { inner, .. }) => matches!(self.arena.value_type(id), Some(&ValueType::Staged { base, .. }) if inner == CoreNode::ValueType(base)),
+        | _ => false,
+    })]
+    fn value_type(
+        &self,
+        id: ValueTypeId,
+    ) -> Former<'arena, CoreNode>
+    {
+        if let Some(modelled) = self.modelled(id) {
+            return modelled;
+        }
+        if let Some(related) = self.related(id) {
+            return related;
+        }
+        // A type a member names is written by the name: the spelling holds the
+        // name once, however often the type is shared (#5826).
+        if let Some(member) = written(&self.forms.members, id) {
+            return Former::Member(member);
+        }
+        // A type at a stage of the definition's own is written at it, `Nat[i]`.
+        if let Some(staged) = self.staged_former(id) {
+            return staged;
+        }
+        let Some(value_type) = self.arena.value_type(self.unstaged(id))
+        else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a handle that names no node: a malformed source, with no term to \
+                              spell"
+                )
+            )]
+            return Former::Unreadable(Unreadable::Dangling);
+        };
+        match *value_type {
+            ValueType::Data {
+                declaration,
+                ref arguments,
+            } => Former::Data {
+                name: self.name(declaration),
+                arity: Arity::from(arguments.len()),
+            },
+            ValueType::Path {
+                carrier,
+                left,
+                right,
+            } => Former::Path {
+                carrier: self.written_carrier(carrier),
+                left: CoreNode::Value(left),
+                right: CoreNode::Value(right),
+            },
+            ValueType::Bridge {
+                carrier,
+                left,
+                right,
+            } => Former::Bridge {
+                carrier: self.written_carrier(carrier),
+                left: CoreNode::Value(left),
+                right: CoreNode::Value(right),
+            },
+            ValueType::Flow {
+                carrier,
+                source,
+                target,
+            } => Former::Flow {
+                carrier: self.written_carrier(carrier),
+                left: CoreNode::Value(source),
+                right: CoreNode::Value(target),
+            },
+            ValueType::Run(code) => Former::RunType(CoreNode::Value(code)),
+            ValueType::Prefix(code) => Former::PrefixType(CoreNode::Value(code)),
+            ValueType::Dialogue(code) => Former::DialogueType(CoreNode::Value(code)),
+            ValueType::Web => Former::WebType,
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the unknown type a hole or a mark synthesises: the walk writes it \
+                              as the grammar's `unknown_type` where a type is read"
+                )
+            )]
+            ValueType::Unknown => Former::Unreadable(Unreadable::UnknownType),
+            ValueType::Record(ref fields) if fields.is_empty() => {
+                Former::Product(Arity::from(0_usize))
+            },
+            ValueType::Record(ref fields) => Former::RecordType(Arity::from(fields.len())),
+            // A system of faces prints as the glued type, its fixed fields:
+            // the meets are evidence its formation checks.
+            ValueType::Patched {
+                base, ref fixed, ..
+            } => Former::Patched(CoreNode::ValueType(base), Arity::from(fixed.len())),
+            ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
+            ValueType::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
+            ValueType::Stack { input, output } => {
+                Former::Stack(CoreNode::CompType(input), CoreNode::CompType(output))
+            },
+            ValueType::PathUniverse(source, target) => {
+                Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
+            },
+            ValueType::Base(base) => Former::BaseType(base),
+            ValueType::Buffer => Former::BufferType,
+            ValueType::Qubit => Former::QubitType,
+            ValueType::Row => Former::RowType,
+            ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
+            ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
+            ValueType::Universe { sort, ref level } => Former::Universe { sort, level },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a universe lift: the core's explicit cumulativity, which the \
+                              surface grammar has no syntax for"
+                )
+            )]
+            ValueType::Lift { .. } => Former::Unreadable(Unreadable::Lift),
+            // A row's tail reads as the row term it stands for, as a decode
+            // reads as its code.
+            ValueType::Element { code, .. } | ValueType::RowTail(code) => {
+                Former::Element(CoreNode::Value(code))
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a name the naming table does not hold: a malformed table, with no \
+                              name to write"
+                )
+            )]
+            ValueType::Abstract(atom) => self
+                .name(atom)
+                .map_or(Former::Unreadable(Unreadable::Unnamed), Former::Abstract),
+            ValueType::StaticPi { domain, codomain } => Former::StaticPi {
+                domain: CoreNode::ValueType(domain),
+                codomain: CoreNode::ValueType(codomain),
+            },
+            ValueType::Sigma { first, second } => Former::Sigma {
+                first: CoreNode::ValueType(first),
+                second: CoreNode::ValueType(second),
+            },
+            ValueType::Session(ref session) => Former::Session {
+                protocol: session.protocol(),
+                state: session.state(),
+                payloads: Arity::from(session.payloads().len()),
+            },
+            ValueType::Capability {
+                ref authority,
+                grade,
+                region,
+            } => Former::Capability {
+                authority,
+                grade,
+                region,
+            },
+            ValueType::World(WorldType::At { inner, world }) => Former::Located {
+                inner: CoreNode::ValueType(inner),
+                world: self.world_name(world),
+            },
+            ValueType::Kept { value, region } => Former::Kept {
+                inner: CoreNode::ValueType(value),
+                region,
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a world's capability: the linear resource a migration spends, which \
+                              the surface never writes"
+                )
+            )]
+            ValueType::World(WorldType::Capability(_)) => {
+                Former::Unreadable(Unreadable::WorldCapability)
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "never reached: the read strips a stage first, and the arena holds \
+                              no stage over a stage"
+                )
+            )]
+            // Never read: the arena holds no stage over a stage.
+            ValueType::Staged { .. } => Former::Unreadable(Unreadable::Dangling),
+        }
+    }
+
+    /// The computation type `id` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each computation-type former read as its [`Former`], a codata
+    ///   family applied named as its declaration is named;
+    ///   [`Former::Unreadable`] for an id the arena does not hold.
+    /// - provides: the computation-type half of [`Source::read`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — returners, arrows, dependent types and computation
+    ///   codes in the finite grammar fixtures distinguish wrong formers and
+    ///   child positions. A direct returner read and truncation distinguish the
+    ///   child family and stale handles; arbitrary dependent trees are outside
+    ///   these fixtures.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::dependent_function_type_breaks_before_codomain`
+    /// - witness: `tests::goldens::a_codata_family_spells_as_its_name_applied`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
+    #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
+        | (Some(&CompType::With(ref components)), Former::With(arity)) => usize::from(arity) == components.len(),
+        | (Some(&CompType::Returns { ref results, ref effects }), Former::Returns(arity)) => usize::from(arity) == results.len()
+            && effects.purity() == gandr_core_term::effect::Purity::Pure,
+        | (Some(&CompType::Returns { ref results, ref effects }), Former::EffectfulReturner { result: Returned::Group(arity), tail, .. }) => usize::from(arity) == results.len()
+            && effects.purity() == gandr_core_term::effect::Purity::Effectful
+            && tail == effects.tail().map(CoreNode::ValueType),
+        | (Some(&CompType::Returns { .. }), Former::Unreadable(Unreadable::SeveralResults))
+        | (Some(&CompType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (None, Former::Unreadable(Unreadable::Dangling)) => true,
+        | (Some(&CompType::Codata { declaration, ref arguments }), Former::Codata { name, arity }) =>
+            usize::from(arity) == arguments.len() && self.name(declaration) == name,
+        | (Some(&CompType::Returner { result, ref effects }), Former::Returner(actual)) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Pure,
+        | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: Returned::One(actual), tail, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful && tail == effects.tail().map(CoreNode::ValueType),
+        | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
+        | (Some(&CompType::Pi { domain, codomain }), Former::Pi { domain: actual_domain, codomain: actual_codomain }) =>
+            actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::CompType(codomain),
+        | (Some(&CompType::LinearArrow { domain, multiplicity, codomain }), Former::LinearArrow { domain: actual_domain, multiplicity: actual_multiplicity, codomain: actual_codomain }) =>
+            actual_domain == CoreNode::ValueType(domain) && actual_multiplicity == CoreNode::Value(multiplicity) && actual_codomain == CoreNode::CompType(codomain),
+        | (Some(&CompType::Element { code, .. }), Former::ComputationElement(actual)) => actual == CoreNode::Value(code),
+        | _ => false,
+    })]
+    fn comp_type(
+        &self,
+        id: CompTypeId,
+    ) -> Former<'arena, CoreNode>
+    {
+        let Some(comp_type) = self.arena.comp_type(id)
+        else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a handle that names no node: a malformed source, with no term to \
+                              spell"
+                )
+            )]
+            return Former::Unreadable(Unreadable::Dangling);
+        };
+        // Each entry over a theory as the row writes it, where one is kept.
+        let manifests = || {
+            self.rows
+                .binary_search_by_key(&id, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.rows.get(at))
+                .map_or(&[][..], |&(_, ref manifests)| manifests.as_slice())
+        };
+        match *comp_type {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the unknown type a hole or a mark synthesises: the walk writes it \
+                              as the grammar's `unknown_type` where a type is read"
+                )
+            )]
+            CompType::Unknown => Former::Unreadable(Unreadable::UnknownType),
+            CompType::With(ref components) => Former::With(Arity::from(components.len())),
+            CompType::Returns {
+                ref results,
+                ref effects,
+            } if effects.purity() == gandr_core_term::effect::Purity::Pure
+                && !crate::walk::reads_earlier(self, results, CoreNode::ValueType).0 =>
+            {
+                Former::Returns(Arity::from(results.len()))
+            },
+            CompType::Returns {
+                ref results,
+                ref effects,
+            } if !crate::walk::reads_earlier(self, results, CoreNode::ValueType).0 => {
+                Former::EffectfulReturner {
+                    result: Returned::Group(Arity::from(results.len())),
+                    effects,
+                    tail: effects.tail().map(CoreNode::ValueType),
+                    manifests: manifests(),
+                }
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a returner of several results one of which reads another, which the \
+                              surface grammar does not yet write"
+                )
+            )]
+            CompType::Returns { .. } => Former::Unreadable(Unreadable::SeveralResults),
+            CompType::Returner {
+                result,
+                ref effects,
+            } => {
+                if effects.purity() == gandr_core_term::effect::Purity::Pure {
+                    Former::Returner(CoreNode::ValueType(result))
+                }
+                else {
+                    Former::EffectfulReturner {
+                        result: Returned::One(CoreNode::ValueType(result)),
+                        effects,
+                        tail: effects.tail().map(CoreNode::ValueType),
+                        manifests: manifests(),
+                    }
+                }
+            },
+            CompType::Arrow { domain, codomain } => Former::Arrow {
+                domain: CoreNode::ValueType(domain),
+                codomain: CoreNode::CompType(codomain),
+            },
+            CompType::Pi { domain, codomain } => Former::Pi {
+                domain: CoreNode::ValueType(domain),
+                codomain: CoreNode::CompType(codomain),
+            },
+            CompType::LinearArrow {
+                domain,
+                multiplicity,
+                codomain,
+            } => Former::LinearArrow {
+                domain: CoreNode::ValueType(domain),
+                multiplicity: CoreNode::Value(multiplicity),
+                codomain: CoreNode::CompType(codomain),
+            },
+            CompType::Element { code, .. } => Former::ComputationElement(CoreNode::Value(code)),
+            CompType::Codata {
+                declaration,
+                ref arguments,
+            } => Former::Codata {
+                name: self.name(declaration),
+                arity: Arity::from(arguments.len()),
+            },
+        }
+    }
+
+    /// The computation `id` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each computation former read as its [`Former`], its children
+    ///   as nodes of their families and its names spelled: a primitive by its
+    ///   prelude function's name, an operation and a record field by their own,
+    ///   a scope by its interface's; the binary composite returned as the fold
+    ///   `Path.step(p, q)` writes; a hole and a mark as the honest set's, a
+    ///   return of several values as several results, and an id the arena does
+    ///   not hold as dangling.
+    /// - provides: the computation half of [`Source::read`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the computation golden reads every computation former
+    ///   and its children in order; a truncated arena reads dangling.
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
+    #[spec(ensures: |ret| match (self.arena.computation(self.written(id)), ret) {
+        | (Some(&Computation::Hole(_)), Former::Unreadable(Unreadable::Hole))
+        | (Some(&Computation::Mark { .. }), Former::Unreadable(Unreadable::Mark))
+        | (Some(&Computation::ReturnAll(_)), Former::Unreadable(Unreadable::SeveralResults))
+        | (None, Former::Unreadable(Unreadable::Dangling)) => true,
+        | (Some(&Computation::Return(value)), Former::Return(actual))
+        | (Some(&Computation::Force(value)), Former::Force(actual))
+        | (Some(&Computation::Decompose(value)), Former::Decompose(actual)) => actual == CoreNode::Value(value),
+        | (Some(&Computation::Lambda(body)), Former::Lambda(actual))
+        | (Some(&Computation::LinearLambda(body)), Former::LinearLambda(actual))
+        | (Some(&Computation::Fixpoint { body, .. }), Former::Fixpoint(actual))
+        | (Some(&Computation::Reset(body)), Former::Reset(actual))
+        | (Some(&Computation::Shift(body)), Former::Shift(actual)) => actual == CoreNode::Computation(body),
+        | (Some(&Computation::Bind(bound, rest)), Former::Bind(actual_bound, actual_rest)) =>
+            actual_bound == CoreNode::Computation(bound) && actual_rest == CoreNode::Computation(rest),
+        | (Some(&Computation::Ascribe { body, ty }), Former::Ascription { body: actual_body, ty: actual_ty }) =>
+            actual_body == CoreNode::Computation(body) && actual_ty == CoreNode::CompType(ty),
+        | (Some(&Computation::Application(function, argument)), Former::Application(actual_function, actual_argument)) =>
+            actual_function == CoreNode::Computation(function) && actual_argument == CoreNode::Value(argument),
+        | (Some(&Computation::Primitive { primitive, ref arguments }), Former::Primitive { name, arity }) =>
+            name.as_ref() == primitive.name().as_ref() && usize::from(arity) == arguments.len(),
+        | (Some(&Computation::Case { scrutinee, ref branches }), Former::Case { scrutinee: actual, arity }) =>
+            actual == CoreNode::Value(scrutinee) && usize::from(arity) == branches.len(),
+        | (Some(&Computation::DataCase { scrutinee, motive, ref branches, equations, .. }), Former::DataCase { scrutinee: actual, motive: actual_motive, arity, equations: actual_equations }) =>
+            actual == CoreNode::Value(scrutinee) && actual_motive == CoreNode::CompType(motive) && usize::from(arity) == branches.len() && usize::from(actual_equations) == usize::from(equations),
+        | (Some(&Computation::Split { scrutinee, arity, body, .. }), Former::Split { scrutinee: actual, arity: actual_arity, body: actual_body }) =>
+            actual == CoreNode::Value(scrutinee) && usize::from(arity) == usize::from(actual_arity) && actual_body == CoreNode::Computation(body),
+        | (Some(&Computation::Handle { ref clauses, .. }), Former::Handle { clauses: count, .. })
+        | (Some(&Computation::Scope { ref clauses, .. }), Former::Scope { clauses: count, .. }) => usize::from(count) == clauses.len(),
+        | (Some(&Computation::Session(ref action)), _) => match (action, ret) {
+            | (&SessionAction::Send { endpoint, payload }, Former::Send { endpoint: actual, payload: actual_payload }) =>
+                endpoint == actual && actual_payload == CoreNode::Value(payload),
+            | (&SessionAction::Receive { endpoint, body }, Former::Receive { endpoint: actual, body: actual_body }) =>
+                endpoint == actual && actual_body == CoreNode::Computation(body),
+            | (&SessionAction::Close { endpoint }, Former::Close(actual)) => endpoint == actual,
+            | (&SessionAction::Select { endpoint, ref label }, Former::Select { endpoint: actual, label: actual_label }) =>
+                endpoint == actual && actual_label.as_ref() == label.as_ref(),
+            | (&SessionAction::Offer { endpoint, ref arms }, Former::Offer { endpoint: actual, arms: count }) =>
+                endpoint == actual && usize::from(count) == arms.len(),
+            | (&SessionAction::Fork { .. }, Former::Fork { .. }) => true,
+            | (&SessionAction::Place { payload, body }, Former::Place { payload: actual, body: actual_body }) =>
+                actual == CoreNode::Value(payload) && actual_body == CoreNode::Computation(body),
+            | _ => false,
+        },
+        | (Some(&Computation::Memory(ref form)), _) => match (form, ret) {
+            | (&MemoryForm::Hold { value, body, grade }, Former::Hold { value: held, body: scope, grade: printed }) =>
+                held == CoreNode::Value(value) && scope == CoreNode::Computation(body) && grade == printed,
+            | (&MemoryForm::Access { held, place, body, mode }, Former::Access { held: actual, place: printed_place, body: lent, mode: printed }) =>
+                held == actual && lent == CoreNode::Computation(body) && match (mode, printed) {
+                    | (AccessMode::Exclusive { unwind }, AccessMode::Exclusive { unwind: unwound }) =>
+                        unwound == CoreNode::Computation(unwind),
+                    | (AccessMode::Shared, AccessMode::Shared) => true,
+                    | _ => false,
+                } && match (place, printed_place) {
+                    | (Place::Whole, Place::Whole) => true,
+                    | (Place::At { index }, Place::At { index: printed_index }) => printed_index == CoreNode::Value(index),
+                    | _ => false,
+                },
+            | (&MemoryForm::Resume { view, value }, Former::ResumeView { view: actual, value: written }) =>
+                view == actual && written == CoreNode::Value(value),
+            | (&MemoryForm::Abort { view }, Former::AbortView(actual))
+            | (&MemoryForm::Consume { held: view }, Former::ConsumeHeld(actual)) => view == actual,
+            | _ => false,
+        },
+        | (Some(&Computation::World(ref form)), _) => match (form, ret) {
+            | (&WorldForm::Hold { value }, Former::WorldHold(held)) => held == CoreNode::Value(value),
+            | (&WorldForm::Leta { world, value, body }, Former::Leta { world: named, value: opened, body: rest }) =>
+                opened == CoreNode::Value(value) && rest == CoreNode::Computation(body) && named == self.world_name(world),
+            | (&WorldForm::Migrate { world, body }, Former::Migrate { world: named, body: run }) =>
+                run == CoreNode::Computation(body) && named == self.world_name(world),
+            | _ => false,
+        },
+        | (Some(_), _) => !matches!(ret, Former::Unreadable(_)),
+        | (None, _) => false,
+    })]
+    fn computation(
+        &self,
+        id: ComputationId,
+    ) -> Former<'arena, CoreNode>
+    {
+        let value = CoreNode::Value;
+        let computation = CoreNode::Computation;
+        let Some(held) = self.arena.computation(self.written(id))
+        else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a handle that names no node: a malformed source, with no term to \
+                              spell"
+                )
+            )]
+            return Former::Unreadable(Unreadable::Dangling);
+        };
+        match *held {
+            Computation::Return(returned) => Former::Return(value(returned)),
+            Computation::Abandon(stack) => Former::Abandon(value(stack)),
+            Computation::Bind(bound, rest) => Former::Bind(computation(bound), computation(rest)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a return of several values, which the surface grammar has no syntax \
+                              for"
+                )
+            )]
+            Computation::ReturnAll(_) => Former::Unreadable(Unreadable::SeveralResults),
+            Computation::BindAll { bound, arity, body } => Former::BindAll {
+                bound: computation(bound),
+                arity: Arity::from(usize::from(arity)),
+                body: computation(body),
+            },
+            Computation::Ascribe { body, ty } => Former::Ascription {
+                body: computation(body),
+                ty: CoreNode::CompType(ty),
+            },
+            Computation::Force(thunk) => Former::Force(value(thunk)),
+            Computation::Decompose(dialogue) => Former::Decompose(value(dialogue)),
+            Computation::Application(function, argument) => {
+                Former::Application(computation(function), value(argument))
+            },
+            Computation::Lambda(body) => Former::Lambda(computation(body)),
+            Computation::LinearLambda(body) => Former::LinearLambda(computation(body)),
+            Computation::Primitive {
+                primitive,
+                ref arguments,
+            } => Former::Primitive {
+                name: Name::from(<&'static str>::from(primitive.name())),
+                arity: Arity::from(arguments.len()),
+            },
+            Computation::Transport(path, transported) => {
+                Former::Transport(value(path), value(transported))
+            },
+            Computation::PathTransport {
+                motive,
+                path,
+                value: transported,
+            } => Former::PathTransport {
+                motive: CoreNode::ValueType(motive),
+                path: value(path),
+                value: value(transported),
+            },
+            Computation::Ride {
+                motive,
+                flow,
+                value: moved,
+            } => Former::Ride {
+                motive: CoreNode::ValueType(motive),
+                flow: value(flow),
+                value: value(moved),
+            },
+            Computation::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value: transported,
+            } => Former::TelescopeTransport {
+                motive: CoreNode::CompType(motive),
+                path: value(path),
+                start: value(start),
+                over: value(over),
+                value: value(transported),
+            },
+            Computation::Fixpoint { body, .. } => Former::Fixpoint(computation(body)),
+            Computation::Case {
+                scrutinee,
+                ref branches,
+            } => Former::Case {
+                scrutinee: value(scrutinee),
+                arity: Arity::from(branches.len()),
+            },
+            Computation::Split {
+                scrutinee,
+                arity,
+                body,
+                ..
+            } => Former::Split {
+                scrutinee: value(scrutinee),
+                arity: Arity::from(usize::from(arity)),
+                body: computation(body),
+            },
+            Computation::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+                equations,
+                ..
+            } => Former::DataCase {
+                scrutinee: value(scrutinee),
+                motive: CoreNode::CompType(motive),
+                arity: Arity::from(branches.len()),
+                equations: Arity::from(usize::from(equations)),
+            },
+            Computation::RecordProjection(record, ref label) => {
+                Former::RecordProjection(value(record), Name::from(label.as_ref()))
+            },
+            Computation::TupleProjection(tuple, component) => {
+                Former::TupleProjection(value(tuple), Component::from(usize::from(component)))
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a hole, a term the author has not written: the walk writes it as \
+                              the grammar's hole `?`"
+                )
+            )]
+            Computation::Hole(_) => Former::Unreadable(Unreadable::Hole),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a mark, a term the elaborator could not type: the grammar has no \
+                              spelling for a mark"
+                )
+            )]
+            Computation::Mark { .. } => Former::Unreadable(Unreadable::Mark),
+            Computation::ListFold {
+                list,
+                on_nil,
+                on_cons,
+                ..
+            } => Former::ListFold {
+                list: value(list),
+                nil: computation(on_nil),
+                cons: computation(on_cons),
+            },
+            Computation::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => Former::ListCase {
+                list: value(list),
+                nil: computation(on_nil),
+                cons: computation(on_cons),
+            },
+            Computation::Perform {
+                ref signature,
+                ref operation,
+                payload,
+            } => Former::Perform {
+                interface: Name::from(<&str>::from(signature.name().module())),
+                operation: Name::from(operation.as_ref()),
+                payload: value(payload),
+            },
+            Computation::Handle {
+                subject,
+                on_return,
+                ref clauses,
+                ..
+            } => Former::Handle {
+                subject: computation(subject),
+                on_return: computation(on_return),
+                clauses: Arity::from(clauses.len()),
+            },
+            Computation::Exercise {
+                capability,
+                ref operation,
+                payload,
+                ..
+            } => Former::Exercise {
+                capability: value(capability),
+                operation: Name::from(operation.as_ref()),
+                payload: value(payload),
+            },
+            Computation::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            } => Former::Scope {
+                interface: Name::from(signature.name().as_ref()),
+                subject: computation(subject),
+                on_return: computation(on_return),
+                clauses: Arity::from(clauses.len()),
+                sorts: self
+                    .scopes
+                    .binary_search_by_key(&id, |&(held, _)| held)
+                    .ok()
+                    .and_then(|at| self.scopes.get(at))
+                    .map_or(&[], |&(_, ref scope)| scope.sorts.as_slice()),
+                answered: self
+                    .answers
+                    .binary_search_by_key(&id, |&(held, _)| held)
+                    .ok()
+                    .and_then(|at| self.answers.get(at))
+                    .map(|&(_, answered)| answered),
+            },
+            Computation::Resume(stack, resumed) => {
+                Former::Resume(value(stack), computation(resumed))
+            },
+            Computation::Reset(body) => Former::Reset(computation(body)),
+            Computation::Shift(body) => Former::Shift(computation(body)),
+            Computation::With(ref components) => Former::Lazy(Arity::from(components.len())),
+            Computation::Project(component, observed) => Former::Project(
+                Component::from(usize::from(component)),
+                computation(observed),
+            ),
+            Computation::Session(ref action) => match *action {
+                SessionAction::Send { endpoint, payload } => Former::Send {
+                    endpoint,
+                    payload: value(payload),
+                },
+                SessionAction::Receive { endpoint, body } => Former::Receive {
+                    endpoint,
+                    body: computation(body),
+                },
+                SessionAction::Select {
+                    endpoint,
+                    ref label,
+                } => Former::Select {
+                    endpoint,
+                    label: Name::from(label.as_ref()),
+                },
+                SessionAction::Offer { endpoint, ref arms } => Former::Offer {
+                    endpoint,
+                    arms: Arity::from(arms.len()),
+                },
+                SessionAction::Close { endpoint } => Former::Close(endpoint),
+                SessionAction::Fork {
+                    protocol,
+                    child,
+                    parent,
+                } => Former::Fork {
+                    protocol: CoreNode::ValueType(protocol),
+                    child: computation(child),
+                    parent: computation(parent),
+                },
+                SessionAction::Place { payload, body } => Former::Place {
+                    payload: value(payload),
+                    body: computation(body),
+                },
+            },
+            Computation::Memory(ref form) => match *form {
+                MemoryForm::Hold {
+                    value: held,
+                    body,
+                    grade,
+                } => Former::Hold {
+                    value: value(held),
+                    body: computation(body),
+                    grade,
+                },
+                MemoryForm::Access {
+                    held,
+                    place,
+                    body,
+                    mode,
+                } => Former::Access {
+                    held,
+                    place: match place {
+                        Place::Whole => Place::Whole,
+                        Place::At { index } => Place::At {
+                            index: value(index),
+                        },
+                    },
+                    body: computation(body),
+                    mode: match mode {
+                        AccessMode::Exclusive { unwind } => AccessMode::Exclusive {
+                            unwind: computation(unwind),
+                        },
+                        AccessMode::Shared => AccessMode::Shared,
+                    },
+                },
+                MemoryForm::Resume {
+                    view,
+                    value: written,
+                } => Former::ResumeView {
+                    view,
+                    value: value(written),
+                },
+                MemoryForm::Abort { view } => Former::AbortView(view),
+                MemoryForm::Consume { held } => Former::ConsumeHeld(held),
+            },
+            Computation::World(ref form) => match *form {
+                WorldForm::Hold { value: held } => Former::WorldHold(value(held)),
+                WorldForm::Leta {
+                    world,
+                    value: opened,
+                    body,
+                } => Former::Leta {
+                    world: self.world_name(world),
+                    value: value(opened),
+                    body: computation(body),
+                },
+                WorldForm::Migrate { world, body } => Former::Migrate {
+                    world: self.world_name(world),
+                    body: computation(body),
+                },
+            },
+        }
+    }
+}
+
+impl Source for CoreSource<'_>
+{
+    type Node = CoreNode;
+
+    /// The node `node` names in the arena.
+    ///
+    /// # Specification
+    /// - requires: nothing; an id from another arena reads as whatever this
+    ///   arena holds at it, or as unreadable.
+    /// - ensures: as [`Source::read`], of the node `node` restores to: each
+    ///   family read by its own reader, every former of the family as its own
+    ///   [`Former`] over its children, the honest set's members — a hole, a
+    ///   mark, the unknown type, a lift — as unreadable, and a missing handle
+    ///   as dangling.
+    /// - provides: the printer's reading of the core arena.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact golden spellings distinguish constructor
+    ///   selection over the finite type and value fixtures. Direct reads of all
+    ///   four families, distinct pair children and a truncated arena
+    ///   distinguish namespace confusion, reversed children and stale handles.
+    ///   An arbitrary arena or naming table is outside this finite evidence.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
+    /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `core_source::tests::a_restored_elaboration_reads_as_written`
+    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
+        | CoreNode::Value(id) if self.arena.value(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
+        | CoreNode::Computation(id) if self.arena.computation(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
+        | CoreNode::ValueType(id) if self.arena.value_type(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
+        | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable(Unreadable::Dangling)),
+        | CoreNode::Value(_) | CoreNode::Computation(_) | CoreNode::ValueType(_) | CoreNode::CompType(_) => true,
+    })]
+    #[inline]
+    fn read(
+        &self,
+        node: CoreNode,
+    ) -> Former<'_, CoreNode>
+    {
+        match self.restoration.restored(node) {
+            CoreNode::Value(id) => self.value(id),
+            CoreNode::Computation(id) => self.computation(id),
+            CoreNode::ValueType(id) => self.value_type(id),
+            CoreNode::CompType(id) => self.comp_type(id),
+        }
+    }
+
+    /// The constant whose name the printer writes for `node` in the arena.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: of the node `node` restores to, a held constant value's or
+    ///   abstract type's constant when the naming table names it, and a held
+    ///   data or codata family's declaration, a staged type read at the type it
+    ///   refines as [`Source::read`] reads it; none for another former or a
+    ///   missing handle.
+    /// - provides: the declaration behind each name [`Source::read`] writes
+    ///   from the naming table.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type naming a family, an abstract type and a
+    ///   declared value lists each name it writes at the bytes it wrote it, and
+    ///   a bound variable sharing a family's name lists nothing.
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    #[spec(ensures: |ret| ret.is_none()
+        || !matches!(self.restoration.restored(node), CoreNode::Computation(_)))]
+    #[inline]
+    fn declaration(
+        &self,
+        node: CoreNode,
+    ) -> Option<ConstantIndex>
+    {
+        match self.restoration.restored(node) {
+            CoreNode::Value(id) => match self.arena.value(id) {
+                Some(&Value::Constant(constant)) if self.name(constant).is_some() => Some(constant),
+                Some(_) | None => None,
+            },
+            CoreNode::ValueType(id) => match self.arena.value_type(self.unstaged(id)) {
+                Some(&ValueType::Data { declaration, .. }) => Some(declaration),
+                Some(&ValueType::Abstract(atom)) if self.name(atom).is_some() => Some(atom),
+                Some(_) | None => None,
+            },
+            CoreNode::CompType(id) => match self.arena.comp_type(id) {
+                Some(&CompType::Codata { declaration, .. }) => Some(declaration),
+                Some(_) | None => None,
+            },
+            CoreNode::Computation(_) => None,
+        }
+    }
+
+    /// The handle of component `index` of the n-ary former `node` names in
+    /// the arena.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: of the node `node` restores to, the value type at `index`
+    ///   among a held product's, sum's or record type's components, a session
+    ///   type's payloads and a group of outputs' results; the value at `index`
+    ///   among a held tuple's, record's or constructor's fields, the fields a
+    ///   record update writes and a family's arguments, a codata family's
+    ///   included; a fill's generator at 0 and its cells after it; the value at
+    ///   `index` among a primitive's arguments and the computation among a
+    ///   case's or a data case's branches, a handler's operation clauses and an
+    ///   offer's arms; a record's fields, an update's and an offer's arms in
+    ///   label order; none for an index past them, another former, another
+    ///   family or a missing handle.
+    /// - provides: the printer's reading of an n-ary former.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: a record's field is reached by counting through its
+    ///   label-ordered map, linear in the fields before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the golden braces read every component of products
+    ///   and sums of arity one to three, of tuples of arity one to three and of
+    ///   records of two fields, in order, and the computation golden a case's
+    ///   branches and a handler's clauses; a direct read past the arity and of
+    ///   a non-product observes the absence.
+    /// - witness: `tests::goldens::n_ary_products_and_sums_spell_between_their_braces`
+    /// - witness: `tests::goldens::n_ary_tuples_and_injections_spell_between_their_braces`
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
+    /// - witness: `tests::goldens::a_codata_family_spells_as_its_name_applied`
+    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
+        | CoreNode::ValueType(id) => ret == match self.arena.value_type(self.unstaged(id)) {
+            | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
+            | Some(&ValueType::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::ValueType(field)),
+            | Some(&ValueType::Data { ref arguments, .. }) => arguments.get(usize::from(index)).map(|&argument| CoreNode::Value(argument)),
+            | Some(_) | None => ret,
+        },
+        | CoreNode::Value(id) => ret == match self.arena.value(id) {
+            | Some(&(Value::Tuple(ref components) | Value::Compose { cells: ref components, .. })) => components.get(usize::from(index)).map(|&component| CoreNode::Value(component)),
+            | Some(&Value::Fill { generator, ref cells, .. }) => usize::from(index).checked_sub(1_usize)
+                .map_or(Some(CoreNode::Computation(generator)), |cell| cells.get(cell).map(|&cell| CoreNode::Value(cell))),
+            | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
+            | Some(&Value::RecordUpdate { overlay, .. }) => match self.arena.value(overlay) {
+                | Some(&Value::Record(ref fields)) => fields.values().nth(usize::from(index)).map(|&field| CoreNode::Value(field)),
+                | Some(_) | None => None,
+            },
+            | Some(&Value::Constructor { ref fields, .. }) => fields.get(usize::from(index)).map(|&field| CoreNode::Value(field)),
+            | Some(&Value::Recorded(ref moves)) => moves.iter()
+                .filter_map(|step| match step.payload() { Maybe::Present(payload) => Some(CoreNode::Value(payload)), Maybe::Absent(_) => None })
+                .nth(usize::from(index)),
+            | Some(&Value::Dialogue(ref moves)) => moves.iter()
+                .filter_map(|turn| match turn.movement.payload() { Maybe::Present(payload) => Some(CoreNode::Value(payload)), Maybe::Absent(_) => None })
+                .nth(usize::from(index)),
+            | Some(_) | None => None,
+        },
+        | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
+        | CoreNode::CompType(id) => ret == match self.arena.comp_type(id) {
+            | Some(&CompType::Codata { ref arguments, .. }) => arguments.get(usize::from(index)).map(|&argument| CoreNode::Value(argument)),
+            | Some(&CompType::With(ref components)) => components.get(usize::from(index)).map(|&component| CoreNode::CompType(component)),
+            | Some(&CompType::Returns { ref results, .. }) => results.get(usize::from(index)).map(|&result| CoreNode::ValueType(result)),
+            | Some(_) | None => None,
+        },
+    })]
+    #[inline]
+    fn component(
+        &self,
+        node: CoreNode,
+        index: Component,
+    ) -> Option<CoreNode>
+    {
+        let at = usize::from(index);
+        match self.restoration.restored(node) {
+            CoreNode::ValueType(id) => match *self.arena.value_type(self.unstaged(id))? {
+                ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                    parts.get(at).map(|&part| CoreNode::ValueType(part))
+                },
+                ValueType::Record(ref fields) => fields
+                    .values()
+                    .nth(at)
+                    .map(|&field| CoreNode::ValueType(field)),
+                ValueType::Patched { ref fixed, .. } => {
+                    fixed.values().nth(at).map(|&value| CoreNode::Value(value))
+                },
+                ValueType::Session(ref session) => session
+                    .payloads()
+                    .get(at)
+                    .map(|&payload| CoreNode::ValueType(payload)),
+                ValueType::Data { ref arguments, .. } => {
+                    arguments.get(at).map(|&argument| CoreNode::Value(argument))
+                },
+                ValueType::PathUniverse(..)
+                | ValueType::Path { .. }
+                | ValueType::Bridge { .. }
+                | ValueType::Flow { .. }
+                | ValueType::Run(_)
+                | ValueType::Prefix(_)
+                | ValueType::Dialogue(_)
+                | ValueType::Web
+                | ValueType::Base(_)
+                | ValueType::Buffer
+                | ValueType::Qubit
+                | ValueType::Row
+                | ValueType::RowTail(_)
+                | ValueType::List(_)
+                | ValueType::Thunk(_)
+                | ValueType::Universe { .. }
+                | ValueType::Lift { .. }
+                | ValueType::Element { .. }
+                | ValueType::Abstract(_)
+                | ValueType::StaticPi { .. }
+                | ValueType::Sigma { .. }
+                | ValueType::Unknown
+                | ValueType::Stack { .. }
+                | ValueType::Capability { .. }
+                | ValueType::Kept { .. }
+                | ValueType::Staged { .. }
+                | ValueType::World(_) => None,
+            },
+            CoreNode::Value(id) => match *self.arena.value(id)? {
+                Value::Tuple(ref components)
+                | Value::Compose {
+                    cells: ref components,
+                    ..
+                } => components
+                    .get(at)
+                    .map(|&component| CoreNode::Value(component)),
+                Value::Fill {
+                    generator,
+                    ref cells,
+                    ..
+                } => at
+                    .checked_sub(1_usize)
+                    .map_or(Some(CoreNode::Computation(generator)), |cell| {
+                        cells.get(cell).map(|&cell| CoreNode::Value(cell))
+                    }),
+                Value::Record(ref fields) => {
+                    fields.values().nth(at).map(|&field| CoreNode::Value(field))
+                },
+                Value::RecordUpdate { overlay, .. } => {
+                    if let Value::Record(ref fields) = *self.arena.value(overlay)? {
+                        fields.values().nth(at).map(|&field| CoreNode::Value(field))
+                    }
+                    else {
+                        None
+                    }
+                },
+                Value::Constructor { ref fields, .. } => {
+                    fields.get(at).map(|&field| CoreNode::Value(field))
+                },
+                Value::Recorded(ref moves) => moves
+                    .iter()
+                    .filter_map(|step| match step.payload() {
+                        Maybe::Present(payload) => Some(CoreNode::Value(payload)),
+                        Maybe::Absent(_) => None,
+                    })
+                    .nth(at),
+                Value::Dialogue(ref moves) => moves
+                    .iter()
+                    .filter_map(|turn| match turn.movement.payload() {
+                        Maybe::Present(payload) => Some(CoreNode::Value(payload)),
+                        Maybe::Absent(_) => None,
+                    })
+                    .nth(at),
+                Value::Web(_)
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..)
+                | Value::FlowProduct(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..)
+                | Value::Primitive { .. }
+                | Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Univalence(..)
+                | Value::Ua { .. }
+                | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Literal(_)
+                | Value::Injection(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Thunk(_)
+                | Value::Ascribe { .. }
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_)
+                | Value::Row(_) => None,
+            },
+            CoreNode::Computation(id) => match *self.arena.computation(id)? {
+                Computation::Primitive { ref arguments, .. } => {
+                    arguments.get(at).map(|&argument| CoreNode::Value(argument))
+                },
+                Computation::With(ref components) => components
+                    .get(at)
+                    .map(|&component| CoreNode::Computation(component)),
+                Computation::Case { ref branches, .. } => branches
+                    .get(at)
+                    .map(|&branch| CoreNode::Computation(branch)),
+                Computation::DataCase { ref branches, .. } => branches
+                    .get(at)
+                    .map(|&branch| CoreNode::Computation(branch)),
+                Computation::Handle { ref clauses, .. }
+                | Computation::Scope { ref clauses, .. } => clauses
+                    .get(at)
+                    .map(|clause| CoreNode::Computation(clause.body)),
+                Computation::Session(SessionAction::Offer { ref arms, .. }) => {
+                    arms.values().nth(at).map(|&arm| CoreNode::Computation(arm))
+                },
+                Computation::Session(
+                    SessionAction::Send { .. }
+                    | SessionAction::Receive { .. }
+                    | SessionAction::Select { .. }
+                    | SessionAction::Close { .. }
+                    | SessionAction::Fork { .. }
+                    | SessionAction::Place { .. },
+                )
+                | Computation::Memory(_)
+                | Computation::World(_)
+                | Computation::Transport(..)
+                | Computation::PathTransport { .. }
+                | Computation::TelescopeTransport { .. }
+                | Computation::Ride { .. }
+                | Computation::Lambda(_)
+                | Computation::LinearLambda(_)
+                | Computation::Fixpoint { .. }
+                | Computation::Application(..)
+                | Computation::Return(_)
+                | Computation::Bind(..)
+                | Computation::Force(_)
+                | Computation::Decompose(_)
+                | Computation::Split { .. }
+                | Computation::RecordProjection(..)
+                | Computation::TupleProjection(..)
+                | Computation::Hole(_)
+                | Computation::Mark { .. }
+                | Computation::ListFold { .. }
+                | Computation::ListCase { .. }
+                | Computation::Ascribe { .. }
+                | Computation::Perform { .. }
+                | Computation::Exercise { .. }
+                | Computation::Resume(..)
+                | Computation::Abandon(_)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::Project(..)
+                | Computation::ReturnAll(_)
+                | Computation::BindAll { .. } => None,
+            },
+            CoreNode::CompType(id) => match *self.arena.comp_type(id)? {
+                CompType::Codata { ref arguments, .. } => {
+                    arguments.get(at).map(|&argument| CoreNode::Value(argument))
+                },
+                CompType::With(ref components) => components
+                    .get(at)
+                    .map(|&component| CoreNode::CompType(component)),
+                CompType::Returns { ref results, .. } => {
+                    results.get(at).map(|&result| CoreNode::ValueType(result))
+                },
+                CompType::Unknown
+                | CompType::Returner { .. }
+                | CompType::Arrow { .. }
+                | CompType::Pi { .. }
+                | CompType::LinearArrow { .. }
+                | CompType::Element { .. } => None,
+            },
+        }
+    }
+
+    /// The label of entry `index` of the record, the record update, the record
+    /// type, the handler, the offer, the sum or the lazy product `node` names
+    /// in the arena.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: of the node `node` restores to, the label at `index` among a
+    ///   held record's or record type's fields, the fields a record update
+    ///   writes and an offer's arms, in label order, the operation a handler's
+    ///   clause at `index` answers, and the label the source writes for a sum's
+    ///   summand or a lazy product's entry at `index`; none for an index past
+    ///   them, a sum or lazy product the source writes at positions, another
+    ///   former, another family or a missing handle.
+    /// - provides: the printer's reading of a record's labels, a handler's
+    ///   operations, an offer's labels and the labels a sum and a lazy record
+    ///   type are written over.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: as [`Self::component`], linear in the fields before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — records and record types of two fields written out of
+    ///   label order spell each field under its own label, and a handler's
+    ///   clause its operation; a sum and a lazy record type written over labels
+    ///   spell each entry under its label; a direct read past the fields and of
+    ///   a tuple observes the absence.
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_sum_and_a_lazy_record_spell_their_written_labels_4395`
+    /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
+    #[spec(captures: restored = self.restoration.restored(node), ensures: |ret| match restored {
+        | CoreNode::ValueType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value_type(self.unstaged(id)) {
+            | Some(&ValueType::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+            | Some(&ValueType::Patched { ref fixed, .. }) => fixed.keys().nth(usize::from(index)).map(AsRef::as_ref),
+            | Some(&ValueType::Sum(ref parts)) => entry_label(&self.forms.sum_labels, id, Arity::from(parts.len()), index).map(AsRef::as_ref),
+            | Some(_) | None => None,
+        },
+        | CoreNode::Value(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.value(id) {
+            | Some(&Value::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+            | Some(&Value::RecordUpdate { overlay, .. }) => match self.arena.value(overlay) {
+                | Some(&Value::Record(ref fields)) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+                | Some(_) | None => None,
+            },
+            | Some(_) | None => None,
+        },
+        | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
+        | CoreNode::CompType(id) => ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.arena.comp_type(id) {
+            | Some(&CompType::With(ref components)) => entry_label(&self.forms.with_labels, id, Arity::from(components.len()), index).map(AsRef::as_ref),
+            | Some(_) | None => None,
+        },
+    })]
+    #[inline]
+    fn label(
+        &self,
+        node: CoreNode,
+        index: Component,
+    ) -> Option<Name<'_>>
+    {
+        let at = usize::from(index);
+        let label: &str = match self.restoration.restored(node) {
+            CoreNode::ValueType(id) => match *self.arena.value_type(self.unstaged(id))? {
+                ValueType::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                ValueType::Patched { ref fixed, .. } => fixed.keys().nth(at).map(AsRef::as_ref),
+                ValueType::Sum(ref parts) => {
+                    entry_label(&self.forms.sum_labels, id, Arity::from(parts.len()), index)
+                        .map(AsRef::as_ref)
+                },
+                ValueType::Data { .. }
+                | ValueType::PathUniverse(..)
+                | ValueType::Path { .. }
+                | ValueType::Bridge { .. }
+                | ValueType::Flow { .. }
+                | ValueType::Run(_)
+                | ValueType::Prefix(_)
+                | ValueType::Dialogue(_)
+                | ValueType::Web
+                | ValueType::Base(_)
+                | ValueType::Buffer
+                | ValueType::Qubit
+                | ValueType::Row
+                | ValueType::RowTail(_)
+                | ValueType::Product(_)
+                | ValueType::List(_)
+                | ValueType::Thunk(_)
+                | ValueType::Universe { .. }
+                | ValueType::Lift { .. }
+                | ValueType::Element { .. }
+                | ValueType::Abstract(_)
+                | ValueType::StaticPi { .. }
+                | ValueType::Sigma { .. }
+                | ValueType::Unknown
+                | ValueType::Stack { .. }
+                | ValueType::Session(_)
+                | ValueType::Capability { .. }
+                | ValueType::Kept { .. }
+                | ValueType::Staged { .. }
+                | ValueType::World(_) => None,
+            },
+            CoreNode::Value(id) => match *self.arena.value(id)? {
+                Value::Record(ref fields) => fields.keys().nth(at).map(AsRef::as_ref),
+                Value::RecordUpdate { overlay, .. } => {
+                    if let Value::Record(ref fields) = *self.arena.value(overlay)? {
+                        fields.keys().nth(at).map(AsRef::as_ref)
+                    }
+                    else {
+                        None
+                    }
+                },
+                Value::Primitive { .. }
+                | Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Univalence(..)
+                | Value::Ua { .. }
+                | Value::Returned(_)
+                | Value::Compose { .. }
+                | Value::Fill { .. }
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Literal(_)
+                | Value::Tuple(_)
+                | Value::Injection(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Thunk(_)
+                | Value::Ascribe { .. }
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Constructor { .. }
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_)
+                | Value::Recorded(_)
+                | Value::Dialogue(_)
+                | Value::Web(_)
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..)
+                | Value::FlowProduct(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..)
+                | Value::Row(_) => None,
+            },
+            CoreNode::Computation(id) => match *self.arena.computation(id)? {
+                Computation::Handle { ref clauses, .. }
+                | Computation::Scope { ref clauses, .. } => {
+                    clauses.get(at).map(|clause| clause.operation.as_ref())
+                },
+                Computation::Session(SessionAction::Offer { ref arms, .. }) => {
+                    arms.keys().nth(at).map(AsRef::as_ref)
+                },
+                Computation::Session(
+                    SessionAction::Send { .. }
+                    | SessionAction::Receive { .. }
+                    | SessionAction::Select { .. }
+                    | SessionAction::Close { .. }
+                    | SessionAction::Fork { .. }
+                    | SessionAction::Place { .. },
+                )
+                | Computation::Memory(_)
+                | Computation::World(_)
+                | Computation::Primitive { .. }
+                | Computation::Transport(..)
+                | Computation::PathTransport { .. }
+                | Computation::TelescopeTransport { .. }
+                | Computation::Ride { .. }
+                | Computation::Lambda(_)
+                | Computation::LinearLambda(_)
+                | Computation::Fixpoint { .. }
+                | Computation::Application(..)
+                | Computation::Return(_)
+                | Computation::Bind(..)
+                | Computation::ReturnAll(_)
+                | Computation::BindAll { .. }
+                | Computation::Force(_)
+                | Computation::Decompose(_)
+                | Computation::Case { .. }
+                | Computation::Split { .. }
+                | Computation::DataCase { .. }
+                | Computation::RecordProjection(..)
+                | Computation::TupleProjection(..)
+                | Computation::Hole(_)
+                | Computation::Mark { .. }
+                | Computation::ListFold { .. }
+                | Computation::ListCase { .. }
+                | Computation::Perform { .. }
+                | Computation::Exercise { .. }
+                | Computation::Resume(..)
+                | Computation::Abandon(_)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::With(..)
+                | Computation::Ascribe { .. }
+                | Computation::Project(..) => None,
+            },
+            CoreNode::CompType(id) => match *self.arena.comp_type(id)? {
+                CompType::With(ref components) => entry_label(
+                    &self.forms.with_labels,
+                    id,
+                    Arity::from(components.len()),
+                    index,
+                )
+                .map(AsRef::as_ref),
+                CompType::Unknown
+                | CompType::Codata { .. }
+                | CompType::Returner { .. }
+                | CompType::Returns { .. }
+                | CompType::Arrow { .. }
+                | CompType::Pi { .. }
+                | CompType::LinearArrow { .. }
+                | CompType::Element { .. } => None,
+            },
+        }?;
+        Some(Name::from(label))
+    }
+
+    /// The constructor of the family the data case `node` eliminates at tag
+    /// `index`, its field count and its placement.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a held data case the constructor table records a family
+    ///   for, the family's constructor at `index` as a pattern names it; for a
+    ///   held data case the table does not record, whose scrutinee is a
+    ///   constructor, the same of the constructor's family; none otherwise.
+    /// - provides: a data case's patterns, a case the checker builds at a
+    ///   constructor among them.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Source::constructor`], and a case the table does
+    ///   not record names its arm by its constructor's family.
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_case_over_words_writes_each_arm_as_the_surface_does_815`
+    /// - witness: `core_source::tests::a_case_over_a_constructor_names_its_arm_by_the_constructor_s_family_6548`
+    #[spec(ensures: |ret| ret.is_none() || matches!(self.restoration.restored(node), CoreNode::Computation(_)))]
+    #[inline]
+    fn constructor(
+        &self,
+        node: CoreNode,
+        index: Component,
+    ) -> Option<(Name<'_>, Arity, crate::Placement)>
+    {
+        let CoreNode::Computation(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let family = self.constructors.cases.get(&id).copied().or_else(|| {
+            let &Computation::DataCase { scrutinee, .. } = self.arena.computation(id)?
+            else {
+                return None;
+            };
+            let &Value::Constructor { family, .. } = self.arena.value(scrutinee)?
+            else {
+                return None;
+            };
+            self.family(family)
+        })?;
+        let (name, arity) = self.constructors.arm(family, index)?;
+        Some((name, arity, self.constructors.placement(family, arity)))
+    }
+
+    /// The motive of a split that reads its scrutinee.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the computation type a held split that reads its scrutinee
+    ///   checks its body against; none for any other node.
+    /// - provides: as [`Source::split_motive`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Source::split_motive`].
+    /// - witness: `scope::tests::a_dependent_split_s_motive_stands_under_its_binder`
+    #[spec(ensures: |ret| ret.is_none_or(|motive| matches!(motive, CoreNode::CompType(_))))]
+    #[inline]
+    fn split_motive(
+        &self,
+        node: CoreNode,
+    ) -> Option<CoreNode>
+    {
+        let CoreNode::Computation(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let Computation::Split {
+            motive: SplitMotive::Scrutinee(motive),
+            ..
+        } = *self.arena.computation(id)?
+        else {
+            return None;
+        };
+        Some(CoreNode::CompType(motive))
+    }
+
+    /// The names of the binders the root stands under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn context(&self) -> &[Option<Name<'_>>]
+    {
+        self.context
+    }
+
+    /// The types the binders the root stands under bind.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn context_types(&self) -> &[Option<CoreNode>]
+    {
+        self.context_types
+    }
+
+    /// The recursive definition's own binder in the context, and its claim.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn recursive(&self) -> Option<Recursive>
+    {
+        self.recursive
+    }
+
+    /// The telescope of the recursive definition the root stands in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn recursive_telescope(&self) -> &[Option<Name<'_>>]
+    {
+        self.recursive_telescope
+    }
+
+    /// The names of the capability scopes the root stands in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn regions(&self) -> &[Option<Name<'_>>]
+    {
+        self.regions
+    }
+
+    /// The names of the region binders of the definition the root belongs
+    /// to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn region_binders(&self) -> &[Option<Name<'_>>]
+    {
+        self.binders
+    }
+
+    /// The name the source writes for a dependent arrow's, a dependent
+    /// pair's, a lambda's or a bind's binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn written_binder(
+        &self,
+        node: CoreNode,
+    ) -> Option<Name<'_>>
+    {
+        match self.restoration.restored(node) {
+            CoreNode::CompType(id) => written(&self.forms.arrows, id),
+            CoreNode::ValueType(id) => written(&self.forms.pairs, id),
+            CoreNode::Computation(id) => written(self.openers, id),
+            CoreNode::Value(_) => None,
+        }
+    }
+
+    /// The label the source writes for a dependent pair's second component.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn second_label(
+        &self,
+        node: CoreNode,
+    ) -> Option<Name<'_>>
+    {
+        let CoreNode::ValueType(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        written(&self.forms.seconds, id)
+    }
+
+    /// The name recorded for the homed head `head`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn homed(
+        &self,
+        head: Name<'_>,
+    ) -> Option<Name<'_>>
+    {
+        self.homes
+            .iter()
+            .find_map(|&(bare, written)| (bare.as_ref() == head.as_ref()).then_some(written))
+    }
+
+    /// The reduct recorded at a crossed value, named by its admission
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reduct(
+        &self,
+        node: CoreNode,
+    ) -> Option<(Name<'_>, ConstantIndex)>
+    {
+        let CoreNode::Value(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let at = self
+            .crossings
+            .binary_search_by_key(&id, |&(crossed, _)| crossed)
+            .ok()?;
+        let &(_, reduct) = self.crossings.get(at)?;
+        Some((self.name(reduct)?, reduct))
+    }
+
+    /// The forgetting map recorded at a crossed value, its theory named by
+    /// its admission position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn forgotten(
+        &self,
+        node: CoreNode,
+    ) -> Option<Forgotten<'_, CoreNode>>
+    {
+        let CoreNode::Value(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let at = self
+            .forgettings
+            .binary_search_by_key(&id, |&(crossed, _)| crossed)
+            .ok()?;
+        let &(_, ref forgetting) = self.forgettings.get(at)?;
+        Some(Forgotten {
+            theory: (self.name(forgetting.theory)?, forgetting.theory),
+            sorts: &forgetting.sorts,
+        })
+    }
+
+    /// A nested call or a run applying a forced constant `maps` records,
+    /// every carrier it passes a quote, read as the map and the model it is
+    /// applied to.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// Every turn reads one application nearer the spine's head, a finite
+    /// term.
+    ///
+    /// # Cost
+    /// - allocation: the spine's arguments and the map's sorts, growth within
+    ///   the call's spine
+    #[inline]
+    fn forget_call(
+        &self,
+        node: CoreNode,
+    ) -> Option<ForgetCall<'_, CoreNode>>
+    {
+        let CoreNode::Value(id) = node
+        else {
+            return None;
+        };
+        let (&Value::Nested(call) | &Value::Run(call)) = self.arena.value(id)?
+        else {
+            return None;
+        };
+        // The spine's arguments from its last: the model, then each carrier
+        // from the last.
+        let mut arguments = Vec::new();
+        let mut function = call;
+        let callee = loop {
+            let computation = self.arena.computation(function)?;
+            if let &Computation::Application(inner, argument) = computation {
+                arguments.push(argument);
+                function = inner;
+                continue;
+            }
+            let &Computation::Force(callee) = computation
+            else {
+                return None;
+            };
+            break callee;
+        };
+        let &Value::Constant(map) = self.arena.value(callee)?
+        else {
+            return None;
+        };
+        let at = self
+            .maps
+            .binary_search_by_key(&map, |&(held, _)| held)
+            .ok()?;
+        let &(_, ref forgetting) = self.maps.get(at)?;
+        arguments.reverse();
+        let (&model, carriers) = arguments.split_last()?;
+        if carriers.len() != forgetting.sorts.len() {
+            return None;
+        }
+        let sorts = forgetting
+            .sorts
+            .iter()
+            .zip(carriers)
+            .map(|(&sort, &carrier)| match self.arena.value(carrier) {
+                Some(&Value::Quote(quoted)) => Some((sort, CoreNode::ValueType(quoted))),
+                Some(_) | None => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(ForgetCall {
+            theory: (self.name(forgetting.theory)?, forgetting.theory),
+            sorts,
+            model: CoreNode::Value(model),
+        })
+    }
+
+    /// The last argument of a nested call or a run applying a forced
+    /// constant `implied` holds: a reduct's one argument, a forgetting map's
+    /// model after its carriers.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// Every turn reads one application nearer the spine's head, a finite
+    /// term.
+    #[inline]
+    fn implied(
+        &self,
+        node: CoreNode,
+    ) -> Option<CoreNode>
+    {
+        let CoreNode::Value(id) = node
+        else {
+            return None;
+        };
+        let (&Value::Nested(call) | &Value::Run(call)) = self.arena.value(id)?
+        else {
+            return None;
+        };
+        let &Computation::Application(mut function, argument) = self.arena.computation(call)?
+        else {
+            return None;
+        };
+        let callee = loop {
+            let computation = self.arena.computation(function)?;
+            if let &Computation::Application(inner, _) = computation {
+                function = inner;
+                continue;
+            }
+            let &Computation::Force(callee) = computation
+            else {
+                return None;
+            };
+            break callee;
+        };
+        let &Value::Constant(map) = self.arena.value(callee)?
+        else {
+            return None;
+        };
+        self.implied
+            .binary_search(&map)
+            .is_ok()
+            .then_some(CoreNode::Value(argument))
+    }
+
+    /// The telescope of the constant `head` reads as, through any
+    /// restoration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn implicits(
+        &self,
+        head: CoreNode,
+    ) -> &[Option<Name<'_>>]
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return &[];
+        };
+        match self.arena.value(id) {
+            Some(&Value::Constant(constant)) => self.telescope(constant),
+            Some(_) | None => &[],
+        }
+    }
+
+    /// The written block of the constant `head` reads as, through any
+    /// restoration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn written_implicits(
+        &self,
+        head: CoreNode,
+    ) -> &[Name<'_>]
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return &[];
+        };
+        match self.arena.value(id) {
+            Some(&Value::Constant(constant)) => self.block(constant),
+            Some(_) | None => &[],
+        }
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn model_slots(
+        &self,
+        head: CoreNode,
+    ) -> &[ModelSlot<'_, CoreNode>]
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return &[];
+        };
+        match self.arena.value(id) {
+            Some(&Value::Constant(constant)) => self.slots(constant),
+            Some(_) | None => &[],
+        }
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn operator(
+        &self,
+        head: CoreNode,
+    ) -> Option<gandr_core_term::primitive::Operator>
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return None;
+        };
+        let Some(&Value::Constant(constant)) = self.arena.value(id)
+        else {
+            return None;
+        };
+        self.operators
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.operators.get(at))
+            .map(|&(_, operator)| operator)
+    }
+}
+
+/// The name `names` holds for `id`, ascending by id.
+///
+/// # Specification
+/// trivial.
+fn written<'arena, Id>(
+    names: &[(Id, Name<'arena>)],
+    id: Id,
+) -> Option<Name<'arena>>
+where
+    Id: Ord + Copy,
+{
+    names
+        .binary_search_by_key(&id, |&(held, _)| held)
+        .ok()
+        .and_then(|at| names.get(at))
+        .map(|&(_, name)| name)
+}
+
+/// The label `labels` holds for entry `at` of the former `id` names, when it
+/// holds one label per entry of its `arity`.
+///
+/// # Specification
+/// trivial.
+fn entry_label<'held, 'name, Id>(
+    labels: &'held [(Id, Vec<Name<'name>>)],
+    id: Id,
+    arity: Arity,
+    at: Component,
+) -> Option<&'held Name<'name>>
+where
+    Id: Ord + Copy,
+{
+    let &(_, ref written) = labels
+        .binary_search_by_key(&id, |&(held, _)| held)
+        .ok()
+        .and_then(|position| labels.get(position))
+        .filter(|&&(_, ref written)| written.len() == usize::from(arity))?;
+    written.get(usize::from(at))
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+    use alloc::string::ToString as _;
+    use alloc::vec::Vec;
+
+    use gandr_core_term::ValueTypeId;
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::FieldLabel;
+
+    use super::Arity;
+    use super::Component;
+    use super::ConstantIndex;
+    use super::Constructors;
+    use super::CoreArena;
+    use super::CoreNode;
+    use super::CoreSource;
+    use super::FamilyKey;
+    use super::Former;
+    use super::Name;
+    use super::Source as _;
+    use super::Unreadable;
+    use super::WrittenForms;
+
+    /// Node families retain child order and refuse handles dropped by
+    /// truncation.
+    #[test]
+    fn family_reads_preserve_children_and_reject_truncation()
+    {
+        let mut arena = CoreArena::new();
+        let mark = arena.watermark();
+        let first = arena.value_unit();
+        let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+        let pair = arena.value_tuple(&[first, second]);
+        let computation = arena.computation_return(first);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
+        let source = CoreSource::new(&arena, &[]);
+        assert!(matches!(
+            source.read(CoreNode::Value(pair)),
+            Former::Tuple(arity) if usize::from(arity) == 2
+        ));
+        assert_eq!(
+            [
+                Some(CoreNode::Value(first)),
+                Some(CoreNode::Value(second)),
+                None
+            ],
+            [0_usize, 1, 2]
+                .map(|index| source.component(CoreNode::Value(pair), Component::from(index))),
+            "a tuple's components read in order and stop at its arity"
+        );
+        assert!(matches!(
+            source.read(CoreNode::Computation(computation)),
+            Former::Return(value) if value == CoreNode::Value(first)
+        ));
+        assert!(matches!(
+            source.read(CoreNode::ValueType(value_type)),
+            Former::Product(arity) if usize::from(arity) == 0
+        ));
+        assert!(
+            matches!(source.read(CoreNode::CompType(comp_type)), Former::Returner(body)
+            if body == CoreNode::ValueType(value_type))
+        );
+        arena.truncate_to(mark);
+        let source = CoreSource::new(&arena, &[]);
+        for node in [
+            CoreNode::Value(pair),
+            CoreNode::Computation(computation),
+            CoreNode::ValueType(value_type),
+            CoreNode::CompType(comp_type),
+        ] {
+            assert!(matches!(
+                source.read(node),
+                Former::Unreadable(Unreadable::Dangling)
+            ));
+        }
+    }
+
+    /// A staged type reads as the type it refines: a stage is the recursion
+    /// typing's own, and its components are the refined type's.
+    #[test]
+    fn a_staged_type_reads_as_the_type_it_refines()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let product = arena.value_type_product(&[integer, string]);
+        let staged = arena.value_type_staged(
+            product,
+            gandr_kernel_term::Stage::At(gandr_kernel_term::StageId::from(0_usize)),
+        );
+        let source = CoreSource::new(&arena, &[]);
+        assert!(matches!(
+            source.read(CoreNode::ValueType(staged)),
+            Former::Product(arity) if usize::from(arity) == 2
+        ));
+        assert_eq!(
+            source.component(CoreNode::ValueType(staged), Component::from(1_usize)),
+            Some(CoreNode::ValueType(string))
+        );
+    }
+
+    /// #7906: inside a definition over stages, a type at a binder's stage
+    /// reads as staged at that binder's name, and one step below it as
+    /// staged below. A stage two steps below, or one no binder names, reads
+    /// as the type it refines, which the surface writes with no stage.
+    #[test]
+    fn a_type_at_a_binder_s_stage_reads_as_staged_at_its_name_7906()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let stage = |ordinal: usize| gandr_kernel_term::StageId::from(ordinal);
+        let one = gandr_kernel_term::StageDepth::ONE;
+        let two =
+            gandr_kernel_term::StageDepth::from(core::num::NonZeroU32::MIN.saturating_add(1_u32));
+        let at = arena.value_type_staged(integer, gandr_kernel_term::Stage::At(stage(1)));
+        let below = arena.value_type_staged(integer, gandr_kernel_term::Stage::Below {
+            anchor: stage(0),
+            depth: one,
+        });
+        let deeper = arena.value_type_staged(integer, gandr_kernel_term::Stage::Below {
+            anchor: stage(0),
+            depth: two,
+        });
+        let unnamed = arena.value_type_staged(integer, gandr_kernel_term::Stage::At(stage(2)));
+        let binders = [
+            super::WrittenStage {
+                name: Name::from("j"),
+                bound: gandr_kernel_term::StageBound::Unbounded,
+            },
+            super::WrittenStage {
+                name: Name::from("k"),
+                bound: gandr_kernel_term::StageBound::Below(gandr_kernel_term::StageBinder::from(
+                    0_usize,
+                )),
+            },
+        ];
+        let source = CoreSource::new(&arena, &[]).staged(&binders);
+        assert!(matches!(
+            source.read(CoreNode::ValueType(at)),
+            Former::Staged { inner, stage, reach: gandr_kernel_term::StageReach::At }
+                if inner == CoreNode::ValueType(integer) && stage.as_ref() == "k"
+        ));
+        assert!(matches!(
+            source.read(CoreNode::ValueType(below)),
+            Former::Staged { inner, stage, reach: gandr_kernel_term::StageReach::Below(depth) }
+                if inner == CoreNode::ValueType(integer) && stage.as_ref() == "j" && depth == one
+        ));
+        for unwritten in [deeper, unnamed] {
+            assert!(matches!(
+                source.read(CoreNode::ValueType(unwritten)),
+                Former::BaseType(BaseType::Integer)
+            ));
+        }
+    }
+
+    /// A patched type reads as its base, then each value it fixes in label
+    /// order, under its label. A base a type member names reads as the
+    /// member's name, and the type is written over the name.
+    #[test]
+    fn a_patched_type_reads_as_its_base_and_its_fixed_values()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let label = |name: &str| FieldLabel::from(String::from(name));
+        let record = arena.value_type_record(BTreeMap::from([
+            (label("host"), string),
+            (label("port"), integer),
+            (label("tls"), integer),
+        ]));
+        let port = arena.value_unit();
+        let tls = arena.value_tuple(&[port]);
+        let patched = arena.value_type_patched(
+            record,
+            BTreeMap::from([(label("tls"), tls), (label("port"), port)]),
+        );
+        let source = CoreSource::new(&arena, &[]);
+        let node = CoreNode::ValueType(patched);
+        assert!(matches!(
+            source.read(node),
+            Former::Patched(base, arity)
+                if base == CoreNode::ValueType(record) && usize::from(arity) == 2
+        ));
+        assert_eq!(
+            source.component(node, Component::from(1_usize)),
+            Some(CoreNode::Value(tls))
+        );
+        assert_eq!(
+            source
+                .label(node, Component::from(1_usize))
+                .map(|name| String::from(name.as_ref())),
+            Some(String::from("tls"))
+        );
+        assert_eq!(source.component(node, Component::from(2_usize)), None);
+        let members = WrittenForms {
+            members: Vec::from([(record, Name::from("Config"))]),
+            ..WrittenForms::new()
+        };
+        let named = CoreSource::new(&arena, &[]).writing(&members);
+        assert!(matches!(
+            named.read(CoreNode::ValueType(record)),
+            Former::Member(name) if name.as_ref() == "Config"
+        ));
+        let printed = crate::present_type(
+            &named,
+            node,
+            crate::PageWidth::from(100_u32),
+            crate::Form::Explicit.into(),
+        )
+        .map(|printed| String::from(printed.as_ref()));
+        assert_eq!(
+            printed.ok().as_deref(),
+            Some("Config.#{.port = *{}, .tls = *{*{}}}"),
+            "the base is written by the member's name"
+        );
+    }
+
+    /// A product's, a sum's and a record's components read in order, a
+    /// record's fields and labels in label order whatever order they were
+    /// given in, and nothing reads past the arity or below another former.
+    #[test]
+    fn components_read_in_order_and_stop_at_the_arity()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let unit = arena.value_type_product(&[]);
+        let product = arena.value_type_product(&[integer, string, unit]);
+        let sum = arena.value_type_sum(&[string, integer]);
+        let returns = arena.comp_type_returner(product);
+        let record_type = arena.value_type_record(BTreeMap::from([
+            (FieldLabel::from(String::from("b")), string),
+            (FieldLabel::from(String::from("a")), integer),
+        ]));
+        let first = arena.value_unit();
+        let second = arena.value_tuple(&[first]);
+        let record = arena.value_record(BTreeMap::from([
+            (FieldLabel::from(String::from("y")), second),
+            (FieldLabel::from(String::from("x")), first),
+        ]));
+        let source = CoreSource::new(&arena, &[]);
+        let read = |node: ValueTypeId, index: usize| {
+            source.component(CoreNode::ValueType(node), Component::from(index))
+        };
+        let labels = |node: CoreNode| {
+            [0_usize, 1, 2].map(|index| {
+                source
+                    .label(node, Component::from(index))
+                    .map(|label| String::from(label.as_ref()))
+            })
+        };
+        assert!(matches!(
+            source.read(CoreNode::ValueType(product)),
+            Former::Product(arity) if usize::from(arity) == 3
+        ));
+        assert_eq!(
+            [
+                read(product, 0),
+                read(product, 1),
+                read(product, 2),
+                read(product, 3)
+            ],
+            [
+                Some(CoreNode::ValueType(integer)),
+                Some(CoreNode::ValueType(string)),
+                Some(CoreNode::ValueType(unit)),
+                None
+            ]
+        );
+        assert_eq!([read(sum, 0), read(sum, 1), read(sum, 2)], [
+            Some(CoreNode::ValueType(string)),
+            Some(CoreNode::ValueType(integer)),
+            None
+        ]);
+        assert_eq!(
+            [
+                read(record_type, 0),
+                read(record_type, 1),
+                read(record_type, 2)
+            ],
+            [
+                Some(CoreNode::ValueType(integer)),
+                Some(CoreNode::ValueType(string)),
+                None
+            ],
+            "a record type's fields read in label order"
+        );
+        assert_eq!(
+            [0_usize, 1, 2]
+                .map(|index| source.component(CoreNode::Value(record), Component::from(index))),
+            [
+                Some(CoreNode::Value(first)),
+                Some(CoreNode::Value(second)),
+                None
+            ],
+            "a record's fields read in label order"
+        );
+        assert_eq!(
+            labels(CoreNode::ValueType(record_type)),
+            [Some(String::from("a")), Some(String::from("b")), None],
+            "a record type's labels read in label order and stop at its fields"
+        );
+        assert_eq!(
+            labels(CoreNode::Value(record)),
+            [Some(String::from("x")), Some(String::from("y")), None],
+            "a record's labels read in label order and stop at its fields"
+        );
+        assert_eq!(
+            labels(CoreNode::ValueType(product)),
+            [None, None, None],
+            "a product has no labels"
+        );
+        assert_eq!(
+            labels(CoreNode::Value(second)),
+            [None, None, None],
+            "a tuple has no labels"
+        );
+        assert_eq!(read(unit, 0), None, "the unit has no component");
+        assert_eq!(read(integer, 0), None, "a base type has no component");
+        assert_eq!(
+            source.component(CoreNode::CompType(returns), Component::from(0_usize)),
+            None,
+            "a computation type has no component"
+        );
+    }
+
+    /// Admission position, not the first available name, governs both named
+    /// formers.
+    #[test]
+    fn names_use_admission_positions_and_refuse_the_exact_end()
+    {
+        let mut arena = CoreArena::new();
+        let constant = arena.value_constant(ConstantIndex::from(1_usize));
+        let abstract_type = arena.value_type_abstract(ConstantIndex::from(1_usize));
+        let names = [Name::from("Other"), Name::from("Chosen")];
+        let source = CoreSource::new(&arena, &names);
+        assert!(
+            matches!(source.read(CoreNode::Value(constant)), Former::Constant(name)
+            if name.as_ref() == "Chosen")
+        );
+        assert!(
+            matches!(source.read(CoreNode::ValueType(abstract_type)), Former::Abstract(name)
+            if name.as_ref() == "Chosen")
+        );
+        let source = CoreSource::new(&arena, &names[.. 1]);
+        assert!(matches!(
+            source.read(CoreNode::Value(constant)),
+            Former::Unreadable(Unreadable::Unnamed)
+        ));
+        assert!(matches!(
+            source.read(CoreNode::ValueType(abstract_type)),
+            Former::Unreadable(Unreadable::Unnamed)
+        ));
+    }
+
+    /// A hole, a mark and the unknown type have no source spelling; their
+    /// neighbours keep theirs.
+    #[test]
+    fn holes_marks_and_the_unknown_type_read_as_unreadable()
+    {
+        let mut arena = CoreArena::new();
+        let unit = arena.value_unit();
+        let hole = arena.value_hole(gandr_core_term::hole::HoleId::from(0_u32));
+        let marked = arena.value_mark(gandr_core_term::hole::MarkIndex::from(0_u32), unit);
+        let returned = arena.computation_return(unit);
+        let computation_hole = arena.computation_hole(gandr_core_term::hole::HoleId::from(1_u32));
+        let computation_mark =
+            arena.computation_mark(gandr_core_term::hole::MarkIndex::from(1_u32), returned);
+        let unknown = arena.value_type_unknown();
+        let unknown_computation = arena.comp_type_unknown();
+        let source = CoreSource::new(&arena, &[]);
+        for (node, reason) in [
+            (CoreNode::Value(hole), Unreadable::Hole),
+            (CoreNode::Value(marked), Unreadable::Mark),
+            (CoreNode::Computation(computation_hole), Unreadable::Hole),
+            (CoreNode::Computation(computation_mark), Unreadable::Mark),
+            (CoreNode::ValueType(unknown), Unreadable::UnknownType),
+            (
+                CoreNode::CompType(unknown_computation),
+                Unreadable::UnknownType,
+            ),
+        ] {
+            assert!(
+                matches!(source.read(node), Former::Unreadable(read) if read == reason),
+                "{node:?}"
+            );
+        }
+        assert!(matches!(source.read(CoreNode::Value(unit)), Former::Unit));
+        assert!(matches!(
+            source.read(CoreNode::Computation(returned)),
+            Former::Return(value) if value == CoreNode::Value(unit)
+        ));
+    }
+
+    /// A group of outputs whose results read no result before them reads as
+    /// its returner, each result a component; one whose second result reads
+    /// the first is a many-value former the surface does not yet write.
+    #[test]
+    fn a_group_of_outputs_reads_as_its_returner_unless_one_reads_another()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let closed = arena.comp_type_returns_with_effects(
+            &[integer, string],
+            gandr_core_term::effect::EffectRow::EMPTY,
+        );
+        let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let reading = arena.value_type_path(integer, first, first);
+        let dependent = arena.comp_type_returns_with_effects(
+            &[integer, reading],
+            gandr_core_term::effect::EffectRow::EMPTY,
+        );
+        let source = CoreSource::new(&arena, &[]);
+        assert!(
+            matches!(source.read(CoreNode::CompType(closed)), Former::Returns(arity) if usize::from(arity) == 2),
+            "two closed results read as their returner"
+        );
+        assert_eq!(
+            [0_usize, 1, 2]
+                .map(|index| source.component(CoreNode::CompType(closed), Component::from(index))),
+            [
+                Some(CoreNode::ValueType(integer)),
+                Some(CoreNode::ValueType(string)),
+                None
+            ],
+            "each result is a component, in order"
+        );
+        assert!(
+            matches!(
+                source.read(CoreNode::CompType(dependent)),
+                Former::Unreadable(Unreadable::SeveralResults)
+            ),
+            "a result reading the one before it names a binder no group writes"
+        );
+    }
+
+    /// A flow whose carrier decodes a nominated hole reads with no carrier,
+    /// as the source omitted it, and one over a written hole keeps it.
+    #[test]
+    fn an_omitted_flow_carrier_reads_as_nothing_4932()
+    {
+        let mut arena = CoreArena::new();
+        let point = arena.value_unit();
+        let nominated = gandr_core_term::hole::HoleId::nominated(
+            gandr_core_term::hole::NominationIndex::from(0_u32),
+        )
+        .expect("the first nomination names a hole");
+        let mut flow_over = |hole| {
+            let code = arena.value_hole(hole);
+            let carrier = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
+            (carrier, arena.value_type_flow(carrier, point, point))
+        };
+        let (_, omitted) = flow_over(nominated);
+        let (written_carrier, written) = flow_over(gandr_core_term::hole::HoleId::from(0_u32));
+        let source = CoreSource::new(&arena, &[]);
+        assert!(matches!(
+            source.read(CoreNode::ValueType(omitted)),
+            Former::Flow { carrier: None, left, right }
+                if left == CoreNode::Value(point) && right == CoreNode::Value(point)
+        ));
+        assert!(matches!(
+            source.read(CoreNode::ValueType(written)),
+            Former::Flow { carrier: Some(carrier), .. }
+                if carrier == CoreNode::ValueType(written_carrier)
+        ));
+    }
+
+    /// An elaborated body reads as the body it was elaborated from through
+    /// its restoration, and as the bind the elaboration minted without it.
+    #[test]
+    fn a_restored_elaboration_reads_as_written()
+    {
+        let mut arena = CoreArena::new();
+        let constant = arena.value_constant(ConstantIndex::from(0_usize));
+        let forced = arena.computation_force(constant);
+        let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let inner = arena.computation_application(forced, argument);
+        let nested = arena.value_nested(inner);
+        let outer = arena.computation_application(forced, nested);
+        let lambda = arena.computation_lambda(outer);
+        let subject = arena.value_thunk(lambda);
+        let (mut carried, mut binds) = (Vec::new(), Vec::new());
+        let elaborated = gandr_core_term::elaborate_nested_traced(
+            &mut arena,
+            subject,
+            (
+                &BTreeMap::from([(
+                    nested,
+                    gandr_core_term::Nesting::Run(gandr_core_term::effect::Purity::Pure),
+                )]),
+                &alloc::collections::BTreeSet::new(),
+            ),
+            &mut carried,
+            &mut binds,
+        )
+        .expect("the run stands in the call's values");
+        let Some(&super::Value::Thunk(body)) = arena.value(elaborated)
+        else {
+            panic!("the elaborated subject stays a thunk");
+        };
+        let names = [Name::from("f")];
+        let restoration = super::Restoration::of(&carried);
+        let print = |source: &CoreSource<'_>| {
+            crate::present_computation(
+                source,
+                CoreNode::Computation(body),
+                crate::PageWidth::from(100_u32),
+                crate::Form::Explicit.into(),
+            )
+            .expect("the body lays out")
+            .to_string()
+        };
+        assert_eq!(
+            print(&CoreSource::new(&arena, &names)),
+            "fun (a) { let b = f a ; f b }",
+            "unrestored, the minted bind is read"
+        );
+        assert_eq!(
+            print(&CoreSource::new(&arena, &names).restoring(&restoration)),
+            "fun (a) { f (f a) }",
+            "restored, the run is read as written"
+        );
+        assert!(matches!(
+            CoreSource::new(&arena, &names)
+                .restoring(&restoration)
+                .read(CoreNode::Value(nested)),
+            Former::Nested(computation) if computation == CoreNode::Computation(inner)
+        ));
+    }
+
+    /// A constructor of a family applied to arguments carries its value type
+    /// as its classifier, so the printer can annotate it; one of a family with
+    /// no parameters carries none.
+    #[test]
+    fn only_a_parameterised_constructor_carries_its_classifier()
+    {
+        let mut arena = CoreArena::new();
+        let unit = arena.value_unit();
+        let bare = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let applied = arena.value_type_data(ConstantIndex::from(0_usize), Vec::from([unit]));
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let of_bare = arena.value_constructor(ConstantIndex::from(0_usize), bare, tag, Vec::new());
+        let of_applied =
+            arena.value_constructor(ConstantIndex::from(0_usize), applied, tag, Vec::new());
+        let source = CoreSource::new(&arena, &[]);
+        assert!(
+            matches!(
+                source.read(CoreNode::Value(of_applied)),
+                Former::Constructor { classifier: Some(held), .. } if held == CoreNode::ValueType(applied)
+            ),
+            "a parameterised constructor carries its family's application"
+        );
+        assert!(
+            matches!(source.read(CoreNode::Value(of_bare)), Former::Constructor {
+                classifier: None,
+                ..
+            }),
+            "a constructor of a family without parameters carries nothing"
+        );
+    }
+
+    /// #3669: a constructor kept at a type a definition computes reads by the
+    /// family on its node, as the same constructor at its data family does.
+    /// Neither carries a classifier: the family takes no parameters, and a
+    /// computed type is no family application to write against.
+    #[test]
+    fn a_constructor_at_a_computed_type_reads_by_its_family_3669()
+    {
+        let mut arena = CoreArena::new();
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let computed = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
+        let family = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let at_computed =
+            arena.value_constructor(ConstantIndex::from(0_usize), computed, tag, Vec::new());
+        let at_family =
+            arena.value_constructor(ConstantIndex::from(0_usize), family, tag, Vec::new());
+        let mut constructors = Constructors::default();
+        constructors.family(FamilyKey::Declared(ConstantIndex::from(0_usize)), [(
+            Name::from("Origin"),
+            Arity::from(0_usize),
+        )]);
+        let source = CoreSource::new(&arena, &[]).naming(&constructors);
+        let read = |value| {
+            let Former::Constructor {
+                name, classifier, ..
+            } = source.read(CoreNode::Value(value))
+            else {
+                return None;
+            };
+            Some((name.map(|name| String::from(name.as_ref())), classifier))
+        };
+        assert_eq!(
+            (read(at_computed), read(at_family)),
+            (
+                Some((Some(String::from("Origin")), None)),
+                Some((Some(String::from("Origin")), None))
+            ),
+            "a constructor reads by its family at a computed type and at its family alike"
+        );
+    }
+
+    /// #6230: a constructor kept at a type a definition computes carries that
+    /// type where its family takes arguments, since the lowering refuses a bare
+    /// call of it at an unannotated position. Where its family takes none, it
+    /// carries nothing, as #3669 reads it.
+    #[test]
+    fn a_constructor_at_a_computed_type_carries_it_where_its_family_takes_arguments_6230()
+    {
+        let mut arena = CoreArena::new();
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let computed = arena.value_type_element(code, gandr_kernel_strata::Level::zero());
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let of_applied =
+            arena.value_constructor(ConstantIndex::from(0_usize), computed, tag, Vec::new());
+        let of_plain =
+            arena.value_constructor(ConstantIndex::from(1_usize), computed, tag, Vec::new());
+        let mut constructors = Constructors::default();
+        constructors.family(FamilyKey::Declared(ConstantIndex::from(0_usize)), [(
+            Name::from("Entry"),
+            Arity::from(0_usize),
+        )]);
+        constructors.applied(FamilyKey::Declared(ConstantIndex::from(0_usize)));
+        constructors.family(FamilyKey::Declared(ConstantIndex::from(1_usize)), [(
+            Name::from("Origin"),
+            Arity::from(0_usize),
+        )]);
+        let source = CoreSource::new(&arena, &[]).naming(&constructors);
+        let classifier = |value| {
+            let Former::Constructor { classifier, .. } = source.read(CoreNode::Value(value))
+            else {
+                return None;
+            };
+            Some(classifier)
+        };
+        assert_eq!(
+            (classifier(of_applied), classifier(of_plain)),
+            (Some(Some(CoreNode::ValueType(computed))), Some(None)),
+            "a computed type classifies a constructor whose family takes arguments, and no other"
+        );
+    }
+
+    /// #6548: a data case that the constructor table does not record, built
+    /// over a constructor as the checker builds a case's answer at a point,
+    /// names its arm by the constructor's family. A case over a variable that
+    /// the table does not record names none.
+    #[test]
+    fn a_case_over_a_constructor_names_its_arm_by_the_constructor_s_family_6548()
+    {
+        let mut arena = CoreArena::new();
+        let family = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
+        let point = arena.value_constructor(ConstantIndex::from(0_usize), family, tag, Vec::new());
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let motive = arena.comp_type_returner(family);
+        let answer = arena.computation_return(point);
+        let arities = Vec::from([gandr_kernel_term::FieldCount::from(0_usize)]);
+        let at_point =
+            arena.computation_data_case(point, motive, Vec::from([answer]), arities.clone());
+        let at_variable =
+            arena.computation_data_case(variable, motive, Vec::from([answer]), arities);
+        let mut constructors = Constructors::default();
+        constructors.family(FamilyKey::Declared(ConstantIndex::from(0_usize)), [(
+            Name::from("Origin"),
+            Arity::from(0_usize),
+        )]);
+        let source = CoreSource::new(&arena, &[]).naming(&constructors);
+        let arm = |case| {
+            source
+                .constructor(CoreNode::Computation(case), Component::from(0_usize))
+                .map(|(name, ..)| String::from(name.as_ref()))
+        };
+        assert_eq!(
+            (arm(at_point), arm(at_variable)),
+            (Some(String::from("Origin")), None),
+            "a case over a constructor names its arm by the constructor's family, and one over a variable names none"
+        );
+    }
+}

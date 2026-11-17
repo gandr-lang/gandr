@@ -1,0 +1,6 @@
+{SIGN}module Short : Model(CatShape) where {{
+  type Ob = Type;
+  type Hom(a : Ob) = +U[ω] (a -> -F a);
+  def ident(t : Type, x : t) -> -F t {{ return x }}
+  def id(t : Type) -> -F (+U[ω] (t -> -F t)) {{ return thunk {{ become ident(t) }} }}
+}}

@@ -1,0 +1,4 @@
+module Bad where {
+  @[ refuses("DuplicateDefinition") ]
+  def x = 1;
+}

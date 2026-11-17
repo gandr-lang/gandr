@@ -1,0 +1,118 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+name: report-hotpath-regressions
+
+# A failed `hotpath / <benchmark>` check files a row on each regressed
+# function's issue, `perf: <function>` (`mise run ci:hotpath-guard`,
+# crates/workflow-hotpath-guard/README.md); a passing one marks its pull
+# request's open rows of that benchmark fixed. hotpath Cloud posts its check
+# after the benchmark upload, so the check is never required and nothing
+# waits for it: the check's completion runs this workflow instead. GitHub
+# sends the event for check runs another app creates, from the default
+# branch's copy of this file; the job runs only for a concluded hotpath check.
+# A check CI posts itself (the judge's `hotpath / <benchmark>-band` on a
+# pull request, `-push` on main's push) starts no workflow: GitHub starts
+# none for what a workflow's token does, a dispatch aside. Its poster
+# dispatches this workflow with the commit and the pull request instead.
+on:
+  check_run:
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: the commit whose hotpath checks are filed
+        required: true
+        type: string
+      pull:
+        description: the pull request the commit heads
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Each benchmark's check completes on its own, and a restack completes a
+# pull request's checks on several heads at once. The runs of one pull
+# request (of one commit, without one) queue, so a later run finds the
+# comment and the rows an earlier one wrote rather than posting its own.
+concurrency:
+  group: hotpath-guard-${{ inputs.pull || github.event.check_run.pull_requests[0].number || inputs.sha || github.event.check_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TERM_COLOR: always
+  CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
+  MISE_CARGO_BINSTALL_QUICKINSTALL: "true"
+  MISE_CARGO_BINSTALL_NATIVE: "true"
+  # Must match landing-checks.yml and the image. The image checks the list at build time.
+  MISE_DISABLE_TOOLS: "cargo:bindgen-cli,cargo:hotpath,github:j178/prek,github:max-sixty/worktrunk,github:nektos/act,github:orhun/git-cliff"
+  # Must match landing-checks.yml: a job's mise writes no line of `mise.lock` (#6976).
+  MISE_LOCKFILE_MODE: merge
+
+jobs:
+  file:
+    name: file the concluded hotpath checks
+    if: ${{ !github.event.repository.fork && (github.event_name == 'workflow_dispatch' || (startsWith(github.event.check_run.name, 'hotpath / ') && (github.event.check_run.conclusion == 'failure' || github.event.check_run.conclusion == 'success'))) }}
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    # actions: read lists and downloads each side's kept report
+    # (`hotpath-<commit>`), which the global shift is read from.
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      checks: read
+      issues: write
+      pull-requests: read
+    steps:
+      # Most passing checks have no open row to fix: an issue search for the
+      # pull request's number ends those runs before any build. A match may
+      # be another number in a body, which only costs a run; a check without
+      # a pull request, or a failed one, always runs.
+      - name: look for the pull request's open rows
+        id: rows
+        if: ${{ github.event.check_run.conclusion == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PULL: ${{ github.event.check_run.pull_requests[0].number }}
+        run: |
+          if [[ -n "$PULL" ]] && [[ $(gh issue list --label kind:performance --state open --search "\"#$PULL\" in:body" --json number --jq length) == 0 ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      # A check_run event's commit is the default branch's head, so the guard
+      # never runs the code of the pull request whose check failed.
+      - name: git checkout
+        if: ${{ steps.rows.outputs.skip != 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      # mise provides rustup under act, so it installs first, as in landing-checks.yml.
+      - name: install mise-managed policy tools
+        if: ${{ steps.rows.outputs.skip != 'true' }}
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+      - name: setup rust
+        if: ${{ steps.rows.outputs.skip != 'true' }}
+        uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
+        with:
+          cache-save: false
+      # The event names the pull request as it stood when the check
+      # concluded; a restack can force-push the branch before this runs, and
+      # the commit then names none (crates/workflow-hotpath-guard/README.md).
+      - name: file the commit's concluded checks
+        if: ${{ steps.rows.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ inputs.sha || github.event.check_run.head_sha }}
+          PULL: ${{ inputs.pull || github.event.check_run.pull_requests[0].number }}
+        run: mise run ci:hotpath-guard --sha "$HEAD_SHA" ${PULL:+--pull "$PULL"} --file-issue >> "$GITHUB_STEP_SUMMARY"
