@@ -95,10 +95,11 @@ fi
 # ask the architect's sign-off (#7058).
 jq -n -r -L "$root/.config/bodies" -L "$here" --rawfile body "$body" \
   'include "account"; $body | deletes_rows // [] | .[] | select(.act | IN("deleted", "merged", "narrowed")) | .item' > "$scratch/deleted" 2> /dev/null || : > "$scratch/deleted"
-# The last segment of each such row's item: the word that names it.
+# The name segment of each row's item. A positional field uses its owner's
+# segment instead of its numeric position.
 segments=$(while IFS= read -r item; do
   [[ -n $item ]] || continue
-  jq -n -c --arg item "$item" --arg segment "$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")" '{($item): $segment}'
+  jq -n -c --arg item "$item" --arg segment "$(item_segment "$item")" '{($item): $segment}'
 done < "$scratch/deleted" | jq -s -c 'add // {}')
 mapfile -t named_by < <(jq -r '[.[]] | unique[]' <<< "$segments")
 

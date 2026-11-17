@@ -7,20 +7,32 @@
 # `<sha>` with the base, to `<sha>`. The change now runs from `<from>` to
 # `<head>`, where `<from>` is `change_base`'s.
 #
-# The diff has no context lines, so a line number moves nothing, and the
-# rows that a landing below adds to a shared file move no word. A restack
-# over such a landing then keeps the sign-off, as the restack of pull
-# request 6848 over the purpose rows of `ledger/purposes.sql` did not. The
-# check reads, in each added or removed line, only the words that hold the
-# segment: runs of characters other than space, quote, comma and
-# parenthesis. A common segment as `ledger` names 39 of the 45 files of
-# pull request 7017. An edit of another cell of such a line, as its `since`,
-# moves nothing. A word that the change adds, drops or renames moves the
-# sign-off. Each word counts once in each file, so one more place of a word
-# that the change holds already moves nothing: the restack of pull request
-# 7322 gave its field `keyed:` to a site that a landing below added (#7338).
-# A sign-off with no fork in the clone binds neither half, and `check.bash`
-# reads it as stale.
+# The diff has no context lines. A line number moves nothing. A row that a
+# landing adds to a shared file moves no word. A restack over that landing
+# keeps the sign-off.
+# - see: #6848
+#
+# The check reads words that hold a segment from each added or removed line.
+# A word runs until space, quote, comma or parenthesis.
+#
+# An edit of another cell on a line that names a segment moves nothing. A word
+# that the change adds, drops or renames moves the sign-off. Each word counts
+# once per file. An added second use of an existing word moves nothing.
+# - see: #7017
+# - see: #7338
+#
+# A sign-off with no fork in the clone binds neither half. `check.bash` reads
+# it as stale.
+#
+# `item_segment <item>` prints the segment that names `<item>`. A positional
+# field ends in its numeric position. The field's owner names that field.
+item_segment() {
+  local item=$1
+  [[ $item =~ ::[0-9]+$ ]] && item=${item%::*}
+  item=${item##*::}
+  printf '%s\n' "${item//[<>]/}"
+}
+
 moved() {
   local fork=$1 sha=$2 from=$3 head=$4
   shift 4
