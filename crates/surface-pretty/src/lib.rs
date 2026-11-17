@@ -1181,6 +1181,10 @@ quenchant_shape::reason_enum! {
 /// # Errors
 /// As [`present_type`].
 ///
+/// # Cost
+/// - allocation: the header's text, its parts and the names of its parameters,
+///   growth within the definition's header and body.
+///
 /// # Adequacy
 /// - hypothesis: L3 — a descending fixpoint over a case, of one parameter and
 ///   of two, a staged fixpoint and one claiming nothing distinguish a lost or
