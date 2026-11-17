@@ -1,0 +1,17 @@
+// Record updates inside path types. A take of these declarations mints their
+// nodes in another order than a fresh judgement.
+
+/// `corner` holds fields `x` and `y`.
+def corner = *{x = 1, y = 2};
+
+/// `commute` equates updates at `x` and `y` in either order.
+def commute : Path[.A = *{x : Integer, y : Integer}](
+  *{*{corner | x = 9} | y = 3},
+  *{*{corner | y = 3} | x = 9}
+) = Path.here (*{x = 9, y = 3});
+
+/// `unchanged` equates an update with its base record.
+def unchanged : Path[.A = *{x : Integer, y : Integer}](
+  *{corner | x = 1},
+  corner
+) = Path.here corner;

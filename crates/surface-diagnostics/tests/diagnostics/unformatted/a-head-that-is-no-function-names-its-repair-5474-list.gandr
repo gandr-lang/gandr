@@ -1,0 +1,3 @@
+import std.list (List);
+def pair() -> List(Integer) =
+  #[7 8]

@@ -1,0 +1,6 @@
+def spin : rec t => t ;
+def nested : !Integer >> rec t => rec u => !Integer >> t ;
+def typed : !Integer >> Integer ;
+def free : !Integer >> t ;
+def positional : !Integer >> +{ end, end } ;
+def twice : !Integer >> &{ go : end, go : end } ;

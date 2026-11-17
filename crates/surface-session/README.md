@@ -1,0 +1,109 @@
+# gandr-surface-session
+
+The interactive session: each revision of one source lowered, judged exactly as `gandr check` judges it, resumed through the incremental checker and checkpointed.
+
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
+- [License](#license)
+<!-- tocstop -->
+
+## Synopsis
+
+**What.** A `Session` takes successive revisions of one source through `Session::submit`, which is `Session::judge` then `Session::admit`. `judge` lowers each revision once; the dispatcher's `judge` judges and settles the lowered module, and the same declarations, offered by the item source as a `Program`, go to the incremental checker, which adopts every checkpoint that still answers, judges the rest and persists the set. `admit` then offers the judged declarations to the kernel, and the artifact of what crossed is committed into a block store as records through `gandr-storage-artifact`. The `Submission` carries the dispatcher's `Composed` and `Standing` for the text, the resume's census and whether the checkpoints were stored, the manifest of the kernel checkpoint, the edit actions from the latest accepted revision and the parse's completion obligations, and turns into the dispatcher's `Step` so a face renders it through the same renderer the batch verbs use. `Session::reopen` restores a session over the checkpoints an earlier one wrote, and `Session::read_kernel` reads a kernel checkpoint back through the kernel's decoder.
+
+**Why.** The REPL, the language server and a terminal interface all need what the batch pipeline does not keep: the latest resume to adopt from, a checkpoint store that outlives the process, and the import scope of the last revision that lowered. Holding that state once, below every face, means each face is a loop over `submit` and a renderer of steps, and every face's verdicts are the batch pipeline's.
+
+**How.** `judge` parses the revision through the session's form store, which molds only the top-level forms whose identity it does not hold, then calls the dispatcher's `lower_parsed`, then the dispatcher's `judge` for the report and `program` plus `IncrementalSession::submit` for the resume, over a copy of the lowered arena, and keeps the dispatcher's `Admission` for `admit`. A whole-revision refusal is `Composed::Refused`: it retains the accepted resume, imports, and snapshot but advances the lowering-attempt count. Checkpoints use `CheckpointStore`; a store failure becomes `Persistence::Failed` when a resume remains available, otherwise `SessionFault::Store`. `Persistence` and `KernelCheckpoint` state how a block-store refusal and a store that keeps nothing are carried.
+
+## Provided features
+
+- **The session.** `Session`, `Session::new`, `Session::submit`, `Session::last`, `Session::stream`, `Session::lowerings`, `Session::into_store`, `Session::take`; `Submission`, `Resumed`, `Persistence`, `resumed::Absent`, `SessionFault`, `Verdicts`.
+- **The judgement before the admission.** `Session::judge`, `Session::admit`, `Admitted`, `admitted::Absent`, `admission::Absent`: a revision's report and resume before its kernel admission, and the admission after.
+- **A document that imports a sibling.** `Session::judge_unit_reading`, `Session::submit_unit`, `Session::trial_unit`, `Session::parse_held_unit`, `Session::type_held_unit`, `ClosureSlot`, `ClosureKey`, `Laying`, `Submission::base`: the document judged over the import closure the dispatcher's `lay_out` lays it out in, its own declarations reported, as `gandr check` reports its file. `Session::judge_unit_reading` states how the closure is parsed, lowered, judged and passed once per process and root, and `Session::type_held_unit` how the document is typed after it. `Admitted::crossed` and `Admitted::judged`: the readmission resumed from the longest run of leading declarations the process holds for the same closure, or the session past it, so an edit to the document's own text offers the kernel its own declarations from the first one it changed, and a revision that changes none offers none.
+- **The form store.** `Submission::forms`, `FormCensus`, `FormCount`, `Session::with_pool`, `Session::parse_held`: each submission's forms, how many were molded rather than taken up, and how many the commit took up whole. A second reading of a revision molds only the forms the store does not hold.
+- **The context stack.** `Stack`, `Frame`, `Slot`, `FormStore::stack`, `JudgedParse::stack`: each application spine around a position, innermost first, kept per form.
+- **The instrument.** `Instrument`, `Silent`, `Phase`, `Session::judge_reading_retiring`, `Session::judge_unit_reading_retiring`, `Detached::run`: the judgement and the admission tell a sink each phase they enter and leave, and the forms, items and declarations they count. With `instrument`, `Instrument::activity` and `unrecorded::Absent`: the parse forks on the recording fork; `Counts`, `CountColumn`, `DeclarationCounts`, `Instrument::counts`, `Instrument::positioning`, `uncounted::Absent`: a column of each declaration's counts for each recheck; `Trace`, `TraceColumn`, `Instrument::trace`: the checker's steps each pass writes, folded into the tree of each item it judges.
+- **The account.** `Session::account`, `Account`, `AccountRow`, `CheckerVerdict`, `KernelState`, `CompileTier`: each declaration's verdict and tiers by its content key, kept across judgements. With `instrument`, `AccountRow::counts`: the latest recheck's counts; `Account::derivation_at`, `Derivation`, `DerivationTree`, `DerivationNode`, `Written`, `Warrant`: each declaration's tree of judgement nodes by its content key, each node placed in its declaration; `Goals` and `Lay`: its goals and types printed on demand in the source's names, laid out at a page or on one line.
+- **Trials.** `Session::trial`, `Trial`, `CandidateIndex`, `resumed::Absent::Tried`, `FormStore::parse_held`: candidate revisions judged against the latest accepted state without submitting any, each as a fresh session judges it, ranked, the session unchanged.
+- **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`.
+- **The parser's repairs.** `Submission::obligations`: the parse's completion obligations, in source order.
+- **Checkpoints across processes.** `Session::reopen`, `Reopened`, `reopened::Absent`.
+- **The kernel checkpoint.** `KernelCheckpoint`, `Submission::kernel`, `Session::read_kernel`, `Session::blocks`. A document laid after an import closure the process readmitted is exported and committed after the closure's declarations, whose encoding and decode the closure's record keeps.
+- **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`.
+- **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`.
+- **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage.
+- **Types and documentation.** `type_of`, `spelled::Absent`, `Session::documentation`: a declaration's type spelled at a page width from the latest resume, by name, and its documentation by its form's identity.
+- **Edit-action reconstruction.** `Snapshot` (`of`, `of_after`, `leading`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`. A document laid after an import closure the process lowered shares the closure's items' images, so its snapshot and its edits read its own items alone.
+
+## Expected features
+
+- **A checkpoint store.** Any `CheckpointStore`: `gandr-core-incremental`'s `MemoryCheckpointStore` for a session that dies with its process, its `FileCheckpointStore` for one that outlives it, its `DiscardingCheckpointStore` for one that keeps nothing per revision, such as an editor's open document. Such a session keeps a judgement at a save by `Session::persist_to` another store, and a session opened later restores its first judgement from it through `Session::restore_from`.
+- **A block store.** Any `BlockStore`: `gandr-storage-records`' `InMemoryBlockStore` for a session that dies with its process; a store that outlives it carries the kernel checkpoints to the next.
+- **A backend identity.** A `BackendArtifact` naming the checker build, so checkpoints a different checker judged are never restored.
+- **The text.** The caller owns the source's buffer and submits each revision whole; the submission borrows it.
+- **A face.** The dispatcher's `entries` reads the `Step` a submission turns into as `gandr-surface-diagnostics` diagnostics, which `gandr-surface-render-terminal` lays out and `gandr-surface-lsp` publishes.
+
+## Examples
+
+```rust
+use gandr_core_incremental::BackendArtifact;
+use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_storage_records::InMemoryBlockStore;
+use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_grammar::built_in;
+use gandr_surface_session::Session;
+use gandr_surface_syntax::SourceText;
+
+let mut session = Session::new(
+    built_in()?,
+    SourceRoot::Strict,
+    MemoryCheckpointStore::default(),
+    InMemoryBlockStore::default(),
+    BackendArtifact::from(b"this checker build".as_slice()),
+);
+let _first = session.submit(SourceText::from("def x = 40 ;"))?;
+let second = session.submit(SourceText::from("def x = 40 ;\ndef y = x ;"))?;
+// `second.composed()` is what `gandr check` reports for the text; its resume
+// adopted the checkpoint of `x` and judged `y`, `second.edits()` holds the one
+// action inserting `y`, and `second.kernel()` names the kernel checkpoint of
+// both definitions, which `session.read_kernel` reads back.
+```
+
+The crate's tests run with `cargo nextest run -p gandr-surface-session`.
+
+## Where the detail lives
+
+Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
+
+| Topic | Module |
+| ----- | ------ |
+| A crate of its own, contract evidence, references | [`src/lib.rs`](src/lib.rs) |
+| Submissions, trials, the report, the kernel admission, checkpoints, imports, repairs, diagnostics and goals, evaluation | [`session`](src/session.rs) |
+| The readmissions of a revision's leading declarations, the closure's held by the process and those past it by the session, resumed by content | [`closures`](src/closures.rs) |
+| The import closures the process lowered, resumed for each document laid after them | [`lowerings`](src/lowerings.rs) |
+| The account | [`account`](src/account.rs) |
+| The form store | [`forms`](src/forms.rs) |
+| The context stack | [`stack`](src/stack.rs) |
+| The instrument: one sink for the engine's own work | [`instrument`](src/instrument.rs) |
+| The item source | [`item_source`](src/item_source.rs) |
+| Edits as a diff of the lowered core, native snapshots, localization | [`edit`](src/edit.rs) |
+| A declaration's type and documentation | [`typed`](src/typed.rs) |
+| Live match checkpoints | [`live_match`](src/live_match.rs) |
+
+## References
+
+- `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing format's one table per artifact, which `Admitted`'s positions index.
+- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes, Example 1.4 and § 6.
+- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite keeps its node across an edit while its stratum, pasting and cell count hold.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: the core and kernel re-assessment (§ kernel-reassessment-design item 9), each declaration's kernel tier, which `Session::account` hands to the editor.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the engine-surface blueprint, § engine-surface-layers, which decides the one sink, the silent sink, the `instrument` feature and the choice of sink for each recheck.
+
+## License
+
+Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.

@@ -1,0 +1,47 @@
+[package]
+name = "gandr-theory-ordered-algebras"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "One law checker for the ordered semirings and commutative rings of gandr, with the max-plus semiring and the Lawvere quantale over exact dyadics, the usage semiring of the core language's grades, the exact Clifford+T amplitudes with their gates, and the cover of an algebra by a unimodular sequence"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "no-std", "ordered-semiring", "quantale"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+autobenches = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The measurement: a `harness = false` bench that times the sum and the
+# product of random amplitudes and a circuit of 2^8 gates on 2^4 qubits, with
+# percentiles and allocations.
+[[bench]]
+harness = false
+name = "amplitudes"
+path = "benches/amplitudes.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. The exact-reals crate supplies the dyadics the
+# max-plus and Lawvere carriers hold. The Stone duality crate supplies the
+# lattices of sets that a cover of the lattice stratum lives in.
+[dependencies]
+anodized.workspace = true
+gandr-theory-exact-reals.workspace = true
+gandr-theory-stone-duality.workspace = true
+
+# The suite builds dyadic halves from a big-integer mantissa and generates
+# amplitudes and circuits; the bench counts allocations.
+[dev-dependencies]
+allocation-counter.workspace = true
+num-bigint.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

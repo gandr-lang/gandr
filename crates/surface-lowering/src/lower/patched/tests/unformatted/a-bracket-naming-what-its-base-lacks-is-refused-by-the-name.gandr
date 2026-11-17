@@ -1,0 +1,5 @@
+{CONFIG}def moded(c : Config[.mode = 1]) -> Integer {{ 0 }}
+def remote(c : Config[remote ↦ *{{.host = "h"}}]) -> Integer {{ 0 }}
+def leaking(c : Config[secure ↦ *{{.port = 1, .tls = true, .host = "h"}}]) -> Integer {{ 0 }}
+def atomic(c : Integer[.port = 1]) -> Integer {{ 0 }}
+def partial(c : Config[secure ↦ *{{.port = 1}}]) -> Integer {{ 0 }}
