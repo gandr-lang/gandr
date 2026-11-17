@@ -739,7 +739,7 @@ fn add_type_rules(
     // field's value is a type hole, as a value a type takes as a call's
     // argument is. A face's value is an expression, the record of the face's
     // fields.
-    rules.push(rule(
+    let mut extension = rule(
         RuleName("extension_type"),
         ty,
         type_path,
@@ -767,7 +767,18 @@ fn add_type_rules(
             ]),
             tile(TileLabel("}")),
         ]),
+    );
+    extension.adaptations.push(Adaptation::refused(
+        RuleName("extension_type"),
+        RetiredForm::BracketFields,
+        AdaptationReason("the static bracket that fixes a record type's fields by label, `T[.l = v]`, is refused by name; a stage `T[i]` and a supply by name `f[.a = A]` keep the bracket"),
     ));
+    extension.adaptations.push(Adaptation::refused(
+        RuleName("extension_type"),
+        RetiredForm::BracketFaces,
+        AdaptationReason("the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name"),
+    ));
+    rules.push(extension);
     // A parenthesized type holds one type or, as the domain of the n-ary box
     // `(A, B) -> C`, a list of them, each entry a bare type or a binder
     // `x : A` — the telescope `(x : A, y : B(x)) -> C`. One rule, so `(` keeps
