@@ -534,13 +534,13 @@ pub enum Former<'source, Node>
     /// over.
     RowType,
     /// The product of a value type's components, which the source answers by
-    /// [`Source::component`]: `Unit` at arity zero, `#{A, …}` from one.
+    /// [`Source::component`]: `Unit` at arity zero, `*{A, …}` from one.
     Product(Arity),
     /// The sum of a value type's components, which the source answers by
     /// [`Source::component`]: `Void` at arity zero, `+{A, …}` from one.
     Sum(Arity),
     /// A record type of this many fields, which the source answers in label
-    /// order by [`Source::component`] and [`Source::label`]: `#{l : A, …}`.
+    /// order by [`Source::component`] and [`Source::label`]: `*{l : A, …}`.
     RecordType(Arity),
     /// A record type patched at this many fields: its base, then each fixed
     /// value, which the source answers in label order by
@@ -573,7 +573,7 @@ pub enum Former<'source, Node>
         /// The classifier of the result.
         codomain: Node,
     },
-    /// The dependent pair `#{x : A, y : B}`, whose second factor binds the
+    /// The dependent pair `*{x : A, y : B}`, whose second factor binds the
     /// first.
     Sigma
     {
@@ -676,14 +676,14 @@ pub enum Former<'source, Node>
     /// A literal.
     Literal(&'source Literal),
     /// A tuple of values, which the source answers by [`Source::component`]:
-    /// `#{a, …}` from arity one; the empty tuple is [`Former::Unit`].
+    /// `*{a, …}` from arity one; the empty tuple is [`Former::Unit`].
     Tuple(Arity),
     /// A record value of this many fields, which the source answers in label
-    /// order by [`Source::component`] and [`Source::label`]: `#{.l = a, …}`.
+    /// order by [`Source::component`] and [`Source::label`]: `*{.l = a, …}`.
     Record(Arity),
     /// A record update of its base by this many fields, before elaboration,
     /// which the source answers in label order by [`Source::component`] and
-    /// [`Source::label`]: `#{b | l = a, …}`.
+    /// [`Source::label`]: `*{b | l = a, …}`.
     RecordUpdate(Node, Arity),
     /// An injection into the summand at this position: `+{.i = v}`.
     Injection(Component, Node),
@@ -1017,7 +1017,7 @@ pub enum Former<'source, Node>
         arity: Arity,
     },
     /// A product elimination, its body under one binder per component:
-    /// `match v { #{a, b} => c }`.
+    /// `match v { *{a, b} => c }`.
     Split
     {
         /// The scrutinee.

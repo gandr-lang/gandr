@@ -175,7 +175,7 @@ fn map(
     arena.value_thunk(lambda)
 }
 
-/// The record `#{to, #{#{g, law}, #{h, law}}}`, each law reflexivity at the
+/// The record `*{to, *{*{g, law}, *{h, law}}}`, each law reflexivity at the
 /// bound point.
 ///
 /// # Specification
@@ -263,7 +263,7 @@ fn ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum()
 
     // `e : List Bool ≃ List Bool`, checked at its type.
     let named = declaration(At(0), Maybe::Present(record_type), written);
-    // `ua(#{…}) : Path[.A = Type](⌜List Bool⌝, ⌜List Bool⌝)`, the literal
+    // `ua(*{…}) : Path[.A = Type](⌜List Bool⌝, ⌜List Bool⌝)`, the literal
     // checked against the record type the identity names.
     let literal = univalence(&mut arena, written);
     let checked = declaration(At(1), Maybe::Present(identity), literal);

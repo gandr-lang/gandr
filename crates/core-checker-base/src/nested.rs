@@ -75,7 +75,7 @@
 //! it reads — a dependent pair's first component under its second's type, a
 //! dependent function's argument under the types after it — stands as the
 //! value it returns, `⟨c⟩`, rather than a bind's variable: the variable is
-//! opaque, so `#{f(Base), cong(f, loop)}` at `#{point : Int, around :
+//! opaque, so `*{f(Base), cong(f, loop)}` at `*{point : Int, around :
 //! Path[.A = Int](point, point)}` would check its second component at `Path[.A
 //! = Int]( x, x)` for a fresh `x`, which `f(Base)`'s path does not reach. A
 //! returned value is what a compound endpoint already is, and it computes the

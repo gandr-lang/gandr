@@ -1103,7 +1103,7 @@ fn a_fork_and_an_offer_keep_the_exits_they_end_in_815()
     }
 }
 
-/// A tuple of any arity from one spells its components between `#{` and
+/// A tuple of any arity from one spells its components between `*{` and
 /// `}`, a nested tuple one component among them; an injection spells the
 /// summand it enters, the third as readily as the first.
 #[test]
@@ -2426,7 +2426,7 @@ fn each_written_constant_name_is_listed_where_it_stands_1441()
 /// reducing its family away leaves (#771) — has no spelling of its own: the
 /// surface reads a record whose later field names no earlier one as a
 /// record of labels, so it is written as the product it reads as, `A * B`
-/// sugared and `#{A, B}` explicit; one whose second factor names its binder
+/// sugared and `*{A, B}` explicit; one whose second factor names its binder
 /// keeps the record.
 #[test]
 fn a_dependent_pair_ignoring_its_binder_spells_as_the_product_771()
@@ -2681,7 +2681,7 @@ fn a_selection_off_a_dependent_record_spells_its_label_3971()
     let names = [Name::from("t")];
     let mut core = CoreArena::new();
     let integer = core.value_type_base(BaseType::Integer);
-    // `#{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}`.
+    // `*{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}`.
     let x = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let y = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let between = core.value_type_path(integer, x, y);
@@ -2739,7 +2739,7 @@ fn a_selection_off_a_context_binder_s_record_spells_its_label_4139()
     let names = [Name::from("t")];
     let mut core = CoreArena::new();
     let integer = core.value_type_base(BaseType::Integer);
-    // `#{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}`.
+    // `*{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}`.
     let x = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
     let y = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let between = core.value_type_path(integer, x, y);
@@ -4010,7 +4010,7 @@ fn a_type_no_expression_reads_is_quoted_839()
 }
 
 /// #1459: a labelled record type quoted where an expression stands is written
-/// `type(#{…})` in both forms, alone and as an argument: `#{a : T}` where an
+/// `type(*{…})` in both forms, alone and as an argument: `*{a : T}` where an
 /// expression is read is not the record type's code.
 #[test]
 fn a_quoted_record_type_is_quoted_1459()
@@ -4041,7 +4041,7 @@ fn a_quoted_record_type_is_quoted_1459()
 }
 
 /// #1514: a telescope type quoted where an expression stands is written
-/// `type(#{…})` in both forms, alone and as an argument: `#{a : A, b : B}`
+/// `type(*{…})` in both forms, alone and as an argument: `*{a : A, b : B}`
 /// where an expression is read is a pack, not the telescope's code.
 #[test]
 fn a_quoted_telescope_type_is_quoted_1514()
@@ -4124,10 +4124,10 @@ fn a_path_type_over_a_family_application_is_quoted_3279()
 /// operators over the components, so a quoted product, sum or lazy product
 /// of two or more components is written `type(T)` where an expression
 /// stands in the sugared form, alone, as an argument and under a type
-/// former; the explicit form's `#{A, B}` reads as the product's code and
+/// former; the explicit form's `*{A, B}` reads as the product's code and
 /// stays bare. A static lambda's body is read as an expression between its
 /// braces, so its chain is quoted in the sugared form and its product in the
-/// explicit form, whose `#{` would open the block (#4508).
+/// explicit form, whose `*{` would open the block (#4508).
 #[test]
 fn a_quoted_chain_is_quoted_1127()
 {
@@ -4181,9 +4181,9 @@ fn a_quoted_chain_is_quoted_1127()
     }
 }
 
-/// #5060: an expression reads `#{a, b}` as the tuple of the values `a` and
+/// #5060: an expression reads `*{a, b}` as the tuple of the values `a` and
 /// `b`, so the explicit form keeps the quote of a product whose component is a
-/// decoded value, `type(#{a, a})`. A product of type formers, `#{Unit,
+/// decoded value, `type(*{a, a})`. A product of type formers, `*{Unit,
 /// Integer}`, reads as the product's code and stays bare.
 #[test]
 fn a_quoted_product_of_values_keeps_its_quote_5060()
