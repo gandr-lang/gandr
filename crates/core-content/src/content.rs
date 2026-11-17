@@ -1,93 +1,41 @@
-//! Canonical content: an item's or a type's nodes as a co-de Bruijn table,
+//! The content table of a core node: its nodes as a co-de Bruijn table,
 //! numbered by discovery, free of arena ids and admission positions.
 //!
-//! # One minimal-scope table per item
+//! The encoder lists every node that the roots reach as a de Bruijn table. It
+//! reads the children of each node from `gandr_core_term::children`. A
+//! constant becomes the [`Reference`] that the resolver gives its position.
+//! The factor then gives the co-de Bruijn table of `crate::support`. A
+//! breadth-first walk from the roots numbers the table. So equal terms in two
+//! arenas give equal tables.
 //!
-//! The encoder lists every node reachable from an item's roots as a de
-//! Bruijn table. It reads each node's children from
-//! `gandr_core_term::children`, the one enumeration core states, and writes
-//! the node as its content former over their numbers. `support::factor` then
-//! rebuilds the table bottom-up as the carrier of `gandr_core_term::support`
-//! lays it out. Each entry is a [`SupportedNode`]: a compact former whose own
-//! variable, endpoint or slot, if it has one, is a rank in its scope; the
-//! scope itself, as wide in each zone as the variables free beneath the node;
-//! and a cover, one thinning per child, saying where each of the child's free
-//! variables sits in the node's scope or among the binders the child's slot
-//! crosses. Each root keeps its own thinning into the item's empty scope. A
-//! child is named by its number, a constant by the [`Reference`] its position
-//! resolves to.
+//! # Items
 //!
-//! Equal compact nodes are one entry: the table is hash-consed by former,
-//! cover and scope, so two equal subterms share whether the arena allocated
-//! them once or twice, and a subterm under different unused binders is the
-//! same entry because unused binders never reach its scope. Different
-//! variable wiring stays distinct, because the cover records it. The arena's
-//! own sharing is therefore no part of the content: two items built in two
-//! arenas have equal tables exactly when their terms are equal.
+//! - [`TypeContent`]: the table of one node and the support of its root.
+//! - [`TypeContent::debruijn`]: the de Bruijn table under the root support, for
+//!   a reader that counts binders.
+//! - [`TypeContent::mint`]: the table minted back into an arena, each entry
+//!   once and after its children.
+//! - [`Encoder`] and [`tabled_roots`]: the table of a set of roots.
+//! - [`TypeMemo`]: the tables of one judgement pass, by arena type.
 //!
-//! The table is numbered in the order a breadth-first walk from the roots
-//! first discovers each entry, children left to right, so the numbering is a
-//! function of the content. Factoring and numbering are iterative; the work
-//! is linear in the de Bruijn table plus the sizes of the covers and the
-//! reference sets.
+//! # Boundaries
 //!
-//! # References read off the roots
-//!
-//! Every entry carries the references beneath it, apart by position: those
-//! in term positions and those beneath a signature or a type former, built
-//! from its children's when it is factored and rebuilt by the reader of a
-//! persisted table, which never trusts a stored set. An item's footprint is
-//! the union over its roots (`footprint_of`); no walk of the table is needed.
-//! The references are syntactic and over-approximate what the judgement
-//! reads, as the footprint always has; they never decide a strengthening.
-//!
-//! # The de Bruijn projection
-//!
-//! [`TypeContent::debruijn`] expands a root back into a de Bruijn table under
-//! its root thinning. A mint of a seat, a printed type and each reader that
-//! counts binders read that table. A root thinning whose index passes `u32`
-//! beneath a binder gives `PlacementError::IndexOverflow`. The projection
-//! never saturates the index.
-//!
-//! **Choice.** The compact former is [`ContentNode`] itself, its own
-//! occurrence rewritten to its rank, rather than a former generic over its
-//! index type: session actions and memory forms carry their endpoints and
-//! slots as kernel indices inside shared syntax, and one former type keeps
-//! the codec, the minting path and the printer on one vocabulary.
-//! **Reversal.** A consumer that must tell a rank from an ambient index by
-//! type, not by the table it came from, makes the generic former worth its
-//! second spelling.
-//!
-//! # The mint
-//!
-//! [`TypeContent::mint`] mints a table of any sort back into an arena. It
-//! mints each entry once, after its children. So a minted node keeps the
-//! sharing of the table, and it reads back as the same table. The table names
-//! the node up to alpha-equivalence and sharing. Two terms that differ only in
-//! their bound names or in the sharing of their arena read one table.
+//! An id that the arena does not hold gives [`ContentNode::Unresolved`] with
+//! its sort. So the encoder stays total. A table with such a node beneath a
+//! root is opaque. A child of a de Bruijn table out of its range gives the
+//! same node. A child that closes a cycle gives it too.
 //!
 //! The mint refuses a table by name. It names an unresolved node, an unplaced
 //! reference and a child of the wrong sort. A stage type and a codata
 //! application stay opaque as content. A native thunk of a table type keeps no
 //! body as content. The mint builds its curried body again from its row.
 //!
-//! # An id the arena does not hold
+//! The table names each hole by its place among the holes that it meets. It
+//! names a seal site by its component alone. So the content of an item is a
+//! function of its own source and of the sources that it reaches.
 //!
-//! An id that resolves to nothing is a fact about another arena. It is listed
-//! as [`ContentNode::Unresolved`] with its sort, so encoding stays total, and
-//! a table holding one beneath a root is opaque: its item is never adopted,
-//! never persisted, and a reader of everything once anything changes. A
-//! child of a de Bruijn table out of its range, or one closing a cycle, is
-//! factored the same way.
-//!
-//! # Numbers local to the item
-//!
-//! An elaborator numbers holes and ascriptions over the whole laid unit, so
-//! one item takes other numbers in another closure. The table names each hole
-//! by its place among the holes it meets, in the hole's own origin, and a
-//! seal site by its component alone. The cells of a type of words name their
-//! sort by its reference, as every constant is named. So an item's content is
-//! a function of its own source and of the sources that source reaches.
+//! A root thinning whose index passes `u32` beneath a binder gives
+//! `PlacementError::IndexOverflow`. The projection never saturates the index.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
@@ -252,6 +200,8 @@ impl ArenaNode
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn sort(self) -> Sort
     {
         match self {
@@ -266,6 +216,8 @@ impl ArenaNode
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn held(
         self,
         arena: &CoreArena,
@@ -1075,6 +1027,7 @@ impl<'node> Children<'node>
     ///   bounded evidence does not instrument the opaque return.
     /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
     /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[inline]
     pub fn iter(self) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort)> + Clone + 'node
     {
         self.crossed().map(|(child, sort, _)| (child, sort))
@@ -1101,6 +1054,7 @@ impl<'node> Children<'node>
     ///   checked against `map_children`'s independent enumeration.
     /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
     /// - witness: `gandr-core-incremental::content::tests::projection_keeps_every_variadic_child`
+    #[inline]
     pub fn crossed(
         self
     ) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort, Crossing)> + Clone + 'node
@@ -1438,6 +1392,8 @@ impl ContentNode
                 | (Sort::CompType, Sort::CompType)
         ),
     })]
+    #[inline]
+    #[must_use]
     pub const fn sort(&self) -> Sort
     {
         match *self {
@@ -1723,6 +1679,8 @@ impl ContentNode
             } => actual == Some(&[(a, A), (m, V), (b, C)][..]),
         }
     })]
+    #[inline]
+    #[must_use]
     pub fn children(&self) -> Children<'_>
     {
         use Sort::CompType as C;
@@ -2131,6 +2089,7 @@ impl ContentNode
         Self::Patched { .. } |
         Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::LinearLambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::QubitType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::LinearArrow { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
+    #[inline]
     pub const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
         match *self {
@@ -2296,6 +2255,7 @@ impl ContentNode
             && !matches!(*self, Self::Session(ref action) if matches!(action.endpoint(), Maybe::Present(_)))
             && !matches!(*self, Self::Memory(ref form) if matches!(form.resident(), Maybe::Present(_))),
     })]
+    #[inline]
     pub fn occurrence(&self) -> Maybe<(Zone, DeBruijnIndex), occurring::Absent>
     {
         if let Self::Variable { zone, index } = *self {
@@ -2335,6 +2295,8 @@ impl ContentNode
             Maybe::Absent(_) => ret.occurrence() == named,
         },
     )]
+    #[inline]
+    #[must_use]
     pub fn relocated(
         mut self,
         index: DeBruijnIndex,
@@ -2430,6 +2392,10 @@ impl WorldContent
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the reference of a declared world
+    #[inline]
     pub fn of(
         layout: &Layout,
         world: gandr_core_term::world::World,
@@ -2447,6 +2413,7 @@ impl WorldContent
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
         match *self {
@@ -2547,6 +2514,7 @@ impl TypeContent
     /// - hypothesis: L3 — a recorded answer naming a changed definition in a
     ///   type position, an abstract type or a code invalidates its reader.
     /// - witness: `gandr-core-incremental::checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    #[inline]
     pub fn reads(&self) -> impl Iterator<Item = &Reference>
     {
         self.nodes
@@ -2559,6 +2527,8 @@ impl TypeContent
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn from_parts(
         nodes: Vec<SupportedNode>,
         root: Thinning,
@@ -2597,6 +2567,7 @@ impl TypeContent
                     .all(|(child, _)| usize::from(child) < ret.nodes.len())
             })
         })]
+    #[inline]
     pub fn of(
         arena: &CoreArena,
         layout: &Layout,
@@ -2637,6 +2608,7 @@ impl TypeContent
                     .all(|(child, _)| usize::from(child) < ret.nodes.len())
             })
         })]
+    #[inline]
     pub fn unstaged(
         arena: &CoreArena,
         layout: &Layout,
@@ -2664,6 +2636,11 @@ impl TypeContent
     /// - hypothesis: L3 — the judged body's nodes that a report names mint back
     ///   to themselves from their places.
     /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the table of every node that `root` reaches, and the place
+    ///   of each node in it
+    #[inline]
     pub fn placed(
         arena: &CoreArena,
         layout: &Layout,
@@ -2703,6 +2680,11 @@ impl TypeContent
     /// - hypothesis: L3 — the judged body's nodes that a report names mint back
     ///   to themselves from their places.
     /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the place of each minted entry, and each minted node,
+    ///   growth within `arena`
+    #[inline]
     pub fn mint_placed(
         &self,
         arena: &mut CoreArena,
@@ -2742,6 +2724,8 @@ impl TypeContent
     #[spec(ensures: |ret| ret.nodes.iter().all(|node| node.former().children()
         .iter()
         .all(|(child, _)| usize::from(child) < ret.nodes.len())))]
+    #[inline]
+    #[must_use]
     pub fn tabulated(
         raw: &[ContentNode],
         root: NodeIndex,
@@ -2784,6 +2768,7 @@ impl TypeContent
             && self.nodes.first().is_some_and(|root| root.sort() == node.sort()),
         Maybe::Absent(_) => true,
     })]
+    #[inline]
     pub fn mint(
         &self,
         arena: &mut CoreArena,
@@ -2818,6 +2803,7 @@ impl TypeContent
             && self.nodes.first().is_some_and(|root| root.sort() == node.sort()),
         Maybe::Absent(_) => true,
     })]
+    #[inline]
     pub fn mint_holding(
         &self,
         arena: &mut CoreArena,
@@ -2857,6 +2843,7 @@ impl TypeContent
         Maybe::Present(id) => arena.value_type(id).is_some(),
         Maybe::Absent(_) => true,
     })]
+    #[inline]
     pub fn mint_value_type(
         &self,
         arena: &mut CoreArena,
@@ -2874,9 +2861,11 @@ impl TypeContent
 }
 
 /// The type tables one judgement pass has encoded, by the arena type each
-/// encodes. Within a pass the arena only grows and the program's layout is
-/// fixed, so an arena type's table never changes: the pass encodes each type
-/// it answers or projects once, however many items consult it.
+/// encodes.
+///
+/// Within a pass, the arena only grows. The resolver stays the same. So the
+/// table of an arena type never changes. The pass encodes each type that it
+/// answers or projects once.
 ///
 /// # Specification
 /// - executable: none — a cache; [`TypeMemo::content`] checks every answer
@@ -2904,7 +2893,11 @@ impl TypeMemo
     /// # Adequacy
     /// - hypothesis: L2 — as [`TypeMemo`].
     /// - witness: `gandr-core-incremental::tests::incremental::incremental_equals_from_scratch`
+    ///
+    /// # Cost
+    /// - allocation: the table of `node` on its first request, kept in the memo
     #[spec(ensures: |ret| ret == TypeContent::of(arena, layout, node))]
+    #[inline]
     pub fn content(
         &self,
         arena: &CoreArena,
@@ -2974,6 +2967,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn new(
         arena: &'arena CoreArena,
         layout: &'layout Layout,
@@ -2994,6 +2988,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn unstaging(
         arena: &'arena CoreArena,
         layout: &'layout Layout,
@@ -3063,6 +3058,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 && self.queue.len() == queued.saturating_add(1) && self.queue.back() == Some(&self.read_as(node)),
         },
     )]
+    #[inline]
     pub fn discover(
         &mut self,
         node: ArenaNode,
@@ -3089,9 +3085,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - hypothesis: L3 — shared fields and changed constructor signatures
     ///   remain distinct.
     /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    ///
+    /// # Cost
+    /// - allocation: the lists of roots of the signature
     #[spec(ensures: |ret| ret.parameters.len() == signature.parameters().len()
         && ret.constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
         && ret.iter().all(|root| usize::from(root) < self.seen.len()))]
+    #[inline]
     pub fn data_roots(
         &mut self,
         signature: &gandr_core_term::DataSignature,
@@ -3164,6 +3164,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   discovery-numbered table.
     /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
     /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    ///
+    /// # Cost
+    /// - allocation: the content node of each queued node, and a queue entry
+    ///   for each child seen first
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3173,6 +3177,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     )]
     #[spec(ensures: self.queue.is_empty() && self.nodes.len() == self.seen.len()
         && self.seen.values().all(|index| usize::from(*index) < self.nodes.len()))]
+    #[inline]
     pub fn drain(&mut self)
     {
         while let Some(node) = self.queue.pop_front() {
@@ -3644,6 +3649,9 @@ impl Slots<'_>
     ///   `with`'s components are read through it; a run one short or one long
     ///   misplaces the slots after it, which the enforcing lane refuses.
     /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    ///
+    /// # Cost
+    /// - allocation: the list of the children of the former's slots
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |taken| taken.len() == slots.len()))]
     fn take<Slot>(
         &mut self,
@@ -3682,6 +3690,9 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a queue entry for a child seen first
     fn value(
         &mut self,
         child: ValueId,
@@ -3696,6 +3707,9 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a queue entry for a child seen first
     fn computation(
         &mut self,
         child: ComputationId,
@@ -3710,6 +3724,9 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a queue entry for a child seen first
     fn value_type(
         &mut self,
         child: ValueTypeId,
@@ -3725,6 +3742,9 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a queue entry for a child seen first
     fn comp_type(
         &mut self,
         child: CompTypeId,
@@ -3755,6 +3775,9 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
 ///   enumeration; a slot filled from the wrong family or out of order fails the
 ///   postcondition.
 /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the content former and its lists of children
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Value && found.placed(node).0),
 )]
@@ -3923,6 +3946,9 @@ fn value_content(
 ///   against the enumeration; a slot filled from the wrong family or out of
 ///   order fails the postcondition.
 /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the content former and its lists of children
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Computation && found.placed(node).0),
 )]
@@ -4162,6 +4188,9 @@ fn computation_content(
 ///   against the enumeration; a slot filled from the wrong family or out of
 ///   order fails the postcondition.
 /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the content former and its lists of children
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::ValueType && found.placed(node).0),
 )]
@@ -5138,6 +5167,7 @@ impl MintEntry for ContentNode
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn minted_former(&self) -> &ContentNode
     {
         self
@@ -5150,6 +5180,7 @@ impl MintEntry for SupportedNode
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn minted_former(&self) -> &ContentNode
     {
         self.former()
@@ -5175,12 +5206,17 @@ impl MintEntry for SupportedNode
 /// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
 /// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
+///
+/// # Cost
+/// - allocation: the mint state of each entry, and each minted node, growth
+///   within `arena`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(minted) => minted.held(arena).is_some()
         && nodes.first().is_some_and(|node| node.minted_former().sort() == minted.sort()),
     Maybe::Absent(reason) => !nodes.is_empty()
         || matches!(reason, seating::Absent::IllSorted | seating::Absent::Unwalked),
 })]
+#[inline]
 pub fn mint_table<Entry>(
     nodes: &[Entry],
     arena: &mut CoreArena,
@@ -5247,6 +5283,10 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`mint_table`].
 /// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
+///
+/// # Cost
+/// - allocation: the stack of the walk, and each minted node, growth within
+///   `arena`
 fn mint_reached<Entry>(
     nodes: &[Entry],
     states: &mut [MintState],
@@ -5312,6 +5352,10 @@ where
 /// - hypothesis: L3 — the nodes of a report mint back to nodes whose content is
 ///   their own.
 /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the list of minted nodes, and each minted node, growth within
+///   `arena`
 fn mint_all<Entry>(
     nodes: &[Entry],
     arena: &mut CoreArena,
@@ -5480,6 +5524,9 @@ where
 /// - hypothesis: L2 — a record type and a patched type mint each field under
 ///   its label.
 /// - witness: `gandr-core-incremental::content::tests::every_dependent_former_mints_back_as_its_own_table`
+///
+/// # Cost
+/// - allocation: the map of the minted fields by label
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |seated| seated.keys().eq(fields.keys())))]
 fn seat_fields<Id>(
     states: &[MintState],
@@ -6204,9 +6251,11 @@ pub struct DataRoots
     pub presentation: PresentationRoots,
 }
 
-/// The rules that present a nominal type's terms, and the free cells of a
-/// type of words, as content: each names a constructor by its tag, and the
-/// cells name their sort by its reference, not by its admission position.
+/// The rules that present the terms of a nominal type, and the free cells of
+/// a type of words, as content.
+///
+/// Each rule names a constructor by its tag. The cells name their sort by its
+/// reference, not by its admission position.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PresentationRoots
 {
@@ -6260,6 +6309,7 @@ impl DataRoots
     ///   slot; a signature whose fields are open keeps one support per root.
     /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     /// - witness: `gandr-core-incremental::content::tests::open_roots_project_under_their_own_supports`
+    #[inline]
     pub fn iter(&self) -> impl Iterator<Item = NodeIndex> + Clone + '_
     {
         self.parameters
@@ -6283,6 +6333,7 @@ impl DataRoots
     /// - hypothesis: L3 — a vector's stated lengths are values beside its
     ///   classifiers, and its checkpoint round-trips.
     /// - witness: `gandr-core-incremental::codec::tests::an_indexed_family_round_trips_its_indices`
+    #[inline]
     pub fn sorted(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
     {
         let classifiers = self
@@ -6318,10 +6369,15 @@ impl DataRoots
     /// - hypothesis: L3 — as `DeclarationRoots::renumbered` of
     ///   `gandr-core-incremental`.
     /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    ///
+    /// # Cost
+    /// - allocation: the renumbered lists of roots
     #[spec(ensures: |ret| ret.kind == image(self.kind)
         && ret.parameters.len() == self.parameters.len()
         && ret.constructors.len() == self.constructors.len()
         && ret.presentation.rules.len() == self.presentation.rules.len())]
+    #[inline]
+    #[must_use]
     pub fn renumbered<Image>(
         &self,
         image: Image,
@@ -6370,6 +6426,8 @@ impl Tabled
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn of(
         &self,
         raw: NodeIndex,
@@ -6388,6 +6446,10 @@ impl Tabled
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the thinning of the support of the entry
+    #[inline]
     pub fn support(
         &self,
         raw: NodeIndex,
@@ -6402,6 +6464,11 @@ impl Tabled
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the thinning of the support of each root
+    #[inline]
+    #[must_use]
     pub fn supports(
         &self,
         roots: &[NodeIndex],
@@ -6450,6 +6517,11 @@ pub struct Placer
 /// - hypothesis: L3 — the nodes of a report that neither its item nor its entry
 ///   holds mint back to themselves from this table.
 /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the de Bruijn table, the supported table and the place of each
+///   root
+#[inline]
 pub fn tabled_roots(
     arena: &CoreArena,
     layout: &Layout,
@@ -6480,6 +6552,11 @@ impl Placer
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the thinning of the support of the place
+    #[inline]
+    #[must_use]
     pub fn place(
         &self,
         node: ArenaNode,
@@ -6525,6 +6602,7 @@ impl Minted
     /// - hypothesis: L3 — the places of a report mint back to the nodes that
     ///   they were taken from.
     /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    #[inline]
     pub fn of<Roots>(
         nodes: &[SupportedNode],
         roots: Roots,
@@ -6553,6 +6631,11 @@ impl Minted
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the support of `place` as the key of the lookup
+    #[inline]
+    #[must_use]
     pub fn node(
         &self,
         place: &TablePlace,
@@ -6577,7 +6660,12 @@ impl Minted
 ///   type encoded alone; a shared subterm is one node.
 /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+///
+/// # Cost
+/// - allocation: the factored table and its renumbered copy
 #[spec(ensures: |ret| ret.placed.len() == raw.len())]
+#[inline]
+#[must_use]
 pub fn tabled(
     raw: &[ContentNode],
     roots: &[NodeIndex],
@@ -6607,6 +6695,11 @@ pub fn tabled(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the map of hole names
+#[inline]
+#[must_use]
 pub fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
 {
     let mut holes = BTreeMap::new();
@@ -6643,6 +6736,9 @@ pub fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
 ///   item takes the name that the root's own table gives it.
 /// - witness: `gandr-core-incremental::content::tests::a_hole_is_named_by_its_place_in_the_table_6522`
 /// - witness: `gandr-core-incremental::content::tests::a_root_names_its_holes_by_their_place_under_it`
+///
+/// # Cost
+/// - allocation: an entry of the map of hole names for a hole met first
 #[spec(
     captures: [old = holes.get(&hole).copied(), count = holes.len()],
     ensures: |ret| holes.get(&hole) == Some(&ret) && ret.origin() == hole.origin()

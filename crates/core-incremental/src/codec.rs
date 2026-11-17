@@ -5474,7 +5474,7 @@ where
 ///   malformed roots.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 ///
-/// [`DataRoots::sorted`]: crate::content::DataRoots::sorted
+/// [`DataRoots::sorted`]: gandr_core_content::DataRoots::sorted
 #[spec(ensures: |ret| ret.as_ref().map_or(true,|content| content.roots().sorted().all(|(root, sort)| content.nodes().get(usize::from(root)).is_some_and(|node| node.sort() == sort))))]
 fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataContent, CodecError>
 {

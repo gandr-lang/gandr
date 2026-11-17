@@ -60,6 +60,7 @@ use gandr_core_content::Discovery;
 use gandr_core_content::Minted;
 use gandr_core_content::Placer;
 use gandr_core_content::Reference;
+use gandr_core_content::Resolver;
 use gandr_core_content::SupportedNode;
 use gandr_core_content::TablePlace;
 use gandr_core_content::TypeContent;

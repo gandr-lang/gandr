@@ -38,6 +38,7 @@ use gandr_core_checker::Declaration;
 use gandr_core_content::ItemKey;
 use gandr_core_content::Occurrence;
 use gandr_core_content::Reference;
+use gandr_core_content::Resolver;
 use gandr_core_term::CoreArena;
 use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
@@ -283,35 +284,6 @@ impl Layout
         })
     }
 
-    /// The reference the admission position `position` resolves to.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the reference of the item at `position`, or
-    ///   [`Reference::Unoccupied`] when no item takes it.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — occupied, skipped, empty and maximum positions
-    ///   distinguish a false hit or a missing mapping by exact returned
-    ///   references.
-    /// - witness: `region::tests::positions_must_ascend_and_may_skip`
-    /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
-    #[spec(ensures: |ret| self.occupied.get(&position)
-        .and_then(|&ordinal| self.references.get(usize::from(ordinal)))
-        .map_or_else(|| ret == Reference::Unoccupied, |reference| ret == *reference))]
-    pub(crate) fn resolve(
-        &self,
-        position: ConstantIndex,
-    ) -> Reference
-    {
-        self.occupied
-            .get(&position)
-            .and_then(|&ordinal| self.references.get(usize::from(ordinal)))
-            .cloned()
-            .unwrap_or(Reference::Unoccupied)
-    }
-
     /// The ordinal of the item at the admission position `position`.
     ///
     /// # Specification
@@ -357,18 +329,34 @@ impl Layout
 
 impl gandr_core_content::Resolver for Layout
 {
-    /// The reference of the item at `position`, as [`Layout::resolve`] reads
-    /// it.
+    /// The reference the admission position `position` resolves to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the reference of the item at `position`, or
+    ///   [`Reference::Unoccupied`] when no item takes it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — occupied, skipped, empty and maximum positions
+    ///   distinguish a false hit or a missing mapping by exact returned
+    ///   references.
+    /// - witness: `region::tests::positions_must_ascend_and_may_skip`
+    /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+    #[spec(ensures: |ret| self.occupied.get(&position)
+        .and_then(|&ordinal| self.references.get(usize::from(ordinal)))
+        .map_or_else(|| ret == Reference::Unoccupied, |reference| ret == *reference))]
     #[inline]
     fn resolve(
         &self,
         position: ConstantIndex,
     ) -> Reference
     {
-        Self::resolve(self, position)
+        self.occupied
+            .get(&position)
+            .and_then(|&ordinal| self.references.get(usize::from(ordinal)))
+            .cloned()
+            .unwrap_or(Reference::Unoccupied)
     }
 
     /// The position of the item that `reference` names, as

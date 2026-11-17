@@ -19,13 +19,14 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The printer reads core types and values and the content tables of the
-# content crate, the leaf vocabularies and levels they carry, and lays its
-# documents out through the layout engine; a name the printer cannot spell
-# says why through the shape crate's named absence. The grammar's spelling
-# table names each glyph's ASCII spelling. The binder scopes index the nodes
-# they reach in a `hashbrown` map under `foldhash`'s fixed seed. The pinned
-# anodized facade supplies core-only specification helpers; logic/BigInt
-# stays disabled.
+# content crate. It also reads the leaf vocabularies and their levels. It
+# writes its documents through the layout engine. For a name with no
+# spelling, the named absence of the shape crate gives the reason. The
+# spelling table of the grammar gives the ASCII spelling of each glyph.
+#
+# The binder scopes index the nodes they reach in a `hashbrown` map under
+# `foldhash`'s fixed seed. The pinned anodized facade supplies core-only
+# specification helpers. The crate does not enable its feature logic/BigInt.
 [dependencies]
 anodized.workspace = true
 foldhash.workspace = true

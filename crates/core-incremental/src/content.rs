@@ -216,6 +216,7 @@ use gandr_core_content::Encoder;
 use gandr_core_content::NodeIndex;
 use gandr_core_content::Opacity;
 use gandr_core_content::Reference;
+use gandr_core_content::Resolver;
 use gandr_core_content::Sort;
 use gandr_core_content::SupportedNode;
 use gandr_core_content::TypeContent;

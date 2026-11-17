@@ -15,6 +15,7 @@ use gandr_core_content::ContentNode;
 use gandr_core_content::ItemKey;
 use gandr_core_content::NodeIndex;
 use gandr_core_content::Reference;
+use gandr_core_content::Resolver;
 use gandr_core_content::TypeContent;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::CoreArena;

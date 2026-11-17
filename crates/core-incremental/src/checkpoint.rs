@@ -182,6 +182,7 @@ use gandr_core_checker::unfolding;
 use gandr_core_content::ArenaNode;
 use gandr_core_content::Opacity;
 use gandr_core_content::Reference;
+use gandr_core_content::Resolver;
 use gandr_core_content::TypeContent;
 use gandr_core_content::seating;
 #[cfg(feature = "instrument")]

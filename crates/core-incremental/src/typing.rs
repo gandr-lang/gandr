@@ -35,6 +35,7 @@ use gandr_core_checker::session::LinearityDefect;
 use gandr_core_content::ArenaNode;
 use gandr_core_content::NodeIndex;
 use gandr_core_content::Reference;
+use gandr_core_content::Resolver;
 use gandr_core_content::TypeContent;
 use gandr_core_content::TypeMemo;
 use gandr_core_term::CoreArena;

@@ -535,7 +535,7 @@ fn a_data_type_mints_with_its_arguments()
         ContentNode::Literal(zero()),
     ]);
     for (content, holds) in [(&bare, "no argument"), (&applied, "a literal argument")] {
-        let Maybe::Present(minted) = super::mint_in(&content, &mut program)
+        let Maybe::Present(minted) = super::mint_in(content, &mut program)
         else {
             panic!("a data type of {holds} seats at its declaration");
         };

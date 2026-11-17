@@ -11,10 +11,12 @@ keywords = ["content-addressing", "gandr", "hash-consing"]
 categories = ["compilers"]
 publish.workspace = true
 
-# The crate reads the core vocabulary and the leaves that it shares with the
-# kernel: the term crate's literals and indices and the levels of the strata
-# crate. A source's tag is a prefix of the BLAKE3 digest of its name. The
-# table's interner indexes its nodes in a `hashbrown` table under
+# The crate reads the core vocabulary. It also reads the leaves that the
+# core shares with the kernel. These leaves are the literals and indices of
+# the term crate and the levels of the strata crate.
+#
+# The tag of a source is a prefix of the BLAKE3 digest of its name. The
+# interner of a table indexes its nodes in a `hashbrown` table under
 # `foldhash`'s fixed seed. The pinned anodized facade supplies core-only
 # specification helpers.
 [dependencies]
