@@ -16,6 +16,12 @@
 #
 # On a host without a reachable user manager (macOS, a CI container, a session
 # without `XDG_RUNTIME_DIR`), the command runs as it is, without properties.
+#
+# The scope's description names the command by the first 200 bytes of its
+# words. Linux refuses one argument longer than 128 KiB. `xargs` fills a batch
+# to the limit of the whole vector. A description of the whole command thus
+# fails a large batch.
+# - see: #7942
 set -euo pipefail
 
 properties=()
@@ -27,7 +33,8 @@ done
 if [[ $(uname -s) == Linux && -n ${XDG_RUNTIME_DIR:-} ]] \
   && command -v systemd-run > /dev/null \
   && systemctl --user show-environment > /dev/null 2>&1; then
-  exec systemd-run --user --scope --quiet --collect "${properties[@]}" --description="scoped: $*" -- \
+  command="$*"
+  exec systemd-run --user --scope --quiet --collect "${properties[@]}" --description="scoped: ${command:0:200}" -- \
     bash -c 'echo 900 > /proc/self/oom_score_adj; exec "$@"' scope "$@"
 fi
 exec "$@"
