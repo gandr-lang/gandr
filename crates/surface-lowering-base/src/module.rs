@@ -4915,6 +4915,7 @@ impl<'source> Collector<'_, 'source>
                     | Former::CapabilityType
                     | Former::AtType
                     | Former::StagedType
+                    | Former::ExtensionType
                     | Former::ModedType
                     | Former::Scope
                     | Former::Import

@@ -216,7 +216,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 67_usize] = [
+    pub const ALL: [Self; 68_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -280,6 +280,7 @@ impl FormName
         Self::UNION_TYPE,
         Self::DUP,
         Self::STAGED_TYPE,
+        Self::EXTENSION_TYPE,
         Self::UNKNOWN_TYPE,
         Self::REPRESENTABLE_UNIVERSE_TYPE,
         Self::INDEX,
@@ -465,6 +466,8 @@ impl FormName
     pub const DUP: Self = Self("dup_expression");
     /// A type at a stage, `T[i]`.
     pub const STAGED_TYPE: Self = Self("staged_type");
+    /// A record type with fixed fields, `T.#{.l = v}` or `T.#{f ↦ v}`.
+    pub const EXTENSION_TYPE: Self = Self("extension_type");
     /// The unknown type `?`.
     pub const UNKNOWN_TYPE: Self = Self("unknown_type");
     /// The universe of representable sorts `Type+`, which classifies a
@@ -566,6 +569,8 @@ impl TileName
     pub const SELECT_OPEN: Self = Self(".#[");
     /// The sub-record selector's opener `.*{`, closed by `}`.
     pub const SUB_RECORD_OPEN: Self = Self(".*{");
+    /// The fixed fields' opener `.#{`, closed by `}`.
+    pub const EXTENSION_OPEN: Self = Self(".#{");
     /// A brace closer `}`.
     pub const BRACE_CLOSE: Self = Self("}");
     /// A brace opener `{`.
@@ -1055,6 +1060,9 @@ pub enum Former
     /// A data type at a stage a definition's signature binds, `Nat[i]`, or
     /// one below it, `Nat[< i]`.
     StagedType,
+    /// A record type with fixed fields, `Config.#{.port = 443}`, or with the
+    /// fields of a face fixed, `Config.#{secure ↦ *{.port = 443}}`.
+    ExtensionType,
     /// A type at a mode variable, `m T`: a method's receiver at the mode its
     /// telescope's `[m : Mode]` binds, refused anywhere else.
     ModedType,
@@ -1139,7 +1147,7 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 73_usize] = [
+    pub const ALL: [Self; 74_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -1194,6 +1202,7 @@ impl Former
         Self::ManifestType,
         Self::CapabilityType,
         Self::StagedType,
+        Self::ExtensionType,
         Self::ModedType,
         Self::Scope,
         Self::Declaration,
@@ -1239,7 +1248,7 @@ impl Former
 ///   grammar gains breaks the table rather than silently declining the form.
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 137_usize] = [
+pub const FORMERS: [(&str, Former); 138_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1304,6 +1313,7 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
     ("capability_type", Former::CapabilityType),
     ("at_type", Former::AtType),
     ("staged_type", Former::StagedType),
+    ("extension_type", Former::ExtensionType),
     ("moded_type", Former::ModedType),
     ("handle_expression", Former::Scope),
     ("def_value", Former::Declaration),
@@ -5959,6 +5969,7 @@ pub enum Family
                     | Former::CapabilityType
                     | Former::AtType
                     | Former::StagedType
+                    | Former::ExtensionType
                     | Former::ModedType
                     | Former::SessionType,
                 Family::Type
@@ -6047,6 +6058,7 @@ pub const fn family_of(former: Former) -> Family
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
+        | Former::ExtensionType
         | Former::ModedType
         | Former::SessionType => Family::Type,
         Former::Declaration

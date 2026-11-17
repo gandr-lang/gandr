@@ -1703,6 +1703,7 @@ pub fn spine_domains<'source>(
             | Former::CapabilityType
             | Former::AtType
             | Former::StagedType
+            | Former::ExtensionType
             | Former::ModedType
             | Former::Scope
             | Former::Declaration

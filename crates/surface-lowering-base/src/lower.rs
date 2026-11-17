@@ -325,6 +325,7 @@ pub fn parse_literal(
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
+        | Former::ExtensionType
         | Former::ModedType
         | Former::Scope
         | Former::Declaration

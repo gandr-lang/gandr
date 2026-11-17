@@ -68,6 +68,7 @@ use gandr_kernel_term::StageBinder;
 use gandr_kernel_term::StageBound;
 use gandr_kernel_term::StageDepth;
 use gandr_kernel_term::StageId;
+use gandr_surface_grammar::RetiredForm;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -582,10 +583,23 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let frame = self.require(site, Produced::ValueType)?;
         let base = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
-        match self.shared().bracket(site, &mut cursor)? {
+        match self
+            .shared()
+            .bracket(site, &mut cursor, TileName::BRACKET_CLOSE)?
+        {
             Bracket::Stage => {},
-            Bracket::Fields(fixed) => return self.patched_fields(site, frame, base, &fixed),
-            Bracket::Faces(faces) => return self.patched_faces(site, frame, base, &faces),
+            Bracket::Fields(_) => {
+                return Err(LoweringRefusal::RetiredName {
+                    span: site.at.span,
+                    form: RetiredForm::BracketFields,
+                });
+            },
+            Bracket::Faces(_) => {
+                return Err(LoweringRefusal::RetiredName {
+                    span: site.at.span,
+                    form: RetiredForm::BracketFaces,
+                });
+            },
         }
         let _below = cursor.tile(TileName::LESS_THAN);
         let Maybe::Present(_) = cursor.tile(TileName::IDENTIFIER)
@@ -612,6 +626,46 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         self.plan(site, Plan::Staged(base.node, stage));
 
         Ok(())
+    }
+
+    /// Classify a record type with fixed fields, `T.#{.l = v, …}`, or with
+    /// the fields of its faces fixed, `T.#{f ↦ v, …}`.
+    ///
+    /// # Specification
+    /// - requires: `site` is an extension type.
+    /// - ensures: the type is read as [`Self::patched_fields`] and
+    ///   [`Self::patched_faces`] read it.
+    /// - fails: the wrong-sort refusal where no value type is read; a fault
+    ///   naming the form for a tile out of place; a patched type's own
+    ///   refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The type's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the field form and the face form plan the patched
+    ///   type, and the static bracket's forms are refused by name.
+    /// - witness: `gandr-surface-lowering::lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Patched { .. })))]
+    #[inline]
+    pub fn extension_type(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let base = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::EXTENSION_OPEN)?;
+        match self
+            .shared()
+            .bracket(site, &mut cursor, TileName::BRACE_CLOSE)?
+        {
+            Bracket::Fields(fixed) => self.patched_fields(site, frame, base, &fixed),
+            Bracket::Faces(faces) => self.patched_faces(site, frame, base, &faces),
+            Bracket::Stage => Err(site.fault(cursor.here(), FormFault::MisplacedTile)),
+        }
     }
 }
 

@@ -1003,6 +1003,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ExtensionType
                 | Former::ModedType
                 | Former::Scope
                 | Former::Declaration

@@ -203,10 +203,12 @@ fn fixed_values(entries: &[Entry<'_>]) -> BTreeMap<FieldLabel, NodeIndex>
 impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsRef<'host, F>
 {
     /// Read what the static bracket of the form at `site` writes, the cursor
-    /// standing just past its `[`.
+    /// standing just past its `[`, or what the reader `.#{` writes, the cursor
+    /// standing just past it. `close` is the tile that ends the form.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past a staged type's `[`.
+    /// - requires: `cursor` stands just past a staged type's `[` or an
+    ///   extension type's `.#{`, and `close` is the tile that closes it.
     /// - ensures: the field form's entries when a `.` follows the `[`; the face
     ///   form's faces, each with its value, in written order, when a `↦`
     ///   follows the name after it; the cursor exhausted for either; a stage
@@ -239,11 +241,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,
+        close: TileName,
     ) -> Result<Bracket<'source>, LoweringRefusal<'source>>
     {
         if let Maybe::Present(_) = cursor.at(TileName::DOT) {
             let mut fixed = Vec::new();
-            while let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+            while let Maybe::Absent(_) = cursor.tile(close) {
                 let key = match self.cx().dotted(site, cursor)? {
                     Key::Index(_, name, at) => {
                         return Err(LoweringRefusal::UnresolvedName {
@@ -258,7 +261,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                     key,
                     held: Held::Operand(site.one(cursor.operands())?),
                 });
-                separated(site, cursor, TileName::BRACKET_CLOSE)?;
+                separated(site, cursor, close)?;
             }
             exhausted(site, cursor)?;
             return match arrange(site, fixed)? {
@@ -281,7 +284,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             };
             closed(site, cursor, TileName::MAPS_TO)?;
             faces.push((face, site.one(cursor.operands())?));
-            if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+            if let Maybe::Present(_) = cursor.tile(close) {
                 break;
             }
             closed(site, cursor, TileName::COMMA)?;

@@ -457,6 +457,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ExtensionType
                 | Former::ModedType
                 | Former::Scope
                 | Former::Declaration
@@ -575,6 +576,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                         | Former::CapabilityType
                         | Former::AtType
                         | Former::StagedType
+                        | Former::ExtensionType
                         | Former::ModedType
                         | Former::Scope
                         | Former::Declaration
@@ -650,6 +652,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ExtensionType
                 | Former::ModedType
                 | Former::Scope
                 | Former::Declaration

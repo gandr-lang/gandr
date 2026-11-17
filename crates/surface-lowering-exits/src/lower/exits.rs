@@ -601,6 +601,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> ExitsRef<'_, F>
             | Former::CapabilityType
             | Former::AtType
             | Former::StagedType
+            | Former::ExtensionType
             | Former::ModedType
             | Former::AttributeBlock
             | Former::Visibility
