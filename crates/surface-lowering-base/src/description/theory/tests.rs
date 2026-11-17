@@ -1381,7 +1381,9 @@ fn a_face_past_its_shape_is_refused_by_name()
         ),
         (
             "theory Cells where { shape Square : 4 { left = {0, 2}; }; sort A : Type; }",
-            DescriptionFault::Signature(SignatureFault::RetiredShapeMember),
+            DescriptionFault::Signature(SignatureFault::Retired(
+                gandr_surface_grammar::RetiredForm::ShapeMember,
+            )),
             "the retired `shape`",
         ),
     ] {

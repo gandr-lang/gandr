@@ -787,7 +787,9 @@ impl Reader<'_, '_>
                 continue;
             }
             if reading.eat(Spelling("shape")).0 {
-                diagnostics.push(reading.signature_fault(SignatureFault::RetiredShapeMember));
+                diagnostics.push(reading.signature_fault(SignatureFault::Retired(
+                    gandr_surface_grammar::RetiredForm::ShapeMember,
+                )));
                 continue;
             }
             if reading.eat(Spelling("boundary")).0 {
@@ -1786,6 +1788,13 @@ impl Reader<'_, '_>
         };
         if run.at(Spelling("{")).0 {
             return Err(run.signature_fault(SignatureFault::OperationFiller));
+        }
+        // An operation of no input is a constant, `oper c : T`: the reader
+        // refuses the empty input list `() -->` by its name.
+        if kind == OperationKind::Operation && thunked.is_none() && boundary.inputs.is_empty() {
+            return Err(run.signature_fault(SignatureFault::Retired(
+                gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
+            )));
         }
         run.end()?;
         let ports: Vec<&SortRef> = boundary.inputs.iter().chain(&boundary.outputs).collect();

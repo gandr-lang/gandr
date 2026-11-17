@@ -32,9 +32,10 @@ pub enum SignatureFault
     /// A theory block presents sorts, operations and rules, not item-level
     /// data.
     RetiredDataMember,
-    /// A theory block states its shape parameter by `boundary` and `face`:
-    /// `shape` is the retired spelling, and the word is the site's.
-    RetiredShapeMember,
+    /// A theory block's member written in a retired spelling: `shape`, which
+    /// `boundary` replaces, or an operation of no input, which the constant
+    /// replaces. The reader refuses it by the spelling's name.
+    Retired(gandr_surface_grammar::RetiredForm),
     /// A `boundary` lists one name twice: a carrier holds each point once.
     RepeatedPoint
     {

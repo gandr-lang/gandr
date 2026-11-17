@@ -202,6 +202,18 @@ fn theory_declaration(
         RetiredForm::ShapeMember,
         AdaptationReason("the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it"),
     ));
+    theory.adaptations.push(Adaptation::refused(
+        RuleName("theory_declaration"),
+        RetiredForm::EmptyOperationInputs,
+        AdaptationReason("an operation of no input is a constant: `oper c : T` states it, and the reader refuses `() -->` by name"),
+    ));
+    theory.adaptations.push(Adaptation::refused(
+        RuleName("theory_declaration"),
+        RetiredForm::EmptyOperationCall,
+        AdaptationReason(
+            "a constant is its bare name in a term: the reader refuses `c ()` by name",
+        ),
+    ));
     out.push(theory);
 }
 

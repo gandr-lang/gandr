@@ -33,6 +33,7 @@ use super::written::WrittenTerm;
 use super::written::head;
 use super::written::member_name;
 use super::written::port_name;
+use crate::circuit::SignatureFault;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Placed;
@@ -73,6 +74,15 @@ impl Reader<'_, '_>
             let read = self.ports(run)?;
             if !run.eat(Spelling("-->")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
+            }
+            // An operation of no input is written `oper f : R`: the reader
+            // refuses the empty input list `() -->` by its name.
+            if read.0.is_empty() {
+                return Err(
+                    run.fault(DescriptionFault::Signature(SignatureFault::Retired(
+                        gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
+                    ))),
+                );
             }
             read
         }
@@ -428,10 +438,14 @@ impl Reader<'_, '_>
                         run.end()?;
                         match <[Placed; 1]>::try_from(components) {
                             Ok([only]) => pending.push(TermFrame::Read(only)),
+                            // `c ()` applies a constant to no input: the
+                            // constant is its bare name `c`.
                             Err(components) if components.is_empty() => {
                                 return Err(DescriptionDiagnostic {
                                     span: at.span,
-                                    fault: DescriptionFault::Malformed,
+                                    fault: DescriptionFault::Signature(SignatureFault::Retired(
+                                        gandr_surface_grammar::RetiredForm::EmptyOperationCall,
+                                    )),
                                 });
                             },
                             Err(components) => {
@@ -566,6 +580,16 @@ impl Reader<'_, '_>
                     else {
                         TermKind::Operation
                     };
+                    // `c()` calls a constant with no input: the constant is
+                    // its bare name `c`.
+                    if args.is_empty() && matches!(kind, TermKind::Operation) {
+                        return Err(DescriptionDiagnostic {
+                            span: at.span,
+                            fault: DescriptionFault::Signature(SignatureFault::Retired(
+                                gandr_surface_grammar::RetiredForm::EmptyOperationCall,
+                            )),
+                        });
+                    }
                     pending.push(TermFrame::Apply(name, ArgumentCount(args.len()), kind));
                     pending.extend(args.into_iter().rev().map(TermFrame::Read));
                 },
