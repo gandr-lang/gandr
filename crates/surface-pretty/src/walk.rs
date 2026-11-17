@@ -8979,9 +8979,10 @@ impl Walk<'_, '_>
         else if let Former::Product(arity) = former {
             form == Form::Sugared && usize::from(arity) >= 2_usize
         }
-        // An expression reads `Path(x, y)` as a call, but not the carrier a
-        // path-shaped type supplies by name, `Path[.A = A](x, y)`: there it
-        // reads the bracket as an instantiation, whose names are lowercase.
+        // An expression reads `Path x y` as an application, but not the
+        // carrier a path-shaped type supplies by name, `Path[.A = A] x y`:
+        // there it reads the bracket as an instantiation, whose names are
+        // lowercase.
         else if let Former::Path { carrier, .. }
         | Former::Bridge { carrier, .. }
         | Former::Flow { carrier, .. } = former
@@ -12580,10 +12581,10 @@ impl Walk<'_, '_>
             }
             let _ = parts.part(Part::Close);
         };
-        // `Path[.A = Bool](alike(a, a), true)`: the carrier is the head's
-        // implicit `A`, supplied by name, and the two endpoints follow. An
-        // endpoint the source wrote as a word holds the word ascribed `Bool`,
-        // which spells as the word.
+        // `Flow[.A = Bool](a, b)`: the carrier is the head's implicit `A`,
+        // supplied by name, and the two endpoints follow in the call group. A
+        // path and a bridge write their endpoints juxtaposed in each surface
+        // (#5750), `Path[.A = Bool] a b`.
         let supplied = |parts: &mut Parts, head: &str| {
             let _ = parts
                 .text(format!("{head}[.A = "))
@@ -12622,7 +12623,7 @@ impl Walk<'_, '_>
             }
             | Former::Bridge {
                 carrier: Some(_), ..
-            } if self.surface != Surface::Expression => {
+            } => {
                 let head = if matches!(*former, Former::Path { .. }) {
                     "Path"
                 }
@@ -12631,18 +12632,6 @@ impl Walk<'_, '_>
                 };
                 supplied_juxtaposed(&mut parts, head);
                 family_applied(self.surface)
-            },
-            Former::Path {
-                carrier: Some(_), ..
-            } => {
-                supplied(&mut parts, "Path");
-                writes(Production("path_type"), Binding::Atom)
-            },
-            Former::Bridge {
-                carrier: Some(_), ..
-            } => {
-                supplied(&mut parts, "Bridge");
-                writes(Production("bridge_type"), Binding::Atom)
             },
             Former::Flow {
                 carrier: Some(_), ..
