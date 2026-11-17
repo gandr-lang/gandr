@@ -58,6 +58,7 @@ use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
+use gandr_surface_lowering::FragmentSort;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::Offer;
@@ -198,6 +199,12 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
             boundary: FragmentBoundary::TopLevel,
             ..
         } => String::from("write the expression in a declaration"),
+        LoweringRefusal::OutOfFragment {
+            form: FormName::TYPE_APPLICATION,
+            sort: FragmentSort::Computation,
+            boundary: FragmentBoundary::WrongSort,
+            ..
+        } => String::from("write `return` before the type to return it as a value: `return T`"),
         LoweringRefusal::OutOfFragment {
             sort,
             boundary: FragmentBoundary::WrongSort,

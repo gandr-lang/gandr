@@ -8943,9 +8943,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position
-    ///   where no type is read, the refusals of
-    ///   [`Self::typed_call`](crate::lower::Expressions::typed_call) where one
-    ///   is, and the hole's own refusal.
+    ///   where no type is read, and the wrong-sort refusal of a type
+    ///   application where a computation is read and the head is a type
+    ///   former's free name or names a data or a codata family; the refusals of
+    ///   [`Self::typed_call`](crate::lower::Expressions::typed_call) where a
+    ///   type is read, and the hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -9125,6 +9127,18 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 end: self.cx().operands.entries().len(),
             };
             return self.static_application(site, family, applied);
+        }
+        // A type is no computation: where one is read, a family's application
+        // refuses by its sort, as a type atom does, and `return` writes it.
+        if let Reading::Computation(_) = site.reading
+            && let Run::One(head) = cursor.clone().operands()
+            && (matches!(self.former_head(site, head)?, Maybe::Present(_))
+                || matches!(
+                    Native::new(self.host()).family_head(site, head)?,
+                    Maybe::Present(_)
+                ))
+        {
+            return Err(site.folded(FormName::TYPE_APPLICATION, FragmentBoundary::WrongSort));
         }
         if Capability::new(self.host()).exercise(site, &cursor)? == arity::Planned(true) {
             return Ok(());

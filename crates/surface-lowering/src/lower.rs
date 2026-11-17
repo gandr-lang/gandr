@@ -5850,6 +5850,67 @@ mod tests
     }
 
     #[test]
+    fn a_type_family_applied_where_a_computation_is_read_is_refused_by_its_sort_6491()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let wrong_sort = |span| LoweringRefusal::OutOfFragment {
+            span,
+            form: FormName::TYPE_APPLICATION,
+            sort: FragmentSort::Computation,
+            boundary: FragmentBoundary::WrongSort,
+        };
+
+        assert_eq!(
+            refusal(SourceText::from("def p(x : Integer) -> Type { Path x x }")),
+            wrong_sort(at(29_usize, 37_usize)),
+            "a path type where a computation is read is refused at the application by its sort"
+        );
+        assert_eq!(
+            refusal(SourceText::from(
+                "def p(x : Integer) -> Type { Bridge x x }"
+            )),
+            wrong_sort(at(29_usize, 39_usize)),
+            "a bridge type takes the path type's refusal"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def p(x : Integer) -> Type { Flow x x }")),
+            wrong_sort(at(29_usize, 37_usize)),
+            "a flow type takes the path type's refusal"
+        );
+        let declared =
+            "data Seq(a : Type) : Type where\n  | Nil : Seq a\n\ndef s(x : Type) -> Type { Seq x }";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(declared), &mut arena);
+        let start = declared.rfind("Seq x").unwrap();
+        assert_eq!(
+            outcomes(&module).get(1_usize).copied(),
+            Some(DeclarationOutcome::Refused(wrong_sort(at(
+                start,
+                start + 5_usize
+            )))),
+            "a declared family takes the builtin former's refusal, and is no constructor"
+        );
+        assert!(
+            matches!(
+                refusal(SourceText::from("def p(x : Integer) -> Type { Nowhere x x }")),
+                LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("Nowhere")
+            ),
+            "a free name that is no value, no constructor and no family stays unresolved"
+        );
+        let shadowed = lowered(
+            SourceText::from("def p(Path : Integer -> Integer, x : Integer) -> Integer { Path x }"),
+            &mut arena,
+        );
+        assert!(
+            matches!(
+                outcomes(&shadowed).first(),
+                Some(DeclarationOutcome::Completed { .. })
+            ),
+            "a binder named `Path` keeps its value reading, so its call lowers"
+        );
+    }
+
+    #[test]
     fn a_quoted_term_is_refused_at_its_quote_2341()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
