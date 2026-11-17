@@ -29,10 +29,11 @@ fail() {
   failed=1
 }
 
-# The stand-in `ssh`: its first argument is the host, and the rest is the far
-# command, which runs in its own session with that host's home and state
-# directories and the stand-ins first on the path. An ssh session carries no
-# `GH_TOKEN` of this host. It writes its arguments to `ssh-args`.
+# The first argument of the stand-in `ssh` is the host.
+# It runs the far command in a session of its own.
+# It gives that session a separate home, state directory and path.
+# An ssh session carries no `GH_TOKEN` of this host.
+# It writes its arguments to `ssh-args`.
 mkdir -p "$scratch/bin" "$scratch/far-bin" "$scratch/near-bin"
 cat > "$scratch/bin/ssh" << EOF
 #!/usr/bin/env bash
