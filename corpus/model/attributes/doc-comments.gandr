@@ -1,0 +1,29 @@
+//! `doc-comments` resolves links in doc comments and `doc` attributes.
+//!
+//! A link names a declaration or a footer target. The source refuses a link
+//! that resolves to neither.
+//!
+//! The checker resolves each link in its source. It reads footer targets at
+//! the end of their comment run. The links follow the intra-doc links of
+//! rustdoc.
+//!
+//! - see: https://doc.rust-lang.org/rustdoc/
+
+/// Returns its argument; [echo] does the same.
+def identity(x : Integer) -> Integer =
+  x
+
+// Documented by the attribute, linking back to `identity`.
+@[checks, doc("Returns its argument, as [identity] does.")]
+def echo(x : Integer) -> Integer =
+  x
+
+/// Returns its argument, as the [book] does for Rust.
+///
+/// [book]: https://doc.rust-lang.org/rustdoc/write-documentation/linking-to-items-by-name.html
+def cited(x : Integer) -> Integer =
+  x
+
+/// Points at [missing], which nothing declares.
+@[refuses("UnresolvedDocLink")]
+def stale = 1;

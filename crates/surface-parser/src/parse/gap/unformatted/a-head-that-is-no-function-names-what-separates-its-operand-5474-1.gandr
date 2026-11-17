@@ -1,0 +1,2 @@
+def two() -> Integer =
+  shortLength (#[7 8])

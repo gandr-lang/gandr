@@ -1,0 +1,1160 @@
+//! Temporary access in the lowering: the statement that holds a value, the
+//! access that lends it to a view in a mode, the two eliminators that end
+//! the view, and the assignment that writes a held place.
+//!
+//! # A held value and a view are names in the linear zone
+//!
+//! `var x = e ;` holds the value `e` in the linear slot `x` over the rest of
+//! its block, as `fork` binds an endpoint over the rest of its block: the
+//! core hold, whose scope is that rest, at grade `ω`. `var[1] x = e ;` holds
+//! it at grade one; any other numeral is [`LoweringRefusal::GradedBridge`], as
+//! on a thunk type. `var x : T = e ;` holds `e` ascribed `T`; a handle type
+//! `A at w` there binds the world's handle instead (the `lower::world`
+//! module). `access x as v { t }
+//! unwind { u }` lends the slot `x` names exclusively and binds the view `v`,
+//! linearly, over the body `t`; the unwind `u` reads where the access stands,
+//! and a missing unwind is `unwind { pure unit }`. `access exclusive x as v { …
+//! }` spells the same mode. `access shared x as v { t }` lends `x` shared: the
+//! view ends with the body, so the form takes no unwind, and an `unwind`
+//! after it is a misplaced tile. Either mode lends a place of `x` when an
+//! index follows it, `access shared x.#[e] as v { t }`: `e` is read as a value
+//! where the access stands, and the view is the element of `x` at `e`.
+//! `resume v e` and `abort v` end the view `v` names, `e` read as a value.
+//! Each name a form lends or ends resolves to a linear binder, counted among
+//! the linear binders alone as an endpoint is (the `lower::session` module);
+//! a name resolving to anything else is refused here,
+//! [`FragmentBoundary::Held`] for an access and [`FragmentBoundary::View`]
+//! for an eliminator. Which linear binder it is — a held value, a view or an
+//! endpoint — whether a view's mode admits an eliminator, and whether the
+//! held value has elements an index reads are the checker's to judge. A read
+//! of either name elsewhere is a linear variable, which the checker reads as
+//! the value the slot holds.
+//!
+//! # An assignment is an access the statement writes
+//!
+//! `p = e ;` writes the held place `p`, a name a `var` holds or its index
+//! `x.#[i]`, and `p += e ;`, `p -= e ;` and `p *= e ;` write the operator's
+//! prelude row over the place's value and `e`. The statement lowers to `let t =
+//! e ; access p as v { resume(v, t) }`, or `{ let w = op(v, t) ;
+//! resume(v, w) }` for a compound: `e` is read before the place is lent, so
+//! `n = n + 1` reads the slot while it is not lent, and a computation `e`
+//! runs once there, as a `let` runs one. Any other place is
+//! [`FragmentBoundary::Held`].
+//!
+//! - Alternatives: the right side read inside the access, which reads the slot
+//!   while it is lent exclusively; a field place, which the core's place does
+//!   not have.
+//! - Reversal: a field place once the core has one.
+//!
+//! # The body and the unwind are no bodies
+//!
+//! No path through a function runs through an access's body or its unwind:
+//! an exit there would leave the body with its view live, or the unwind
+//! with the access half torn down, so an exit in either is refused as not in
+//! tail. The last computation of each is its result, a value there returned
+//! as a handled subject's is. A hold's scope is the rest of its block, which
+//! an early exit commutes through, as it does a fork's parent: the hold binds
+//! no intuitionistic variable (the `lower::exits` module). A hold in a block
+//! whose ends an early exit continues is refused as unadmitted, as a fork
+//! is: the rest copied under the hold would need its linear indices
+//! renumbered past the held slot, which the commuting does not carry.
+
+use anodized::spec;
+use gandr_core_term::Binders;
+use gandr_core_term::Value;
+use gandr_core_term::Zone;
+use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::HoldGrade;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
+use gandr_core_term::primitive::Arguments;
+use gandr_core_term::primitive::Primitive;
+use gandr_core_term::shift_value;
+use gandr_kernel_term::DeBruijnIndex;
+pub(super) use gandr_surface_lowering_base::lower::access::Accessed;
+pub(super) use gandr_surface_lowering_base::lower::access::Assignment;
+pub use gandr_surface_lowering_base::lower::access::assigned;
+pub use gandr_surface_lowering_base::lower::access::unstated;
+pub use gandr_surface_lowering_base::lower::access::unwound;
+use gandr_surface_lowering_base::lower::exits;
+use gandr_surface_lowering_base::lower::families::Families;
+use gandr_surface_syntax::NodeIndex;
+use quenchant_shape::shape::Maybe;
+
+use super::Lowered;
+use super::Plan;
+use super::Produced;
+use super::Reading;
+use super::Resolved;
+use super::Sink;
+use super::Site;
+use super::Statement;
+use super::StatementBinding;
+use super::capability::Capability;
+use super::capability::CapabilityRef;
+use super::closed;
+use super::exhausted;
+use super::lowered;
+use crate::error::FormFault;
+use crate::error::FragmentBoundary;
+use crate::error::LoweringRefusal;
+use crate::form::Cursor;
+use crate::form::FormName;
+use crate::form::Former;
+use crate::form::Piece;
+use crate::form::Pieces;
+use crate::form::Placed;
+use crate::form::Run;
+use crate::form::TileName;
+use crate::origin::Insertion;
+use crate::origin::Origin;
+use crate::resolve::Bound;
+use crate::resolve::Frame;
+use crate::resolve::ScopeId;
+use crate::unbuilt::Unbuilt;
+
+/// The tiles that write a place after it: `=`, `+=`, `-=` and `*=`.
+pub const ASSIGNING: [TileName; 4] = [
+    TileName::EQUALS,
+    TileName::PLUS_EQUALS,
+    TileName::MINUS_EQUALS,
+    TileName::TIMES_EQUALS,
+];
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// Read one `var x = e ;`, `var[g] x = e ;` or `var x : T = e ;`
+    /// statement, its keyword tile already read.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the statement's tile `var`;
+    ///   `frame` is the frame the statement reads under.
+    /// - ensures: the grade is read when a bracket follows the keyword, `ω`
+    ///   otherwise; `e` is read as a value under `frame`, and a stated `T` as a
+    ///   value type there. A stated handle type `A at w` makes the statement
+    ///   the world's hold of `e` bound at that type, the bind of `(hold e)` at
+    ///   `A at w`, and the frame binding `x` over `frame` is returned.
+    ///   Otherwise the statement is recorded as the hold of `e`, ascribed `T`
+    ///   when one is stated, at the grade over the rest of the block, and the
+    ///   frame binding `x` linearly over `frame`, which the rest of the block
+    ///   reads under, is returned, its binder recorded as a held slot.
+    /// - fails: a fault naming the `var` statement for a tile out of shape and
+    ///   for a grade beside a handle type, the grade's refusal, each hole's own
+    ///   fault and the binder's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The statement's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the counter holds its count over the rest of its
+    ///   block, and both accesses name it past the views between; a hold at
+    ///   grade one carries its grade and a hold at grade two is refused at the
+    ///   grade.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::a_hold_lowers_at_its_grade`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::a_stated_var_ascribes_its_value_or_holds_a_handle`
+    #[spec(
+        captures: before = self.cx().statements.mark(),
+        ensures: |ret| ret.is_err() || (self.cx().statements.mark() == before.next()
+            && self.cx().statements.last().is_some_and(|last| last.origin == hold.node && matches!(last.binding, StatementBinding::Held { .. } | StatementBinding::Located { .. }))),
+    )]
+    #[inline]
+    pub fn hold(
+        &mut self,
+        cursor: &mut Cursor<'_>,
+        hold: Placed,
+        frame: Frame,
+    ) -> Result<Frame, LoweringRefusal<'source>>
+    {
+        let statement = Site {
+            at: hold,
+            name: FormName::VAR_STATEMENT,
+            reading: Reading::Computation(frame),
+        };
+        let grade = match cursor.tile(TileName::BRACKET_OPEN) {
+            Maybe::Present(_) => self.shared().hold_grade(statement, cursor)?,
+            Maybe::Absent(_) => HoldGrade::Many,
+        };
+        let Maybe::Present(binder) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(statement.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let stated = match cursor.tile(TileName::COLON) {
+            Maybe::Present(_) => Maybe::Present(statement.one(cursor.operands())?),
+            Maybe::Absent(_) => Maybe::Absent(unstated::Absent::Unwritten),
+        };
+        closed(statement, cursor, TileName::EQUALS)?;
+        let value = statement.one(cursor.operands())?;
+        closed(statement, cursor, TileName::SEMICOLON)?;
+        let name = self.cx().name_at(binder);
+        self.host().note_binder(binder, frame, name)?;
+        self.host().read(value.node, Reading::Value(frame));
+        if let Maybe::Present(stated) = stated {
+            self.host().read(stated.node, Reading::ValueType(frame));
+            if matches!(self.cx().form_at(stated)?, Some((_, Former::AtType))) {
+                // A handle is the world's to hold: it binds no slot, so a
+                // grade has nothing to grade.
+                if grade != HoldGrade::Many {
+                    return Err(statement.fault(stated.span, FormFault::MisplacedTile));
+                }
+                self.cx_mut().statements.push(Statement {
+                    origin: hold.node,
+                    bound: value.node,
+                    binding: StatementBinding::Located {
+                        annotation: stated.node,
+                        name: binder.node,
+                    },
+                    rest: exits::Rest::Bound,
+                });
+                return Ok(Frame::Inner(self.cx_mut().scope.extend(
+                    frame,
+                    name,
+                    Maybe::Present(binder.span),
+                )));
+            }
+        }
+        self.cx_mut().statements.push(Statement {
+            origin: hold.node,
+            bound: hold.node,
+            binding: StatementBinding::Held {
+                value: value.node,
+                grade,
+                name: binder.node,
+                stated: match stated {
+                    Maybe::Present(stated) => Maybe::Present(stated.node),
+                    Maybe::Absent(reason) => Maybe::Absent(reason),
+                },
+            },
+            rest: exits::Rest::Bound,
+        });
+
+        let slot = self
+            .cx_mut()
+            .scope
+            .extend_linear(frame, name, Maybe::Present(binder.span));
+        let _held = self.cx_mut().held.insert(slot);
+
+        Ok(Frame::Inner(slot))
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// Read a hold's grade, `[n]`, past its `[`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the grade's `[`.
+    /// - ensures: `1` is [`HoldGrade::One`], the cursor past the `]`.
+    /// - fails: [`LoweringRefusal::GradedBridge`] for any other numeral, at the
+    ///   grade; a misplaced-tile fault for a grade out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The grade's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `1` and `2`, each asserted as the grade or the exact
+    ///   refusal.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::a_hold_lowers_at_its_grade`
+    #[spec(
+        captures: first = cursor.peek(),
+        ensures: |ret| match ret {
+            | Ok(HoldGrade::One) => matches!(first, Maybe::Present(Piece::Tile { label: TileName::NUMBER, .. })),
+            | Ok(HoldGrade::Many) => false,
+            | Err(_) => true,
+        },
+    )]
+    fn hold_grade(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<HoldGrade, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(Piece::Tile { label, at }) = cursor.read()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        if label != TileName::NUMBER {
+            return Err(site.fault(at.span, FormFault::MisplacedTile));
+        }
+        if self.cx().name_at(at).as_ref() != "1" {
+            return Err(LoweringRefusal::GradedBridge {
+                span: at.span,
+                grade: self.cx().name_at(at),
+            });
+        }
+        closed(site, cursor, TileName::BRACKET_CLOSE)?;
+
+        Ok(HoldGrade::One)
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
+{
+    /// The linear binder the name at `subject` resolves to under its frame:
+    /// the one path by which every form that lends, ends or writes a slot,
+    /// reads its element or acts on an endpoint finds the slot its name names.
+    ///
+    /// # Specification
+    /// - requires: `subject.at` is a name the form writes, an identifier tile
+    ///   or a name's operand, and `subject.name` is the form a refusal names.
+    /// - ensures: the innermost binder of the name `subject.at` spells, as
+    ///   [`Families::resolve_name`] reads it under `subject`'s frame, when that
+    ///   binder is linear; why not otherwise; nothing is recorded.
+    /// - fails: the name's own refusals.
+    /// - panics: none.
+    /// - executable: none — the answer is the resolver's, which
+    ///   [`Families::resolve_name`] states.
+    ///
+    /// # Errors
+    /// The name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the counter's names resolve past the views between,
+    ///   and a parameter lent, ended or written is no linear binder.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_assignment_writes_only_a_held_place`
+    /// - witness: `gandr-surface-lowering::lower::session::tests::the_seat_exchange_lowers_both_ends`
+    pub(super) fn linear_binder(
+        &mut self,
+        subject: Site,
+    ) -> Result<Maybe<Bound, slot::Absent>, LoweringRefusal<'source>>
+    {
+        let frame = subject.reading.frame();
+        let subject_name = self.cx().name_at(subject.at);
+        Ok(
+            match self.host().resolve_name(subject, frame, subject_name)? {
+                Maybe::Present(Resolved::Binder(bound)) if bound.zone == Zone::Linear => {
+                    Maybe::Present(bound)
+                },
+                Maybe::Present(_) => Maybe::Absent(slot::Absent::Unlinear),
+                Maybe::Absent(_) => Maybe::Absent(slot::Absent::Unbound),
+            },
+        )
+    }
+
+    /// The held slot the name at `subject` names under its frame: the linear
+    /// binder it resolves to, when a `var` binds it.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::linear_binder`].
+    /// - ensures: as [`Self::linear_binder`], when the binder is a slot a `var`
+    ///   binds; nothing is recorded.
+    /// - fails: as [`Self::linear_binder`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held list's name, a view's name and a parameter's
+    ///   name, each written and indexed.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_assignment_writes_only_a_held_place`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::an_index_reads_its_held_element`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |held| match *held {
+        | Maybe::Present(bound) => self.cx().held.contains(&bound.binder),
+        | Maybe::Absent(_) => true,
+    }))]
+    pub(super) fn held_slot(
+        &mut self,
+        subject: Site,
+    ) -> Result<Maybe<Bound, slot::Absent>, LoweringRefusal<'source>>
+    {
+        Ok(match self.linear_binder(subject)? {
+            Maybe::Present(bound) if !self.cx().held.contains(&bound.binder) => {
+                Maybe::Absent(slot::Absent::Unheld)
+            },
+            found @ (Maybe::Present(_) | Maybe::Absent(_)) => found,
+        })
+    }
+
+    /// The linear index and the binder of the name written at `written`, read
+    /// under `frame`, kept as the name's resolution.
+    ///
+    /// # Specification
+    /// - requires: `written` is an identifier tile the form writes.
+    /// - ensures: the linear index and the binder of the innermost binder of
+    ///   the name `written` spells, when that binder is linear, kept as the
+    ///   name's resolution.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] for a name nothing binds;
+    ///   `boundary` at the name for an intuitionistic binder or a declaration;
+    ///   the name's own refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the counter's names resolve past the views between,
+    ///   each kept, and a parameter lent or ended is refused at its name.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::each_name_a_form_lends_ends_or_writes_keeps_its_binder_5011`
+    #[spec(ensures: |ret| match ret {
+        | Err(LoweringRefusal::OutOfFragment { span, boundary: refused, .. }) => refused != boundary || span == written.span,
+        | _ => true,
+    })]
+    fn linear_slot(
+        &mut self,
+        frame: Frame,
+        written: Placed,
+        boundary: FragmentBoundary,
+    ) -> Result<(DeBruijnIndex, ScopeId), LoweringRefusal<'source>>
+    {
+        let subject = Site {
+            at: written,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let found = self.linear_binder(subject)?;
+        self.kept_slot(subject, found, boundary)
+    }
+
+    /// The linear index and the binder of `found`, the binder the name at
+    /// `subject` resolved to under its frame, kept as the name's resolution,
+    /// or the refusal its absence answers.
+    ///
+    /// # Specification
+    /// - requires: `found` is what [`Self::linear_binder`] or
+    ///   [`Self::held_slot`] answered for `subject`.
+    /// - ensures: the binder's linear index and its binder, its resolution kept
+    ///   at the name.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] for a name nothing binds;
+    ///   `boundary` at `subject` for any other absence.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::linear_slot`], [`Self::assign`] and an
+    ///   action's endpoint.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::each_name_a_form_lends_ends_or_writes_keeps_its_binder_5011`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_assignment_writes_only_a_held_place`
+    /// - witness: `gandr-surface-lowering::lower::session::tests::an_action_on_no_endpoint_is_refused`
+    #[spec(ensures: |ret| match ret {
+        | Ok(_) => matches!(found, Maybe::Present(_)),
+        | Err(LoweringRefusal::OutOfFragment { span, .. } | LoweringRefusal::UnresolvedName { span, .. }) => span == subject.at.span,
+        | Err(_) => false,
+    })]
+    pub(super) fn kept_slot(
+        &mut self,
+        subject: Site,
+        found: Maybe<Bound, slot::Absent>,
+        boundary: FragmentBoundary,
+    ) -> Result<(DeBruijnIndex, ScopeId), LoweringRefusal<'source>>
+    {
+        match found {
+            Maybe::Present(bound) => {
+                self.host()
+                    .resolved(subject.at.span, Resolved::Binder(bound));
+                Ok((bound.index, bound.binder))
+            },
+            Maybe::Absent(slot::Absent::Unbound) => Err(LoweringRefusal::UnresolvedName {
+                span: subject.at.span,
+                name: self.cx().name_at(subject.at),
+            }),
+            Maybe::Absent(slot::Absent::Unlinear | slot::Absent::Unheld) => {
+                Err(subject.out(boundary))
+            },
+        }
+    }
+
+    /// Classify a temporary-access form: `access x as v { t } unwind { u }`,
+    /// `resume v e`, `abort v` or a call's view block `e as v { t }`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a temporary-access expression.
+    /// - ensures: the form stands as a computation; an access lends the linear
+    ///   slot `x` names, binds `v` linearly over its body and reads its unwind,
+    ///   when written, under the form's frame, each block's last computation
+    ///   its result; an eliminator ends the view its name resolves to, a
+    ///   resume's value read as a value under the form's frame, and the view's
+    ///   binder is recorded as one a block ends; a view block stands as its
+    ///   call, as [`Self::view_call`] plans it.
+    /// - fails: the wrong-sort refusal where no computation is read;
+    ///   [`FragmentBoundary::Held`] and [`FragmentBoundary::View`] at a name
+    ///   that resolves to no linear binder, and `View` at a view written as no
+    ///   name; [`LoweringRefusal::UnresolvedName`] for one nothing binds; a
+    ///   misplaced-tile fault for a form out of shape; the keyword heads' arity
+    ///   refusals; each block's and hole's own refusal; the view block's
+    ///   refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the counter's accesses with and without an unwind and
+    ///   both eliminators, and each name refused.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_exit_inside_an_access_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Access(_) | Plan::Method(_)))))]
+    #[inline]
+    pub fn access_form(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
+        if super::method::indexed(pieces).is_some() {
+            return self.index_form(site, cursor);
+        }
+        if let Maybe::Present(Piece::Operand(_)) = cursor.peek() {
+            return self.view_call(site, pieces);
+        }
+        let frame = self.host().require(site, Produced::Computation)?;
+        let Maybe::Present(Piece::Tile { label: keyword, .. }) = cursor.read()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let accessed = if keyword == TileName::ACCESS {
+            self.access(site, pieces, frame)?
+        }
+        else {
+            let operand = site.one(cursor.operands())?;
+            exhausted(site, &cursor)?;
+            if keyword == TileName::RESUME {
+                let (written, value) = self.keyword_two(site, operand)?;
+                let (view, ended) = self.ended_view(frame, written)?;
+                let _first = self.cx_mut().ended_views.insert(ended);
+                self.host().read(value.node, Reading::Value(frame));
+                Accessed::Resume {
+                    view,
+                    value: value.node,
+                }
+            }
+            else if keyword == TileName::ABORT {
+                let written = self.keyword_one(site, operand)?;
+                let (view, ended) = self.ended_view(frame, written)?;
+                let _first = self.cx_mut().ended_views.insert(ended);
+                Accessed::Abort { view }
+            }
+            else {
+                return Err(site.fault(site.at.span, FormFault::MisplacedTile));
+            }
+        };
+        self.host().plan(site, Plan::Access(accessed));
+
+        Ok(())
+    }
+
+    /// The view that `resume` or `abort` ends, written at `written`: its
+    /// linear index and its binder under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `written` is the view operand of an eliminator.
+    /// - ensures: as [`Self::linear_slot`] reads the name `written` spells.
+    /// - fails: [`FragmentBoundary::View`] at `written` when it is no name, and
+    ///   [`Self::linear_slot`]'s refusals with [`FragmentBoundary::View`].
+    /// - panics: none.
+    /// - executable: none — the name's form is read off the syntax tree.
+    ///
+    /// # Errors
+    /// The view's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a view's name, a parameter, and an operand that is no
+    ///   name.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_access_names_a_held_value_and_an_eliminator_its_view`
+    /// - witness: `gandr-surface-lowering::lower::session::tests::a_keyword_head_takes_its_operands_by_juxtaposition_5556`
+    fn ended_view(
+        &mut self,
+        frame: Frame,
+        written: Placed,
+    ) -> Result<(DeBruijnIndex, ScopeId), LoweringRefusal<'source>>
+    {
+        if !matches!(self.cx().form_at(written)?, Some((_, Former::Name))) {
+            let view = Site {
+                at: written,
+                name: FormName::IDENTIFIER,
+                reading: Reading::Value(frame),
+            };
+            return Err(view.out(FragmentBoundary::View));
+        }
+        self.linear_slot(frame, written, FragmentBoundary::View)
+    }
+
+    /// Read an access, `access x as v { t } unwind { u }` or
+    /// `access shared x as v { t }`, either of a place `x.#[e]`, at `site`
+    /// under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are the access's own, from its `access` tile.
+    /// - ensures: the mode the word after `access` names, exclusive when none
+    ///   is written; the slot `x` names, resolved under `frame`; the index `e`,
+    ///   when written, read as a value under `frame`; `t` read as a block under
+    ///   `v`'s linear binder over `frame`, and an exclusive access's `u`, when
+    ///   written, as a block under `frame`, each block's last computation its
+    ///   result.
+    /// - fails: as [`Self::access_form`]; a misplaced-tile fault at the
+    ///   `unwind` of a shared access.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The access's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::access_form`], and an access of a place
+    ///   reads its index.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::a_shared_access_lowers_without_an_unwind`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_access_of_a_place_lowers_with_its_index`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |accessed| matches!(*accessed, Accessed::Access { body, .. } if self.cx().results.contains(&body.last))))]
+    fn access(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+        frame: Frame,
+    ) -> Result<Accessed, LoweringRefusal<'source>>
+    {
+        let split = pieces
+            .pieces
+            .iter()
+            .position(
+                |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::UNWIND),
+            )
+            .unwrap_or(pieces.pieces.len());
+        let Some((head, tail)) = pieces.pieces.split_at_checked(split)
+        else {
+            return Err(site.fault(site.at.span, FormFault::MisplacedTile));
+        };
+        let mut cursor = Cursor::new(head, site.at.span);
+        closed(site, &mut cursor, TileName::ACCESS)?;
+        let mode = match cursor.tile(TileName::SHARED) {
+            Maybe::Present(_) => AccessMode::Shared,
+            Maybe::Absent(_) => {
+                let _written = cursor.tile(TileName::EXCLUSIVE);
+                AccessMode::Exclusive { unwind: () }
+            },
+        };
+        let Maybe::Present(lent) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let place = match cursor.tile(TileName::SELECT_OPEN) {
+            Maybe::Present(_) => {
+                let index = site.one(cursor.operands())?;
+                closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
+                self.host().read(index.node, Reading::Value(frame));
+                Place::At { index: index.node }
+            },
+            Maybe::Absent(_) => Place::Whole,
+        };
+        closed(site, &mut cursor, TileName::AS)?;
+        let Maybe::Present(viewer) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let (held, _) = self.linear_slot(frame, lent, FragmentBoundary::Held)?;
+        let name = self.cx().name_at(viewer);
+        self.host().note_binder(viewer, frame, name)?;
+        let viewed = self
+            .cx_mut()
+            .scope
+            .extend_linear(frame, name, Maybe::Present(viewer.span));
+        let body = self.host().block(site, &mut cursor, Frame::Inner(viewed))?;
+        let _result = self.cx_mut().results.insert(body.last);
+        let mut cursor = Cursor::new(tail, site.at.span);
+        let mode = match (mode, tail.is_empty()) {
+            (AccessMode::Shared, true) => AccessMode::Shared,
+            // A shared view ends with its body: nothing aborts it, so there is
+            // no unwind to run.
+            (AccessMode::Shared, false) => {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            },
+            (AccessMode::Exclusive { .. }, true) => AccessMode::Exclusive {
+                unwind: Maybe::Absent(unwound::Absent::Unwritten),
+            },
+            (AccessMode::Exclusive { .. }, false) => {
+                closed(site, &mut cursor, TileName::UNWIND)?;
+                let unwind = self.host().block(site, &mut cursor, frame)?;
+                let _result = self.cx_mut().results.insert(unwind.last);
+                AccessMode::Exclusive {
+                    unwind: Maybe::Present(unwind),
+                }
+            },
+        };
+
+        Ok(Accessed::Access {
+            mode,
+            held,
+            place,
+            body,
+        })
+    }
+
+    /// Read a place assignment's operator and right side after its place,
+    /// `run`, in the block `site` reads under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the assignment's operator tile, just past
+    ///   the place `run`.
+    /// - ensures: the place is one operand, recorded as an assignment of the
+    ///   operator and the right side, which reads as a value under `frame`; the
+    ///   cursor stands past the right side.
+    /// - fails: the block's fault for a place or a right side that is not one
+    ///   operand.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The statement's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain and a compound assignment each lower to the
+    ///   access they write.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |place| self.cx().assignments.contains_key(&place.node)))]
+    #[inline]
+    pub fn assignment(
+        &mut self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        run: Run,
+        frame: Frame,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let place = site.one(run)?;
+        let Maybe::Present(Piece::Tile {
+            label: operator, ..
+        }) = cursor.read()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let value = site.one(cursor.operands())?;
+        self.host().read(value.node, Reading::Value(frame));
+        let _first = self.cx_mut().assignments.insert(place.node, Assignment {
+            operator,
+            value: value.node,
+        });
+
+        Ok(place)
+    }
+
+    /// Classify the place assignment whose place stands at `site`: the place a
+    /// held slot's name, or an index of one, and `assignment` its operator and
+    /// right side.
+    ///
+    /// # Specification
+    /// - requires: `site` is the place a block read an assignment at; `pieces`
+    ///   are its own.
+    /// - ensures: the place stands as a computation, planned as the exclusive
+    ///   access that writes the slot at the place, the index of an indexed
+    ///   place read as a value under the statement's frame, and a compound
+    ///   operator's row found by its spelling without the `=`; the head's name
+    ///   keeps the slot it names.
+    /// - fails: [`FragmentBoundary::Held`] at a place that is neither a name
+    ///   nor an index of one, and at a name that resolves to no held slot;
+    ///   [`LoweringRefusal::UnresolvedName`] for a name nothing binds;
+    ///   [`FragmentBoundary::Unadmitted`] for an operator no row spells.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The assignment's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held name and a held list's index written plainly
+    ///   and by a compound operator, and a parameter written, refused at its
+    ///   name.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
+    /// - witness: `gandr-surface-lowering::lower::access::tests::an_assignment_writes_only_a_held_place`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Access(Accessed::Assign { .. }))))]
+    #[inline]
+    pub fn assign(
+        &mut self,
+        site: Site,
+        former: Former,
+        pieces: &Pieces,
+        assignment: Assignment,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        use gandr_core_term::primitive::Operator;
+        use gandr_core_term::primitive::PRELUDE;
+        let frame = self.host().require(site, Produced::Computation)?;
+        let (head, place) = match (former, pieces.pieces.as_slice()) {
+            (Former::Name, _) => (site.at, Place::Whole),
+            (
+                Former::Access,
+                &[
+                    Piece::Operand(head),
+                    Piece::Tile { label: opener, .. },
+                    Piece::Operand(index),
+                    Piece::Tile {
+                        label: TileName::BRACKET_CLOSE,
+                        ..
+                    },
+                ],
+            ) if opener == TileName::SELECT_OPEN
+                && matches!(self.cx().form_at(head)?, Some((_, Former::Name))) =>
+            {
+                self.host().read(index.node, Reading::Value(frame));
+                (head, Place::At { index: index.node })
+            },
+            _ => return Err(site.out(FragmentBoundary::Held)),
+        };
+        let named = Site {
+            at: head,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let found = self.held_slot(named)?;
+        let (held, _) = self.kept_slot(named, found, FragmentBoundary::Held)?;
+        let combined = if assignment.operator == TileName::EQUALS {
+            Maybe::Absent(assigned::Absent::Plain)
+        }
+        else {
+            let spelled = assignment.operator.as_ref().strip_suffix('=');
+            let Some(&row) = PRELUDE.iter().find(|primitive| {
+                matches!(primitive.operator(), Operator::Infix(spelling) if Some(spelling) == spelled)
+            })
+            else {
+                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::InfixForm)));
+            };
+            Maybe::Present(row)
+        };
+        self.host().plan(
+            site,
+            Plan::Access(Accessed::Assign {
+                held,
+                place,
+                value: assignment.value,
+                combined,
+            }),
+        );
+
+        Ok(())
+    }
+}
+
+impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
+{
+    /// Mint the temporary-access form `accessed` plans.
+    ///
+    /// # Specification
+    /// - requires: every node the plan names is already minted or absent.
+    /// - ensures: the memory form over its children's lowered nodes at
+    ///   `origin`, an access's blocks minted as blocks, its index as a value,
+    ///   and an exclusive access's missing unwind minted as `pure unit` at
+    ///   `origin`; a method's place `self.#[e]` minted as `var p = self ;
+    ///   access shared p.#[e] as v { let _ : a = v ; pure e }`, `a` the element
+    ///   type, every node below the hold marked as inserted for the method; a
+    ///   held slot's element `s.#[e]` minted as `access shared s.#[e] as v {
+    ///   pure v }`, its body marked as inserted for the read; the first absence
+    ///   among the children otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the counter's forms, an unwind written and one left
+    ///   out, a shared access with none, a method's place and a held slot's
+    ///   element.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::the_counter_lowers_to_its_memory_forms`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::an_index_reads_its_held_element`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_access(
+        &self,
+        accessed: Accessed,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let form = match accessed {
+            Accessed::Access {
+                mode,
+                held,
+                place,
+                body,
+            } => {
+                let place = match place {
+                    Place::Whole => Place::Whole,
+                    Place::At { index } => match self.cx().value_at(index) {
+                        Maybe::Present(index) => Place::At { index },
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    },
+                };
+                let body = match self.host_ref().mint_block(body, sink) {
+                    Maybe::Present(body) => body,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let mode = match mode {
+                    AccessMode::Shared => AccessMode::Shared,
+                    AccessMode::Exclusive {
+                        unwind: Maybe::Present(unwind),
+                    } => match self.host_ref().mint_block(unwind, sink) {
+                        Maybe::Present(unwind) => AccessMode::Exclusive { unwind },
+                        Maybe::Absent(reason) => return Maybe::Absent(reason),
+                    },
+                    AccessMode::Exclusive {
+                        unwind: Maybe::Absent(unwound::Absent::Unwritten),
+                    } => {
+                        let unit = sink.arena.value_unit();
+                        sink.origins.record_value(unit, origin);
+                        let returned = sink.arena.computation_return(unit);
+                        sink.origins.record_computation(returned, origin);
+                        AccessMode::Exclusive { unwind: returned }
+                    },
+                };
+                MemoryForm::Access {
+                    mode,
+                    held,
+                    place,
+                    body,
+                }
+            },
+            Accessed::Resume { view, value } => match self.cx().value_at(value) {
+                Maybe::Present(value) => MemoryForm::Resume { view, value },
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Accessed::Abort { view } => MemoryForm::Abort { view },
+            Accessed::Place {
+                receiver,
+                index,
+                element,
+            } => {
+                let (index, element) =
+                    match (self.cx().value_at(index), self.cx().value_type_at(element)) {
+                        (Maybe::Present(index), Maybe::Present(element)) => (index, element),
+                        (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => {
+                            return Maybe::Absent(reason);
+                        },
+                    };
+                let inner = origin.inserted(Insertion::Method);
+                let viewed = sink
+                    .arena
+                    .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(viewed, inner);
+                let read = sink.arena.computation_return(viewed);
+                sink.origins.record_computation(read, inner);
+                let judged = sink.arena.comp_type_returner(element);
+                sink.origins.record_comp_type(judged, inner);
+                let ascribed = sink.arena.computation_ascribe(read, judged);
+                sink.origins.record_computation(ascribed, inner);
+                // Past the ascription's binder the index's free variables are
+                // one deeper.
+                let answered =
+                    shift_value(sink.arena, index, Binders::from(1_u32)).settle(sink.arena);
+                if answered != index {
+                    sink.origins.record_value(answered, inner);
+                }
+                let answer = sink.arena.computation_return(answered);
+                sink.origins.record_computation(answer, inner);
+                let body = sink.arena.computation_bind(ascribed, answer);
+                sink.origins.record_computation(body, inner);
+                let lent = sink.arena.computation_memory(MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    held: DeBruijnIndex::from(0_u32),
+                    place: Place::At { index },
+                    body,
+                });
+                sink.origins.record_computation(lent, inner);
+                let receiver = sink.arena.value_variable(Zone::Intuitionistic, receiver);
+                sink.origins.record_value(receiver, inner);
+                MemoryForm::Hold {
+                    value: receiver,
+                    body: lent,
+                    grade: HoldGrade::Many,
+                }
+            },
+            Accessed::Element { held, index } => {
+                let index = match self.cx().value_at(index) {
+                    Maybe::Present(index) => index,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let inner = origin.inserted(Insertion::Method);
+                let viewed = sink
+                    .arena
+                    .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(viewed, inner);
+                let body = sink.arena.computation_return(viewed);
+                sink.origins.record_computation(body, inner);
+                MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    held,
+                    place: Place::At { index },
+                    body,
+                }
+            },
+            Accessed::Unheld { list, index } => {
+                let list = match self.cx().value_at(list) {
+                    Maybe::Present(list) => list,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let index = match self.cx().value_at(index) {
+                    Maybe::Present(index) => index,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let inner = origin.inserted(Insertion::Method);
+                let viewed = sink
+                    .arena
+                    .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(viewed, inner);
+                let body = sink.arena.computation_return(viewed);
+                sink.origins.record_computation(body, inner);
+                let lent = sink.arena.computation_memory(MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    held: DeBruijnIndex::from(0_u32),
+                    place: Place::At { index },
+                    body,
+                });
+                sink.origins.record_computation(lent, inner);
+                MemoryForm::Hold {
+                    value: list,
+                    body: lent,
+                    grade: HoldGrade::Many,
+                }
+            },
+            Accessed::Assign {
+                held,
+                place,
+                value,
+                combined,
+            } => return self.mint_assign((held, place), (value, combined), sink, origin),
+        };
+        let id = sink.arena.computation_memory(form);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+
+    /// Mint the place assignment of `value` to the slot `held` at `place`:
+    /// `let t = e ; access x as v { resume v t }`, or with a row `op`,
+    /// `let t = e ; access x as v { let w = op(v, t) ; resume v w }`;
+    /// a computation `e` is bound itself, `let t = e`.
+    ///
+    /// # Specification
+    /// - requires: the right side and the place's index are minted or absent.
+    /// - ensures: the bind of the right side's return, or of the computation a
+    ///   nested right side holds, over the exclusive access of the slot at the
+    ///   place, its index raised past the bind, whose body resumes the view
+    ///   with the right side or with the row's result over the view and the
+    ///   right side, and whose unwind is `pure unit`; the bind at `origin`,
+    ///   every node below it inserted for the assignment.
+    /// - fails: never; the first absence among the parts is answered.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain and a compound assignment of a name and of an
+    ///   index, each asserted as the access it mints and judged.
+    /// - witness: `gandr-surface-lowering::lower::access::tests::a_place_assignment_writes_through_an_exclusive_view`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    fn mint_assign(
+        &self,
+        (held, place): (DeBruijnIndex, Place<NodeIndex>),
+        (value, combined): (NodeIndex, Maybe<Primitive, assigned::Absent>),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let value = match self.cx().value_at(value) {
+            Maybe::Present(value) => value,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let inner = origin.inserted(Insertion::Assignment);
+        let place = match place {
+            Place::Whole => Place::Whole,
+            Place::At { index } => match self.cx().value_at(index) {
+                Maybe::Present(index) => {
+                    // Past the right side's binder the index's free variables
+                    // are one deeper.
+                    let raised =
+                        shift_value(sink.arena, index, Binders::from(1_u32)).settle(sink.arena);
+                    if raised != index {
+                        sink.origins.record_value(raised, inner);
+                    }
+                    Place::At { index: raised }
+                },
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+        };
+        let view = DeBruijnIndex::from(0_u32);
+        let right = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        sink.origins.record_value(right, inner);
+        let body = match combined {
+            Maybe::Present(row) => {
+                let viewed = sink.arena.value_variable(Zone::Linear, view);
+                sink.origins.record_value(viewed, inner);
+                let call = sink
+                    .arena
+                    .computation_primitive(row, Arguments::Binary([viewed, right]));
+                sink.origins.record_computation(call, inner);
+                let written = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(written, inner);
+                let resumed = sink.arena.computation_memory(MemoryForm::Resume {
+                    view,
+                    value: written,
+                });
+                sink.origins.record_computation(resumed, inner);
+                let body = sink.arena.computation_bind(call, resumed);
+                sink.origins.record_computation(body, inner);
+                body
+            },
+            Maybe::Absent(assigned::Absent::Plain) => {
+                let resumed = sink
+                    .arena
+                    .computation_memory(MemoryForm::Resume { view, value: right });
+                sink.origins.record_computation(resumed, inner);
+                resumed
+            },
+        };
+        let unit = sink.arena.value_unit();
+        sink.origins.record_value(unit, inner);
+        let unwind = sink.arena.computation_return(unit);
+        sink.origins.record_computation(unwind, inner);
+        let lent = sink.arena.computation_memory(MemoryForm::Access {
+            mode: AccessMode::Exclusive { unwind },
+            held,
+            place,
+            body,
+        });
+        sink.origins.record_computation(lent, inner);
+        // A computation written as the right side has no type to decide its
+        // nesting by; it runs once, before the access, as a `let` runs it.
+        let returned = if let Some(&Value::Nested(nested)) = sink.arena.value(value) {
+            nested
+        }
+        else {
+            let returned = sink.arena.computation_return(value);
+            sink.origins.record_computation(returned, inner);
+            returned
+        };
+        let id = sink.arena.computation_bind(returned, lent);
+
+        Maybe::Present(sink.computation(id, origin))
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a name names no slot a form lends, ends or writes.
+    pub mod slot {
+        /// The name resolves to no linear binder, or to one no `var` holds.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Nothing binds the name.
+            Unbound,
+            /// The name resolves to an intuitionistic binder or to a
+            /// declaration.
+            Unlinear,
+            /// The name resolves to a linear binder that no `var` binds: a
+            /// view or an endpoint.
+            Unheld,
+        }
+    }
+}

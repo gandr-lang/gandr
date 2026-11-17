@@ -1,0 +1,17 @@
+data Peano : Type where {
+  | Origin : Peano
+  | Next : (n : Peano) --> Peano
+}
+def answer : Integer = 1;
+module Counting where {
+  def two = 2;
+}
+def rec shadowed(n : Peano, m : Peano) -> -F Peano {
+  match m {
+    | Origin => return n
+    | Next(n) => return n
+  }
+}
+def hides(answer : Integer) -> -F Integer { return answer }
+def opened() -> -F Integer { import Counting; let two = 3; return two }
+def builtin(add : Integer) -> -F Integer { return add }

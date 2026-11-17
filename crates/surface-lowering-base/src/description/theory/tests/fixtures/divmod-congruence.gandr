@@ -1,0 +1,8 @@
+theory Div where {
+  sort Nat : Type;
+  oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat);
+  rule pass : (rule p : Nat ==> Nat, data m : Nat, data n : Nat) ==> (q : Nat, r : Nat) {
+    node : p(m) ==> (m′);
+    node : divmod(m′, n) --> (q, r);
+  };
+}

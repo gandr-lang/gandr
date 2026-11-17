@@ -1,0 +1,9 @@
+{
+  "signers": ["agent-shade"],
+  "checks": {
+    "check:clippy-plain-only": { "profile": "dev" },
+    "check:clippy-enforcing": { "profile": "test" },
+    "check:dylint": { "profile": "dev" },
+    "check:clippy-arch": { "profile": "test" }
+  }
+}

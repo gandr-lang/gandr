@@ -1,0 +1,45 @@
+/// This source states a flow between two function types.
+///
+/// A schema translator makes a new-schema reader into an old-schema reader.
+/// `Flow.arrow` changes the function domain contravariantly and
+/// preserves its result.
+///
+/// The checker constructs the reader flow from the schema translator.
+/// It rides the new reader back to the old schema.
+///
+/// - cites: [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]
+///
+/// [Gratzer-2026-directed_univalence_simplicial_homotopy_type_theory]: https://arxiv.org/abs/2407.09146 "Gratzer, Weinberger and Buchholtz, Directed univalence in simplicial homotopy type theory"
+
+/// The `ReaderSchema` module moves a reader from the new record layout to
+/// the old layout.
+module ReaderSchema where {
+  type Old = String * Integer;
+  type New = Integer * String;
+  /// The translator swaps the old record fields.
+  @[checks]
+  def toNew(old : Old) -> New =
+    match old where
+      | *{name, age} => *{age, name}
+  /// The translator defines the schema upgrade flow.
+  @[checks]
+  def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;
+  /// The reader flow maps a new-schema reader to an old-schema reader.
+  @[checks]
+  def reader : Flow[.A = Type](New -> Integer, Old -> Integer) = Flow.arrow
+    upgrade
+    (Flow.stay Integer);
+  /// The new-schema reader returns the age field.
+  @[checks]
+  def age(record : New) -> Integer =
+    match record where
+      | *{years, name} => years
+  /// The legacy reader rides the age reader to the old schema.
+  @[checks]
+  def legacy(record : Old) -> Integer =
+    let read = Flow.ride (fun (X) { X }) reader age
+    read record
+  /// The run reads an old record through the ridden reader.
+  @[runs("30")]
+  def aged : () -> Integer = legacy (*{"ada", 30});
+}

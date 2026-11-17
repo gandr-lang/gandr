@@ -1,0 +1,14 @@
+error[PlaceUnindexed]: an access at a place reads an element at an index; the held value is no list
+  ╭▸ corpus/ledger/diagnostics/PlaceUnindexed.gandr:6:3
+  │
+4 │ ┌ def unindexed() -> -F Integer =
+5 │ │   var c = 0
+  │ │   ─── checked against `-F Integer`; while checking the scope of this hold
+6 │ │   access shared c.#[0] as w { pure w }
+  │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+  │ └───│──────────────────────────────────┤
+  │     │                                  checked against `() -> Integer`; while checking the body of this thunk
+  │     a held value with no elements to index
+  │
+  ├ note: `unindexed` is refused with PlaceUnindexed, as its expectation states
+  ╰ help: access a list before indexing it
