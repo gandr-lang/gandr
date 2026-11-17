@@ -2493,6 +2493,8 @@ impl<'pbg> MeldState<'pbg>
     /// - panics: none.
     /// - bound: one read of the emission log for each application of the spine;
     ///   a path's spine holds at most two.
+    /// - executable: none — the head's rule is a read of the grammar, and a
+    ///   predicate restates the walk of the spine.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Path a b` reads both endpoints as expressions, and
@@ -2533,6 +2535,8 @@ impl<'pbg> MeldState<'pbg>
     /// - panics: none.
     /// - bound: one read of the emission log for each application of the spine;
     ///   a path's spine holds at most two.
+    /// - executable: none — the head's rule is a read of the grammar, and a
+    ///   predicate restates the walk of the spine.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::spine_operands`].
@@ -2557,16 +2561,7 @@ impl<'pbg> MeldState<'pbg>
                     if mold != application {
                         break mold;
                     }
-                    at = *children.iter().find(|&&child| {
-                        !matches!(
-                            self.emit
-                                .get(usize::try_from(child.0).unwrap_or(usize::MAX)),
-                            Some(EmitOp::Token {
-                                label: NodeLabel::Space,
-                                ..
-                            }) | None
-                        )
-                    })?;
+                    at = *children.first()?;
                 },
                 EmitOp::Token {
                     label: NodeLabel::Tile(mold),
@@ -4034,6 +4029,8 @@ impl<'pbg> MeldState<'pbg>
     ///   `self` unchanged.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the rule's statement is a read of the grammar, and
+    ///   a predicate restates the gate.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `M.T` and `M.N.T` read as qualified types, and a lone
