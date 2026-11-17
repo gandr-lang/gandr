@@ -246,8 +246,8 @@ fn top_level_forms_and_comments_keep_their_lines()
         include_str!("format/unformatted/top-level-forms-and-comments-keep-their-lines.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "#!/usr/bin/env gandr\n\n// head\ndef a = 1;\ndef b = 2; // trailing\n\n/* own */\n(f a);\n(g b);\n",
-        "forms take a line each, a trailing comment stays, a blank line is kept once, and a statement keeps its separator"
+        "#!/usr/bin/env gandr\n\n// head\ndef a = 1;\ndef b = 2; // trailing\n\n/* own */\ndef c = (f a);\ndef d = (g b);\n",
+        "forms take a line each, a trailing comment stays, a blank line is kept once, and a declaration keeps its terminator"
     );
     assert_eq!(text(&grammar, "", WIDE), "", "an empty source stays empty");
 }
