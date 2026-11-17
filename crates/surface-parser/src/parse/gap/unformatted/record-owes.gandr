@@ -1,0 +1,15 @@
+def lcSyntax : *{{
+  con : Type,
+  empty : () -> con,
+{typed}
+  extendTm : con -> con,
+  law1 : (g : con) -> Path[.A = con](g, g)
+}} = *{{
+  N,
+  *{{
+    LCSyntax.empty,
+    LCSyntax.extendTm
+  }}
+}};
+
+def next = 1;

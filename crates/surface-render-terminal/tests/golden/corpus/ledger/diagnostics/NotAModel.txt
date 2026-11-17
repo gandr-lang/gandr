@@ -1,0 +1,8 @@
+error[NotAModel]: `n` is no binder or definition declared at a model type, so it has no members to open
+  ╭▸ corpus/ledger/diagnostics/NotAModel.gandr:5:14
+  │
+5 │   module m = n
+  │              ━ not a model
+  │
+  ├ note: `opened` is refused with NotAModel, as its expectation states
+  ╰ help: declare `n` as a model before opening it
