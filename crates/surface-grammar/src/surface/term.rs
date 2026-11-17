@@ -1049,8 +1049,10 @@ fn module_signature_field() -> Regex
 }
 
 /// Build the `def rec` recursive tail: `rec id [implicits]? (params) -> T? {
-/// body }`, or the clauses matching the arrows after the head, with or
-/// without parameters before it: `rec id (params)? : T where { | … }`.
+/// body }`, its body one expression after `=`, `rec id (params) -> T? = E ;`,
+/// as the regular tail admits, or the clauses matching the arrows after the
+/// head, with or without parameters before it: `rec id (params)? : T where {
+/// | … }`.
 ///
 /// A single `{ … }` with an interior alternative separates the corecursive
 /// copattern-clause body from the ordinary statement body, so the two never
@@ -1065,8 +1067,8 @@ fn module_signature_field() -> Regex
 /// - requires: nothing.
 /// - ensures: a rec keyword, name and optional implicit telescope (as the
 ///   regular tail admits), then parameters followed by an optional result and
-///   one brace-delimited alternative body or by a stated type and clauses, or a
-///   stated type and clauses alone.
+///   one brace-delimited alternative body or an expression after `=`, or by a
+///   stated type and clauses, or a stated type and clauses alone.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1097,16 +1099,22 @@ fn def_rec_tail() -> Regex
                 alt([
                     seq([
                         opt(seq([t(TileLabel("->")), h(Sort::Type)])),
-                        t(TileLabel("{")),
                         alt([
-                            // corecursive body: copattern clauses `.head => e`
-                            // (+ reserved `_ =>`).
-                            comma1(copattern_clause()),
-                            // ordinary statement body (the block interior,
-                            // flat).
-                            seq([repeat(statement_alt()), opt(h(Sort::Expression))]),
+                            seq([
+                                t(TileLabel("{")),
+                                alt([
+                                    // corecursive body: copattern clauses
+                                    // `.head => e` (+ reserved `_ =>`).
+                                    comma1(copattern_clause()),
+                                    // ordinary statement body (the block
+                                    // interior, flat).
+                                    seq([repeat(statement_alt()), opt(h(Sort::Expression))]),
+                                ]),
+                                t(TileLabel("}")),
+                            ]),
+                            // one-expression body, as the regular tail's.
+                            seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
                         ]),
-                        t(TileLabel("}")),
                     ]),
                     clauses(),
                 ]),
