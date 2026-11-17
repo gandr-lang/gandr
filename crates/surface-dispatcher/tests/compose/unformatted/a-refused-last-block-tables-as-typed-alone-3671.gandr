@@ -1,0 +1,20 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+
+rec {
+  data ULevel : Nat -> Type {
+    NatV : (n : Nat) --> ULevel(n);
+    TypeV : (n : Nat) --> ULevel(Succ(n));
+    PiV : (n : Nat, a : ULevel(n), b : +U (elLevel(n, a) -> -F ULevel(n))) --> ULevel(n);
+  }
+
+  def rec elLevel(n : Nat, u : ULevel(n)) -> -F Type {
+    match u {
+      | NatV(m) => return Nat
+      | TypeV(m) => return (ULevel(m))
+      | PiV(m, a, b) => return (+U ((x : elLevel[<](m, a)) -> -F elLevel[<](m, b(x))))
+    }
+  }
+}

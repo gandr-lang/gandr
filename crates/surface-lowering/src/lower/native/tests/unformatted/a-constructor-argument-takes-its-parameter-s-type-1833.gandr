@@ -1,0 +1,8 @@
+{MAYBE}def count(m : Maybe(Integer)) -> -F Integer {{ return 0 }}
+def passed : () -> Integer ;
+def passed = thunk {{ become count (Some 3) }} ;
+def bare : () -> Integer ;
+def bare = thunk {{ become count None }} ;
+def annotated : () -> Integer ;
+def annotated = thunk {{ become count (Some 3 : Maybe(Integer)) }} ;
+def local(g : Maybe(Integer) -> Integer) -> -F Integer {{ g None }}
