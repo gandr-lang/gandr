@@ -859,4 +859,16 @@ pub mod test
         let ring = IoUring::new().unwrap();
         drop(ring.registrar());
     }
+
+    /// On riscv64 the bindings give glibc's context types the sizes of the
+    /// host's headers, so the ring builds there.
+    #[cfg(all(target_os = "linux", target_arch = "riscv64"))]
+    #[test]
+    fn context_types_take_the_sizes_of_the_headers_7720()
+    {
+        use ::core::mem::size_of;
+        assert_eq!(size_of::<::liburing_rs::__riscv_mc_fp_state>(), 528);
+        assert_eq!(size_of::<::liburing_rs::mcontext_t>(), 784);
+        assert_eq!(size_of::<::liburing_rs::ucontext_t>(), 960);
+    }
 }
