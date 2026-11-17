@@ -226,6 +226,8 @@ const COUNTED: &[&str] = &[
     "type capability_type name",
     "type end_session_type",
     "type equivalence_type",
+    "type extension_type",
+    "type extension_type name",
     "type f_type",
     "type f_type name",
     "type flow_type",

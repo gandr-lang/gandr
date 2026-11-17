@@ -76,7 +76,7 @@ fn a_base_named_by_a_type_member_keeps_the_name()
         })
         .collect();
     let written: BTreeSet<(usize, Option<&str>)> = source
-        .match_indices("Config[")
+        .match_indices("Config.#{")
         .map(|(start, _)| start)
         .chain(
             source
