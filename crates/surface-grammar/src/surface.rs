@@ -544,6 +544,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "data_declaration",
     "derived_rule_declaration",
     "equivalence_type",
+    "extension_type",
     "flow_declaration",
     "flow_type",
     "for_expression",
