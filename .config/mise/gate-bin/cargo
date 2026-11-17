@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# This file is the gate's `cargo`. While `GANDR_GATE_BIN` names this
+# directory, `mise.toml` puts it first on each task's `PATH`. So each cargo
+# command of a gate on the host's counter runs through its own `gandr tokens`.
+# At the command's end, the verb's slot returns each token that the command's
+# tools still hold.
+# - see: #7688 — the hold of one build command on the host's counter
+#
+# This script runs the first `cargo` on `PATH` past this directory. The
+# command runs with this directory off its `PATH`. So a `cargo` that the
+# command starts draws on the same FIFO.
+#
+# The counter is the host's, so the verb runs under no toolchain selection.
+# The command keeps the selection of its environment.
+set -euo pipefail
+
+here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+path=
+IFS=: read -r -a entries <<< "$PATH"
+for entry in "${entries[@]}"; do
+  if [[ ${entry%/} != "$here" && ${entry%/} != "${GANDR_GATE_BIN:-$here}" ]]; then
+    path+=${path:+:}$entry
+  fi
+done
+PATH=$path
+if ! cargo=$(command -v cargo) || [[ ${cargo%/*} == "$here" ]]; then
+  echo "gate: no cargo on PATH past $here" >&2
+  exit 127
+fi
+if [[ -v GANDR_TOOLCHAIN ]]; then
+  exec env -u GANDR_TOOLCHAIN gandr tokens -- env GANDR_TOOLCHAIN="$GANDR_TOOLCHAIN" "$cargo" "$@"
+fi
+exec gandr tokens -- "$cargo" "$@"

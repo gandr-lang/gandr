@@ -1,0 +1,8 @@
+codata Stream : Type[-] where
+  head : Integer;
+  tail : Stream;
+codata Spot : Type[-] where
+  x : Integer;
+  y : Integer;
+def mix(s : +U Stream) -> Spot =
+  s.tail

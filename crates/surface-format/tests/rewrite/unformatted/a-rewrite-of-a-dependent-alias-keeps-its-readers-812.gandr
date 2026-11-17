@@ -1,0 +1,14 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+
+def next(n : Nat) -> -F Nat {
+  Succ n
+}
+
+def stay : (a : Nat) -> Path[.A = Nat](a, a) ;
+
+def stayUp(a : Nat) -> -F Path[.A = Nat](Succ a, Succ a) {
+  Path.step (Path.ap next (Flow.stay a)) (Path.here (Succ a))
+}
