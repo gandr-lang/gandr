@@ -1,0 +1,32 @@
+// A motive that names a path type, a bridge type or a flow type.
+//
+// A motive is a function from an index to a type. Its body is a computation,
+// and a type is a value. So the body writes `return` before the type, as it
+// does before any value. The function itself is a value too, so the
+// definition returns its thunk.
+//
+// - see: #6491
+
+/// Sequences over a type.
+data Seq(a : Type) : Type where
+  /// The empty sequence.
+  | Nil : Seq a
+  /// A head before the rest.
+  | Cons : (h : a, t : Seq a) --> Seq a
+
+/// At each index `d`, the paths from `d` to `a`.
+@[checks]
+def pathsTo(a : Integer) -> Integer -> Type { return thunk { fun (d) { return Path d a } } }
+
+/// At each index `d`, the bridges from `d` to `a`.
+@[checks]
+def bridgesTo(a : Integer) -> Integer -> Type { return thunk { fun (d) { return Bridge d a } } }
+
+/// At each index `d`, the flows from `d` to `a`.
+@[checks]
+def flowsTo(a : Integer) -> Integer -> Type { return thunk { fun (d) { return Flow d a } } }
+
+/// At each index, the sequences over the integers: a declared family takes
+/// the same spelling as a builtin former.
+@[checks]
+def sequencesAt(a : Integer) -> Integer -> Type { return thunk { fun (d) { return Seq Integer } } }
