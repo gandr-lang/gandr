@@ -67,18 +67,18 @@ def rec abstractionsOf(term : Theory) -> Integer =
 
 /// `deaf` uses `bind x` at the `listen` port.
 @[runs("1")]
-def deafFields() -> Integer { match Deaf {
+def deafFields() -> Integer = match Deaf {
   | Presents(sorts, opers, rules) => match rules where
     | Rule(name, lhs, rhs, rest) => fieldsOf lhs
     | _ => 0
   | _ => 0
-} }
+};
 
 /// `deaf` uses `bind c` at the `nu` port.
 @[runs("1")]
-def deafAbstractions() -> Integer { match Deaf {
+def deafAbstractions() -> Integer = match Deaf {
   | Presents(sorts, opers, rules) => match rules where
     | Rule(name, lhs, rhs, rest) => abstractionsOf lhs
     | _ => 0
   | _ => 0
-} }
+};

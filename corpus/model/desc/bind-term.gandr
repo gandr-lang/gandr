@@ -50,7 +50,7 @@ def rec derived(chain : Theory) -> Integer =
 /// as many as for the block with `nu(nil)` on both left sides. A comparison
 /// of atoms by name finds no overlap and derives no rule.
 @[runs("2")]
-def derivations() -> Integer { match Alpha {
+def derivations() -> Integer = match Alpha {
   | Presents(sorts, opers, rules) => derived rules
   | _ => 0
-} }
+};

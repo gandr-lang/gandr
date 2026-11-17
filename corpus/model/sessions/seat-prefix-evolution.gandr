@@ -30,4 +30,4 @@ def carried(play : Prefix Seat.SeatEnd) -> Prefix Evolution.SeatEnd′ =
 
 /// `upgraded` transports the open record to the wider protocol.
 @[runs("recorded (received \"task\") (selected report) (sent \"progress\")")]
-def upgraded() -> Prefix Evolution.SeatEnd′ { carried reporting }
+def upgraded() -> Prefix Evolution.SeatEnd′ = carried reporting;

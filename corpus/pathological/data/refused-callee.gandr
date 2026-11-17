@@ -19,4 +19,4 @@ def refused(xs : List Integer) -> List Integer =
 /// A bare constructor passed to the refused declaration takes no type from
 /// its parameter.
 @[refuses("OutOfFragment.Unannotated")]
-def calls() -> List Integer { refused Nil }
+def calls() -> List Integer = refused Nil;

@@ -47,4 +47,4 @@ def along_here : Path(Path.walk (fun (X) { X }) (Path.here Integer) 2, 2) = Path
 
 /// Transport along reflexivity in the universe keeps the value, by a run.
 @[runs("2")]
-def along_here_run() -> Integer { Path.walk (fun (X) { X }) (Path.here Integer) 2 }
+def along_here_run() -> Integer = Path.walk (fun (X) { X }) (Path.here Integer) 2;

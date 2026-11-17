@@ -43,10 +43,10 @@ pub def rec wp(
 
 /// The increment's specification: the postcondition at the unit and the
 /// successor of the initial state.
-pub def incrSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) (s + 1) }
+pub def incrSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post (*{}) (s + 1);
 
 /// The counter ends at one.
-pub def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }
+pub def isOne(_x : Unit, s : Integer) -> Type = return Path s 1;
 
 /// `incrSpecified` pairs the increment with evidence
 /// below `incrSpec(isOne, s)`.
@@ -70,11 +70,11 @@ def incrSpecBare(
   post : (Unit, Integer) -> Type,
   s : Integer,
   h : incrSpec(post, s)
-) -> wp(incrTree, post, s) { h }
+) -> wp(incrTree, post, s) = h;
 
 /// The return specification: the postcondition at the unit and the initial
 /// state.
-def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) s }
+def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post (*{}) s;
 
 /// `doneSpecified` pairs the stopped program with evidence
 /// at every postcondition.

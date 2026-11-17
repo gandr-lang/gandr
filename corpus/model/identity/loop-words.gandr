@@ -27,7 +27,7 @@ pub def around(c : Words) -> Words =
 
 /// The run returns the constructed word.
 @[runs("Loop (Loop Nil)")]
-def built() -> Words { around (Loop Nil) }
+def built() -> Words = around (Loop Nil);
 
 /// Conversion reduces a cancelled loop word.
 def cancelled_word : Path[.A = Words](Loop (Unloop (Loop Nil)), Loop Nil) = Path.here (Loop Nil);
@@ -67,7 +67,7 @@ def rec mirror(c : Words) -> Words =
 
 /// The mirror of a loop is one inverse loop.
 @[runs("Unloop Nil")]
-def mirrored() -> Words { mirror (Loop Nil) }
+def mirrored() -> Words = mirror (Loop Nil);
 
 /// Conversion gives the same mirror result for the cancelled word.
 def mirror_cancelled : Path[.A = Words](mirror (Loop (Unloop Nil)), Nil) = Path.here Nil;

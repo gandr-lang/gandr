@@ -13,7 +13,7 @@
 import "./data-base.gandr";
 
 /// The product of two types.
-def prodOf(a : Type, b : Type) -> Type { return type(a * b) }
+def prodOf(a : Type, b : Type) -> Type = return type(a * b);
 
 /// One integer for each step of `n`, the next step's tower beside it.
 def rec tower(n : Nat) -> Type =
@@ -22,4 +22,4 @@ def rec tower(n : Nat) -> Type =
     | Succ(m) => return type(Integer * tower[<](m))
 
 /// The tower of `n` beside the product of `a` with itself.
-def towered(n : Nat, a : Type) -> Type { return type(tower(n) * prodOf(a, a)) }
+def towered(n : Nat, a : Type) -> Type = return type(tower(n) * prodOf(a, a));

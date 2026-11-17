@@ -34,7 +34,7 @@ def retired : Prefix Evolution.SeatEnd = recorded
   (offered retire);
 
 /// Short of the offer, the play is a prefix of the narrowed protocol too.
-def kept() -> Prefix Evolution.Kept { Flow.ride (fun (X) { Prefix X }) Evolution.keep reported }
+def kept() -> Prefix Evolution.Kept = Flow.ride (fun (X) { Prefix X }) Evolution.keep reported;
 
 /// `Kept` offers no `retire`: refused at that move.
 @[refuses("RunNotAdmitted")]

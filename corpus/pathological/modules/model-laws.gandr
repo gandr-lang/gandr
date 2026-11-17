@@ -21,16 +21,16 @@ data Lone : Type where
 /// `Lone` is no carrier the host provides, so its laws are the author's to
 /// prove.
 module Overadmitted : Model(Decided) with sort Carrier = Lone where {
-  def alike(a : Lone, b : Lone) -> Bool { true }
+  def alike(a : Lone, b : Lone) -> Bool = true;
   @[refuses("UnprovenLaw.Admitted")]
   law refl = ~admitted;
-  def sym(a : Lone, b : Lone) -> Path(alike a b, alike b a) { Path.here true }
+  def sym(a : Lone, b : Lone) -> Path(alike a b, alike b a) = Path.here true;
 }
 
 /// Float equality as an `Eq`: its symmetry is the host's, its reflexivity no
 /// law the host asserts.
 module FloatEqAdmitted : Model(Eq) with sort Carrier = f64 where {
-  def eq(a : f64, b : f64) -> Bool { float64.eq a b }
+  def eq(a : f64, b : f64) -> Bool = float64.eq a b;
   @[refuses("UnprovenLaw.Admitted")]
   law refl = ~admitted;
   law sym = ~admitted;
@@ -39,5 +39,5 @@ module FloatEqAdmitted : Model(Eq) with sort Carrier = f64 where {
 /// Float equality as an `Eq` stating no reflexivity at all.
 @[refuses("NoFiller.Omitted")]
 module FloatEqMissing : Model(Eq) with sort Carrier = f64 where
-  def eq(a : f64, b : f64) -> Bool { float64.eq a b }
+  def eq(a : f64, b : f64) -> Bool = float64.eq a b;
   law sym = ~admitted;

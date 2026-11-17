@@ -22,4 +22,4 @@ pub def rec count(xs : List String) -> Integer =
     | #[x, ..rest] => { let n = count[<] rest; n + 1 }
 
 /// `main` returns its string argument count as its exit code.
-def main(args : List String) -> Integer { count args }
+def main(args : List String) -> Integer = count args;

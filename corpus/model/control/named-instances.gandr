@@ -20,7 +20,7 @@ import std.io;
 
 /// A line printed through the instance `out`, the capability its label
 /// binds.
-pub def say() -> [out : std.io.Console.Eff] Unit { out.print "said" }
+pub def say() -> [out : std.io.Console.Eff] Unit = out.print "said";
 
 /// One instance of `std.io.Console.Eff` handled around the call: the
 /// call passes it.
@@ -68,10 +68,10 @@ def namedInner() -> Integer =
   }
 
 /// `relayed` passes instance `o` to `say`.
-def relayed() -> [o : std.io.Console.Eff] Unit { say () }
+def relayed() -> [o : std.io.Console.Eff] Unit = say ();
 
 /// An explicit parameter beside the instance, which comes after it.
-def sayLine(s : String) -> [out : std.io.Console.Eff] Unit { out.print s }
+def sayLine(s : String) -> [out : std.io.Console.Eff] Unit = out.print s;
 
 /// `sayLineRuns` passes its explicit argument and a scope instance.
 @[runs("1")]

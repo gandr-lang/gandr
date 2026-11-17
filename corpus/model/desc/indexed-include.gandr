@@ -33,4 +33,4 @@ pub theory Again where
   include Scoped;
 
 /// A model of `Scoped`, given back as it is.
-pub def keep(m : Model Scoped) -> Model Scoped { m }
+pub def keep(m : Model Scoped) -> Model Scoped = m;

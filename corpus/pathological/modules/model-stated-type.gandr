@@ -41,11 +41,11 @@ def decoded(c : Code) -> Type =
 /// Equality of codes: any two compare equal.
 module Always : Model(Eq) with sort Carrier = Code where
   /// Any two codes compare equal.
-  def eq(a : Code, b : Code) -> Bool { true }
+  def eq(a : Code, b : Code) -> Bool = true;
   /// Each code equals itself.
-  def refl(a : Code) -> Path[.A = Bool](eq a a, true) { Path.here true }
+  def refl(a : Code) -> Path[.A = Bool](eq a a, true) = Path.here true;
   /// The comparison is symmetric.
-  def sym(a : Code, b : Code) -> Path[.A = Bool](eq a b, eq b a) { Path.here true }
+  def sym(a : Code, b : Code) -> Path[.A = Bool](eq a b, eq b a) = Path.here true;
 
 /// Equality of codes by their constructors.
 module ByCode : Model(Eq) with sort Carrier = Code where

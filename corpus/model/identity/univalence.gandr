@@ -133,7 +133,7 @@ def uaBeta(
 
 /// The `uaBetaRun` run applies the `winding` map to the loop.
 @[runs("S Z")]
-def uaBetaRun() -> Int { Path.walk (fun (X) { X }) (ua winding) (loop) }
+def uaBetaRun() -> Int = Path.walk (fun (X) { X }) (ua winding) (loop);
 
 /// Transport to the integers converts each loop to its winding number.
 def windingBeta(x : Path[.A = Circle](Base, Base)) -> Path[.A = Int](
@@ -144,7 +144,7 @@ def windingBeta(x : Path[.A = Circle](Base, Base)) -> Path[.A = Int](
 
 /// The loop run returns its winding number.
 @[runs("S Z")]
-def windingRun() -> Int { Path.walk (fun (X) { X }) loopsAreIntegers (loop) }
+def windingRun() -> Int = Path.walk (fun (X) { X }) loopsAreIntegers (loop);
 
 /// No conversion proves `ua` after `idtoequiv`, so `uaEta` owes a law.
 @[owes(1)]

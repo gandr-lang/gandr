@@ -36,11 +36,11 @@ module Bytes : Model(Grade) where
   /// One.
   def one = 1;
   /// The sum.
-  def plus(a : Integer, b : Integer) -> Integer { a + b }
+  def plus(a : Integer, b : Integer) -> Integer = a + b;
   /// The product.
-  def times(a : Integer, b : Integer) -> Integer { a * b }
+  def times(a : Integer, b : Integer) -> Integer = a * b;
   /// The order.
-  def le(a : Integer, b : Integer) -> Bool { a <= b }
+  def le(a : Integer, b : Integer) -> Bool = a <= b;
 
 /// Two is under four, but over the native integers no conversion shows it.
 @[refuses("EndpointMismatch")]

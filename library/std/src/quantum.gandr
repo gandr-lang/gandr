@@ -43,7 +43,7 @@ def rec lift(n : Integer, k : Scale) -> Integer =
     | Halved(m) => 2 * lift[<] n m
 
 /// Whether `n` is even.
-def even(n : Integer) -> Bool { int.mod n 2 == 0 }
+def even(n : Integer) -> Bool = int.mod n 2 == 0;
 
 /// Whether all four integers are even.
 def allEven(a : Integer, b : Integer, c : Integer, d : Integer) -> Bool =
@@ -115,7 +115,7 @@ pub def conjugate(x : Amplitude) -> Amplitude =
     | Amp(a, b, c, d, k) => Amp a b (0 - c) (0 - d) k
 
 /// The squared modulus `x · x̄`, an amplitude with no imaginary part.
-pub def norm(x : Amplitude) -> Amplitude { times x (conjugate x) }
+pub def norm(x : Amplitude) -> Amplitude = times x (conjugate x);
 
 /// The state of one qubit: the amplitudes of `|0⟩` and of `|1⟩`.
 pub data Ket : Type where

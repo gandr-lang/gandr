@@ -63,11 +63,11 @@ module Up : Model(Stepping) where
   type M = Integer;
 
   /// `step` adds one.
-  def step(x : Integer) -> Integer { x + 1 }
+  def step(x : Integer) -> Integer = x + 1;
 
 /// `UpIterated` applies `Iterating` to `Up`.
 module UpIterated = Iterating(Up);
 
 /// `threeStepsUp` iterates the step three times.
 @[runs("7")]
-def threeStepsUp() -> Integer { UpIterated.times (Succ (Succ (Succ Zero))) 4 }
+def threeStepsUp() -> Integer = UpIterated.times (Succ (Succ (Succ Zero))) 4;

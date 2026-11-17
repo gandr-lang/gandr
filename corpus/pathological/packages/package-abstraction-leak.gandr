@@ -18,7 +18,7 @@ module Ints : Model(Seeded) where
   /// Counts are integers.
   type T = Integer;
   /// A count reads as itself.
-  def read(n : Integer) -> Integer { n }
+  def read(n : Integer) -> Integer = n;
   /// Seven.
   def seed = 7;
 

@@ -19,9 +19,9 @@ module Tally0 : Model(Count) where
   /// The one mark.
   def zero = Mark0;
   /// A step leaves the mark as it is.
-  def incr(c : Tag0) -> Tag0 { c }
+  def incr(c : Tag0) -> Tag0 = c;
   /// The tally's number.
-  def read(c : Tag0) -> Integer { 0 }
+  def read(c : Tag0) -> Integer = 0;
 
 /// `Tag1` is carrier one.
 data Tag1 : Type where
@@ -33,9 +33,9 @@ module Tally1 : Model(Count) where
   /// The one mark.
   def zero = Mark1;
   /// A step leaves the mark as it is.
-  def incr(c : Tag1) -> Tag1 { c }
+  def incr(c : Tag1) -> Tag1 = c;
   /// The tally's number.
-  def read(c : Tag1) -> Integer { 1 }
+  def read(c : Tag1) -> Integer = 1;
 
 /// `Tag2` is carrier two.
 data Tag2 : Type where
@@ -47,9 +47,9 @@ module Tally2 : Model(Count) where
   /// The one mark.
   def zero = Mark2;
   /// A step leaves the mark as it is.
-  def incr(c : Tag2) -> Tag2 { c }
+  def incr(c : Tag2) -> Tag2 = c;
   /// The tally's number.
-  def read(c : Tag2) -> Integer { 2 }
+  def read(c : Tag2) -> Integer = 2;
 
 /// `Tag3` is carrier three.
 data Tag3 : Type where
@@ -61,9 +61,9 @@ module Tally3 : Model(Count) where
   /// The one mark.
   def zero = Mark3;
   /// A step leaves the mark as it is.
-  def incr(c : Tag3) -> Tag3 { c }
+  def incr(c : Tag3) -> Tag3 = c;
   /// The tally's number.
-  def read(c : Tag3) -> Integer { 3 }
+  def read(c : Tag3) -> Integer = 3;
 
 /// `Tag4` is carrier four.
 data Tag4 : Type where
@@ -75,9 +75,9 @@ module Tally4 : Model(Count) where
   /// The one mark.
   def zero = Mark4;
   /// A step leaves the mark as it is.
-  def incr(c : Tag4) -> Tag4 { c }
+  def incr(c : Tag4) -> Tag4 = c;
   /// The tally's number.
-  def read(c : Tag4) -> Integer { 4 }
+  def read(c : Tag4) -> Integer = 4;
 
 /// `Tag5` is carrier five.
 data Tag5 : Type where
@@ -89,9 +89,9 @@ module Tally5 : Model(Count) where
   /// The one mark.
   def zero = Mark5;
   /// A step leaves the mark as it is.
-  def incr(c : Tag5) -> Tag5 { c }
+  def incr(c : Tag5) -> Tag5 = c;
   /// The tally's number.
-  def read(c : Tag5) -> Integer { 5 }
+  def read(c : Tag5) -> Integer = 5;
 
 /// `Tag6` is carrier six.
 data Tag6 : Type where
@@ -103,9 +103,9 @@ module Tally6 : Model(Count) where
   /// The one mark.
   def zero = Mark6;
   /// A step leaves the mark as it is.
-  def incr(c : Tag6) -> Tag6 { c }
+  def incr(c : Tag6) -> Tag6 = c;
   /// The tally's number.
-  def read(c : Tag6) -> Integer { 6 }
+  def read(c : Tag6) -> Integer = 6;
 
 /// `Tag7` is carrier seven.
 data Tag7 : Type where
@@ -117,9 +117,9 @@ module Tally7 : Model(Count) where
   /// The one mark.
   def zero = Mark7;
   /// A step leaves the mark as it is.
-  def incr(c : Tag7) -> Tag7 { c }
+  def incr(c : Tag7) -> Tag7 = c;
   /// The tally's number.
-  def read(c : Tag7) -> Integer { 7 }
+  def read(c : Tag7) -> Integer = 7;
 
 /// `Tag8` is carrier eight.
 data Tag8 : Type where
@@ -131,9 +131,9 @@ module Tally8 : Model(Count) where
   /// The one mark.
   def zero = Mark8;
   /// A step leaves the mark as it is.
-  def incr(c : Tag8) -> Tag8 { c }
+  def incr(c : Tag8) -> Tag8 = c;
   /// The tally's number.
-  def read(c : Tag8) -> Integer { 8 }
+  def read(c : Tag8) -> Integer = 8;
 
 /// `Tag9` is carrier nine.
 data Tag9 : Type where
@@ -145,9 +145,9 @@ module Tally9 : Model(Count) where
   /// The one mark.
   def zero = Mark9;
   /// A step leaves the mark as it is.
-  def incr(c : Tag9) -> Tag9 { c }
+  def incr(c : Tag9) -> Tag9 = c;
   /// The tally's number.
-  def read(c : Tag9) -> Integer { 9 }
+  def read(c : Tag9) -> Integer = 9;
 
 /// `Tag10` is carrier ten.
 data Tag10 : Type where
@@ -159,9 +159,9 @@ module Tally10 : Model(Count) where
   /// The one mark.
   def zero = Mark10;
   /// A step leaves the mark as it is.
-  def incr(c : Tag10) -> Tag10 { c }
+  def incr(c : Tag10) -> Tag10 = c;
   /// The tally's number.
-  def read(c : Tag10) -> Integer { 10 }
+  def read(c : Tag10) -> Integer = 10;
 
 /// `Tag11` is carrier eleven.
 data Tag11 : Type where
@@ -173,9 +173,9 @@ module Tally11 : Model(Count) where
   /// The one mark.
   def zero = Mark11;
   /// A step leaves the mark as it is.
-  def incr(c : Tag11) -> Tag11 { c }
+  def incr(c : Tag11) -> Tag11 = c;
   /// The tally's number.
-  def read(c : Tag11) -> Integer { 11 }
+  def read(c : Tag11) -> Integer = 11;
 
 /// `Tag12` is carrier twelve.
 data Tag12 : Type where
@@ -187,9 +187,9 @@ module Tally12 : Model(Count) where
   /// The one mark.
   def zero = Mark12;
   /// A step leaves the mark as it is.
-  def incr(c : Tag12) -> Tag12 { c }
+  def incr(c : Tag12) -> Tag12 = c;
   /// The tally's number.
-  def read(c : Tag12) -> Integer { 12 }
+  def read(c : Tag12) -> Integer = 12;
 
 /// `Tag13` is carrier thirteen.
 data Tag13 : Type where
@@ -201,9 +201,9 @@ module Tally13 : Model(Count) where
   /// The one mark.
   def zero = Mark13;
   /// A step leaves the mark as it is.
-  def incr(c : Tag13) -> Tag13 { c }
+  def incr(c : Tag13) -> Tag13 = c;
   /// The tally's number.
-  def read(c : Tag13) -> Integer { 13 }
+  def read(c : Tag13) -> Integer = 13;
 
 /// `Tag14` is carrier fourteen.
 data Tag14 : Type where
@@ -215,9 +215,9 @@ module Tally14 : Model(Count) where
   /// The one mark.
   def zero = Mark14;
   /// A step leaves the mark as it is.
-  def incr(c : Tag14) -> Tag14 { c }
+  def incr(c : Tag14) -> Tag14 = c;
   /// The tally's number.
-  def read(c : Tag14) -> Integer { 14 }
+  def read(c : Tag14) -> Integer = 14;
 
 /// `Tag15` is carrier fifteen.
 data Tag15 : Type where
@@ -229,9 +229,9 @@ module Tally15 : Model(Count) where
   /// The one mark.
   def zero = Mark15;
   /// A step leaves the mark as it is.
-  def incr(c : Tag15) -> Tag15 { c }
+  def incr(c : Tag15) -> Tag15 = c;
   /// The tally's number.
-  def read(c : Tag15) -> Integer { 15 }
+  def read(c : Tag15) -> Integer = 15;
 
 /// Each mark forces its own tally: the readings add up to 0 + 1 + … + 15.
 @[runs("120")]

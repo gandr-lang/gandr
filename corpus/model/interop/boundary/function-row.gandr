@@ -88,16 +88,16 @@ pub def u32 : Code = Plain U32;
 
 /// `Option<&u32>`'s record: one word, as rustc prints it.
 @[runs("Witness 8 8 8 Bitwise")]
-def optRefSummary() -> Witness { summary optRef }
+def optRefSummary() -> Witness = summary optRef;
 
 /// `u32`'s record.
 @[runs("Witness 4 4 4 Bitwise")]
-def u32Summary() -> Witness { summary (u32) }
+def u32Summary() -> Witness = summary (u32);
 
 /// `Option<&u32>`'s discriminant is the reference's null, so its realisers
 /// are the null niche's.
 @[runs("+{.0 = *{}}")]
-def optRefNiched() -> Bool { niched optRef }
+def optRefNiched() -> Bool = niched optRef;
 
 /// `f`'s row: `Option<&u32>` and `u32` to `u32`.
 pub def fRow : Row = Row (Arg optRef (Arg (u32) NoCode)) (u32);

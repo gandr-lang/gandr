@@ -22,9 +22,9 @@ module Up : Model(Dial) where
   /// `zero` gives zero.
   def zero = 0;
   /// `incr` adds one.
-  def incr(c : Integer) -> Integer { c + 1 }
+  def incr(c : Integer) -> Integer = c + 1;
   /// `read` returns the count.
-  def read(c : Integer) -> Integer { c }
+  def read(c : Integer) -> Integer = c;
 
 /// `Flips` toggles a Boolean value.
 module Flips : Model(Dial) where
@@ -32,9 +32,9 @@ module Flips : Model(Dial) where
   /// `zero` gives false.
   def zero = (false : Bool);
   /// `incr` toggles the flag.
-  def incr(c : Bool) -> Bool { if c { false } else { true } }
+  def incr(c : Bool) -> Bool = if c { false } else { true };
   /// `read` maps true to one.
-  def read(c : Bool) -> Integer { if c { 1 } else { 0 } }
+  def read(c : Bool) -> Integer = if c { 1 } else { 0 };
 
 /// `upOnce` turns an integer dial once.
 def upOnce[s : Model Dial with sort C = Integer]() -> Integer =
@@ -46,8 +46,8 @@ def flipOnce[s : Model Dial with sort C = Bool]() -> Integer =
 
 /// `turnedUp` selects `Up`.
 @[runs("1")]
-def turnedUp() -> Integer { upOnce () }
+def turnedUp() -> Integer = upOnce ();
 
 /// `turnedOver` selects `Flips`.
 @[runs("1")]
-def turnedOver() -> Integer { flipOnce () }
+def turnedOver() -> Integer = flipOnce ();

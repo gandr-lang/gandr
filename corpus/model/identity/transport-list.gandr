@@ -35,7 +35,7 @@ def flipped_beta : Path(
 
 /// A run maps `both` through negation at every element.
 @[runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)")]
-def flipped_list() -> List Bool { moved_list both }
+def flipped_list() -> List Bool = moved_list both;
 
 /// The `flipped_value` declaration stores a value from list transport.
 /// The runtime evaluates its transport when a run reads the declaration.
@@ -50,7 +50,7 @@ def moved_inline(xs : List Bool) -> List Bool =
 
 /// A run maps `both` through an inline negation equivalence.
 @[runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)")]
-def flipped_inline() -> List Bool { moved_inline both }
+def flipped_inline() -> List Bool = moved_inline both;
 
 /// Negation and the identity are no equivalence: their round trips differ.
 @[refuses("RoundTripDistinct")]
@@ -76,4 +76,4 @@ def flagged : Path[.A = Type](Bool * List Bool, Bool * List Bool) = equiv flip_f
 
 /// A run maps truth beside `both` through the flag path.
 @[runs("*{+{.1 = *{}}, cons +{.0 = *{}} (cons +{.1 = *{}} nil)}")]
-def flagged_run() -> Bool * List Bool { Path.walk (fun (X) { X }) flagged (*{+{.0 = *{}}, both}) }
+def flagged_run() -> Bool * List Bool = Path.walk (fun (X) { X }) flagged (*{+{.0 = *{}}, both});

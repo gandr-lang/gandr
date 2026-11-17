@@ -40,7 +40,7 @@ theory Current where
 flow scaling : Current ~~> Scaling where
   def answer = reply;
 
-  def scaled(n : Integer) -> Integer { n * count }
+  def scaled(n : Integer) -> Integer = n * count;
 
 // The import reads the published flow at `Legacy`.
 import "./translated-newer.gandr" as published : Legacy via downgrade;
@@ -53,19 +53,19 @@ import "./translated-newer.gandr" as renamed : Legacy renaming { reply as answer
 
 /// `relayed` reads the published answer.
 @[runs("42")]
-def relayed() -> Integer { published.answer }
+def relayed() -> Integer = published.answer;
 
 /// `recounted` reads the local-flow answer.
 @[runs("42")]
-def recounted() -> Integer { counted.answer }
+def recounted() -> Integer = counted.answer;
 
 /// `doubled` scales two by the count.
 @[runs("6")]
-def doubled() -> Integer { counted.scaled 2 }
+def doubled() -> Integer = counted.scaled 2;
 
 /// `renamedAnswer` reads the answer through the renaming.
 @[runs("42")]
-def renamedAnswer() -> Integer { renamed.answer }
+def renamedAnswer() -> Integer = renamed.answer;
 
 /// `Replied` states the answer as a reply.
 theory Replied where
@@ -85,11 +85,11 @@ module Base : Model(Legacy) where
   def answer = 42;
 
 /// `replyOf` reads the reply of a `Replied` model.
-def replyOf(s : Model Replied) -> Integer { s.reply }
+def replyOf(s : Model Replied) -> Integer = s.reply;
 
 /// `forward` reads the base model at `Replied`.
 @[runs("42")]
-def forward() -> Integer { replyOf (versions.into (pack Base at Model Legacy)) }
+def forward() -> Integer = replyOf (versions.into (pack Base at Model Legacy));
 
 /// `Magma` states a carrier and an operation.
 theory Magma where

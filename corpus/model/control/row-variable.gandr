@@ -20,17 +20,17 @@ import std.io;
 
 /// `log` prints through the console interface.
 /// Its row leaves open `r`, which lacks the console interface.
-pub def log[r : Row](s : String) -> [std.io.Console.Eff | r] Unit { std.io.Console.print s }
+pub def log[r : Row](s : String) -> [std.io.Console.Eff | r] Unit = std.io.Console.print s;
 
 /// `logAlone` solves `r` as the empty row.
-def logAlone() -> [std.io.Console.Eff] Unit { log "alone" }
+def logAlone() -> [std.io.Console.Eff] Unit = log "alone";
 
 /// `log` beside `Partial`: the call's `r` is `[Partial]`.
-def logBeside() -> [std.io.Console.Eff, Partial] Unit { log "beside" }
+def logBeside() -> [std.io.Console.Eff, Partial] Unit = log "beside";
 
 /// `logSwapped` uses an equivalent row order.
 /// The checker solves `r` as `Partial`.
-def logSwapped() -> [Partial, std.io.Console.Eff] Unit { log "swapped" }
+def logSwapped() -> [Partial, std.io.Console.Eff] Unit = log "swapped";
 
 /// `quiet` handles the console interface.
 /// It forwards row `r`.
@@ -44,8 +44,8 @@ def quiet[r : Row](s : String) -> [r] Unit =
 
 /// `quietRun` handles the printed line.
 @[runs("*{}")]
-def quietRun() -> Unit { quiet "handled" }
+def quietRun() -> Unit = quiet "handled";
 
 /// `quiet` beside `Partial`: the variable carries `Partial`
 /// through the handler.
-def quietBeside() -> [Partial] Unit { quiet "forwarded" }
+def quietBeside() -> [Partial] Unit = quiet "forwarded";

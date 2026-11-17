@@ -65,10 +65,10 @@ module Unwitnessed : Model(Glob) where
   type Hom(a : Ob, b : Ob) = Nat;
 
   /// Zero, the identity cell.
-  def id(a : One) -> Nat { Zero }
+  def id(a : One) -> Nat = Zero;
 
   /// Addition, the composite.
-  def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus f g }
+  def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat = plus f g;
 
 /// A store whose write leaves the rest as it is, by a cell of the theory.
 theory Skipping where

@@ -55,7 +55,7 @@ def apart(q : Path[.A = Integer](2, 2)) -> Path[.A = Path[.A = Integer](2, 2)](q
   Path.here q
 
 /// The `as_given` function returns its integer argument.
-def as_given(n : Integer) -> Integer { n }
+def as_given(n : Integer) -> Integer = n;
 
 /// The held sum compares with its own unresolved call.
 def held_sum(x : Integer, y : Integer) -> Path[.A = Integer](as_given (x + y), x + y) =

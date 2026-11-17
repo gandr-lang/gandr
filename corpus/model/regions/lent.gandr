@@ -10,7 +10,7 @@
 import std.process;
 
 /// `read` forces its thunk in the region that keeps it.
-def read[r : Region](k : (() -> Integer) at r) -> Integer { force k }
+def read[r : Region](k : (() -> Integer) at r) -> Integer = force k;
 
 /// `lent` passes a handler-held view to `read`.
 @[runs("3")]

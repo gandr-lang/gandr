@@ -29,9 +29,9 @@ pub module Echo : Model(Newer) with sort V = String where
   /// A computation answers a string.
   type C = String;
   /// Hands the key on.
-  def fetch(key : String, k : String -> String) -> String { k key }
+  def fetch(key : String, k : String -> String) -> String = k key;
   /// Drops the write and runs what comes after.
-  def put(key : String, value : String, k : String) -> String { k }
+  def put(key : String, value : String, k : String) -> String = k;
 
 /// Every key holds its own name, and a write keeps nothing, at the older
 /// store.
@@ -39,9 +39,9 @@ pub module Kept : Model(Older) with sort V = String where
   /// A computation answers a string.
   type C = String;
   /// Hands the key on.
-  def get(key : String, k : String -> String) -> String { k key }
+  def get(key : String, k : String -> String) -> String = k key;
   /// Drops the write and runs what comes after.
-  def put(key : String, value : String, k : String) -> String { k }
+  def put(key : String, value : String, k : String) -> String = k;
 
 /// The site offers the newer store as the older one via a flow, and the
 /// older store as it is.

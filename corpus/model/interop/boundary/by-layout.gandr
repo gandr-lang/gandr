@@ -53,10 +53,10 @@ extern "rust" from "memory" as Memory {
 def fuel : Nat = Succ (Succ (Succ (Succ (Succ (Succ (Succ (Succ Zero)))))));
 
 /// The address `offset` bytes past the address `n`.
-def past(n : Integer, offset : Integer) -> u64 { u64.from_integer (n + offset) }
+def past(n : Integer, offset : Integer) -> u64 = u64.from_integer (n + offset);
 
 /// The `i32` in a word's low four bytes.
-def low(w : u64) -> i32 { i32.from_integer (u64.to_integer w) }
+def low(w : u64) -> i32 = i32.from_integer (u64.to_integer w);
 
 /// The tagged list at the word `w`, or `None` once `fuel` runs out.
 def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe Tagged =

@@ -13,4 +13,4 @@ def tag_of(p : *{n : Integer, w : Ix n}) -> Integer =
   p.n
 
 @[refuses("TypeMismatch")]
-def unpaired() -> Integer { tag_of loose }
+def unpaired() -> Integer = tag_of loose;

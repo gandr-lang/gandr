@@ -44,7 +44,7 @@ def third(m : +U &{a : -F Integer, b : -F String, c : -F Integer}) -> Integer =
 
 /// The last entry of `triple`, observed.
 @[runs("3")]
-def tripled() -> Integer { third triple }
+def tripled() -> Integer = third triple;
 
 /// The one entry of a lazy product of one is its one projection.
 def only(m : +U &{get : -F Integer}) -> Integer =
@@ -52,7 +52,7 @@ def only(m : +U &{get : -F Integer}) -> Integer =
 
 /// The only entry of `single`, observed.
 @[runs("1")]
-def singled() -> Integer { only single }
+def singled() -> Integer = only single;
 
 /// A lazy record written at its labels answers each label's entry. The
 /// printer spells its signature under those labels.
@@ -60,7 +60,7 @@ def signed : +U &{get : -F Integer, put : -F String} = &{.put => "s", .get => 9}
 
 /// `observe` reads the entry `signed` writes at `get`. It runs to that entry.
 @[runs("9")]
-def signed_got() -> Integer { observe signed }
+def signed_got() -> Integer = observe signed;
 
 /// `co` is an ordinary name. The lazy record takes its labels from its
 /// signature, so no bundle keyword spells it.
@@ -68,7 +68,7 @@ def co : +U &{get : -F Integer} = &{.get => 4};
 
 /// The entry the record named `co` writes at `get`.
 @[runs("4")]
-def co_got() -> Integer { only co }
+def co_got() -> Integer = only co;
 
 /// An entry observed by its position, counted from zero, is the entry its
 /// label names: `m.1` is `m.put`.
@@ -81,7 +81,7 @@ def last(m : +U (-F Integer & -F String & -F Integer)) -> Integer =
 
 /// The last component of `chained`, observed by its position.
 @[runs("3")]
-def lasted() -> Integer { last chained }
+def lasted() -> Integer = last chained;
 
 /// A positional lazy record names no entry either, so each is observed by its
 /// position.

@@ -34,7 +34,7 @@ module Sevens : Model(Based) where
 
 /// `seven` reads `Sevens.base`.
 @[runs("7")]
-def seven() -> Integer { Sevens.base }
+def seven() -> Integer = Sevens.base;
 
 /// `Unital` states a unit, a product and a law.
 theory Unital where
@@ -50,7 +50,7 @@ module Additive : Model(Unital) where {
   @[runs("0")]
   def e = 0;
   /// `mul` adds two integers.
-  def mul(x : Integer, y : Integer) -> Integer { x + y }
+  def mul(x : Integer, y : Integer) -> Integer = x + y;
   /// `unitL` states the left unit law.
   @[owes(1)]
   def unitL : (x : Integer) -> Path[.A = Integer](mul e x, x);

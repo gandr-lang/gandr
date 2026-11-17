@@ -22,4 +22,4 @@ pub def passes(s : Signal) -> Integer =
 
 /// A clear signal passes.
 @[runs("1")]
-def cleared() -> Integer { passes Signal.Clear }
+def cleared() -> Integer = passes Signal.Clear;

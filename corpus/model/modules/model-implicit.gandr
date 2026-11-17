@@ -26,9 +26,9 @@ module Up : Model(Tally) where
   /// `zero` gives zero.
   def zero = 0;
   /// `incr` adds one.
-  def incr(c : Integer) -> Integer { c + 1 }
+  def incr(c : Integer) -> Integer = c + 1;
   /// `read` returns the count.
-  def read(c : Integer) -> Integer { c }
+  def read(c : Integer) -> Integer = c;
 
 /// `Tens` counts integers by ten and resets them.
 module Tens : Model(ResetTally) where
@@ -36,17 +36,17 @@ module Tens : Model(ResetTally) where
   /// `zero` gives zero.
   def zero = 0;
   /// `incr` adds ten.
-  def incr(c : Integer) -> Integer { c + 10 }
+  def incr(c : Integer) -> Integer = c + 10;
   /// `read` returns the count.
-  def read(c : Integer) -> Integer { c }
+  def read(c : Integer) -> Integer = c;
   /// `reset` returns zero.
-  def reset(c : Integer) -> Integer { 0 }
+  def reset(c : Integer) -> Integer = 0;
 
 /// `stepped` reads one tally step.
-def stepped[s : Model Tally](c : s.C) -> Integer { s.read (s.incr c) }
+def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c);
 
 /// `further` passes its model to `stepped`.
-def further[t : Model Tally](c : t.C) -> Integer { stepped[.s = t] (t.incr c) }
+def further[t : Model Tally](c : t.C) -> Integer = stepped[.s = t] (t.incr c);
 
 /// `fromZero` reads one integer tally step from zero.
 def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
@@ -54,16 +54,16 @@ def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
 
 /// `suppliedUp` passes `Up`.
 @[runs("5")]
-def suppliedUp() -> Integer { stepped[.s = Up] 4 }
+def suppliedUp() -> Integer = stepped[.s = Up] 4;
 
 /// `suppliedTens` passes the `Tens` reduct.
 @[runs("14")]
-def suppliedTens() -> Integer { stepped[.s = Tens] 4 }
+def suppliedTens() -> Integer = stepped[.s = Tens] 4;
 
 /// `passedOn` passes `Tens` through `further`.
 @[runs("24")]
-def passedOn() -> Integer { further[.t = Tens] 4 }
+def passedOn() -> Integer = further[.t = Tens] 4;
 
 /// `manifest` passes `Up` at its manifest carrier.
 @[runs("1")]
-def manifest() -> Integer { fromZero[.s = Up] () }
+def manifest() -> Integer = fromZero[.s = Up] ();

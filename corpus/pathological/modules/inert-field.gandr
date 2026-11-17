@@ -38,7 +38,7 @@ def shown = Box.label;
 
 /// The label of any labelled thing.
 @[refuses("InertRead")]
-def labelOf(l : Model Labelled) -> String { l.label }
+def labelOf(l : Model Labelled) -> String = l.label;
 
 /// The label, read by an inert definition.
 @[inert]

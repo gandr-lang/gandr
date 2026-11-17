@@ -23,7 +23,7 @@ module Ints : Model(Seeded) where
   /// Counts are integers.
   type T = Integer;
   /// A count reads as itself.
-  def read(n : Integer) -> Integer { n }
+  def read(n : Integer) -> Integer = n;
   /// Seven.
   def seed = 7;
 
@@ -32,7 +32,7 @@ module Texts : Model(Seeded) where
   /// Counts are strings.
   type T = String;
   /// Every count reads as 42.
-  def read(s : String) -> Integer { 42 }
+  def read(s : String) -> Integer = 42;
   /// The word seven.
   def seed = "seven";
 
@@ -43,4 +43,4 @@ def consume(p : Model Seeded) -> Integer =
 
 /// `total` sums both counter readings.
 @[runs("49")]
-def total() -> Integer { consume Ints + consume Texts }
+def total() -> Integer = consume Ints + consume Texts;

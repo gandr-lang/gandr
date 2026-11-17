@@ -22,20 +22,20 @@ data Seq(a : Type) : Type where
 
 /// A path type with no `return`.
 @[refuses("OutOfFragment.WrongSort")]
-def pathsTo(a : Integer, d : Integer) -> Type { Path d a }
+def pathsTo(a : Integer, d : Integer) -> Type = Path d a;
 
 /// A bridge type with no `return`.
 @[refuses("OutOfFragment.WrongSort")]
-def bridgesTo(a : Integer, d : Integer) -> Type { Bridge d a }
+def bridgesTo(a : Integer, d : Integer) -> Type = Bridge d a;
 
 /// A flow type with no `return`.
 @[refuses("OutOfFragment.WrongSort")]
-def flowsTo(a : Integer, d : Integer) -> Type { Flow d a }
+def flowsTo(a : Integer, d : Integer) -> Type = Flow d a;
 
 /// A list type with no `return`.
 @[refuses("OutOfFragment.WrongSort")]
-def listsOf(a : Type) -> Type { List a }
+def listsOf(a : Type) -> Type = List a;
 
 /// A declared family with no `return`. It is no constructor.
 @[refuses("OutOfFragment.WrongSort")]
-def sequencesOf(a : Type) -> Type { Seq a }
+def sequencesOf(a : Type) -> Type = Seq a;

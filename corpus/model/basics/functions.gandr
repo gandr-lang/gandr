@@ -38,4 +38,4 @@ def chained() -> Integer =
 
 /// A call of `twice`.
 @[runs("42")]
-def answer() -> Integer { twice 40 }
+def answer() -> Integer = twice 40;

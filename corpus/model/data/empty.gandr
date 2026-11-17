@@ -30,24 +30,24 @@ def stated(v : Empty) -> Integer =
 
 /// `viaLambda` matches a lambda binder with no arms.
 /// Its arrow gives the binder type.
-def viaLambda(x : Empty) -> Integer { match x {} }
+def viaLambda(x : Empty) -> Integer = match x {};
 
 /// The answer written on a lambda binder's match.
-def viaStated(x : Empty) -> Integer { match x -> -F Integer {} }
+def viaStated(x : Empty) -> Integer = match x -> -F Integer {};
 
 /// `viaBare` writes a lambda without its syntax.
 /// The checker inserts its thunk and gives the binder its type.
-def viaBare(x : Empty) -> Integer { match x {} }
+def viaBare(x : Empty) -> Integer = match x {};
 
 /// The answer written on a bare lambda binder's match.
-def viaBareStated(x : Empty) -> Integer { match x -> -F Integer {} }
+def viaBareStated(x : Empty) -> Integer = match x -> -F Integer {};
 
 /// A function of a function on the empty type, applied to its element.
-def applied(f : Empty -> Integer, v : Empty) -> Integer { f v }
+def applied(f : Empty -> Integer, v : Empty) -> Integer = f v;
 
 /// `viaArgument` passes a lambda as an argument.
 /// The callee parameter gives the binder type.
-def viaArgument(v : Empty) -> Integer { applied (fun (x) { match x {} }) v }
+def viaArgument(v : Empty) -> Integer = applied (fun (x) { match x {} }) v;
 
 /// The answer written on a passed lambda binder's match.
 def viaArgumentStated(v : Empty) -> Integer =

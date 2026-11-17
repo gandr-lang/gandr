@@ -96,7 +96,7 @@ def putGet(
 
 /// `direct` runs `putGet` through `passing`.
 @[runs("11")]
-def direct() -> Integer { putGet passing }
+def direct() -> Integer = putGet passing;
 
 /// `carried` runs `putGet` through `negated`.
-def carried() -> Integer { putGet negated }
+def carried() -> Integer = putGet negated;

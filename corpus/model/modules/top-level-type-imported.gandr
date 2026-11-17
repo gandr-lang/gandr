@@ -14,7 +14,7 @@ def innerBand : Band = *{low = 400000, high = 600000};
 
 /// `innerWidth` reads the imported width.
 @[runs("200000")]
-def innerWidth() -> Integer { width innerBand }
+def innerWidth() -> Integer = width innerBand;
 
 /// `innerBounds` applies imported family `Twice`.
 def innerBounds : Twice Integer = *{400000, 600000};

@@ -15,5 +15,5 @@ module NatAdd : *{type M = Integer, zero : M, add : (M, M) -> M} where {
   def zero = 0;
   /// `add` adds two integers.
   @[checks]
-  def add(x : Integer, y : Integer) -> Integer { x + y }
+  def add(x : Integer, y : Integer) -> Integer = x + y;
 }

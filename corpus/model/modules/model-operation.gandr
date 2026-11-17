@@ -23,9 +23,9 @@ module Counted : Model(Counting) where {
   @[runs("0")]
   def zero = 0;
   /// `next` adds one.
-  def next(n : Integer) -> Integer { n + 1 }
+  def next(n : Integer) -> Integer = n + 1;
   /// `read` returns the count.
-  def read(n : Integer) -> Integer { n }
+  def read(n : Integer) -> Integer = n;
 }
 
 /// `counted_two` reads two counter steps.
@@ -47,5 +47,5 @@ module Summed : Model(Summing) where {
   @[runs("0")]
   def zero = 0;
   /// `add` adds two integers.
-  def add(x : Integer, y : Integer) -> Integer { x + y }
+  def add(x : Integer, y : Integer) -> Integer = x + y;
 }

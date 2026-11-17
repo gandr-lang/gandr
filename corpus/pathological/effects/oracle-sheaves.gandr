@@ -83,7 +83,7 @@ def openMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { return (Tree s
 def staticOpenMode(s : Type, p : s -> Type) -> Mode = MkMode (fun (q) { type(Tree s p q) });
 
 /// Each query has two answers.
-def branches(a : Two) -> Type { return Two }
+def branches(a : Two) -> Type = return Two;
 
 /// The trees of a fixed container as a named function.
 def treesNamed(q : Type) -> Type = return (Tree Two branches q)

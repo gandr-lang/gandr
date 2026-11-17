@@ -36,4 +36,4 @@ def colourOf(l : +U Light) -> Colour =
 
 /// `shown` observes the colour of a green light.
 @[runs("Green")]
-def shown() -> Colour { colourOf (lit Green) }
+def shown() -> Colour = colourOf (lit Green);

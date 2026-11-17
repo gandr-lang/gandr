@@ -18,7 +18,7 @@ def rec same(n : Nat) -> Nat =
 /// A recursion over a type with no constructors to open: nothing stands
 /// below the stage.
 @[refuses("StageNotBelow")]
-def rec counted(n : Integer) -> Integer { counted[<] n }
+def rec counted(n : Integer) -> Integer = counted[<] n;
 
 /// The call at the field the case opened, one stage below the parameter's.
 def rec down(n : Nat) -> Nat =

@@ -69,7 +69,7 @@ def declared(presented : Theory) -> String =
 /// The members of `Gandr.Package` as its presentation gives them: eleven
 /// constants at `String`.
 @[runs("\"version : String\\ngandr : String\\nfeatures : String\\nsystems : String\\nspelling : String\\nname : String\\nauthors : String\\nlicence : String\\ndocumentation : String\\nendpoint : String\\nsources : String\\n\"")]
-def packageMembers() -> String { declared Gandr.Package }
+def packageMembers() -> String = declared Gandr.Package;
 
 /// A package's model, with the values of `std`'s.
 pub module Package : Model(Gandr.Package) where {
@@ -103,13 +103,13 @@ def toolchain(m : Model Gandr.Package) -> String =
 
 /// The toolchain lines of `std`'s model.
 @[runs("\"gandr = >= 0.0\\nsystems = \"")]
-def stdToolchain() -> String { toolchain Package }
+def stdToolchain() -> String = toolchain Package;
 
 /// The lines of `std`'s model through `std.build`'s render: one line for each
 /// constant, in the order of the presentation.
 @[inert]
 @[runs("\"version = \\\"0.1.0\\\"\\ngandr = \\\">= 0.0\\\"\\nfeatures = \\\"\\\"\\nsystems = \\\"\\\"\\nspelling = \\\"\\\"\\nname = \\\"std\\\"\\nauthors = \\\"The gandr authors\\\"\\nlicence = \\\"MIT OR Apache-2.0\\\"\\ndocumentation = \\\"https://github.com/gandr-lang/gandr/tree/main/library/std\\\"\\nendpoint = \\\"https://github.com/gandr-lang/gandr\\\"\\nsources = \\\"src\\\"\\n\"")]
-def packageLines() -> String { render Package }
+def packageLines() -> String = render Package;
 
 /// The package model whose entries are `e`.
 /// - see: #6201
@@ -206,7 +206,7 @@ theory Flagged where {
 }
 
 /// The entries of a model of `Flagged`.
-def flaggedEntries(m : Model Flagged) -> modelType(Flagged) { Entry m.label (Entry m.shown Ended) }
+def flaggedEntries(m : Model Flagged) -> modelType(Flagged) = Entry m.label (Entry m.shown Ended);
 
 /// The model of `Flagged` whose entries are `e`.
 def flaggedOf(e : modelType(Flagged)) -> Model Flagged =
@@ -215,9 +215,10 @@ def flaggedOf(e : modelType(Flagged)) -> Model Flagged =
       | Entry(shown, t) => *{label = label, shown = shown}
 
 /// A model comes back from its entries.
-def flaggedBack(m : Model Flagged) -> Path[.A = Model Flagged](flaggedOf (flaggedEntries m), m) {
-  Path.here m
-}
+def flaggedBack(m : Model Flagged) -> Path[.A = Model Flagged](
+  flaggedOf (flaggedEntries m),
+  m
+) = Path.here m;
 
 /// Entries come back from their model.
 def flaggedEntriesBack(e : modelType(Flagged)) -> Path[.A = modelType(Flagged)](
@@ -245,4 +246,4 @@ module Shown : Model(Flagged) where {
 
 /// The lines of `Shown`: a string and a boolean.
 @[runs("\"label = \\\"here\\\"\\nshown = true\\n\"")]
-def shownLines() -> String { encode Flagged (flaggedEntries Shown) }
+def shownLines() -> String = encode Flagged (flaggedEntries Shown);

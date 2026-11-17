@@ -31,11 +31,11 @@ pub def arity(presented : Theory) -> Integer =
 
 /// This generic program counts `mul` and `one` in `Monoid`.
 @[runs("2")]
-def counted() -> Integer { arity Monoid }
+def counted() -> Integer = arity Monoid;
 
 /// `sign` is an ordinary source name that runs the generic program.
 @[runs("2")]
-def sign() -> Integer { arity Monoid }
+def sign() -> Integer = arity Monoid;
 
 /// This match returns `Integer` or `Unit` as a type quote. The type language
 /// has no `case`, so a term match chooses the type.
@@ -46,7 +46,7 @@ def counted_at(presented : Theory) -> Type =
 
 /// `counted_at(Monoid)` reduces to `Integer`, which holds the operation count.
 @[runs("2")]
-def typed() -> counted_at(Monoid) { arity Monoid }
+def typed() -> counted_at(Monoid) = arity Monoid;
 
 /// A binder keeps `counted_at(presented)` rigid, so its occurrences
 /// are one type.

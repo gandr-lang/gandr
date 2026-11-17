@@ -20,11 +20,11 @@ def cast(p : Path(4, 4)) -> Path(4, 4) =
 def checked : Path(4, 4) = Path.here 4;
 
 /// The `cast_four` run passes reflexivity through `cast`.
-def cast_four() -> Path(4, 4) { cast four_eq_four }
+def cast_four() -> Path(4, 4) = cast four_eq_four;
 
 /// The `pick` function returns its value argument.
 def pick(t : Type, x : t) -> t =
   x
 
 /// A type argument to `pick` supplies a path type code.
-def picked() -> Path(4, 4) { pick (Path 4 4) (Path.here 4) }
+def picked() -> Path(4, 4) = pick (Path 4 4) (Path.here 4);

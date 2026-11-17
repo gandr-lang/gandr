@@ -24,4 +24,4 @@ def rec origin() -> Point {
 /// `coordinates` sums the rejected origin coordinates.
 /// It is refused because origin has no known type.
 @[refuses("UnknownConstant")]
-def coordinates() -> Integer { origin.x + origin.y }
+def coordinates() -> Integer = origin.x + origin.y;

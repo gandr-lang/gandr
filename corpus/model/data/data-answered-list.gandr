@@ -20,7 +20,7 @@ def around(n : Integer) -> List (Maybe Integer) =
   #[Some n, None]
 
 /// This thunk returns the same list.
-def suspended() -> List (Maybe Integer) { #[None, Some 2] }
+def suspended() -> List (Maybe Integer) = #[None, Some 2];
 
 /// Each inner list gets the outer list's element type.
 /// Its constructors get their list's element type.

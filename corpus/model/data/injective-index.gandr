@@ -62,7 +62,7 @@ def ends(lo : Nat, hi : Nat, o : Over (Mk lo hi)) -> At2 lo hi =
 
 /// The predecessor of two, read back through the arm.
 @[runs("A (Succ Zero)")]
-def backTwo() -> At (Succ Zero) { back (Succ Zero) (Pre (Succ Zero)) }
+def backTwo() -> At (Succ Zero) = back (Succ Zero) (Pre (Succ Zero));
 
 /// The rest of a vector at least one long. The arm learns `m = n` from the
 /// path from `Succ(m)` to `Succ(n)`.
@@ -99,8 +99,8 @@ pub def rec lookup(a : Type, n : Nat, v : Vec a n, i : Finite n) -> a =
     | FSucc(m, j) => match v { | VCons(_, _, t) => lookup[<] a m t j }
 
 /// The bound one below two.
-pub def oneOfTwo() -> Finite (Succ (Succ Zero)) { FSucc (Succ Zero) (FZero Zero) }
+pub def oneOfTwo() -> Finite (Succ (Succ Zero)) = FSucc (Succ Zero) (FZero Zero);
 
 /// The second element of the vector two long, at the bound one.
 @[runs("2")]
-def secondAtOne() -> Integer { lookup (Integer) (Succ (Succ Zero)) (pair ()) (oneOfTwo ()) }
+def secondAtOne() -> Integer = lookup (Integer) (Succ (Succ Zero)) (pair ()) (oneOfTwo ());

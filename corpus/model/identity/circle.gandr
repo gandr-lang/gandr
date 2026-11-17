@@ -20,7 +20,7 @@ import "./equivalence.gandr";
 
 /// The loop word has one letter before the empty word.
 @[runs("loop ∷ Path.here Base")]
-def once() -> Path[.A = Circle](Base, Base) { loop }
+def once() -> Path[.A = Circle](Base, Base) = loop;
 
 /// The inverse loop converts to `back(loop) ∷ Path.here Base`.
 def unwound : Path[.A = Path[.A = Circle](Base, Base)](

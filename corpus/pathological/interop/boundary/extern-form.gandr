@@ -45,4 +45,4 @@ extern "rust" from "boundary" as Boundary {
 
 /// `Boundary` declares no `sub`.
 @[refuses("UnresolvedName")]
-def less(x : u32) -> [Boundary] u32 { Boundary.sub x x }
+def less(x : u32) -> [Boundary] u32 = Boundary.sub x x;

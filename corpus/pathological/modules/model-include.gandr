@@ -10,29 +10,29 @@
 /// reflexivity.
 module EqLoose : Model(Eq) with sort Carrier = Integer where
   /// Every pair is equal.
-  def eq(a : Integer, b : Integer) -> Bool { true }
-  def refl(a : Integer) -> Path(eq a a, true) { Path.here true }
-  def sym(a : Integer, b : Integer) -> Path(eq a b, eq b a) { Path.here true }
+  def eq(a : Integer, b : Integer) -> Bool = true;
+  def refl(a : Integer) -> Path(eq a a, true) = Path.here true;
+  def sym(a : Integer, b : Integer) -> Path(eq a b, eq b a) = Path.here true;
 
 /// `EqInteger` and `EqLoose` both answer, and their `eq` differ.
 @[refuses("ModelAmbiguous")]
-def looselyEqual() -> Bool { 3 == 3 }
+def looselyEqual() -> Bool = 3 == 3;
 
 /// No module is named `Nowhere`.
 @[refuses("UnresolvedName")]
 module Stray where
   include Nowhere;
   /// A member beside the include.
-  def kept() -> Integer { 1 }
+  def kept() -> Integer = 1;
 
 /// A grade's zero.
 module Zero where
   /// The least grade.
-  def least() -> Integer { 0 }
+  def least() -> Integer = 0;
 
 /// `least` written beside an include that lends it.
 @[refuses("DuplicateDefinition")]
 module Shadowing where
   include Zero;
   /// A second `least`.
-  def least() -> Integer { 1 }
+  def least() -> Integer = 1;

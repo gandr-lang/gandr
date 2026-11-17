@@ -24,7 +24,7 @@ def rec resuming(p : ProcTree Integer) -> Integer =
 
 /// `resumedByFold` runs `resuming`.
 @[runs("101")]
-def resumedByFold() -> Integer { resuming exitThenOne }
+def resumedByFold() -> Integer = resuming exitThenOne;
 
 /// `discarding` returns nine and drops the continuation.
 def rec discarding(p : ProcTree Integer) -> Integer =
@@ -34,4 +34,4 @@ def rec discarding(p : ProcTree Integer) -> Integer =
 
 /// `discardedByFold` runs `discarding`.
 @[runs("9")]
-def discardedByFold() -> Integer { discarding exitThenOne }
+def discardedByFold() -> Integer = discarding exitThenOne;
