@@ -5852,17 +5852,20 @@ snapshot() {
 }
 # The first failed required check on the head of `$1`, this pull request by
 # default, if any, read off the same reading against the trunk's required
-# contexts (`required.jq`). A cancelled check is red unless another run of its
-# workflow on the same head was not cancelled (`superseded.jq`, #2829): two
-# pull_request events for one head start two runs in the same second, the
-# concurrency group cancels one, whichever id it carries, and its cancelled
-# checks stay listed until the surviving run's jobs start. A head the CI
-# depth gate stopped is not red (`required_reading`, #5074).
+# contexts (`required.jq`). A cancelled check is red unless its run is on
+# another head than the pull request's, which a push left behind (#7796), or
+# another run of its workflow on the same head was not cancelled
+# (`superseded.jq`, #2829): two pull_request events for one head start two
+# runs in the same second, the concurrency group cancels one, whichever id it
+# carries, and its cancelled checks stay listed until the surviving run's jobs
+# start. A head the CI depth gate stopped is not red (`required_reading`,
+# #5074).
 red_check() {
-  local view rollup failed red link run superseded
+  local view rollup failed red link run superseded head
   view=$(pr_reading "${1:-$number}") || return 1
   rollup=$(rollup_of <<< "$view")
   failed=$(required_reading "${1:-$number}" "$required" "$view" | jq -c .failed)
+  head=$(jq -r .headRefOid <<< "$view")
   while IFS=$'\t' read -r red link; do
     [[ -n "$red" ]] || continue
     if [[ "$link" =~ /actions/runs/([0-9]+)/ ]]; then
@@ -5870,9 +5873,15 @@ red_check() {
       superseded=$(gh api "repos/$repo/actions/runs/$run" --jq '"\(.head_sha)\t\(.workflow_id)\t\(.conclusion)"' |
         while IFS=$'\t' read -r sha workflow conclusion; do
           [[ "$conclusion" == cancelled ]] || continue
-          gh api "repos/$repo/actions/workflows/$workflow/runs?head_sha=$sha&per_page=100" \
-            --jq '[.workflow_runs[] | {id, conclusion}]' \
-            | jq -c --argjson run "$run" -f "$pr_stack_dir/superseded.jq"
+          # A run on another head reads no runs: the head alone decides.
+          if [[ "$sha" != "$head" ]]; then
+            runs='[]'
+          else
+            runs=$(gh api "repos/$repo/actions/workflows/$workflow/runs?head_sha=$sha&per_page=100" \
+              --jq '[.workflow_runs[] | {id, conclusion}]')
+          fi
+          jq -c --argjson run "$run" --arg sha "$sha" --arg head "$head" \
+            -f "$pr_stack_dir/superseded.jq" <<< "$runs"
         done) || superseded=
       if [[ "$superseded" == true ]]; then continue; fi
     fi
