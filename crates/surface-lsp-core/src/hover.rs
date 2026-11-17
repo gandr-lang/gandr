@@ -2836,6 +2836,29 @@ mod tests
         );
     }
 
+    #[test]
+    fn a_block_final_semicolon_hovers_the_unit_7733()
+    {
+        let text = SourceText::from(include_str!(
+            "hover/fixtures/a-block-final-semicolon-hovers-the-unit-7733.gandr"
+        ));
+        assert_eq!(
+            shown(text, (0.into(), 5.into())),
+            Ok(String::from("```gandr\nlaid : +U (-F Unit)\n```")),
+            "a laid-out body that ends in `c;` answers the unit"
+        );
+        assert_eq!(
+            shown(text, (1.into(), 2.into())),
+            Ok(String::from("```gandr\n-F Unit\n```")),
+            "the statement before the last `;` runs at the unit's returner"
+        );
+        assert_eq!(
+            shown(text, (3.into(), 6.into())),
+            Ok(String::from("```gandr\nu : Unit\n```")),
+            "a braced block that ends in `c;` binds the unit"
+        );
+    }
+
     /// #2407: a model's `law refl = ~admitted;` hovers the law it admits, at the
     /// model's carrier and with its truth endpoint written as its word, not
     /// the module that holds it; the theory's law hovers its statement.

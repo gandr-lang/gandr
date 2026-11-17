@@ -477,6 +477,22 @@ fn a_continuation_line_indents_under_its_statement()
     );
 }
 
+#[test]
+fn a_block_final_semicolon_stays_in_both_spellings_7733()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "format/unformatted/a-block-final-semicolon-stays-in-both-spellings-7733.gandr"
+    );
+    for width in [NARROW, WIDE] {
+        assert_eq!(
+            text(&grammar, source, width),
+            "def laid() -> -F Unit =\n  pure *{};\ndef braced() -> -F Unit { pure *{}; }\n",
+            "a block's last `;` stays in the laid-out and the braced spelling at {width}"
+        );
+    }
+}
+
 /// #2950: before the fix, a block opening with a comment at column 0 read its
 /// first member, indented deeper than the comment, as the comment's
 /// continuation, and laid it two columns too deep.
