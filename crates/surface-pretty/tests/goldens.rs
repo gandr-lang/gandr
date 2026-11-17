@@ -2729,8 +2729,8 @@ fn a_selection_off_a_dependent_record_spells_its_label_3971()
             Root::Type(CoreNode::CompType(arrow))
         ),
         faithful(Written(
-            "(r : *{x : Integer, y : Integer, z : Path[.A = Integer](x, y)}) ->\n  -F \
-             Path[.A = Path[.A = Integer](r.x, r.y)](r.z, r.z)"
+            "(r : *{x : Integer, y : Integer, z : Path[.A = Integer] x y}) -> -F Path[.A = \
+             Path[.A = Integer] r.x\n  r.y] r.z r.z"
         )),
     );
 }
@@ -4257,16 +4257,16 @@ fn a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102()
     for (root, sugared, explicit) in [
         (
             in_thunk,
-            "Path[.A = Unit * Integer -> Unit * Integer](fun (a) { pick type(Unit * Integer) a }, fun \
-             (a) { pick type(Unit * Integer) a })",
-            "Path[.A = +U (*{Unit, Integer} -> -F *{Unit, Integer})](fun (a) { pick *{Unit, Integer} \
-             a }, fun (a) { pick *{Unit, Integer} a })",
+            "Path[.A = Unit * Integer -> Unit * Integer] (fun (a) { pick type(Unit * Integer) a }) \
+             (fun (a) { pick type(Unit * Integer) a })",
+            "Path[.A = +U (*{Unit, Integer} -> -F *{Unit, Integer})] (fun (a) { pick *{Unit, \
+             Integer} a }) (fun (a) { pick *{Unit, Integer} a })",
         ),
         (
             at_endpoint,
-            "Path[.A = Unit * Integer](pick type(Unit * Integer) held, pick type(Unit * Integer) \
+            "Path[.A = Unit * Integer] (pick type(Unit * Integer) held) (pick type(Unit * Integer) \
              held)",
-            "Path[.A = *{Unit, Integer}](pick *{Unit, Integer} held, pick *{Unit, Integer} held)",
+            "Path[.A = *{Unit, Integer}] (pick *{Unit, Integer} held) (pick *{Unit, Integer} held)",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -6693,7 +6693,7 @@ fn no_thunk_is_left_out_below_a_type_3972()
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(endpoints))),
         faithful(Written(
-            "Path[.A = +U (-F Integer)](thunk { kept (thunk { twice 1 }) }, thunk { kept (thunk { twice 1 }) })"
+            "Path[.A = +U (-F Integer)] (thunk { kept (thunk { twice 1 }) }) (thunk { kept (thunk { twice 1 }) })"
         )),
         "a call inside an endpoint's thunk keeps its argument's thunk"
     );
@@ -7960,7 +7960,7 @@ fn a_stated_parameter_spells_as_written_3943()
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(path))),
         faithful(Written(
-            "Path[.A = +U (Integer -> -F Integer)](fun (a : Integer) { a }, fun (a : Integer) { a })"
+            "Path[.A = +U (Integer -> -F Integer)] (fun (a : Integer) { a }) (fun (a : Integer) { a })"
         )),
         "a path between stated lambdas writes their parameters' types"
     );
@@ -7999,13 +7999,13 @@ fn a_returned_typed_bind_in_an_argument_is_a_block_3942()
     for (root, sugared, explicit) in [
         (
             over_integer,
-            "Path[.A = Integer]({ let a : Integer = pure held ; pure a }, held)",
-            "Path[.A = Integer]({ let a : Integer = pure held ; pure a }, held)",
+            "Path[.A = Integer] ({ let a : Integer = pure held ; pure a }) held",
+            "Path[.A = Integer] ({ let a : Integer = pure held ; pure a }) held",
         ),
         (
             over_universe,
-            "Path[.A = Type]({ let a : Type = pure type(Unit * Integer) ; pure a }, Unit * Integer)",
-            "Path[.A = Type]({ let a : Type = pure *{Unit, Integer} ; pure a }, *{Unit, Integer})",
+            "Path[.A = Type] ({ let a : Type = pure type(Unit * Integer) ; pure a }) (Unit * Integer)",
+            "Path[.A = Type] ({ let a : Type = pure *{Unit, Integer} ; pure a }) *{Unit, Integer}",
         ),
     ] {
         for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
@@ -8055,7 +8055,7 @@ fn a_statement_outside_its_block_is_a_block_3972()
     );
     assert_eq!(
         spelled(&source, Root::Type(CoreNode::ValueType(path))).0,
-        "Path[.A = Integer]({ let a = pure 1 ; pure a }, kept)",
+        "Path[.A = Integer] ({ let a = pure 1 ; pure a }) kept",
         "a path's endpoint takes the statements as a block"
     );
 }

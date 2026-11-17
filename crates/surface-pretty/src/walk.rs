@@ -14473,7 +14473,15 @@ impl Walk<'_, '_>
                             let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
                             let head = self.builder.concat_all(&core::mem::take(&mut current))?;
                             current.push(self.space_or_break(head)?);
-                            current.push(self.bare_up_to(piece, Binding::Atom)?);
+                            // After a type a `{` opens a definition's body, so
+                            // a block argument stands in parentheses (#5750).
+                            let argument = self.bare_up_to(piece, Binding::Atom)?;
+                            current.push(if piece.binding == Binding::Sequence {
+                                self.parenthesized(argument)?
+                            }
+                            else {
+                                argument
+                            });
                         },
                         Part::Binder(offset) => current.push(self.binder(OpenBinders(offset))?),
                         Part::Endpoint(index) => {
