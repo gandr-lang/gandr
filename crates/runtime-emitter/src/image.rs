@@ -418,8 +418,8 @@ pub struct Read
 ///   reads back, checks, and runs to its first command's outcome on both tiers;
 ///   two focus runs of one source give equal bytes. L3 — a command with a code
 ///   is refused by name.
-/// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
-/// - witness: `tests::image::two_focus_runs_give_equal_bytes`
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
+/// - witness: `tests::image::two_focuses_give_equal_bytes`
 /// - witness: `tests::image::an_annotation_is_refused_by_name`
 ///
 /// # Cost
@@ -459,7 +459,7 @@ pub fn encode(
 /// - hypothesis: L2 — as [`encode`]. L3 — a tag that no node has, a child after
 ///   its parent, a count past the ceiling and bytes after the image are each
 ///   refused by name.
-/// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
 /// - witness: `tests::image::each_fault_of_the_bytes_is_refused_by_name`
 ///
 /// # Cost
@@ -586,13 +586,100 @@ impl Numbering
     }
 }
 
+/// A position among the nodes of one family, or an index that a node holds
+/// in 32 bits.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Word32(u32);
+
+/// A count, an ordinal or a constant that the host's counts hold.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Ordinal(usize);
+
+/// How many cases a word names, from zero.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Choices(u64);
+
+/// The case that a word names, below its [`Choices`].
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Case(u64);
+
+/// Implements `From<Word32>` for each id that a node names in 32 bits.
+macro_rules! from_word {
+    ($($id:ty),*) => {$(
+        impl From<Word32> for $id
+        {
+            /// The id at the position.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(word: Word32) -> Self
+            {
+                Self::from(word.0)
+            }
+        }
+    )*};
+}
+
+from_word!(
+    ProducerId,
+    ConsumerId,
+    CommandId,
+    CovariableIndex,
+    DeBruijnIndex
+);
+
+/// Implements `From<Ordinal>` for each count that a node holds.
+macro_rules! from_ordinal {
+    ($($count:ty),*) => {$(
+        impl From<Ordinal> for $count
+        {
+            /// The count of the ordinal.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(ordinal: Ordinal) -> Self
+            {
+                Self::from(ordinal.0)
+            }
+        }
+    )*};
+}
+
+from_ordinal!(
+    ConstantIndex,
+    Component,
+    StagedPosition,
+    FieldCount,
+    ProducerArity
+);
+
 /// A position as the plane's word.
 ///
 /// # Specification
 /// trivial.
-fn position(at: u32) -> CanonicalWord
+fn position<At>(at: At) -> CanonicalWord
+where
+    u32: From<At>,
 {
-    CanonicalWord::from(u64::from(at))
+    CanonicalWord::from(u64::from(u32::from(at)))
 }
 
 /// A count or an ordinal as the plane's word.
@@ -603,7 +690,9 @@ fn position(at: u32) -> CanonicalWord
 /// # Errors
 /// [`untaken`] for a count wider than a word, which no host this crate builds
 /// for has.
-fn count(count: usize) -> Result<CanonicalWord, ValueError>
+fn count<Count>(count: Count) -> Result<CanonicalWord, ValueError>
+where
+    u64: TryFrom<Count>,
 {
     u64::try_from(count)
         .map(CanonicalWord::from)
@@ -666,12 +755,12 @@ impl Walk<'_>
     fn taken(
         &self,
         node: NodeAddress,
-    ) -> Option<u32>
+    ) -> Option<Word32>
     {
         match node {
-            NodeAddress::Producer(id) => self.producers.get(&id).copied(),
-            NodeAddress::Consumer(id) => self.consumers.get(&id).copied(),
-            NodeAddress::Command(id) => self.commands.get(&id).copied(),
+            NodeAddress::Producer(id) => self.producers.get(&id).copied().map(Word32),
+            NodeAddress::Consumer(id) => self.consumers.get(&id).copied().map(Word32),
+            NodeAddress::Command(id) => self.commands.get(&id).copied().map(Word32),
         }
     }
 
@@ -696,7 +785,7 @@ impl Walk<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`encode`].
-    /// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
     ///
     /// # Cost
     /// - allocation: the worklist, the nodes and the positions, growth within
@@ -704,7 +793,7 @@ impl Walk<'_>
     fn take(
         &mut self,
         root: NodeAddress,
-    ) -> Result<u32, ImageRefusal>
+    ) -> Result<Word32, ImageRefusal>
     {
         self.pending.push((root, false));
         while let Some((node, expanded)) = self.pending.pop() {
@@ -779,7 +868,7 @@ impl Walk<'_>
                     self.producers.len(),
                     gandr_core_sequent::NodeFamily::Producer,
                 )?;
-                let _fresh = self.producers.insert(id, at);
+                let _fresh = self.producers.insert(id, u32::from(at));
                 self.nodes.push(Node::Producer(Cow::Borrowed(held)));
             },
             NodeAddress::Consumer(id) => {
@@ -788,7 +877,7 @@ impl Walk<'_>
                     self.consumers.len(),
                     gandr_core_sequent::NodeFamily::Consumer,
                 )?;
-                let _fresh = self.consumers.insert(id, at);
+                let _fresh = self.consumers.insert(id, u32::from(at));
                 self.nodes.push(Node::Consumer(
                     Cow::Borrowed(held),
                     self.arena.independence(id),
@@ -797,7 +886,7 @@ impl Walk<'_>
             NodeAddress::Command(id) => {
                 let held = self.arena.command(id).ok_or(dangling)?;
                 let at = next(self.commands.len(), gandr_core_sequent::NodeFamily::Command)?;
-                let _fresh = self.commands.insert(id, at);
+                let _fresh = self.commands.insert(id, u32::from(at));
                 self.nodes.push(Node::Command(Cow::Borrowed(held)));
             },
         }
@@ -812,14 +901,17 @@ impl Walk<'_>
 ///
 /// # Errors
 /// [`MintRefusal::FamilyFull`] past the arena's ceiling.
-fn next(
-    taken: usize,
+fn next<Taken>(
+    taken: Taken,
     family: gandr_core_sequent::NodeFamily,
-) -> Result<u32, ImageRefusal>
+) -> Result<Word32, ImageRefusal>
+where
+    u32: TryFrom<Taken>,
 {
     u32::try_from(taken)
         .ok()
         .filter(|&at| at < u32::MAX)
+        .map(Word32)
         .ok_or(ImageRefusal::Mint(MintRefusal::FamilyFull(family)))
 }
 
@@ -939,7 +1031,7 @@ impl<'arena> Image<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`encode`].
-    /// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
     ///
     /// # Cost
     /// - allocation: the walk's state and the definitions, growth within the
@@ -976,15 +1068,18 @@ impl<'arena> Image<'arena>
             written.push((constant, definition));
         }
         let counts = [
-            next(
+            u32::from(next(
                 walk.producers.len(),
                 gandr_core_sequent::NodeFamily::Producer,
-            )?,
-            next(
+            )?),
+            u32::from(next(
                 walk.consumers.len(),
                 gandr_core_sequent::NodeFamily::Consumer,
-            )?,
-            next(walk.commands.len(), gandr_core_sequent::NodeFamily::Command)?,
+            )?),
+            u32::from(next(
+                walk.commands.len(),
+                gandr_core_sequent::NodeFamily::Command,
+            )?),
         ];
         Ok(Self {
             nodes: walk.nodes,
@@ -1013,7 +1108,7 @@ impl<'arena> Image<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`read`].
-    /// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
     /// - witness: `tests::image::each_fault_of_the_bytes_is_refused_by_name`
     ///
     /// # Cost
@@ -1085,7 +1180,7 @@ impl CanonicalValue for Image<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`encode`].
-    /// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
     fn emit_tokens<Sink>(
         &self,
         sink: &mut Sink,
@@ -1103,7 +1198,7 @@ impl CanonicalValue for Image<'_>
             match *node {
                 Node::Producer(ref node) => self.emit_producer(node, sink)?,
                 Node::Consumer(ref node, independence) => {
-                    self.emit_consumer(node, independence, sink)?
+                    self.emit_consumer(node, independence, sink)?;
                 },
                 Node::Command(ref node) => self.emit_command(node, sink)?,
             }
@@ -1141,7 +1236,7 @@ impl CanonicalValue for Image<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`read`]; L3 — as [`read`].
-    /// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
     /// - witness: `tests::image::each_fault_of_the_bytes_is_refused_by_name`
     ///
     /// # Cost
@@ -1156,9 +1251,9 @@ impl CanonicalValue for Image<'_>
         }
         let mut stated = [0_u32; 3];
         for family in &mut stated {
-            *family = bounded(reader)?;
+            *family = u32::from(bounded(reader)?);
         }
-        let definitions = bounded(reader)?;
+        let definitions = u32::from(bounded(reader)?);
         let root = CommandId::from(index(opened, reader)?);
         let nodes = stated.iter().map(|&family| u64::from(family)).sum::<u64>();
         if nodes > MOST {
@@ -1191,7 +1286,7 @@ impl CanonicalValue for Image<'_>
                 return Err(row.refused());
             }
             let constant = ConstantIndex::from(
-                usize::try_from(bounded(reader)?).map_err(|_wider| row.refused())?,
+                usize::try_from(u32::from(bounded(reader)?)).map_err(|_wider| row.refused())?,
             );
             let definition = match u64::from(reader.read_word()?) {
                 0_u64 => Definition::Opaque,
@@ -1223,41 +1318,49 @@ impl CanonicalValue for Image<'_>
 /// # Errors
 /// The reader's refusal, and [`ValueError::DecodeBudgetExceeded`] for a
 /// count past [`MOST`].
-fn bounded<Store>(reader: &mut TokenReader<'_, Store>) -> Result<u32, ValueError>
+///
+/// # Cost
+/// - allocation: a suspended frame of the reader, growth within the decode
+///   budget
+fn bounded<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Word32, ValueError>
 where
     Store: ChunkStore,
 {
     let stated = u64::from(reader.read_word()?);
-    if stated > MOST {
-        return Err(ValueError::DecodeBudgetExceeded {
-            spent: DecodeWork::from(stated),
-            ceiling: DecodeWork::from(MOST),
-        });
-    }
-    u32::try_from(stated).map_err(|_wider| ValueError::DecodeBudgetExceeded {
+    let past = ValueError::DecodeBudgetExceeded {
         spent: DecodeWork::from(stated),
         ceiling: DecodeWork::from(MOST),
-    })
+    };
+    if stated > MOST {
+        return Err(past);
+    }
+    u32::try_from(stated).map(Word32).map_err(|_wider| past)
 }
 
-/// Read a position or an index that a node's `u32` holds.
+/// Read a position or an index that a node holds in 32 bits.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// The reader's refusal, and `opened`'s for a word wider than `u32`.
+/// The reader's refusal, and `opened`'s for a word wider than 32 bits.
+///
+/// # Cost
+/// - allocation: a suspended frame of the reader, growth within the decode
+///   budget
 fn index<Store>(
     opened: Opened,
     reader: &mut TokenReader<'_, Store>,
-) -> Result<u32, ValueError>
+) -> Result<Word32, ValueError>
 where
     Store: ChunkStore,
 {
-    u32::try_from(u64::from(reader.read_word()?)).map_err(|_wider| opened.refused())
+    u32::try_from(u64::from(reader.read_word()?))
+        .map(Word32)
+        .map_err(|_wider| opened.refused())
 }
 
-/// Read a count, an ordinal or a constant that a `usize` holds.
+/// Read a count, an ordinal or a constant that the host's counts hold.
 ///
 /// # Specification
 /// trivial.
@@ -1265,14 +1368,20 @@ where
 /// # Errors
 /// The reader's refusal, and `opened`'s for a word wider than the host's
 /// counts.
+///
+/// # Cost
+/// - allocation: a suspended frame of the reader, growth within the decode
+///   budget
 fn ordinal<Store>(
     opened: Opened,
     reader: &mut TokenReader<'_, Store>,
-) -> Result<usize, ValueError>
+) -> Result<Ordinal, ValueError>
 where
     Store: ChunkStore,
 {
-    usize::try_from(u64::from(reader.read_word()?)).map_err(|_wider| opened.refused())
+    usize::try_from(u64::from(reader.read_word()?))
+        .map(Ordinal)
+        .map_err(|_wider| opened.refused())
 }
 
 /// Read a word that names one of `choices` cases, from zero.
@@ -1282,20 +1391,77 @@ where
 ///
 /// # Errors
 /// The reader's refusal, and `opened`'s for a case past the last.
-fn case<Store>(
+///
+/// # Cost
+/// - allocation: a suspended frame of the reader, growth within the decode
+///   budget
+fn case<Store, Read>(
     opened: Opened,
     reader: &mut TokenReader<'_, Store>,
-    choices: u64,
-) -> Result<u64, ValueError>
+    choices: impl Into<Choices>,
+) -> Result<Read, ValueError>
 where
     Store: ChunkStore,
+    Read: From<Case>,
 {
     let read = u64::from(reader.read_word()?);
-    if read < choices {
-        Ok(read)
+    if read < choices.into().0 {
+        Ok(Read::from(Case(read)))
     }
     else {
         Err(opened.refused())
+    }
+}
+
+impl From<u64> for Choices
+{
+    /// The count of cases.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(choices: u64) -> Self
+    {
+        Self(choices)
+    }
+}
+
+impl From<Case> for u64
+{
+    /// The case's number, from zero.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(case: Case) -> Self
+    {
+        case.0
+    }
+}
+
+impl From<Ordinal> for usize
+{
+    /// The ordinal's count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(ordinal: Ordinal) -> Self
+    {
+        ordinal.0
+    }
+}
+
+impl From<Word32> for u32
+{
+    /// The position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(word: Word32) -> Self
+    {
+        word.0
     }
 }
 
@@ -1315,9 +1481,9 @@ fn positions<Store, Id>(
 ) -> Result<Box<[Id]>, ValueError>
 where
     Store: ChunkStore,
-    Id: From<u32>,
+    Id: From<Word32>,
 {
-    let length = ordinal(opened, reader)?;
+    let length = usize::from(ordinal(opened, reader)?);
     let mut read = Vec::new();
     for _at in 0_usize .. length {
         read.push(Id::from(index(opened, reader)?));
@@ -1363,7 +1529,7 @@ where
 /// # Adequacy
 /// - hypothesis: L2 — as [`read`]; L3 — a tag that no node has is refused at
 ///   its open.
-/// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
 /// - witness: `tests::image::each_fault_of_the_bytes_is_refused_by_name`
 ///
 /// # Cost
@@ -1386,7 +1552,7 @@ where
     let command = |node: CommandNode| Node::Command(Cow::Owned(node));
     let node = match u8::from(opened.tag()) {
         REIFY => {
-            let length = ordinal(opened, reader)?;
+            let length = usize::from(ordinal(opened, reader)?);
             let mut frames = Vec::new();
             for _frame in 0_usize .. length {
                 frames.push(match case(opened, reader, 3_u64)? {
@@ -1399,7 +1565,7 @@ where
         },
         PRIMITIVE => {
             let primitive = PRELUDE
-                .get(ordinal(opened, reader)?)
+                .get(usize::from(ordinal(opened, reader)?))
                 .copied()
                 .ok_or_else(|| opened.refused())?;
             let arguments = match case(opened, reader, 3_u64)? {
@@ -1459,7 +1625,7 @@ where
                     position: StagedPosition::from(ordinal(opened, reader)?),
                 },
                 3_u64 => {
-                    let length = ordinal(opened, reader)?;
+                    let length = usize::from(ordinal(opened, reader)?);
                     let mut read = Vec::new();
                     for _component in
                         0_usize .. length.min(JointPositions::CAPACITY.saturating_add(1_usize))
@@ -1475,7 +1641,7 @@ where
             producer(ProducerNode::Fixpoint { body, evidence })
         },
         COCASE => {
-            let length = ordinal(opened, reader)?;
+            let length = usize::from(ordinal(opened, reader)?);
             let mut arms = Vec::new();
             for _arm in 0_usize .. length {
                 let head = destructor(opened, reader)?;
@@ -1527,7 +1693,7 @@ where
             })
         },
         CASE => {
-            let length = ordinal(opened, reader)?;
+            let length = usize::from(ordinal(opened, reader)?);
             let mut arms = Vec::new();
             for _arm in 0_usize .. length {
                 let constructor = read_head(reader)?;
@@ -1543,7 +1709,7 @@ where
         },
         DATA_CASE => {
             let branches = positions(opened, reader)?;
-            let length = ordinal(opened, reader)?;
+            let length = usize::from(ordinal(opened, reader)?);
             let mut arities = Vec::new();
             for _arity in 0_usize .. length {
                 arities.push(FieldCount::from(ordinal(opened, reader)?));
@@ -1789,7 +1955,7 @@ impl Image<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`encode`].
-    /// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
     fn emit_producer<Sink>(
         &self,
         node: &ProducerNode,
@@ -1930,7 +2096,7 @@ impl Image<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`encode`].
-    /// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
     fn emit_consumer<Sink>(
         &self,
         node: &ConsumerNode,
@@ -2026,7 +2192,7 @@ impl Image<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`encode`].
-    /// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
     fn emit_command<Sink>(
         &self,
         node: &CommandNode,

@@ -25,6 +25,8 @@ mod cut;
 #[cfg(test)]
 mod forms;
 #[cfg(test)]
+mod image;
+#[cfg(test)]
 mod seam;
 #[cfg(test)]
 mod sessions;

@@ -979,7 +979,7 @@ where
 /// - hypothesis: L2 — as [`Crossed::emit`]; each head of the corpus's commands
 ///   makes the round trip in a command's image.
 /// - witness: `tests::crossing::every_crossing_head_commits_and_derefs_back_equal`
-/// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
 pub(crate) fn emit_head<Sink>(
     head: &Head,
     sink: &mut Sink,
@@ -1006,7 +1006,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`emit_head`].
-/// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
 ///
 /// # Cost
 /// - allocation: a record's labels or a lift's atoms, durable by the head
@@ -1032,7 +1032,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`emit_literal`].
-/// - witness: `tests::image::each_runs_item_reads_back_and_runs_alike`
+/// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
 ///
 /// # Cost
 /// - allocation: the literal's payload, durable by the literal
