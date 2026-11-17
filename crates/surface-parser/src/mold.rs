@@ -1171,6 +1171,12 @@ primitive_copy_wrapper!(
     struct LayoutSeparatorDropped(bool);
 );
 
+primitive_copy_wrapper!(
+    /// Whether each mold of a token's menu is a stray: it continues no open
+    /// form and opens none.
+    struct StraysOnly(bool);
+);
+
 /// Return whether the token at `index` of `tokens` is a separator that the
 /// head of a next top-level declaration follows, or a layout separator that
 /// the `}` of its block follows.
@@ -3040,8 +3046,27 @@ impl<'pbg> Molder<'pbg>
             return LayoutSeparatorDropped::from(false);
         }
         self.gather(state, lexeme, text, labels, ahead);
+        LayoutSeparatorDropped::from(bool::from(self.strays_only(state)))
+    }
+
+    /// Whether each mold of the gathered menu is a stray at `state`: a tile
+    /// after another of its form, which opens no form and continues no open
+    /// frontier.
+    ///
+    /// # Specification
+    /// - requires: the candidate buffer holds a token's menu at `state`.
+    /// - ensures: true exactly when the buffer is not empty, and each mold of
+    ///   it has a predecessor, opens no form, and continues no open frontier of
+    ///   `state`.
+    /// - panics: none.
+    /// - executable: none — the clause restates the body.
+    fn strays_only(
+        &self,
+        state: &MeldState<'_>,
+    ) -> StraysOnly
+    {
         let adjacencies = self.pbg.adjacencies();
-        LayoutSeparatorDropped::from(
+        StraysOnly::from(
             !self.candidates.is_empty()
                 && self.candidates.iter().all(|&mold| {
                     bool::from(self.pbg.mold_has_predecessor(mold))
