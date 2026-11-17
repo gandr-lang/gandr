@@ -9,7 +9,8 @@
 #
 # The cases run where kache is: mise installs it from the pin.
 set -euo pipefail
-here=$(cd "${BASH_SOURCE[0]%/*}/../../.github/actions/setup-rust" && pwd)
+tree=$(cd "${BASH_SOURCE[0]%/*}/../.." && pwd)
+here=$tree/.github/actions/setup-rust
 if ! command -v kache > /dev/null 2>&1; then
   echo "kache-wrapper check skipped: this host has no kache"
   exit 0
@@ -34,6 +35,23 @@ fail() {
 running() {
   "$1" daemon status --json | jq -e '.daemon_running' > /dev/null
 }
+
+if [[ ${OSTYPE:-} == darwin* ]]; then
+  fake=$scratch/no-kache
+  mkdir -p "$fake"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fake/kache"
+  chmod +x "$fake/kache"
+  read -r toolchain _ < <(rustup show active-toolchain)
+  driver=$HOME/.dylint_drivers/$toolchain/dylint-driver
+  rustc=$(rustup which rustc)
+  if [[ ! -x $driver ]]; then
+    fail "#7861: no Dylint driver matches the active toolchain"
+  elif ! PATH=$fake:$PATH RUSTUP_TOOLCHAIN=$toolchain "$tree/.config/kache/rustc-wrapper" "$driver" "$rustc" -V > /dev/null 2>&1; then
+    fail "#7861: the tree wrapper did not load the Dylint driver"
+  fi
+else
+  echo "kache-wrapper case skipped: #7861 Dylint driver library path needs macOS"
+fi
 
 for job in first second; do
   mkdir -p "$scratch/$job"
