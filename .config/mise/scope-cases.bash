@@ -6,6 +6,14 @@
 # The case reads that the command runs and sees each word.
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
+failed=0
+
+fail() {
+  echo "scope case FAILED: $1"
+  echo "  got: $2"
+  failed=1
+}
+
 words=()
 for index in $(seq 1 2000); do
   words+=("$(printf 'w%099d' "$index")")
@@ -13,8 +21,8 @@ done
 status=0
 out=$("$root/.config/mise/scope" bash -c 'echo "$#"' count "${words[@]}" 2>&1) || status=$?
 if [[ $status != 0 || $out != 2000 ]]; then
-  echo "scope case FAILED: #7942: a command of 2000 words of 100 bytes runs in its scope and sees each word"
-  echo "  got: exit $status: ${out:0:400}"
-  exit 1
+  fail "#7942: a command of 2000 words of 100 bytes runs in its scope and sees each word" "exit $status: ${out:0:400}"
 fi
+
+(( failed == 0 )) || exit 1
 echo "scope case OK: a command of 200 KiB of words runs in its scope and sees each word"
