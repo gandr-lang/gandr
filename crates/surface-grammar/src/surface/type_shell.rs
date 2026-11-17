@@ -737,6 +737,42 @@ fn add_type_rules(
             ]),
         ]),
     ));
+    // A record type with fixed fields, `Config.#{.port = 443, .tls = true}`,
+    // or with the fields of a face fixed, `Config.#{secure ↦ *{.port = 443}}`:
+    // the postfix reader `.#{` on a type, beside `.*{` and `.#[` on a value.
+    // A system writes more faces after the first, each after a `,`. A
+    // field's value is a type hole, as a value a type takes as a call's
+    // argument is. A face's value is an expression, the record of the face's
+    // fields.
+    rules.push(rule(
+        RuleName("extension_type"),
+        ty,
+        type_path,
+        Regex::seq([
+            Regex::sort(ty),
+            tile(TileLabel(".#{")),
+            Regex::alt([
+                Regex::seq([
+                    tile(TileLabel("identifier")),
+                    tile(TileLabel("↦")),
+                    Regex::sort(Sort::Expression),
+                    Regex::repeat(Regex::seq([
+                        tile(TileLabel(",")),
+                        tile(TileLabel("identifier")),
+                        tile(TileLabel("↦")),
+                        Regex::sort(Sort::Expression),
+                    ])),
+                ]),
+                comma1(Regex::seq([
+                    tile(TileLabel(".")),
+                    tile(TileLabel("identifier")),
+                    tile(TileLabel("=")),
+                    Regex::sort(ty),
+                ])),
+            ]),
+            tile(TileLabel("}")),
+        ]),
+    ));
     // A parenthesized type holds one type or, as the domain of the n-ary box
     // `(A, B) -> C`, a list of them, each entry a bare type or a binder
     // `x : A` — the telescope `(x : A, y : B(x)) -> C`. One rule, so `(` keeps
