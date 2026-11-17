@@ -94,7 +94,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   refused at the operand.
     /// - witness: `gandr-surface-lowering::lower::splice::tests::a_splice_is_a_hole_carrying_its_tactic_2762`
     /// - witness: `gandr-surface-lowering::lower::splice::tests::an_operand_writing_no_tactic_is_refused_2762`
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::ports_collects_the_outputs_of_a_call_5767`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_call_of_outputs_standing_as_one_value_is_their_record`
     #[spec(ensures: |ret| ret.is_err() || match self.cx().plans.get(site.at.node) {
         Some(&Plan::ValueHole(hole)) => hole.tactic().is_some(),
         Some(&Plan::Transparent(collected)) => self.cx().packed.contains_key(&collected),
@@ -242,7 +242,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// # Adequacy
     /// - hypothesis: L3 — as
     ///   [`Self::splice`](crate::lower::Expressions::splice).
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::ports_collects_the_outputs_of_a_call_5767`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_call_of_outputs_standing_as_one_value_is_their_record`
     #[spec(ensures: |ret| !matches!(ret, Ok(Some(collected)) if collected.node == operand.node))]
     fn collected(
         &self,

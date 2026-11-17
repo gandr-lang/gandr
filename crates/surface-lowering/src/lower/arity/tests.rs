@@ -2361,10 +2361,11 @@ fn a_plugging_passes_every_output_in_order()
 /// no `~ports` is refused at the call, and `~ports` of a call of one value is
 /// refused at its operand.
 #[test]
-fn ports_collects_the_outputs_of_a_call_5767()
+fn a_call_of_outputs_standing_as_one_value_is_their_record()
 {
-    let module_text =
-        include_str!("tests/fixtures/ports-collects-the-outputs-of-a-call-5767-module.gandr");
+    let module_text = include_str!(
+        "tests/fixtures/a-call-of-outputs-standing-as-one-value-is-their-record-module.gandr"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(module_text, &mut arena);
 
