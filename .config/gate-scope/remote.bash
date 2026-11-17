@@ -57,19 +57,29 @@ ssh_of() {
   jq -r --arg host "$1" '.hosts[$host].ssh[]' "$config"
 }
 
-# Runs `far.bash` on host `$1` with the arguments after it. A token in
-# `handed` goes first on the remote shell's standard input, with tracing off,
-# so the far side holds it in its environment before its first read of
-# GitHub. No argument vector, file or log holds it.
+# Runs `far.bash` on host `$1` with the arguments after it. The source is a
+# remote command so standard input stays a session pipe. The parent holds the
+# pipe's writer until its local end stops. Its first line is the reader token.
+# No argument vector, file or log holds that token.
 handed=
 far() {
-  local host=$1 ssh=()
+  local host=$1 ssh=() word script command session status=0 ssh_pid
   shift
   while IFS= read -r word; do ssh+=("$word"); done < <(ssh_of "$host")
-  {
-    if [[ -n $handed ]]; then printf 'set +x\nexport GH_TOKEN=%q\n' "$handed"; fi
-    cat "$here/far.bash"
-  } | "${ssh[@]}" "bash -s -- $(printf '%q ' "$@")"
+  script=$(< "$here/far.bash")
+  printf -v command 'exec bash -c %q --' "$script"
+  for word in "$@"; do printf -v command '%s %q' "$command" "$word"; done
+  session=$(mktemp -d)
+  mkfifo "$session/session"
+  "${ssh[@]}" "bash -c $(printf '%q' "$command")" < "$session/session" &
+  ssh_pid=$!
+  exec 7> "$session/session"
+  printf '%s\n' "$handed" >&7
+  handed=
+  wait "$ssh_pid" || status=$?
+  exec 7>&-
+  rm -rf "$session"
+  return "$status"
 }
 
 host=$named
