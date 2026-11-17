@@ -98,6 +98,13 @@ targets = ["riscv64gc-unknown-linux-gnu"]
 build = "crate"
 crate = "bindgen-cli"
 
+# The crate's install holds the engine beside the client, as its release does.
+[[tool]]
+key = "github:kunobi-ninja/kache"
+targets = ["riscv64gc-unknown-linux-gnu"]
+build = "crate"
+crate = "kache"
+
 [[tool]]
 key = "mise"
 targets = ["riscv64gc-unknown-linux-gnu"]

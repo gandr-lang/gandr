@@ -178,6 +178,7 @@ mod tests
             "github:aubepkg/aube",
             "github:tombi-toml/tombi",
             "cargo:bindgen-cli",
+            "github:kunobi-ninja/kache",
             "mise",
         ]);
         let mise = builds.tool.last().unwrap();
