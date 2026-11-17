@@ -2054,6 +2054,7 @@ INSERT INTO purpose VALUES('runtime-emitter','block::Block','struct','The bytes 
 INSERT INTO purpose VALUES('runtime-emitter','block::Blocks','struct','The block compiler: it compiles a description by llc in a process of its own and keeps the bytes under the digest of the description, in the process and in a directory.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Cache','enum','Names where a block compiler keeps its bytes: in the process alone, or in a directory too.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Class','enum','Names a class of registers from which LLVM picks the register of an operand.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','block::Code','struct','The machine code of one block: the text of its object, entered at its first byte.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Description','struct','The data that the bytes of a block are a function of: the target, the template, the operands, the answer, the clobbers and the options.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Direction','enum','Names how an operand passes between its word and its register: in, out, or in and out.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Flags','enum','Names whether the template of a block can change the flags of the target.',NULL,'fits','sound',NULL);

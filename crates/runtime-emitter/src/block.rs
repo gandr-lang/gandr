@@ -41,6 +41,8 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
 use core::fmt::Write as _;
+use core::hash::Hash as _;
+use core::hash::Hasher;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 use std::fs;
@@ -49,6 +51,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::process::Output;
 use std::process::Stdio;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -95,81 +98,78 @@ impl Target
         Self::DarwinAarch64,
     ];
 
-    /// The name of the target in the Rust toolchain.
+    /// How `llc` and the lowering read the target.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn selection(self) -> Selection
+    {
+        match self {
+            Self::LinuxX86_64 => Selection {
+                arguments: &["-mtriple=x86_64-unknown-linux-gnu"],
+                flags: "~{dirflag},~{fpsr},~{flags},",
+                dialect: " inteldialect",
+            },
+            Self::LinuxAarch64 => Selection {
+                arguments: &["-mtriple=aarch64-unknown-linux-gnu"],
+                flags: "~{cc},",
+                dialect: "",
+            },
+            Self::LinuxRiscv64 => Selection {
+                arguments: &[
+                    "-mtriple=riscv64-unknown-linux-gnu",
+                    "-mattr=+m,+a,+f,+d,+c",
+                    "-target-abi=lp64d",
+                ],
+                flags: "",
+                dialect: "",
+            },
+            Self::DarwinAarch64 => Selection {
+                arguments: &["-mtriple=arm64-apple-macosx11.0.0"],
+                flags: "~{cc},",
+                dialect: "",
+            },
+        }
+    }
+}
+
+impl fmt::Display for Target
+{
+    /// Write the name of the target in the Rust toolchain.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
-    pub const fn name(self) -> &'static str
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
     {
-        match self {
+        f.write_str(match *self {
             Self::LinuxX86_64 => "x86_64-unknown-linux-gnu",
             Self::LinuxAarch64 => "aarch64-unknown-linux-gnu",
             Self::LinuxRiscv64 => "riscv64gc-unknown-linux-gnu",
             Self::DarwinAarch64 => "aarch64-apple-darwin",
-        }
+        })
     }
+}
 
+/// How `llc` and the lowering read one target.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Selection
+{
     /// The arguments that select the target in `llc`: the LLVM triple that
     /// rustc gives it, and the features of a `gc` core on riscv64.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn arguments(self) -> &'static [&'static str]
-    {
-        match self {
-            Self::LinuxX86_64 => &["-mtriple=x86_64-unknown-linux-gnu"],
-            Self::LinuxAarch64 => &["-mtriple=aarch64-unknown-linux-gnu"],
-            Self::LinuxRiscv64 => &[
-                "-mtriple=riscv64-unknown-linux-gnu",
-                "-mattr=+m,+a,+f,+d,+c",
-                "-target-abi=lp64d",
-            ],
-            Self::DarwinAarch64 => &["-mtriple=arm64-apple-macosx11.0.0"],
-        }
-    }
-
+    arguments: &'static [&'static str],
     /// The clobbers that name the flags of the target, as Rust's `asm!`
     /// writes them. riscv64 has no flags.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn flags(self) -> &'static str
-    {
-        match self {
-            Self::LinuxX86_64 => "~{dirflag},~{fpsr},~{flags},",
-            Self::LinuxAarch64 | Self::DarwinAarch64 => "~{cc},",
-            Self::LinuxRiscv64 => "",
-        }
-    }
-
+    flags: &'static str,
     /// The dialect of the template: Intel on x86-64, as Rust's `asm!` reads
     /// it, and the one dialect of each other target.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn dialect(self) -> &'static str
-    {
-        match self {
-            Self::LinuxX86_64 => " inteldialect",
-            Self::LinuxAarch64 | Self::LinuxRiscv64 | Self::DarwinAarch64 => "",
-        }
-    }
-
-    /// The byte that stands for the target in a key.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn tag(self) -> u8
-    {
-        match self {
-            Self::LinuxX86_64 => 0,
-            Self::LinuxAarch64 => 1,
-            Self::LinuxRiscv64 => 2,
-            Self::DarwinAarch64 => 3,
-        }
-    }
+    dialect: &'static str,
 }
 
 /// The name of one register of the target, as LLVM spells it: `rax`, `x8`,
@@ -187,6 +187,9 @@ impl From<&str> for Register
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name, setup
     #[inline]
     fn from(name: &str) -> Self
     {
@@ -327,6 +330,9 @@ impl From<&str> for Template
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the text, setup
     #[inline]
     fn from(text: &str) -> Self
     {
@@ -371,6 +377,9 @@ impl Assembler
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the path, setup
     #[inline]
     #[must_use]
     pub fn pinned() -> Self
@@ -408,17 +417,25 @@ pub enum Origin
     Directory,
 }
 
-/// The bytes of one block, and where they came from.
+/// The machine code of one block: the text of its object, the function
+/// `block`, entered at its first byte.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Code(pub Arc<[u8]>);
+
+/// The code of one block, and where it came from.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Block
 {
-    /// The text of the block's object: the function `block`, entered at its
-    /// first byte.
-    pub bytes: Arc<[u8]>,
-    /// Where this request found the bytes.
+    /// The code.
+    pub code: Code,
+    /// Where this request found the code.
     pub origin: Origin,
 }
 
@@ -496,15 +513,50 @@ impl core::error::Error for Refusal
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Key(blake3::Hash);
 
-/// The bytes of one key, and the lock that one compile of them holds.
+/// The digest that a key reads the hash of a description into.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct Digest(blake3::Hasher);
+
+impl Hasher for Digest
+{
+    /// Add `bytes` to the digest.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn write(
+        &mut self,
+        bytes: &[u8],
+    )
+    {
+        self.0.update(bytes);
+    }
+
+    /// The first eight bytes of the digest, little-endian. A key reads the
+    /// whole digest.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn finish(&self) -> u64
+    {
+        let [b0, b1, b2, b3, b4, b5, b6, b7, ..] = *self.0.finalize().as_bytes();
+        u64::from_le_bytes([b0, b1, b2, b3, b4, b5, b6, b7])
+    }
+}
+
+/// The code of one key, and the lock that one compile of it holds.
 ///
 /// # Specification
 /// trivial.
 #[derive(Debug, Default)]
 struct Slot
 {
-    /// The bytes, once a request has them.
-    bytes: OnceLock<Arc<[u8]>>,
+    /// The code, once a request has it.
+    code: OnceLock<Code>,
     /// The lock that a request holds while it reads the directory or
     /// compiles.
     compiling: Mutex<()>,
@@ -531,6 +583,9 @@ impl Blocks
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the map of slots, setup
     #[inline]
     #[must_use]
     pub fn new(
@@ -548,19 +603,23 @@ impl Blocks
         }
     }
 
-    /// The bytes of the block that `description` describes.
+    /// The code of the block that `description` describes.
     ///
     /// # Specification
-    /// - ensures: the bytes are the text of the object that the assembler
-    ///   writes for the lowering of `description`, the same for each request of
-    ///   one key; the origin is [`Origin::Compiled`] for exactly one request of
-    ///   a key that neither the process nor the directory held, and no other
+    /// - ensures: the code is the text of the object that the assembler writes
+    ///   for the lowering of `description`, the same for each request of one
+    ///   key; the origin is [`Origin::Compiled`] for exactly one request of a
+    ///   key that neither the process nor the directory held, and no other
     ///   request starts a process.
     /// - fails: each [`Refusal`], as its variant states. A failed request
-    ///   leaves the key with no bytes.
+    ///   leaves the key with no code.
     /// - panics: none.
     /// - executable: none — the bytes are the assembler's, observable only by
     ///   its run.
+    ///
+    /// # Cost
+    /// - allocation: the slot of a new key, its file's path and its code,
+    ///   durable by the key
     ///
     /// # Errors
     /// The [`Refusal`] of the lowering, of the assembler, of the object or of
@@ -586,10 +645,10 @@ impl Blocks
         let slot = {
             let slots = self.slots.pin();
             if let Some(slot) = slots.get(&key)
-                && let Some(bytes) = slot.bytes.get()
+                && let Some(code) = slot.code.get()
             {
                 return Ok(Block {
-                    bytes: Arc::clone(bytes),
+                    code: code.clone(),
                     origin: Origin::Process,
                 });
             }
@@ -599,9 +658,9 @@ impl Blocks
             .compiling
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if let Some(bytes) = slot.bytes.get() {
+        if let Some(code) = slot.code.get() {
             return Ok(Block {
-                bytes: Arc::clone(bytes),
+                code: code.clone(),
                 origin: Origin::Process,
             });
         }
@@ -609,21 +668,21 @@ impl Blocks
             .directory
             .as_deref()
             .map(|directory| directory.join(key.0.to_hex().as_str()));
-        let (bytes, origin) = match file.as_deref().map(fs::read) {
-            Some(Ok(bytes)) => (Arc::<[u8]>::from(bytes), Origin::Directory),
+        let (code, origin) = match file.as_deref().map(fs::read) {
+            Some(Ok(bytes)) => (Code(Arc::from(bytes)), Origin::Directory),
             Some(Err(error)) if error.kind() != io::ErrorKind::NotFound => {
                 return Err(Refusal::Io(error.kind()));
             },
             Some(Err(_)) | None => {
-                let bytes = self.assemble(description)?;
+                let code = self.assemble(description)?;
                 if let Some(ref file) = file {
-                    keep(file, &bytes).map_err(|error| Refusal::Io(error.kind()))?;
+                    keep(file, &code).map_err(|error| Refusal::Io(error.kind()))?;
                 }
-                (bytes, Origin::Compiled)
+                (code, Origin::Compiled)
             },
         };
         Ok(Block {
-            bytes: Arc::clone(slot.bytes.get_or_init(|| bytes)),
+            code: slot.code.get_or_init(|| code).clone(),
             origin,
         })
     }
@@ -632,8 +691,11 @@ impl Blocks
     ///
     /// # Specification
     /// - ensures: two descriptions have one key exactly when they are equal, up
-    ///   to the collisions of the digest.
-    /// - executable: none — injectivity is a property of the encoding.
+    ///   to the collisions of the digest; the key also reads the version of the
+    ///   lowering and the assembler's path.
+    /// - executable: none — injectivity is a property of the encoding, which
+    ///   the derived `Hash` frames: each slice by its length, each string by a
+    ///   terminator, each enumeration by its variant.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two descriptions that differ in the template alone
@@ -644,78 +706,11 @@ impl Blocks
         description: &Description,
     ) -> Key
     {
-        /// Add `count` to `hasher`, as eight bytes.
-        fn counted(
-            hasher: &mut blake3::Hasher,
-            count: usize,
-        )
-        {
-            hasher.update(&u64::try_from(count).unwrap_or(u64::MAX).to_le_bytes());
-        }
-        /// Add `bytes` to `hasher` after their length, so that no two
-        /// sequences of fields give one stream.
-        fn framed(
-            hasher: &mut blake3::Hasher,
-            bytes: &[u8],
-        )
-        {
-            counted(hasher, bytes.len());
-            hasher.update(bytes);
-        }
-        /// Add `place` to `hasher`.
-        fn place(
-            hasher: &mut blake3::Hasher,
-            place: &Place,
-        )
-        {
-            match *place {
-                Place::Register(ref register) => {
-                    hasher.update(&[0]);
-                    framed(hasher, register.0.as_bytes());
-                },
-                Place::Class(Class::General) => {
-                    hasher.update(&[1]);
-                },
-            }
-        }
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(LOWERING);
-        framed(&mut hasher, self.assembler.0.as_os_str().as_encoded_bytes());
-        hasher.update(&[description.target.tag()]);
-        framed(&mut hasher, description.template.0.as_bytes());
-        match description.answer {
-            Answer::Zero => {
-                hasher.update(&[0]);
-            },
-            Answer::Place(ref answer) => {
-                hasher.update(&[1]);
-                place(&mut hasher, answer);
-            },
-        }
-        counted(&mut hasher, description.operands.len());
-        for operand in &description.operands {
-            let direction = match operand.direction {
-                Direction::In => 0,
-                Direction::Out => 1,
-                Direction::InOut => 2,
-            };
-            hasher.update(&[direction]);
-            place(&mut hasher, &operand.place);
-        }
-        counted(&mut hasher, description.clobbers.len());
-        for clobber in &description.clobbers {
-            framed(&mut hasher, clobber.0.as_bytes());
-        }
-        let memory = match description.options.memory {
-            Memory::Clobbered => 0,
-            Memory::Untouched => 1,
-        };
-        let flags = match description.options.flags {
-            Flags::Clobbered => 0,
-            Flags::Preserved => 1,
-        };
-        hasher.update(&[memory, flags]);
-        Key(hasher.finalize())
+        let mut digest = Digest(blake3::Hasher::new());
+        digest.write(LOWERING);
+        self.assembler.hash(&mut digest);
+        description.hash(&mut digest);
+        Key(digest.0.finalize())
     }
 
     /// Lower `description`, run the assembler on it and take the text of its
@@ -724,16 +719,19 @@ impl Blocks
     /// # Specification
     /// trivial.
     ///
+    /// # Cost
+    /// - allocation: the module, the process and its output, durable by the key
+    ///
     /// # Errors
     /// As [`Blocks::compile`], less the cache.
     fn assemble(
         &self,
         description: &Description,
-    ) -> Result<Arc<[u8]>, Refusal>
+    ) -> Result<Code, Refusal>
     {
         let module = lower(description)?;
         let mut child = Command::new(&self.assembler.0)
-            .args(description.target.arguments())
+            .args(description.target.selection().arguments)
             .args(["-O2", "-filetype=obj", "-o", "-", "-"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -755,24 +753,28 @@ impl Blocks
             .wait_with_output()
             .map_err(|error| Refusal::Io(error.kind()))?;
         if !output.status.success() {
-            return Err(refusal(&String::from_utf8_lossy(&output.stderr)));
+            return Err(refusal(&output));
         }
         written.map_err(|error| Refusal::Io(error.kind()))?;
-        text(&output.stdout)
+        text(&output)
     }
 }
 
-/// Write `bytes` to `file` whole or not at all: to a fresh file beside it,
+/// Write `code` to `file` whole or not at all: to a fresh file beside it,
 /// then a rename over it.
 ///
 /// # Specification
 /// trivial.
 ///
+/// # Cost
+/// - allocation: the directory's path and the part file's name, durable by the
+///   key
+///
 /// # Errors
 /// The first failure of the directory, the write or the rename.
 fn keep(
     file: &Path,
-    bytes: &[u8],
+    code: &Code,
 ) -> io::Result<()>
 {
     let directory = file.parent().unwrap_or_else(|| Path::new("."));
@@ -781,13 +783,13 @@ fn keep(
     let mut name = file.as_os_str().to_owned();
     name.push(format!(".{}.{count}.part", std::process::id()));
     let part = PathBuf::from(name);
-    fs::write(&part, bytes)?;
+    fs::write(&part, &*code.0)?;
     fs::rename(&part, file).inspect_err(|_| {
         let _removed = fs::remove_file(&part);
     })
 }
 
-/// The refusal that the assembler's error text `errors` states.
+/// The refusal that the error text of the assembler's `output` states.
 ///
 /// # Specification
 /// - ensures: [`Refusal::Register`] with the name in braces when the first
@@ -795,12 +797,16 @@ fn keep(
 ///   [`Refusal::Assembler`] with the text of that first error.
 /// - executable: none — the text is the assembler's.
 ///
+/// # Cost
+/// - allocation: the text of the refusal, error path
+///
 /// # Adequacy
 /// - hypothesis: L3 — a register that the target lacks and an instruction that
 ///   it lacks give their two variants with their exact text.
 /// - witness: `tests::block::each_refusal_names_its_cause`
-fn refusal(errors: &str) -> Refusal
+fn refusal(output: &Output) -> Refusal
 {
+    let errors = String::from_utf8_lossy(&output.stderr);
     let first = errors
         .lines()
         .find_map(|line| line.split_once("error: ").map(|(_, error)| error))
@@ -814,12 +820,16 @@ fn refusal(errors: &str) -> Refusal
     Refusal::Assembler(first.into())
 }
 
-/// The text of `object`: the bytes of its one code section.
+/// The code in the object of the assembler's `output`: the bytes of its one
+/// code section.
 ///
 /// # Specification
 /// - ensures: `Ok` exactly when the object holds no relocation, no undefined
 ///   symbol and one code section with bytes, and then its bytes.
 /// - executable: none — the object is the assembler's.
+///
+/// # Cost
+/// - allocation: the code of the block, durable by the key
 ///
 /// # Errors
 /// [`Refusal::Relocation`], [`Refusal::Undefined`] or [`Refusal::Sections`],
@@ -829,10 +839,10 @@ fn refusal(errors: &str) -> Refusal
 /// - hypothesis: L3 — a call of a symbol, a weak symbol and a second code
 ///   section each give their variant with its exact name or count.
 /// - witness: `tests::block::each_refusal_names_its_cause`
-fn text(object: &[u8]) -> Result<Arc<[u8]>, Refusal>
+fn text(output: &Output) -> Result<Code, Refusal>
 {
     let unread = |error: object::Error| Refusal::Object(error.to_string().into());
-    let file = object::File::parse(object).map_err(unread)?;
+    let file = object::File::parse(&*output.stdout).map_err(unread)?;
     for section in file.sections() {
         if let Some((_, relocation)) = section.relocations().next() {
             let symbol = if let RelocationTarget::Symbol(index) = relocation.target() {
@@ -853,7 +863,7 @@ fn text(object: &[u8]) -> Result<Arc<[u8]>, Refusal>
         .sections()
         .filter(|section| section.kind() == SectionKind::Text && section.size() > 0);
     match (code.next(), code.count()) {
-        (Some(section), 0) => Ok(Arc::from(section.data().map_err(unread)?)),
+        (Some(section), 0) => Ok(Code(Arc::from(section.data().map_err(unread)?))),
         (None, _) => Err(Refusal::Sections(0)),
         (Some(_), more) => Err(Refusal::Sections(more.saturating_add(1))),
     }
@@ -868,44 +878,6 @@ fn text(object: &[u8]) -> Result<Arc<[u8]>, Refusal>
 #[repr(transparent)]
 struct Layout(Box<[usize]>);
 
-impl Layout
-{
-    /// The index of operand `operand`'s constraint.
-    ///
-    /// # Specification
-    /// trivial.
-    fn index(
-        &self,
-        operand: usize,
-    ) -> Option<usize>
-    {
-        self.0.get(operand).copied()
-    }
-}
-
-/// Whether the block writes the word of an operand of `direction`.
-///
-/// # Specification
-/// trivial.
-const fn written(direction: Direction) -> bool
-{
-    matches!(direction, Direction::Out | Direction::InOut)
-}
-
-/// The LLVM value of the address of operand `index`'s word.
-///
-/// # Specification
-/// trivial.
-fn word(index: usize) -> String
-{
-    if index == 0 {
-        String::from("%ops")
-    }
-    else {
-        format!("%p{index}")
-    }
-}
-
 /// The LLVM module of `description`: the function `block`.
 ///
 /// # Specification
@@ -915,6 +887,9 @@ fn word(index: usize) -> String
 ///   the order answer, written operands, clobbers, then the inputs in the order
 ///   read operands, tied operands.
 /// - executable: none — the module is text for the assembler.
+///
+/// # Cost
+/// - allocation: the module, its parts and its layout, durable by the key
 ///
 /// # Errors
 /// [`Refusal::Register`] for a name outside `[a-z0-9]` and
@@ -929,6 +904,16 @@ fn word(index: usize) -> String
 fn lower(description: &Description) -> Result<String, Refusal>
 {
     let operands = &description.operands;
+    let selection = description.target.selection();
+    let written = |direction: Direction| matches!(direction, Direction::Out | Direction::InOut);
+    let word = |index: usize| {
+        if index == 0 {
+            String::from("%ops")
+        }
+        else {
+            format!("%p{index}")
+        }
+    };
     let answered = matches!(description.answer, Answer::Place(_));
     let outputs = usize::from(answered)
         .saturating_add(
@@ -993,10 +978,14 @@ fn lower(description: &Description) -> Result<String, Refusal>
         })
         .collect();
     for &index in &tied {
-        let _written = write!(constraints, "{},", layout.index(index).unwrap_or(0));
+        let _written = write!(
+            constraints,
+            "{},",
+            layout.0.get(index).copied().unwrap_or(0)
+        );
     }
     if description.options.flags == Flags::Clobbered {
-        constraints.push_str(description.target.flags());
+        constraints.push_str(selection.flags);
     }
     if description.options.memory == Memory::Clobbered {
         constraints.push_str("~{memory},");
@@ -1036,7 +1025,7 @@ fn lower(description: &Description) -> Result<String, Refusal>
     let _written = write!(
         module,
         "  {call} {returned} asm sideeffect{} \"",
-        description.target.dialect()
+        selection.dialect
     );
     template(description, &layout, &mut module)?;
     let _written = writeln!(module, "\", \"{constraints}\"({})", arguments.join(", "));
@@ -1058,7 +1047,7 @@ fn lower(description: &Description) -> Result<String, Refusal>
     }
     for (index, operand) in operands.iter().enumerate() {
         if written(operand.direction) {
-            let output = value(layout.index(index).unwrap_or(0));
+            let output = value(layout.0.get(index).copied().unwrap_or(0));
             let _written = writeln!(module, "  store i64 {output}, ptr {}, align 8", word(index));
         }
     }
@@ -1076,6 +1065,9 @@ fn lower(description: &Description) -> Result<String, Refusal>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the refused name, error path
 ///
 /// # Errors
 /// [`Refusal::Register`] for an empty name or a name outside `[a-z0-9]`.
@@ -1100,6 +1092,9 @@ fn named(register: &Register) -> Result<(), Refusal>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the lowered template, durable by the key
 ///
 /// # Errors
 /// [`Refusal::Reference`] for a reference that names no operand, a brace
@@ -1137,7 +1132,7 @@ fn template(
             else {
                 name.parse::<usize>()
                     .ok()
-                    .and_then(|operand| layout.index(operand))
+                    .and_then(|operand| layout.0.get(operand).copied())
             };
             let Some(index) = index
             else {

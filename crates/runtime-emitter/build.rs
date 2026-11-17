@@ -213,6 +213,10 @@ const SKIPPED: [&str; 9] = [
 /// - executable: none — the table's correctness is what the emitted code does,
 ///   observable only by running it.
 ///
+/// # Cost
+/// - allocation: the paths, the commands, the object, the stencils and the
+///   table text, setup
+///
 /// # Errors
 /// A [`Refusal`] naming the first refusal the module documentation lists.
 ///

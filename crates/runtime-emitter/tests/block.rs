@@ -3,6 +3,7 @@
 //! the cache in the process and in a directory, one compile for requests at
 //! once, and each refusal by name.
 
+use core::iter;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Barrier;
@@ -24,24 +25,15 @@ use gandr_runtime_emitter::block::Refusal;
 use gandr_runtime_emitter::block::Register;
 use gandr_runtime_emitter::block::Target;
 
-/// The register `name`, as a place.
+/// An input in `register`.
 ///
 /// # Specification
 /// trivial.
-fn register(name: &str) -> Place
-{
-    Place::Register(Register::from(name))
-}
-
-/// An input in the register `name`.
-///
-/// # Specification
-/// trivial.
-fn input(name: &str) -> Operand
+fn input(register: Register) -> Operand
 {
     Operand {
         direction: Direction::In,
-        place: register(name),
+        place: Place::Register(register),
     }
 }
 
@@ -67,9 +59,9 @@ fn system_call(target: Target) -> Description
         template: template.into(),
         operands: core::iter::once(number)
             .chain(arguments)
-            .map(input)
+            .map(|name| input(Register::from(name)))
             .collect(),
-        answer: Answer::Place(register(answer)),
+        answer: Answer::Place(Place::Register(Register::from(answer))),
         clobbers: clobbers.iter().copied().map(Register::from).collect(),
         options: Options::DEFAULT,
     }
@@ -84,13 +76,13 @@ fn compiler() -> Blocks
     Blocks::new(Assembler::pinned(), Cache::Process)
 }
 
-/// A fresh directory for one witness, empty.
+/// A fresh directory for the witness of the cache, empty.
 ///
 /// # Specification
 /// trivial.
-fn scratch(name: &str) -> PathBuf
+fn scratch() -> PathBuf
 {
-    let directory = std::env::temp_dir().join(format!("gandr-block-{}-{name}", std::process::id()));
+    let directory = std::env::temp_dir().join(format!("gandr-block-{}-cache", std::process::id()));
     let _absent = fs::remove_dir_all(&directory);
     fs::create_dir_all(&directory).unwrap();
     directory
@@ -123,10 +115,10 @@ fn the_system_call_compiles_to_the_bytes_that_ran()
     for (target, bytes) in expected {
         let block = blocks.compile(&system_call(target)).unwrap();
         assert_eq!(
-            (&*block.bytes, block.origin),
+            (&*block.code.0, block.origin),
             (bytes, Origin::Compiled),
             "the system call on {}",
-            target.name()
+            target
         );
     }
 }
@@ -165,7 +157,7 @@ fn a_class_operand_and_an_output_take_their_words()
     // to it, operand 1 is read, and the answer shares the register of
     // operand 1, which it may.
     assert_eq!(
-        &*add.bytes,
+        &*add.code.0,
         &[
             0x48, 0x8b, 0x0f, 0x48, 0x8b, 0x47, 0x08, 0x48, 0x01, 0xc1, 0x48, 0x89, 0xc8, 0x48,
             0x89, 0x0f, 0xc3,
@@ -173,7 +165,7 @@ fn a_class_operand_and_an_output_take_their_words()
         "add"
     );
     assert_eq!(
-        &*sub.bytes,
+        &*sub.code.0,
         &[
             0x48, 0x8b, 0x0f, 0x48, 0x8b, 0x47, 0x08, 0x48, 0x29, 0xc1, 0x48, 0x89, 0xc8, 0x48,
             0x89, 0x0f, 0xc3,
@@ -188,7 +180,7 @@ fn a_class_operand_and_an_output_take_their_words()
 #[test]
 fn a_second_request_starts_no_process()
 {
-    let directory = scratch("cache");
+    let directory = scratch();
     let assembler = directory.join("llc");
     std::os::unix::fs::symlink(Assembler::pinned().0, &assembler).unwrap();
     let call = system_call(Target::LinuxX86_64);
@@ -211,7 +203,7 @@ fn a_second_request_starts_no_process()
     assert_eq!(
         again,
         Block {
-            bytes: compiled.bytes.clone(),
+            code: compiled.code.clone(),
             origin: Origin::Process
         },
         "the second request"
@@ -219,7 +211,7 @@ fn a_second_request_starts_no_process()
     assert_eq!(
         later,
         Block {
-            bytes: compiled.bytes.clone(),
+            code: compiled.code,
             origin: Origin::Directory
         },
         "a request of a new compiler on the directory"
@@ -240,14 +232,14 @@ fn requests_at_once_share_one_compile()
     let call = system_call(Target::LinuxRiscv64);
     let barrier = Barrier::new(8);
     let results: Vec<Block> = thread::scope(|scope| {
-        let handles: Vec<_> = (0 .. 8)
-            .map(|_| {
-                scope.spawn(|| {
-                    barrier.wait();
-                    blocks.compile(&call).unwrap()
-                })
+        let handles: Vec<_> = iter::repeat_with(|| {
+            scope.spawn(|| {
+                barrier.wait();
+                blocks.compile(&call).unwrap()
             })
-            .collect();
+        })
+        .take(8)
+        .collect();
         handles
             .into_iter()
             .map(|handle| handle.join().unwrap())
@@ -261,7 +253,7 @@ fn requests_at_once_share_one_compile()
     assert!(
         results
             .iter()
-            .all(|block| block.origin != Origin::Directory && block.bytes == results[0].bytes),
+            .all(|block| block.origin != Origin::Directory && block.code == results[0].code),
         "each request reads the one compile's bytes"
     );
 }
@@ -271,10 +263,12 @@ fn requests_at_once_share_one_compile()
 fn each_refusal_names_its_cause()
 {
     let blocks = compiler();
-    let with = |change: &dyn Fn(&mut Description)| {
-        let mut description = system_call(Target::LinuxX86_64);
-        change(&mut description);
-        blocks.compile(&description)
+    let call = || system_call(Target::LinuxX86_64);
+    let with = |description: Description| blocks.compile(&description);
+    let operand = |register: &'static str| {
+        let mut description = call();
+        description.operands[0] = input(Register::from(register));
+        description
     };
     let absent = PathBuf::from("/nonexistent/gandr/llc");
     assert_eq!(
@@ -284,46 +278,61 @@ fn each_refusal_names_its_cause()
         "llc is absent"
     );
     assert_eq!(
-        with(&|description| description.template = "bogus".into()),
+        with(Description {
+            template: "bogus".into(),
+            ..call()
+        }),
         Err(Refusal::Assembler(
             "invalid instruction mnemonic 'bogus'".into()
         )),
         "the assembler refuses the template"
     );
     assert_eq!(
-        with(&|description| description.operands[0] = input("x17")),
+        with(operand("x17")),
         Err(Refusal::Register("x17".into())),
         "the target lacks the register of an operand"
     );
     assert_eq!(
-        with(&|description| description.clobbers = Box::new([Register::from("x17")])),
+        with(Description {
+            clobbers: Box::new([Register::from("x17")]),
+            ..call()
+        }),
         Err(Refusal::Register("x17".into())),
         "the target lacks the register of a clobber"
     );
     assert_eq!(
-        with(&|description| description.operands[0] = input("r}")),
+        with(operand("r}")),
         Err(Refusal::Register("r}".into())),
         "a name that LLVM cannot read"
     );
     assert_eq!(
-        with(&|description| description.template = "mov rax, {4}".into()),
+        with(Description {
+            template: "mov rax, {4}".into(),
+            ..call()
+        }),
         Err(Refusal::Reference("4".into())),
         "a reference past the operands"
     );
     assert_eq!(
-        with(&|description| description.template = "call foo".into()),
+        with(Description {
+            template: "call foo".into(),
+            ..call()
+        }),
         Err(Refusal::Relocation("foo".into())),
         "the object holds a relocation"
     );
     assert_eq!(
-        with(&|description| description.template = ".weak foo".into()),
+        with(Description {
+            template: ".weak foo".into(),
+            ..call()
+        }),
         Err(Refusal::Undefined("foo".into())),
         "the object holds an undefined symbol"
     );
     assert_eq!(
-        with(&|description| {
-            description.template =
-                ".pushsection .text.second,\"ax\",@progbits\nnop\n.popsection".into();
+        with(Description {
+            template: ".pushsection .text.second,\"ax\",@progbits\nnop\n.popsection".into(),
+            ..call()
         }),
         Err(Refusal::Sections(2)),
         "the object holds a second code section"
