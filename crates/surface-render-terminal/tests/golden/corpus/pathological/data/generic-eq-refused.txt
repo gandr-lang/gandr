@@ -20,7 +20,7 @@ error[GenericUncovered]: `Eq.generic` derives no equality for `Box`: it takes pa
 error[GenericMisplaced]: `Eq.generic` stands only as a definition's whole body, applied to one data type: `def eq = Eq.generic(T)`
    ╭▸ corpus/pathological/data/generic-eq-refused.gandr:43:25
    │
-43 │ def inside() -> Bool { (Eq.generic Point) (Point 1 2) (Point 1 2) }
+43 │ def inside() -> Bool = (Eq.generic Point) (Point 1 2) (Point 1 2);
    │                         ━━━━━━━━━━━━━━━━ a generic program read off its place
    │
    ├ note: `inside` is refused with GenericMisplaced, as its expectation states

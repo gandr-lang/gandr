@@ -16,7 +16,7 @@ error[SignatureMismatch.Missing]: this import is read at `Wider`, whose `extra` 
 23 │ import "../../model/modules/translated-newer.gandr" as newer : Wider via downgrade;
    │                                                                ━━━━━ a member the import finds no declaration of
    ┆
-27 │ def widened() -> Integer { newer.answer }
+27 │ def widened() -> Integer = newer.answer;
    │     ─────── declared here
    │
    ├ note: `widened` is refused with SignatureMismatch.Missing, as its expectation states

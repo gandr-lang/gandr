@@ -8,8 +8,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │              ─────── the type it is checked against
 14 │     /// A continuation at the carrier, not a function of the state.
 15 │ ┌   @[refuses("TypeMismatch")]
-16 │ │   def get(k : Integer) -> Integer { k }
-   │ └───────────┬─────────────────────────┯─┘ checked against `(Integer -> Integer) -> Integer`; while checking the body of this thunk
+16 │ │   def get(k : Integer) -> Integer = k;
+   │ └───────────┬─────────────────────────┯┘ checked against `(Integer -> Integer) -> Integer`; while checking the body of this thunk
    │             │                         │
    │             │                         its type does not convert: expected `Integer`, found `Integer -> Integer`
    │             checked against `(Integer -> Integer) -> -F Integer`; while checking the body of this function; binds k : Integer -> Integer
@@ -24,11 +24,11 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │                                   ─── the type it synthesises
    ┆
 15 │ ┏   @[refuses("TypeMismatch")]
-16 │ ┃   def get(k : Integer) -> Integer { k }
-   │ ┃                                       ╿
-   │ ┃                                       │
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━its type does not convert: expected `Integer -> Integer`, found `(Integer -> Integer) -> Integer`
-   │                                         the type it is checked against
+16 │ ┃   def get(k : Integer) -> Integer = k;
+   │ ┃                                      ╿
+   │ ┃                                      │
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━its type does not convert: expected `Integer -> Integer`, found `(Integer -> Integer) -> Integer`
+   │                                        the type it is checked against
    │
    ├ note: `get` is refused with TypeMismatch, as its expectation states
    ╰ help: change the term or the type it is checked against, so that the two types agree

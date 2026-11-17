@@ -1,7 +1,7 @@
 error[OutOfFragment.shell_block]: the shell block is not supported yet
    ╭▸ corpus/pathological/shell/control-operator-unsupported.gandr:12:22
    │
-12 │ def both() -> Unit { #!{ true && false; } }
+12 │ def both() -> Unit = #!{ true && false; };
    │                      ━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `both` is refused with OutOfFragment.shell_block, as its expectation states

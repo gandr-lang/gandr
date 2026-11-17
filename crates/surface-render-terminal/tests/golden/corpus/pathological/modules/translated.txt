@@ -28,7 +28,7 @@ error[SignatureMismatch.Missing]: this import is read at `Tagged`, whose `label`
 32 │ import "../../model/modules/translated-newer.gandr" as newer : Older via retagged;
    │                                                                          ━━━━━━━━ a member the import finds no declaration of
    ┆
-36 │ def relayed() -> Integer { newer.answer }
+36 │ def relayed() -> Integer = newer.answer;
    │     ─────── declared here
    │
    ├ note: `relayed` is refused with SignatureMismatch.Missing, as its expectation states

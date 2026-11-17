@@ -7,8 +7,8 @@ error[NoFiller.Omitted]: the module omits this law, and its sides do not convert
 64 │ ┃   /// The numbers, each a cell from the object to itself.
    ┆ ┇
 70 │ ┃   /// Addition, the composite.
-71 │ ┃   def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat { plus f g }
-   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert
+71 │ ┃   def comp(a : One, b : One, c : One, f : Nat, g : Nat) -> Nat = plus f g;
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert
    │
    ├ note: `assoc` is refused with NoFiller.Omitted, as its expectation states
    ╰ help: prove the law by a definition at its type, or admit it where the host asserts it

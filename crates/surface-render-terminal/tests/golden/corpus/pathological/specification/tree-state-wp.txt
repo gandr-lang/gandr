@@ -21,8 +21,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
    │ │   ─ checked against `(s : Integer) -> incrByTwoSpec(post, s) -> -F wp(incrTree, post, s)`; while checking the body of this function; binds s : Integer
 31 │ │   h : incrByTwoSpec(post, s)
    │ │   ─ checked against `incrByTwoSpec(post, s) -> -F wp(incrTree, post, s)`; while checking the body of this function; binds h : incrByTwoSpec(post, s)
-32 │ │ ) -> wp(incrTree, post, s) { h }
-   │ └──────────────────────────────┯─┘ checked against `(post : (Unit, Integer) -> Type, s : Integer, incrByTwoSpec(post, s)) -> wp(incrTree, post, s)`; while checking the body of this thunk
+32 │ │ ) -> wp(incrTree, post, s) = h;
+   │ └──────────────────────────────┯┘ checked against `(post : (Unit, Integer) -> Type, s : Integer, incrByTwoSpec(post, s)) -> wp(incrTree, post, s)`; while checking the body of this thunk
    │                                │
    │                                its type does not convert: expected `wp(incrTree, post, s)`, found `incrByTwoSpec(post, s)`
    │
