@@ -1,0 +1,3 @@
+{SAME}def apply(f : (y : Integer) -> Integer, x : Integer) -> -F Integer {{ become f x }}
+def passed : () -> Integer ;
+def passed = thunk {{ become apply same[.a = Integer] 3 }} ;

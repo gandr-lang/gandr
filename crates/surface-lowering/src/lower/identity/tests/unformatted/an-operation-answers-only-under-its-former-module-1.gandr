@@ -1,0 +1,8 @@
+def held : Path[.A = Integer](4, 4);
+def held = Path.here 4;
+def stayed : Flow[.A = Integer](4, 4);
+def stayed = Flow.stay 4;
+def bare : Path[.A = Integer](4, 4);
+def bare = here 4;
+def crossed : Path[.A = Integer](4, 4);
+def crossed = Flow.here 4;

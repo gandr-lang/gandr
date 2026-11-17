@@ -1,0 +1,4 @@
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
+def pair(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }
+def named(a : Integer) -> Integer { let r = divmod a a; r.q }
+def whole(a : Integer) -> Integer { let t = pair a a; 0 }

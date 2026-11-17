@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+            "textDocument":{"uri":"file:///tmp/other.gandr","version":2},"contentChanges":[]}}
