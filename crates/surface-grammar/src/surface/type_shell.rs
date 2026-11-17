@@ -679,14 +679,16 @@ fn add_type_rules(
     // stage opens with `<` or a name. The face form and a stage share their
     // name, and the token after it, `↦` or `]`, decides between them. The
     // forms are alternatives of one rule, so the `[` after a type keeps one
-    // mold.
+    // mold. A second rule over the same `[` would tie with this one at every
+    // staged type.
     //
-    // A field's value is a type hole. After `=` in a type, an expression hole
-    // lets a declaration's own `= e`, cut off by a bracket the source leaves
-    // open, read as a fixed value. The recovery then marks the open bracket
-    // at the declaration's end and not where it was left open. The `,` after
-    // a face's expression hole lets the recovery of a dropped token read a
-    // system in sources that write no face (#5106).
+    // A field's value is a type hole, as a value a type takes as a call's
+    // argument is: a number, a boolean, a string, a name or a call. After `=`
+    // in a type, an expression hole lets a declaration's own `= e`, cut off by
+    // a bracket the source leaves open, read as a fixed value. The recovery
+    // then marks the open bracket at the declaration's end and not where it
+    // was left open. The `,` after a face's expression hole lets the recovery
+    // of a dropped token read a system in sources that write no face (#5106).
     rules.push(rule(
         RuleName("staged_type"),
         ty,
@@ -735,10 +737,11 @@ fn add_type_rules(
     // A record type with fixed fields, `Config.#{.port = 443, .tls = true}`,
     // or with the fields of a face fixed, `Config.#{secure ↦ *{.port = 443}}`:
     // the postfix reader `.#{` on a type, beside `.*{` and `.#[` on a value.
-    // A system writes more faces after the first, each after a `,`. A
-    // field's value is a type hole, as a value a type takes as a call's
-    // argument is. A face's value is an expression, the record of the face's
-    // fields.
+    // A system writes more faces after the first, each after a `,`:
+    // `Config.#{secure ↦ a, addr ↦ b}`. A field's value is a type hole, as a
+    // value a type takes as a call's argument is. A face's value follows `↦`,
+    // which no declaration writes, so it is an expression: the record of the
+    // face's fields.
     let mut extension = rule(
         RuleName("extension_type"),
         ty,
