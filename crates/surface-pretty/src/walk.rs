@@ -2786,6 +2786,7 @@ struct Atom;
 /// - hypothesis: L3 — `7`, `Integer` and `Unit` are atoms; `- 3`, a lowercase
 ///   variable and a qualified name are not.
 /// - witness: `tests::goldens::a_call_supplies_its_callee_s_implicits_by_position_6320`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Literal(_) | Former::Quote(_)))]
 fn atom<S>(
     source: &S,
     node: S::Node,
@@ -11686,24 +11687,37 @@ impl Walk<'_, '_>
         // the call supplies it by an atom, moved ahead of the named ones. An
         // entry the call omits, supplies by any other value or by a path ends
         // the run, so no `_` is written.
-        let mut positional = 0_usize;
-        for written in block {
-            let Some(at) = residents
-                .iter()
-                .position(|&(name, _)| name.as_ref() == written.as_ref())
-            else {
-                break;
-            };
-            if !residents
-                .get(at)
-                .is_some_and(|&(_, ref resident)| matches!(*resident, Resident::Node(node) if atom(source, node).is_some()))
-            {
-                break;
-            }
-            let taken = residents.remove(at);
-            residents.insert(positional, taken);
-            positional = positional.saturating_add(1_usize);
+        let positional = if block.is_empty() || residents.is_empty() {
+            0_usize
         }
+        else {
+            let entries: BTreeMap<&str, usize> = block
+                .iter()
+                .enumerate()
+                .map(|(index, written)| (written.as_ref(), index))
+                .collect();
+            let mut atomic = alloc::vec![false; block.len()];
+            for &(name, ref resident) in &residents {
+                if let (Some(&index), &Resident::Node(node)) =
+                    (entries.get(name.as_ref()), resident)
+                    && atom(source, node).is_some()
+                    && let Some(slot) = atomic.get_mut(index)
+                {
+                    *slot = true;
+                }
+            }
+            let run = atomic.iter().take_while(|&&held| held).count();
+            // A stable sort: the run's entries lead in block order, and the
+            // rest keep their order behind them.
+            residents.sort_by_key(|&(name, _)| {
+                entries
+                    .get(name.as_ref())
+                    .copied()
+                    .filter(|&index| index < run)
+                    .unwrap_or(run)
+            });
+            run
+        };
         // A call reads its head and its arguments as expressions wherever it
         // stands: where a type is read, the walk reads them as expressions the
         // type encloses and returns to the type past the call's join.
