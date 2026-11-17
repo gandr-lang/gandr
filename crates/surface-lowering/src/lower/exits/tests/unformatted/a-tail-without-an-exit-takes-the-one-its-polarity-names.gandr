@@ -1,0 +1,23 @@
+{NAT}def value(n : Nat) -> -F Nat {{ n }}
+def value_by_hand(n : Nat) -> -F Nat {{ return n }}
+def built(n : Nat) -> -F Nat {{ Succ n }}
+def built_by_hand(n : Nat) -> -F Nat {{ return Succ n }}
+def counted(n : Nat) -> -F Integer {{ 3 }}
+def counted_by_hand(n : Nat) -> -F Integer {{ return 3 }}
+def paired(n : Nat) -> -F (Nat * Nat) {{ *{{n, n}} }}
+def paired_by_hand(n : Nat) -> -F (Nat * Nat) {{ return *{{n, n}} }}
+def annotated(n : Nat) -> -F Nat {{ (Succ n : Nat) }}
+def annotated_by_hand(n : Nat) -> -F Nat {{ return (Succ n : Nat) }}
+def called(n : Nat) -> -F Nat {{ value n }}
+def called_by_hand(n : Nat) -> -F Nat {{ become value n }}
+def produced(n : Nat) -> -F Nat {{ pure n }}
+def produced_by_hand(n : Nat) -> -F Nat {{ become pure n }}
+def produced_returned(n : Nat) -> -F Nat {{ return n }}
+def arms(n : Nat) -> -F Nat {{ match n {{ | Zero => n | Succ(p) => value p }} }}
+def arms_by_hand(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become value p }} }}
+def sequenced(n : Nat) -> -F Nat {{ let m = value n ; Succ m }}
+def sequenced_by_hand(n : Nat) -> -F Nat {{ let m = value n ; return Succ m }}
+def early(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => {{ let q = match p {{ | Zero => return p | Succ(r) => pure r }} ; pure q }} }} }}
+def early_by_hand(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => {{ let q = match p {{ | Zero => return p | Succ(r) => pure r }} ; become pure q }} }} }}
+def suspended(n : Nat) -> -F (+U (-F Nat)) {{ thunk {{ value n }} }}
+def suspended_by_hand(n : Nat) -> -F (+U (-F Nat)) {{ return thunk {{ become value n }} }}

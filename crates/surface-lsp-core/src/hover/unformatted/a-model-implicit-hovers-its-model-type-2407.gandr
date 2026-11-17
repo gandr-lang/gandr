@@ -1,0 +1,5 @@
+theory Tally where {
+  sort C : Type;
+  oper incr : (c : C) --> C;
+}
+def stepped[s : Model(Tally)] (c : s.C) -> s.C { s.incr c }

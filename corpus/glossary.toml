@@ -1,0 +1,29 @@
+# The corpus's technical words, each with its one part of speech
+# (crates/workflow-prose/README.md § Glossary). `check:prose` refuses a
+# sentence that uses a word here as another part of speech: a technical term
+# carries one meaning and is never paraphrased. The list starts from the
+# features ledger's names and the refusal names; a word joins it when the
+# corpus uses it with one meaning.
+
+[words]
+# The checker's and the kernel's acts.
+admit = "verb"
+elaborate = "verb"
+lower = "verb"
+normalise = "verb"
+refuse = "verb"
+replay = "verb"
+settle = "verb"
+unify = "verb"
+# The things they act on and produce.
+certificate = "noun"
+checker = "noun"
+codata = "noun"
+exemplar = "noun"
+handler = "noun"
+kernel = "noun"
+presentation = "noun"
+refusal = "noun"
+thunk = "noun"
+twin = "noun"
+universe = "noun"

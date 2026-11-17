@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="7" skipped="0" failures="0" errors="0" uuid="61aa5309-f139-4296-bce0-5208a8d2e4e2" timestamp="2026-10-12T16:41:44.345-06:00" time="7.025">
+    <testsuite name="gandr-core-incremental::tests" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="incremental::incremental_equals_from_scratch" classname="gandr-core-incremental::tests" timestamp="2026-10-12T16:41:44.350-06:00" time="0.050"/>
+    </testsuite>
+    <testsuite name="gandr-core-nbe::teardown" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack" classname="gandr-core-nbe::teardown" timestamp="2026-10-12T16:41:44.937-06:00" time="2.304"/>
+    </testsuite>
+    <testsuite name="gandr-kernel-check-memo" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="accounting::tests::anodized_postcondition_sentinel" classname="gandr-kernel-check-memo" timestamp="2026-10-12T16:41:45.118-06:00" time="0.002"/>
+    </testsuite>
+    <testsuite name="gandr-lang::cli" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="cli::lsp_clients_share_one_engine_hub" classname="gandr-lang::cli" timestamp="2026-10-12T16:41:45.257-06:00" time="2.118"/>
+    </testsuite>
+    <testsuite name="gandr-surface-parser" tests="2" skipped="0" errors="0" failures="0">
+        <testcase name="parse::tests::arbitrary_source_parses_by_form_as_whole" classname="gandr-surface-parser" timestamp="2026-10-12T16:41:44.350-06:00" time="7.020"/>
+        <testcase name="parse::tests::hostile_edits_reuse_only_equal_units" classname="gandr-surface-parser" timestamp="2026-10-12T16:41:44.350-06:00" time="2.831"/>
+    </testsuite>
+    <testsuite name="gandr-surface-parser::tests" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="acceptance::run_binder_annotation_molds_clean" classname="gandr-surface-parser::tests" timestamp="2026-10-12T16:41:45.828-06:00" time="0.778"/>
+    </testsuite>
+</testsuites>
