@@ -905,9 +905,8 @@ fn a_shared_type_past_its_distinct_nodes_spells_unknown_5826()
 }
 
 /// #4835: a homed type former spells bare by default, and after the name its
-/// source records for its head otherwise, `std.list.List(Integer)`, its
-/// argument where the bare spelling writes it. A qualified head keeps the call
-/// form until #5753.
+/// source records for its head otherwise, `std.list.List Integer`, its
+/// argument juxtaposed as the bare spelling writes it (#5753).
 #[test]
 fn a_homed_former_spells_as_its_reader_reads_it_4835()
 {
@@ -920,8 +919,8 @@ fn a_homed_former_spells_as_its_reader_reads_it_4835()
     let homed = CoreSource::new(&core, &[]).homing(&homes);
     for (source, root, spelling) in [
         (&bare, list, "List Integer"),
-        (&homed, list, "std.list.List(Integer)"),
-        (&homed, nested, "std.list.List(std.list.List(Integer))"),
+        (&homed, list, "std.list.List Integer"),
+        (&homed, nested, "std.list.List (std.list.List Integer)"),
     ] {
         assert_eq!(
             spelled(source, Root::Type(CoreNode::ValueType(root))),

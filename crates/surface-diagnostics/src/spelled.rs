@@ -1129,12 +1129,12 @@ pub struct HomedName
 /// The name the source `reader` writes for each type head a `std` module
 /// homes, where it does not write the head bare.
 ///
-/// A source that lists the head from its home writes it bare, `List(A)`
+/// A source that lists the head from its home writes it bare, `List A`
 /// under `import std.list (List);`, and holds no entry. A source that
 /// imports the home otherwise writes it after the qualifier its import binds:
-/// `l.List(A)` under `import std.list as l;`, `std.list.List(A)` under
+/// `l.List A` under `import std.list as l;`, `std.list.List A` under
 /// `import std.list;`. Any other source writes it after its home's path,
-/// `std.list.List(A)`, which reads back with the import of that home.
+/// `std.list.List A`, which reads back with the import of that home.
 ///
 /// # Specification
 /// - requires: nothing.

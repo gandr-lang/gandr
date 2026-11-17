@@ -2661,21 +2661,29 @@ pub fn read_pieces<'source>(
 /// - ensures: when `position` is an application of either sort whose left
 ///   operands down to its head are applications of that sort and whose every
 ///   part is written, `read` holds the head, `(`, the arguments separated by
-///   `,`, and `)`, and the head is answered. The head is a tile piece when the
-///   application is a type's and its head is one type name or type variable,
-///   and an operand otherwise. `None` otherwise, with `read` empty.
+///   `,`, and `)`, and the first piece is answered. The head is a tile piece
+///   when the application is a type's and its head is one type name or type
+///   variable. It is the link's pieces, the module operand first, when the
+///   application is a type's and its head is a qualified type name with no
+///   argument list. It is an operand otherwise. `None` otherwise, with `read`
+///   empty.
 /// - panics: none.
 /// - economy: one walk down the spine, written into `read`'s buffer, with no
 ///   allocation beyond the buffer's growth (#6968).
+///
+/// # Cost
+/// - allocation: the pieces of the spine, growth within `read`'s buffer.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `f x y` lowers as `f(x, y)`, and a call inside an
 ///   argument as its own call. While the call form stands, a `(` after an
 ///   operand molds as a call, so `f ()` and a grouped argument reach the spine
 ///   only after the call form leaves the grammar. `Var (Extend g n) n` in a
-///   type lowers as `Var(Extend(g, n), n)`.
+///   type lowers as `Var(Extend(g, n), n)`. `Shapes.Box Integer` lowers as
+///   `Shapes.Box(Integer)`.
 /// - witness: `gandr-surface-lowering::lower::tests::a_call_argument_and_an_inferring_call_lower_4853`
 /// - witness: `gandr-surface-lowering::lower::tests::a_type_applies_its_family_by_juxtaposition_5326`
+/// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_applies_by_juxtaposition_5753`
 #[spec(ensures: |ret| match ret {
     Some(head) => matches!(read.pieces.first(), Some(&Piece::Operand(at) | &Piece::Tile { at, .. }) if at == head) && matches!(read.pieces.last(), Some(&Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE),
     None => read.pieces.is_empty(),
@@ -2790,18 +2798,122 @@ fn application_spine(
         | NodeLabel::Space
         | NodeLabel::Doc => None,
     });
-    read.pieces
-        .push(head_tile.map_or(Piece::Operand(head), |label| Piece::Tile {
-            label,
-            at: head,
-        }));
+    // A qualified head, `M.T`, is the link the call form `M.T(a, b)` holds,
+    // so a qualified type's application reads as that call.
+    let mark = read.pieces.len();
+    if head_tile.is_none() && in_type {
+        qualified_head(pbg, tree, head, read);
+    }
+    if read.pieces.len() == mark {
+        read.pieces
+            .push(head_tile.map_or(Piece::Operand(head), |label| Piece::Tile {
+                label,
+                at: head,
+            }));
+    }
+    let written_head = read.pieces.len().saturating_sub(mark);
     read.pieces.reverse();
     // The separator nearest the head opens the list.
-    if let Some(&mut Piece::Tile { ref mut label, .. }) = read.pieces.get_mut(1) {
+    if let Some(&mut Piece::Tile { ref mut label, .. }) = read.pieces.get_mut(written_head) {
         *label = TileName::PAREN_OPEN;
     }
 
-    Some(head)
+    read.pieces.first().map(|piece| piece.placed())
+}
+
+/// Write the link of the qualified type `head`, `M.T`, into `read`, from its
+/// last piece to its first, as the spine writes its pieces.
+///
+/// # Specification
+/// - requires: `head` is the head of a type's application spine.
+/// - ensures: when `head` is a type path whose pieces are an operand, a `.`,
+///   module names each followed by a `.`, and a type name, with no argument
+///   list, `read` gains those pieces in reverse order. `read` is unchanged
+///   otherwise.
+/// - provides: the head half of the juxtaposed qualified application, `M.T a
+///   b`, which reads as the call form `M.T(a, b)` reads (#5753).
+/// - fails: never.
+/// - panics: none.
+/// - economy: one walk over the path's children, written into `read`'s buffer,
+///   with no allocation beyond the buffer's growth (#6968).
+/// - executable: none — the pieces are the path's children in the tree, which a
+///   predicate could check only by repeating the walk.
+///
+/// # Cost
+/// - allocation: the pieces of the link, growth within `read`'s buffer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Shapes.Box Integer` lowers as `Shapes.Box(Integer)`, and
+///   a link through a module path as its call form.
+/// - witness: `gandr-surface-lowering::tests::modules::a_module_s_family_applies_by_juxtaposition_5753`
+fn qualified_head(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    head: Placed,
+    read: &mut Pieces,
+)
+{
+    let pathed = tree.node(head.node).is_some_and(|node| {
+        matches!(
+            shape_of(pbg, node),
+            Ok(Shape::Form {
+                former: Former::TypePath,
+                ..
+            })
+        )
+    });
+    if !pathed {
+        return;
+    }
+    let mark = read.pieces.len();
+    for child in tree.children(head.node) {
+        let Some(node) = tree.node(child)
+        else {
+            continue;
+        };
+        let placed = Placed::of(child, node);
+        let first = read.pieces.len() == mark;
+        let piece = match node.label() {
+            NodeLabel::Space | NodeLabel::Doc => continue,
+            NodeLabel::Meld(_) | NodeLabel::Tile(_) if first => Piece::Operand(placed),
+            NodeLabel::Tile(mold) if !first => match tile_name(pbg, node, mold) {
+                Ok(label)
+                    if label == TileName::DOT
+                        || label == TileName::TYPE_VARIABLE
+                        || label == TileName::TYPE_IDENTIFIER =>
+                {
+                    Piece::Tile { label, at: placed }
+                },
+                Ok(_) | Err(_) => {
+                    read.pieces.truncate(mark);
+                    return;
+                },
+            },
+            NodeLabel::Meld(_)
+            | NodeLabel::Tile(_)
+            | NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. } => {
+                read.pieces.truncate(mark);
+                return;
+            },
+        };
+        read.pieces.push(piece);
+    }
+    if matches!(
+        read.pieces.last(),
+        Some(&Piece::Tile {
+            label: TileName::TYPE_IDENTIFIER,
+            ..
+        })
+    ) {
+        if let Some(link) = read.pieces.get_mut(mark ..) {
+            link.reverse();
+        }
+    }
+    else {
+        read.pieces.truncate(mark);
+    }
 }
 
 /// Where the form at `position` itself stopped, when the parser closed it,

@@ -3608,33 +3608,6 @@ const fn family_applied(surface: Surface) -> Binding
     }
 }
 
-/// How a family applied to its arguments is written.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FamilyForm
-{
-    /// Its arguments juxtaposed with its head, `Maybe A`.
-    Juxtaposed,
-    /// Its call form, `F(a, b)`, where no juxtaposition reads back.
-    Called,
-}
-
-/// How a family applied to its arguments is written.
-///
-/// A module-qualified head keeps its call form until #5753.
-/// A bare head juxtaposes its arguments.
-///
-/// # Specification
-/// trivial.
-fn family_form(name: &Written) -> FamilyForm
-{
-    if name.0.contains('.') {
-        FamilyForm::Called
-    }
-    else {
-        FamilyForm::Juxtaposed
-    }
-}
-
 /// Whether a row writes any interface, and any instance by its label.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Listed
@@ -12792,7 +12765,6 @@ impl Walk<'_, '_>
                     .and_then(|_| source.declaration(node));
                 let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
                 let count = Arity(usize::from(arity));
-                let form = family_form(&name);
                 // A family the lowering names as a call, a theory's terms
                 // `Terms(Mag)`, is written as the application it names.
                 let minted = (count.0 == 0_usize)
@@ -12809,10 +12781,6 @@ impl Walk<'_, '_>
                 }
                 else if count.0 == 0_usize {
                     writes(Production("type_identifier"), Binding::Atom)
-                }
-                else if form == FamilyForm::Called {
-                    let _ = parts.applied(count, self.surface);
-                    type_applied(self.surface, Production("type_application"))
                 }
                 else {
                     let _ = parts.family(count, self.surface);
@@ -12841,15 +12809,11 @@ impl Walk<'_, '_>
                 let calls = usize::from(arity) > 0_usize || called.is_some();
                 let name = called.unwrap_or(spelled);
                 let count = Arity(usize::from(arity));
-                let form = family_form(&name);
                 if annotated {
                     let _ = parts.text("(");
                 }
                 let _ = parts.text(name);
-                if count.0 > 0_usize && form == FamilyForm::Called {
-                    let _ = parts.applied(count, self.surface);
-                }
-                else if count.0 > 0_usize {
+                if count.0 > 0_usize {
                     let _ = parts.family(count, self.surface);
                 }
                 if annotated {
@@ -12857,9 +12821,7 @@ impl Walk<'_, '_>
                 }
                 let applied = match (calls, annotated) {
                     (true, true) => writes(Production("application_expression"), Binding::Atom),
-                    (true, false) if count.0 > 0_usize && form == FamilyForm::Juxtaposed => {
-                        family_applied(self.surface)
-                    },
+                    (true, false) if count.0 > 0_usize => family_applied(self.surface),
                     (true, false) => type_applied(self.surface, Production("type_application")),
                     (false, _) => writes(Production("constructor.expression"), Binding::Atom),
                 };
@@ -13515,9 +13477,8 @@ impl Walk<'_, '_>
                 let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
                 writes(Production("parenthesized_expression"), Binding::Atom)
             },
-            // A homed type former written through its home's path: the path,
-            // then its one argument, `std.list.List(A)`. A qualified head reads
-            // back juxtaposed nowhere until #5753, so it keeps the call form.
+            // A homed type former written through its home's path, then its one
+            // argument juxtaposed, `std.list.List A`.
             Former::List(_)
             | Former::RunType(_)
             | Former::PrefixType(_)
@@ -13526,8 +13487,8 @@ impl Walk<'_, '_>
             {
                 let _ = parts
                     .text(String::from(head.as_ref()))
-                    .applied(Arity(1_usize), self.surface);
-                self.applied_type(Production("type_path"), admits)
+                    .family(Arity(1_usize), self.surface);
+                family_applied(self.surface)
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",

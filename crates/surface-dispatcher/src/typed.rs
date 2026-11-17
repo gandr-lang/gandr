@@ -5674,7 +5674,7 @@ impl TypeTable
             }
         }
         // A homed head the source does not import prints after its home's
-        // path, `std.list.List(A)`, and so does a host interface a printed row
+        // path, `std.list.List A`, and so does a host interface a printed row
         // names, `std.io.Console.Eff` (#5209). Each such print reads back with
         // the import of that home appended, bound to the unit's source of that
         // module. Both are native: the reader takes a homed head from its
@@ -8619,9 +8619,9 @@ mod tests
             (
                 "import std.list as l ;\n",
                 vec![home, counted],
-                "l.List(Integer)",
+                "l.List Integer",
             ),
-            ("", vec![counted], "std.list.List(Integer)"),
+            ("", vec![counted], "std.list.List Integer"),
         ] {
             // The stand-in for `std.list`, which declares nothing, the
             // sibling, then the reader.
@@ -8678,7 +8678,7 @@ mod tests
         assert!(
             trips
                 .iter()
-                .any(|&(ref written, _)| written == "std.list.List(Integer)"),
+                .any(|&(ref written, _)| written == "std.list.List Integer"),
             "the list type prints after its home's path: {trips:?}"
         );
         assert!(

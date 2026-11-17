@@ -3110,8 +3110,8 @@ mod tests
 
     /// A list type written through the module path a whole import of
     /// `std.list` binds, or through the alias an import of it binds, lowers to
-    /// the native list; a head the module does not home is an unknown member
-    /// of the alias.
+    /// the native list, applied in its call form or by juxtaposition (#5753);
+    /// a head the module does not home is an unknown member of the alias.
     #[test]
     fn a_homed_former_reads_through_its_import_s_qualifier_4862()
     {
@@ -3121,6 +3121,12 @@ mod tests
             ),
             include_str!(
                 "lower/unformatted/a-homed-former-reads-through-its-import-s-qualifier-4862-1.gandr"
+            ),
+            include_str!(
+                "lower/unformatted/a-homed-former-reads-through-its-import-s-qualifier-4862-3.gandr"
+            ),
+            include_str!(
+                "lower/unformatted/a-homed-former-reads-through-its-import-s-qualifier-4862-4.gandr"
             ),
         ] {
             let mut arena = CoreArena::new();
