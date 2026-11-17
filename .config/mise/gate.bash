@@ -284,10 +284,10 @@ gate_exit() {
 # jobserver that `MAKEFLAGS` already names stays, and so does a lower
 # `NEXTEST_TEST_THREADS`.
 #
-# The gate keeps its own FIFO for now. It draws on the host's counter only
-# after four gates at once on it beat a median run of 701 seconds. On the
-# hub's porter, each cargo of a gate runs one `rustc`. A gate's median run on
-# the porter is 1,868 seconds.
+# Before it makes its own FIFO, the gate draws on the host's counter
+# (`gate_hosted`), so the gates of the host share one bound. Each cargo
+# command of the gate then holds the counter by a FIFO of its own, and its
+# end gives back each token that its tools kept.
 # - see: #7688 — the gate's cargo on the host's counter
 #
 # A driver that a test starts takes the host's width unless `GANDR_JOBS` caps
@@ -306,6 +306,7 @@ gate_bound() {
     return
   fi
   trap gate_exit EXIT
+  if gate_hosted "$share"; then return; fi
   gate_jobs_fifo=$(mktemp -u "${TMPDIR:-/tmp}/gandr-gate-jobs.XXXXXX")
   mkfifo -m 600 "$gate_jobs_fifo"
   exec {gate_jobs_fd}<>"$gate_jobs_fifo"

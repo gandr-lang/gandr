@@ -24,9 +24,10 @@
 # its locks apart and leaves the runtime directory as it stands.
 # - see: #6182 — the lock directory
 #
-# A gate makes its own FIFO of its share, even beside a `gandr` whose `tokens`
-# runs a command. On the host's counter, the gate names its own `cargo`. That
-# `cargo` runs the next `cargo` on the path through `gandr tokens --`.
+# A gate draws on the host's counter where the `gandr` on the path has a
+# `tokens` that runs a command. There the gate names its own `cargo`. That
+# `cargo` runs the next `cargo` on the path through `gandr tokens --`. Beside
+# an older `gandr`, the gate makes its own FIFO of its share.
 # - see: #7688 — the gate's cargo on the host's counter
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
@@ -185,11 +186,10 @@ for pid in "${pids[@]}"; do kill -KILL "$pid" 2> /dev/null || true; done
 for pid in "${pids[@]}"; do wait "$pid" 2> /dev/null || true; done
 pids=()
 
-# A gate makes its own FIFO of its share, even where the `gandr` on the path
-# runs a command on the host's counter. The gate draws on the counter only
-# after four gates at once on it beat a median run of 701 seconds. The case's
-# `gandr` answers `tokens --help` as a build whose `tokens` runs a command. It
-# writes each command that `tokens` runs.
+# A gate draws on the host's counter where the `gandr` on the path runs a
+# command through `tokens`. Beside an older `gandr`, it makes its own FIFO of
+# its share. The case's first `gandr` answers `tokens --help` as a build whose
+# `tokens` runs a command. It writes each command that `tokens` runs.
 # - see: #7688 — the gate's cargo on the host's counter
 mkdir -p "$scratch/bin-7688" "$scratch/old-7688" "$scratch/cargo-7688"
 printf '%s\n' '#!/usr/bin/env bash' \
@@ -199,23 +199,28 @@ printf '%s\n' '#!/usr/bin/env bash' \
 printf '%s\n' '#!/usr/bin/env bash' 'echo "Usage: gandr tokens [OPTIONS]"' > "$scratch/old-7688/gandr"
 printf '%s\n' '#!/usr/bin/env bash' 'echo cargo' > "$scratch/cargo-7688/cargo"
 chmod +x "$scratch/bin-7688/gandr" "$scratch/old-7688/gandr" "$scratch/cargo-7688/cargo"
-status=0
-bound=$(PATH="$scratch/bin-7688:$PATH" bash -c '
-  source "$1"
-  unset MAKEFLAGS NEXTEST_TEST_THREADS GANDR_JOBS GANDR_GATE_BIN
-  gate_cores=8
-  gate_slots=4
-  gate_bound
-  printf "%s\n%s\n%s\n" "$MAKEFLAGS" "$gate_jobs" "${GANDR_GATE_BIN:-none}"
-' _ "$gate_helper" 2>&1) || status=$?
-[[ $status == 0 ]] || fail "#7688: the gate's bound exited $status: $bound"
-[[ $bound == "-j2 --jobserver-auth=fifo:"*/gandr-gate-jobs.*$'\n'2$'\n'none ]] || fail "#7688: the gate makes no FIFO of its share of 2, or names the shim of the counter: $bound"
+gate_bin=$(cd "${gate_helper%/*}/gate-bin" && pwd)
+for build in bin-7688 old-7688; do
+  status=0
+  bound=$(PATH="$scratch/$build:$PATH" bash -c '
+    source "$1"
+    unset MAKEFLAGS NEXTEST_TEST_THREADS GANDR_JOBS GANDR_GATE_BIN
+    gate_cores=8
+    gate_slots=4
+    gate_bound
+    printf "%s\n%s\n%s\n" "$MAKEFLAGS" "$gate_jobs" "${GANDR_GATE_BIN:-none}"
+  ' _ "$gate_helper" 2>&1) || status=$?
+  [[ $status == 0 ]] || fail "#7688: the gate's bound beside $build exited $status: $bound"
+  case $build in
+    bin-7688) [[ $bound == "-j2"$'\n'"the host's counter's"$'\n'"$gate_bin" ]] || fail "#7688: the gate does not draw on the counter of a build whose tokens runs a command: $bound" ;;
+    old-7688) [[ $bound == "-j2 --jobserver-auth=fifo:"*/gandr-gate-jobs.*$'\n'2$'\n'none ]] || fail "#7688: the gate beside an older build makes no FIFO of its share of 2: $bound" ;;
+  esac
+done
 
 # On the counter, the gate names the directory of its `cargo`. `MAKEFLAGS`
 # keeps the share and names no jobserver. A `gandr` whose `tokens` runs no
 # command leaves the gate's flags as they stand.
 # - see: #7688 — the gate's cargo on the host's counter
-gate_bin=$(cd "${gate_helper%/*}/gate-bin" && pwd)
 for build in bin-7688 old-7688; do
   status=0
   hosted=$(PATH="$scratch/$build:$PATH" bash -c '
@@ -432,4 +437,4 @@ bash -c 'source "$1"; host_scratch "$2/case"' _ "$helper" "$leases"
 [[ ! -e $made ]] || fail "#7615: a call kept the directory of a holder that KILL ended"
 
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a gate made its own FIFO of its share beside a holder's; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory; a scratch directory's lease kept a live run's directory and freed a killed run's"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a gate drew on the host's counter beside a build whose tokens runs a command, and made its own FIFO of its share beside an older build; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory; a scratch directory's lease kept a live run's directory and freed a killed run's"
