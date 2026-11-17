@@ -614,6 +614,54 @@ fn a_header_s_spine_breaks_its_bracket_above_the_body_7923()
     );
 }
 
+/// #7939: a declaration in a module's braces stood in no header, so the
+/// bracket of its header that holds a spine kept its line past the page,
+/// where #7923 breaks the same bracket of a top-level declaration. Now each
+/// declaration's header holds its brackets at every depth: the bracket breaks
+/// as one item, and the body stays deeper than each line of the header.
+#[test]
+fn a_nested_header_s_spine_breaks_its_bracket_above_the_body_7939()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "format/unformatted/a-nested-header-s-spine-breaks-its-bracket-above-the-body-7939.gandr"
+    );
+    let laid = text(&grammar, source, 60);
+    assert_eq!(
+        laid,
+        "module M where {\n  def first(\n    p : Pair (Pair Integer Integer) (Pair Integer Integer)\n  ) -> Integer =\n    0\n}\n",
+        "the parameter's bracket breaks under the nested header"
+    );
+    assert_eq!(
+        text(&grammar, laid.as_str(), 60),
+        laid,
+        "and the layout formats once"
+    );
+}
+
+/// #7939: a declaration with no body kept its type's spine on one line past
+/// the page. No body's column stands after such a declaration, so its type's
+/// spine breaks before each operand when it does not fit.
+#[test]
+fn a_bodiless_type_s_spine_breaks_one_operand_a_line_7939()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "format/unformatted/a-bodiless-type-s-spine-breaks-one-operand-a-line-7939.gandr"
+    );
+    let laid = text(&grammar, source, 60);
+    assert_eq!(
+        laid,
+        "def pairs : Pair\n  (Pair Integer Integer)\n  (Pair (Pair Integer Integer) (Pair Integer Integer));\n",
+        "each operand of the type stands on a line of its own"
+    );
+    assert_eq!(
+        text(&grammar, laid.as_str(), 60),
+        laid,
+        "and the layout formats once"
+    );
+}
+
 /// #5665: a postfix form after a call in call form takes the whole call, so
 /// the formatter keeps the call's group against its head there. A space
 /// would give the postfix form the group alone. A call that no postfix form

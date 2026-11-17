@@ -356,11 +356,15 @@ enum Header
     No,
 }
 
-/// The header standing of each group of `groups`, in order: a bracket that
-/// the top-level form holds before its first layout block stands in the
-/// header, and so does each group inside such a bracket that no list holds.
-/// A broken list's closer returns to its opener's column, so a spine inside
-/// one breaks as anywhere else. A form with no layout block has no header.
+/// The header standing of each group of `groups`, in order: in any group, the
+/// run of elements from the start of an item up to a layout block is the
+/// header of the form that block ends, and each bracket in that run stands in
+/// the header. So does each group inside such a bracket that no list holds.
+/// An item starts at the group's start, after a separator, after a layout
+/// separator and after a layout block, so a declaration in a module's braces
+/// has its header as a top-level one has (#7939). A broken list's closer
+/// returns to its opener's column, so a spine inside one breaks as anywhere
+/// else. A run that no layout block ends is no header.
 ///
 /// # Specification
 /// trivial.
@@ -377,38 +381,54 @@ fn headers(groups: &[Group<'_>]) -> Vec<Header>
             Some(Frame::Layout { .. })
         )
     };
-    let Some(form) = groups.first()
-    else {
-        return headers;
-    };
-    let Some(body) = form
-        .placed
-        .iter()
-        .position(|placed| matches!(placed.element, Element::Group(GroupId(id)) if layout(id)))
-    else {
-        return headers;
-    };
     // A group comes after the group that holds it, so one pass in order
     // marks every group inside a marked one.
     for (index, group) in groups.iter().enumerate() {
-        let held = if index == 0 {
-            form.placed.get(.. body).unwrap_or_default()
-        }
-        else if headers.get(index) == Some(&Header::Yes) && listed(group) == Listed::No {
-            group.placed.as_slice()
-        }
-        else {
-            continue;
-        };
-        for placed in held {
-            if let Element::Group(GroupId(inner)) = placed.element
-                && let Some(slot) = headers.get_mut(inner)
-            {
-                *slot = Header::Yes;
+        let inside = headers.get(index) == Some(&Header::Yes) && listed(group) == Listed::No;
+        let mut start = 0_usize;
+        for (at, placed) in group.placed.iter().enumerate() {
+            let ends = match placed.element {
+                Element::Group(GroupId(id)) if layout(id) => {
+                    mark(
+                        &mut headers,
+                        group.placed.get(start .. at).unwrap_or_default(),
+                    );
+                    true
+                },
+                Element::Break => true,
+                Element::Text(text) => SEPARATORS.contains(&<&str>::from(text)),
+                Element::Group(_)
+                | Element::Verbatim(_)
+                | Element::LineComment(_)
+                | Element::BlockComment(_) => false,
+            };
+            if ends {
+                start = at.saturating_add(1);
             }
+        }
+        if inside {
+            mark(&mut headers, &group.placed);
         }
     }
     headers
+}
+
+/// Mark each group that `placed` holds as standing in a header.
+///
+/// # Specification
+/// trivial.
+fn mark(
+    headers: &mut [Header],
+    placed: &[Placed<'_>],
+)
+{
+    for placed in placed {
+        if let Element::Group(GroupId(inner)) = placed.element
+            && let Some(slot) = headers.get_mut(inner)
+        {
+            *slot = Header::Yes;
+        }
+    }
 }
 
 /// Whether `group` breaks one item per line.
@@ -921,7 +941,14 @@ fn group_doc(
             ..
         } => (open, close, closing),
         Frame::Form => {
-            let best = run(builder, &group.placed, docs, (Mode::Best, Held::Free))?;
+            // A form that no layout block ends has no body's column, so its
+            // type's spine may break before each operand (#7939).
+            let bodied = group.placed.iter().any(|placed| {
+                matches!(placed.element, Element::Group(GroupId(inner))
+                    if docs.get(inner).is_some_and(|built| built.ends == Ends::Column))
+            });
+            let held = if bodied { Held::Free } else { Held::Typed };
+            let best = run(builder, &group.placed, docs, (Mode::Best, held))?;
             return Ok(Built {
                 flat: Flat::Breaks,
                 best,
@@ -1009,7 +1036,7 @@ fn group_doc(
         let best = builder.concat_all([open, opening, content, closing, close])?;
         let best = match held {
             Held::Kept => builder.choice(best, broken)?,
-            Held::Free => best,
+            Held::Free | Held::Typed => best,
         };
         return Ok(Built {
             flat,
@@ -1267,6 +1294,9 @@ enum Held
     Free,
     /// Each spine keeps its line, as a header's bracket keeps it.
     Kept,
+    /// Each spine is a choice, a type's spine too, as in a form that no body
+    /// follows.
+    Typed,
 }
 
 /// Whether the spines of a bracket's `placed` elements may break: a bracket
@@ -1311,7 +1341,7 @@ fn run(
 ) -> Result<DocId, FormatError>
 {
     let spines = match (mode, held) {
-        (Mode::Best, Held::Free) => spines(placed, docs),
+        (Mode::Best, Held::Free | Held::Typed) => spines(placed, docs, held),
         (Mode::Flat, _) | (Mode::Best, Held::Kept) => Vec::new(),
     };
     let mut spines = spines.iter().peekable();
@@ -1411,23 +1441,26 @@ enum Tile
     Other,
 }
 
-/// Whether `placed` is the empty tile an expression's application writes
-/// between its head and an operand. A type's juxtaposition, `Maybe A`, is no
-/// such tile: its spine keeps its line, since a signature's spine broken
-/// before its operands would stand at the column of the body after it
-/// (#5326). Nor is a call's in call form that a postfix form takes as its
-/// target, `f(x).l`: a break there would give the postfix form the group
-/// alone (#5665).
+/// Whether `placed` is the empty tile an application writes between its head
+/// and an operand. A type's juxtaposition, `Maybe A`, is such a tile under
+/// [`Held::Typed`] alone: elsewhere its spine keeps its line, since a
+/// signature's spine broken before its operands would stand at the column of
+/// the body after it (#5326). A form with no body has no such column, so its
+/// type's spine breaks as an expression's does (#7939). Nor is a call's in
+/// call form that a postfix form takes as its target, `f(x).l`: a break there
+/// would give the postfix form the group alone (#5665).
 ///
 /// # Specification
 /// trivial.
-fn tile(placed: &Placed<'_>) -> Tile
+fn tile(
+    placed: &Placed<'_>,
+    held: Held,
+) -> Tile
 {
+    let typed = placed.context == space::Context::TypeGlue;
     if matches!(placed.element, Element::Text(text) if <&str>::from(text).is_empty())
-        && !matches!(
-            placed.context,
-            space::Context::TypeGlue | space::Context::CallGlue
-        )
+        && placed.context != space::Context::CallGlue
+        && (!typed || held == Held::Typed)
     {
         Tile::Juxtaposition
     }
@@ -1454,9 +1487,10 @@ fn tile(placed: &Placed<'_>) -> Tile
 fn spines(
     placed: &[Placed<'_>],
     docs: &[Built],
+    held: Held,
 ) -> Vec<Spine>
 {
-    let juxtaposes = |placed: &Placed<'_>| tile(placed) == Tile::Juxtaposition;
+    let juxtaposes = |placed: &Placed<'_>| tile(placed, held) == Tile::Juxtaposition;
     let mut spines = Vec::new();
     let mut floor = 0_usize;
     let mut index = 0_usize;
