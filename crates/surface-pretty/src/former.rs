@@ -1278,6 +1278,17 @@ pub enum Former<'source, Node>
         /// The region it lives in, a scope's counted from the outermost.
         region: gandr_core_term::effect::capability::Region,
     },
+    /// A data type refined at a stage of the definition's own, `Nat[i]` at
+    /// its binder's stage or `Nat[< i]` one step below it.
+    Staged
+    {
+        /// The type the stage refines.
+        inner: Node,
+        /// The binder the stage is read from, as the source writes it.
+        stage: Name<'source>,
+        /// Where the type stands relative to that binder.
+        reach: gandr_kernel_term::StageReach,
+    },
     /// A hold of a value at the world it is computed at, `hold v`.
     WorldHold(Node),
     /// A handle opened, `let x at w = v ; t`: the rest under the opened

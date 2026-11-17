@@ -1830,22 +1830,26 @@ fn an_inverse_in_a_type_s_endpoint_is_spelled_as_the_printer_does_5205()
 /// #7856: a definition's stage binders stand first in its printed block, in
 /// stage order, each bound directly after its stage, and the printing reads
 /// back to itself with no hold. `kept` writes a stage before a type
-/// implicit, and `boundedAt` a stage below another.
+/// implicit, and `boundedAt` a stage below another. #7906: each type of the
+/// header stands at the stage its source writes, `Nat[j]`, `Nat[k]` and
+/// `Nat[< j]`.
 #[test]
 fn a_definition_s_stage_binders_are_printed_in_its_block_7856()
 {
     let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
     let sources = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
-    for (path, declaration, header) in [
+    for (path, declaration, header, staged) in [
         (
             "classifier/implicit-telescope.gandr",
             "kept",
             "def kept[i : Size, a : Type](",
+            &[][..],
         ),
         (
             "model/data/sized-higher-order.gandr",
             "boundedAt",
             "def boundedAt[j : Size, k : Size, k < j](",
+            &[" : Nat[j], ", " : Nat[k]) -> Nat[< j]"][..],
         ),
     ] {
         let source = sources
@@ -1869,6 +1873,12 @@ fn a_definition_s_stage_binders_are_printed_in_its_block_7856()
                 spelled.starts_with(header),
                 "{declaration} in {form:?} opens with {header}: {spelled}"
             );
+            for written in staged {
+                assert!(
+                    spelled.contains(written),
+                    "{declaration} in {form:?} writes `{written}`: {spelled}"
+                );
+            }
         }
         let found = bodies(&grammar, written, &source.name);
         assert!(

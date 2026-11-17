@@ -761,6 +761,9 @@ pub struct CoreSource<'arena>
     /// The names of the region binders of the definition the root belongs
     /// to, by ordinal.
     binders: &'arena [Option<Name<'arena>>],
+    /// The stage binders of the definition the root belongs to, in stage
+    /// order: what a staged type's stage is read by.
+    staged: &'arena [WrittenStage<'arena>],
     /// The forms the source writes that the core erases, each list ascending
     /// by its node: the binders' names and labels the source writes, and the
     /// relation, the model type and the type member each type is written as.
@@ -836,6 +839,7 @@ impl<'arena> CoreSource<'arena>
             recursive_telescope: &[],
             regions: &[],
             binders: &[],
+            staged: &[],
             forms: UNWRITTEN,
             openers: &[],
             scopes: &[],
@@ -994,6 +998,22 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { binders, ..self }
+    }
+
+    /// This source, its roots in a definition over the stage binders
+    /// `staged`, in stage order: a type at one of their stages is written at
+    /// it, `Nat[i]`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn staged(
+        self,
+        staged: &'arena [WrittenStage<'arena>],
+    ) -> Self
+    {
+        Self { staged, ..self }
     }
 
     /// This source, spelling each form `forms` records as the source writes
@@ -1375,9 +1395,9 @@ impl<'arena> CoreSource<'arena>
         }
     }
 
-    /// The type the staged type `id` refines, or `id` itself: a stage is the
-    /// recursion typing's own, and a source never writes one, so a staged
-    /// type reads as the type it refines.
+    /// The type the staged type `id` refines, or `id` itself: a stage no
+    /// binder of the definition names has no spelling, so a staged type reads
+    /// as the type it refines where [`Self::staged_former`] reads none.
     ///
     /// # Specification
     /// - ensures: never a staged type, since the arena holds no stage over a
@@ -1397,6 +1417,49 @@ impl<'arena> CoreSource<'arena>
             Some(&ValueType::Staged { base, .. }) => base,
             Some(_) | None => id,
         }
+    }
+
+    /// The staged type `id` as the definition's stage binders write it, at
+    /// its binder's stage, `Nat[i]`, or one step below it, `Nat[< i]`; none
+    /// for a type at no stage, for a stage no binder names and for a stage
+    /// more than one step below its binder, which the surface cannot write.
+    ///
+    /// # Specification
+    /// - ensures: [`Former::Staged`] over the refined type exactly when `id` is
+    ///   a staged type whose anchor is the ordinal of a binder of
+    ///   [`Self::staged`], at that binder's stage or one step below it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition over two stages, one below the other,
+    ///   writes each parameter at its own stage and the result below the first.
+    /// - witness: `gandr-surface-dispatcher::parity::a_definition_s_stage_binders_are_printed_in_its_block_7856`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|former| matches!(*former, Former::Staged { inner, .. }
+        if matches!(self.arena.value_type(id), Some(&ValueType::Staged { base, .. }) if inner == CoreNode::ValueType(base)))))]
+    fn staged_former(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<Former<'arena, CoreNode>>
+    {
+        let &ValueType::Staged { base, stage } = self.arena.value_type(id)?
+        else {
+            return None;
+        };
+        let (anchor, reach) = match stage {
+            gandr_kernel_term::Stage::At(anchor) => (anchor, gandr_kernel_term::StageReach::At),
+            gandr_kernel_term::Stage::Below { anchor, depth }
+                if depth == gandr_kernel_term::StageDepth::ONE =>
+            {
+                (anchor, gandr_kernel_term::StageReach::Below(depth))
+            },
+            gandr_kernel_term::Stage::Below { .. } => return None,
+        };
+        let binder = self.staged.get(usize::from(anchor))?;
+        Some(Former::Staged {
+            inner: CoreNode::ValueType(base),
+            stage: binder.name,
+            reach,
+        })
     }
 
     /// The carrier `carrier` as the source wrote it, or nothing where the
@@ -1997,6 +2060,7 @@ impl<'arena> CoreSource<'arena>
             self.forms.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
         | (_, Former::Model { .. }) => self.forms.models.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
         | (_, Former::Member(name)) => written(&self.forms.members, id) == Some(name),
+        | (_, Former::Staged { inner, .. }) => matches!(self.arena.value_type(id), Some(&ValueType::Staged { base, .. }) if inner == CoreNode::ValueType(base)),
         | _ => false,
     })]
     fn value_type(
@@ -2014,6 +2078,10 @@ impl<'arena> CoreSource<'arena>
         // name once, however often the type is shared (#5826).
         if let Some(member) = written(&self.forms.members, id) {
             return Former::Member(member);
+        }
+        // A type at a stage of the definition's own is written at it, `Nat[i]`.
+        if let Some(staged) = self.staged_former(id) {
+            return staged;
         }
         let Some(value_type) = self.arena.value_type(self.unstaged(id))
         else {

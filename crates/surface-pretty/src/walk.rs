@@ -474,7 +474,7 @@ enum Kind
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::Member(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
+        | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. } | Former::Staged { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::Returns(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::LinearArrow { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -529,7 +529,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::PrefixType(_)
         | Former::DialogueType(_)
         | Former::Located { .. }
-        | Former::Kept { .. } => Kind::ValueType,
+        | Former::Kept { .. }
+        | Former::Staged { .. } => Kind::ValueType,
         Former::Returner(_)
         | Former::Returns(_)
         | Former::With(..)
@@ -1499,7 +1500,8 @@ where
         | Former::Returner(child)
         | Former::Quote(child)
         | Former::Located { inner: child, .. }
-        | Former::Kept { inner: child, .. } => Vec::from([value_type(child)]),
+        | Former::Kept { inner: child, .. }
+        | Former::Staged { inner: child, .. } => Vec::from([value_type(child)]),
         Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
@@ -8594,6 +8596,7 @@ impl Walk<'_, '_>
                 | Former::ConsumeHeld(_)
                 | Former::Located { .. }
                 | Former::Kept { .. }
+                | Former::Staged { .. }
                 | Former::WorldHold(_)
                 | Former::Leta { .. }
                 | Former::Migrate { .. }
@@ -10044,6 +10047,7 @@ impl Walk<'_, '_>
             | Former::ConsumeHeld(_)
             | Former::Located { .. }
             | Former::Kept { .. }
+            | Former::Staged { .. }
             | Former::WorldHold(_)
             | Former::Leta { .. }
             | Former::Migrate { .. } => Some(self.form(source, node, &former, admits)),
@@ -13411,6 +13415,19 @@ impl Walk<'_, '_>
                 );
                 let _ = parts.piece(Binding::Atom).text(" at ").text(scope);
                 writes(Production("at_type"), Binding::Cons)
+            },
+            // `Nat[i]` at the definition's stage binder `i`, and `Nat[< i]`
+            // one step below it: a postfix bracket in the path band, so the
+            // refined type is an atom.
+            Former::Staged { stage, reach, .. } => {
+                let opener = match reach {
+                    gandr_kernel_term::StageReach::At => "[",
+                    gandr_kernel_term::StageReach::Below(_) => "[< ",
+                };
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(format!("{opener}{}]", stage.as_ref()));
+                writes(Production("staged_type"), Binding::Atom)
             },
             Former::WorldHold(_) => {
                 // Parenthesized, as the surface writes it.

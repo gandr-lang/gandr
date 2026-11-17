@@ -1479,7 +1479,7 @@ pub fn present_whole(
             ))
         })
         .collect();
-    let source = source.bounding(&bounding);
+    let source = source.bounding(&bounding).staged(stages);
     // A type stands under the binders of the dependent arrows before it;
     // the body under the parameters, the definition's own binder among them
     // where it recurses, after the uniform ones.
