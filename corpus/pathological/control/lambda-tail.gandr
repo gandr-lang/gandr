@@ -1,0 +1,26 @@
+// A bare lambda that ends a body is read as the box that the body returns
+// only where the expected type returns a box of a function. Two cases keep
+// their `return`, and each is refused here. A box of a computation that is
+// no function has no lambda to read, so the lambda is refused with
+// `ShapeMismatch`. A definition that states no type gives no box to read
+// against, so its lambda is refused with `NotSynthesisable`.
+//
+// - see: #6390
+
+/// Two values.
+data Two : Type where
+  /// The left value.
+  | Left : Two
+  /// The right value.
+  | Right : Two
+
+/// A box of a computation that is no function.
+@[refuses("ShapeMismatch")]
+def no_function() -> +U (-F Two) =
+  fun (u) {
+    return u
+  }
+
+/// No type is stated.
+@[refuses("NotSynthesisable")]
+def unstated = fun (u) { return u };

@@ -67,6 +67,16 @@ def arms(choice : Two) -> +U ((u : Two) -> -F Two) =
       return u
     }
 
+/// The later arm ends in a bare lambda, after an arm that returns one.
+def right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
+  match choice where
+    | Left => return fun (u) {
+      return u
+    }
+    | Right => fun (u) {
+      return u
+    }
+
 /// The arm at `Zero` ends in a bare lambda under a refined parameter.
 def refined_arm(n : Nat, _x : natOr(n)) -> +U ((u : Nat) -> -F Nat) =
   match n where
