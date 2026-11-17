@@ -13254,10 +13254,11 @@ impl<'source> LoweredModule<'source>
         declaration: &LoweredDeclaration<'source>,
     ) -> Maybe<&gandr_core_term::effect::EffectRow, requirement::Absent>
     {
-        self.world_rows.get(&declaration.constant()).map_or(
-            Maybe::Absent(requirement::Absent::Unrequired),
-            Maybe::Present,
-        )
+        let Some(row) = self.world_rows.get(&declaration.constant())
+        else {
+            return Maybe::Absent(requirement::Absent::Unrequired);
+        };
+        Maybe::Present(row)
     }
 
     /// The offer this module's source writes, `offers [ … ] ;`: what a site
