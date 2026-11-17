@@ -1,0 +1,9 @@
+def f(x : Integer) -> -F Integer {
+  // first
+  let y = inc x ; /* after y */
+  let z = inc
+    // why
+    y ;
+  z
+  // end
+}

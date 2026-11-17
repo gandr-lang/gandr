@@ -1,0 +1,56 @@
+test: sample::tests::a_change_never_displaces_the_fixed_set_4654
+package: gandr-workflow-sweep
+command: mise run debug:test gandr-workflow-sweep sample::tests::a_change_never_displaces_the_fixed_set_4654
+
+(lldb) target create "target/debug-trace/debug/build/gandr-workflow-sweep/dc4cad6c2186fe0c/out/gandr_workflow_sweep-dc4cad6c2186fe0c"
+Current executable set to 'target/debug-trace/debug/build/gandr-workflow-sweep/dc4cad6c2186fe0c/out/gandr_workflow_sweep-dc4cad6c2186fe0c' (x86_64).
+(lldb) settings set -- target.run-args  "sample::tests::a_change_never_displaces_the_fixed_set_4654" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = gandr_workflow_sweep-dc4cad6c2186fe0c`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000001fe2ca8
+(lldb) run
+
+running 1 test
+test sample::tests::a_change_never_displaces_the_fixed_set_4654 ... 
+thread 'sample::tests::a_change_never_displaces_the_fixed_set_4654' (2291854) panicked at crates/workflow-sweep/src/sample.rs:329:9:
+a change touching every source displaces ["fixture/model/m00.gandr", "fixture/model/m04.gandr", "fixture/pending/p1.gandr"] of the fixed set ["fixture/model/m00.gandr", "fixture/model/m04.gandr", "fixture/model/m06.gandr", "fixture/pending/p1.gandr", "fixture/pending/p2.gandr", "strict/values.gandr"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2291687 launched: 'target/debug-trace/debug/build/gandr-workflow-sweep/dc4cad6c2186fe0c/out/gandr_workflow_sweep-dc4cad6c2186fe0c' (x86_64)
+Process 2291687 stopped
+* thread #2, name = 'sample::tests::', stop reason = breakpoint 1.1
+       frame #0: 0x0000555557536ca8 gandr_workflow_sweep-dc4cad6c2186fe0c`__rustc::rust_panic at panicking.rs:887:25
+(lldb) bt 24
+* thread #2, name = 'sample::tests::', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555557536ca8 gandr_workflow_sweep-dc4cad6c2186fe0c`__rustc::rust_panic at panicking.rs:887:25
+     frame #1: 0x00005555575537e5 gandr_workflow_sweep-dc4cad6c2186fe0c`std::panicking::panic_with_hook at panicking.rs:840:5
+     frame #2: 0x00005555575362c2 gandr_workflow_sweep-dc4cad6c2186fe0c`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13
+     frame #3: 0x000055555752ece9 gandr_workflow_sweep-dc4cad6c2186fe0c`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555557536e8d gandr_workflow_sweep-dc4cad6c2186fe0c`__rustc::rust_begin_unwind at panicking.rs:679:5
+     frame #5: 0x0000555557571b4c gandr_workflow_sweep-dc4cad6c2186fe0c`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x0000555555c92cc9 gandr_workflow_sweep-dc4cad6c2186fe0c`gandr_workflow_sweep::sample::tests::a_change_never_displaces_the_fixed_set_4654 at sample.rs:329:9
+     frame #7: 0x0000555555c91527 gandr_workflow_sweep-dc4cad6c2186fe0c`gandr_workflow_sweep::sample::tests::a_change_never_displaces_the_fixed_set_4654::{closure#0}((null)={}) at sample.rs:315:53
+     frame #8: 0x0000555555c955d6 gandr_workflow_sweep-dc4cad6c2186fe0c`<gandr_workflow_sweep::sample::tests::a_change_never_displaces_the_fixed_set_4654::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x0000555555cee30b gandr_workflow_sweep-dc4cad6c2186fe0c`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #10: 0x0000555555cee309 gandr_workflow_sweep-dc4cad6c2186fe0c`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #11: 0x0000555555cfb855 gandr_workflow_sweep-dc4cad6c2186fe0c`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #12: 0x0000555555cfb850 gandr_workflow_sweep-dc4cad6c2186fe0c`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #13: 0x0000555555cfb850 gandr_workflow_sweep-dc4cad6c2186fe0c`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #14: 0x0000555555cfb83b gandr_workflow_sweep-dc4cad6c2186fe0c`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #15: 0x0000555555cfb83b gandr_workflow_sweep-dc4cad6c2186fe0c`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #16: 0x0000555555cfb83b gandr_workflow_sweep-dc4cad6c2186fe0c`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #17: 0x0000555555cfb826 gandr_workflow_sweep-dc4cad6c2186fe0c`test::run_test::{closure#0} at lib.rs:677:43
+     frame #18: 0x0000555555cf6214 gandr_workflow_sweep-dc4cad6c2186fe0c`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #19: 0x0000555555cf6199 gandr_workflow_sweep-dc4cad6c2186fe0c`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #20: 0x0000555555cfe9b2 gandr_workflow_sweep-dc4cad6c2186fe0c`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #21: 0x0000555555cfe9a3 gandr_workflow_sweep-dc4cad6c2186fe0c`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x0000555555cfe9a3 gandr_workflow_sweep-dc4cad6c2186fe0c`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #23: 0x0000555555cfe993 gandr_workflow_sweep-dc4cad6c2186fe0c`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

@@ -1,0 +1,45 @@
+# A boxed `dyn Error` in a type takes the test's own `Failure`.
+id: boxed-error-is-failure
+language: Rust
+severity: hint
+message: a test returns its own failure, not a boxed trait object
+rule:
+  kind: generic_type
+  regex: ^Box<dyn (?:(?:core|std)::error::)?Error>$
+fix: Failure
+---
+# The constructor of a boxed `dyn Error` takes the constructor of `Failure`.
+id: boxed-error-from-is-failure-from
+language: Rust
+severity: hint
+message: a test returns its own failure, not a boxed trait object
+rule:
+  kind: scoped_identifier
+  regex: ^Box::<dyn (?:(?:core|std)::error::)?Error>::from$
+fix: Failure::from
+---
+# In a source file, the import of `Error` in the module of the unit tests takes
+# the import of `Failure`. The task runs this rule on source files alone.
+id: test-module-imports-failure
+language: Rust
+severity: hint
+message: the unit tests import their own failure
+rule:
+  kind: use_declaration
+  regex: ^use (?:core|std)::error::Error;$
+  inside:
+    kind: mod_item
+    regex: ^mod tests
+    stopBy: end
+fix: use crate::failure::Failure;
+---
+# In a file of a test target, the import of `Error` takes the import of
+# `Failure`. The task runs this rule on the files under `tests/` alone.
+id: test-target-imports-failure
+language: Rust
+severity: hint
+message: the test target imports its own failure
+rule:
+  kind: use_declaration
+  regex: ^use (?:core|std)::error::Error;$
+fix: use crate::failure::Failure;
