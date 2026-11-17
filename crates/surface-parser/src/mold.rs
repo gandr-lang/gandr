@@ -1166,6 +1166,11 @@ primitive_copy_wrapper!(
     struct DeclarationEnd(bool);
 );
 
+primitive_copy_wrapper!(
+    /// Whether a layout block's separator falls away, since no form takes it.
+    struct LayoutSeparatorDropped(bool);
+);
+
 /// Return whether the token at `index` of `tokens` is a separator that the
 /// head of a next top-level declaration follows, or a layout separator that
 /// the `}` of its block follows.
@@ -2261,6 +2266,15 @@ impl<'pbg> Molder<'pbg>
             CandidateLabels::from(labels.as_slice()),
             SpacedBefore::from(false),
         );
+        if bool::from(self.drops_layout_separator(
+            state,
+            token.lexeme,
+            text,
+            &labels,
+            Ahead::Nothing,
+        )) {
+            return;
+        }
         self.gather(state, token.lexeme, text, &labels, Ahead::Nothing);
         self.settle_statement(state, token.lexeme, text, &labels, Ahead::Nothing);
         self.settle_layout_close(state, token.lexeme, text, &labels, Ahead::Nothing);
@@ -2485,6 +2499,16 @@ impl<'pbg> Molder<'pbg>
                     index: TokenIndex::from(index),
                     source: &source,
                 };
+                if bool::from(self.drops_layout_separator(
+                    state,
+                    token.lexeme,
+                    text,
+                    &labels,
+                    ahead,
+                )) {
+                    index = index.saturating_add(1);
+                    continue;
+                }
                 self.gather(state, token.lexeme, text, &labels, ahead);
                 self.settle_statement(state, token.lexeme, text, &labels, ahead);
                 self.settle_layout_close(state, token.lexeme, text, &labels, ahead);
@@ -2975,6 +2999,58 @@ impl<'pbg> Molder<'pbg>
         self.keep_called_former(state, lexeme, text);
         self.drop_stray_keyword(state, lexeme, text);
         self.read_reserved_name(state, lexeme, text, ahead);
+    }
+
+    /// Whether the layout separator `lexeme` falls away with no tile and no
+    /// obligation, since no form takes it.
+    ///
+    /// The labeler places a separator after an item that no `;` or closer
+    /// ends. A brace that does not hold a block of items, as when a `module`
+    /// lost its `where`, has no form that takes the separator. Its only
+    /// reading is then a stray mid that owes its absent form, at a byte that
+    /// the writer never wrote. So the separator falls away, and each item
+    /// after the damage owes nothing for it.
+    ///
+    /// # Specification
+    /// - requires: `labels` are `text`'s candidate labels.
+    /// - ensures: true exactly when `lexeme` is [`Lexeme::LayoutSemi`], its
+    ///   gathered menu at `state` is not empty, and each mold of that menu has
+    ///   a predecessor, opens no form, and continues no open frontier of
+    ///   `state`. The candidate buffer holds that menu when `lexeme` is a
+    ///   layout separator. Leaves `state` unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `module` that lost its `where` before its `{` reads
+    ///   its members after the brace. A member whose body a layout block ends
+    ///   takes a layout separator that no form continues. A stray reading owes
+    ///   one tile for each such member, and the drop owes none. A layout
+    ///   separator between two items of a block still separates them.
+    /// - witness: `tests::acceptance::a_layout_separator_that_no_form_takes_owes_nothing_7881`
+    fn drops_layout_separator(
+        &mut self,
+        state: &MeldState<'_>,
+        lexeme: Lexeme,
+        text: TokenText<'_>,
+        labels: &LabelIds,
+        ahead: Ahead<'_, '_>,
+    ) -> LayoutSeparatorDropped
+    {
+        if lexeme != Lexeme::LayoutSemi {
+            return LayoutSeparatorDropped::from(false);
+        }
+        self.gather(state, lexeme, text, labels, ahead);
+        let adjacencies = self.pbg.adjacencies();
+        LayoutSeparatorDropped::from(
+            !self.candidates.is_empty()
+                && self.candidates.iter().all(|&mold| {
+                    bool::from(self.pbg.mold_has_predecessor(mold))
+                        && !bool::from(self.pbg.mold_is_form_first(mold))
+                        && !state
+                            .open_frontier_molds()
+                            .any(|open| adjacencies.binary_search(&(open, mold)).is_ok())
+                }),
+        )
     }
 
     /// Close the statement a statement keyword stands in, when the keyword
@@ -5060,6 +5136,16 @@ impl<'pbg> Molder<'pbg>
                     index: TokenIndex::from(index),
                     source,
                 };
+                if bool::from(self.drops_layout_separator(
+                    state,
+                    token.lexeme,
+                    text,
+                    &labels,
+                    ahead,
+                )) {
+                    index = index.saturating_add(1);
+                    continue;
+                }
                 self.gather(state, token.lexeme, text, &labels, ahead);
                 state.settle_declaration_boundary(&self.candidates);
                 self.close_before_prefixed_head(
