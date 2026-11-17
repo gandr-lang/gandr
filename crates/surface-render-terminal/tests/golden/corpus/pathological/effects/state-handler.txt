@@ -1,0 +1,130 @@
+error[OutOfFragment.WrongSort]: a handle expression cannot stand where a computation is expected
+   ╭▸ corpus/pathological/effects/state-handler.gandr:70:10
+   │
+70 │   } with Passing
+   │          ━━━━━━━ a form of another sort than this position takes
+   │
+   ├ note: `answeredForConsole` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a computation in this position
+
+error[MalformedForm]: an operand is missing in this handle expression
+    ╭▸ corpus/pathological/effects/state-handler.gandr:117:4
+    │
+117 │   }
+    │    ━ an operand is missing here
+    │
+    ├ note: `unansweredForConsole` is refused with MalformedForm, as its expectation states
+    ╰ help: write the missing operand
+
+error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `S`, which is a sort the operations do not return, which the manifest leaves unfixed
+   ╭▸ corpus/pathological/effects/state-handler.gandr:18:15
+   │
+18 │   handle st : State.Eff {
+   │               ━━━━━━━━━ a member the handler cannot read as an operation
+   │
+   ├ note: `unfixed` is refused with UninterfacedMember, as its expectation states
+   ╰ help: give the theory an unfixed carrier sort and operations that return it
+
+error[UninterfacedMember]: the theory cannot stand as the interface its handler reads at `C`, which is the sort the operations return, which the handler's answer fixes
+   ╭▸ corpus/pathological/effects/state-handler.gandr:30:15
+   │
+30 │   handle st : State.Eff with sort S = Integer with sort C = Integer {
+   │               ━━━━━━━━━ a member the handler cannot read as an operation
+   │
+   ├ note: `carrierFixed` is refused with UninterfacedMember, as its expectation states
+   ╰ help: give the theory an unfixed carrier sort and operations that return it
+
+error[UnresolvedName]: `T` is not defined
+   ╭▸ corpus/pathological/effects/state-handler.gandr:41:35
+   │
+41 │   handle st : State.Eff with sort T = Integer {
+   │                                   ━ not found in this scope
+   │
+   ├ note: `undeclared` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `T`, or import the module that exports it
+
+error[UnresolvedName]: `Stateless` is not defined
+   ╭▸ corpus/pathological/effects/state-handler.gandr:54:10
+   │
+54 │   } with Stateless
+   │          ━━━━━━━━━ not found in this scope
+   │
+   ├ note: `answeredByNothing` is refused with UnresolvedName, as its expectation states
+   ╰ help: define `Stateless`, or import the module that exports it
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/effects/state-handler.gandr:60:3
+   │
+59 │    def answeredAtInteger() -> Integer =
+   │    │                          ─────── the type it synthesises
+   │ ┌──┘
+   │ │
+60 │ │┏   handle st : State.Eff with sort S = Integer {
+61 │ │┃     pure 1
+62 │ │┃   } with Passing
+   │ │┃                ╿
+   │ └┃────────────────│
+   │  ┗━━━━━━━━━━━━━━━━checked against `() -> Integer`; while checking the body of this thunk
+   │                   its type does not convert: expected `Integer -> Integer`, found `Integer`
+   │
+   ├ note: `answeredAtInteger` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[ModelUnanswered]: no module in scope is a model of `State.Eff` answering this scope at the types its manifest and subject force: `Passing` is not; name one after its subject, `} with M`, or write its clauses, `} with { … }`
+   ╭▸ corpus/pathological/effects/state-handler.gandr:77:3
+   │
+77 │ ┏   handle st : State.Eff with sort S = Unit + Unit {
+78 │ ┃     pure fun (s) { pure 1 }
+79 │ ┃   }
+   │ ┗━━━┛ a model implicit no module answers
+   │
+   ├ note: `unansweredAtTwo` is refused with ModelUnanswered, as its expectation states
+   ╰ help: declare a module that is a model of the theory at these types, or supply one by name in brackets
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/effects/state-handler.gandr:87:3
+   │
+86 │   def inScopeAtInteger() -> Integer =
+   │                             ─────── the type it synthesises
+87 │ ┏   handle st : State.Eff with sort S = Integer {
+88 │ ┃     pure 1
+89 │ ┃   }
+   │ ┗━━━┛ its type does not convert: expected `Integer -> Integer`, found `Integer`
+   │
+   ├ note: while checking the body of this thunk
+   ├ note: while checking the return clause of this handler; binds _ : Integer
+   ├ note: while comparing the type this synthesises with the one it is checked against
+   ├ note: while finishing the type of this
+   ├ note: `inScopeAtInteger` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[ModelAmbiguous]: more than one module in scope is a model of `State.Eff` answering this scope: `Passing` and `Forgetting`; name the one meant after its subject, `} with M`
+    ╭▸ corpus/pathological/effects/state-handler.gandr:107:3
+    │
+107 │ ┏   handle st : State.Eff with sort S = Integer {
+108 │ ┃     pure fun (s) { pure s }
+109 │ ┃   }
+    │ ┗━━━┛ a model implicit more than one module answers
+    │
+    ├ note: `ambiguousInScope` is refused with ModelAmbiguous, as its expectation states
+    ╰ help: supply the intended model by name in brackets before the parentheses
+
+error[CapabilityAmplified]: this capability grants less than the one expected here
+    ╭▸ corpus/pathological/effects/state-handler.gandr:129:5
+    │
+127 │ ┌  def amplifiedAtImplicit() -> Integer =
+128 │ │┌   handle s : State.Eff with sort S = Bool {
+129 │ ││     readGivenAt 0
+    │ ││     ━━━━━━━━━━━━━ a capability granting less: expected `Cap {get, put} at s`, found `Cap {get, put} at s`
+130 │ ││   } with {
+131 │ ││     | pure(y) => pure y
+132 │ ││     | oper get(k) => k true
+133 │ ││     | oper put(v, k) => k ()
+134 │ ││   }
+    │ ││   │
+    │ └│───│
+    │  └───checked against `() -> Integer`; while checking the body of this thunk
+    │      checked against `-F Integer`; while checking the subject of this scope under its capability; binds s : Cap {get, put}
+    │
+    ├ note: `amplifiedAtImplicit` is refused with CapabilityAmplified, as its expectation states
+    ╰ help: use the required capability

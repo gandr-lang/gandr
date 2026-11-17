@@ -1,0 +1,45 @@
+/// `higher-order-fields`: Function fields in described families.
+/// Implemented: a constructor field `A -> T` is the function former of the
+/// description code. The code decodes the field to the thunked arrow. So a
+/// presented type holds a continuation. A fold applies it and reaches its rest.
+///
+/// Not implemented: an observation taking an argument, `step : (a : Integer) ->
+/// -F Integer`, has no code and is refused. A rule applying a continuation,
+/// put-get's `Put(s, Get(k)) <=> Put(s, k(s))`, is refused.
+///
+/// - owes: #2859 — an observation taking an argument
+/// - owes: #2861 — a rule applying a continuation
+//! Programs over a state, quotiented by put-put
+//! [Plotkin-2002-notions_computation_determine_monads]: a read's continuation
+//! is a function-valued field, the higher-order descriptions' `Π`
+//! [Chapman-2010-gentle_art_levitation].
+//!
+//! - cites: [Plotkin-2002-notions_computation_determine_monads]
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//!
+//! [Plotkin-2002-notions_computation_determine_monads]: https://doi.org/10.1007/3-540-45931-6_24 "Plotkin and Power, Notions of computation determine monads"
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
+
+/// Programs over an integer state: a read hands the state to its
+/// continuation, and a store the next store overwrites is no store.
+data Program : Type where {
+  | Done : (x : Integer) --> Program
+  | Get : (k : Integer -> Program) --> Program
+  | Put : (s : Integer, k : Program) --> Program
+  rule : Put s (Put u k) <=> Put u k;
+}
+
+/// The state-passing handler, reaching a read's rest through its
+/// continuation.
+def rec final(p : Program, s : Integer) -> Integer =
+  match p where
+    | Done(x) => x
+    | Get(k) => final[<] (k s) s
+    | Put(t, k) => final[<] k t
+
+/// Answers the state it reads.
+def answered(x : Integer) -> Program { Done x }
+
+/// A store, then a read of it.
+@[runs("5")]
+def readBack : () -> Integer = final (Put 5 (Get answered)) 0;

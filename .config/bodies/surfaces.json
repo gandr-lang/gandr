@@ -1,0 +1,5 @@
+[
+  { "surface": "editor extension", "paths": ["contrib/gandr-vscode/"] },
+  { "surface": "gandr view", "paths": ["crates/surface-tui/"] },
+  { "surface": "gandr tui", "paths": ["crates/surface-tui/"] }
+]
