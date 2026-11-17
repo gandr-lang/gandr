@@ -446,7 +446,9 @@ enum Placed
     /// The head of a constructor's or a primitive former's call, or of an
     /// annotation, a constructor qualified by its family among them, and a
     /// theory's operation qualified by the theory whose terms it builds,
-    /// `Mag.mul(…)`: the call is the one core node, and answers.
+    /// `Mag.mul(…)`: the call is the one core node, and answers. The head of
+    /// a path type's spine, `Path[.A = C]` in `Path[.A = C] a b`, stands so
+    /// too.
     Head,
     /// The name of a held slot in an element read, for example `xs` in `let
     /// y = xs.#[1] ;`. The read lends the slot shared at the index. The slot
@@ -1128,10 +1130,16 @@ fn gated(
         // outermost application answers for. A type's spine, `Vec A n`, lowers
         // as one application of its family, so the family's name answers
         // through it, as the head of the call form `Vec(A, n)` does (#5326).
+        // A path or a bridge head, `Path[.A = C]` in `Path[.A = C] a b`, is no
+        // type alone: the spine lowers as one path type, which answers
+        // (#5750).
         let head = parent.is_some_and(|(_, label, headed, ..)| {
             headed
                 && if melded {
-                    matches!(label, "(" | JUXTAPOSED) && (qualified || def.label == JUXTAPOSED)
+                    (matches!(label, "(" | JUXTAPOSED) && (qualified || def.label == JUXTAPOSED))
+                        || (label == JUXTAPOSED
+                            && def.sort == Sort::Type
+                            && matches!(def.label, "Path" | "Bridge"))
                 }
                 else {
                     label == "["
