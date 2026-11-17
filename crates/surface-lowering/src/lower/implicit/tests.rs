@@ -202,6 +202,37 @@ fn a_stage_telescope_merges_nothing()
 }
 
 #[test]
+fn a_block_names_its_stage_binders_in_stage_order_7856()
+{
+    // `kept` writes its stage before a type implicit; `boundedAt` writes a
+    // stage below another; `twin` writes no stage and answers nothing.
+    let source = format!(
+        "{}def boundedAt[j : Size, k : Size, k < j](n : Integer) -> Integer {{ n }}\n",
+        include_str!("tests/fixtures/a-stage-telescope-merges-nothing.gandr")
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let constant = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map_or_else(
+                || panic!("`{name}` is declared"),
+                crate::module::LoweredDeclaration::constant,
+            )
+    };
+    assert_eq!(module.stage_names(constant("kept")), [SurfaceName::from(
+        "i"
+    )]);
+    assert_eq!(module.stage_names(constant("boundedAt")), [
+        SurfaceName::from("j"),
+        SurfaceName::from("k")
+    ]);
+    assert_eq!(module.stage_names(constant("twin")), []);
+}
+
+#[test]
 fn supply_by_name_is_order_free()
 {
     let source = format!(

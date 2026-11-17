@@ -13828,9 +13828,10 @@ impl<'source> LoweredModule<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a block with a stage before a type implicit and a
-    ///   block with a stage below another separate the order and the count.
-    /// - witness: `gandr-surface-dispatcher::parity::a_definition_s_stage_binders_are_printed_in_its_block_7856`
+    /// - hypothesis: L3 — a block with a stage before a type implicit, a block
+    ///   with a stage below another, and a block with no stage separate the
+    ///   order and the count.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_block_names_its_stage_binders_in_stage_order_7856`
     #[spec(ensures: |ret| ret.is_empty() != matches!(self.stage_names.get(&constant), Maybe::Present(_)))]
     #[inline]
     #[must_use]
