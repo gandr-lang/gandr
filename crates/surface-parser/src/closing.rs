@@ -46,10 +46,9 @@
 //! editor can show what closes the form the cursor is in.
 //!
 //! `tile_spelling` writes each tile: a label naming a lexical class
-//! (`identifier`, `constructor`, `number`, string content, a shell word, …) is
-//! filled by any token of the class, the shell subshell brackets and the
-//! command-substitution opener are written as the text the labeler reads them
-//! from, and every other label is its own text.
+//! (`identifier`, `constructor`, `number`, string content, …) is filled by
+//! any token of the class, the arm bar is written as the text the labeler
+//! reads it from, and every other label is its own text.
 //!
 //! - Alternatives: the first `≐`-successor in mold order, which names an
 //!   optional tile as often as the closer (`@[` after `def x`, `,` in a
@@ -120,30 +119,19 @@ use crate::mold::CandidateLabel;
 const CLASS_LABELS: &[&str] = &[
     "character",
     "constructor",
-    "double_string_fragment",
-    "environment_assignment",
     "escape_sequence",
-    "file_descriptor",
     "hole_name",
     "identifier",
     "number",
-    "shell_word",
-    "single_quoted_content",
     "string_fragment",
     "type_identifier",
     "type_variable",
     "typed_number",
-    "variable_name",
 ];
 
 /// The labels whose tile the labeler emits under another text, with that
 /// text.
-const WRITTEN_AS: &[(&str, &str)] = &[
-    ("arm_bar", "|"),
-    ("command_substitution_start", "$!{"),
-    ("subshell_close", "]"),
-    ("subshell_open", "["),
-];
+const WRITTEN_AS: &[(&str, &str)] = &[("arm_bar", "|")];
 
 /// How a tile label is written in source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,9 +148,8 @@ pub enum TileSpelling<'label>
 /// # Specification
 /// - requires: nothing; any label is admissible.
 /// - ensures: a label naming a lexical class (an identifier, a constructor, a
-///   number, string content, a shell word, …) is [`TileSpelling::Class`] of
-///   itself; the shell subshell brackets and the command-substitution opener
-///   are [`TileSpelling::Literal`] of the text the labeler reads them from;
+///   number, string content, …) is [`TileSpelling::Class`] of itself; the arm
+///   bar is [`TileSpelling::Literal`] of the text the labeler reads it from;
 ///   every other label is [`TileSpelling::Literal`] of itself, the text it is
 ///   the label of.
 /// - provides: the spelling a completion shows for an expected tile.
@@ -1344,7 +1331,7 @@ mod tests
     #[test]
     fn every_label_a_token_offers_is_spelled_as_it_reads()
     {
-        let source = "def f = X(x, 1, 1u32, 'c', \"s\\n\"); #!sh{ A=b echo 'q' $v [ ls ] 2>x } match x { | y => y }";
+        let source = "def f = X(x, 1, 1u32, 'c', \"s\\n\"); match x { | y => y }";
         let mut lexemes = BTreeSet::new();
         for token in label(SourceFragment::from(source)) {
             let start = usize::try_from(token.start).unwrap_or(usize::MAX);
@@ -1354,7 +1341,7 @@ mod tests
             for offered in candidate_labels(token.lexeme, TokenText::from(text)) {
                 match tile_spelling(offered) {
                     TileSpelling::Literal(spelled) => assert!(
-                        spelled == text || (text.starts_with("#!") && spelled == "#!{"),
+                        spelled == text,
                         "`{text}` offers `{offered:?}`, spelled `{spelled}`"
                     ),
                     TileSpelling::Class(class) => {
@@ -1374,13 +1361,6 @@ mod tests
             Lexeme::StringFragment,
             Lexeme::EscapeSequence,
             Lexeme::Punct,
-            Lexeme::ShellWord,
-            Lexeme::EnvAssign,
-            Lexeme::SingleQuotedContent,
-            Lexeme::VariableName,
-            Lexeme::SubshellOpen,
-            Lexeme::SubshellClose,
-            Lexeme::FileDescriptor,
             Lexeme::ArmBar,
             Lexeme::Space,
         ]
