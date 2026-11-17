@@ -970,8 +970,7 @@ impl RetiredForm
             Self::BracketFaces => "↦",
             Self::ParenthesizedProduct => "(A, B)",
             Self::ParenthesizedProductPattern => "(p, q)",
-            Self::EmptyOperationInputs => "()",
-            Self::EmptyOperationCall => "()",
+            Self::EmptyOperationInputs | Self::EmptyOperationCall => "()",
         })
     }
 }
