@@ -1,9 +1,13 @@
-// A bare lambda that ends a body is read as the box that the body returns
-// only where the expected type returns a box of a function. Two cases keep
-// their `return`, and each is refused here. A box of a computation that is
-// no function has no lambda to read, so the lambda is refused with
-// `ShapeMismatch`. A definition that states no type gives no box to read
-// against, so its lambda is refused with `NotSynthesisable`.
+// Two tail lambdas keep their `return`, and the checker refuses each one.
+//
+// The checker reads a bare tail lambda as a returned box only where the
+// expected type returns a box of a function. Elsewhere the lambda stays a
+// computation, and its body needs the `return`.
+//
+// A box of a computation that is no function has no lambda to read. The
+// checker refuses that lambda with `ShapeMismatch`. A definition that states
+// no type has no box to read. The checker refuses its lambda with
+// `NotSynthesisable`.
 //
 // - see: #6390
 
@@ -21,6 +25,6 @@ def no_function() -> () -> Two =
     u
   }
 
-/// No type is stated.
+/// The definition states no type.
 @[refuses("NotSynthesisable")]
 def unstated = fun (u) { u };
