@@ -14,22 +14,24 @@
 //!
 //! The bytes are one value of the value plane, in its flat form
 //! ([`gandr_storage_values::encode_flat`]): the image's open, five counts, the
-//! nodes, the definitions, and the close.
+//! table of annotations when the nodes name one, the nodes, the definitions,
+//! and the close.
 //!
 //! |Record|Words after the open|
 //! |---|---|
 //! |the image|the producers, the consumers, the commands, the definitions and the root's position|
-//! |a node|its form's payload, each child as its family position|
+//! |the image with annotations|as the image, then the count of roots and the bytes of the table|
+//! |a node|its form's payload, each child as its family position, each annotation as the ordinal of its root|
 //! |a definition|the constant, then zero for an opaque one or one past its body's position|
 //!
 //! # Boundaries
 //!
-//! - **Annotations are refused.** A code, a fold, an operation, a handler and a
-//!   session action name core types of the arena's annotations. A byte form of
-//!   core types is owed, so [`encode`] refuses each such node by name
-//!   ([`Uncodable::Annotation`]). Each of the five forms has its tag already,
-//!   so the bytes of a command without one do not change when that form lands.
-//!   The reader refuses those tags as tags that it does not read.
+//! - **Annotations cross as content.** A code, a fold, an operation, a handler
+//!   and a session action name core nodes of the arena's annotations. Their
+//!   roots form one content table in the node codec of `gandr-core-content`,
+//!   one place for each distinct content. The reader mints the table into the
+//!   fresh arena before the nodes that name it. A command that names no
+//!   annotation has no table, so its bytes are the image's bytes alone.
 //! - **A digest admits nothing.** A content pointer of the bytes names them.
 //!   The kernel's admission stays the one authority of validity, so [`read`]
 //!   runs [`check_command`] on each root that it mints.
