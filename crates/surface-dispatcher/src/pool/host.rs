@@ -654,7 +654,7 @@ pub struct HostCounter
     /// The directory of the slots' files.
     slots: PathBuf,
     /// The owner's file, which this hub holds a shared lock on.
-    _owner: File,
+    owner: File,
 }
 
 impl Drop for HostCounter
@@ -666,7 +666,7 @@ impl Drop for HostCounter
     #[inline]
     fn drop(&mut self)
     {
-        let_go(&self._owner);
+        let_go(&self.owner);
     }
 }
 
@@ -727,7 +727,7 @@ impl HostCounter
         let counter = Self {
             mapping,
             slots,
-            _owner: owner,
+            owner,
         };
         counter.reap();
         Ok(counter)
@@ -782,7 +782,7 @@ pub struct Host
     /// its next take takes the token all the same.
     deferred: AtomicBool,
     /// The slot's file, which this process holds an exclusive lock on.
-    _claim: File,
+    claim: File,
 }
 
 impl Host
@@ -836,7 +836,7 @@ impl Host
                         place: Place(at),
                         class,
                         deferred: AtomicBool::new(false),
-                        _claim: file,
+                        claim: file,
                     });
                 },
                 Err(TryLockError::WouldBlock) => {},
@@ -1182,7 +1182,7 @@ impl Drop for Host
         if reclaim(&self.mapping.segment().counter, self.slot()) == Audit::Due {
             audit(self.mapping.segment());
         }
-        let_go(&self._claim);
+        let_go(&self.claim);
     }
 }
 
@@ -1872,7 +1872,7 @@ mod tests
         let directory = scratch(Scratch("copied"));
         let counter =
             HostCounter::with(&directory, Threads::from(NonZeroUsize::new(2).unwrap())).unwrap();
-        let copy = counter._owner.try_clone().unwrap();
+        let copy = counter.owner.try_clone().unwrap();
         drop(counter);
         assert!(
             matches!(
