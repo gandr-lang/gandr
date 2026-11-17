@@ -20556,6 +20556,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Clause cost
+    /// - bound: none on a declaration that lowers. On a refused declaration,
+    ///   one walk of the nodes of each of at most four forms of that
+    ///   declaration, and one compare of at most 2 bytes at each grout.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `def a = #{ .x = 1 };` reads an extra operand first
     ///   and reports the retired token; `def b : Integer => Integer;` reports

@@ -7332,7 +7332,9 @@ mod tests
             );
         }
         assert_eq!(
-            lowered("data D : Type where\n  | Mk : (n : Integer => Integer) --> D\n"),
+            lowered(include_str!(
+                "lower/fixtures/a-constructor-field-names-the-fat-arrow-box-7879.gandr"
+            )),
             [
                 refused(42, 52, FormName::from(NamedKind("data_generator")), boxed),
                 refused(24, 59, FormName::DECLARATION, FormFault::MisplacedTile),
@@ -7369,9 +7371,9 @@ mod tests
         );
         assert!(
             matches!(
-                lowered(
-                    "def same(n : Integer) -> -F Integer =\n  match n where\n    | m => return m\n"
-                )
+                lowered(include_str!(
+                    "lower/fixtures/a-one-name-arm-keeps-its-reading-7879.gandr"
+                ))
                 .as_slice(),
                 [DeclarationOutcome::Completed { .. }]
             ),
@@ -7422,7 +7424,9 @@ mod tests
         ] {
             assert_eq!(lowered(source), [retired(8)], "{source}");
         }
-        let several = lowered("def a : *{};\ndef b = #{};\ndef c = 1;\n");
+        let several = lowered(include_str!(
+            "lower/fixtures/a-view-telescope-leaves-the-other-declarations-7879.gandr"
+        ));
         assert!(
             matches!(several.as_slice(), [
                 DeclarationOutcome::Uncompleted { .. },

@@ -4506,6 +4506,7 @@ pub fn retired_within(
 /// - hypothesis: L3 — `def b : Integer => Integer;` reads as the box at `=>
 ///   Integer`; `rec X => S` holds no such operand.
 /// - witness: `gandr-surface-lowering::lower::tests::the_fat_arrow_box_is_refused_by_name_7879`
+#[spec(ensures: |ret| ret == RetiredBox(false) || extra.start() < extra.end())]
 #[must_use]
 pub fn boxed_extra(
     pbg: &Pbg,
@@ -4545,7 +4546,8 @@ pub fn boxed_extra(
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RetiredBox(pub bool);
 
 quenchant_shape::reason_enum! {
