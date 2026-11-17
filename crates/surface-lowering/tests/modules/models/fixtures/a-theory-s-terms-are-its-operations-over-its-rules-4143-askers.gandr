@@ -1,0 +1,3 @@
+def neutral : Terms(Mag) = Mag.one;
+def twice : Terms(Mag) = Mag.mul Mag.one Mag.one;
+def again : Terms(Mag) = Mag.one;

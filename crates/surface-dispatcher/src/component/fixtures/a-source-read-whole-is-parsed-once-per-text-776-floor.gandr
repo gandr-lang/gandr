@@ -1,0 +1,2 @@
+/// The floor.
+def six : Integer = 6;

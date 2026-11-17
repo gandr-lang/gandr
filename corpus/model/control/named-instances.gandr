@@ -1,0 +1,187 @@
+//! This source shows named effect instances.
+//!
+//! A label distinguishes one interface instance from another.
+//! A call can pass an instance by its label.
+//! The label is a parameter that the function abstracts after every parameter
+//! it writes.
+//!
+//! The checker resolves an omitted label from a capability scope or from a
+//! label of the row of the caller [Brachthauser-2020-effects_as_capabilities].
+//! It keeps each labelled instance separate from the default.
+//!
+//! - see: #2271
+//! - see: ../../pathological/control/named-instances.gandr
+//! - cites: [Brachthauser-2020-effects_as_capabilities]
+//!
+//! [Brachthauser-2020-effects_as_capabilities]: https://doi.org/10.1145/3428194 "Brachthäuser, Schuster and Ostermann, Effects as Capabilities: Effect Handlers and Lightweight Effect Polymorphism"
+
+// The console's host interface.
+import std.io;
+
+/// A line printed through the instance `out`, the capability its label
+/// binds.
+pub def say() -> [out : std.io.Console.Eff] Unit { out.print "said" }
+
+/// One instance of `std.io.Console.Eff` handled around the call: the
+/// call passes it.
+@[runs("1")]
+def resolved() -> Integer =
+  handle a : std.io.Console.Eff {
+    say ();
+    pure 0
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
+  }
+
+/// Two instances handled around the call, the outer named: its clause
+/// answers.
+@[runs("1")]
+def namedOuter() -> Integer =
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
+      say[.out = a] ();
+      pure 0
+    } with {
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
+    }
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
+  }
+
+/// `namedInner` selects the inner console instance.
+@[runs("2")]
+def namedInner() -> Integer =
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
+      say[.out = b] ();
+      pure 0
+    } with {
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
+    }
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
+  }
+
+/// `relayed` passes instance `o` to `say`.
+def relayed() -> [o : std.io.Console.Eff] Unit { say () }
+
+/// An explicit parameter beside the instance, which comes after it.
+def sayLine(s : String) -> [out : std.io.Console.Eff] Unit { out.print s }
+
+/// `sayLineRuns` passes its explicit argument and a scope instance.
+@[runs("1")]
+def sayLineRuns() -> Integer =
+  handle a : std.io.Console.Eff {
+    sayLine "line";
+    pure 0
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
+  }
+
+/// Steps down to the ground, which a recursion takes apart one by one.
+data Steps : Type where
+  /// The ground, where the recursion stops.
+  | Ground : Steps
+  /// One step above the rest.
+  | Step : (rest : Steps) --> Steps
+
+/// `descend` prints one line at each recursive level.
+/// The recursive call passes `out` onward.
+def rec descend(s : Steps) -> [out : std.io.Console.Eff] Unit =
+  match s where
+    | Ground => pure *{}
+    | Step(rest) => {
+      out.print "step";
+      descend[<] rest
+    }
+
+/// `descend` over three steps, each line counted as it resumes: the
+/// handler answers every level's line.
+@[runs("3")]
+def descendRuns() -> Integer =
+  handle a : std.io.Console.Eff {
+    descend (Step (Step (Step Ground)));
+    pure 0
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => {
+      let n = k *{};
+      pure (n + 1)
+    }
+  }
+
+/// `both` holds two console instances.
+/// It prints through `first` before `second`.
+def both() -> [first : std.io.Console.Eff, second : std.io.Console.Eff] Unit =
+  say[.out = first] ()
+  say[.out = second] ()
+
+/// `both` with its first instance the outer scope: the outer clause
+/// answers the first line.
+@[runs("1")]
+def outerFirst() -> Integer =
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
+      both[.first = a, .second = b] ();
+      pure 0
+    } with {
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
+    }
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
+  }
+
+/// `innerFirst` swaps the two `both` instances.
+/// The inner scope answers the first line.
+@[runs("2")]
+def innerFirst() -> Integer =
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
+      both[.first = b, .second = a] ();
+      pure 0
+    } with {
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
+    }
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
+  }
+
+/// A suspended computation at the function's own instance, run by it: the
+/// parameter's row names the label the result row binds.
+def runAt(body : +U (-F [o : std.io.Console.Eff] Unit)) -> [o : std.io.Console.Eff] Unit =
+  force body
+
+/// `bothWritten` writes region binders and capabilities explicitly.
+/// Each row label names one binder.
+def bothWritten[r : Region, r1 : Region](
+  first : Cap { print } at r,
+  second : Cap { print } at r1
+) -> [r : std.io.Console.Eff, r1 : std.io.Console.Eff] Unit =
+  say[.out = first] ()
+  say[.out = second] ()
+
+/// `bothWritten` passed the inner scope first: its clause answers.
+@[runs("2")]
+def bothWrittenRuns() -> Integer =
+  handle a : std.io.Console.Eff {
+    handle b : std.io.Console.Eff {
+      bothWritten b a;
+      pure 0
+    } with {
+      | pure(x) => pure x
+      | oper print(line, k) => pure 2
+    }
+  } with {
+    | pure(x) => pure x
+    | oper print(line, k) => pure 1
+  }

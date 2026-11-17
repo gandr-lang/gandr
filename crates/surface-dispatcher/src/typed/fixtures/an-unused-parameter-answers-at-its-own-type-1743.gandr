@@ -1,0 +1,3 @@
+def plus(n : Integer, m : Integer) -> Integer { n }
+
+def keep(a : Type, x : a) -> Type { a }

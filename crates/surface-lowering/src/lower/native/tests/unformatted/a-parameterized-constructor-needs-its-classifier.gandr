@@ -1,0 +1,4 @@
+{MAYBE}def bare = None;
+def some = (Some 3 : Maybe(Integer));
+def none = (None : Maybe(Integer));
+def three = (Some (3 : Integer) : Maybe(Integer));
