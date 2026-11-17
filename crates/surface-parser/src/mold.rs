@@ -1252,6 +1252,57 @@ fn ends_declaration(
     }))
 }
 
+/// The end of the tokens that a weighing of the form open at `index` reads:
+/// past the first `;` or layout separator outside a bracket, or before the
+/// first token that starts its line and heads or prefixes a declaration,
+/// whichever comes first. The end is never past the stream.
+///
+/// # Specification
+/// - requires: `tokens` came from the labeler over `source`.
+/// - ensures: an index after `index` and at most `tokens.len()`. Each token
+///   before it and after `index` is no separator at bracket depth zero, and no
+///   line-start declaration head or prefix.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+fn form_end(
+    pbg: &Pbg,
+    tokens: &[Token],
+    index: TokenIndex,
+    source: &SourceFragment<'_>,
+) -> TokenIndex
+{
+    let bytes = SourceBytes::from(AsRef::<str>::as_ref(source).as_bytes());
+    let mut depth = 0_usize;
+    let start = usize::from(index).saturating_add(1);
+    for (at, &token) in tokens.iter().enumerate().skip(start) {
+        if matches!(token.lexeme, Lexeme::Space) {
+            continue;
+        }
+        let starts_line = usize::try_from(token.start)
+            .ok()
+            .and_then(|offset| AsRef::<str>::as_ref(source).get(.. offset))
+            .is_some_and(|before| before.is_empty() || before.ends_with('\n'));
+        if starts_line
+            && (bool::from(heads_declaration(pbg, token, source))
+                || bool::from(prefixes_declaration(pbg, token, source)))
+        {
+            return TokenIndex::from(at);
+        }
+        let separates = matches!(token.lexeme, Lexeme::LayoutSemi)
+            || (matches!(token.lexeme, Lexeme::Punct)
+                && AsRef::<str>::as_ref(&token.text(source)) == ";");
+        if depth == 0 && separates {
+            return TokenIndex::from(at.saturating_add(1));
+        }
+        match bracket(token, bytes) {
+            Bracket::Open => depth = depth.saturating_add(1),
+            Bracket::Close => depth = depth.saturating_sub(1),
+            Bracket::Neither => {},
+        }
+    }
+    TokenIndex::from(tokens.len())
+}
+
 /// The reserved uppercase words (the tree-sitter grammar's `KW` / primitive
 /// type names).
 ///
@@ -2917,6 +2968,9 @@ impl<'pbg> Molder<'pbg>
             source,
         };
         let next = TokenIndex::from(usize::from(index).saturating_add(1));
+        let weighed = tokens
+            .get(.. usize::from(form_end(self.pbg, tokens, index, source)))
+            .unwrap_or(tokens);
         let mut least = None;
         let mut minted = None;
         for nth in 0 .. owed {
@@ -2931,9 +2985,8 @@ impl<'pbg> Molder<'pbg>
             let choice = self.choose_stream(state, tokens, index, source);
             Self::push_choice(state, choice, text, reading);
             let bound = least.map_or(WindowBound::Unbounded, WindowBound::Below);
-            let end = self.mold_window(state, tokens, next, source, &mark, bound);
-            let delta = (end == WindowEnd::Molded)
-                .then(|| state.completion_delta(state.delta_since(&mark)));
+            let end = self.mold_window(state, weighed, next, source, &mark, bound);
+            let delta = (end == WindowEnd::Molded).then(|| state.delta_since(&mark));
             state.rollback_to(&mark);
             if let Some(delta) = delta {
                 least = Some(delta);
@@ -2951,7 +3004,7 @@ impl<'pbg> Molder<'pbg>
         let choice = self.choose_stream(state, tokens, index, source);
         Self::push_choice(state, choice, text, reading);
         let bound = least.map_or(WindowBound::Unbounded, WindowBound::Below);
-        let end = self.mold_window(state, tokens, next, source, &mark, bound);
+        let end = self.mold_window(state, weighed, next, source, &mark, bound);
         let standing = end == WindowEnd::Molded;
         state.rollback_to(&mark);
         if !standing {
