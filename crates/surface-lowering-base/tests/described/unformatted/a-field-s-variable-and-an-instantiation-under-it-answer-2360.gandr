@@ -1,0 +1,12 @@
+theory Commute where {
+  sort Value : Type;
+  sort Name : Type;
+  sort Digest : Type+;
+  sort Claim : Type+;
+  sort C : Type;
+  oper put : (v : Value, k : pi+ (d : Digest) . C) --> C;
+  oper lookup : (n : Name, k : pi+ (c : Claim) . C) --> C;
+  oper new : (body : pi+ (x : Digest) . C) --> C;
+  rule commute : put v (bind d . (lookup n (bind c . (k d c)))) <=> lookup n (bind c . (put v (bind d . (k d c))));
+  rule gc : new (bind x . q) <=> q;
+}

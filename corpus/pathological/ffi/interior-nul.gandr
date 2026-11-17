@@ -1,0 +1,17 @@
+// A C string with an interior NUL handed to a foreign function: the string
+// would end early at the seam, so the call is to be refused. The
+// lowering does not reach the extern block yet.
+//
+// - see: #327 — `gandr_test_strlen`, `measured`
+// - see: #1106 — `measured`
+
+/// The test library's string length.
+@[refuses("OutOfFragment.extern_block")]
+extern "c" from "testlib" {
+  def gandr_test_strlen(s : CStr) -> u64;
+}
+
+/// A string holding a NUL, measured; the lowering reads no projection yet
+/// , and `testlib` is the extern block's.
+@[refuses("OutOfFragment.projection_expression")]
+def measured = testlib.gandr_test_strlen "a\0b";

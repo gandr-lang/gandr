@@ -1,0 +1,2 @@
+rule twice : turn(turn(x)) ==> x;
+}

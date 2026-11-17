@@ -1,0 +1,3 @@
+@[ doc("first") ]
+@[ doc("second") $0]
+def f = 42;

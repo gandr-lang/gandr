@@ -1,0 +1,30 @@
+// A program hands the host a plan whose cut cites a forged law, and `admit`
+// refuses the plan.
+//
+// The plan is the plan of `sqrt 2 < 3/2` in `comparison.gandr`, except for
+// one reference. Its cut cites its laws at the reference 7, and the host
+// registers only the references 0, 1 and 2. So the validation pass refuses
+// the plan at the cut, node 10, by the check `UnknownEvidence`.
+//
+// `gandr run forged-cut-law.gandr` writes the refusal as one line on
+// standard error. The run stops at `admit`, and it prints nothing.
+//
+// - see: `corpus/model/reals/comparison.gandr` — the plan with its true laws
+// - see: `crates/theory-exact-reals/src/validate.rs` — the checks of a plan
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+
+/// The canonical bytes of the plan of `sqrt 2 < 3/2` whose cut cites its
+/// laws at the reference 7: 13 nodes in 176 bytes.
+pub def forged : String = "4758525001000d000000000000000100000000020000000000000000000000001200000000010000000500000000000000000201000000010000000000000001120300000004000000140200000005000000120100000000000000120400000003000000130700000008000000080001000000000100000000000000010001010000000100000000000000010006000000090000000700000002ffffffff010000000000000003120a0000000b000000";
+
+/// The entry: admit the plan and decide its root. The host declines
+/// `admit`, so the run stops there and prints nothing.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let held = std.reals.admit forged
+  let *{verdict, machine} = std.reals.decide held 16
+  std.io.Console.print verdict
+  0

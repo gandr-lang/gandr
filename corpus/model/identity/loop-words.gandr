@@ -1,0 +1,79 @@
+/// This source presents the circle loop words as a rewrite type.
+///
+/// `Loop` and `Unloop` are inverse letters.
+/// Two cancellation rules compute each word to a normal form.
+/// One stratum down, these words are the paths `Path[.A = Circle](Base, Base)`
+/// of `circle.gandr`, the HoTT book's circle of § 8.1.
+///
+/// A fold must respect both rules before the checker admits it.
+/// The winding and spinning sources map between words and integers.
+///
+/// - see: corpus/model/identity/loop-winding.gandr
+/// - see: corpus/model/identity/loop-space.gandr
+
+/// The `Words` type has loop letters and two cancellation rules.
+@[normalizes("Loop(Loop(Unloop(Unloop(Loop(Nil))))) ~> Loop(Nil)")]
+pub data Words : Type where {
+  | Nil : Words
+  | Loop : (x : Words) --> Words
+  | Unloop : (x : Words) --> Words
+  rule : Loop (Unloop x) <=> x;
+  rule : Unloop (Loop x) <=> x;
+}
+
+/// The `around` function adds one loop letter.
+pub def around(c : Words) -> Words =
+  Loop c
+
+/// The run returns the constructed word.
+@[runs("Loop (Loop Nil)")]
+def built() -> Words { around (Loop Nil) }
+
+/// Conversion reduces a cancelled loop word.
+def cancelled_word : Path[.A = Words](Loop (Unloop (Loop Nil)), Loop Nil) = Path.here (Loop Nil);
+
+/// A path between words compares their normal forms.
+def respelled : Path[.A = Words](Loop Nil, Loop Nil) = cancelled_word;
+
+/// Two words that reduce to the empty word agree.
+def both_cancel : Path[.A = Words](Unloop (Loop Nil), Loop (Unloop Nil)) = Path.here Nil;
+
+/// No rule identifies a loop with the empty word.
+@[refuses("EndpointMismatch")]
+def loop_not_nil : Path[.A = Words](Loop Nil, Nil) = Path.here Nil;
+
+/// The `tell_words` function refuses the cancellation rule.
+@[refuses("RuleNotRespected")]
+def tell_words(c : Words) -> Integer =
+  match c where
+    | Nil => 0
+    | Loop(x) => 1
+    | Unloop(x) => 2
+
+/// The refused fold cannot carry the cancellation path to a path from
+/// two to one.
+@[refuses("EndpointMismatch")]
+def two_is_one() -> Path[.A = Integer](2, 1) =
+  Path.ap tell_words both_cancel
+
+/// The `mirror` function exchanges loop and inverse-loop letters.
+/// At `Loop(Unloop(x))` it builds `Unloop(Loop(mirror(x)))`, which the second
+/// rule reads as `mirror(x)`, so it respects both rules.
+def rec mirror(c : Words) -> Words =
+  match c where
+    | Nil => Nil
+    | Loop(x) => Unloop (mirror[<] x)
+    | Unloop(x) => Loop (mirror[<] x)
+
+/// The mirror of a loop is one inverse loop.
+@[runs("Unloop Nil")]
+def mirrored() -> Words { mirror (Loop Nil) }
+
+/// Conversion gives the same mirror result for the cancelled word.
+def mirror_cancelled : Path[.A = Words](mirror (Loop (Unloop Nil)), Nil) = Path.here Nil;
+
+/// The mirror of a respelled loop is one inverse loop.
+def mirror_respelled : Path[.A = Words](
+  mirror (Loop (Unloop (Loop Nil))),
+  Unloop Nil
+) = Path.here (Unloop Nil);

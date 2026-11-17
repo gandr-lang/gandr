@@ -1,0 +1,34 @@
+//! A type calls a module's function through the module's name, as a value
+//! does.
+//!
+//! A theory states its types as functions to `Type`, and a model calls them
+//! through the module that declares them. The printer writes such a type as
+//! that call. So the type must read back as the call it prints.
+//!
+//! `Standard.same(Integer)` calls the function and decodes the code that the
+//! call returns. `Standard.unit()` calls a function of no arguments, and the
+//! printer writes that call with its empty list. `Standard.after(Integer)(n)`
+//! applies the call's result to one more argument. A second list after a
+//! type family is not a call, and the lowering refuses it.
+//!
+//! - see: #5213 — a type reads a qualified call and a call of a call
+
+/// The types of a small theory, each a function to `Type`.
+module Standard where
+  /// The type with one point.
+  def unit() -> Type { return Unit }
+
+  /// The type its argument names.
+  def same(a : Type) -> Type { return a }
+
+  /// A family that ignores its index.
+  def after(a : Type) -> Integer -> Type { return fun (x) { a } }
+
+/// The point, at the type a function of no arguments names.
+def point() -> Standard.unit() { *{} }
+
+/// An integer at the type a call names.
+def sameCalled() -> Standard.same(Integer) { 1 }
+
+/// An integer at the type a call's result names at one more argument.
+def indexed(n : Integer) -> Standard.after(Integer)(n) { 2 }
