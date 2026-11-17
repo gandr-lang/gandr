@@ -2096,8 +2096,8 @@ fn a_primed_name_has_no_ascii_spelling_782()
         ),
         (
             Root::Type(CoreNode::CompType(over_context)),
-            faithful(Written("(n′ : Integer) -> -F Path[.A = Integer](n′, y′)")),
-            approximate(Written("(a : Integer) -> -F Path[.A = Integer](a, ?)")),
+            faithful(Written("(n′ : Integer) -> -F Path[.A = Integer] n′ y′")),
+            approximate(Written("(a : Integer) -> -F Path[.A = Integer] a ?")),
         ),
     ] {
         assert_eq!(
@@ -2781,11 +2781,11 @@ fn a_selection_off_a_context_binder_s_record_spells_its_label_4139()
     for (source, expected) in [
         (
             source.typing(&typed),
-            faithful(Written("Path[.A = Integer](r.x, r.y)")),
+            faithful(Written("Path[.A = Integer] r.x r.y")),
         ),
         (
             source,
-            approximate(Written("Path[.A = Integer](r.0, (r.1).0)")),
+            approximate(Written("Path[.A = Integer] r.0 (r.1).0")),
         ),
     ] {
         assert_eq!(
@@ -4063,11 +4063,11 @@ fn a_quoted_telescope_type_is_quoted_1514()
     for (root, spelling) in [
         (
             telescope,
-            "type(*{a : Integer, b : Path[.A = Integer](a, a)})",
+            "type(*{a : Integer, b : Path[.A = Integer] a a})",
         ),
         (
             argument,
-            "Flow.stay type(*{a : Integer, b : Path[.A = Integer](a, a)})",
+            "Flow.stay type(*{a : Integer, b : Path[.A = Integer] a a})",
         ),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
@@ -4110,10 +4110,10 @@ fn a_path_type_over_a_family_application_is_quoted_3279()
     let over_base = core.value_quote(over_base);
     let source = CoreSource::new(&core, &names);
     for (root, spelling) in [
-        (over_application, "type(Path[.A = Maybe Nat](a, c))"),
-        (argument, "Flow.stay type(Path[.A = Maybe Nat](a, c))"),
-        (over_nullary, "type(Path[.A = Nat](a, c))"),
-        (over_base, "type(Path[.A = Integer](a, c))"),
+        (over_application, "type(Path[.A = Maybe Nat] a c)"),
+        (argument, "Flow.stay type(Path[.A = Maybe Nat] a c)"),
+        (over_nullary, "type(Path[.A = Nat] a c)"),
+        (over_base, "type(Path[.A = Integer] a c)"),
     ] {
         for form in [Form::Sugared, Form::Explicit] {
             let presented = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -5228,12 +5228,12 @@ fn a_returned_composite_of_paths_is_written_as_a_step_754()
         (
             transported,
             Form::Sugared,
-            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop loop",
+            "Path.walk (fun (a) { type(Path[.A = Circle] a a) }) loop loop",
         ),
         (
             transported,
             Form::Explicit,
-            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop loop",
+            "Path.walk (fun (a) { type(Path[.A = Circle] a a) }) loop loop",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
@@ -5280,7 +5280,7 @@ fn a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218()
         (agreeing, "Path.step (Path.here base) loop"),
         (
             apart,
-            "Path.walk (fun (a) { type(Path[.A = Circle](other, a)) }) loop (Path.here base)",
+            "Path.walk (fun (a) { type(Path[.A = Circle] other a) }) loop (Path.here base)",
         ),
         (squared, "Path.step (Path.here (Path.here base)) loop"),
     ] {
@@ -5335,8 +5335,8 @@ fn a_composite_a_transport_moves_stays_explicit_815()
         );
         assert_eq!(
             rendered.as_ref(),
-            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) (Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop) \
-             (Path.walk (fun (a) { type(Path[.A = Circle](base, a)) }) loop loop)",
+            "Path.walk (fun (a) { type(Path[.A = Circle] a a) }) (Path.walk (fun (a) { type(Path[.A = Circle] base a) }) loop loop) \
+             (Path.walk (fun (a) { type(Path[.A = Circle] base a) }) loop loop)",
             "{form:?}"
         );
         let rendered = presented_in(
@@ -5407,7 +5407,7 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
         (
             unmapped,
             Form::Sugared,
-            "Path.walk (fun (a) { type(Path[.A = Circle](base, spin a)) }) loop (Path.here base)",
+            "Path.walk (fun (a) { type(Path[.A = Circle] base (spin a)) }) loop (Path.here base)",
         ),
     ] {
         let rendered = presented_in(&source, Root::Value(CoreNode::Value(root)), wide(), form);
