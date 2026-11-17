@@ -1,0 +1,55 @@
+//! Vectors are lists indexed by their length.
+//!
+//! A vector's type states its length. A function then states the length that
+//! it returns.
+//!
+//! The kind `Nat -> Type` reads the length type before the universe.
+//! `VNil` stands at zero.
+//! `VCons` stands one past its tail length.
+//! A length call evaluates to its result.
+//! `plus(m, Zero)` therefore stands at length `m`.
+//!
+//! - cites: [Dybjer-1994-inductive_families] — a family whose constructors each
+//!   state the index they stand at
+//! - see: #3579 — a family's argument written as a call converts with its value
+//! - see: #3625 — a constructor's field written as a call meets a type that
+//!   writes the call
+//! - see: #3627 — a constructor at a length written as a call that computes
+//!   the length it states
+//! - see: `../../pathological/data/vectors.gandr`
+//!
+//! [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 "Dybjer, Inductive families"
+
+// The naturals the lengths count in.
+import "./data-base.gandr";
+
+/// Vectors of elements of `a`, indexed by their length.
+pub data Vec(a : Type) : Nat -> Type where
+  /// The empty vector, at length zero.
+  | VNil : Vec a Zero
+  /// An element before a vector `n` long, at one past `n`.
+  | VCons : (n : Nat, head : a, tail : Vec a n) --> Vec a (Succ n)
+
+/// The vector of one integer, one long.
+def single() -> Vec Integer (Succ Zero) =
+  VCons Zero 3 (VNil : Vec Integer Zero)
+
+/// A vector of two integers, two long: each `VCons` one past its tail.
+pub def pair() -> Vec Integer (Succ (Succ Zero)) =
+  VCons
+    (Succ Zero)
+    1
+    (VCons Zero 2 (VNil : Vec Integer Zero) : Vec Integer (Succ Zero))
+
+/// A vector `m` long is `plus(m, Zero)` long. The sum computes `m`.
+def padded(m : Nat, v : Vec Integer m) -> Vec Integer plus(m, Zero) { v }
+
+/// An element before a vector `plus(m, k)` long. Its field writes the length
+/// as the sum that the types write.
+def consPlus(a : Type, m : Nat, k : Nat, x : a, v : Vec a plus(m, k)) -> Vec a (Succ plus(m, k)) =
+  VCons (plus m k) x v
+
+/// An element before a vector `plus(m, k)` long, at `plus(m, Succ(k))`. The
+/// sum computes `Succ(plus(m, k))`, the length that `VCons` states.
+def consPlusSucc(a : Type, m : Nat, k : Nat, x : a, v : Vec a plus(m, k)) -> Vec a plus(m, Succ k) =
+  VCons (plus m k) x v

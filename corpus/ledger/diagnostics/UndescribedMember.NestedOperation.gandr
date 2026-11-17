@@ -1,0 +1,20 @@
+/// `UndescribedMember.NestedOperation`: a member the description does not read:
+/// a rule with an operation nested in producer position, beside
+/// an indexed sort.
+///
+/// The right unit law rewrites an extension whose continuation returns. Its
+/// port binds a value, so the block has no indexed reading, and the law over
+/// the indexed sort stays declined.
+///
+/// - owes: #4128
+@[refuses("UndescribedMember.NestedOperation")]
+theory BelowMonad where
+  sort V : Type+;
+  sort C : Type;
+  sort Below(w : C, v : C) : Type;
+
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  oper refl : (w : C) --> Below w w;
+
+  rule unitR : ext m (bind x. (ret x)) <=> m;
