@@ -1,0 +1,6 @@
+data MagTerms : Type where {
+  | One : MagTerms
+  | Mul : (x : MagTerms, y : MagTerms) --> MagTerms
+  rule : Mul One x <=> x;
+  rule : Mul x One <=> x;
+}

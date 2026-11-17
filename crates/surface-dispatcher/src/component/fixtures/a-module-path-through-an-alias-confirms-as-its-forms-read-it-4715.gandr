@@ -1,0 +1,2 @@
+pub def greeting : Integer;
+pub def greeting = 2;

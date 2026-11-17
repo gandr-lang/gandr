@@ -1,0 +1,3 @@
+{{"jsonrpc":"2.0","id":7,"method":"{method}","params":{{
+                    "textDocument":{{"uri":"{uri}"}},{range}
+                    "options":{{"tabSize":4,"insertSpaces":true}}}}}}

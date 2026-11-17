@@ -1,0 +1,3 @@
+{COLOR}{MAYBE}def small(m : Maybe(Integer)) -> -F Integer {{ match m {{ | Some(0) => return 10 | Some(_) => return 11 | None => return 12 }} }}
+def flag(m : Maybe(Bool)) -> -F Integer {{ match m {{ | Some(true) => return 1 | Some(false) => return 0 | None => return 2 }} }}
+def hue(m : Maybe(Color)) -> -F Integer {{ match m {{ | Some(Red) => return 1 | Some(_) => return 2 | None => return 3 }} }}

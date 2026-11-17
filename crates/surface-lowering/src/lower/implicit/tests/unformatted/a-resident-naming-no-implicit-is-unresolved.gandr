@@ -1,0 +1,2 @@
+{SAME}def stray : () -> Integer ;
+def stray = thunk {{ become same[.b = Integer] 3 }} ;

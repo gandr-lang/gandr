@@ -1,0 +1,52 @@
+def act(A : Type, F : A -> A, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](F x, F y) {
+  Path.ap F p
+}
+
+def thenHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A](x, y),
+  q : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) {
+  Path.here (Path.step p q)
+}
+
+def junction(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path[.A = A](x, y),
+  s : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](F x, F z)](
+  Path.step (act A F x y r) (act A F y z s),
+  Path.step (act A F x y r) (act A F y z s)
+) {
+  thenHere A (F x) (F y) (F z) (act A F x y r) (act A F y z s)
+}
+
+def junctionVariables(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  r : Path[.A = A](x, y),
+  s : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step r s, Path.step r s) {
+  thenHere A x y z r s
+}
+
+def junctionOneCall(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path[.A = A](x, y),
+  s : Path[.A = A](F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](Path.step (act A F x y r) s, Path.step (act A F x y r) s) {
+  thenHere A (F x) (F y) z (act A F x y r) s
+}

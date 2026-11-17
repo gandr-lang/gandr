@@ -1,0 +1,30 @@
+/// This source transports `true` along the negation composite at three
+/// lengths of cctt's `tests/bench/negPath.cctt`.
+///
+/// The composite at `n` holds `n + 1` negation paths, so an even `n` moves
+/// `true` to `false`. A path between types runs as its two maps. So each run
+/// applies negation once for each path of the composite.
+///
+/// The run machine runs each length that this source states. At 10⁶ the run
+/// spends its fuel budget.
+///
+/// - see: #6309
+/// - see: #6325 — the fuel budget at 10⁶
+// The natural numbers.
+import "./circle-base.gandr";
+// The numerals of the benchmark lengths.
+import "./ladder-base.gandr";
+// The negation composite and its transport `negVal`.
+import "./negation-composite.gandr";
+
+/// A hundred and one negations move `true` to `false`.
+@[runs("+{.1 = *{}}")]
+def negated100() -> Bool { negVal n100 }
+
+/// A thousand and one negations move `true` to `false`.
+@[runs("+{.1 = *{}}")]
+def negated1000() -> Bool { negVal n1k }
+
+/// A hundred thousand and one negations move `true` to `false`.
+@[runs("+{.1 = *{}}")]
+def negated100000() -> Bool { negVal n100k }

@@ -1,0 +1,3 @@
+type Config = *{port : Integer, tls : Bool} where
+  face secure = {port, tls};
+def current = 0;

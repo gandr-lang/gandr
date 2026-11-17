@@ -1,0 +1,20 @@
+//! `rust-164250` models a view stored in its handler region.
+//!
+//! The pathological twin stores the view outside that region.
+//!
+//! The checker rejects that write before the program runs.
+//!
+//! - see: #1492
+// Early exit's host interface.
+import std.process;
+
+/// `kept` forces a view inside the handler region that holds its value.
+def kept() -> Integer =
+  var l = 42
+  handle inner : std.process.Exit.Eff {
+    let q2 : (() -> Integer) at inner = access shared l as w { pure pure w };
+    force q2
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => pure 0
+  }

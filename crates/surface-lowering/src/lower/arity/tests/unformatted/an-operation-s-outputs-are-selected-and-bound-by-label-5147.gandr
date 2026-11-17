@@ -1,0 +1,4 @@
+{operation}def first(a : Flag, b : Flag) -> Flag {{ (swap a b).x }}
+def last(a : Flag, b : Flag) -> Flag {{ (swap a b).y }}
+def punned(a : Flag, b : Flag) -> Flag {{ let *{{.y, .x}} = swap a b; y }}
+def renamed(a : Flag, b : Flag) -> Flag {{ let *{{.y = q, .x = p}} = swap a b; p }}
