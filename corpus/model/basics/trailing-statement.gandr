@@ -8,7 +8,7 @@
 //
 // - see: #1205
 
-/// This body runs `pure unit` and returns `Unit`.
+/// This body runs `pure *{}` and returns `Unit`.
 def plain() -> Unit =
   pure *{};
 

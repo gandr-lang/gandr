@@ -175,7 +175,7 @@ fn map(
     arena.value_thunk(lambda)
 }
 
-/// The record `#{to, #{#{g, law}, #{h, law}}}`, each law reflexivity at the
+/// The record `*{to, *{*{g, law}, *{h, law}}}`, each law reflexivity at the
 /// bound point.
 ///
 /// # Specification
@@ -263,7 +263,7 @@ fn ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum()
 
     // `e : List Bool ≃ List Bool`, checked at its type.
     let named = declaration(At(0), Maybe::Present(record_type), written);
-    // `ua(#{…}) : Path[.A = Type](⌜List Bool⌝, ⌜List Bool⌝)`, the literal
+    // `ua(*{…}) : Path[.A = Type](⌜List Bool⌝, ⌜List Bool⌝)`, the literal
     // checked against the record type the identity names.
     let literal = univalence(&mut arena, written);
     let checked = declaration(At(1), Maybe::Present(identity), literal);
@@ -271,7 +271,7 @@ fn ua_is_admitted_on_the_record_s_laws_beyond_the_first_order_stratum()
     let constant = arena.value_constant(ConstantIndex::from(0_usize));
     let along = univalence(&mut arena, constant);
     let synthesised = declaration(At(2), Maybe::Absent(signature::Absent::Unsigned), along);
-    // `(a b : Type) (e : El a ≃ El b) => Path[.A = Type](a, b)`, `ua(e)`: a
+    // `(a b : Type) (e : El a ≃ El b) -> Path[.A = Type](a, b)`, `ua(e)`: a
     // decoded variable code crosses as the variable.
     let decoded_record = {
         let from = decoded(&mut arena, Index(1));
@@ -388,7 +388,7 @@ fn a_record_whose_law_fails_does_not_build_a_path()
     let refused = univalence(&mut arena, failing);
     let holding = record(&mut arena, [same, same, same]);
     let admitted_path = univalence(&mut arena, holding);
-    // `(a b : Type) => Path[.A = Type](a, b)`, `ua` of the identity record: the
+    // `(a b : Type) -> Path[.A = Type](a, b)`, `ua` of the identity record: the
     // codes read as decodes, and the identity map is no map `El a → El b`.
     let between = {
         let left = variable(&mut arena, Index(1));

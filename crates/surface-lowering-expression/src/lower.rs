@@ -6942,9 +6942,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Adequacy
     /// - hypothesis: L3 — a lambda signed `+U (Empty -> -F Integer)` matches no
     ///   arm on its binder, as a parameter of the same type does, written in a
-    ///   thunk or bare, and a lambda signed `Empty => Integer`, `(Empty,
-    ///   Integer) => Integer` or the telescope `(a : One) => Path[.A = One](a,
-    ///   a)` lowers as under the thunked arrows the alias stands for.
+    ///   thunk or bare, and a lambda signed `Empty -> Integer`, `(Empty,
+    ///   Integer) -> Integer` or the telescope `(a : One) -> Path[.A = One](a,
+    ///   a)` lowers as under the thunked arrows the sugar stands for.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
@@ -8159,7 +8159,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 }
                 return Ok(inner);
             }
-            // Labels name the outputs of a call. A `#{ … }` pattern matches a
+            // Labels name the outputs of a call. A `*{ … }` pattern matches a
             // record value.
             if labelled != 0 {
                 return Err(pattern.out(FragmentBoundary::WrongSort));
@@ -9817,7 +9817,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        // `r.#{ .a, .b }` selects the record of `r`'s fields `a` and `b`.
+        // `r.*{ .a, .b }` selects the record of `r`'s fields `a` and `b`.
         if let [_, Piece::Tile { label, .. }, ..] = *pieces.pieces.as_slice()
             && label == TileName::SUB_RECORD_OPEN
         {
@@ -13197,7 +13197,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   written order, and the former is planned over them; the inner links of
     ///   the chain are not read.
     /// - provides: the eager product, the sum and the lazy product of the
-    ///   fragment, each the same core type as the braced `#{A, B}`, `+{A, B}`
+    ///   fragment, each the same core type as the braced `*{A, B}`, `+{A, B}`
     ///   and `&{C, D}`.
     /// - fails: yields the wrong-sort refusal where no type of the former's
     ///   sort is read, and the refusal of any link of the chain out of shape.

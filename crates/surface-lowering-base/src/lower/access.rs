@@ -159,7 +159,7 @@ quenchant_shape::reason_enum! {
         /// The access holds no `unwind` clause.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// No unwind was written; the access unwinds by `pure unit`.
+            /// No unwind was written; the access unwinds by `pure *{}`.
             Unwritten,
         }
     }

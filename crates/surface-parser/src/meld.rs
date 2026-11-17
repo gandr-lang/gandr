@@ -3786,10 +3786,10 @@ impl<'pbg> MeldState<'pbg>
             // A left-absorbing form-start (a call `(`, an instantiation `[`)
             // continues the head operand and is gated on it; the operand-
             // continuation tiebreak, not the sort, settles it. A fresh form-start
-            // (a list `[`, a `#{` record, a parenthesised `(`) fills the open slot
+            // (a list `[`, a `*{` record, a parenthesised `(`) fills the open slot
             // directly, so the hole-sort check discards a wrong-sort one — a
-            // Pattern `[` at an expression slot, an Expression `#{` at a type slot
-            // — before any dry-run, collapsing the `[` / `(` / `#{` sort families
+            // Pattern `[` at an expression slot, an Expression `*{` at a type slot
+            // — before any dry-run, collapsing the `[` / `(` / `*{` sort families
             // to their context-correct reading (Item form-starts stay exempt, so a
             // top-level `def` survives the Expression-defaulted slot).
             Kind::FormStart { absorb_left } => {

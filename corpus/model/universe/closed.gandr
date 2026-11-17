@@ -68,14 +68,14 @@ def kept() -> -F Nat { idAt NatC one }
 
 /// The `succ` value is the successor at the decode of the arrow
 /// from naturals to
-/// naturals. That decode runs to `Nat => Nat`.
+/// naturals. That decode runs to `Nat -> Nat`.
 @[checks]
 def succ : el(Arrow NatC NatC);
 def succ = thunk { fun (n) { Succ n } };
 
 /// The `applyAt` function applies `f` to `v` at each pair of codes. The decode
 /// of `Arrow(a, b)` reads through the arrow arm of the decoder to
-/// `el(a) => el(b)`.
+/// `el(a) -> el(b)`.
 @[checks]
 def applyAt(a : U, b : U, f : el(Arrow a b), v : el(a)) -> -F el(b) { f v }
 

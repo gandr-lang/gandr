@@ -556,7 +556,7 @@ impl<'source> Collector<'_, 'source>
             .collect();
         let mut after = Vec::new();
         // Each node still to read, with the innermost binder of the type's
-        // own around it: a type binds the keys of its groups, `(x : A) => B`,
+        // own around it: a type binds the keys of its groups, `(x : A) -> B`,
         // and a name such a key binds mentions no parameter (#1350).
         let mut pending: Vec<(NodeIndex, Option<usize>)> = Vec::new();
         let mut binders: Vec<(SurfaceName<'source>, Option<usize>)> = Vec::new();

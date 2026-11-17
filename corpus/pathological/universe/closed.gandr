@@ -23,7 +23,7 @@ def rec el(u : U) -> Type =
     | NatC => return Nat
     | Arrow(a, b) => { let x = el[<] a; let y = el[<] b; return (x -> y) }
 
-/// One is a natural, and the decode of the arrow code runs to `Nat => Nat`.
+/// One is a natural, and the decode of the arrow code runs to `Nat -> Nat`.
 @[refuses("TypeMismatch")]
 def one : el(Arrow NatC NatC) = Succ Zero;
 

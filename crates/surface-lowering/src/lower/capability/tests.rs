@@ -2123,7 +2123,7 @@ fn a_scope_names_a_model_of_its_theory_2272()
         get_holds,
         "`get` hands the component the resumption as a function of the state"
     );
-    // `put`: `r ← resume(k, pure unit); component(s, r)`.
+    // `put`: `r ← resume(k, pure *{}); component(s, r)`.
     let put_holds = match arena.computation(put) {
         Some(&Computation::Bind(bound, body)) => {
             resumed(bound, 0, Some(&Value::unit()))

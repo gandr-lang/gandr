@@ -1515,7 +1515,7 @@ pub enum Unwriting
 impl NormalForm
 {
     /// The normal form spelled as `gandr run` spells the value: the
-    /// inspection notation, a results tuple as `#{…}`.
+    /// inspection notation, a results tuple as `*{…}`.
     ///
     /// # Specification
     /// trivial.
@@ -2063,7 +2063,7 @@ impl<'desc> Symbol<'desc>
 }
 
 /// `term` in the inspection notation, a results tuple at its root as
-/// `(a, b, …)` from two components and `#{a}` at one: the spelling `gandr run`
+/// `(a, b, …)` from two components and `*{a}` at one: the spelling `gandr run`
 /// gives the value in its sugared form.
 ///
 /// # Specification

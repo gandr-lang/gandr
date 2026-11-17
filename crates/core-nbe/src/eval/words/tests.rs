@@ -738,7 +738,7 @@ fn cong_into_the_universe_at_the_2_cell_is_the_arm_6530()
     let unit = core.value_type_unit();
     let boolean = core.value_type_sum(&[unit, unit]);
     let code = core.value_quote(boolean);
-    // `h = λy. return #{y, y}`: an arm the machine runs, not a word.
+    // `h = λy. return *{y, y}`: an arm the machine runs, not a word.
     let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let doubled = core.value_tuple(&[bound, bound]);
     let returned = core.computation_return(doubled);

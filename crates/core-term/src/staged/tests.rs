@@ -10,7 +10,7 @@ use crate::CoreArena;
 use crate::ValueTypeId;
 use crate::equal_type_syntax;
 
-/// `(Nat[0] => -F List(Nat[<0]))` as a thunk, and the plain type it reads
+/// `(Nat[0] -> -F List(Nat[<0]))` as a thunk, and the plain type it reads
 /// as, the naturals at position zero.
 ///
 /// # Specification

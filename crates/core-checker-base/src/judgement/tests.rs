@@ -4077,7 +4077,7 @@ fn an_identity_not_over_the_path_is_refused_6574()
 /// The constants a dependent pair test reads, admitted at positions
 /// `0..6`: `a b : Integer`, `r : Path[.A = Integer](a, a)`, `s : Σ (n :
 /// Integer). Path[.A = Integer](n, n)`, `r₂ : Path[.A = Integer](a, a)` and `q
-/// : Path[.A = Σ…](#{a, r}, #{a, r})`; that Σ, and the pair `#{a, r}`.
+/// : Path[.A = Σ…](*{a, r}, *{a, r})`; that Σ, and the pair `*{a, r}`.
 struct SigmaScene
 {
     /// The constants `[a, b, r, s, r₂, q]`.
@@ -4086,7 +4086,7 @@ struct SigmaScene
     types: [ValueTypeId; 6],
     /// `Σ (n : Integer). Path[.A = Integer](n, n)`.
     sigma: ValueTypeId,
-    /// The pair `#{a, r}`.
+    /// The pair `*{a, r}`.
     pair: ValueId,
 }
 
@@ -4335,7 +4335,7 @@ fn a_pair_of_paths_checks_at_the_identity_of_a_dependent_pair()
     let here_first = arena.value_here(first);
     let here_second = arena.value_here(second);
     let projections = arena.value_tuple(&[here_first, here_second]);
-    // `ring : Σ… = #{0, here(0)}`, and its identity with itself from the
+    // `ring : Σ… = *{0, here(0)}`, and its identity with itself from the
     // reflexivities of another `0`.
     let ring = arena.value_constant(ConstantIndex::from(6_usize));
     let zero = arena.value_literal(integer_literal());

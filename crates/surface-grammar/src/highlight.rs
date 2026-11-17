@@ -38,7 +38,7 @@
 //! - An `identifier` takes the role of its place: a definition after `def`,
 //!   `rec`, `op`, `oper`, `obs`, `rule` or `data`; a binding after `as`, `for`,
 //!   `module`, `node` or `feed`; a parameter inside a parenthesised list or an
-//!   implicit `@[…]` binder; a member after `.`, inside a record `#{…}` or a
+//!   implicit `@[…]` binder; a member after `.`, inside a record `*{…}` or a
 //!   block of fields; a label for a world; a call for the operation a circuit
 //!   node applies; a number for a grade in `+U[…]` and `thunk[…]`; an attribute
 //!   or decoration name is `Other`.
@@ -66,7 +66,7 @@
 //! the head of an application `f(x)` is an expression atom, so a `Variable`; a
 //! shell command's head and its arguments are one `shell_word` class, so all
 //! `Path`; and an entry's key is the atom its hole holds — a shorthand key in
-//! `#{ x = 1, … }` a `Variable`, a type entry's key in `#{ x : A, … }` or `+{
+//! `*{ x = 1, … }` a `Variable`, a type entry's key in `*{ x : A, … }` or `+{
 //! ok : A, … }` a `TypeVariable` — where a leading-dot label is a `Member`.
 //!
 //! - Alternatives: a table keyed by a token's lexeme class, which cannot tell a
@@ -852,7 +852,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// - requires: `facts` is an `identifier` mold's.
 /// - ensures: the reference atom's identifier is a variable, and so is each
 ///   name of a cons pattern's letter, `g` and `back(g)`. A member: in a
-///   projection, after `.`, inside a record bracket `#{`, and inside a block
+///   projection, after `.`, inside a record bracket `*{`, and inside a block
 ///   `{` of fields or observations. A label: a world, where a handle's type
 ///   names it and where a declaration declares it. A `select` and a site's
 ///   offer write their label as an operand, as a row does. A named

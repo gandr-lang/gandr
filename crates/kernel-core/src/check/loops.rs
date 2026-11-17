@@ -769,9 +769,9 @@ fn nullary_constructors(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `rotInv1`'s fibre `Path(Circle, …)` is a set of words,
-///   while a fibre of paths between the circle's paths is not, and its square
-///   is owed.
+/// - hypothesis: L3 — `rotInv1`'s fibre `Path[.A = Circle](…)` is a set of
+///   words, while a fibre of paths between the circle's paths is not, and its
+///   square is owed.
 /// - witness: `tests::native_formers::a_nested_loop_obligation_owes_its_square_off_a_set_464`
 #[spec(ensures: |ret| ret.is_none_or(|sort| nullary_constructors(arena, presentations, sort).is_some()))]
 fn presented_set(

@@ -1,5 +1,5 @@
 //! Generative functors, as the collection pass reads them: the declaration
-//! `module MkSet(Elt : #{ … }) :> #{ … } where { … }`, collected once as a
+//! `module MkSet(Elt : *{ … }) :> *{ … } where { … }`, collected once as a
 //! template, and each application `module IntSet = MkSet(IntOrd) ;`, collected
 //! as an instance of it. The minting half lives with the lowering
 //! (`crate::lower::functor`).
@@ -175,7 +175,7 @@ quenchant_shape::reason_enum! {
         /// The form is a module's, not a functor's.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// No `(X : #{ … })` follows the name.
+            /// No `(X : *{ … })` follows the name.
             Unparameterized,
         }
     }

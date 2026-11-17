@@ -55,7 +55,7 @@
 //! | `s.f(a)` | `i <- access shared s as v { f(v, a) } ; access shared s.#[i] as w { pure w }` |
 //!
 //! where `m` is exclusive when `b` ends `w` by `resume` or `abort` and shared
-//! otherwise; an exclusive lend unwinds by `pure unit`. A receiver that is
+//! otherwise; an exclusive lend unwinds by `pure *{}`. A receiver that is
 //! no held slot has no place to lend, [`FragmentBoundary::Held`], and a block
 //! after a call of any other method is [`LoweringRefusal::ViewOfNoPlace`].
 //!

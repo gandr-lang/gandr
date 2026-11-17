@@ -1794,7 +1794,7 @@ pub trait Families<'run, 'source>
     /// The type over labels `former` the type at `node` states, read through
     /// parentheses and, when `thunked`, one `+U`: its own node and its entries.
     /// A sum chain `A + B + …` states the labelled sum `+{A, B, …}`, a
-    /// product chain `A * B * …` the telescope `#{A, B, …}`, and a lazy
+    /// product chain `A * B * …` the telescope `*{A, B, …}`, and a lazy
     /// product chain `C & D & …` the lazy record `&{C, D, …}`.
     ///
     /// # Specification

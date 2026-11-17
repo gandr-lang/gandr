@@ -1727,8 +1727,8 @@ pub fn spine_domains<'source>(
 }
 
 /// The kind `kind` with the parentheses written around it as a whole
-/// dropped: `(A -> U)` is the arrow `A -> U` and `((a : A) => U)` the family
-/// kind `(a : A) => U`.
+/// dropped: `(A -> U)` is the arrow `A -> U` and `((a : A) -> U)` the family
+/// kind `(a : A) -> U`.
 ///
 /// # Specification
 /// - requires: nothing.

@@ -1552,7 +1552,7 @@ enum Represented
     Unit,
 }
 
-/// `module Counter :> #{ type T, seed : T } where { type T = R ; def seed = r ;
+/// `module Counter :> *{ type T, seed : T } where { type T = R ; def seed = r ;
 /// }` as the lowering admits it — the atom, the body member, the witness
 /// exporting it at the atom — then a client at the atom, a leak at the
 /// representation and a bystander, the atom standing for `represented`.
@@ -1796,7 +1796,7 @@ fn corruption_selects_every_matching_name()
 /// The code picker `pick : U ((a : Type) -> El a -> F Type)`, its call
 /// `chosen : U (F Type) = thunk ((force pick) ?a) 0`, which omits the code its
 /// argument fixes, and under the item key `last` the path
-/// `Path(U (F Type), chosen, thunk (return Integer))` by `here`.
+/// `Path[.A = U (F Type)](chosen, thunk (return Integer))` by `here`.
 ///
 /// # Specification
 /// - ensures: three signed declarations; the path converts only once the call's

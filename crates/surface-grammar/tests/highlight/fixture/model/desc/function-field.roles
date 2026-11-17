@@ -1,6 +1,6 @@
 0..42 Comment "//! A constructor can hold a continuation."
 43..46 Comment "//!"
-47..116 Comment "//! An `A => T` field is the function former of the description code."
+47..116 Comment "//! An `A -> T` field is the function former of the description code."
 117..120 Comment "//!"
 121..199 Comment "//! The code decodes the field to the thunked arrow of the native reading. The"
 200..277 Comment "//! type keeps its rule. State programs form the free model of state. Put-put"

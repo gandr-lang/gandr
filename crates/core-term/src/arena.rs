@@ -3855,7 +3855,7 @@ impl CoreArena
         self.alloc_value(Value::Run(computation))
     }
 
-    /// Mint the record update `#{ base | … }` laying `overlay`'s fields over
+    /// Mint the record update `*{ base | … }` laying `overlay`'s fields over
     /// `base`'s.
     ///
     /// # Specification

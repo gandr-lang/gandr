@@ -1549,7 +1549,7 @@ fn transport_along_univalence_applies_the_forward_map()
 #[test]
 fn transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530()
 {
-    // `h = λy. return #{y, falsity}`: its answer names the point it ran at.
+    // `h = λy. return *{y, falsity}`: its answer names the point it ran at.
     let mut core = CoreArena::new();
     let [truth, falsity] = booleans(&mut core);
     let bound = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
@@ -1679,7 +1679,7 @@ fn boolean_map(
     core.value_thunk(lambda)
 }
 
-/// `ua(#{f, #{#{g, ()}, #{h, ()}}})` over three maps on the booleans: the
+/// `ua(*{f, *{*{g, ()}, *{h, ()}}})` over three maps on the booleans: the
 /// forward map, the left inverse and the right inverse. The laws are the
 /// unit, which the evaluator never runs.
 ///

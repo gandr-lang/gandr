@@ -1761,7 +1761,7 @@ where
             (None, None) => Vec::from([bare(annotated), value_type(ty)]),
         },
         // An offer's arm and a fork's child end in a computation the surface
-        // reads only as one, `retire => pure unit`: no exit is elided there.
+        // reads only as one, `retire => pure *{}`: no exit is elided there.
         Former::Offer { arms, .. } => components(
             arms,
             Admits::Computation(Tail::Continues),
@@ -1918,8 +1918,8 @@ enum Elaboration
 ///   a type; `surface` itself otherwise. A quote, any other nested or returned
 ///   computation and an ascription, elided or written as the match that answers
 ///   it, write nothing of their own around a slot, so their slot is read as
-///   they are; the endpoints of a path or a bridge type, `Path(A, x, y)`, are
-///   expressions in either sort unless its carrier is a universe, since the
+///   they are; the endpoints of a path or a bridge type, `Path[.A = A](x, y)`,
+///   are expressions in either sort unless its carrier is a universe, since the
 ///   grammar reads a universe's endpoints, codes, as types and any other
 ///   carrier's as expressions; any other type former's value slot is read as
 ///   the type is, since every type application reads its arguments in the
@@ -1989,8 +1989,8 @@ where
         return Surface::Expression;
     }
     // A path type's endpoints are expressions wherever the type stands, but
-    // over a universe: the grammar reads `Path(A, x, y)`'s endpoints so, its
-    // carrier a type, and `Path(Type, A, B)`'s as types.
+    // over a universe: the grammar reads `Path[.A = A](x, y)`'s endpoints so,
+    // its carrier a type, and `Path[.A = Type](A, B)`'s as types.
     if endpoints_read_as_expressions(source, former) == Endpoints::Expressions
         && !matches!(admits, Admits::ValueType)
     {

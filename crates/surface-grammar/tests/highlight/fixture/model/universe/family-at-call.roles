@@ -327,7 +327,7 @@
 1709..1710 Other "}"
 1710..1710 Other ""
 1712..1785 Comment "/// The `familyRecord` value holds a family and an operation into it. The"
-1786..1856 Comment "/// constant family gives the operation field the type `Unit => Unit`."
+1786..1856 Comment "/// constant family gives the operation field the type `Unit -> Unit`."
 1857..1859 Other "@["
 1859..1865 Other "checks"
 1865..1866 Other "]"

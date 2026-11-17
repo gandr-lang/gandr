@@ -1705,7 +1705,7 @@ fn reflexive_law(arena: &mut TermArena) -> ValueId
     arena.value_thunk(lambda)
 }
 
-/// The bi-invertible record `#{to, #{#{g, law}, #{h, law}}}` over the maps
+/// The bi-invertible record `*{to, *{*{g, law}, *{h, law}}}` over the maps
 /// `to`, `g` and `h`, each law reflexivity at the bound point.
 ///
 /// # Specification

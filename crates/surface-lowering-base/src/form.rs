@@ -341,9 +341,8 @@ impl FormName
     pub const TYPE_ABSTRACTION: Self = Self("type_abstraction");
     /// A number written with its type.
     pub const TYPED_NUMBER: Self = Self("typed_number");
-    /// The unit value: the keyword `unit`, and the empty parentheses `()` the
-    /// grammar folds into the parenthesised expression, which the lowering
-    /// refuses as an empty list.
+    /// The empty parentheses `()`, which the grammar folds into the
+    /// parenthesised expression and the lowering refuses as an empty list.
     pub const UNIT: Self = Self("unit");
     /// The statement `module m = e ;`, which opens the model `e` as `m` over
     /// the rest of its block, inlined into its block.
@@ -406,7 +405,7 @@ impl FormName
     pub const LIST_PATTERN: Self = Self("list_pattern");
     /// The rest pattern `..p` inside a list pattern.
     pub const REST_PATTERN: Self = Self("rest_pattern");
-    /// The telescope pattern `#{p, …}` or `#{.l = p, …}`.
+    /// The telescope pattern `*{p, …}` or `*{.l = p, …}`.
     pub const TELESCOPE_PATTERN: Self = Self("telescope_pattern");
     /// The injection pattern `+{ .l = p }`.
     pub const LABELLED_SUM_PATTERN: Self = Self("labelled_sum_pattern");
@@ -962,7 +961,7 @@ pub enum Former
     /// or one more conditional: the match of its condition over the two
     /// booleans.
     If,
-    /// The telescope value `#{…}`: the tuple of its positional entries, or the
+    /// The telescope value `*{…}`: the tuple of its positional entries, or the
     /// record of its labelled ones.
     Telescope,
     /// The list literal `#[v, …]`: the native list of its elements in order,
@@ -1016,7 +1015,7 @@ pub enum Former
     SumType,
     /// The lazy product type `C & D & …`, the lazy record of its operands.
     LazyProductType,
-    /// The telescope type `#{…}`: the product of its positional entries, or
+    /// The telescope type `*{…}`: the product of its positional entries, or
     /// the record of its labelled ones.
     TelescopeType,
     /// The sum over labels `+{…}`, positional or labelled.

@@ -6807,8 +6807,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// Whether `cell` is the identity cell, which `ua` reads as the empty word
     /// of the universe's paths, as core-nbe reads it.
     ///
-    /// The identity cell at dimension one is the identity equivalence `#{id,
-    /// #{#{id, refl}, #{id, refl}}}`, and at dimension two the homotopy `λy.
+    /// The identity cell at dimension one is the identity equivalence `*{id,
+    /// *{*{id, refl}, *{id, refl}}}`, and at dimension two the homotopy `λy.
     /// here(y)`. The cell and each of its parts are read to the value they
     /// return first, so a cell a definition gives reads as its body.
     ///

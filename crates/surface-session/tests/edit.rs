@@ -549,8 +549,8 @@ fn multi_point_edit_localizes_to_the_common_ancestor()
 
 /// A step of the corpus typing of
 /// `pathological/identity/flow-forward-unsupported.gandr`: the typist's `"`
-/// (closed by the editor) turns the returned one-component tuple `#{age, }`
-/// into the two-component `#{age, ""}`. The tuples share their former; a walk
+/// (closed by the editor) turns the returned one-component tuple `*{age, }`
+/// into the two-component `*{age, ""}`. The tuples share their former; a walk
 /// that descended into them would pair the one component they share and drop
 /// the new one, leaving an empty script for unequal revisions — a breach of
 /// `diff`'s identity clause, `ret.0.is_empty() == (old.items == new.items)` —
@@ -575,7 +575,7 @@ fn growing_a_tuple_replaces_it_325()
         .map(ItemOrdinal::from)
         .expect("the revision declares `anonymise`");
     let script = diff_sound(&base, &edited);
-    // The body is `thunk λ. split old (return #{…})`: the tuple is the
+    // The body is `thunk λ. split old (return *{…})`: the tuple is the
     // returned value of the split's continuation.
     let tuple = CorePath::new(anonymise, slots![0, 0, 1, 0]);
     assert!(

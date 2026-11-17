@@ -1,7 +1,8 @@
 /// `higher-order-fields`: Function fields in described families.
-/// Implemented: a constructor field `A => T` is the description code's function
-/// former, decoded to the thunked arrow, so a presented type holds a
-/// continuation and a fold reaches its rest by applying it.
+/// Implemented: a constructor field `A -> T` is the function former of the
+/// description code. The code decodes the field to the thunked arrow. So a
+/// presented type holds a continuation. A fold applies it and reaches its rest.
+///
 /// Not implemented: an observation taking an argument, `step : (a : Integer) ->
 /// -F Integer`, has no code and is refused. A rule applying a continuation,
 /// put-get's `Put(s, Get(k)) <=> Put(s, k(s))`, is refused.

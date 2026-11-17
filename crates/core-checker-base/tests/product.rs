@@ -123,7 +123,7 @@ fn a_product_of_written_paths_elaborates_to_the_native_product()
     // def flipped : Path[.A = Type](Bool, Bool) = equiv(not, not) ;
     let equiv = arena.value_equiv(negation, negation);
     let flipping = identity(&mut arena, (functions.ty, functions.ty));
-    // def paired : Path[.A = Type](#{Unit, Bool}, #{Unit, Bool}) =
+    // def paired : Path[.A = Type](*{Unit, Bool}, *{Unit, Bool}) =
     //   pathProduct(here(Unit), equiv(not, not)) ;
     let unit_code = arena.value_quote(unit);
     let here = arena.value_here(unit_code);
@@ -232,14 +232,14 @@ fn a_product_with_a_native_and_a_written_component_reads_as_an_element()
     let unit = arena.value_type_unit();
     let negation = arena.value_constant(ConstantIndex::from(0_usize));
     let unit_code = arena.value_quote(unit);
-    // def mixed : Path[.A = Type](#{Unit, Bool}, #{Unit, Bool}) =
+    // def mixed : Path[.A = Type](*{Unit, Bool}, *{Unit, Bool}) =
     //   pathProduct(refl(⌜Unit⌝), equiv(not, not)) ;
     let reflexivity = arena.value_path_refl(unit_code);
     let written = arena.value_equiv(negation, negation);
     let mixed = arena.value_path_product(reflexivity, written);
     let pair = arena.value_type_product(&[unit, functions.ty]);
     let pairing = identity(&mut arena, (pair, pair));
-    // def nested : Path[.A = Type](#{#{Unit, Bool}, Unit}, …) =
+    // def nested : Path[.A = Type](*{*{Unit, Bool}, Unit}, …) =
     //   pathProduct(pathProduct(here(Unit), equiv(not, not)), here(Unit)) ;
     let here = arena.value_here(unit_code);
     let inner_equiv = arena.value_equiv(negation, negation);
@@ -311,7 +311,7 @@ fn what_the_product_cannot_read_it_refuses_by_name()
     let pair = arena.value_type_product(&[integer, unit]);
     let integral_type = identity(&mut arena, (pair, pair));
     // λ p. return pathProduct(p, p) at U (Path[.A = Type](Bool, Bool) →
-    // F Path[.A = Type](#{Bool, Bool}, #{Bool, Bool})): a path a parameter
+    // F Path[.A = Type](*{Bool, Bool}, *{Bool, Bool})): a path a parameter
     // binds names no certificate.
     let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let open = arena.value_path_product(parameter, parameter);
@@ -368,7 +368,7 @@ fn a_flow_product_synthesises_the_flow_between_its_pairs()
     let functions = booleans(&mut arena);
     let unit = arena.value_type_unit();
     let negation = arena.value_constant(ConstantIndex::from(0_usize));
-    // def paired : Flow[.A = Type](#{Unit, Bool}, #{Unit, Bool}) =
+    // def paired : Flow[.A = Type](*{Unit, Bool}, *{Unit, Bool}) =
     //   flowProduct(stay(Unit), forward(not)) ;
     let unit_code = arena.value_quote(unit);
     let stay = arena.value_stay(unit_code);
@@ -376,13 +376,13 @@ fn a_flow_product_synthesises_the_flow_between_its_pairs()
     let paired = arena.value_flow_product(stay, forward);
     let pair = arena.value_type_product(&[unit, functions.ty]);
     let pairing = directed(&mut arena, (pair, pair));
-    // def nested : Flow[.A = Type](#{Unit, #{Unit, Bool}}, …) =
+    // def nested : Flow[.A = Type](*{Unit, *{Unit, Bool}}, …) =
     //   flowProduct(stay(Unit), paired) ;
     let nested = arena.value_flow_product(stay, paired);
     let deep = arena.value_type_product(&[unit, pair]);
     let deepening = directed(&mut arena, (deep, deep));
     // λ p. return flowProduct(p, stay(Unit)) at U (Flow[.A = Type](Bool, Bool)
-    // → F Flow[.A = Type](#{Bool, Unit}, #{Bool, Unit})): a flow a
+    // → F Flow[.A = Type](*{Bool, Unit}, *{Bool, Unit})): a flow a
     // parameter binds is a flow, unlike a path, which must name a
     // certificate.
     let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));

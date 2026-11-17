@@ -194,7 +194,7 @@
 //! resolving paths against the collected modules directly, which would leave
 //! the namespace engine registering names that nothing consults.
 //!
-//! An inline signature `module M : #{ x : A, type T = τ } where { … }` is
+//! An inline signature `module M : *{ x : A, type T = τ } where { … }` is
 //! matched coercively. A value component's type becomes its member's signature
 //! when the member has none, or only the type a function tail derives; a member
 //! already signed is checked by a witness — a declaration at the component's
@@ -202,9 +202,9 @@
 //! disagreement as a type mismatch at the witness. The exports are reordered to
 //! signature order and narrowed to the components: a member the signature omits
 //! is admitted and checked, but absent from the namespace and from the module's
-//! stratum item. A nested module component takes a record type `#{ … }` and is
+//! stratum item. A nested module component takes a record type `*{ … }` and is
 //! matched against the nested module's own exports the same way, as is a member
-//! signature `def inner : #{ … } ;` written beside `module inner`. A manifest
+//! signature `def inner : *{ … } ;` written beside `module inner`. A manifest
 //! type component `type T = τ` lowers `τ` once, and a later component naming
 //! `T` stands for that type; an earlier one cannot name it. The alternatives
 //! were checking the whole module against one record type, declined with the
@@ -948,7 +948,7 @@ pub struct TypeComponent<'source>
 
 /// The faces a record type member names over its labels.
 ///
-/// In `type T = #{ … } where { face f = { a, b }; … }`, the labels are the
+/// In `type T = *{ … } where { face f = { a, b }; … }`, the labels are the
 /// boundary, and each face is a set of them. The face poset holds each face
 /// and each meet of two faces, ordered by inclusion.
 ///
@@ -4511,7 +4511,7 @@ enum Exported
 }
 
 /// The first token `at` writes — a tile, or grout over bytes no label molds —
-/// as the name of a stray: `#{` for `#{ s | b = 2 }` and `#{s | b = 2}` alike,
+/// as the name of a stray: `*{` for `*{ s | b = 2 }` and `*{s | b = 2}` alike,
 /// so the spacing inside the child never renames it.
 ///
 /// # Specification
@@ -7545,8 +7545,8 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of the module form `form`.
-    /// - ensures: the opened module when its tiles read `module Name ((X : #{ …
-    ///   }))? ((: | :>) (#{ … } | Model(S)))? { members }`, its name and each
+    /// - ensures: the opened module when its tiles read `module Name ((X : *{ …
+    ///   }))? ((: | :>) (*{ … } | Model(S)))? { members }`, its name and each
     ///   dotted segment in either case, sealed exactly when the ascription is
     ///   `:>`, carrying the model signature `Model(S)` derives and the functor
     ///   parameter when one is written; the application when they read `module
@@ -8008,7 +8008,7 @@ impl<'source> Collector<'_, 'source>
         }))
     }
 
-    /// Read a module signature, `#{ components }`, after its `:` or `:>`.
+    /// Read a module signature, `*{ components }`, after its `:` or `:>`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the ascription's `:` or `:>`.
@@ -10374,12 +10374,12 @@ impl<'source> Collector<'_, 'source>
         Ok(())
     }
 
-    /// Read a record type's fields, `#{ name : T, … }`, each name the bare
+    /// Read a record type's fields, `*{ name : T, … }`, each name the bare
     /// type-variable word its key hole holds.
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of the record type `record`.
-    /// - ensures: every field in order, when the tiles read `#{`, fields whose
+    /// - ensures: every field in order, when the tiles read `*{`, fields whose
     ///   key is a bare lowercase word and whose type follows its `:`, separated
     ///   by `,`, and `}` with nothing after.
     /// - provides: the reading half of [`Self::layer`].
@@ -13320,7 +13320,7 @@ impl<'source> LoweredModule<'source>
     }
 
     /// The faces each record type member of this module's source names over
-    /// its labels, `type T = #{ … } where { face f = { a, b }; … }`, in written
+    /// its labels, `type T = *{ … } where { face f = { a, b }; … }`, in written
     /// order.
     ///
     /// # Specification

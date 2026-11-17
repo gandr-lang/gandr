@@ -2592,7 +2592,7 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     match arena.value(along) {
-        // `#{f, #{#{g, s}, #{h, r}}}`: the left inverse is `g`.
+        // `*{f, *{*{g, s}, *{h, r}}}`: the left inverse is `g`.
         Some(&Value::Univalence(record)) => {
             let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
             let left = gandr_kernel_term::Component::from(0_usize);
@@ -3197,7 +3197,7 @@ pub(crate) enum Former<'labels>
 /// - requires: one component per motive part, and one label per component for a
 ///   record.
 /// - ensures: `x₀ ← step(P₀, p, v₀); …; return (x₀, …)` for the `mover`'s step,
-///   or `return #{l₀ = x₀, …}` for a record, each step's identity or flow and
+///   or `return *{l₀ = x₀, …}` for a record, each step's identity or flow and
 ///   component shifted past the binds outside it, and each part's outer
 ///   variables shifted past them as well.
 /// - fails: `ArenaFault` for a component count past `u32`.

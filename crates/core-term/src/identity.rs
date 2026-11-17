@@ -175,7 +175,7 @@ enum Trip
 ///   two maps, returning the path over `carrier` shifted past the binder too,
 ///   from the outer map of `trip` applied to the inner one applied to the bound
 ///   point, each application the value its computation returns, to the bound
-///   point: the core the written `(x : C) => Path[.A = C](outer(inner(x)), x)`
+///   point: the core the written `(x : C) -> Path[.A = C](outer(inner(x)), x)`
 ///   lowers to.
 /// - fails: never.
 /// - panics: none.
@@ -218,8 +218,8 @@ fn round_trip(
 ///
 /// # Specification
 /// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the core the written `#{into : +U (A -> -F B), from : +U (B -> -F
-///   A), sect : (a : A) => Path[.A = A](from(into(a)), a), retr : (b : B) =>
+/// - ensures: the core the written `*{into : +U (A -> -F B), from : +U (B -> -F
+///   A), sect : (a : A) -> Path[.A = A](from(into(a)), a), retr : (b : B) ->
 ///   Path[.A = B]( into(from(b)), b)}` lowers to: `Σ into. Σ from. sect ×
 ///   retr`, each occurrence of `A` and `B` shifted past the binders it stands
 ///   under.
@@ -255,9 +255,9 @@ pub fn quasi_inverse(
 ///
 /// # Specification
 /// - requires: `from` and `to` are value types of `arena` in one context.
-/// - ensures: the core the written `#{into : +U (A -> -F B), linv : #{from : +U
-///   (B -> -F A), sect : (a : A) => Path[.A = A](from(into(a)), a)}, rinv :
-///   #{from : +U (B -> -F A), retr : (b : B) => Path[.A = B](into(from(b)),
+/// - ensures: the core the written `*{into : +U (A -> -F B), linv : *{from : +U
+///   (B -> -F A), sect : (a : A) -> Path[.A = A](from(into(a)), a)}, rinv :
+///   *{from : +U (B -> -F A), retr : (b : B) -> Path[.A = B](into(from(b)),
 ///   b)}}` lowers to: `Σ into. (Σ from. sect) × (Σ from. retr)`, each
 ///   occurrence of `A` and `B` shifted past the binders it stands under.
 /// - fails: never.
@@ -288,14 +288,14 @@ pub fn bi_invertible(
     arena.value_type_sigma(forward, inverses)
 }
 
-/// The type `(y : A) => Path[.A = A](y, y)` of a homotopy from the identity of
+/// The type `(y : A) -> Path[.A = A](y, y)` of a homotopy from the identity of
 /// `A` to itself: the cell `ua` reads one dimension above the record.
 ///
 /// # Specification
 /// - requires: `carrier` is a value type of `arena` in a context `Γ`.
 /// - ensures: the thunk of the dependent arrow over `carrier`, returning the
 ///   path over `carrier` shifted past the binder from the bound point to
-///   itself: the core the written `(y : A) => Path[.A = A](y, y)` lowers to.
+///   itself: the core the written `(y : A) -> Path[.A = A](y, y)` lowers to.
 /// - fails: never.
 /// - panics: none.
 ///

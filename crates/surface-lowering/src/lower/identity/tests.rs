@@ -1945,7 +1945,7 @@ fn a_descent_reads_its_path_result_past_a_leading_parameter()
 }
 
 /// #791: before the fix, a `cong` whose answer is synthesised read its map's
-/// codomain only off `+U (A -> -F B)`, so a parameter stated as `A => B`, the
+/// codomain only off `+U (A -> -F B)`, so a parameter stated as `A -> B`, the
 /// same type, refused the operation as unannotated.
 #[test]
 fn cong_reads_a_map_stated_as_a_value_function_791()
@@ -1971,7 +1971,7 @@ fn cong_reads_a_map_stated_as_a_value_function_791()
 
 /// #778: before the fix, a synthesised `cong` read a declaration's codomain
 /// only off a function definition's written result, so a map declared by its
-/// signature, `def f : A => B ;` or `def f : +U (A -> -F B) ;`, as the printer
+/// signature, `def f : A -> B ;` or `def f : +U (A -> -F B) ;`, as the printer
 /// writes every function, refused the operation as unannotated.
 #[test]
 fn cong_reads_a_map_its_signature_states_778()

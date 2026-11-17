@@ -23,8 +23,8 @@
 //! A term name resolves against the enclosing lambda binders, then against the
 //! module's declarations strictly earlier than the one being lowered. Nothing
 //! falls through: a name neither scope answers is a refusal, and there is no
-//! atom former reachable from name resolution. The unit value is the keyword
-//! `unit`, a form of its own, so no name answers it.
+//! atom former reachable from name resolution. The unit value is the empty
+//! telescope `*{}`, a form of its own, so no name answers it.
 //!
 //! # Names resolve through tables with no fallthrough
 //!
@@ -55,8 +55,8 @@
 //! Choice: the unit value is `*{}`, and `()` is never the unit. A product of
 //! no components and a domain list of no members are both the empty list, so
 //! reading `()` as the unit would make `() -> C` and `Unit -> C` the same
-//! type. The keyword `unit` retired (#4853): `*{}` already spells the nullary
-//! product, and the keyword gave it a second spelling. Alternatives: `()` as
+//! type. One spelling, `*{}`, stands for the nullary product, so no keyword
+//! gives it a second spelling. Alternatives: `()` as
 //! the unit, which conflates the empty domain list with the one-argument
 //! function over `Unit`; and a primitive term table answering the name
 //! `unit`, which a declaration could shadow. Reversal: none while `*{}`

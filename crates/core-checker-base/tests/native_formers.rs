@@ -1276,8 +1276,8 @@ fn a_path_that_computes_the_point_converts_with_its_words_in_both_checkers_5099(
     let mut arena = CoreArena::new();
     let (mut declarations, circle) = one_loop(&mut arena);
     // `kept = thunk (λx. case x { Base ⇒ return Base })` at constant 3, and
-    // `moved = ⟨cong(kept, loop)⟩` at `Path(S, ⟨kept(Base)⟩, ⟨kept(Base)⟩)`:
-    // `Path.ap(collapse, loop)` as #5099 writes it.
+    // `moved = ⟨cong(kept, loop)⟩` at `Path[.A = S](⟨kept(Base)⟩,
+    // ⟨kept(Base)⟩)`: `Path.ap(collapse, loop)` as #5099 writes it.
     let returner = arena.comp_type_returner(circle.carrier);
     let (kept_type, kept) = case_over(&mut arena, (circle.carrier, returner), circle.point, &[]);
     declarations.push(definition(ConstantIndex::from(3_usize), kept_type, kept));
@@ -3036,7 +3036,7 @@ fn an_arm_is_refined_through_the_injectivity_of_its_constructor_3403()
         OriginToken::from(1_usize),
     );
     // `I : Nat -> Type { Made : (m : Nat) --> I(S(m)) }`: an arm on `Made`
-    // binds `m` and the equation `Path(Nat, S(m), S(n))`.
+    // binds `m` and the equation `Path[.A = Nat](S(m), S(n))`.
     let field = variable(&mut arena, 0);
     let stated = arena.value_constructor(natural, nat, first, vec![field]);
     let family = Declaration::data(

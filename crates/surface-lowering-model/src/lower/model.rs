@@ -7,8 +7,8 @@
 //!
 //! # A derived component is minted as its written spelling lowers
 //!
-//! An operation `f : (x₁ : S₁, …) => S` mints as the telescope Π the written
-//! component `f : (x₁ : S₁, …) => S` lowers to: `+U` over one binder per
+//! An operation `f : (x₁ : S₁, …) -> S` mints as the telescope Π the written
+//! component `f : (x₁ : S₁, …) -> S` lowers to: `+U` over one binder per
 //! telescope entry, dependent exactly where a later entry or the result names
 //! it, into the returner of the result — the product of the results for a
 //! many-out operation. An entry whose port binds variables binds the thunked
@@ -3892,7 +3892,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     ///   unindexed sort; for an indexed one, the function from its indices into
     ///   that universe, `+U` over one binder per index, dependent exactly where
     ///   a later index's sort names it, into the universe's returner — as the
-    ///   written `(a : A, …) => Type` lowers, or `=> Type[-]` for the
+    ///   written `(a : A, …) -> Type` lowers, or `-> Type[-]` for the
     ///   computation types; every node carrying the minting's origin.
     /// - fails: an index whose sort does not mint, as [`Self::sort_type`].
     /// - panics: none.

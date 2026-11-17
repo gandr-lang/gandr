@@ -41,7 +41,7 @@ def numbered() -> -F Integer { renamed (*{n = 3, s = "x"}) }
 def widened() -> -F Integer { renamed (*{.a = *{}, .n = 4, .s = "y"}) }
 
 /// A field selected by its label off a record no field depends on reads the
-/// field the pattern `#{.n = m}` reads.
+/// field the pattern `*{.n = m}` reads.
 @[checks]
 def selected(r : *{n : Integer, s : String}) -> -F Integer =
   r.n

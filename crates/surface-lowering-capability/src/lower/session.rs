@@ -68,9 +68,9 @@
 //!
 //! The child is a process of its own, not a body an exit leaves: `return` and
 //! `become` do not stand in it, and it ends with its last computation, such as
-//! `close c` or `pure unit`, which the checker holds to the pure returner of
+//! `close c` or `pure *{}`, which the checker holds to the pure returner of
 //! the unit. Alternative: the child read as a body whose exits leave it, so
-//! `return unit` ends it early. Reversal: the same, once a child needs to end
+//! `return *{}` ends it early. Reversal: the same, once a child needs to end
 //! from inside a match.
 //!
 //! # Actions are computations; receipt binds

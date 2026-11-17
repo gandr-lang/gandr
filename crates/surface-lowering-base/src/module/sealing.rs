@@ -17,7 +17,7 @@
 //!
 //! - Choice: the representation is written once, as a member, and the component
 //!   names it by name. Alternatives: a witness list on the seal (`:> [Integer]
-//!   #{ type T, … }`), which separates a type's definition from the module that
+//!   *{ type T, … }`), which separates a type's definition from the module that
 //!   uses it; inferring the representation from the members' types, which
 //!   guesses and leaves a component no member mentions undetermined. Reversal:
 //!   a different signature spelling moves the member form, nothing else.
@@ -551,7 +551,7 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Read the type member `member`, `type T = τ ;` or the family `type T(a :
-    /// A, …) = τ ;`, or a record type with its faces block, `type T = #{ … }
+    /// A, …) = τ ;`, or a record type with its faces block, `type T = *{ … }
     /// where { face f = { a, … }; … }`, written in `container` — a module's
     /// body or a source's top level — after the attribute blocks written
     /// before it.

@@ -1,7 +1,7 @@
 0..56 Comment "//! `state-wp` observes state as predicate transformers."
 57..60 Comment "//!"
 61..139 Comment "//! A transformer maps a postcondition and initial state to a precondition. It"
-140..215 Comment "//! has type `((A, S) => Type, S) => Type`. It uncurries the transformer of"
+140..215 Comment "//! has type `((A, S) -> Type, S) -> Type`. It uncurries the transformer of"
 216..281 Comment "//! § 3.4 of the cited work, and it reads propositions as types."
 282..285 Comment "//!"
 286..365 Comment "//! The handler maps `get` and `put` into state predicates. The scope satisfies"

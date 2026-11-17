@@ -7,11 +7,11 @@
 //
 // - see: #1311
 
-/// The theory of `module-members.gandr`'s nested `#{ answer: Integer }`.
+/// The theory of `module-members.gandr`'s nested `*{ answer: Integer }`.
 theory Answering where
   oper answer : Integer;
 
-/// The theory of its outer `#{ inner: #{ answer: Integer }, total: Integer }`.
+/// The theory of its outer `*{ inner: *{ answer: Integer }, total: Integer }`.
 pub theory Faceted where
   oper inner : Model Answering;
   oper total : Integer;

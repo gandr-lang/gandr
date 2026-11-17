@@ -81,7 +81,7 @@ use crate::unbuilt::Unbuilt;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Columns
 {
-    /// The stated type, `(A, …) => C`.
+    /// The stated type, `(A, …) -> C`.
     pub stated: NodeIndex,
     /// Each column's type, `A, …`.
     pub domains: Vec<NodeIndex>,

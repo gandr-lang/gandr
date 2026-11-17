@@ -5,7 +5,7 @@
 ///
 /// `~env` is the whole scope as an environment, and `~env(only x, y)` restricts
 /// it by the modifier language. A macro reads scope, as `~typeof` reads a
-/// type, so the query needs no keyword. An ascription, `~env : Model(#{ … })`,
+/// type, so the query needs no keyword. An ascription, `~env : Model *{ … }`,
 /// is the width coercion.
 ///
 /// - see: #4567 — the first-class environments sketch, its rulings in the issue body

@@ -165,7 +165,7 @@ fn an_imported_code_keeps_its_type()
     );
 }
 
-/// `Path((), ⟨stack, run, handler, chooser⟩, ())`: a type whose endpoint
+/// `Path[.A = ()](⟨stack, run, handler, chooser⟩, ())`: a type whose endpoint
 /// holds a stack of an application and a bind, a recorded send, a handler
 /// with one clause and a case of two branches, every one of them over values
 /// and computations of its own.

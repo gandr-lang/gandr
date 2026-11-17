@@ -410,7 +410,6 @@ corpus/ledger/features/function-extensionality.gandr STE-8.1 670dc78ada63e5cd
 corpus/ledger/features/glf-model-in-source.gandr STE-3.2 c66281339a05b990
 corpus/ledger/features/glf-model-in-source.gandr STE-3.5 c305ca6b46ff41c2
 corpus/ledger/features/glf-model-in-source.gandr STE-6.3 7d83061867113072
-corpus/ledger/features/glf-model-in-source.gandr STE-6.3 9094b4e6aec39b85
 corpus/ledger/features/glf-model-in-source.gandr STE-6.3 c305ca6b46ff41c2
 corpus/ledger/features/glf-model-in-source.gandr STE-8.1 d4d837875ab5473a
 corpus/ledger/features/grade-algebra.gandr STE-3.2 849b3e39c8f6fea1
@@ -427,9 +426,7 @@ corpus/ledger/features/grades.gandr STE-6.3 770fb6d1945ad8ba
 corpus/ledger/features/grades.gandr STE-6.3 fef06a06ea131f49
 corpus/ledger/features/higher-order-fields.gandr STE-3.5 0bc22691a4c54ff0
 corpus/ledger/features/higher-order-fields.gandr STE-3.5 79ccc26b48677b29
-corpus/ledger/features/higher-order-fields.gandr STE-3.5 80f94667c07c9e58
 corpus/ledger/features/higher-order-fields.gandr STE-3.5 ac9ea2646f04383c
-corpus/ledger/features/higher-order-fields.gandr STE-6.3 80f94667c07c9e58
 corpus/ledger/features/host-effects.gandr STE-8.1 e66436c5ab7b6149
 corpus/ledger/features/implicit-arguments.gandr STE-3.6 155afcd3fecf85fe
 corpus/ledger/features/implicit-arguments.gandr STE-3.6 3739972c20984d4d
@@ -677,7 +674,6 @@ corpus/ledger/features/sized-types.gandr STE-6.3 f0ac5d79ff4e49d7
 corpus/ledger/features/sized-types.gandr STE-8.1 7c05fc30e176c5f7
 corpus/ledger/features/sized-types.gandr STE-8.1 f0ac5d79ff4e49d7
 corpus/ledger/features/sized-types.gandr STE-4.3 381af1b5c6d3bf30
-corpus/ledger/features/specification-monads.gandr STE-3.6 213924002b17ce7d
 corpus/ledger/features/specification-monads.gandr STE-3.6 4f4ce34ff066ab65
 corpus/ledger/features/specification-monads.gandr STE-3.2 3fcebb241a9c238e
 corpus/ledger/features/specification-monads.gandr STE-3.2 a415c3089699530f
@@ -685,7 +681,6 @@ corpus/ledger/features/specification-monads.gandr STE-3.2 a58eda459c9a8d53
 corpus/ledger/features/specification-monads.gandr STE-3.2 ea729c2afd60d336
 corpus/ledger/features/specification-monads.gandr STE-3.2 f32bc3c0e5b58f4d
 corpus/ledger/features/specification-monads.gandr STE-6.3 000ea79c1a171204
-corpus/ledger/features/specification-monads.gandr STE-6.3 7a1fd85e90744f0c
 corpus/ledger/features/specification-monads.gandr STE-6.3 ea729c2afd60d336
 corpus/ledger/features/specification-monads.gandr STE-6.3 f32bc3c0e5b58f4d
 corpus/ledger/features/spinal-duplication.gandr STE-3.2 11af92f11416c948
@@ -2413,9 +2408,7 @@ corpus/surface/arity/lazy-record.gandr STE-3.5 6384d545e6672061
 corpus/surface/arity/records.gandr STE-3.6 454e7a2fd19b45ea
 corpus/surface/arity/records.gandr STE-3.6 a6fe5a3005429419
 corpus/surface/arity/records.gandr STE-3.5 32f0cfcfc2cf076c
-corpus/surface/arity/sum.gandr STE-3.6 bf3fcdff5920f015
 corpus/surface/arity/sum.gandr STE-3.2 39ed3c25f6ac78ff
-corpus/surface/arity/sum.gandr STE-6.3 bf3fcdff5920f015
 corpus/surface/comparisons.gandr STE-3.5 5e324d457b3315df
 corpus/surface/comparisons.gandr STE-6.3 5e324d457b3315df
 corpus/surface/comparisons.gandr STE-6.4 7ffeb0f63edb2700
@@ -2484,9 +2477,7 @@ corpus/surface/typed-bind.gandr STE-3.4 f2786d197cd49fb9
 corpus/surface/typed-bind.gandr STE-6.4 7ffeb0f63edb2700
 corpus/surface/typed-bind.gandr STE-6.5 f2786d197cd49fb9
 corpus/surface/unit-pattern.gandr STE-9.3 1e5a0fa8f008c9f8
-corpus/surface/unit-pattern.gandr STE-6.3 db3d18f53b80cf88
 corpus/surface/unit-pattern.gandr STE-6.4 7ffeb0f63edb2700
-corpus/surface/unit-pattern.gandr STE-6.5 db3d18f53b80cf88
 crates/surface-corpus/tests/comments/judge/fixtures/tile-members.gandr STE-9.3 9804a5271eec37cb
 crates/surface-format/tests/unformatted/members.gandr STE-3.5 85901dfc0d83fdff
 crates/surface-lowering-base/src/prelude.gandr STE-3.6 37115528dc68192c

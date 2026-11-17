@@ -829,8 +829,8 @@ pub enum CellIdentity
 /// Whether `cell` is the identity cell, which `ua` reads as the empty word of
 /// the universe's paths: reflexivity.
 ///
-/// The identity cell at dimension one is the identity equivalence `#{id,
-/// #{#{id, refl}, #{id, refl}}}`, and at dimension two the homotopy `λy.
+/// The identity cell at dimension one is the identity equivalence `*{id,
+/// *{*{id, refl}, *{id, refl}}}`, and at dimension two the homotopy `λy.
 /// here(y)`: the reflexivity at the identity equivalence. The cell is read by
 /// its syntax, each map `λy. return y` and each law `λy. return here(y)`.
 ///

@@ -53,7 +53,7 @@ def fieldAt(
   return *{}
 
 /// The `familyRecord` value holds a family and an operation into it. The
-/// constant family gives the operation field the type `Unit => Unit`.
+/// constant family gives the operation field the type `Unit -> Unit`.
 @[checks]
 def familyRecord : *{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))};
 def familyRecord = *{Unit, *{thunk { fun (g) { return Unit } }, thunk { fun (g) { return *{} } }}};

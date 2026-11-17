@@ -116,10 +116,10 @@ fn every_universe_spelling_reads_cleanly() -> Result<(), Failure>
 }
 
 /// A type operator is a static abstraction `fun (A) { T }`, applied as `T(A)`,
-/// and the value function space is `A => B` or `(A, B) => C`; each molds clean
+/// and the value function space is `A -> B` or `(A, B) -> C`; each molds clean
 /// as a declared type, as a definition's value and as an operator's argument,
 /// the n-ary alias with its binders as a call's argument too, and a case arm's
-/// `=>` still molds beside them.
+/// `=>` molds beside them.
 #[test]
 fn every_type_operator_spelling_reads_cleanly() -> Result<(), Failure>
 {
@@ -163,7 +163,7 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Failure>
     Ok(())
 }
 
-/// #2255: where a value is read, a `(` whose group closes before `=>` molds
+/// #2255: where a value is read, a `(` whose group closes before `->` molds
 /// as the value-function alias's domain list, and one whose group closes
 /// before anything else as the parenthesized expression it was: an
 /// ascription, a tuple and the unit keep their reading.

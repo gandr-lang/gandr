@@ -33,7 +33,7 @@
 //!   tile (an `Inl` atom vs an `Inl(x)` constructor pattern, a `List` type
 //!   identifier vs a `List(T)` application). It is settled by a bounded greedy
 //!   lookahead over the next tokens; the grammar factors the wider families
-//!   (`def`, `let`, `fun`, the `(` group, and the `#{` record) so they need
+//!   (`def`, `let`, `fun`, the `(` group, and the `*{` record) so they need
 //!   none.
 //! * **Determinism is HARD.** Candidates are visited in ascending [`MoldId`]
 //!   order under a strict `<`, so an exact tie keeps the smaller `MoldId`
@@ -322,7 +322,7 @@ const LABEL_CAPACITY: usize = MAX_LABELS + RESERVED_FALLBACK_LABELS.len();
 /// ambiguity is a shared-prefix form family whose opener molds tie on the local
 /// key — a `constructor` atom vs a `constructor(…)` pattern, a
 /// `type_identifier` vs a `type_identifier(T)` application (the `def` / `let` /
-/// `fun` / `(` / `#{` families are factored, so they never reach here). Each is
+/// `fun` / `(` / `*{` families are factored, so they never reach here). Each is
 /// LL(k) decidable within a few tiles of the shared prefix, so the molder
 /// dry-runs each tied opener followed by a greedy molding of the next window
 /// tokens and keeps the reading whose window completes with the fewest
@@ -4260,13 +4260,13 @@ impl<'pbg> Molder<'pbg>
     }
 
     /// Read a `(` a fresh expression slot admits as a parenthesized
-    /// expression as a parenthesized type instead when `=>` is the next
+    /// expression as a parenthesized type instead when `->` is the next
     /// significant token past the group's `)`: the group is then the domain
-    /// list of a value-function type, `(y : A, P) => B`, which stands where a
-    /// value is read as `A => B` does. An ascription `(e : T)` never goes on
-    /// with `=>`, and a handler's clause arrow reads only inside its `with`
-    /// braces, so the token past the group decides. An empty group stays the
-    /// unit: a domain list holds at least one type.
+    /// list of a value-function type, `(y : A, P) -> B`, which stands where a
+    /// value is read as `A -> B` does. An ascription `(e : T)` never goes on
+    /// with `->`, and a handler's clause arrow reads only inside its `with`
+    /// braces, so the token past the group decides. An empty group stays a
+    /// parenthesized expression: a domain list holds at least one type.
     ///
     /// # Specification
     /// - requires: `frontier` is `state`'s admissibility frontier; `tokens` is
@@ -4282,7 +4282,7 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — a telescope, a bare domain list, a tuple, an
     ///   ascription, the unit and a group left open on the stream expose the
-    ///   decision. Keeping the expression before `=>` reads the domain list as
+    ///   decision. Keeping the expression before `->` reads the domain list as
     ///   a tuple and refuses it as a type, and taking the type elsewhere reads
     ///   an ascription as a binder.
     /// - witness: `tests::grammar::every_type_operator_spelling_reads_cleanly`
@@ -4528,7 +4528,7 @@ impl<'pbg> Molder<'pbg>
     /// tie: a bare atom versus a form-start over the same lexeme (`Inl` alone
     /// versus `Inl(x)` opening a constructor pattern, `List` versus `List(T)`
     /// opening a type application) — the wider form families (`def`, `let`,
-    /// `fun`, the `(` group, the `#{` record) are factored at the grammar, so
+    /// `fun`, the `(` group, the `*{` record) are factored at the grammar, so
     /// they tie on the local key (zero
     /// streaming delta, equal continuation and sort ranks). The completion
     /// penalty [`choose`](Self::choose) would use resolves such a tie the

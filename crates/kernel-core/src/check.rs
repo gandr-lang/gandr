@@ -11412,8 +11412,8 @@ mod tests
     }
 
     /// Admit `pick = thunk λ_. return answer` at `U (Unit → F Integer)`, then
-    /// `family = thunk λ_. return ⌜Path(Integer, ⟨force pick ()⟩, point)⌝` at
-    /// `U (Unit → F Type)`, then `here(point)` with no dialogue at
+    /// `family = thunk λ_. return ⌜Path[.A = Integer](⟨force pick ()⟩, point)⌝`
+    /// at `U (Unit → F Type)`, then `here(point)` with no dialogue at
     /// `El(⟨force family ()⟩)`.
     ///
     /// # Specification

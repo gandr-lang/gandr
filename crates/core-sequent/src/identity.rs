@@ -1728,7 +1728,7 @@ fn action_body(
 /// - requires: `fields` holds one selector and one closed action per field,
 ///   every selector a component or every one a label.
 /// - ensures: `x₀ ← v.s₀; y₀ ← a₀ t x₀; …; return (y₀, …)` for components and
-///   `return #{s₀ = y₀, …}` for labels, binders from the outermost `t`, `v`,
+///   `return *{s₀ = y₀, …}` for labels, binders from the outermost `t`, `v`,
 ///   then `xᵢ` and `yᵢ` per field.
 /// - fails: [`FocusRefusal::TranslationInvariant`] for an index overflow or a
 ///   label among components.

@@ -6728,7 +6728,7 @@ fn under_lambdas(
     (lambdas, computation)
 }
 
-/// Clauses over `(Nat, Nat) => Nat` bind one lambda per column under the
+/// Clauses over `(Nat, Nat) -> Nat` bind one lambda per column under the
 /// fixpoint, and the tree switches on the column the patterns test: the first
 /// for `plus`, the second for `add`, each read as its lambda's variable. A
 /// recursion through a written parameter, `scale(by)`, and overlapping

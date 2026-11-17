@@ -366,7 +366,7 @@
 3607..3608 Number "0"
 3608..3609 Other ")"
 3609..3610 Other ";"
-3612..3687 Comment "/// `same(unit)` in a declared type: the argument solves `a` as `Unit`, and"
+3612..3687 Comment "/// `same (*{})` in a declared type: the argument solves `a` as `Unit`, and"
 3688..3742 Comment "/// the path\'s integer carrier then disagrees with it."
 3743..3745 Other "@["
 3745..3752 Other "refuses"

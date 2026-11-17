@@ -709,13 +709,12 @@ fn add_type_rules(
             ]),
         ]),
     ));
-    // A parenthesized type holds one type or, as the domain of the n-ary `=>`,
-    // a list of them, each entry a bare type or a binder `x : A` — the
-    // telescope `(x : A, y : B(x)) => C`. One rule, so `(` keeps a single
-    // type-sort mold; the binder's name is a type hole the `:` after it makes
-    // a key, so `(a -> -F b)` still reads its `a` as a type. The lowering
-    // refuses a list anywhere but before `=>`, and a binder anywhere but
-    // before `=>` or, alone, before `->`, where it binds the dependent arrow.
+    // A parenthesized type holds one type or, as the domain of the n-ary box
+    // `(A, B) -> C`, a list of them, each entry a bare type or a binder
+    // `x : A` — the telescope `(x : A, y : B(x)) -> C`. One rule, so `(` keeps
+    // a single type-sort mold; the binder's name is a type hole the `:` after
+    // it makes a key, so `(a -> -F b)` still reads its `a` as a type. The
+    // lowering refuses a list or a binder anywhere but before `->`.
     rules.push(rule(
         RuleName("parenthesized_type"),
         ty,
@@ -726,10 +725,10 @@ fn add_type_rules(
             tile(TileLabel(")")),
         ]),
     ));
-    // The telescope `#{ … }`: the tuple, the record and Σ are one former, so
+    // The telescope `*{ … }`: the tuple, the record and Σ are one former, so
     // one rule spells all three. An entry is a bare type, positional and
-    // labelled by its index, or a labelled `k : T`; `#{}` is the unit and
-    // `#{A}` the 1-ary product. The entry shape is inlined, its key a type
+    // labelled by its index, or a labelled `k : T`; `*{}` is the unit and
+    // `*{A}` the 1-ary product. The entry shape is inlined, its key a type
     // hole the lowering reads as a bare label; the record type it renames and
     // the folded field are recorded as adaptations.
     let mut telescope_type = rule(
