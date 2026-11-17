@@ -1,0 +1,69 @@
+// This source shows model implicits.
+//
+// A model implicit provides each component of its theory.
+// A model of an included theory provides its reduct.
+//
+// The checker selects a model from an explicit argument or from its carrier.
+// A manifest model type fixes one sort without a parameter.
+//
+// - see: #739
+
+/// `Tally` states a carrier, a zero, a step and a reading.
+theory Tally where
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+
+/// `ResetTally` adds a reset operation.
+theory ResetTally where
+  include Tally;
+  oper reset : (c : C) --> C;
+
+/// `Up` counts integers by one.
+module Up : Model(Tally) where
+  type C = Integer;
+  /// `zero` gives zero.
+  def zero = 0;
+  /// `incr` adds one.
+  def incr(c : Integer) -> Integer { c + 1 }
+  /// `read` returns the count.
+  def read(c : Integer) -> Integer { c }
+
+/// `Tens` counts integers by ten and resets them.
+module Tens : Model(ResetTally) where
+  type C = Integer;
+  /// `zero` gives zero.
+  def zero = 0;
+  /// `incr` adds ten.
+  def incr(c : Integer) -> Integer { c + 10 }
+  /// `read` returns the count.
+  def read(c : Integer) -> Integer { c }
+  /// `reset` returns zero.
+  def reset(c : Integer) -> Integer { 0 }
+
+/// `stepped` reads one tally step.
+def stepped[s : Model Tally](c : s.C) -> Integer { s.read (s.incr c) }
+
+/// `further` passes its model to `stepped`.
+def further[t : Model Tally](c : t.C) -> Integer { stepped[.s = t] (t.incr c) }
+
+/// `fromZero` reads one integer tally step from zero.
+def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
+  s.read (s.incr s.zero)
+
+/// `suppliedUp` passes `Up`.
+@[runs("5")]
+def suppliedUp() -> Integer { stepped[.s = Up] 4 }
+
+/// `suppliedTens` passes the `Tens` reduct.
+@[runs("14")]
+def suppliedTens() -> Integer { stepped[.s = Tens] 4 }
+
+/// `passedOn` passes `Tens` through `further`.
+@[runs("24")]
+def passedOn() -> Integer { further[.t = Tens] 4 }
+
+/// `manifest` passes `Up` at its manifest carrier.
+@[runs("1")]
+def manifest() -> Integer { fromZero[.s = Up] () }

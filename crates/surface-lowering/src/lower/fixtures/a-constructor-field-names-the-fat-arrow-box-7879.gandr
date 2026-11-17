@@ -1,0 +1,2 @@
+data D : Type where
+  | Mk : (n : Integer => Integer) --> D

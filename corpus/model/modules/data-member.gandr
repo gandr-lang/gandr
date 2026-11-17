@@ -1,0 +1,39 @@
+// This source shows a data declaration inside a module.
+//
+// `M` contains family `Box` and constructor `B`. A module groups a family with
+// the functions over it. So the family stands beside its functions under the
+// name of the module.
+//
+// The checker resolves bare names inside `M` and paths outside it.
+//
+// - see: #4298
+
+/// `M` holds family `Box`.
+module M where
+  /// `Box` holds one integer.
+  data Box : Type where
+    /// `B` wraps `x`.
+    | B : (x : Integer) --> Box
+
+  /// `one` uses bare constructor `B`.
+  def one : Box = B 1;
+
+/// `two` uses `M.B`.
+def two : M.Box = M.B 2;
+
+/// `three` uses `M.Box.B`.
+def three : M.Box = M.Box.B 3;
+
+/// `open` matches a box through `M.B`.
+def open(b : M.Box) -> Integer =
+  match b { | M.B(x) => x }
+
+/// `five` builds and opens a box.
+@[runs("5")]
+def five() -> Integer =
+  open (M.B 5)
+
+/// `own_box` opens `M.one`.
+@[runs("1")]
+def own_box() -> Integer =
+  open M.one

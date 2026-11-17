@@ -1,0 +1,8 @@
+theory Unheard where {
+  sort Name : Atom;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper out : (c : Name, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  rule unheard : nu (bind a . (out a p)) ==> nil ();
+}

@@ -1,0 +1,1202 @@
+//! The one unified context: two flat, de Bruijn, id-addressed, name-free zones
+//! `Γ; Σ`, with the linear zone's one-shot discipline enforced by the lookup
+//! that reads it.
+//!
+//! # One representation
+//!
+//! There is one spelling of "the context", and it is the flat one: no name
+//! keys a binder, so a lookup is an index into a stack rather than a scan, and
+//! no binder costs a heap string. Names live in the surface syntax and in
+//! diagnostics, above this crate.
+//!
+//! # Two zones, two index spaces
+//!
+//! `Γ` admits weakening and contraction: an occurrence reads a slot and changes
+//! nothing, so an index may be read any number of times. `Σ` is linear: an
+//! occurrence *consumes* its slot, a second occurrence of the same index is
+//! refused, and closing a linear binder's scope with its slot unconsumed is
+//! refused too.
+//!
+//! Each zone has its own binder stack and its own de Bruijn index space, which
+//! is why [`Value::Variable`] carries the zone beside the index.
+//!
+//! The linear zone holds session endpoints: a fork binds the two ends of a
+//! channel into it, an action rebinds its endpoint's slot at the
+//! continuation type ([`Context::advance`]), and `close` is the endpoint's
+//! one occurrence. It is also the type-level form of "a control capture
+//! cannot be naively duplicated": the half a duplication policy asks rather
+//! than re-decides.
+//!
+//! # The error path is single-valued
+//!
+//! A failing operation leaves the context **at the failure point**, unchanged
+//! by the failure itself and un-unwound. The context has one implementation,
+//! iterative, so no second face can unwind it differently, and the failure
+//! state *is* the specification: it is asserted rather than described.
+//!
+//! # Zone-qualified variables
+//!
+//! `Value::Variable` carries a `Zone` beside its index, because each zone
+//! counts binders in its own index space and an index alone names no binder.
+//! `Γ` admits weakening and contraction: an occurrence spends nothing. `Σ` is
+//! linear: an occurrence consumes its slot, a second occurrence is refused with
+//! `ContextError::LinearSlotConsumed`, and closing a scope whose slot is
+//! unspent is refused with `ContextError::LinearSlotUnconsumed`. The session
+//! fork binds into `Σ`; the tests exercise both refusals against a context
+//! opened with `Zone::Linear` directly.
+//!
+//! # Lifecycle letters
+//!
+//! A slot of `Σ` is a name in `gandr-theory-nominal-automata`'s sense, and
+//! its use states are that crate's letters over it. Opening the slot — a
+//! hold, an access's view, a fork's two ends, the continuation of a clause
+//! whose stack captured a resident — is `Open`; an occurrence that rebinds it
+//! ([`Context::advance`]) or moves its value out ([`LinearUse::Moved`]) is a
+//! `Free` use; the one occurrence that consumes it ([`LinearUse::Consumed`])
+//! — a write-back, a resume, an abort, `close`, an abandonment — is `Close`.
+//! An abandoned stack's run closes the names its frames hold, innermost
+//! first, each by its access's unwind. `LinearSlotConsumed` refuses a second
+//! `Close`, and `LinearSlotUnconsumed` a scope that ends with its name open.
+//! The context decides this over a derivation, whose case arms, handler
+//! clauses and branches make a tree; the crate's automata decide it over one
+//! word.
+//!
+//! # Failure state
+//!
+//! A failing context operation leaves the context at the failure point: a
+//! refused occurrence spends nothing, and a refused close leaves the binder in
+//! place. That state is the specification, and the tests assert it after every
+//! refusal. The context has one implementation, iterative, so no second face
+//! can unwind it differently.
+//!
+//! [`Value::Variable`]: crate::Value::Variable
+
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_kernel_term::DeBruijnIndex;
+
+use crate::arena::ValueTypeId;
+use crate::syntax::Zone;
+use crate::world::World;
+
+/// The number of binders one zone of a context holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BinderDepth(usize);
+
+impl From<usize> for BinderDepth
+{
+    /// Wraps a raw count as a zone's binder depth.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(depth: usize) -> Self
+    {
+        Self(depth)
+    }
+}
+
+impl From<BinderDepth> for usize
+{
+    /// Unwraps a binder depth to its raw count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(depth: BinderDepth) -> Self
+    {
+        depth.0
+    }
+}
+
+/// Whether a linear slot still carries its single use.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LinearUse
+{
+    /// The slot has not been consumed; exactly one occurrence may still read
+    /// it.
+    Available,
+    /// The slot's value has been moved out: only the occurrence that writes
+    /// a value back may still end it.
+    Moved,
+    /// The slot has been consumed; a further occurrence is refused.
+    Consumed,
+}
+
+/// One binder of the linear zone: its declared type, its remaining use and
+/// the world it is located at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct LinearSlot
+{
+    /// The type the binder was introduced at.
+    declared: ValueTypeId,
+    /// Whether the slot's single use is still available.
+    use_state: LinearUse,
+    /// The world the resident is meaningful at.
+    world: World,
+}
+
+/// A snapshot of the linear zone, outermost slot first: what a branching
+/// rule restores before each arm and compares after it.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct LinearZone(Vec<LinearSlot>);
+
+impl LinearZone
+{
+    /// How many linear binders the snapshot holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn depth(&self) -> BinderDepth
+    {
+        BinderDepth(self.0.len())
+    }
+
+    /// Every slot's declared type and remaining use, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn slots(
+        &self
+    ) -> impl DoubleEndedIterator<Item = (ValueTypeId, LinearUse)> + ExactSizeIterator + '_
+    {
+        self.0.iter().map(|slot| (slot.declared, slot.use_state))
+    }
+
+    /// This snapshot with each slot `take` accepts carrying `other`'s use
+    /// there: `take` reads the slot's position, the slots outside it counted,
+    /// and `other`'s use at it. Every other slot, and every slot past `other`'s
+    /// depth, keeps its own use; no declared type or world changes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as many slots as `self`, each `self`'s but for its use, which
+    ///   is `other`'s at a position `other` holds and `take` accepts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot taken, a slot passed over and a slot past the
+    ///   other snapshot's depth, each read by its use.
+    /// - witness: `context::tests::a_snapshot_takes_the_uses_it_names_from_another_1488`
+    #[spec(ensures: |ret| ret.0.len() == self.0.len()
+        && ret.0.iter().zip(&self.0).enumerate().all(|(position, (taken, own))| {
+            let theirs = other.0.get(position).map(|slot| slot.use_state);
+            taken.declared == own.declared
+                && taken.world == own.world
+                && taken.use_state == match theirs {
+                    | Some(theirs) if take(BinderDepth(position), theirs) => theirs,
+                    | Some(_) | None => own.use_state,
+                }
+        }))]
+    #[inline]
+    #[must_use]
+    pub fn taking<Take>(
+        &self,
+        other: &Self,
+        take: Take,
+    ) -> Self
+    where
+        Take: Fn(BinderDepth, LinearUse) -> bool,
+    {
+        Self(
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(position, &own)| match other.0.get(position) {
+                    Some(theirs) if take(BinderDepth(position), theirs.use_state) => LinearSlot {
+                        use_state: theirs.use_state,
+                        ..own
+                    },
+                    Some(_) | None => own,
+                })
+                .collect(),
+        )
+    }
+
+    /// This snapshot with each slot `take` accepts replaced by `other`'s slot
+    /// there, its declared type, use and world: `take` reads the slot's
+    /// position, the slots outside it counted. Every other slot, and every
+    /// slot past `other`'s depth, stays as it is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as many slots as `self`, each `other`'s at a position `other`
+    ///   holds and `take` accepts, and `self`'s otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot adopted after it advanced and was consumed, a
+    ///   slot passed over and a slot past the other snapshot's depth, each read
+    ///   by its declared type and its use.
+    /// - witness: `context::tests::a_snapshot_adopts_the_slots_it_names_from_another`
+    #[spec(ensures: |ret| ret.0.len() == self.0.len()
+        && ret.0.iter().zip(&self.0).enumerate().all(|(position, (adopted, own))| {
+            match other.0.get(position) {
+                | Some(theirs) if take(BinderDepth(position)) => adopted == theirs,
+                | Some(_) | None => adopted == own,
+            }
+        }))]
+    #[inline]
+    #[must_use]
+    pub fn adopting<Take>(
+        &self,
+        other: &Self,
+        take: Take,
+    ) -> Self
+    where
+        Take: Fn(BinderDepth) -> bool,
+    {
+        Self(
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(position, &own)| match other.0.get(position) {
+                    Some(&theirs) if take(BinderDepth(position)) => theirs,
+                    Some(_) | None => own,
+                })
+                .collect(),
+        )
+    }
+}
+
+/// Why a context operation was refused.
+///
+/// Every variant names the zone or the slot it is about, because the context is
+/// name-free: a diagnostic above this crate re-attaches the surface name, and a
+/// refusal that named neither the zone nor the index would be unattachable.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ContextError
+{
+    /// The index counts past every binder the zone holds.
+    UnboundIndex
+    {
+        /// The zone the index was read in.
+        zone: Zone,
+        /// The index that failed to resolve.
+        index: DeBruijnIndex,
+        /// The binders the zone held when it failed.
+        depth: BinderDepth,
+    },
+    /// A linear slot was read a second time. Contraction is not admissible in
+    /// the linear zone, and this is where the refusal happens.
+    LinearSlotConsumed
+    {
+        /// The index whose slot was already consumed.
+        index: DeBruijnIndex,
+    },
+    /// A linear binder's scope closed with its single use unspent. Weakening is
+    /// not admissible in the linear zone either, and this is that half.
+    LinearSlotUnconsumed
+    {
+        /// The depth the zone stood at when the scope closed.
+        depth: BinderDepth,
+    },
+    /// A scope was closed in a zone that holds no binder.
+    NoBinderToClose
+    {
+        /// The zone that was empty.
+        zone: Zone,
+    },
+}
+
+/// The offset of one binder within its zone's flat stack.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct SlotOffset(usize);
+
+/// A run of intuitionistic binders located at one world: every binder from
+/// `from` up to the next run's start.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct LocatedRun
+{
+    /// The offset of the run's first binder.
+    from: SlotOffset,
+    /// The world every binder of the run is located at.
+    world: World,
+}
+
+/// Resolve a de Bruijn index against a zone of `depth` binders.
+///
+/// The index counts binders outward from the use site, so index zero names the
+/// innermost binder, which is the *last* element of the flat stack.
+///
+/// # Specification
+/// - requires: nothing — every index and every depth is admissible input.
+/// - ensures: `|ret| usize::try_from(u32::from(index)).map_or_else(|_|
+///   ret.is_none(), |index| match ret { Some(offset) =>
+///   offset.0.checked_add(index).and_then(|below| below.checked_add(1_usize))
+///   == Some(depth.0), None => index >= depth.0 })` — the stack offset of the
+///   named binder, which is `depth - index - 1`, exactly when the index counts
+///   within `depth`.
+/// - provides: the one arithmetic both zones' lookups share, so the two cannot
+///   disagree about what an index names. The clause states the offset by the
+///   sum that recovers the depth, so it is not the body's own subtraction chain
+///   read back.
+/// - fails: returns `None` when the index counts past the zone's binders,
+///   including for an empty zone.
+/// - panics: none — both subtractions are checked.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the two decision surfaces are the two checked
+///   subtractions, separated by the innermost index of a two-deep zone, an
+///   outer index, the first index past the depth, and an index read against an
+///   empty zone, each observed through the lookups that report on it.
+/// - witness: `context::tests::opening_a_binder_shifts_the_zones_indices`
+/// - witness: `context::tests::an_index_past_the_depth_is_unbound`
+#[inline]
+#[spec(ensures: |ret| usize::try_from(u32::from(index)).map_or_else(|_| ret.is_none(), |index| {
+    match ret {
+        | Some(offset) => {
+            offset.0.checked_add(index).and_then(|below| below.checked_add(1_usize))
+                == Some(depth.0)
+        },
+        | None => index >= depth.0,
+    }
+}))]
+fn slot_offset(
+    depth: BinderDepth,
+    index: DeBruijnIndex,
+) -> Option<SlotOffset>
+{
+    let index = usize::try_from(u32::from(index)).ok()?;
+    let remaining = depth.0.checked_sub(index)?;
+    let offset = remaining.checked_sub(1_usize)?;
+    Some(SlotOffset(offset))
+}
+
+/// The unified typing context: the intuitionistic zone `Γ` and the linear zone
+/// `Σ`, both flat, both id-addressed, both name-free.
+///
+/// Every binder is located at the world it was opened at, and the world
+/// register names the world the next binder is located at. Cloning a context
+/// is a flat clone of its vectors, which is what lets a conversion or a
+/// normalizer take one by value without an owning-pointer graph coming with
+/// it; while every binder stands at the host's world the runs are empty, so
+/// an unlocated context clones as its two zones alone.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Context
+{
+    /// `Γ`, innermost binder last.
+    intuitionistic: Vec<ValueTypeId>,
+    /// Where `Γ`'s binders are located, as runs: a run starts at each binder
+    /// located elsewhere than the one below it, starts ascending, and a binder
+    /// below the first run stands at the host's world.
+    located: Vec<LocatedRun>,
+    /// `Σ`, innermost binder last, each slot carrying its remaining use.
+    linear: Vec<LinearSlot>,
+    /// The world the judgement stands at: where the next binder is located.
+    world: World,
+}
+
+impl Context
+{
+    /// The empty context.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// The number of binders a zone holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn depth(
+        &self,
+        zone: Zone,
+    ) -> BinderDepth
+    {
+        BinderDepth(match zone {
+            Zone::Intuitionistic => self.intuitionistic.len(),
+            Zone::Linear => self.linear.len(),
+        })
+    }
+
+    /// Open a binder in `zone` at `declared`, located at the world register.
+    ///
+    /// A linear binder opens with its single use available; the intuitionistic
+    /// zone records the type alone, because a structural slot has no use to
+    /// spend.
+    ///
+    /// # Specification
+    /// - requires: `declared` resolves in the arena the caller reads this
+    ///   context against; the context stores the id and never dereferences it.
+    /// - ensures: the zone's depth is one greater, every index bound before the
+    ///   call is reachable at one more than it was, and index zero of the zone
+    ///   names `declared`, located at the register.
+    /// - provides: the binder-opening half of every rule that goes under a
+    ///   binder. The predicate observes depth, the new slot and the untouched
+    ///   zone's depth; the shift of older slots is witnessed by lookup.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the two decision surfaces are which zone is pushed
+    ///   and what a linear slot's opening use is, separated by opening one
+    ///   binder in each zone with the other zone's depth asserted unmoved, and
+    ///   by reading the fresh linear slot's use, which must open available.
+    /// - witness: `context::tests::opening_a_binder_shifts_the_zones_indices`
+    /// - witness: `context::tests::a_fresh_linear_slot_opens_available`
+    #[spec(
+        captures: [structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: match zone {
+            | Zone::Intuitionistic => structural.checked_add(1) == Some(self.intuitionistic.len())
+                && self.linear.len() == linear && self.intuitionistic.last() == Some(&declared)
+                && self.trailing_world() == self.world,
+            | Zone::Linear => linear.checked_add(1) == Some(self.linear.len())
+                && self.intuitionistic.len() == structural
+                && self.linear.last() == Some(&LinearSlot { declared, use_state: LinearUse::Available, world: self.world }),
+        },
+    )]
+    #[inline]
+    pub fn open(
+        &mut self,
+        zone: Zone,
+        declared: ValueTypeId,
+    )
+    {
+        self.open_at(zone, declared, self.world);
+    }
+
+    /// Open a binder in `zone` at `declared`, located at `world` whatever the
+    /// register: the binder a `leta` opens at its handle's world.
+    ///
+    /// # Specification
+    /// - requires: as [`Context::open`].
+    /// - ensures: as [`Context::open`], the new binder located at `world`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder opened at another world reads back located
+    ///   there while the register stays.
+    /// - witness: `context::tests::a_binder_is_located_where_it_was_opened`
+    #[spec(
+        captures: [structural = self.intuitionistic.len(), linear = self.linear.len(), register = self.world],
+        ensures: self.world == register && match zone {
+            | Zone::Intuitionistic => structural.checked_add(1) == Some(self.intuitionistic.len())
+                && self.linear.len() == linear && self.intuitionistic.last() == Some(&declared)
+                && self.trailing_world() == world,
+            | Zone::Linear => linear.checked_add(1) == Some(self.linear.len())
+                && self.intuitionistic.len() == structural
+                && self.linear.last() == Some(&LinearSlot { declared, use_state: LinearUse::Available, world }),
+        },
+    )]
+    #[inline]
+    pub fn open_at(
+        &mut self,
+        zone: Zone,
+        declared: ValueTypeId,
+        world: World,
+    )
+    {
+        match zone {
+            Zone::Intuitionistic => {
+                if world != self.trailing_world() {
+                    self.located.push(LocatedRun {
+                        from: SlotOffset(self.intuitionistic.len()),
+                        world,
+                    });
+                }
+                self.intuitionistic.push(declared);
+            },
+            Zone::Linear => self.linear.push(LinearSlot {
+                declared,
+                use_state: LinearUse::Available,
+                world,
+            }),
+        }
+    }
+
+    /// The world register: the world the judgement stands at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn world(&self) -> World
+    {
+        self.world
+    }
+
+    /// Move the world register to `world` and return the world it stood at:
+    /// a migration's push, and with the returned world its pop.
+    ///
+    /// # Specification
+    /// - ensures: the register is `world`, the previous register is returned,
+    ///   and every binder keeps its location.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder opened before a move stays located where it
+    ///   was opened, and a binder opened after it is located at the new world.
+    /// - witness: `context::tests::a_binder_is_located_where_it_was_opened`
+    #[spec(captures: [register = self.world], ensures: |ret| ret == register && self.world == world)]
+    #[inline]
+    pub fn relocate(
+        &mut self,
+        world: World,
+    ) -> World
+    {
+        core::mem::replace(&mut self.world, world)
+    }
+
+    /// The world a bound index is located at.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range index is admissible input.
+    /// - ensures: the world the named binder was opened at.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no binder
+    ///   of the zone.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ContextError::UnboundIndex`] — the index names no binder of the
+    ///   zone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two binders opened at two worlds each read back at
+    ///   their own, and an index past the depth is unbound.
+    /// - witness: `context::tests::a_binder_is_located_where_it_was_opened`
+    #[spec(ensures: |ret| ret.is_ok() == self.declared(zone, index).is_ok())]
+    #[inline]
+    pub fn located(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Result<World, ContextError>
+    {
+        let depth = self.depth(zone);
+        let unbound = ContextError::UnboundIndex { zone, index, depth };
+        let Some(offset) = slot_offset(depth, index)
+        else {
+            return Err(unbound);
+        };
+        match zone {
+            Zone::Intuitionistic => Ok(self
+                .located
+                .iter()
+                .rev()
+                .find(|run| run.from <= offset)
+                .map_or(World::Host, |run| run.world)),
+            Zone::Linear => self
+                .linear
+                .get(offset.0)
+                .map(|slot| slot.world)
+                .ok_or(unbound),
+        }
+    }
+
+    /// Close the innermost binder of `zone` and return the type it was opened
+    /// at.
+    ///
+    /// # Specification
+    /// - requires: nothing — an empty zone is admissible input and is refused.
+    /// - ensures: `|ret| ret.is_err() ||
+    ///   (usize::from(entry_depth).checked_sub(1_usize) ==
+    ///   Some(usize::from(self.depth(zone))) && ret.ok() == entry_innermost)` —
+    ///   on success the zone's depth is one smaller and the returned id is the
+    ///   one the closed binder was opened at.
+    /// - provides: the binder-closing half of every rule that goes under a
+    ///   binder.
+    /// - fails: [`ContextError::NoBinderToClose`] when the zone is empty;
+    ///   [`ContextError::LinearSlotUnconsumed`] when the linear zone's
+    ///   innermost slot still carries its use or holds a moved value nothing
+    ///   wrote back, which is the refusal of weakening in `Σ`. Both leave the
+    ///   context exactly as it was — the unconsumed slot is taken and put back
+    ///   — so the failure state is the state the caller inspects, and the depth
+    ///   the refusal reports is the depth it left behind.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ContextError::NoBinderToClose`] — the named zone holds no binder.
+    /// - [`ContextError::LinearSlotUnconsumed`] — the linear binder's single
+    ///   use was never spent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the empty-zone guard and
+    ///   the linear zone's use check, separated by closing an empty zone,
+    ///   closing a consumed linear slot, and closing an unconsumed one, each
+    ///   with the post-failure depth asserted exactly.
+    /// - witness: `context::tests::closing_an_empty_zone_is_refused`
+    /// - witness: `context::tests::a_linear_binder_must_be_consumed_before_it_closes`
+    #[inline]
+    #[spec(
+        captures: [
+            entry_depth = self.depth(zone),
+            entry_innermost = match zone {
+                | Zone::Intuitionistic => self.intuitionistic.last().copied(),
+                | Zone::Linear => self.linear.last().map(|slot| slot.declared),
+            },
+        ],
+        ensures: |ret| ret.is_err()
+            || (usize::from(entry_depth).checked_sub(1_usize)
+                == Some(usize::from(self.depth(zone)))
+                && ret.ok() == entry_innermost),
+    )]
+    pub fn close(
+        &mut self,
+        zone: Zone,
+    ) -> Result<ValueTypeId, ContextError>
+    {
+        match zone {
+            Zone::Intuitionistic => {
+                let declared = self
+                    .intuitionistic
+                    .pop()
+                    .ok_or(ContextError::NoBinderToClose { zone })?;
+                self.forget_runs_from(BinderDepth(self.intuitionistic.len()));
+                Ok(declared)
+            },
+            Zone::Linear => {
+                // Pop first and restore on refusal, rather than reading the top
+                // and shortening the vector by a computed length. The slot is
+                // `Copy`, so the restore puts back exactly what was taken and
+                // the refusal leaves the zone where it was — while there is no
+                // length arithmetic left that could be off by one.
+                let Some(slot) = self.linear.pop()
+                else {
+                    return Err(ContextError::NoBinderToClose { zone });
+                };
+                if slot.use_state != LinearUse::Consumed {
+                    self.linear.push(slot);
+                    return Err(ContextError::LinearSlotUnconsumed {
+                        depth: BinderDepth(self.linear.len()),
+                    });
+                }
+                Ok(slot.declared)
+            },
+        }
+    }
+
+    /// The type a bound index was opened at, with no use spent.
+    ///
+    /// This is the *reading* of a slot rather than the *occurrence* of a
+    /// variable: it reports a consumed linear slot's type as readily as an
+    /// available one, because a diagnostic and a well-formedness walk both need
+    /// the declared type of a slot whose use is already gone.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range index is admissible input.
+    /// - ensures: `|ret| ret.ok() ==
+    ///   usize::try_from(u32::from(index)).ok().and_then(|index| match zone {
+    ///   Zone::Intuitionistic => self.intuitionistic.len()
+    ///   .checked_sub(index.saturating_add(1)).and_then(|offset|
+    ///   self.intuitionistic.get(offset)).copied(), Zone::Linear =>
+    ///   self.linear.len().checked_sub(index.saturating_add(1))
+    ///   .and_then(|offset| self.linear.get(offset)).map(|slot| slot.declared)
+    ///   })` — the id the named binder was opened at, counted inward from the
+    ///   innermost slot rather than through the shared offset arithmetic, by
+    ///   one indexed read.
+    /// - provides: the non-consuming lookup, which is what separates reading a
+    ///   context from typing an occurrence in it. The unchanged-context half of
+    ///   the postcondition is `&self`'s own guarantee rather than a checkable
+    ///   observation.
+    /// - fails: [`ContextError::UnboundIndex`] when the index counts past the
+    ///   zone's binders.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ContextError::UnboundIndex`] — the index names no binder of the
+    ///   zone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the zone selection and the
+    ///   index arithmetic, separated by the innermost index, an outer index and
+    ///   the first index past the depth, each asserted exactly, plus a linear
+    ///   slot read after it was consumed, which must still report its type.
+    /// - witness: `context::tests::a_declared_lookup_spends_no_use`
+    /// - witness: `context::tests::an_index_past_the_depth_is_unbound`
+    /// - witness: `context::tests::opening_a_binder_shifts_the_zones_indices`
+    /// - witness: `context::tests::the_linear_zone_refuses_contraction`
+    #[inline]
+    #[spec(ensures: |ret| ret.ok() == usize::try_from(u32::from(index)).ok().and_then(|index| {
+        match zone {
+            | Zone::Intuitionistic => self.intuitionistic.len().checked_sub(index.saturating_add(1))
+                .and_then(|offset| self.intuitionistic.get(offset)).copied(),
+            | Zone::Linear => self.linear.len().checked_sub(index.saturating_add(1))
+                .and_then(|offset| self.linear.get(offset)).map(|slot| slot.declared),
+        }
+    }))]
+    pub fn declared(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Result<ValueTypeId, ContextError>
+    {
+        let depth = self.depth(zone);
+        let unbound = ContextError::UnboundIndex { zone, index, depth };
+        let Some(offset) = slot_offset(depth, index)
+        else {
+            return Err(unbound);
+        };
+        match zone {
+            Zone::Intuitionistic => self.intuitionistic.get(offset.0).copied().ok_or(unbound),
+            Zone::Linear => self
+                .linear
+                .get(offset.0)
+                .map(|slot| slot.declared)
+                .ok_or(unbound),
+        }
+    }
+
+    /// Type one variable occurrence, spending whatever use the zone's
+    /// discipline says an occurrence spends.
+    ///
+    /// In `Γ` an occurrence spends nothing, so contraction is admissible and
+    /// the same index types any number of occurrences. In `Σ` an occurrence
+    /// consumes the slot, so a second occurrence of the same index is
+    /// refused — the linear zone's whole content, at the one place a term
+    /// reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range index and an already-consumed slot
+    ///   are both admissible input and both refused.
+    /// - ensures: the type of the named binder; in `Σ`, and only there, the
+    ///   named slot is left [`LinearUse::Consumed`]. No other slot is touched
+    ///   in either zone.
+    /// - provides: the typing rule for [`Value::Variable`], which is the only
+    ///   place the two zones' disciplines differ. The predicate observes the
+    ///   selected slot, exact refusal and both depths; neighbouring slots are
+    ///   distinguished by the finite transition witness.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no binder;
+    ///   [`ContextError::LinearSlotConsumed`] when the linear slot's single use
+    ///   is already spent. A refusal spends nothing, so the context after a
+    ///   failure is the context before it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ContextError::UnboundIndex`] — the index names no binder of the
+    ///   zone.
+    /// - [`ContextError::LinearSlotConsumed`] — the linear slot was already
+    ///   used.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the zone's discipline and
+    ///   the consumed guard, separated by two occurrences of one intuitionistic
+    ///   index (both admitted), two occurrences of one linear index (the second
+    ///   refused by variant), and an out-of-range index in each zone.
+    /// - witness: `context::tests::the_intuitionistic_zone_admits_contraction`
+    /// - witness: `context::tests::the_linear_zone_refuses_contraction`
+    /// - witness: `context::tests::an_index_past_the_depth_is_unbound`
+    /// - witness: `context::tests::occurrences_preserve_other_slots_and_refusal_state`
+    ///
+    /// [`Value::Variable`]: crate::Value::Variable
+    #[spec(
+        captures: [declared = self.declared(zone, index), use_state = self.linear_use(index),
+            structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: |ret| self.intuitionistic.len() == structural && self.linear.len() == linear
+            && match declared {
+                | Err(error) => ret == Err(error) && self.linear_use(index) == use_state,
+                | Ok(declared) => match zone {
+                    | Zone::Intuitionistic => ret == Ok(declared) && self.linear_use(index) == use_state,
+                    | Zone::Linear => match use_state {
+                        | Ok(LinearUse::Available | LinearUse::Moved) => ret == Ok(declared)
+                            && self.linear_use(index) == Ok(LinearUse::Consumed),
+                        | Ok(LinearUse::Consumed) => ret == Err(ContextError::LinearSlotConsumed { index })
+                            && self.linear_use(index) == use_state,
+                        | Err(error) => ret == Err(error) && self.linear_use(index) == use_state,
+                    },
+                },
+            },
+    )]
+    #[inline]
+    pub fn occurrence(
+        &mut self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Result<ValueTypeId, ContextError>
+    {
+        let depth = self.depth(zone);
+        let unbound = ContextError::UnboundIndex { zone, index, depth };
+        let Some(offset) = slot_offset(depth, index)
+        else {
+            return Err(unbound);
+        };
+        match zone {
+            Zone::Intuitionistic => self.intuitionistic.get(offset.0).copied().ok_or(unbound),
+            Zone::Linear => {
+                let Some(slot) = self.linear.get_mut(offset.0)
+                else {
+                    return Err(unbound);
+                };
+                if slot.use_state == LinearUse::Consumed {
+                    return Err(ContextError::LinearSlotConsumed { index });
+                }
+                slot.use_state = LinearUse::Consumed;
+                Ok(slot.declared)
+            },
+        }
+    }
+
+    /// Move the value out of an available linear slot, leaving its use to the
+    /// occurrence that writes a value back.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unbound, moved or consumed index is admissible
+    ///   input.
+    /// - ensures: on success the slot's declared type, the slot left
+    ///   [`LinearUse::Moved`]; every other slot and both depths unchanged.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no linear
+    ///   binder; [`ContextError::LinearSlotConsumed`] when its value was moved
+    ///   already or its use is spent. A refusal changes nothing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot moved, moved again, closed while moved,
+    ///   written back and moved after its use, each asserted by variant.
+    /// - witness: `context::tests::a_moved_slot_ends_only_by_its_write_back`
+    #[spec(
+        captures: [declared = self.declared(Zone::Linear, index), use_state = self.linear_use(index),
+            structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: |ret| self.intuitionistic.len() == structural && self.linear.len() == linear
+            && match (declared, use_state) {
+                | (Ok(declared), Ok(LinearUse::Available)) => ret == Ok(declared)
+                    && self.linear_use(index) == Ok(LinearUse::Moved),
+                | (Ok(_), Ok(LinearUse::Moved | LinearUse::Consumed)) => ret == Err(ContextError::LinearSlotConsumed { index })
+                    && self.linear_use(index) == use_state,
+                | (Err(error), _) | (_, Err(error)) => ret == Err(error),
+            },
+    )]
+    #[inline]
+    pub fn move_out(
+        &mut self,
+        index: DeBruijnIndex,
+    ) -> Result<ValueTypeId, ContextError>
+    {
+        let depth = self.depth(Zone::Linear);
+        let unbound = ContextError::UnboundIndex {
+            zone: Zone::Linear,
+            index,
+            depth,
+        };
+        let slot = slot_offset(depth, index)
+            .and_then(|offset| self.linear.get_mut(offset.0))
+            .ok_or(unbound)?;
+        if slot.use_state != LinearUse::Available {
+            return Err(ContextError::LinearSlotConsumed { index });
+        }
+        slot.use_state = LinearUse::Moved;
+        Ok(slot.declared)
+    }
+
+    /// Give a consumed linear slot its single use back: a read that a later
+    /// copy of the same value stands in for.
+    ///
+    /// A `let` binds a name that stands for the value it returns, and the body
+    /// reads a copy of the value at each place the name stands. The read of the
+    /// value at the `let` then spends nothing, as the copies spend it.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unbound, available or moved index is admissible
+    ///   input.
+    /// - ensures: on success the slot is left [`LinearUse::Available`]; every
+    ///   other slot and both depths unchanged.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no linear
+    ///   binder; [`ContextError::LinearSlotUnconsumed`] at the zone's depth
+    ///   when its use is not spent. A refusal changes nothing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot consumed and refunded reads once more, and a
+    ///   slot refunded twice or never read is refused by variant.
+    /// - witness: `context::tests::a_refunded_slot_reads_once_more`
+    #[spec(
+        captures: [use_state = self.linear_use(index), depth = self.depth(Zone::Linear), structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: |ret| self.intuitionistic.len() == structural && self.linear.len() == linear
+            && match use_state {
+                | Ok(LinearUse::Consumed) => ret == Ok(()) && self.linear_use(index) == Ok(LinearUse::Available),
+                | Ok(LinearUse::Available | LinearUse::Moved) => ret == Err(ContextError::LinearSlotUnconsumed { depth })
+                    && self.linear_use(index) == use_state,
+                | Err(error) => ret == Err(error),
+            },
+    )]
+    #[inline]
+    pub fn refund(
+        &mut self,
+        index: DeBruijnIndex,
+    ) -> Result<(), ContextError>
+    {
+        let depth = self.depth(Zone::Linear);
+        let unbound = ContextError::UnboundIndex {
+            zone: Zone::Linear,
+            index,
+            depth,
+        };
+        let slot = slot_offset(depth, index)
+            .and_then(|offset| self.linear.get_mut(offset.0))
+            .ok_or(unbound)?;
+        if slot.use_state != LinearUse::Consumed {
+            return Err(ContextError::LinearSlotUnconsumed { depth });
+        }
+        slot.use_state = LinearUse::Available;
+        Ok(())
+    }
+
+    /// Whether a linear slot still carries its single use.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range index is admissible input.
+    /// - ensures: `|ret| ret.ok() ==
+    ///   usize::try_from(u32::from(index)).ok().and_then(|index|
+    ///   self.linear.len().checked_sub(index.saturating_add(1)).
+    ///   and_then(|offset| self.linear.get(offset)).map(|slot|
+    ///   slot.use_state))` — the slot's remaining use, counted inward from the
+    ///   innermost slot by one indexed read.
+    /// - provides: the observation a caller needs to decide whether closing a
+    ///   linear scope will be refused, without provoking the refusal. The
+    ///   unchanged-context half of the postcondition is `&self`'s own guarantee
+    ///   rather than a checkable observation.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no linear
+    ///   binder.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ContextError::UnboundIndex`] — the index names no linear binder.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the single decision surface is the index arithmetic,
+    ///   separated by a slot before and after its use and by an index past the
+    ///   depth, each asserted by variant.
+    /// - witness: `context::tests::the_linear_zone_refuses_contraction`
+    /// - witness: `context::tests::a_fresh_linear_slot_opens_available`
+    #[inline]
+    #[spec(ensures: |ret| ret.ok() == usize::try_from(u32::from(index)).ok().and_then(|index| {
+        self.linear.len().checked_sub(index.saturating_add(1))
+            .and_then(|offset| self.linear.get(offset)).map(|slot| slot.use_state)
+    }))]
+    pub fn linear_use(
+        &self,
+        index: DeBruijnIndex,
+    ) -> Result<LinearUse, ContextError>
+    {
+        let zone = Zone::Linear;
+        let depth = self.depth(zone);
+        let unbound = ContextError::UnboundIndex { zone, index, depth };
+        let Some(offset) = slot_offset(depth, index)
+        else {
+            return Err(unbound);
+        };
+        self.linear
+            .get(offset.0)
+            .map(|slot| slot.use_state)
+            .ok_or(unbound)
+    }
+
+    /// Rebind an available linear slot at `continuation`: the typestate move
+    /// a session action makes, `Σ, c : S ⇒ Σ, c : S′`, spending nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unbound or consumed index is admissible input.
+    /// - ensures: on success the slot's declared type is `continuation`, its
+    ///   use is still available, every other slot and both depths are
+    ///   unchanged, and the slot's previous declared type is returned.
+    /// - provides: the session rule's typestate move. The predicate observes
+    ///   the selected slot, exact refusal and both depths; neighbouring slots
+    ///   and the whole context after a refusal are compared by the witness.
+    /// - fails: [`ContextError::UnboundIndex`] when the index names no linear
+    ///   binder; [`ContextError::LinearSlotConsumed`] when its use is spent. A
+    ///   refusal changes nothing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ContextError::UnboundIndex`] — the index names no linear binder.
+    /// - [`ContextError::LinearSlotConsumed`] — the endpoint was closed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the index arithmetic and
+    ///   the consumed guard, separated by advancing an outer slot past an inner
+    ///   one, a consumed slot, and an index past the depth, with the context
+    ///   after each refusal asserted equal to the one before.
+    /// - witness: `context::tests::advancing_rebinds_one_available_slot`
+    #[spec(
+        captures: [declared = self.declared(Zone::Linear, index), use_state = self.linear_use(index),
+            structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: |ret| self.intuitionistic.len() == structural && self.linear.len() == linear
+            && match (declared, use_state) {
+                | (Ok(previous), Ok(LinearUse::Available)) => ret == Ok(previous)
+                    && self.declared(Zone::Linear, index) == Ok(continuation)
+                    && self.linear_use(index) == Ok(LinearUse::Available),
+                | (Ok(_), Ok(LinearUse::Moved | LinearUse::Consumed)) => ret == Err(ContextError::LinearSlotConsumed { index })
+                    && self.declared(Zone::Linear, index) == declared && self.linear_use(index) == use_state,
+                | (Err(error), _) | (_, Err(error)) => ret == Err(error),
+            },
+    )]
+    #[inline]
+    pub fn advance(
+        &mut self,
+        index: DeBruijnIndex,
+        continuation: ValueTypeId,
+    ) -> Result<ValueTypeId, ContextError>
+    {
+        let depth = self.depth(Zone::Linear);
+        let unbound = ContextError::UnboundIndex {
+            zone: Zone::Linear,
+            index,
+            depth,
+        };
+        let slot = slot_offset(depth, index)
+            .and_then(|offset| self.linear.get_mut(offset.0))
+            .ok_or(unbound)?;
+        if slot.use_state != LinearUse::Available {
+            return Err(ContextError::LinearSlotConsumed { index });
+        }
+        Ok(core::mem::replace(&mut slot.declared, continuation))
+    }
+
+    /// The linear zone as it stands: every slot's declared type and use.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn linear_zone(&self) -> LinearZone
+    {
+        LinearZone(self.linear.clone())
+    }
+
+    /// Every linear slot's declared type and use, outermost first, read in
+    /// place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn linear_slots(
+        &self
+    ) -> impl DoubleEndedIterator<Item = (ValueTypeId, LinearUse)> + ExactSizeIterator + '_
+    {
+        self.linear
+            .iter()
+            .map(|slot| (slot.declared, slot.use_state))
+    }
+
+    /// Every linear slot's world, outermost first, read in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn linear_worlds(&self) -> impl DoubleEndedIterator<Item = World> + ExactSizeIterator + '_
+    {
+        self.linear.iter().map(|slot| slot.world)
+    }
+
+    /// Put the linear zone back as `zone` recorded it: a branching rule's
+    /// return to the state before its first arm.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the linear zone equals `zone` slot for slot and the
+    ///   intuitionistic zone is unchanged. The predicate compares the restored
+    ///   zone, which the body copies, and the intuitionistic depth; the witness
+    ///   reads the intuitionistic zone after a restore.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot consumed and a slot advanced after the
+    ///   snapshot both read as recorded once it is restored.
+    /// - witness: `context::tests::a_restored_snapshot_undoes_uses_and_advances`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every slot of `zone` once; the check compares each once"
+        )
+    )]
+    #[spec(
+        captures: [structural = self.intuitionistic.len()],
+        ensures: self.linear == zone.0 && self.intuitionistic.len() == structural,
+    )]
+    #[inline]
+    pub fn restore_linear(
+        &mut self,
+        zone: &LinearZone,
+    )
+    {
+        self.linear.clone_from(&zone.0);
+    }
+
+    /// Drop every binder of `zone` above `depth`, spent or not: the unwinding
+    /// of a refused judgement, which discharges no obligation.
+    ///
+    /// # Specification
+    /// - requires: nothing — a depth at or above the zone's is admissible.
+    /// - ensures: the zone holds the lesser of its depth and `depth` binders,
+    ///   the outermost kept unchanged; the other zone is unchanged. The
+    ///   predicate observes both depths; the witness reads the kept slot and
+    ///   the other zone.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an unconsumed linear slot above the depth is dropped
+    ///   without refusal, a slot below it is kept, and a depth above the zone's
+    ///   changes nothing.
+    /// - witness: `context::tests::truncating_drops_unspent_slots_without_refusal`
+    #[spec(
+        captures: [structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: match zone {
+            | Zone::Intuitionistic => self.intuitionistic.len() == structural.min(depth.0) && self.linear.len() == linear,
+            | Zone::Linear => self.linear.len() == linear.min(depth.0) && self.intuitionistic.len() == structural,
+        },
+    )]
+    #[inline]
+    pub fn truncate(
+        &mut self,
+        zone: Zone,
+        depth: BinderDepth,
+    )
+    {
+        match zone {
+            Zone::Intuitionistic => {
+                self.intuitionistic.truncate(depth.0);
+                self.forget_runs_from(BinderDepth(self.intuitionistic.len()));
+            },
+            Zone::Linear => self.linear.truncate(depth.0),
+        }
+    }
+
+    /// The world the innermost intuitionistic binder is located at, the
+    /// host's when no run is open: where a binder opened at the same world
+    /// joins without a run of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn trailing_world(&self) -> World
+    {
+        self.located.last().map_or(World::Host, |run| run.world)
+    }
+
+    /// Drop every run that starts at or above `depth` intuitionistic binders:
+    /// the binders they located are gone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forget_runs_from(
+        &mut self,
+        depth: BinderDepth,
+    )
+    {
+        let kept = self.located.partition_point(|run| run.from.0 < depth.0);
+        self.located.truncate(kept);
+    }
+}
+
+#[cfg(test)]
+mod tests;

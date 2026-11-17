@@ -1,0 +1,2 @@
+def bad : Integer ;
+def bad = *$0{} ;
