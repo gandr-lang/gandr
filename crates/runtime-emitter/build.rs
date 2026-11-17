@@ -14,6 +14,9 @@
 //! A target without a patcher — anything but arm64 on macOS or Linux and
 //! Linux x86-64 — compiles no object and writes an empty table: its runs take
 //! the portable executor.
+//!
+//! On each target, the script also gives the crate `GANDR_LLC`: the path of
+//! the `llc` of the toolchain's sysroot, which the block compiler runs.
 
 use core::fmt::Write as _;
 use std::env;
@@ -226,6 +229,20 @@ fn main() -> Result<(), Refusal>
     let table = out.join("stencils.rs");
     println!("cargo::rerun-if-changed=../runtime-stencils/src");
     println!("cargo::rustc-check-cfg=cfg(gandr_patcher)");
+    // The block compiler runs the `llc` of this toolchain, which the
+    // `llvm-tools` component keeps under the host's directory of the sysroot.
+    let rustc = env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
+    let sysroot = Command::new(&rustc).args(["--print", "sysroot"]).output()?;
+    if !sysroot.status.success() {
+        return Err(Refusal::Compile(sysroot.status));
+    }
+    let llc = PathBuf::from(String::from_utf8_lossy(&sysroot.stdout).trim())
+        .join("lib")
+        .join("rustlib")
+        .join(variable("HOST")?)
+        .join("bin")
+        .join("llc");
+    println!("cargo::rustc-env=GANDR_LLC={}", llc.display());
     let os = variable("CARGO_CFG_TARGET_OS")?;
     let arch = variable("CARGO_CFG_TARGET_ARCH")?;
     let layout = match (os.to_str(), arch.to_str()) {
@@ -242,7 +259,6 @@ fn main() -> Result<(), Refusal>
     };
     println!("cargo::rustc-cfg=gandr_patcher");
     let object_path = out.join("stencils.o");
-    let rustc = env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
     let mut command = Command::new(rustc);
     command
         .args([

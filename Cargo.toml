@@ -293,11 +293,12 @@ default-features = false
 # BLAKE3 hashing for content and node identities, the kernel's verdict keys
 # and build identity, the site's build identity a stored stratum's key binds,
 # the engine hub's socket names, the rank a sweep's sample orders sources by,
-# the digest a prose finding's sentence is keyed by, and the key of a plan's
-# minimal form.
+# the digest a prose finding's sentence is keyed by, the key of a plan's
+# minimal form, and the key of a machine block.
 # consumers:
 # - core-incremental
 # - kernel-core (and its build script)
+# - runtime-emitter
 # - storage-artifact
 # - storage-records
 # - storage-schema
@@ -1743,26 +1744,28 @@ features = ["std"]
 version = "1.17.0"
 default-features = false
 
-# Object-file reading for the emitter's build script: the stencil object's
-# sections, symbols and relocations, Mach-O and ELF. Chosen over goblin for
+# Object-file reading for the emitter's build script and its block compiler:
+# the stencil object's sections, symbols and relocations, Mach-O and ELF, and
+# the text of each block's object. Chosen over goblin for
 # its unified relocation view across both formats and its use by the Rust
 # toolchain's own backtrace and linker tools; the choice reverses if a third
 # object format needs a reader object lacks. The record is in the emitter's
 # crate docs.
 # features:
 # - read_core: the format-independent reading interface
-# - elf: the Linux x86-64 stencil object
-# - macho: the macOS arm64 stencil object
+# - elf: the Linux objects
+# - macho: the macOS arm64 objects
 # consumers:
-# - runtime-emitter (build)
+# - runtime-emitter (and its build script)
 [workspace.dependencies.object]
 version = "0.40.0"
 default-features = false
 features = ["elf", "macho", "read_core"]
 
-# The index of a host's chunk holder and of a store plane, from a digest to its
-# slot in the arena, read and written with no lock. A read happens after the
-# write that it reads, so a reader that finds a slot reads the whole image.
+# The index of a host's chunk holder, of a store plane and of the emitter's
+# machine blocks, from a digest to its slot, read and written with no lock. A
+# read happens after the write that it reads, so a reader that finds a slot
+# reads the whole image.
 # iroh holds it already, with the same features. The choice, its alternatives
 # and its reversal are in the pull request of #6899 that adds it.
 # features:
@@ -1770,6 +1773,7 @@ features = ["elf", "macho", "read_core"]
 #   read for a system call on each reclamation, and no measurement asks for it
 #   yet. `serde` stays off: nothing serialises the index.
 # consumers:
+# - runtime-emitter
 # - runtime-net
 # - storage-store
 [workspace.dependencies.papaya]
