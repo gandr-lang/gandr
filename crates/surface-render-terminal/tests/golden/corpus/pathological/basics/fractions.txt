@@ -1,0 +1,26 @@
+error[NotSynthesisable]: the type of a decimal literal cannot be inferred where it stands
+   ╭▸ corpus/pathological/basics/fractions.gandr:11:11
+   │
+11 │ def low = 0.2;
+   │           ━━━ needs a type to be checked against
+   │
+   ├ note: `low` is refused with NotSynthesisable, as its expectation states
+   ╰ help: write a type ascription for this form
+
+error[NotSynthesisable]: the type of a decimal literal cannot be inferred where it stands
+   ╭▸ corpus/pathological/basics/fractions.gandr:15:13
+   │
+15 │ def small = 1e-3;
+   │             ━━━━ needs a type to be checked against
+   │
+   ├ note: `small` is refused with NotSynthesisable, as its expectation states
+   ╰ help: write a type ascription for this form
+
+error[OutOfFragment.typed_number]: the typed number is not supported yet
+   ╭▸ corpus/pathological/basics/fractions.gandr:19:14
+   │
+19 │ def single = 0.5f32;
+   │              ━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `single` is refused with OutOfFragment.typed_number, as its expectation states
+   ╰ note: tracked by #2563 <https://github.com/gandr-lang/gandr/issues/2563>

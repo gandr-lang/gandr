@@ -1,0 +1,5 @@
+Applies `apply` to `../x.gandr`.
+
+```gandr
+def `y` = 1
+```

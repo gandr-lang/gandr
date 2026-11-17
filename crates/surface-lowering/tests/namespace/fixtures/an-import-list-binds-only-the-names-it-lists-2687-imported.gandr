@@ -1,0 +1,4 @@
+pub data Point : Type where { | One : Point }
+pub def one : Point = One;
+pub def two : Point = One;
+def hidden : Point = One;

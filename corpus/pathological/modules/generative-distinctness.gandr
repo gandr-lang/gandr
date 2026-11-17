@@ -1,0 +1,25 @@
+module Seed :> *{type T, zero : T, next : T -> T} where {
+  type T = Integer;
+  @[runs("0")]
+  def zero = 0;
+  @[runs("fun (a) { a + 1 }")]
+  def next(n : T) -> T { n + 1 }
+}
+
+module MkCounter(S : *{type T, zero : T, next : T -> T}) :> *{
+  type T,
+  seed : T,
+  step : T -> T
+} where
+  type T = S.T;
+  def seed = S.zero;
+  def step = S.next;
+
+module A = MkCounter(Seed);
+module B = MkCounter(Seed);
+
+@[refuses("TypeMismatch")]
+def mixed : A.T = B.seed;
+
+@[refuses("ProjectionFromApplication")]
+def projected : Integer = (MkCounter Seed).seed;
