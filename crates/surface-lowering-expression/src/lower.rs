@@ -20561,6 +20561,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   one walk of the nodes of each of at most four forms of that
     ///   declaration, and one compare of at most 2 bytes at each grout.
     ///
+    /// # Cost
+    /// - allocation: the worklists of the walks of the refused forms, error
+    ///   path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `def a = #{ .x = 1 };` reads an extra operand first
     ///   and reports the retired token; `def b : Integer => Integer;` reports
@@ -20665,6 +20669,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - witness: `gandr-surface-lowering::tests::modules::an_abstract_component_kinds_at_a_universe`
     /// - witness: `gandr-surface-lowering::lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
     /// - witness: `gandr-surface-lowering::lower::tests::a_written_definition_minting_no_body_is_refused_by_name_6113`
+    ///
+    /// # Cost
+    /// - allocation: the refusal that a refused outcome owns, error path
     #[spec(
         ensures: |ret| {
             if let Maybe::Present((at, refusal)) = slot.refusal {

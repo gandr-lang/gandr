@@ -4176,6 +4176,10 @@ pub fn bare_bracket(
 ///   term, or offering nothing, changes the observation.
 /// - witness: `gandr-surface-lowering::lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
 /// - witness: `gandr-surface-lowering::lower::tests::the_glued_view_telescope_is_refused_by_name_7879`
+///
+/// # Cost
+/// - allocation: the capitalised spelling of a stray keyword, and the lookups
+///   of its labels, diagnostic
 #[spec(ensures: |ret| shape == GroutShape::Convex || matches!(ret, Repair::Grout(_)))]
 fn grouted(
     pbg: &Pbg,
