@@ -5878,7 +5878,7 @@ mod tests
             "a flow type takes the path type's refusal"
         );
         let declared =
-            "data Seq(a : Type) : Type where\n  | Nil : Seq a\n\ndef s(x : Type) -> Type { Seq x }";
+            include_str!("lower/fixtures/a-declared-family-where-a-computation-is-read-6491.gandr");
         let mut arena = CoreArena::new();
         let module = lowered(SourceText::from(declared), &mut arena);
         let start = declared.rfind("Seq x").unwrap();
