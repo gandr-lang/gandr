@@ -482,6 +482,11 @@ path = "crates/core-checker-bridge"
 # discovery, free of arena ids and admission positions, and its mint.
 # consumers:
 # - core-incremental
+# - surface-dispatcher
+# - surface-pretty
+# - surface-repl
+# - surface-session
+# - surface-tui (dev)
 [workspace.dependencies.gandr-core-content]
 path = "crates/core-content"
 
@@ -501,7 +506,7 @@ path = "crates/core-fork"
 # consumers:
 # - surface-driver
 # - surface-lsp
-# - surface-pretty
+# - surface-pretty (dev)
 # - surface-repl
 # - surface-session
 # - surface-tui (dev)

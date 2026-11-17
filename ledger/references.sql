@@ -540,6 +540,7 @@ INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theor
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-computads','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-ordered-algebras','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e','theory-ordered-algebras','usage','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-74f1-7b03-a3a9-d145795bf4fd','core-content','','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-7772-7e72-a3d0-5855883d3db1','core-incremental','checkpoint','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-7772-7e72-a3d0-5855883d3db1','core-term','key','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-9a6d-7c20-a9c5-131d35beda06','surface-corpus','refusal','background',NULL,NULL,NULL);
@@ -775,6 +776,7 @@ INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','stora
 INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','storage-store','plane::index','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d90b-b64a-7248-8f6e-e792b6e8cb9f','storage-store','plane','background','484c1e84c9b09f8a7b9c2b5df2bdccffcd8234f4','2026-11-14','050e6297abe82c557307369b30f3a9e4023f2fdb');
 INSERT INTO reference VALUES('vault:01a1dbb1-8f03-73b2-bbab-a82afed5f02f','workflow-prose','','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','core-content','','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-emitter','block','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-emitter','image','lineage',NULL,NULL,NULL);
 CREATE TABLE work(

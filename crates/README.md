@@ -35,7 +35,7 @@ flowchart BT
   workflow
   kernel -->|5| theory
   core -->|12| theory
-  core -->|33| kernel
+  core -->|35| kernel
   storage -->|6| theory
   storage -->|1| kernel
   runtime -->|1| theory
@@ -44,7 +44,7 @@ flowchart BT
   runtime -->|3| storage
   surface -->|38| theory
   surface -->|28| kernel
-  surface -->|45| core
+  surface -->|48| core
   surface -->|11| storage
   surface -->|7| runtime
   workflow -->|1| theory
@@ -63,6 +63,7 @@ crates/
 ├── core-checker-base/             the faces, module run and refusals
 ├── core-checker-bridge/           kernel readmission, staging families
 ├── core-checker/                  the checking judgement under one name
+├── core-content/                  the content form of a core node: its canonical table, its encoder and its mint, under the checker
 ├── core-fork/                     the fork a consumer hands its independent jobs to, and its serial reference
 ├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-nbe-base/                 the glued domain; the overlay, its erasure and its measure; staging

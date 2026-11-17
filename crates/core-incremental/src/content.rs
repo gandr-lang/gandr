@@ -1,85 +1,9 @@
-//! Canonical content: an item's or a type's nodes as a co-de Bruijn table,
-//! numbered by discovery, free of arena ids and admission positions.
+//! The content of an item: its roots over the node form of
+//! `gandr-core-content`.
 //!
-//! # One minimal-scope table per item
-//!
-//! The encoder lists every node reachable from an item's roots as a de
-//! Bruijn table. It reads each node's children from
-//! `gandr_core_term::children`, the one enumeration core states, and writes
-//! the node as its content former over their numbers. `support::factor` then
-//! rebuilds the table bottom-up as the carrier of `gandr_core_term::support`
-//! lays it out. Each entry is a [`SupportedNode`]: a compact former whose own
-//! variable, endpoint or slot, if it has one, is a rank in its scope; the
-//! scope itself, as wide in each zone as the variables free beneath the node;
-//! and a cover, one thinning per child, saying where each of the child's free
-//! variables sits in the node's scope or among the binders the child's slot
-//! crosses. Each root keeps its own thinning into the item's empty scope. A
-//! child is named by its number, a constant by the [`Reference`] its position
-//! resolves to.
-//!
-//! Equal compact nodes are one entry: the table is hash-consed by former,
-//! cover and scope, so two equal subterms share whether the arena allocated
-//! them once or twice, and a subterm under different unused binders is the
-//! same entry because unused binders never reach its scope. Different
-//! variable wiring stays distinct, because the cover records it. The arena's
-//! own sharing is therefore no part of the content: two items built in two
-//! arenas have equal tables exactly when their terms are equal.
-//!
-//! The table is numbered in the order a breadth-first walk from the roots
-//! first discovers each entry, children left to right, so the numbering is a
-//! function of the content. Factoring and numbering are iterative; the work
-//! is linear in the de Bruijn table plus the sizes of the covers and the
-//! reference sets.
-//!
-//! # References read off the roots
-//!
-//! Every entry carries the references beneath it, apart by position: those
-//! in term positions and those beneath a signature or a type former, built
-//! from its children's when it is factored and rebuilt by the reader of a
-//! persisted table, which never trusts a stored set. An item's footprint is
-//! the union over its roots (`footprint_of`); no walk of the table is needed.
-//! The references are syntactic and over-approximate what the judgement
-//! reads, as the footprint always has; they never decide a strengthening.
-//!
-//! # The de Bruijn projection
-//!
-//! [`TypeContent::debruijn`] and [`ItemContent::debruijn`] expand a root
-//! back into a de Bruijn table under its root thinning: what minting a seat,
-//! printing a type or any reader that counts binders consumes. A root
-//! thinning whose index passes `u32` beneath a binder is reported as
-//! `PlacementError::IndexOverflow`, never saturated.
-//!
-//! **Choice.** The compact former is [`ContentNode`] itself, its own
-//! occurrence rewritten to its rank, rather than a former generic over its
-//! index type: session actions and memory forms carry their endpoints and
-//! slots as kernel indices inside shared syntax, and one former type keeps
-//! the codec, the minting path and the printer on one vocabulary.
-//! **Reversal.** A consumer that must tell a rank from an ambient index by
-//! type, not by the table it came from, makes the generic former worth its
-//! second spelling.
-//!
-//! # The mint
-//!
-//! [`TypeContent::mint`] mints a table of any sort back into an arena, each
-//! entry after its children, each entry once: so a minted node keeps the
-//! table's sharing, and it reads back as the same table. The table is the
-//! name of the node up to alpha-equivalence and sharing: two terms that
-//! differ only in their bound names or in what their arena shares read one
-//! table. [`ItemContent::rooted`] reads the table under one root of an item.
-//! The mint refuses a table by name: an unresolved node (a stage type or a
-//! codata application, which content keeps opaque), a
-//! reference that the program holds no item for, or a child of the wrong
-//! sort. A table-typed native thunk keeps no body as content, and the mint
-//! builds its curried body again from its row.
-//!
-//! # An id the arena does not hold
-//!
-//! An id that resolves to nothing is a fact about another arena. It is listed
-//! as [`ContentNode::Unresolved`] with its sort, so encoding stays total, and
-//! a table holding one beneath a root is opaque: its item is never adopted,
-//! never persisted, and a reader of everything once anything changes. A
-//! child of a de Bruijn table out of its range, or one closing a cycle, is
-//! factored the same way.
+//! The node form, its tables, its projection and its mint live in that crate.
+//! This module adds the roots of each declaration and the encoding of an
+//! item. The cache codec writes both with the tags below.
 //!
 //! # Content, not ids
 //!
@@ -87,15 +11,6 @@
 //! every node reachable from its `DeclarationRoots` and each root's
 //! thinning. Value roots retain the signature and body; Data roots retain
 //! the kind, parameter telescope and constructor field types.
-//!
-//! # Numbers local to the item
-//!
-//! An elaborator numbers holes and ascriptions over the whole laid unit, so
-//! one item takes other numbers in another closure. The table names each hole
-//! by its place among the holes it meets, in the hole's own origin, and a
-//! seal site by its component alone. The cells of a type of words name their
-//! sort by its reference, as every constant is named. So an item's content is
-//! a function of its own source and of the sources that source reaches.
 //!
 //! # Native universe-path content
 //!
@@ -1152,8 +1067,8 @@ impl ItemContent
     /// - ensures: the table of every node reachable from `root`, renumbered by
     ///   discovery from `root` alone, each hole named by its place under
     ///   `root`, with the support of the first declaration root naming it, else
-    ///   the empty support; so it equals the content [`TypeContent::of_node`]
-    ///   gives the node in its arena.
+    ///   the empty support; so it equals the content [`of_node`] gives the node
+    ///   in its arena.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1240,8 +1155,7 @@ impl ItemContent
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the content [`ItemContent::rooted`] gives the signature root,
-    ///   so it equals the content [`TypeContent::of_node`] gives the signature
-    ///   in its arena.
+    ///   so it equals the content [`of_node`] gives the signature in its arena.
     /// - provides: None for an unsigned value or a nominal declaration.
     /// - panics: none.
     ///

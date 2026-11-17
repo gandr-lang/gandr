@@ -6,9 +6,10 @@
 //! # Six pieces
 //!
 //! **The item seam.** [`Program`] holds [`Item`]s — a front end's
-//! [`ItemKey`] beside the checker's own [`gandr_core_checker::Declaration`] —
-//! over one arena. Constants are read as the [`Reference`] their position
-//! resolves to, so nothing that must survive an edit is stated in positions.
+//! [`ItemKey`](gandr_core_content::ItemKey) beside the checker's own
+//! [`gandr_core_checker::Declaration`] — over one arena. Constants are read as
+//! the [`Reference`](gandr_core_content::Reference) their position resolves to,
+//! so nothing that must survive an edit is stated in positions.
 //!
 //! **The conservative footprint.** [`footprint_of`] lists every reference an
 //! item mentions, and those in type positions apart: the read relation a value

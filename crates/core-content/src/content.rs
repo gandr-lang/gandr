@@ -43,11 +43,11 @@
 //!
 //! # The de Bruijn projection
 //!
-//! [`TypeContent::debruijn`] and [`ItemContent::debruijn`] expand a root
-//! back into a de Bruijn table under its root thinning: what minting a seat,
-//! printing a type or any reader that counts binders consumes. A root
-//! thinning whose index passes `u32` beneath a binder is reported as
-//! `PlacementError::IndexOverflow`, never saturated.
+//! [`TypeContent::debruijn`] expands a root back into a de Bruijn table under
+//! its root thinning. A mint of a seat, a printed type and each reader that
+//! counts binders read that table. A root thinning whose index passes `u32`
+//! beneath a binder gives `PlacementError::IndexOverflow`. The projection
+//! never saturates the index.
 //!
 //! **Choice.** The compact former is [`ContentNode`] itself, its own
 //! occurrence rewritten to its rank, rather than a former generic over its
@@ -60,17 +60,16 @@
 //!
 //! # The mint
 //!
-//! [`TypeContent::mint`] mints a table of any sort back into an arena, each
-//! entry after its children, each entry once: so a minted node keeps the
-//! table's sharing, and it reads back as the same table. The table is the
-//! name of the node up to alpha-equivalence and sharing: two terms that
-//! differ only in their bound names or in what their arena shares read one
-//! table. [`ItemContent::rooted`] reads the table under one root of an item.
-//! The mint refuses a table by name: an unresolved node (a stage type or a
-//! codata application, which content keeps opaque), a
-//! reference that the program holds no item for, or a child of the wrong
-//! sort. A table-typed native thunk keeps no body as content, and the mint
-//! builds its curried body again from its row.
+//! [`TypeContent::mint`] mints a table of any sort back into an arena. It
+//! mints each entry once, after its children. So a minted node keeps the
+//! sharing of the table, and it reads back as the same table. The table names
+//! the node up to alpha-equivalence and sharing. Two terms that differ only in
+//! their bound names or in the sharing of their arena read one table.
+//!
+//! The mint refuses a table by name. It names an unresolved node, an unplaced
+//! reference and a child of the wrong sort. A stage type and a codata
+//! application stay opaque as content. A native thunk of a table type keeps no
+//! body as content. The mint builds its curried body again from its row.
 //!
 //! # An id the arena does not hold
 //!
@@ -81,13 +80,6 @@
 //! child of a de Bruijn table out of its range, or one closing a cycle, is
 //! factored the same way.
 //!
-//! # Content, not ids
-//!
-//! An item's content is its reference, declaration category, the table of
-//! every node reachable from its `DeclarationRoots` and each root's
-//! thinning. Value roots retain the signature and body; Data roots retain
-//! the kind, parameter telescope and constructor field types.
-//!
 //! # Numbers local to the item
 //!
 //! An elaborator numbers holes and ascriptions over the whole laid unit, so
@@ -96,194 +88,6 @@
 //! seal site by its component alone. The cells of a type of words name their
 //! sort by its reference, as every constant is named. So an item's content is
 //! a function of its own source and of the sources that source reaches.
-//!
-//! # Native universe-path content
-//!
-//! The content table preserves universe sorts and levels, quotes, static
-//! operators and native universe paths. Native path tags occupy `0x40–0x44` in
-//! this cache codec, and element identity `0x45–0x4C`: the path type, `here`,
-//! element transport, a compound endpoint, `funext` over its two functions,
-//! `equiv` over its two translators, the telescope transport, and `ua` over
-//! its stratum, its two descriptions and its translator records. None is a
-//! kernel artifact tag.
-//! Candidate evidence is exact content, including ordered direction and
-//! dialogue boundaries, and never a cached admission receipt; a `funext` or an
-//! `equiv` is content by its functions alone, and the evaluations it was
-//! decided by are recomputed by the judgement that reads it. Type-only
-//! signature content refuses term-bearing path
-//! classifiers just as it refuses quotes and decodes.
-//!
-//! Checkpoint sets use `GCKPT\0\0\x19`; programs use `GPROG\0\0\x0d`. Their
-//! identities bind the checker, native declaration categories, effect and
-//! control content, support queries and refusal vocabulary. Identities of
-//! another version are rejected rather than reusing answers from a different
-//! fragment. Static family, universe and native-former round-trip witnesses
-//! exercise their distinct tags and payloads.
-//!
-//! **Choice.** Preserve native classifiers, maps and candidate evidence as
-//! content instead of caching a certificate verdict. Structural path conversion
-//! may erase evidence, but checkpoint identity must not. **Reversal.**
-//! Persisting higher fields or guarded List inhabitants requires its own
-//! versioned content vocabulary and validated dependency support; none is
-//! inferred from a native path entry. The directed family and the bridge type
-//! persist under their own tags, below.
-//!
-//! # Native declaration content and support
-//!
-//! A declaration's roots are `DeclarationRoots::Value`,
-//! `DeclarationRoots::Data`, `DeclarationRoots::Abstract` or
-//! `DeclarationRoots::World`; data retains the kind, every parameter and every
-//! constructor field, and an abstract type its kind, its representation, the
-//! extent of its seal, the component its seal names, the mobility its
-//! signature marks and the relation, reflexivity and law of its interface,
-//! each a value root, so an edit to the interface reaches every reader of the
-//! atom. A mobile atom and an interfaced one take their own roots tags, so an
-//! unmarked one without an interface encodes as before. Cache node tags
-//! `0x50–0x55` represent the six native data/record forms independently of
-//! kernel artifact tags, `0x5A` the positional tuple projection, its component
-//! a count after its tuple child, and `0x5B` the split, its arity a count
-//! between its scrutinee and body children. Field labels and arbitrary child
-//! counts survive persistence.
-//!
-//! A value declaration's roots carry the laws its folds rest on as item
-//! references, so adding, removing or reordering a `respects` law changes the
-//! declaration's content even though its body is unchanged. A law's statement
-//! reaches the fold the way any read signature does: the check reads it
-//! through the signature table, and the support records the answer. Lawful
-//! roots persist under their own roots tag, so content naming no law encodes
-//! exactly as before.
-//!
-//! An abstract type answers no support query: a reader of its atom records
-//! the atom in a type position, so an edit to the representation, the extent
-//! or the site changes the abstract type's content and reaches every reader
-//! through the value-changed closure. Adoption forms it again and mints its
-//! atom in the new context.
-//!
-//! A located item is content like any other. A world form and a world type
-//! name their world by the reference of its declaration ([`WorldContent`]),
-//! a world declaration's roots are the row it requires, and a value
-//! declaration's roots carry the entry it states. What the world register
-//! answers a judgement beyond that is support: the home and the spending of
-//! each constant it reads, and the entry it resolves to under the host's
-//! grant.
-//!
-//! Support keys distinguish a value-signature query from a data-signature query
-//! at the same reference. A data answer contains the complete nominal schema or
-//! its absence, not merely its universe. Adoption reforms a retained data
-//! declaration in the new context. Term-bearing nominal type content remains
-//! outside the type-only adoption reader and is conservatively rechecked; it is
-//! never promoted to an authority-bearing cache hit.
-//!
-//! **Choice.** Extend ordinary declaration content and query-specific support
-//! instead of treating data as a value signature. **Reversal.** A wider
-//! adoption reader must validate term-valued indices and their dependencies
-//! before reusing them.
-//! `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
-//! round-trips accepted and refused items, adopts an unchanged module,
-//! invalidates a constructor after a schema-only change, and compares
-//! incremental results with fresh checking.
-//!
-//! # Recursive data and fixpoints
-//!
-//! A fixpoint persists as cache node tag `0x19` with its evidence and its body;
-//! it is a term, never a seatable type. A data declaration's fields may name
-//! it: the self reference resolves to the item's own reference, and the checker
-//! reads the forming block without a support query, so a recursive
-//! declaration's footprint holds no query of itself. The occurrence refusals
-//! keep their parameter or field site, a reference past the block keeps the
-//! reference it names, and a descent refusal keeps its fixpoint's site and the
-//! rule of the walk that failed.
-//!
-//! **Choice.** Persist the evidence as content, so a partial and a structurally
-//! descending fixpoint never share an address. **Reversal.** A mutual block
-//! would add a block reference to the support vocabulary; until then one block
-//! is one item.
-//! `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume`
-//! round-trips a recursive family, a fixpoint and each new refusal and adopts
-//! the unchanged program.
-//!
-//! # Effect and control content
-//!
-//! Pure returners retain tag `0x30`; row-qualified returners use `0x70`. Inline
-//! interfaces store canonical operation names and ordered payload/reply type
-//! edges. Decoding refuses duplicate or out-of-order names and an empty row
-//! under `0x70`;
-//! `content::tests::effect_rows_round_trip_without_losing_operation_types`
-//! round-trips a row's operation types, and `codec`'s readers name the
-//! refusals' witnesses. The List former and its control content use the
-//! following cache tags, independent of kernel artifact tags.
-//!
-//! | Tag | Former |
-//! | --- | ------ |
-//! | `0x56` | List classifier |
-//! | `0x57` | Empty list |
-//! | `0x58` | Cons |
-//! | `0x59` | List fold |
-//! | `0x71` | Reify |
-//! | `0x72` | Stack classifier |
-//! | `0x73` | With classifier |
-//! | `0x74` | Perform |
-//! | `0x75` | Handle |
-//! | `0x76` | Resume |
-//! | `0x77` | Reset |
-//! | `0x78` | Shift |
-//! | `0x79` | With computation |
-//! | `0x7A` | Project |
-//! | `0x7B` | Exercise |
-//! | `0x7C` | Capability scope |
-//! | `0x7D` | Capability classifier |
-//!
-//! A handler retains source clause order; its branches' binders are
-//! crossings of their slots, and the projection restores their de Bruijn
-//! indices.
-//! Stack frames retain execution order and projection side. Fixed children
-//! precede interface type edges, which precede clause bodies; frames contribute
-//! their Apply and Bind children in order. Unknown-operation, coverage,
-//! undelimited-shift and dependent-stack refusals retain their sites and type
-//! payloads. A control table of any sort can be minted into another arena;
-//! the mint copies the content and invents no runtime term graph.
-//!
-//! A capability scope persists as a handler does, under its own tag, so a
-//! scope and a handler over one interface never share an address. An exercise
-//! keeps its capability and payload before its interface's type edges. A
-//! capability classifier keeps its authority's restricted interfaces as a row,
-//! then its grade and its region, a scoped region by its depth; it seats like
-//! any closed type. The capability refusals keep their sites and type payloads.
-//!
-//! The session identities persist under their own tags, beside the session
-//! classifier (`0x60`) and action (`0x61`):
-//!
-//! | Tag | Former |
-//! | --- | ------ |
-//! | `0x62` | Session statement, `bisim` or `sim` |
-//! | `0x63` | Stay |
-//! | `0x64` | Then |
-//! | `0x65` | Recorded run |
-//! | `0x66` | Ride |
-//! | `0x67` | Flow classifier |
-//! | `0x68` | Run classifier |
-//! | `0x69` | Forward flow, `forward(f)` |
-//! | `0x6A` | Function flow, `arrow(d, c)` |
-//! | `0x6B` | Flow product, `flowProduct(p, q)` |
-//!
-//! A statement keeps its relation, so `bisim(a, b)` and `sim(a, b)` never
-//! share an address; the decided simulation is checker output and is not
-//! content. A recorded run keeps its moves in order, its payloads as value
-//! edges and its labels inline. Flow and run classifiers hold terms, and
-//! they seat as any other former does.
-//!
-//! **Choice.** Preserve typed interfaces and control syntax as content, not
-//! runtime heap addresses or captured delimiter stacks. Omitting annotations
-//! permits stale adoption; persisting a runtime continuation would require a
-//! separate heap and capability protocol. Revisit only when that protocol and
-//! its dependency validation are specified.
-//!
-//! Witnesses:
-//! `content::tests::control_graphs_preserve_scopes_and_signature_edges`,
-//! `content::tests::capability_graphs_keep_authority_region_and_scope`,
-//! `codec::tests::control_nodes_persist_names_frames_and_branch_order` and
-//! `edit::tests::control_edits_preserve_names_scopes_and_frame_order` in
-//! `gandr-surface-session`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
@@ -2580,8 +2384,8 @@ impl ContentNode
 ///
 /// # Specification
 /// - executable: none — the tag contains no table; each [`SupportedNode`]
-///   carries the tag of its subterm, and [`ItemContent::opacity`] reads it off
-///   the roots.
+///   carries the tag of its subterm, and `ItemContent::opacity` of
+///   `gandr-core-incremental` reads it off the roots.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a foreign unresolved value makes content opaque; the
@@ -6511,7 +6315,8 @@ impl DataRoots
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`DeclarationRoots::renumbered`].
+    /// - hypothesis: L3 — as `DeclarationRoots::renumbered` of
+    ///   `gandr-core-incremental`.
     /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     #[spec(ensures: |ret| ret.kind == image(self.kind)
         && ret.parameters.len() == self.parameters.len()
