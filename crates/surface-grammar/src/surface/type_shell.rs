@@ -152,6 +152,11 @@ fn add_type_rules(
         SurfaceForm("value_function_type"),
         AdaptationReason("folded into function_type: the box `(A, B) -> C` is the arrow over a value codomain, so the value function space has no arrow of its own"),
     ));
+    function.adaptations.push(Adaptation::refused(
+        RuleName("function_type"),
+        RetiredForm::FatArrowBox,
+        AdaptationReason("the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named"),
+    ));
     rules.push(function);
     // The linear arrow `(x : A) ⊸ C`, in the band of the arrow: its parameter
     // binds in the linear zone, and the codomain reads the parameter only

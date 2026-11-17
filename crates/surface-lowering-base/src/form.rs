@@ -4481,6 +4481,73 @@ pub fn retired_within(
     found
 }
 
+/// Whether the extra operand at `extra` under the form at `form` is the
+/// retired box: an operand of sort `Type` that starts with the tile `=>`.
+///
+/// In a hole of sort `Type`, no mold reads `=>` but the one of `rec X => S`,
+/// so the molder reads `A => B` as `A` and an extra operand that starts with
+/// `=>`. The sort of the hole and the first tile decide, and no rule does. A
+/// parameter, a result and a constructor field give other faults, which this
+/// reader leaves alone.
+///
+/// # Specification
+/// - requires: `extra` is the span of an extra operand that a form under `form`
+///   refuses.
+/// - ensures: true exactly when a form under `form` stands at `extra`, its mold
+///   is of sort `Type` and labelled with the box's written text, and its first
+///   child is a tile of that text.
+/// - fails: never; a node the tree does not hold reads as false.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the worklist of the walk, error path
+///
+/// # Adequacy
+/// - hypothesis: L3 — `def b : Integer => Integer;` reads as the box at `=>
+///   Integer`; `rec X => S` holds no such operand.
+/// - witness: `gandr-surface-lowering::lower::tests::the_fat_arrow_box_is_refused_by_name_7879`
+#[must_use]
+pub fn boxed_extra(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+    extra: ByteSpan,
+) -> RetiredBox
+{
+    let written = RetiredForm::FatArrowBox.written().0;
+    let boxed = |mold: MoldId| {
+        pbg.mold(mold)
+            .is_ok_and(|held| held.label == written && held.sort == Sort::Type)
+    };
+    let mut pending = alloc::vec![form];
+    while let Some(position) = pending.pop() {
+        let Some(node) = tree.node(position)
+        else {
+            continue;
+        };
+        if node.span() == extra
+            && let NodeLabel::Meld(mold) = node.label()
+            && boxed(mold)
+            && tree
+                .children(position)
+                .filter_map(|child| tree.node(child))
+                .find(|child| child.label() != NodeLabel::Space)
+                .is_some_and(|first| matches!(first.label(), NodeLabel::Tile(tile) if boxed(tile)))
+        {
+            return RetiredBox(true);
+        }
+        pending.extend(tree.children(position));
+    }
+    RetiredBox(false)
+}
+
+/// Whether an extra operand is the retired box.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RetiredBox(pub bool);
+
 quenchant_shape::reason_enum! {
     /// Why a node carries no tile label.
     pub mod tiled {

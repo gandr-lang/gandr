@@ -177,6 +177,7 @@ use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Repair;
+use crate::form::RetiredBox;
 use crate::form::Run;
 use crate::form::RunReading;
 use crate::form::Shape;
@@ -184,6 +185,7 @@ use crate::form::TileName;
 use crate::form::Universe;
 use crate::form::applied_word;
 use crate::form::bare_bracket;
+use crate::form::boxed_extra;
 use crate::form::family_of;
 use crate::form::misspelt_keyword;
 use crate::form::misspelt_operator;
@@ -20536,7 +20538,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
 
     /// The refusal of the slot `slot`, refused as `refusal` at `at`: the
     /// refusal of the first retired token that a form of the slot holds, when
-    /// one holds such a token, and `refusal` otherwise.
+    /// one holds such a token; the retired box, when `refusal` is an extra
+    /// operand that [`boxed_extra`] reads as the box; and `refusal`
+    /// otherwise.
     ///
     /// A declaration that holds an old spelling reports that refusal and no
     /// other fault, since the faults around it follow from it.
@@ -20546,16 +20550,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - ensures: [`crate::form::Repaired::refusal`] of [`retired_within`]'s
     ///   repair under the first of `at`, the form that introduced the slot, its
     ///   signature and its definition that holds a retired token, named by that
-    ///   form; `refusal` when none holds one.
+    ///   form; else, for an extra operand that [`boxed_extra`] reads as the box
+    ///   under one of them, the same refusal with [`FormFault::Retired`] of
+    ///   [`RetiredForm::FatArrowBox`]; `refusal` otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `def a = #{ .x = 1 };` reads an extra operand first
-    ///   and reports the retired token; a declaration with no retired token
-    ///   keeps its refusal.
+    ///   and reports the retired token; `def b : Integer => Integer;` reports
+    ///   the box at `=> Integer`; a declaration with neither keeps its refusal.
     /// - witness: `gandr-surface-lowering::lower::tests::the_glued_view_telescope_is_refused_by_name_7879`
-    #[spec(ensures: |ret| ret == refusal || matches!(ret, LoweringRefusal::MalformedForm { fault: FormFault::Repaired(Repair::Retired(_)), .. }))]
+    /// - witness: `gandr-surface-lowering::lower::tests::the_fat_arrow_box_is_refused_by_name_7879`
+    #[spec(ensures: |ret| ret == refusal || matches!(ret, LoweringRefusal::MalformedForm { fault: FormFault::Repaired(Repair::Retired(_)) | FormFault::Retired(RetiredForm::FatArrowBox), .. }))]
     fn retired_first(
         &self,
         slot: &DeclarationSlot<'source>,
@@ -20568,15 +20575,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             Maybe::Present(half) => Some(half.declaration.node),
             Maybe::Absent(_) => None,
         });
-        [
+        let forms = [
             Some(at),
             Some(slot.introduced_by.node),
             halves[0],
             halves[1],
-        ]
-        .into_iter()
-        .flatten()
-        .find_map(|form| {
+        ];
+        let token = forms.into_iter().flatten().find_map(|form| {
             let Maybe::Present(found) = retired_within(cx.pbg, cx.tree, form)
             else {
                 return None;
@@ -20590,8 +20595,27 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                 })
                 .unwrap_or(FormName::DECLARATION);
             Some(found.refusal(name))
-        })
-        .unwrap_or(refusal)
+        });
+        if let Some(found) = token {
+            return found;
+        }
+        if let LoweringRefusal::MalformedForm {
+            span,
+            form,
+            fault: FormFault::ExtraOperand,
+        } = refusal
+            && forms
+                .into_iter()
+                .flatten()
+                .any(|held| boxed_extra(cx.pbg, cx.tree, held, span) == RetiredBox(true))
+        {
+            return LoweringRefusal::MalformedForm {
+                span,
+                form,
+                fault: FormFault::Retired(RetiredForm::FatArrowBox),
+            };
+        }
+        refusal
     }
 
     /// What the slot at `position` amounts to by its own halves, whatever

@@ -7266,6 +7266,119 @@ mod tests
         }
     }
 
+    /// #7879: the box `A => B` in a type position reads as `A` and an extra
+    /// operand that starts with `=>`. In a signature, a nested box, a group
+    /// in parentheses and a record field, the declaration reports that
+    /// refusal by its name and no other fault. A parameter, a result and an
+    /// expression hole keep their faults, and `rec t => S` and an arm whose
+    /// pattern is one name keep their readings.
+    #[test]
+    fn the_fat_arrow_box_is_refused_by_name_7879()
+    {
+        let pbg = grammar();
+        let lowered = |source: &'static str| {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("parses")
+                .into_tree();
+            let mut arena = CoreArena::new();
+            let module = lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .expect("lowers");
+            outcomes(&module)
+        };
+        let refused = |start: usize, end: usize, form: FormName, fault: FormFault| {
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                span: span(ByteOffset::from(start), ByteOffset::from(end)),
+                form,
+                fault,
+            })
+        };
+        let boxed = FormFault::Retired(gandr_surface_grammar::RetiredForm::FatArrowBox);
+        for (source, start, end, form) in [
+            (
+                "def b : Integer => Integer;\n",
+                16,
+                26,
+                FormName::DECLARATION,
+            ),
+            (
+                "def b : Integer => Integer => Integer;\n",
+                16,
+                37,
+                FormName::DECLARATION,
+            ),
+            (
+                "def g : (Integer => Integer) -> Integer;\n",
+                17,
+                27,
+                FormName::from(NamedKind("parenthesized_type")),
+            ),
+            (
+                "def r : *{ x : Integer => Integer };\n",
+                23,
+                33,
+                FormName::from(NamedKind("telescope_type")),
+            ),
+        ] {
+            assert_eq!(
+                lowered(source),
+                [refused(start, end, form, boxed)],
+                "{source}"
+            );
+        }
+        assert_eq!(
+            lowered("data D : Type where\n  | Mk : (n : Integer => Integer) --> D\n"),
+            [
+                refused(42, 52, FormName::from(NamedKind("data_generator")), boxed),
+                refused(24, 59, FormName::DECLARATION, FormFault::MisplacedTile),
+            ],
+            "a constructor field names the box and keeps the fault of its line"
+        );
+        for (source, at, form, fault) in [
+            (
+                "def f(g : Integer => Integer) -> Integer;\n",
+                17,
+                FormName::DECLARATION,
+                FormFault::Repaired(Repair::Diverged(crate::form::Ending::Unnamed)),
+            ),
+            (
+                "def f(x : Integer) -> Integer => Integer;\n",
+                21,
+                FormName::DECLARATION,
+                FormFault::Repaired(Repair::Unended(crate::form::Ending::Unnamed)),
+            ),
+            (
+                "def b = Integer => Integer;\n",
+                27,
+                FormName::from(NamedKind("lambda_expression")),
+                FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)),
+            ),
+        ] {
+            assert_eq!(lowered(source), [refused(at, at, form, fault)], "{source}");
+        }
+        assert!(
+            matches!(lowered("def s : rec t => !Integer >> t;\n").as_slice(), [
+                DeclarationOutcome::Uncompleted { .. }
+            ]),
+            "`rec t => S` reads as a session type"
+        );
+        assert!(
+            matches!(
+                lowered(
+                    "def same(n : Integer) -> -F Integer =\n  match n where\n    | m => return m\n"
+                )
+                .as_slice(),
+                [DeclarationOutcome::Completed { .. }]
+            ),
+            "an arm whose pattern is one name reads as an arm"
+        );
+    }
+
     /// #7879: the glued `#{` is the retired opener of a telescope and a
     /// record. A declaration that holds it reports that refusal at the
     /// token's bytes and no other fault; another declaration keeps its own
