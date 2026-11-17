@@ -189,6 +189,8 @@ mod session;
 mod stream;
 mod typing;
 
+pub use gandr_core_content::codec::UnsupportedPersistence;
+
 pub use crate::boundary::ItemCount;
 pub use crate::boundary::ItemOrdinal;
 pub use crate::boundary::LivenessEmpty;
@@ -229,7 +231,6 @@ pub use crate::checkpoint::resume_after;
 pub use crate::checkpoint::resume_from;
 pub use crate::checkpoint::reuse::Reuse;
 pub use crate::codec::CheckpointBytes;
-pub use crate::codec::UnsupportedPersistence;
 pub use crate::content::AbstractRoots;
 pub use crate::content::DataContent;
 pub use crate::content::DeclarationRoots;

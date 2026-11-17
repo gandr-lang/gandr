@@ -41,10 +41,9 @@ use std::ffi::OsStr;
 use std::path::Path;
 
 use anodized::spec;
+use gandr_core_content::codec::Bytes;
 use gandr_core_publish::Contents;
 use quenchant_shape::shape::Maybe;
-
-use crate::codec::Bytes;
 
 /// The byte length of a frame's magic and version.
 const OPENING_LEN: usize = 12;
@@ -173,6 +172,9 @@ impl Payload<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the appended bytes, growth within the payload
     #[inline]
     pub fn append(
         &mut self,
@@ -220,6 +222,9 @@ impl Format
     /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
     /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
     /// - witness: `persistence::tests::a_record_under_the_unmoved_header_loads`
+    ///
+    /// # Cost
+    /// - allocation: the framed record, growth within the payload
     #[spec(
         ensures: |ret| match ret {
             | Ok(ref record) => match self.read(Bytes(&record.0)) {

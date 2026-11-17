@@ -13,6 +13,8 @@ use gandr_core_content::NodeIndex;
 use gandr_core_content::Occurrence;
 use gandr_core_content::Reference;
 use gandr_core_content::Sort;
+use gandr_core_content::codec::Bytes;
+use gandr_core_content::codec::UnsupportedPersistence;
 use gandr_core_term::CoreArena;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelOffset;
@@ -42,9 +44,7 @@ use crate::boundary::RecordCount;
 use crate::checkpoint::Answer;
 use crate::checkpoint::Checkpoints;
 use crate::checkpoint::ItemCheckpoint;
-use crate::codec::Bytes;
 use crate::codec::CheckpointBytes;
-use crate::codec::UnsupportedPersistence;
 use crate::codec::reference_bytes;
 use crate::fixture::Digits;
 use crate::fixture::Key;
@@ -1442,7 +1442,7 @@ fn rewriting_the_first_frame_preserves_unequal_length_neighbors()
 fn stores_refuse_capped_levels_without_replacing_records()
 {
     let mut level = Level::var(LevelVar::new(LevelVarIndex::from(0_u32)));
-    for _ in 0 .. crate::codec::MAX_DECODED_LEVEL_OFFSET {
+    for _ in 0 .. gandr_core_content::codec::MAX_DECODED_LEVEL_OFFSET {
         level = level.succ().expect("representable level");
     }
     let mut arena = CoreArena::new();
@@ -1458,7 +1458,7 @@ fn stores_refuse_capped_levels_without_replacing_records()
     let valid = checked(&mut program);
     let address = address_of(&program).expect("resolved address");
     let refusal = CheckpointStoreError::LevelOffsetTooLarge {
-        offset: LevelOffset::from(crate::codec::MAX_DECODED_LEVEL_OFFSET),
+        offset: LevelOffset::from(gandr_core_content::codec::MAX_DECODED_LEVEL_OFFSET),
     };
 
     let mut memory = MemoryCheckpointStore::default();
