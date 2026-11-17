@@ -5,12 +5,13 @@
 # Every container job extracts the whole image before its first step, and
 # extraction, not the download, is most of that time (#1999: 2.6 s to
 # download, 32 s to extract). The image therefore carries only what most jobs
-# run. The toolchain is the pin's channel with clippy and rustfmt; the
-# components few jobs use (rustc-dev and llvm-tools for Dylint, llvm-tools
-# for coverage, rust-src for `build-dist`) are added by the task that needs
-# them. `RUSTUP_TOOLCHAIN` names the channel, so rustup reads no component
-# list from rust-toolchain.toml, and mise leaves rust alone (below): nothing
-# installs the rest on first use.
+# run. The toolchain is the pin's channel with clippy, rustfmt and llvm-tools:
+# the runtime emitter's tests compile machine blocks with its `llc`, and
+# coverage reads its `llvm-cov`. The components few jobs use (rustc-dev for
+# Dylint, rust-src for `build-dist`) are added by the task that needs them.
+# `RUSTUP_TOOLCHAIN` names the channel, so rustup reads no component list from
+# rust-toolchain.toml, and mise leaves rust alone (below): nothing installs
+# the rest on first use.
 # Build caches (Cargo's registry, mise's downloads) leave in the layer that
 # made them.
 ARG UBUNTU_BASE=docker.io/library/ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
@@ -62,14 +63,15 @@ COPY --chown=1000:1000 .mise/locks /opt/pins/.mise/locks
 COPY --chown=1000:1000 .config/mise/tasks/mise-tasks-fmt.toml .config/mise/tasks/mise-tasks-check.toml .config/mise/tasks/mise-tasks-mutants.toml /opt/pins/.config/mise/tasks/
 WORKDIR /opt/pins
 
-# The pin supplies the channel; the image installs clippy and rustfmt alone.
+# The pin supplies the channel; the image installs clippy, rustfmt and
+# llvm-tools alone.
 RUN set -eux; \
     [ -n "$RUST_CHANNEL" ]; \
     [ "$RUST_CHANNEL" = "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" ]; \
     curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh; \
     sh /tmp/rustup-init.sh -y --no-modify-path --default-toolchain none; \
     rm /tmp/rustup-init.sh; \
-    rustup toolchain install "$RUST_CHANNEL" --profile minimal --component clippy,rustfmt; \
+    rustup toolchain install "$RUST_CHANNEL" --profile minimal --component clippy,rustfmt,llvm-tools; \
     rustup default "$RUST_CHANNEL"
 
 # The shared install action selects mise's version. A BuildKit secret authenticates release
