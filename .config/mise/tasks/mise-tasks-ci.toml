@@ -379,8 +379,8 @@ echo "night $night, crate $((night % nights + 1)) of $nights: ${packages[*]}"
 # object the real record replaces the zero one. `report -v` prints the export
 # command cargo-llvm-cov builds, so the profile, the objects and the ignored
 # paths are cargo-llvm-cov's own; its merged report is discarded.
-# llvm-tools supplies llvm-cov, and the task adds it where it is absent (a
-# no-op where it is installed).
+# llvm-tools supplies llvm-cov; the CI image leaves it out, so the task adds
+# it (a no-op where it is installed).
 #
 # The coverage workflow runs the measure in parts, so no job reaches its
 # limit (#4020): the part `hash:<k>/<n>` runs one of nextest's slices of the

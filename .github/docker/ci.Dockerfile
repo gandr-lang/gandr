@@ -2,18 +2,18 @@
 # subset, gh, cargo-mutants, runtime and Dylint driver. No engine SDK or LLVM pin exists here.
 # Pin files are copied, never retyped; image-tag.sh hashes the build inputs.
 #
-# Every container job extracts the whole image before its first step, and
-# extraction, not the download, is most of that time (#1999: 2.6 s to
-# download, 32 s to extract). The image therefore carries only what most jobs
-# run. The toolchain is the pin's channel with clippy, rustfmt and llvm-tools:
-# the runtime emitter's tests compile machine blocks with its `llc`, and
-# coverage reads its `llvm-cov`. The components few jobs use (rustc-dev for
-# Dylint, rust-src for `build-dist`) are added by the task that needs them.
-# `RUSTUP_TOOLCHAIN` names the channel, so rustup reads no component list from
-# rust-toolchain.toml, and mise leaves rust alone (below): nothing installs
-# the rest on first use.
-# Build caches (Cargo's registry, mise's downloads) leave in the layer that
-# made them.
+# Every container job extracts the whole image before its first step. The
+# extraction takes most of that time, and the download takes little. So the
+# image carries only what most jobs run. Build caches, as Cargo's registry
+# and mise's downloads, leave in the layer that made them.
+# - see: #1999
+#
+# The toolchain is the channel of the pin, with clippy, rustfmt and
+# llvm-tools. The tests of the runtime emitter run the `llc` of llvm-tools. A
+# task adds each component that few jobs use: rustc-dev for Dylint and
+# rust-src for `build-dist`. `RUSTUP_TOOLCHAIN` names the channel, so rustup
+# reads no component list from rust-toolchain.toml. mise leaves rust alone
+# (below), so nothing installs the rest on first use.
 ARG UBUNTU_BASE=docker.io/library/ubuntu:26.04@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78
 FROM ${UBUNTU_BASE} AS tools
 # The pin's channel, passed by build-ci-image.yml and checked against the pin below.
@@ -63,7 +63,7 @@ COPY --chown=1000:1000 .mise/locks /opt/pins/.mise/locks
 COPY --chown=1000:1000 .config/mise/tasks/mise-tasks-fmt.toml .config/mise/tasks/mise-tasks-check.toml .config/mise/tasks/mise-tasks-mutants.toml /opt/pins/.config/mise/tasks/
 WORKDIR /opt/pins
 
-# The pin supplies the channel; the image installs clippy, rustfmt and
+# The pin supplies the channel. The image installs clippy, rustfmt and
 # llvm-tools alone.
 RUN set -eux; \
     [ -n "$RUST_CHANNEL" ]; \
