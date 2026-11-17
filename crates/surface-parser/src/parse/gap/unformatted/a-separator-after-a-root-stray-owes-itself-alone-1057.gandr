@@ -1,0 +1,2 @@
+print "x";
+def a : Integer = 1;
