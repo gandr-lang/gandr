@@ -1,0 +1,12 @@
+data Ctx : Type where { | Empty : Ctx | Extend : (g : Ctx, n : Integer) --> Ctx }
+data Var : (g : Ctx, n : Integer) --> Type where {
+  | Here : (g : Ctx, n : Integer) --> Var(Extend(g, n), n)
+}
+type Ren(d : Ctx, g : Ctx) = (n : Integer) -> (Var(g, n) -> Var(d, n));
+def lift(d : Ctx, g : Ctx, r : Ren(Extend(d, 5), Extend(g, 6))) -> Integer { 0 }
+data Box : Type where { | Wrap : (g : Ctx) --> Box }
+def boxed() -> Box {
+  let one = Extend Empty 1;
+  let two = Extend one 2;
+  Wrap two
+}

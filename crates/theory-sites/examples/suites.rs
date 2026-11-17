@@ -1,0 +1,554 @@
+//! Runs every condition of the site at its bound and prints each outcome as
+//! a Markdown table row: the condition, the bound, the verdict, the cases
+//! examined and the smallest counter-example.
+//!
+//! Conditions on single maps run over the shapes of size at most five;
+//! conditions on composable pairs and spans over size at most four. The
+//! stratum table builds the chain catalogue, the magma's profile catalogue and
+//! the wiring catalogue at size seven and times each one's build and stratum
+//! certification. The last table runs the conditions over a level on `W ≀ W`,
+//! the wreath of the wiring site over itself, at the same total sizes. The
+//! chain restriction's table counts its objects, maps and pasting schemes at
+//! total sizes nine to fifteen, the counts `tests::theta` pins against Θ₂.
+//!
+//! Run it with `cargo run --release -p gandr-theory-sites --example suites`.
+
+extern crate alloc;
+
+use alloc::sync::Arc;
+use core::fmt::Display;
+use std::io::Write;
+use std::io::stdout;
+use std::time::Instant;
+
+use gandr_theory_sites::CaseCount;
+use gandr_theory_sites::Catalogue;
+use gandr_theory_sites::Cocones;
+use gandr_theory_sites::Degree;
+use gandr_theory_sites::GeneratorBound;
+use gandr_theory_sites::Level as _;
+use gandr_theory_sites::Outcome;
+use gandr_theory_sites::Part;
+use gandr_theory_sites::PortCount;
+use gandr_theory_sites::Profile;
+use gandr_theory_sites::Scope;
+use gandr_theory_sites::SegalStratum;
+use gandr_theory_sites::Shape;
+use gandr_theory_sites::ShapeBudget;
+use gandr_theory_sites::ShapeIndex;
+use gandr_theory_sites::ShapeObstruction;
+use gandr_theory_sites::ShapeSize;
+use gandr_theory_sites::Site;
+use gandr_theory_sites::Uncertified;
+use gandr_theory_sites::Wreath;
+use gandr_theory_sites::closure;
+use gandr_theory_sites::codegeneracies;
+use gandr_theory_sites::core_decomposition;
+use gandr_theory_sites::corolla;
+use gandr_theory_sites::degree_order;
+use gandr_theory_sites::deletion_classes;
+use gandr_theory_sites::direct_core;
+use gandr_theory_sites::dual_rigidity;
+use gandr_theory_sites::factorization;
+use gandr_theory_sites::grounded_stratum;
+use gandr_theory_sites::identities;
+use gandr_theory_sites::intersection;
+use gandr_theory_sites::invertibility;
+use gandr_theory_sites::latching;
+use gandr_theory_sites::pushouts;
+use gandr_theory_sites::rigidity;
+use gandr_theory_sites::segal;
+use gandr_theory_sites::split_lowering;
+use gandr_theory_sites::unit_property;
+
+/// Why the run stops: a shape the constructors refused, or the output.
+enum RunError
+{
+    /// Building a catalogue or the scalars was refused.
+    Shape(ShapeObstruction),
+    /// Writing a row failed.
+    Write(std::io::Error),
+}
+
+impl core::fmt::Debug for RunError
+{
+    /// Writes the cause, which `main` prints when it returns the error.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Shape(ref refusal) => write!(f, "a shape was refused: {refusal}"),
+            Self::Write(ref failure) => write!(f, "the output failed: {failure}"),
+        }
+    }
+}
+
+impl From<ShapeObstruction> for RunError
+{
+    /// Wraps the refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(refusal: ShapeObstruction) -> Self
+    {
+        Self::Shape(refusal)
+    }
+}
+
+impl From<std::io::Error> for RunError
+{
+    /// Wraps the write failure.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(failure: std::io::Error) -> Self
+    {
+        Self::Write(failure)
+    }
+}
+
+/// One table row: the condition, the bound and the outcome.
+///
+/// # Specification
+/// trivial.
+fn row<Witness>(
+    out: &mut impl Write,
+    condition: &impl Display,
+    bound: ShapeSize,
+    outcome: &Outcome<Witness>,
+) -> std::io::Result<()>
+where
+    Witness: Display,
+{
+    let witness = match outcome.witness() {
+        quenchant_shape::shape::Maybe::Present(witness) => format!("`{witness}`"),
+        quenchant_shape::shape::Maybe::Absent(_) => "—".to_owned(),
+    };
+    writeln!(
+        out,
+        "| {condition} | ≤ {} | {} | {} | {witness} |",
+        usize::from(bound),
+        outcome.verdict(),
+        usize::from(outcome.cases()),
+    )
+}
+
+/// The header of an outcome table.
+///
+/// # Specification
+/// trivial.
+fn header(out: &mut impl Write) -> std::io::Result<()>
+{
+    writeln!(
+        out,
+        "| Condition | Size | Verdict | Cases | Smallest counter-example |"
+    )?;
+    writeln!(
+        out,
+        "| --------- | ---- | ------- | ----- | ------------------------ |"
+    )
+}
+
+/// One stratum row: the family, the bound, the catalogue's shape count, the
+/// degree, what certifying the stratum found, and the time to build and
+/// certify.
+///
+/// # Specification
+/// trivial.
+fn stratum_row(
+    out: &mut impl Write,
+    family: &impl Display,
+    bound: ShapeSize,
+    degree: Degree,
+    build: impl FnOnce(ShapeSize) -> Result<Catalogue, ShapeObstruction>,
+) -> Result<(), RunError>
+{
+    let start = Instant::now();
+    let catalogue = Arc::new(build(bound)?);
+    let verdict = match SegalStratum::certify(Arc::clone(&catalogue), degree) {
+        Ok(stratum) => format!(
+            "certified: {} corollas, {} cocones",
+            stratum.corollas().len(),
+            stratum.cocones().len()
+        ),
+        Err(Uncertified::Degree { .. }) => "refused: no shape reaches the degree".to_owned(),
+        Err(Uncertified::Condition {
+            witness,
+            degree: failing,
+        }) => format!("refused at `{witness}`, degree {failing}"),
+    };
+    let elapsed = start.elapsed();
+    writeln!(
+        out,
+        "| {family} | ≤ {} | {} | {degree} | {verdict} | {} µs |",
+        usize::from(bound),
+        catalogue.shapes().len(),
+        elapsed.as_micros(),
+    )?;
+    Ok(())
+}
+
+/// How many maps run between the objects of a wreath at `among`.
+///
+/// # Specification
+/// trivial.
+fn maps_among(
+    wreath: &Wreath<Catalogue>,
+    among: &[ShapeIndex],
+) -> CaseCount
+{
+    CaseCount::from(
+        among
+            .iter()
+            .flat_map(|source| among.iter().map(move |target| (*source, *target)))
+            .map(|(source, target)| wreath.hom(source, target).len())
+            .sum::<usize>(),
+    )
+}
+
+/// Every index of a wreath's objects.
+///
+/// # Specification
+/// trivial.
+fn every(wreath: &Wreath<Catalogue>) -> Vec<ShapeIndex>
+{
+    (0 .. wreath.objects().len())
+        .map(ShapeIndex::from)
+        .collect()
+}
+
+/// The wreath's table: `W ≀ W`'s object and map counts, then each condition
+/// over a level, single maps at the first total size and composable pairs
+/// and spans at the second.
+///
+/// # Specification
+/// trivial.
+fn wreath_rows(
+    out: &mut impl Write,
+    (single, paired): (&Arc<Catalogue>, &Arc<Catalogue>),
+    (one, two): (ShapeSize, ShapeSize),
+) -> std::io::Result<()>
+{
+    let start = Instant::now();
+    let wide = Wreath::build(single, single, one);
+    let narrow = Wreath::build(paired, paired, two);
+    let built = start.elapsed();
+    writeln!(out)?;
+    writeln!(
+        out,
+        "W ≀ W: {} objects and {} maps at total size ≤ {}, {} and {} at ≤ {}, built in {} ms",
+        wide.objects().len(),
+        usize::from(maps_among(&wide, &every(&wide))),
+        usize::from(one),
+        narrow.objects().len(),
+        usize::from(maps_among(&narrow, &every(&narrow))),
+        usize::from(two),
+        built.as_millis(),
+    )?;
+    writeln!(out)?;
+    let (wide, narrow) = (Site::new(&wide), Site::new(&narrow));
+    header(out)?;
+    row(out, &"identities", one, &identities(&wide))?;
+    for (name, part) in [
+        ("closure", Part::Whole),
+        ("closure of the raising maps", Part::Raising),
+        ("closure of the lowering maps", Part::Lowering),
+    ] {
+        row(out, &name, two, &closure(&narrow, part))?;
+    }
+    row(
+        out,
+        &"raising ∩ lowering = isomorphisms",
+        one,
+        &intersection(&wide),
+    )?;
+    row(
+        out,
+        &"invertible ⇔ two-sided inverse",
+        one,
+        &invertibility(&wide),
+    )?;
+    row(
+        out,
+        &"degree orders both classes",
+        one,
+        &degree_order(&wide, Scope::Both),
+    )?;
+    row(
+        out,
+        &"factorization, unique up to unique iso",
+        one,
+        &factorization(&wide),
+    )?;
+    row(out, &"rigidity (iv)", one, &rigidity(&wide))?;
+    row(out, &"dual rigidity (iv′)", one, &dual_rigidity(&wide))?;
+    row(out, &"lowering maps split", one, &split_lowering(&wide))?;
+    let pushed = pushouts(&narrow);
+    row(
+        out,
+        &"pushout along a deletion exists",
+        two,
+        &pushed.existence,
+    )?;
+    row(out, &"pushed-out map is raising", two, &pushed.stability)?;
+    writeln!(out, "conditions run in {} ms", start.elapsed().as_millis())
+}
+
+/// The chain restriction's table: at each total size, its objects and maps,
+/// and its pasting schemes, the objects with an outer vertex and no point,
+/// with the maps between them.
+///
+/// # Specification
+/// trivial.
+fn restriction_rows(out: &mut impl Write) -> Result<(), RunError>
+{
+    writeln!(out)?;
+    writeln!(
+        out,
+        "| Total size | Objects | Maps | Pasting schemes | Their maps | Build |"
+    )?;
+    writeln!(
+        out,
+        "| ---------- | ------- | ---- | --------------- | ---------- | ----- |"
+    )?;
+    let pointless = |shape: &Shape| usize::from(shape.point_count()) == 0;
+    for total in [9_usize, 11, 13, 15] {
+        let bound = ShapeSize::from(total);
+        let start = Instant::now();
+        let chains = Arc::new(Catalogue::chains(bound)?);
+        let restriction = Wreath::build(&chains, &chains, bound);
+        let built = start.elapsed();
+        let all = every(&restriction);
+        let schemes: Vec<ShapeIndex> = restriction
+            .objects()
+            .iter()
+            .zip(&all)
+            .filter(|&(object, _)| {
+                usize::from(object.outer().vertex_count()) > 0
+                    && pointless(object.outer())
+                    && object.columns().iter().all(pointless)
+            })
+            .map(|(_, index)| *index)
+            .collect();
+        writeln!(
+            out,
+            "| ≤ {total} | {} | {} | {} | {} | {} ms |",
+            all.len(),
+            usize::from(maps_among(&restriction, &all)),
+            schemes.len(),
+            usize::from(maps_among(&restriction, &schemes)),
+            built.as_millis(),
+        )?;
+    }
+    Ok(())
+}
+
+/// Runs every condition and prints its row.
+///
+/// # Specification
+/// trivial.
+fn main() -> Result<(), RunError>
+{
+    let mut out = stdout().lock();
+    let (one, two) = (ShapeSize::from(5_usize), ShapeSize::from(4_usize));
+    let single = Catalogue::build(one)?;
+    let paired = Catalogue::build(two)?;
+    let wide = Site::new(&single);
+    let narrow = Site::new(&paired);
+    writeln!(
+        out,
+        "shape classes: {} at size ≤ {}, {} at size ≤ {}",
+        single.shapes().len(),
+        usize::from(one),
+        paired.shapes().len(),
+        usize::from(two)
+    )?;
+    writeln!(out)?;
+    header(&mut out)?;
+    row(&mut out, &"identities", one, &identities(&wide))?;
+    for (name, part) in [
+        ("closure", Part::Whole),
+        ("closure of the raising maps", Part::Raising),
+        ("closure of the lowering maps", Part::Lowering),
+    ] {
+        row(&mut out, &name, two, &closure(&narrow, part))?;
+    }
+    row(
+        &mut out,
+        &"raising ∩ lowering = isomorphisms",
+        one,
+        &intersection(&wide),
+    )?;
+    row(
+        &mut out,
+        &"invertible ⇔ two-sided inverse",
+        one,
+        &invertibility(&wide),
+    )?;
+    row(
+        &mut out,
+        &"degree orders the raising maps",
+        one,
+        &degree_order(&wide, Scope::Raising),
+    )?;
+    row(
+        &mut out,
+        &"degree orders both classes",
+        one,
+        &degree_order(&wide, Scope::Both),
+    )?;
+    row(
+        &mut out,
+        &"point-free core is direct",
+        one,
+        &direct_core(&wide),
+    )?;
+    row(
+        &mut out,
+        &"latching categories are finite",
+        one,
+        &latching(&wide),
+    )?;
+    row(
+        &mut out,
+        &"factorization, unique up to unique iso",
+        one,
+        &factorization(&wide),
+    )?;
+    row(&mut out, &"rigidity (iv)", one, &rigidity(&wide))?;
+    row(&mut out, &"dual rigidity (iv′)", one, &dual_rigidity(&wide))?;
+    row(
+        &mut out,
+        &"lowering maps split",
+        one,
+        &split_lowering(&wide),
+    )?;
+    let pushed = pushouts(&narrow);
+    row(
+        &mut out,
+        &"pushout along a deletion exists",
+        two,
+        &pushed.existence,
+    )?;
+    row(
+        &mut out,
+        &"pushed-out map is raising",
+        two,
+        &pushed.stability,
+    )?;
+    row(
+        &mut out,
+        &"deletions addressed by kernels",
+        one,
+        &deletion_classes(&wide),
+    )?;
+    row(
+        &mut out,
+        &"deletions as codegeneracies",
+        one,
+        &codegeneracies(&wide),
+    )?;
+    row(
+        &mut out,
+        &"point reaches each point once",
+        one,
+        &corolla(&wide),
+    )?;
+    row(
+        &mut out,
+        &"core beside points, uniquely",
+        one,
+        &core_decomposition(&single),
+    )?;
+    row(
+        &mut out,
+        &"grounded = zero points",
+        one,
+        &grounded_stratum(&single),
+    )?;
+    row(
+        &mut out,
+        &"Segal, admitted families, every degree",
+        one,
+        &segal(&single, Degree::from(5_usize), Cocones::Admitted),
+    )?;
+    row(
+        &mut out,
+        &"Segal, blanket families, every degree",
+        one,
+        &segal(&single, Degree::from(5_usize), Cocones::Blanket),
+    )?;
+    let units = unit_property(GeneratorBound::from(4_usize), &paired)?;
+    writeln!(out)?;
+    writeln!(
+        out,
+        "scalars of at most 4 generators: {}; units found: {}",
+        usize::from(units.scalars),
+        units.units.len()
+    )?;
+    for unit in &units.units {
+        writeln!(out, "unit: `{unit}`")?;
+    }
+    writeln!(out)?;
+    header(&mut out)?;
+    row(
+        &mut out,
+        &"the unit is two-sided on every labelled diagram",
+        two,
+        &units.two_sided,
+    )?;
+    row(
+        &mut out,
+        &"no unit without the empty diagram",
+        two,
+        &units.content,
+    )?;
+    writeln!(out)?;
+    writeln!(
+        out,
+        "| Catalogue | Size | Shapes | Degree | Stratum | Build and certify |"
+    )?;
+    writeln!(
+        out,
+        "| --------- | ---- | ------ | ------ | ------- | ----------------- |"
+    )?;
+    let seven = ShapeSize::from(7_usize);
+    for degree in [4_usize, 5] {
+        stratum_row(
+            &mut out,
+            &"chains",
+            seven,
+            Degree::from(degree),
+            Catalogue::chains,
+        )?;
+    }
+    let magma = [(2_usize, 1_usize), (0, 1)]
+        .into_iter()
+        .map(|(inputs, outputs)| Profile {
+            inputs: PortCount::from(inputs),
+            outputs: PortCount::from(outputs),
+        })
+        .collect();
+    stratum_row(
+        &mut out,
+        &"magma profiles",
+        seven,
+        Degree::from(7_usize),
+        |bound| Catalogue::profiles(bound, magma, ShapeBudget::EVERY),
+    )?;
+    stratum_row(
+        &mut out,
+        &"wirings",
+        seven,
+        Degree::from(4_usize),
+        Catalogue::build,
+    )?;
+    wreath_rows(&mut out, (&Arc::new(single), &Arc::new(paired)), (one, two))?;
+    restriction_rows(&mut out)?;
+    Ok(())
+}

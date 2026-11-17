@@ -1,0 +1,19 @@
+error[ContinuationUnspent]: the operation's continuation holds something that must end, so the clause must `resume` it or `abandon` it exactly once
+   ╭▸ corpus/ledger/diagnostics/ContinuationUnspent.gandr:29:29
+   │
+18 │ ┌  def dropped() -> -F Unit =
+19 │ │┌   handle c : std.process.Exit.Eff {
+20 │ ││     let found = fork (task : Cancel.Join) {
+21 │ ││       send task Cancel.notes;
+22 │ ││       close task
+   ┆ ┆┆
+29 │ ││     | oper exit(code, k) => pure *{}
+   │ ││                             ━━━━━━━━ a continuation never resumed or abandoned
+30 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Unit`; while checking the body of this thunk
+   │      checked against `-F Unit`; while checking an operation clause of this handler; binds c : Integer, _ : Stack (-F Unit) (-F Unit)
+   │
+   ├ note: `dropped` is refused with ContinuationUnspent, as its expectation states
+   ╰ help: end the continuation once with `resume` or `abandon`

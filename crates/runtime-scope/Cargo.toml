@@ -1,0 +1,33 @@
+[package]
+name = "gandr-runtime-scope"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "A scoped runtime on the kernel's io_uring: one thread drives a scope's futures, and the scope's end drains each operation"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["async", "gandr", "io-uring", "linux"]
+categories = ["asynchronous", "network-programming", "os::linux-apis"]
+publish.workspace = true
+autotests = false
+
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The runtime stands on the Linux kernel's ring, so the crate's dependencies
+# are Linux's alone. On another system the crate compiles empty.
+[target.'cfg(target_os = "linux")'.dependencies]
+gandr-runtime-uring = { workspace = true }
+libc = { workspace = true }
+rustix = { workspace = true, features = ["net"] }
+socket2 = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+assert_fs = { workspace = true }
+gandr-kernel-data = { workspace = true }
+predicates = { workspace = true }
+
+[lints]
+workspace = true

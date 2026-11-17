@@ -1,0 +1,7 @@
+data Circle : Type where {
+  | Base : Circle
+  | Next : (x : Circle) --> Circle
+  | loop : Next Base <-> Next Base
+  | turn : Next Base <-> Next Base
+}
+data Flag : Type where { | On : Flag }

@@ -1,0 +1,50 @@
+//! Products and records satisfy eta.
+//!
+//! A pair equals the pair of its projections.
+//! A record equals the record of its fields.
+//! The unit is the tuple of no components, and it equals each value
+//! of its type.
+//!
+//! A neutral product, record or dependent pair converts to the tuple of its
+//! projections on either side.
+//! Reflexivity proves the resulting path.
+//! Eta reads no grade, so a linear parameter of the unit type stays used once.
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
+
+/// A pair is the pair of its projections.
+def etaPair(e : Integer * Integer) -> Path(*{e.0, e.1}, e) =
+  Path.here e
+
+/// The pair of projections stands on either side.
+def etaPairRight(e : Integer * Integer) -> Path(e, *{e.0, e.1}) =
+  Path.here e
+
+/// A record is the record of its fields.
+def etaRecord(e : *{r : Integer}) -> Path[.A = *{r : Integer}](*{.r = e.r}, e) =
+  Path.here e
+
+/// A record of two fields, each read by its label.
+def etaRecordTwo(e : *{l : Integer, r : Integer}) -> Path[.A = *{l : Integer, r : Integer}](
+  *{.l = e.l, .r = e.r},
+  e
+) =
+  Path.here e
+
+/// This eta path for a dependent pair uses its two components.
+def etaFiber(e : *{n : Integer, v : Path[.A = Integer](n, n)}) -> Path(
+  *{e.n, e.v},
+  e
+) =
+  Path.here e
+
+/// The unit equals each value of its type.
+def etaUnit(u : Unit) -> Path[.A = Unit](*{}, u) =
+  Path.here u
+
+/// Eta relates the endpoints of this path, and the body takes the one copy of
+/// the linear parameter.
+def etaUnitOnce(u : Unit) ⊸ Path[.A = Unit](*{}, u) =
+  Path.here u

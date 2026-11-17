@@ -1,0 +1,4 @@
+pub module Times where {
+  type M = Integer;
+  def mul(a : Integer, b : Integer) -> Integer { become a + b }
+}

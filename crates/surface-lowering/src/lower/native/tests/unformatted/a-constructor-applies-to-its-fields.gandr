@@ -1,0 +1,4 @@
+{COLOR}data Triple : Type where {{ | T : (a : Integer, b : Integer, c : Integer) --> Triple }}
+def green = Green;
+def triple = T 1 2 3;
+def short = T 1 2;

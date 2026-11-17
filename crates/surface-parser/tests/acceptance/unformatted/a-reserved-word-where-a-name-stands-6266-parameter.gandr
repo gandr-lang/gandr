@@ -1,0 +1,2 @@
+def f({keyword} : Integer) -> Integer = 1;
+def ok = 2 ;
