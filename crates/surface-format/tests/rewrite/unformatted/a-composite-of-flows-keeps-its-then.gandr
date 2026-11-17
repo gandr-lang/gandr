@@ -5,7 +5,5 @@ module Evolution where {
   def sub = Flow.sim Old New;
   def kept : Flow[.A = Type](Old, Old);
   def kept = Flow.stay Old;
-  def widened() -> -F Flow[.A = Type](Old, New) {
-    become Path.step kept sub
-  }
+  def widened() -> -F Flow[.A = Type](Old, New) = become Path.step kept sub;
 }

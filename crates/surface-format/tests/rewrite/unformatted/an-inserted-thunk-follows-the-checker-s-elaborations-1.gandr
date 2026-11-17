@@ -1,7 +1,7 @@
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
-def twice(n : Nat) -> Nat { Succ (Succ n) }
+def twice(n : Nat) -> Nat = Succ (Succ n);
 
-def call(f : +U (-F Nat)) -> Nat { force f }
+def call(f : +U (-F Nat)) -> Nat = force f;
 
-def field(n : Nat) -> Nat { call (thunk { twice n }) }
+def field(n : Nat) -> Nat = call (thunk { twice n });

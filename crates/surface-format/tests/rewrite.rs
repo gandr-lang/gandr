@@ -232,50 +232,36 @@ fn a_tail_return_is_left_out_where_the_lowering_would_infer_it_1327()
     let sugared = "\
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
 
-def succeeded(n : Nat) -> Nat {
-  Succ n
-}
+def succeeded(n : Nat) -> Nat = Succ n;
 
-def early(k : Nat) -> Nat {
-  match k {
-    | Zero => k
-    | Succ(j) => {
-      let q = match j {
-        | Zero => return j
-        | Succ(r) => pure r
-      };
-      pure q
-    }
+def early(k : Nat) -> Nat = match k {
+  | Zero => k
+  | Succ(j) => {
+    let q = match j {
+      | Zero => return j
+      | Succ(r) => pure r
+    };
+    pure q
   }
-}
+};
 
-def computed(n : Nat) -> Nat {
-  return succeeded n
-}
+def computed(n : Nat) -> Nat = return succeeded n;
 
-def stated(n : Nat) -> Nat {
+def stated(n : Nat) -> Nat = {
   return n;
-}
+};
 
-def nested(n : Nat) -> Nat -> Nat {
-  thunk { fun (x) { Succ x } }
-}
+def nested(n : Nat) -> Nat -> Nat = thunk { fun (x) { Succ x } };
 
-def blocked(n : Nat) -> Nat {
-  match n {
-    | Zero => { let y = succeeded n; y }
-    | Succ(p) => p
-  }
-}
+def blocked(n : Nat) -> Nat = match n {
+  | Zero => { let y = succeeded n; y }
+  | Succ(p) => p
+};
 
-def noted(n : Nat) -> Nat {
-  return /* the argument */ n
-}
+def noted(n : Nat) -> Nat = return /* the argument */ n;
 
 @[explicit_exits]
-def asked(n : Nat) -> Nat {
-  return n
-}
+def asked(n : Nat) -> Nat = return n;
 ";
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
@@ -301,9 +287,7 @@ fn a_result_at_a_region_keeps_its_returner_2325()
     let source =
         include_str!("rewrite/unformatted/a-result-at-a-region-keeps-its-returner-2325.gandr");
     let sugared = "\
-def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) {
-  pure k
-}
+def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) = pure k;
 ";
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
@@ -326,25 +310,15 @@ fn a_result_row_is_written_before_its_type_2255()
     let sugared = "\
 import std.process;
 
-def both() -> [Partial, std.process.Exit.Eff] Integer {
-  pure 1
-}
+def both() -> [Partial, std.process.Exit.Eff] Integer = pure 1;
 
-def pair() -> [Partial] (Integer * Integer) {
-  pure *{1, 2}
-}
+def pair() -> [Partial] (Integer * Integer) = pure *{1, 2};
 
-def apply(k : +U (Unit -> -F [Partial] Unit)) -> [Partial] Unit {
-  k *{}
-}
+def apply(k : +U (Unit -> -F [Partial] Unit)) -> [Partial] Unit = k *{};
 
-def tailed[r : Row]() -> [Partial | r] Unit {
-  pure *{}
-}
+def tailed[r : Row]() -> [Partial | r] Unit = pure *{};
 
-def open[r : Row]() -> [r] Unit {
-  pure *{}
-}
+def open[r : Row]() -> [r] Unit = pure *{};
 ";
     assert_eq!(
         hosted_spelled(&grammar, source, Form::Sugared),
@@ -428,9 +402,7 @@ fn the_path_operations_fold_in_both_forms_5206()
     );
     let folded = |returner: &str| {
         format!(
-            "{CIRCLE}def spin(x : Circle) -> {returner} {{
-  x
-}}
+            "{CIRCLE}def spin(x : Circle) -> {returner} = x;
 
 def thrice : Path[.A = Path[.A = Circle](Base, Base)](
   Path.step loop (Path.step loop loop),
@@ -637,7 +609,7 @@ fn a_bare_checks_block_before_its_declaration_s_line_is_stripped_once_3049()
     let once = sugared(source);
     assert_eq!(
         once,
-        "/// One.\ndef one(x : Unit) -> Unit { x }\n\n/// Two.\ndef two(x : Unit) -> Unit { x }\n",
+        "/// One.\ndef one(x : Unit) -> Unit = x;\n\n/// Two.\ndef two(x : Unit) -> Unit = x;\n",
         "both blocks go in one pass"
     );
     assert_eq!(sugared(&once), once, "a second pass changes nothing");
@@ -871,9 +843,7 @@ fn a_composite_of_types_sugars_back_803()
           c : Type,
           p : Path[.A = Type](a, b),
           q : Path[.A = Type](b, c)
-        ) -> Path[.A = Path[.A = Type](a, c)](Path.step p q, Path.step p q) {
-          Path.here (Path.step p q)
-        }
+        ) -> Path[.A = Path[.A = Type](a, c)](Path.step p q, Path.step p q) = Path.here (Path.step p q);
     "#]]
     .assert_eq(formatted.text().as_ref());
 }
@@ -904,14 +874,12 @@ fn the_value_function_alias_is_written_where_the_printer_writes_it()
           | Succ : (n : Nat) --> Nat
         }
 
-        def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
-          become Path.walk
-            ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))
-            q
-            (Path.here a)
-            (Path.here q)
-            (Path.here a)
-        }
+        def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) = become Path.walk
+          ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))
+          q
+          (Path.here a)
+          (Path.here q)
+          (Path.here a);
     "#]]
     .assert_eq(formatted.text().as_ref());
     let explicit = include_str!(
@@ -973,13 +941,14 @@ fn a_thunk_type_a_body_returns_takes_the_alias_838()
           | Succ : (n : Nat) --> Nat
         }
 
-        def onType(t : Type) -> Type {
-          return (t -> t)
-        }
+        def onType(t : Type) -> Type = return (t -> t);
 
-        def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat {
-          become Path.walk (Nat -> Nat) q v v v
-        }
+        def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat = become Path.walk
+          (Nat -> Nat)
+          q
+          v
+          v
+          v;
     "#]]
     .assert_eq(&spelled(
         &grammar,
@@ -1001,7 +970,7 @@ fn a_thunk_over_a_kind_arrow_keeps_its_spelling_beside_a_value_function_5528()
     let source = "def kinded(e : *{c : +U ((x : Integer) -> -F Integer), b : +U (Type -> -F Type)}) -> Integer { 0 }\n";
     assert_eq!(
         spelled(&grammar, source, Form::Sugared, Selection::Every),
-        "def kinded(e : *{c : Integer -> Integer, b : +U (Type -> -F Type)}) -> Integer { 0 }\n",
+        "def kinded(e : *{c : Integer -> Integer, b : +U (Type -> -F Type)}) -> Integer = 0;\n",
         "the thunk over the kind arrow keeps its spelling, and the value function is sugared"
     );
 }
@@ -1088,11 +1057,8 @@ fn a_match_over_a_stated_sum_is_sugared_791()
     assert_eq!(
         (formatted.text().as_ref(), formatted.withdrawn()),
         (
-            format!(
-                "{}\n\ndef pair : Integer * String;\n",
-                matched("Integer + Integer", "", "Integer")
-            )
-            .as_str(),
+            "def pick(t : Integer + Integer) -> Integer = match t {\n  | +{.1 = x} => x\n  | _ => \
+             0\n};\n\ndef pair : Integer * String;\n",
             [].as_slice()
         )
     );
@@ -1119,11 +1085,9 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
     assert_eq!(
         (formatted.text().as_ref(), formatted.withdrawn()),
         (
-            source
-                .replace("*{Integer, String}", "Integer * String")
-                .replace("-> -F Integer", "-> Integer")
-                .replace("return 0", "0")
-                .as_str(),
+            "data Color : Type where {\n  | Red : Color\n  | Green : Color\n}\n\ndef sketch(c : \
+             Color) -> Integer = match c {\n  | Red => 0\n  | Green => ?\n};\n\ndef pair : \
+             Integer * String;\n",
             [].as_slice()
         )
     );
@@ -1538,6 +1502,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "function-form",
             "joined-definition",
             "type-application",
+            "body-after-equals",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -1759,15 +1724,15 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         formatted.into_text()
     };
     expect![[r#"
-        def twice(n : Integer) -> Integer { return (n + n) }
+        def twice(n : Integer) -> Integer = return (n + n);
 
         /// Becomes a call.
         @[runs("2")]
-        def becomes() -> Integer { become twice 1 }
+        def becomes() -> Integer = become twice 1;
 
-        def block() -> Integer { let m = twice 1; m }
+        def block() -> Integer = { let m = twice 1; m };
 
-        def pair() -> Integer * Integer { *{1, 2} }
+        def pair() -> Integer * Integer = *{1, 2};
 
         def commented : () -> Integer = thunk {
           // keeper
@@ -1780,15 +1745,15 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        def twice(n : Integer) -> -F Integer { return (n + n) }
+        def twice(n : Integer) -> -F Integer = return (n + n);
 
         /// Becomes a call.
         @[runs("2")]
-        def becomes() -> -F Integer { become twice 1 }
+        def becomes() -> -F Integer = become twice 1;
 
-        def block() -> -F Integer { let m = twice 1; return m }
+        def block() -> -F Integer = { let m = twice 1; return m };
 
-        def pair() -> -F *{Integer, Integer} { return *{1, 2} }
+        def pair() -> -F *{Integer, Integer} = return *{1, 2};
 
         def commented : +U (-F Integer);
         def commented = thunk {
@@ -1834,27 +1799,27 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
         formatted.into_text()
     };
     expect![[r#"
-        def identity(n : Integer) -> Integer { n }
+        def identity(n : Integer) -> Integer = n;
 
-        def add(a : Integer, b : Integer) -> Integer { return (a + b) }
+        def add(a : Integer, b : Integer) -> Integer = return (a + b);
 
-        def named(x : Integer) -> Integer { x }
+        def named(x : Integer) -> Integer = x;
 
         def stated : Integer -> Integer = thunk { fun (x : Integer) { x } };
 
         def short : (Integer, Integer) -> Integer = thunk { fun (a) { become add a } };
 
-        def renamed(y : Integer) -> Integer { y }
+        def renamed(y : Integer) -> Integer = y;
 
         def mistyped : Integer -> Integer = thunk { fun (x : String) { 1 } };
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        def identity(n : Integer) -> -F Integer { return n }
+        def identity(n : Integer) -> -F Integer = return n;
 
-        def add(a : Integer, b : Integer) -> -F Integer { return (a + b) }
+        def add(a : Integer, b : Integer) -> -F Integer = return (a + b);
 
-        def named(x : Integer) -> -F Integer { return x }
+        def named(x : Integer) -> -F Integer = return x;
 
         def stated : +U (Integer -> -F Integer);
         def stated = thunk { fun (x : Integer) { return x } };
@@ -1996,7 +1961,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
           // parts them
           def three = 3;
 
-          def four() -> Integer { 4 }
+          def four() -> Integer = 4;
 
           module Inner where {
             def five : Integer = 5;
@@ -2017,7 +1982,7 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
           // parts them
           def three = 3;
 
-          def four() -> -F Integer { 4 }
+          def four() -> -F Integer = 4;
 
           module Inner where {
             def five : Integer;
@@ -2055,34 +2020,34 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
         formatted.into_text()
     };
     expect![[r#"
-        def inc(x : Integer) -> Integer { x + 1 }
+        def inc(x : Integer) -> Integer = x + 1;
 
-        def pair() -> Integer * Integer { *{1, 2} }
+        def pair() -> Integer * Integer = *{1, 2};
 
-        def spin(x : Integer) -> [Partial] Integer { x }
+        def spin(x : Integer) -> [Partial] Integer = x;
 
-        def call(f : () -> Integer) -> Integer { force f }
+        def call(f : () -> Integer) -> Integer = force f;
 
-        def four() -> Integer { 4 }
+        def four() -> Integer = 4;
 
         module Kept where {
-          def five() -> Integer { 5 }
+          def five() -> Integer = 5;
         }
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
-        def inc(x : Integer) -> -F Integer { x + 1 }
+        def inc(x : Integer) -> -F Integer = x + 1;
 
-        def pair() -> -F *{Integer, Integer} { *{1, 2} }
+        def pair() -> -F *{Integer, Integer} = *{1, 2};
 
-        def spin(x : Integer) -> -F [Partial] Integer { x }
+        def spin(x : Integer) -> -F [Partial] Integer = x;
 
-        def call(f : +U (-F Integer)) -> -F Integer { force f }
+        def call(f : +U (-F Integer)) -> -F Integer = force f;
 
-        def four() -> -F Integer { 4 }
+        def four() -> -F Integer = 4;
 
         module Kept where {
-          def five() -> -F Integer { 5 }
+          def five() -> -F Integer = 5;
         }
     "#]]
     .assert_eq(&laid(Form::Explicit));
@@ -2123,15 +2088,15 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
         formatted.into_text()
     };
     expect![[r#"
-        def identity(x : Integer) -> Integer { x }
+        def identity(x : Integer) -> Integer = x;
 
-        def add(a : Integer, b : Integer) -> Integer { a + b }
+        def add(a : Integer, b : Integer) -> Integer = a + b;
     "#]]
     .assert_eq(&laid(Form::Sugared, Some(Answer::Alike)));
     expect![[r#"
-        def identity(x : Integer) -> -F Integer { x }
+        def identity(x : Integer) -> -F Integer = x;
 
-        def add(a : Integer, b : Integer) -> -F Integer { a + b }
+        def add(a : Integer, b : Integer) -> -F Integer = a + b;
     "#]]
     .assert_eq(&laid(Form::Explicit, Some(Answer::Alike)));
     expect![[r#"
@@ -2358,5 +2323,63 @@ fn a_refusal_beside_or_at_a_respelled_form_keeps_its_site_6726()
         let formatted = format(&grammar, &parsed, options).expect("the source formats");
         assert_eq!(formatted.withdrawn(), [], "{source}");
         assert_eq!(formatted.into_text(), sugared);
+    }
+}
+
+/// A body in the braces a definition's head opens moves after `=`, in either
+/// form and alone in a selection. One expression stands alone with its `;`,
+/// and statements stand in a block. A recursive body and a module's member
+/// move too. A body after `=` stays, and a body that holds a comment keeps
+/// its braces, so the comment keeps its owner. A second pass changes nothing
+/// (#6318).
+#[test]
+fn a_brace_body_moves_after_the_equals_6318()
+{
+    let grammar = grammar();
+    let source = include_str!("rewrite/unformatted/a-brace-body-moves-after-the-equals-6318.gandr");
+    let moved = spelled(
+        &grammar,
+        source,
+        Form::Sugared,
+        Selection::Only(&[RewriteName::BodyAfterEquals]),
+    );
+    expect![[r#"
+        data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+
+        def twice(n : Nat) -> Nat = Succ (Succ n);
+
+        def block(n : Nat) -> Nat = {
+          let m = twice n;
+          twice m
+        };
+
+        def noted(n : Nat) -> Nat {
+          // the count twice
+          twice n
+        }
+
+        def rec down(n : Nat) -> Nat = match n {
+          | Zero => Zero
+          | Succ(m) => down[<] m
+        };
+
+        def kept(n : Nat) -> Nat = twice n;
+
+        module Inner where {
+          def inner(n : Nat) -> Nat = twice n;
+        }
+    "#]]
+    .assert_eq(&moved);
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(&grammar, source, form, Selection::Every),
+            moved,
+            "{form}: the body moves alike"
+        );
+        assert_eq!(
+            spelled(&grammar, moved.as_str(), form, Selection::Every),
+            moved,
+            "{form}: a second pass changes nothing"
+        );
     }
 }

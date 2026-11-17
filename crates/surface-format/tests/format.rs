@@ -843,15 +843,15 @@ const EXPLICIT: &str = include_str!("format/unformatted/explicit.gandr");
 fn an_explicit_source_keeps_its_explicit_spelling()
 {
     let grammar = grammar();
-    let kept = "@[form(explicit)]\ndef shown() -> -F Integer { let n = force one; become read n \
-                }\n";
+    let kept = "@[form(explicit)]\ndef shown() -> -F Integer = { let n = force one; become read n \
+                };\n";
     let imported = "import \"./base.gandr\" ;\n";
     let imported_kept = "import \"./base.gandr\";\n";
     let grouped = include_str!(
         "format/unformatted/an-explicit-source-keeps-its-explicit-spelling-grouped.gandr"
     );
-    let grouped_kept = "rec {\n  @[form(explicit)]\n  def shown() -> -F Integer { let n = force \
-                        one; become read n }\n}\n";
+    let grouped_kept = "rec {\n  @[form(explicit)]\n  def shown() -> -F Integer = { let n = \
+                        force one; become read n };\n}\n";
     for (written, expected) in [
         (String::from(EXPLICIT), String::from(kept)),
         (
