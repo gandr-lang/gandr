@@ -1815,3 +1815,77 @@ fn a_binding_field_takes_its_own_tags()
         "a field is not an atom's abstraction"
     );
 }
+
+#[test]
+fn a_constant_s_bare_name_reads_as_the_constant_in_a_rule_and_an_index()
+{
+    // `oper bot : Grade; oper cut : M bot; oper lift : (bot : Grade) --> M
+    // bot; rule keep : orBot cut y ==> cut`: `bot` and `cut` are constants,
+    // and `lift`'s port `bot` shadows the constant in its own output.
+    let parts = |bot: FreeTerm, cut: FreeTerm, shadowed: FreeTerm| {
+        let operation =
+            |name: &str, kind, inputs: Vec<TheoryPort>, output: TheoryPort| TheoryOperation {
+                name: Name::from(name),
+                kind,
+                inputs,
+                outputs: vec![output],
+            };
+        let mut graded = sort("M", Representability::Ordinary);
+        graded.indices.push(port("g", "Grade", []));
+        TheoryParts {
+            sorts: vec![sort("Grade", Representability::Ordinary), graded],
+            operations: vec![
+                operation(
+                    "bot",
+                    OperationKind::Constant,
+                    Vec::new(),
+                    port("", "Grade", []),
+                ),
+                operation(
+                    "cut",
+                    OperationKind::Constant,
+                    Vec::new(),
+                    port("", "M", [bot.clone()]),
+                ),
+                operation(
+                    "lift",
+                    OperationKind::Operation,
+                    vec![port("bot", "Grade", [])],
+                    port("", "M", [shadowed]),
+                ),
+                operation(
+                    "orBot",
+                    OperationKind::Operation,
+                    vec![
+                        port("x", "M", [bot.clone()]),
+                        port("y", "M", [FreeTerm::var("e")]),
+                    ],
+                    port("", "M", [bot]),
+                ),
+            ],
+            rules: vec![TheoryRule {
+                name: Name::from("keep"),
+                left: FreeTerm::op("orBot", [cut.clone(), FreeTerm::var("y")]),
+                right: cut,
+                fresh: Vec::new(),
+                under: Maybe::Absent(row_condition::Absent::Unconditioned),
+            }],
+            ..TheoryParts::default()
+        }
+    };
+    let mut read = parts(
+        FreeTerm::var("bot"),
+        FreeTerm::var("cut"),
+        FreeTerm::var("bot"),
+    );
+    read.read_constants();
+    assert_eq!(
+        read,
+        parts(
+            FreeTerm::op("bot", []),
+            FreeTerm::op("cut", []),
+            FreeTerm::var("bot"),
+        ),
+        "each constant turns, and the port's own name stays its variable"
+    );
+}

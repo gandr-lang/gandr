@@ -827,6 +827,60 @@ impl<N> FreeTerm<N>
             | TermHead::Bound(_) => None,
         })
     }
+
+    /// The term with each variable that `constant` names read as that
+    /// constant: an operation applied to no argument.
+    ///
+    /// A theory's operation of no input is a constant, written by its bare
+    /// name, `mul e x`. A reader reads every bare name as a variable first,
+    /// and this map reads the names of the theory's constants again.
+    ///
+    /// # Specification
+    /// - ensures: the same shape; each variable leaf whose name `constant`
+    ///   admits is an operation of that name over no argument, and every other
+    ///   head is kept.
+    /// - panics: none.
+    /// - executable: none — the ensures clause is the map itself; a predicate
+    ///   restating it would walk the term again.
+    ///
+    /// # Cost
+    /// - allocation: the read term's table, durable by the term
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a term with a constant's name and a variable's name
+    ///   beside it pins which leaves turn and which stay.
+    /// - witness: `rule::tests::a_constant_s_name_reads_as_its_operation_and_a_variable_stays`
+    #[inline]
+    #[must_use]
+    pub fn read_constants<F>(
+        &self,
+        constant: F,
+    ) -> Self
+    where
+        F: Fn(&N) -> bool,
+        N: Clone,
+    {
+        let read = self.0.try_map(|head| {
+            Ok::<_, core::convert::Infallible>(match *head {
+                TermHead::Var(ref name) if constant(name) => {
+                    TermHead::Op(name.clone(), ArgumentCount::from(0_usize))
+                },
+                TermHead::Var(_)
+                | TermHead::Ctor(..)
+                | TermHead::Op(..)
+                | TermHead::Results(_)
+                | TermHead::Inst(..)
+                | TermHead::Abs(_)
+                | TermHead::Atom(_)
+                | TermHead::Lam(_)
+                | TermHead::Bound(_) => head.clone(),
+            })
+        });
+        match read {
+            Ok(tree) => Self(tree),
+            Err(never) => match never {},
+        }
+    }
 }
 
 impl FreeTerm
@@ -1675,6 +1729,25 @@ mod tests
             ground.collect_vars().is_empty(),
             "a ground term has no variables"
         );
+    }
+
+    #[test]
+    fn a_constant_s_name_reads_as_its_operation_and_a_variable_stays()
+    {
+        // `mul(e, x)` over the constant `e`: `e` turns, `x` stays.
+        let written = FreeTerm::op("mul", [
+            FreeTerm::var("e"),
+            FreeTerm::op("inv", [FreeTerm::var("x")]),
+        ]);
+        let read = written.read_constants(|name| name.as_ref() == "e");
+        assert_eq!(
+            read,
+            FreeTerm::op("mul", [
+                FreeTerm::op("e", []),
+                FreeTerm::op("inv", [FreeTerm::var("x")]),
+            ]),
+        );
+        assert_eq!(read.collect_vars(), vec![Name::from("x")]);
     }
 
     #[test]

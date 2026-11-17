@@ -305,11 +305,13 @@
 //! reads them.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
+use core::iter;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
@@ -1181,6 +1183,96 @@ impl TheoryParts
         for rule in &mut self.rules {
             rule.left = rule.left.bind_fields(ports);
             rule.right = rule.right.bind_fields(ports);
+        }
+    }
+
+    /// Read the bare name of each constant as that constant, in every rule
+    /// side and every index term of a port.
+    ///
+    /// A rule side `mul e x` and a sort index `M bot` name a constant,
+    /// `oper e : M`, by its bare name. The reader takes each bare name for a
+    /// variable, so this pass reads the constants' names again
+    /// ([`FreeTerm::read_constants`]). A name that a port or a binder of the
+    /// same member binds stays that variable.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each variable of a rule side, and each variable of an index
+    ///   term of an operation's port, a sort's index port or a port's binder,
+    ///   that names an operation of [`OperationKind::Constant`] and no port or
+    ///   binder of its own member, is that constant over no argument; every
+    ///   other member is kept.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the set of the constants' names, setup
+    /// - allocation: the set of the names each member binds, setup
+    /// - allocation: each read term's table, durable by the parts
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rule side and a port index that name a constant,
+    ///   beside a port that shares a constant's name, pin which names turn.
+    /// - witness: `theory::tests::a_constant_s_bare_name_reads_as_the_constant_in_a_rule_and_an_index`
+    #[inline]
+    #[spec(captures: before = (self.rules.len(), self.operations.len()), ensures: (self.rules.len(), self.operations.len()) == before)]
+    pub fn read_constants(&mut self)
+    {
+        let constants: BTreeSet<Name> = self
+            .operations
+            .iter()
+            .filter(|operation| operation.kind == OperationKind::Constant)
+            .map(|operation| operation.name.clone())
+            .collect();
+        if constants.is_empty() {
+            return;
+        }
+        for rule in &mut self.rules {
+            rule.left = rule.left.read_constants(|name| constants.contains(name));
+            rule.right = rule.right.read_constants(|name| constants.contains(name));
+        }
+        // The names a member's ports and binders bind, which shadow a
+        // constant's name in that member's index terms.
+        let binds = |ports: &[TheoryPort]| -> BTreeSet<Name> {
+            ports
+                .iter()
+                .flat_map(|port| {
+                    iter::once(&port.name)
+                        .chain(port.bindings.iter().map(|binder| &binder.name))
+                        .chain(port.abstractions.iter().map(|binder| &binder.name))
+                })
+                .cloned()
+                .collect()
+        };
+        let read = |ports: &mut [TheoryPort], bound: &BTreeSet<Name>| {
+            let constant = |name: &Name| constants.contains(name) && !bound.contains(name);
+            for port in ports {
+                for index in port
+                    .indices
+                    .iter_mut()
+                    .chain(
+                        port.bindings
+                            .iter_mut()
+                            .flat_map(|binder| binder.indices.iter_mut()),
+                    )
+                    .chain(
+                        port.abstractions
+                            .iter_mut()
+                            .flat_map(|binder| binder.indices.iter_mut()),
+                    )
+                {
+                    *index = index.read_constants(constant);
+                }
+            }
+        };
+        for operation in &mut self.operations {
+            let mut bound = binds(&operation.inputs);
+            bound.extend(binds(&operation.outputs));
+            read(&mut operation.inputs, &bound);
+            read(&mut operation.outputs, &bound);
+        }
+        for sort in &mut self.sorts {
+            let bound = binds(&sort.indices);
+            read(&mut sort.indices, &bound);
         }
     }
 }
