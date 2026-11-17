@@ -2759,6 +2759,14 @@ echo "gh-direct check OK"
 description = "A host lock's slots refuse or wait while held, free when their holder and its children are gone, a gate's slot frees when the gate exits, and a lane holds one slot"
 run = ".config/mise/host-lock-cases.bash"
 
+# These cases pin the daemons of two jobs at one time on one host. They write
+# the wrapper of two jobs over one cache directory and start a daemon through
+# each. The end of the first job stops its own daemon alone.
+# - see: #7828, `.config/kache/wrapper-cases.bash`
+["check:kache-wrapper"]
+description = "Two jobs at one time on one host each run a kache daemon of their own, and the end of one leaves the other's running"
+run = ".config/kache/wrapper-cases.bash"
+
 # A target that another compiler filled (#7497):
 # `.config/mise/target-pin-cases.bash` builds a scratch package on the tree's
 # toolchain and reads cargo's record. The step keeps the target of the tree's
