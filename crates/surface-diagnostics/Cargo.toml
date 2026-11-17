@@ -17,19 +17,24 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
-# The model reads the producers' own vocabulary: the settle comparison's
-# declaration report and refusal names, the lowering's refusals and origin
-# table, the checker's refusals, failures and the failure classes beneath
-# them, the kernel's occurrence sites and descent rules those refusals carry,
-# and the source text spans are measured against. A composite's fill defect is
-# the sites' own refusal, and the univalence refusals carry the sites' degree,
-# shape and element indices. The pretty printer spells the types a failure
-# names while the arena is at hand. The parser reads what separates a head
-# that is no function from the operand beside it, which a refusal names as
-# its repair. A handler's refusal names its law by the levitation's own name.
+# The model reads the vocabulary of each producer. From the comparison that
+# settles a module, it reads the declaration report and the refusal names.
+# From the lowering, it reads the refusals and the origin table. From the
+# checker, it reads the refusals, the failures and their failure classes.
+# From the kernel, it reads the occurrence sites and the descent rules.
+#
+# The model measures the spans against the source text. A fill defect of a
+# composite is a refusal of the sites crate. A univalence refusal carries the
+# degree, the shape and the element indices of the sites crate.
+#
+# The pretty printer spells the types of a failure while the arena is at
+# hand. The parser reads what separates a head that is no function from the
+# operand beside it, and a refusal names that as its repair. A refusal of a
+# handler names its law by the name of the levitation.
+#
 # The JSON image derives through serde and encodes through serde_json. The
-# pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# pinned anodized facade supplies the specification helpers of `core` alone.
+# The facade does not enable its feature logic/BigInt.
 [dependencies]
 anodized.workspace = true
 gandr-core-checker.workspace = true
