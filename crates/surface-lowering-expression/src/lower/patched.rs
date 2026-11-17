@@ -620,6 +620,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// Each link spends one step of the allowance and one of the module's
     /// slots, and the walk stops when either is spent.
     ///
+    /// # Cost
+    /// - allocation: the refusal of a name or of the allowance, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a patched base named by a type member, and by an
     ///   alias of it; a selection off a name written at a type member.
@@ -667,6 +670,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Errors
     /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: the refusal of a name, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::member_definition`].
