@@ -2801,20 +2801,18 @@ where
                 .chars()
                 .all(|letter| letter.is_alphanumeric() || letter == '_')
     };
-    let atomic = match source.read(node) {
-        Former::Literal(&Literal::Integer(ref integer)) => integer.sign() == Sign::NonNegative,
-        Former::Quote(quoted) => match source.read(quoted) {
-            Former::BaseType(BaseType::Integer | BaseType::String | BaseType::Character) => true,
-            Former::Product(arity) | Former::Sum(arity) => usize::from(arity) == 0_usize,
-            Former::Data {
-                name: Some(name),
-                arity,
-            } => usize::from(arity) == 0_usize && bare(name),
-            Former::Member(name) | Former::Abstract(name) => bare(name),
-            _ => false,
-        },
-        _ => false,
+    let code = |quoted: S::Node| {
+        let former = source.read(quoted);
+        matches!(
+            former,
+            Former::BaseType(BaseType::Integer | BaseType::String | BaseType::Character)
+        ) || matches!(former, Former::Product(arity) | Former::Sum(arity) if usize::from(arity) == 0_usize)
+            || matches!(former, Former::Data { name: Some(name), arity } if usize::from(arity) == 0_usize && bare(name))
+            || matches!(former, Former::Member(name) | Former::Abstract(name) if bare(name))
     };
+    let former = source.read(node);
+    let atomic = matches!(former, Former::Literal(&Literal::Integer(ref integer)) if integer.sign() == Sign::NonNegative)
+        || matches!(former, Former::Quote(quoted) if code(quoted));
     atomic.then_some(Atom)
 }
 
