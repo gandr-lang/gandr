@@ -292,6 +292,7 @@ use crate::meld::DeclarationBound;
 use crate::meld::DeclarationStart;
 use crate::meld::FormUnit;
 use crate::meld::HeadOperandPresence;
+use crate::meld::LayoutOpener;
 use crate::meld::Mark;
 use crate::meld::MoldAdmissibility;
 use crate::meld::SlopeHeight;
@@ -1320,11 +1321,11 @@ fn ends_declaration(
 /// - hypothesis: L3 — a `match` block inside a `def` body puts two closes at
 ///   one byte, and each reads its own opener.
 /// - witness: `tests::acceptance::a_layout_close_closes_its_own_block_7902`
-#[spec(ensures: |ret| ret.is_none_or(|start| tokens.get(.. usize::from(index)).is_some_and(|before| before.iter().any(|token| token.lexeme == Lexeme::LayoutOpen && token.start == start))))]
+#[spec(ensures: |ret| ret.is_none_or(|start| tokens.get(.. usize::from(index)).is_some_and(|before| before.iter().any(|token| token.lexeme == Lexeme::LayoutOpen && token.start == u32::from(start)))))]
 fn layout_opener(
     tokens: &[Token],
     index: TokenIndex,
-) -> Option<u32>
+) -> Option<LayoutOpener>
 {
     let mut ended = 0_usize;
     for token in tokens.get(.. usize::from(index))?.iter().rev() {
@@ -1332,7 +1333,7 @@ fn layout_opener(
             Lexeme::LayoutClose => ended = ended.saturating_add(1),
             Lexeme::LayoutOpen => match ended.checked_sub(1) {
                 Some(fewer) => ended = fewer,
-                None => return Some(token.start),
+                None => return Some(LayoutOpener::from(token.start)),
             },
             _ => {},
         }

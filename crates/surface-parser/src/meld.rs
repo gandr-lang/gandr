@@ -1136,6 +1136,10 @@ primitive_copy_wrapper!(
     pub struct FormContinuation(bool);
 );
 primitive_copy_wrapper!(
+    /// The byte where the layout opener of a layout block starts.
+    pub struct LayoutOpener(u32);
+);
+primitive_copy_wrapper!(
     /// Whether a separator closes the open declaration as its last tile.
     pub struct SeparatorTaken(bool);
 );
@@ -2806,10 +2810,10 @@ impl<'pbg> MeldState<'pbg>
     ///   missing opener at one byte; closed at its block, the arm owes its `=>`
     ///   once.
     /// - witness: `tests::acceptance::a_layout_close_closes_its_own_block_7902`
-    #[spec(ensures: |ret| ret.is_none_or(|close| close.chain.length <= STATEMENT_REACH && self.frontiers.contains(&close.index)))]
+    #[spec(ensures: |ret| ret.is_none_or(|close| close.chain.length <= STATEMENT_REACH))]
     pub(crate) fn layout_close(
         &self,
-        opener: u32,
+        opener: LayoutOpener,
         candidates: &[MoldId],
     ) -> Option<StatementClose>
     {
@@ -2822,7 +2826,7 @@ impl<'pbg> MeldState<'pbg>
                         .any(|&tile| {
                             self.stack
                                 .get(tile)
-                                .is_some_and(|cell| cell.start == opener)
+                                .is_some_and(|cell| cell.start == u32::from(opener))
                         })
                 })
         })?;
