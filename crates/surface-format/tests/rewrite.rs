@@ -1149,11 +1149,7 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     assert_eq!(formatted.withdrawn(), []);
     assert_eq!(
         formatted.into_text(),
-        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step loop loop,
-  Path.here Base
-);
-"
+        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop) (Path.here Base);\n"
     );
     let alone = format_beside(&grammar, &parsed, options, (Beside::Alone, None))
         .unwrap_or_else(|error| panic!("the source formats alone: {error}"));
