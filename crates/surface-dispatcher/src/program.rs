@@ -1242,6 +1242,9 @@ fn footprint_spellings(
 /// # Adequacy
 /// - hypothesis: L3 — as [`footprint_spellings`].
 /// - witness: `tests::corpus::a_reads_claim_settles_against_the_carried_footprint_2520`
+///
+/// # Cost
+/// - allocation: the spelling of the reads, growth within the footprint
 #[spec(ensures: |ref ret| (footprint.opacity() == gandr_core_content::Opacity::Opaque)
     == (*ret == RunSpelling::from(String::from(UNRESOLVED_NODE))))]
 fn footprint_spelled(footprint: &Footprint) -> RunSpelling

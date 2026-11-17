@@ -125,6 +125,10 @@ impl<'base> Reuse<'base>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the taker of the held checkpoints, growth within the
+    ///   resume
     pub(crate) fn of(
         resume: Option<&'base Resume>,
         program: &'base Program,
@@ -207,6 +211,10 @@ impl<'base> Reuse<'base>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the answer of each item before the position, growth within
+    ///   the context
     fn catch_up(
         &mut self,
         context: &CheckingContext<'_>,

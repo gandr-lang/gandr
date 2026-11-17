@@ -391,6 +391,10 @@ impl Placing<'_, '_, '_, '_, '_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Placing::place`].
     /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+    ///
+    /// # Cost
+    /// - allocation: the map of roots of the candidates on the first call,
+    ///   growth within the candidates
     fn rooted(
         &mut self,
         node: ArenaNode,
@@ -698,6 +702,9 @@ impl Seat<'_>
     /// - witness: `failure::tests::a_failure_seats_at_the_nodes_it_names`
     /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
     /// - witness: `failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
+    ///
+    /// # Cost
+    /// - allocation: the minted node, growth within `arena`
     fn node(
         &mut self,
         placed: Placed,
@@ -765,6 +772,9 @@ impl Seat<'_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`FailureContent`].
     /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+    ///
+    /// # Cost
+    /// - allocation: the walk of the item, growth within the edited program
     fn rooted(
         &mut self,
         rooted: &Rooted,

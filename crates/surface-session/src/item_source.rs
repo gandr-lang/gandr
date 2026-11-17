@@ -286,6 +286,10 @@ impl ItemSource for SurfaceItems
     ///   spell.
     /// - witness: `tests::items::the_item_source_offers_a_revision_or_names_its_fault`
     /// - witness: `tests::items::a_module_with_a_theory_offers_its_theory_code_7395`
+    ///
+    /// # Cost
+    /// - allocation: the lowered items of the revision, growth within the
+    ///   revision
     #[spec(
         ensures: |ret| match ret {
     Ok(ref result) => {

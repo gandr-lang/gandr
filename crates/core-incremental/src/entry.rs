@@ -308,6 +308,9 @@ impl EntryContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`EntryContent`].
     /// - witness: `entry::tests::an_elaborated_item_keeps_its_filled_body_and_mints_it_back`
+    ///
+    /// # Cost
+    /// - allocation: the minted body and type, growth within `arena`
     pub(crate) fn seat(
         &self,
         arena: &mut CoreArena,

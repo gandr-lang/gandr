@@ -217,6 +217,10 @@ fn entered_worlds(content: &ItemContent) -> impl Iterator<Item = &Reference> + '
 /// - witness: `footprint::tests::a_term_position_does_not_suppress_a_type_position`
 /// - witness: `footprint::tests::a_quoted_abstract_type_reads_its_own_reference_in_type_position`
 /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
+///
+/// # Cost
+/// - allocation: the sets of references of the footprint, growth within the
+///   content
 #[spec(ensures: |ret| ret.type_reads.is_subset(&ret.reads)
     && ret.opacity == content.opacity()
     && content.declaration().iter().all(|(root, _)| content.nodes().get(usize::from(root)).is_none_or(|node|

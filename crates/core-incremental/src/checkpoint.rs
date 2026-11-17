@@ -182,7 +182,7 @@ use gandr_core_checker::unfolding;
 use gandr_core_content::ArenaNode;
 use gandr_core_content::Opacity;
 use gandr_core_content::Reference;
-use gandr_core_content::Resolver;
+use gandr_core_content::Resolver as _;
 use gandr_core_content::TypeContent;
 use gandr_core_content::seating;
 #[cfg(feature = "instrument")]
@@ -404,6 +404,10 @@ impl Answer
     ///   entry at invalidates the entry.
     /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
     /// - witness: `tests::worlds::a_changed_grant_judges_again_each_entry_it_moves_3381`
+    ///
+    /// # Cost
+    /// - allocation: the set of references beneath the roots, growth within the
+    ///   answer
     #[spec(ensures: |ret| match *self {
         Self::Untyped | Self::Data(None) | Self::Codata | Self::Located { .. } => ret.is_empty(),
         Self::Typed(ref ty) => ty.reads().all(|read| ret.contains(read)),
@@ -563,6 +567,10 @@ impl ItemCheckpoint
     ///   and cardinality without retaining an owned copy of the incoming
     ///   support.
     /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
+    ///
+    /// # Cost
+    /// - allocation: the support in canonical order, growth within the
+    ///   checkpoint
     #[spec(
         captures: [count = support.len()],
         ensures: |ret| {
@@ -966,6 +974,10 @@ impl ItemCheckpoint
     ///   before reuse.
     /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
     /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+    ///
+    /// # Cost
+    /// - allocation: the checkpoint with its new support, growth within the
+    ///   checkpoint
     #[spec(
         captures: [count = support.len()],
         ensures: |ret| {
@@ -1390,6 +1402,10 @@ impl Resume
     ///   handles; subsequent insertion and deletion check retained and stale
     ///   identities. Order-capacity failures are outside the witnessed domain.
     /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
+    ///
+    /// # Cost
+    /// - allocation: the resume of the restored checkpoints, growth within the
+    ///   checkpoints
     #[spec(
         captures: [count = checkpoints.items.len(), budget = checkpoints.budget],
         ensures: |ret| {
@@ -1747,6 +1763,10 @@ pub fn resume(
 /// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+///
+/// # Cost
+/// - allocation: the resume and the checkpoint of each item, growth within the
+///   edited program
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -1816,6 +1836,10 @@ pub fn resume_from(
 /// # Adequacy
 /// - hypothesis: L3 — as [`Leading`].
 /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+///
+/// # Cost
+/// - allocation: the resume and the state that the pass leaves, growth within
+///   the program
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&(ref checked, ref leading)|
     usize::from(leading.count()) == program.items().len()
         && checked.checkpoints.items == leading.checkpoints
@@ -2493,6 +2517,9 @@ pub fn content_key(
 ///   a staged type keys as its base.
 /// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
 /// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+///
+/// # Cost
+/// - allocation: the table of the node for its digest, growth within the table
 #[inline]
 pub fn node_key(
     (arena, layout): (&CoreArena, &Layout),
@@ -3420,6 +3447,10 @@ type Advancing<Kept, Retired> = Polled<Advanced<Kept>, Retired, ItemOrder>;
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
 /// - witness: `tests::incremental::a_revision_after_its_leading_items_judges_only_its_own_776`
+///
+/// # Cost
+/// - allocation: the checkpoint of each item that the pass runs, growth within
+///   the edited program
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -4180,6 +4211,10 @@ type Decided = (Vec<Answered>, Typing, Answer, (Entered, Entry), Reported);
 /// - hypothesis: L3 — a suspension that the resume adopts joins the equations
 ///   of a reader that the resume judges, as a check from scratch does.
 /// - witness: `report::tests::an_adopted_suspension_is_seated_for_the_reader_that_the_resume_judges`
+///
+/// # Cost
+/// - allocation: an entry of the waiting suspensions, growth within the waiting
+///   map
 fn wait_on(
     waiting: &mut BTreeMap<ConstantIndex, Suspension>,
     (context, layout): (&mut CheckingContext<'_>, &Layout),
@@ -4251,6 +4286,9 @@ fn failure_of(
 ///   named failures, rather than only successfully allocated seats.
 /// - witness: `tests::incremental::noop_edit_adopts_everything`
 /// - witness: `tests::incremental::satisfied_ascription_types_and_keeps_dependents_adoptable`
+///
+/// # Cost
+/// - allocation: the minted seat, growth within `arena`
 #[spec(
     captures: [before = usize::from(census.minted)],
     ensures: |ret| {
@@ -4396,6 +4434,10 @@ enum Seat
 /// - witness: `tests::native_formers::a_path_product_resumes_to_its_native_path`
 /// - witness: `tests::native_formers::an_adopted_equivalence_keeps_its_decision_for_a_later_product_1752`
 /// - witness: `tests::incremental::a_filled_implicit_is_adopted_at_its_judged_body_so_its_reader_unfolds_it_6572`
+///
+/// # Cost
+/// - allocation: the answers and the typing of the adopted checkpoint, growth
+///   within the checkpoint
 #[spec(
     requires: input.supplied.next() == input.ordinal,
     ensures: |ret| {
@@ -5170,6 +5212,9 @@ fn touches(
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
 /// - witness: `tests::worlds::a_changed_home_judges_its_readers_again_3381`
+///
+/// # Cost
+/// - allocation: the list of consulted answers, growth within the support
 #[spec(
     ensures: |ret| {
         ret.len() <= support.consulted().len().saturating_mul(2).saturating_add(support.data_consulted().len()).saturating_add(support.codata_consulted().len()).saturating_add(1)
@@ -5293,6 +5338,9 @@ fn own_entry(
 ///   input changes the retained answers rather than preserving the previous
 ///   checkpoint support.
 /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
+///
+/// # Cost
+/// - allocation: the sorted support, growth within the support
 #[spec(
     captures: [count = support.len()],
     ensures: |ret| {
@@ -5330,6 +5378,9 @@ fn canonical_support(mut support: Vec<Answered>) -> Vec<Answered>
 ///   typed and untyped answers against independently checked results.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
+///
+/// # Cost
+/// - allocation: the table of the answer, growth within the answer
 #[spec(
     captures: [present = matches!(answer, Maybe::Present(_))],
     ensures: |ret| match ret {
@@ -5381,6 +5432,9 @@ fn answer_of(
 /// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
 /// - witness: `tests::defects::items_visited_for_a_head_edit_grow_linearly`
 /// - witness: `checkpoint::tests::value_change_closure_handles_cycles_and_opaque_readers`
+///
+/// # Cost
+/// - allocation: the value-changed set, growth within the program
 #[spec(
     requires: footprints.len() == encoded.len(),
     ensures: |ret| {

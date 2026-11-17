@@ -2394,7 +2394,8 @@ impl WorldContent
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the reference of a declared world
+    /// - allocation: the reference of a declared world, growth within the
+    ///   content of the world
     #[inline]
     pub fn of(
         layout: &Layout,
@@ -2638,8 +2639,8 @@ impl TypeContent
     /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
     ///
     /// # Cost
-    /// - allocation: the table of every node that `root` reaches, and the place
-    ///   of each node in it
+    /// - allocation: the table of every node that `root` reaches and the place
+    ///   of each node, growth within the table
     #[inline]
     pub fn placed(
         arena: &CoreArena,
@@ -2895,7 +2896,8 @@ impl TypeMemo
     /// - witness: `gandr-core-incremental::tests::incremental::incremental_equals_from_scratch`
     ///
     /// # Cost
-    /// - allocation: the table of `node` on its first request, kept in the memo
+    /// - allocation: the table of `node` on its first request, growth within
+    ///   the memo
     #[spec(ensures: |ret| ret == TypeContent::of(arena, layout, node))]
     #[inline]
     pub fn content(
@@ -3087,7 +3089,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     ///
     /// # Cost
-    /// - allocation: the lists of roots of the signature
+    /// - allocation: the lists of roots of the signature, growth within the
+    ///   roots
     #[spec(ensures: |ret| ret.parameters.len() == signature.parameters().len()
         && ret.constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
         && ret.iter().all(|root| usize::from(root) < self.seen.len()))]
@@ -3166,8 +3169,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
     ///
     /// # Cost
-    /// - allocation: the content node of each queued node, and a queue entry
-    ///   for each child seen first
+    /// - allocation: the content node of each queued node and a queue entry for
+    ///   each new child, growth within the table
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3651,7 +3654,8 @@ impl Slots<'_>
     /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
     ///
     /// # Cost
-    /// - allocation: the list of the children of the former's slots
+    /// - allocation: the list of the children of the former's slots, growth
+    ///   within the former
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |taken| taken.len() == slots.len()))]
     fn take<Slot>(
         &mut self,
@@ -3692,7 +3696,7 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: a queue entry for a child seen first
+    /// - allocation: a queue entry for a new child, growth within the queue
     fn value(
         &mut self,
         child: ValueId,
@@ -3709,7 +3713,7 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: a queue entry for a child seen first
+    /// - allocation: a queue entry for a new child, growth within the queue
     fn computation(
         &mut self,
         child: ComputationId,
@@ -3726,7 +3730,7 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: a queue entry for a child seen first
+    /// - allocation: a queue entry for a new child, growth within the queue
     fn value_type(
         &mut self,
         child: ValueTypeId,
@@ -3744,7 +3748,7 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: a queue entry for a child seen first
+    /// - allocation: a queue entry for a new child, growth within the queue
     fn comp_type(
         &mut self,
         child: CompTypeId,
@@ -3777,7 +3781,8 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
 /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 ///
 /// # Cost
-/// - allocation: the content former and its lists of children
+/// - allocation: the content former and its lists of children, growth within
+///   the table
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Value && found.placed(node).0),
 )]
@@ -3948,7 +3953,8 @@ fn value_content(
 /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 ///
 /// # Cost
-/// - allocation: the content former and its lists of children
+/// - allocation: the content former and its lists of children, growth within
+///   the table
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Computation && found.placed(node).0),
 )]
@@ -4190,7 +4196,8 @@ fn computation_content(
 /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 ///
 /// # Cost
-/// - allocation: the content former and its lists of children
+/// - allocation: the content former and its lists of children, growth within
+///   the table
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::ValueType && found.placed(node).0),
 )]
@@ -5526,7 +5533,8 @@ where
 /// - witness: `gandr-core-incremental::content::tests::every_dependent_former_mints_back_as_its_own_table`
 ///
 /// # Cost
-/// - allocation: the map of the minted fields by label
+/// - allocation: the map of the minted fields by label, growth within the
+///   minted former
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |seated| seated.keys().eq(fields.keys())))]
 fn seat_fields<Id>(
     states: &[MintState],
@@ -6371,7 +6379,7 @@ impl DataRoots
     /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     ///
     /// # Cost
-    /// - allocation: the renumbered lists of roots
+    /// - allocation: the renumbered lists of roots, growth within the roots
     #[spec(ensures: |ret| ret.kind == image(self.kind)
         && ret.parameters.len() == self.parameters.len()
         && ret.constructors.len() == self.constructors.len()
@@ -6448,7 +6456,8 @@ impl Tabled
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the thinning of the support of the entry
+    /// - allocation: the thinning of the support of the entry, growth within
+    ///   the support
     #[inline]
     pub fn support(
         &self,
@@ -6466,7 +6475,8 @@ impl Tabled
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the thinning of the support of each root
+    /// - allocation: the thinning of the support of each root, growth within
+    ///   the supports
     #[inline]
     #[must_use]
     pub fn supports(
@@ -6519,8 +6529,8 @@ pub struct Placer
 /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
 ///
 /// # Cost
-/// - allocation: the de Bruijn table, the supported table and the place of each
-///   root
+/// - allocation: the de Bruijn table and the supported table and the place of
+///   each root, growth within the table
 #[inline]
 pub fn tabled_roots(
     arena: &CoreArena,
@@ -6554,7 +6564,8 @@ impl Placer
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the thinning of the support of the place
+    /// - allocation: the thinning of the support of the place, growth within
+    ///   the support
     #[inline]
     #[must_use]
     pub fn place(
@@ -6633,7 +6644,8 @@ impl Minted
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: a copy of the support of `place` as the key of the lookup
+    /// - allocation: a copy of the support of `place` as the key of the lookup,
+    ///   growth within the support
     #[inline]
     #[must_use]
     pub fn node(
@@ -6662,7 +6674,8 @@ impl Minted
 /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
 ///
 /// # Cost
-/// - allocation: the factored table and its renumbered copy
+/// - allocation: the factored table and its renumbered copy, growth within the
+///   table
 #[spec(ensures: |ret| ret.placed.len() == raw.len())]
 #[inline]
 #[must_use]
@@ -6697,7 +6710,7 @@ pub fn tabled(
 /// trivial.
 ///
 /// # Cost
-/// - allocation: the map of hole names
+/// - allocation: the map of hole names, growth within the table
 #[inline]
 #[must_use]
 pub fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
@@ -6738,7 +6751,8 @@ pub fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
 /// - witness: `gandr-core-incremental::content::tests::a_root_names_its_holes_by_their_place_under_it`
 ///
 /// # Cost
-/// - allocation: an entry of the map of hole names for a hole met first
+/// - allocation: an entry of the map of hole names for a new hole, growth
+///   within the map
 #[spec(
     captures: [old = holes.get(&hole).copied(), count = holes.len()],
     ensures: |ret| holes.get(&hole) == Some(&ret) && ret.origin() == hole.origin()

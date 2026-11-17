@@ -60,7 +60,7 @@ use gandr_core_content::Discovery;
 use gandr_core_content::Minted;
 use gandr_core_content::Placer;
 use gandr_core_content::Reference;
-use gandr_core_content::Resolver;
+use gandr_core_content::Resolver as _;
 use gandr_core_content::SupportedNode;
 use gandr_core_content::TablePlace;
 use gandr_core_content::TypeContent;
@@ -358,6 +358,9 @@ pub enum StepContent
 /// - hypothesis: L3 — a reopened take seats the content at shifted constants,
 ///   and the kernel re-derives the law only from the dialogue it gives.
 /// - witness: `gandr-surface-lsp::tests::taking::a_reopened_take_replays_a_kept_dialogue_7399`
+///
+/// # Cost
+/// - allocation: the kept dialogue, growth within the dialogue
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|content| content.len() == dialogue.len()))]
 fn dialogue_content(
     layout: &Layout,
@@ -397,6 +400,9 @@ fn dialogue_content(
 /// # Adequacy
 /// - hypothesis: L3 — as [`dialogue_content`].
 /// - witness: `gandr-surface-lsp::tests::taking::a_reopened_take_replays_a_kept_dialogue_7399`
+///
+/// # Cost
+/// - allocation: the seated dialogue, growth within the dialogue
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |seated| seated.len() == dialogue.len()))]
 fn seated_dialogue(
     layout: &Layout,
@@ -619,6 +625,9 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+    ///
+    /// # Cost
+    /// - allocation: the entries of the tables, growth within the tables
     pub(crate) fn of(
         (arena, layout): (&CoreArena, &Layout),
         (sites, body): (&Sites, Option<&Placer>),
@@ -954,6 +963,9 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+    ///
+    /// # Cost
+    /// - allocation: the seated entries, growth within `arena`
     pub(crate) fn seat(
         &self,
         (arena, layout): (&mut CoreArena, &Layout),
@@ -1312,6 +1324,9 @@ impl Placing<'_, '_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReportContent`].
     /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the place of the node, growth within the table
     fn place(
         &mut self,
         node: ArenaNode,
@@ -1359,6 +1374,10 @@ impl Placing<'_, '_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReportContent`].
     /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the content of the elaboration, growth within the
+    ///   elaboration
     fn elaboration(
         &mut self,
         elaboration: &NestedElaboration,
@@ -1668,6 +1687,9 @@ impl ReportContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReportContent`].
     /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the seated parts of the report, growth within `arena`
     pub(crate) fn seat(
         &self,
         (arena, layout): (&mut CoreArena, &Layout),
@@ -1709,6 +1731,9 @@ impl ReportContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReportContent`].
     /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the seated suspension, growth within `arena`
     pub(crate) fn seat_suspension(
         &self,
         (arena, layout): (&mut CoreArena, &Layout),
@@ -1806,6 +1831,9 @@ impl SeatedReport
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReportContent`].
     /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the content of the report, growth within the report
     #[inline]
     pub fn content(
         &self,
@@ -1860,6 +1888,9 @@ impl Seat<'_, '_, '_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the minted node, growth within `arena`
     fn node(
         &self,
         place: &Place,
@@ -1913,6 +1944,9 @@ impl Seat<'_, '_, '_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReportContent`].
     /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the seated elaboration, growth within `arena`
     fn elaboration(
         &self,
         content: &ElaborationContent,
@@ -2078,6 +2112,9 @@ fn carried_of(
 /// - hypothesis: L3 — roots that share a place keep it once, each at the index
 ///   of that place; roots at distinct places keep their own indices.
 /// - witness: `report::tests::roots_that_share_a_place_keep_it_once`
+///
+/// # Cost
+/// - allocation: the merged places, growth within the places
 fn merged(places: Vec<TablePlace>) -> (Vec<TablePlace>, Option<Vec<OutsideIndex>>)
 {
     let mut first: BTreeMap<&TablePlace, OutsideIndex> = BTreeMap::new();

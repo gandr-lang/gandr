@@ -136,6 +136,9 @@ pub fn type_of(
 ///   checks precedence without printing twice.
 /// - witness: `typed::tests::missing_and_refused_types_keep_their_absence_reasons`
 /// - witness: `typed::tests::a_synthesised_type_is_spelled`
+///
+/// # Cost
+/// - allocation: the spelled type, growth within the checkpoint
 #[spec(ensures: |ret| match *checkpoint.typing() {
     Typing::Refused(_) => matches!(ret, Maybe::Absent(spelled::Absent::Refused)),
     Typing::Checked { .. } | Typing::Owed | Typing::Suspended

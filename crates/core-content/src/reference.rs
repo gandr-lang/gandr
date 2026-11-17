@@ -177,7 +177,7 @@ impl From<(SourceTag, &str)> for ItemKey
     /// - witness: `gandr-core-incremental::region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
     ///
     /// # Cost
-    /// - allocation: the bytes of the key
+    /// - allocation: the bytes of the key, growth within the key
     #[spec(ensures: |ret| ret.0.first() == Some(&TAGGED)
         && ret.0.get(1 .. TAG_PREFIX) == Some(tag.0.as_slice())
         && ret.name().0 == name.as_bytes())]
@@ -200,7 +200,7 @@ impl From<&[u8]> for ItemKey
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the bytes of the key
+    /// - allocation: the bytes of the key, growth within the key
     #[inline]
     fn from(bytes: &[u8]) -> Self
     {
@@ -217,7 +217,7 @@ impl From<&str> for ItemKey
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the bytes of the key
+    /// - allocation: the bytes of the key, growth within the key
     #[inline]
     fn from(text: &str) -> Self
     {

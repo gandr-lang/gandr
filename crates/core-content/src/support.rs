@@ -284,7 +284,8 @@ impl<'part> Union<'part>
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the set of one reference
+    /// - allocation: the set of one reference, growth within the references of
+    ///   the node
     fn of(own: Option<&Reference>) -> Self
     {
         Self {
@@ -309,7 +310,8 @@ impl<'part> Union<'part>
     /// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
     ///
     /// # Cost
-    /// - allocation: a copy of the set when two parts differ
+    /// - allocation: a copy of the set when two parts differ, growth within the
+    ///   references of the node
     fn add(
         &mut self,
         part: &'part Reads,
@@ -347,7 +349,8 @@ impl<'part> Union<'part>
     /// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
     ///
     /// # Cost
-    /// - allocation: the joined set of references
+    /// - allocation: the joined set of references, growth within the references
+    ///   of the node
     #[spec(ensures: |ret| ret.as_slice().windows(2).all(|pair| pair.first() < pair.last()))]
     fn finish(self) -> Reads
     {
@@ -493,7 +496,8 @@ impl Interner
     /// - witness: `gandr-core-incremental::content::tests::unused_binder_interleavings_share_one_node`
     ///
     /// # Cost
-    /// - allocation: an entry of the table and of its index
+    /// - allocation: an entry of the table and of its index, growth within the
+    ///   table
     #[spec(
         captures: [entry = self.nodes.len(), sort = former.sort(), arity = cover.len()],
         ensures: |ret| self.nodes.get(usize::from(ret)).is_some_and(|node|
@@ -643,7 +647,8 @@ enum Visit<Kept>
 /// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
 ///
 /// # Cost
-/// - allocation: the factored table, its index and the placement of each entry
+/// - allocation: the factored table and its index and the placement of each
+///   entry, growth within the table
 #[spec(ensures: |ret| ret.placements.len() == raw.len()
     && ret.placements.iter().zip(raw).all(|(placed, node)|
         ret.nodes.get(usize::from(placed.node)).is_some_and(|compact|
@@ -801,7 +806,8 @@ pub struct Numbered
 /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
 ///
 /// # Cost
-/// - allocation: the renumbered table and the map from old numbers to new
+/// - allocation: the renumbered table and the map from old numbers to new,
+///   growth within the table
 #[spec(ensures: |ret| ret.numbers.len() == usize::from(end)
     && ret.numbers.iter().flatten().all(|index| usize::from(*index) < ret.nodes.len())
     && ret.numbers.iter().flatten().count() == ret.nodes.len())]
@@ -877,7 +883,8 @@ impl Discovery
     /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
     ///
     /// # Cost
-    /// - allocation: an entry of the renumbered table and of its queue
+    /// - allocation: an entry of the renumbered table and of its queue, growth
+    ///   within the table
     #[spec(
         captures: [held = self.numbers.get(usize::from(old)).copied().flatten(), written = self.nodes.len()],
         ensures: |ret| match held {
@@ -936,7 +943,8 @@ impl Discovery
 /// - witness: `gandr-core-incremental::content::tests::debruijn_projection_reports_index_overflow`
 ///
 /// # Cost
-/// - allocation: the de Bruijn table, its queue and the map of numbered entries
+/// - allocation: the de Bruijn table and its queue and the map of numbered
+///   entries, growth within the table
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |table| table.iter().all(|node|
     node.children().iter().all(|(child, _)| table.get(usize::from(child)).is_some()))))]
 #[inline]
@@ -982,7 +990,8 @@ pub struct Expanded
 /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
 ///
 /// # Cost
-/// - allocation: the de Bruijn table, its queue and the map of numbered entries
+/// - allocation: the de Bruijn table and its queue and the map of numbered
+///   entries, growth within the table
 #[inline]
 pub fn expand_from<Roots>(
     nodes: &[SupportedNode],
@@ -1104,7 +1113,8 @@ pub enum TableFault
 /// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
 ///
 /// # Cost
-/// - allocation: the reference sets of the rebuilt nodes
+/// - allocation: the reference sets of the rebuilt nodes, growth within the
+///   table
 #[spec(
     captures: [count = parts.len()],
     ensures: |ret| ret.as_ref().map_or(true, |table| table.len() == count),

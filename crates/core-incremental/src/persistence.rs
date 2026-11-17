@@ -1084,6 +1084,9 @@ fn artifact_bytes(
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
 /// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+///
+/// # Cost
+/// - allocation: the content of each item, growth within the program
 #[spec(
     ensures: |ret| {
         ret.len() == program.references().len()

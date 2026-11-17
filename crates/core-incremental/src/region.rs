@@ -38,7 +38,7 @@ use gandr_core_checker::Declaration;
 use gandr_core_content::ItemKey;
 use gandr_core_content::Occurrence;
 use gandr_core_content::Reference;
-use gandr_core_content::Resolver;
+use gandr_core_content::Resolver as _;
 use gandr_core_term::CoreArena;
 use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
@@ -343,6 +343,9 @@ impl gandr_core_content::Resolver for Layout
     ///   references.
     /// - witness: `region::tests::positions_must_ascend_and_may_skip`
     /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+    ///
+    /// # Cost
+    /// - allocation: a copy of the reference, growth within the layout
     #[spec(ensures: |ret| self.occupied.get(&position)
         .and_then(|&ordinal| self.references.get(usize::from(ordinal)))
         .map_or_else(|| ret == Reference::Unoccupied, |reference| ret == *reference))]

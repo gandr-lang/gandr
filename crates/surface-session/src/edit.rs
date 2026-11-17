@@ -504,6 +504,9 @@ impl Tree
     /// - witness: `tests::edit::apply_of_diff_reproduces_new`
     /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
     /// - witness: `tests::edit::constructor_change_is_one_replace`
+    ///
+    /// # Cost
+    /// - allocation: the renumbered subtree, growth within the tree
     #[spec(
         ensures: |ret| match self.nodes.get(usize::from(root)) {
     Some(original) => {
@@ -631,6 +634,9 @@ impl core::hash::Hasher for Naming
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `tests::edit::self_diff_is_empty_and_apply_is_identity`
 /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
+///
+/// # Cost
+/// - allocation: the content name of each node, growth within the table
 #[spec(ensures: |ret| ret.len() == nodes.len())]
 fn names_of(
     nodes: &[ContentNode],
@@ -696,6 +702,9 @@ fn names_of(
 ///   names of a let spine observe the order.
 /// - witness: `edit::tests::a_let_spine_reads_each_shared_node_once_6470`
 /// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
+///
+/// # Cost
+/// - allocation: the ordered table indices, growth within the table
 #[spec(ensures: |ret| ret.len() == nodes.len())]
 fn topological(nodes: &[ContentNode]) -> Vec<NodeIndex>
 {
@@ -1113,6 +1122,9 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
     ///   earlier revision of the same leading items, against the snapshot read
     ///   whole, and the diff of two revisions sharing them.
     /// - witness: `edit::tests::a_snapshot_after_leading_images_is_the_whole_snapshot_776`
+    ///
+    /// # Cost
+    /// - allocation: the snapshot of the program, growth within the program
     #[spec(
         requires: leading.items.len() <= program.items().len()
             && leading.items.iter().zip(program.references()).all(|(item, reference)| item.reference == *reference),
@@ -1312,6 +1324,9 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
     ///   and collapsed failure causes.
     /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
     /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    ///
+    /// # Cost
+    /// - allocation: the path of the walk, growth within the body
     #[spec(
         ensures: |ret| {
     self.items
@@ -1584,6 +1599,9 @@ if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right
     /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
     /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
     /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
+    ///
+    /// # Cost
+    /// - allocation: the path of the descent, growth within the body
     #[spec(
         ensures: |ret| {
     (match ret.0 {
@@ -2027,6 +2045,9 @@ impl EditScript
 /// - witness: `tests::edit::item_deletion_is_one_delete`
 /// - witness: `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`
 /// - witness: `tests::edit::growing_a_tuple_replaces_it_325`
+///
+/// # Cost
+/// - allocation: the edit script, growth within the two trees
 #[spec(
     ensures: |ret| {
     ret.0.is_empty() == (old.items == new.items)
@@ -2235,6 +2256,9 @@ pub fn diff(
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `tests::edit::hole_fill_and_erase`
 /// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+///
+/// # Cost
+/// - allocation: the edited tree, growth within the tree and the script
 #[spec(
     ensures: |ret| {
     ret.len()
@@ -2461,6 +2485,9 @@ struct Place
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
+///
+/// # Cost
+/// - allocation: the grafted tree, growth within the tree and the edits
 #[spec(
     ensures: |ret| {
     numbering(&ret.nodes) == Numbering::Discovered
@@ -2588,6 +2615,9 @@ fn graft(
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
+///
+/// # Cost
+/// - allocation: the kept pairs of ordinals, growth within the two programs
 #[spec(
     ensures: |ret| {
     ret.len() <= old.len().min(new.len())
@@ -2781,6 +2811,9 @@ fn path_of<Nodes>(
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
+///
+/// # Cost
+/// - allocation: the actions of the edit, growth within the two bodies
 #[spec(
     captures: before = actions.len(),
     ensures: |_| {
@@ -3450,6 +3483,9 @@ enum Root
 /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
 /// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
+///
+/// # Cost
+/// - allocation: the tree and the span of each node, growth within the program
 #[spec(
     ensures: |ret| {
     ret.0.nodes.len() == ret.1.len() && !ret.0.nodes.is_empty()
@@ -4305,6 +4341,9 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the reference of a declared world, growth within the program
 fn world_content(
     program: &Program,
     world: gandr_core_term::world::World,

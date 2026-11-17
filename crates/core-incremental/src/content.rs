@@ -216,7 +216,7 @@ use gandr_core_content::Encoder;
 use gandr_core_content::NodeIndex;
 use gandr_core_content::Opacity;
 use gandr_core_content::Reference;
-use gandr_core_content::Resolver;
+use gandr_core_content::Resolver as _;
 use gandr_core_content::Sort;
 use gandr_core_content::SupportedNode;
 use gandr_core_content::TypeContent;
@@ -313,6 +313,9 @@ impl Sites
     /// - hypothesis: L3 — a failure seated from its checkpoint places each node
     ///   it names through this walk.
     /// - witness: `failure::tests::a_failure_seats_at_the_nodes_it_names`
+    ///
+    /// # Cost
+    /// - allocation: the list of reached arena nodes, growth within the item
     pub(crate) fn walk(&self) -> Vec<ArenaNode>
     {
         let mut walk: Vec<(Discovery, ArenaNode)> = self
@@ -370,6 +373,9 @@ impl EntryRoots
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the roots of the entry, growth within the entry
     pub(crate) fn of(
         layout: &Layout,
         entry: &gandr_core_checker::worlds::Entry,
@@ -455,6 +461,9 @@ pub struct RuleRoots
 /// - hypothesis: L3 — a ruled item's rules are content, so two items differing
 ///   only in a rule differ in identity.
 /// - witness: `content::tests::an_operation_rule_is_content`
+///
+/// # Cost
+/// - allocation: the rules as content, growth within the operation
 #[spec(ensures: |ret| ret.len() == rules.rules().len())]
 fn rule_roots(
     layout: &Layout,
@@ -717,6 +726,9 @@ impl DeclarationRoots
     /// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
     /// - witness: `content::tests::open_roots_project_under_their_own_supports`
     /// - witness: `content::tests::an_abstract_type_s_interface_roots_are_renumbered_with_it`
+    ///
+    /// # Cost
+    /// - allocation: the renumbered roots, growth within the roots
     #[spec(ensures: |ret| ret.iter().map(|(_, sort)| sort).eq(self.iter().map(|(_, sort)| sort))
         && ret.iter().map(|(root, _)| root).eq(self.iter().map(|(root, _)| image(root))))]
     pub(crate) fn renumbered<Image>(
@@ -844,6 +856,10 @@ impl DataContent
     /// - hypothesis: L3 — a data answer whose constructor names a changed
     ///   definition invalidates its reader.
     /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    ///
+    /// # Cost
+    /// - allocation: the set of references beneath the roots, growth within the
+    ///   table
     pub(crate) fn reads(&self) -> alloc::collections::BTreeSet<&Reference>
     {
         self.roots
@@ -882,6 +898,10 @@ impl DataContent
     /// - hypothesis: L3 — changing a constructor while preserving its kind
     ///   invalidates reuse.
     /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    ///
+    /// # Cost
+    /// - allocation: the roots of every constructor signature, growth within
+    ///   the signature
     #[spec(ensures: |ret| ret.roots.parameters.len() == signature.parameters().len()
         && ret.roots.constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
         && ret.roots.iter().all(|root| usize::from(root) < ret.nodes.len())
@@ -910,6 +930,9 @@ impl DataContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`DataContent::of`], which builds through it.
     /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    ///
+    /// # Cost
+    /// - allocation: the factored table and its roots, growth within the table
     #[spec(ensures: |ret| ret.placements.len() == ret.roots.iter().count())]
     pub(crate) fn tabulated(
         roots: &DataRoots,
@@ -1024,6 +1047,9 @@ impl ItemContent
     /// - witness: `content::tests::covers_preserve_every_binding_former`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     /// - witness: `content::tests::open_roots_project_under_their_own_supports`
+    ///
+    /// # Cost
+    /// - allocation: the de Bruijn table, growth within the table
     #[spec(ensures: |ret| ret.as_ref().is_err() || self.nodes.get(usize::from(root)).is_none_or(|node|
         ret.as_ref().is_ok_and(|table| table.first().map(ContentNode::sort) == Some(node.sort()))))]
     #[inline]
@@ -1079,6 +1105,9 @@ impl ItemContent
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
     /// - witness: `content::tests::a_root_names_its_holes_by_their_place_under_it`
+    ///
+    /// # Cost
+    /// - allocation: the table under the root, growth within the table
     #[spec(ensures: |ret| self.nodes.get(usize::from(root)).is_none_or(|node|
         ret.nodes().first().map(SupportedNode::sort) == Some(node.sort())))]
     #[inline]
@@ -1232,6 +1261,9 @@ pub struct Encoded
 /// - witness: `content::tests::content_is_free_of_arena_ids`
 /// - witness: `content::tests::a_shared_node_is_listed_once`
 /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+///
+/// # Cost
+/// - allocation: the table and the roots of the item, growth within the item
 #[spec(ensures: |ret| ret.sites.0.values().all(|&(index, _)| usize::from(index) < ret.content.nodes.len())
     && ret.content.placements.len() == ret.content.declaration.iter().count()
     && match layout.items.get(usize::from(ordinal)) {
@@ -1452,6 +1484,9 @@ pub fn encode_item(
 /// - hypothesis: L3 — a node of another item's signature, and a codata item's
 ///   own kind, are placed under their roots and seat at them again.
 /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+///
+/// # Cost
+/// - allocation: the list of root nodes, growth within the declaration
 pub fn item_roots(item: &crate::region::Item) -> Vec<ArenaNode>
 {
     let mut roots = Vec::new();
@@ -1527,6 +1562,9 @@ pub fn item_roots(item: &crate::region::Item) -> Vec<ArenaNode>
 /// # Adequacy
 /// - hypothesis: L3 — as [`item_roots`].
 /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+///
+/// # Cost
+/// - allocation: the list of reached arena nodes, growth within the root
 pub fn root_walk(
     arena: &CoreArena,
     layout: &Layout,
@@ -1597,6 +1635,10 @@ fn local_site(site: gandr_core_checker::SealSite) -> gandr_core_checker::SealSit
 /// - hypothesis: L3 — a content outside an item that holds the item's body
 ///   anchors the body once, and none of the nodes below it.
 /// - witness: `failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
+///
+/// # Cost
+/// - allocation: the list of anchors and the walk of the root, growth within
+///   the item
 pub fn anchors(
     arena: &CoreArena,
     layout: &Layout,
@@ -1663,6 +1705,9 @@ pub fn anchors(
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+///
+/// # Cost
+/// - allocation: the table of the node, growth within the table
 #[spec(ensures: |ret| ret.nodes().first().is_some_and(|node| node.sort() == root.sort()
         && (root.held(program.arena()).is_some() || *node.former() == ContentNode::Unresolved(root.sort()))))]
 #[inline]
@@ -1686,6 +1731,9 @@ pub fn of_node(
 /// - hypothesis: L2 — terms with a lambda and a bind mint into a fresh program
 ///   and read back as their own content.
 /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+///
+/// # Cost
+/// - allocation: each minted node, growth within the arena of the program
 #[spec(ensures: |ret| match ret {
         Maybe::Present(node) => node.held(program.arena()).is_some(),
         Maybe::Absent(_) => true,

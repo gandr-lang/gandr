@@ -5657,6 +5657,9 @@ pub fn item_sources(module: &LoweredModule<'_>) -> Vec<gandr_core_incremental::S
 /// # Adequacy
 /// - hypothesis: L3 — as [`item_program`].
 /// - witness: `tests::locality::sweeps::a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522`
+///
+/// # Cost
+/// - allocation: the bytes of the key, growth within the key
 #[spec(ensures: |ret| <[u8]>::len(ret.name().as_ref()) == str::len(lowered.name().as_ref()))]
 #[must_use]
 fn item_key(

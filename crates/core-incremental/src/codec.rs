@@ -1044,6 +1044,9 @@ pub fn reference_bytes(reference: &Reference) -> CheckpointBytes
 ///   while unknown tags are refused. The predicate checks successful payloads
 ///   without constructing a second owned key.
 /// - witness: `codec::tests::reference_frames_preserve_binary_keys_and_occurrences`
+///
+/// # Cost
+/// - allocation: the key of the reference, growth within the bytes
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -1132,6 +1135,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_world`].
 /// - witness: `codec::tests::world_formers_round_trip_under_their_own_tags_3381`
+///
+/// # Cost
+/// - allocation: the reference of a declared world, growth within the bytes
 #[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_world(reader: &mut Reader<'_>) -> Result<gandr_core_content::WorldContent, CodecError>
 {
@@ -1245,6 +1251,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_entry`].
 /// - witness: `tests::worlds::a_located_program_persists_and_judges_alike_3381`
+///
+/// # Cost
+/// - allocation: the roots of the entry, growth within the bytes
 #[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_entry(reader: &mut Reader<'_>) -> Result<crate::content::EntryRoots, CodecError>
 {
@@ -1514,6 +1523,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_report`].
 /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the content of the report, growth within the bytes
 fn read_report(
     reader: &mut Reader<'_>,
     body: Option<&[SupportedNode]>,
@@ -2040,6 +2052,9 @@ fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+///
+/// # Cost
+/// - allocation: the entries of the tables, growth within the bytes
 fn read_tables(
     reader: &mut Reader<'_>,
     body: Option<&[SupportedNode]>,
@@ -2237,6 +2252,9 @@ fn read_tables(
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_report`].
 /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the content of the elaboration, growth within the bytes
 fn read_elaboration(
     reader: &mut Reader<'_>,
     places: &Places<'_>,
@@ -3908,6 +3926,9 @@ where
 /// - hypothesis: L3 — native round trips retain variadic order and reject
 ///   truncation.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Cost
+/// - allocation: the list of child indices, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.as_ref().map_or(true,|indices| reader.cursor == before.saturating_add(8).saturating_add(indices.len().saturating_mul(8))))]
 fn read_indices(reader: &mut Reader<'_>) -> Result<Vec<NodeIndex>, CodecError>
 {
@@ -3973,6 +3994,9 @@ where
 /// - hypothesis: L3 — duplicate labels cannot silently overwrite a record
 ///   field.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Cost
+/// - allocation: the map of record fields, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
 fn read_fields(
     reader: &mut Reader<'_>
@@ -4030,6 +4054,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a system of two faces keeps its meet across persistence.
 /// - witness: `codec::tests::every_node_former_round_trips_under_its_own_frame`
+///
+/// # Cost
+/// - allocation: the list of meets, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
 fn read_meets(
     reader: &mut Reader<'_>
@@ -4118,6 +4145,10 @@ fn read_branches(
 /// - hypothesis: L3 — a recursive protocol with every former survives
 ///   persistence at a state past its root.
 /// - witness: `codec::tests::session_nodes_persist_their_protocol_and_children`
+///
+/// # Cost
+/// - allocation: the written form of the protocol, growth within the session
+///   type
 fn write_session_type<Out>(
     writer: &mut Writer<'_, Out>,
     session: &SessionType<NodeIndex>,
@@ -4177,6 +4208,9 @@ where
 /// - hypothesis: L3 — a recursive protocol round-trips, and a protocol whose
 ///   recursion is not contractive is refused as corrupt.
 /// - witness: `codec::tests::session_nodes_persist_their_protocol_and_children`
+///
+/// # Cost
+/// - allocation: the session type and its payloads, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_session_type(reader: &mut Reader<'_>) -> Result<SessionType<NodeIndex>, CodecError>
 {
@@ -5327,6 +5361,9 @@ where
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 /// - witness: `codec::tests::a_type_of_words_round_trips_its_cells`
 /// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
+///
+/// # Cost
+/// - allocation: the nominal roots and rules and cells, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(32))]
 fn read_data_roots(reader: &mut Reader<'_>) -> Result<gandr_core_content::DataRoots, CodecError>
 {
@@ -5529,6 +5566,9 @@ where
 ///   spelling.
 /// - witness: `codec::tests::effect_rows_reject_duplicate_and_noncanonical_names`
 /// - witness: `codec::tests::control_nodes_persist_names_frames_and_branch_order`
+///
+/// # Cost
+/// - allocation: the operations of the interface, growth within the bytes
 #[spec(captures: before = reader.cursor, ensures: |ret| match ret { Ok(_) => reader.cursor > before && reader.cursor <= reader.bytes.len(), Err(error) => error == CodecError::Corrupt })]
 fn read_effect_signature(
     reader: &mut Reader<'_>
@@ -5605,6 +5645,9 @@ where
 ///   rows are refused.
 /// - witness: `codec::tests::effect_rows_reject_duplicate_and_noncanonical_names`
 /// - witness: `codec::tests::effect_rows_persist_operation_types_and_canonical_identity`
+///
+/// # Cost
+/// - allocation: the instance map of the row, growth within the bytes
 #[spec(captures: [before = reader.cursor], ensures: |ret| match ret { Ok(_) => reader.cursor > before && reader.cursor <= reader.bytes.len(), Err(error) => error == CodecError::Corrupt })]
 fn read_effect_row(
     reader: &mut Reader<'_>
@@ -5640,6 +5683,9 @@ fn read_effect_row(
 /// # Adequacy
 /// - hypothesis: L3 — an open and a closed row literal each round trip.
 /// - witness: `codec::tests::every_node_former_round_trips_under_its_own_frame`
+///
+/// # Cost
+/// - allocation: the tail of the row literal, growth within the bytes
 #[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecError>
 {
@@ -6959,6 +7005,9 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<SupportedNode>, CodecError>
 ///   allocated queue or visited set.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `codec::tests::discovery_accepts_repeated_roots_and_empty_tables`
+///
+/// # Cost
+/// - allocation: the discovery numbers of the walk, growth within the table
 #[spec(
     requires: nodes.iter().all(|node| {
         node.former().children()
@@ -7347,6 +7396,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a ruled item's content round-trips.
 /// - witness: `codec::tests::a_ruled_value_root_round_trips_and_its_rules_are_content`
+///
+/// # Cost
+/// - allocation: the roots of one side of the rule, growth within the bytes
 fn read_operation_side(reader: &mut Reader<'_>)
 -> Result<Vec<crate::content::RuleRoot>, CodecError>
 {
@@ -7825,6 +7877,9 @@ where
 ///   rejected by the outer canonical-byte check. The predicate bounds
 ///   cardinality rather than allocating a second decoded set.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+///
+/// # Cost
+/// - allocation: the set of references, growth within the bytes
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -10201,6 +10256,9 @@ where
 ///   checker certificate or decode a second copy.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+///
+/// # Cost
+/// - allocation: the checkpoint of one item, growth within the bytes
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -10477,6 +10535,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_failed`].
 /// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the list of anchors, growth within the bytes
 fn read_anchors(reader: &mut Reader<'_>) -> Result<Vec<crate::content::Anchor>, CodecError>
 {
     let count = reader.count()?;
@@ -10817,6 +10878,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_failed`].
 /// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the failure content, growth within the bytes
 fn read_failed(reader: &mut Reader<'_>)
 -> Result<Maybe<FailureContent, failed::Absent>, CodecError>
 {
