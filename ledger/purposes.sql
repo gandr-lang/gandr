@@ -2622,6 +2622,7 @@ INSERT INTO purpose VALUES('surface-diagnostics','spelled::model_slots','functio
 INSERT INTO purpose VALUES('surface-diagnostics','spelled::read_by','function','Writes over each path the name a reading source writes for a declaration it imports, so a printer spells that declaration as the source reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-diagnostics','spelled::telescopes','function','Names the telescope of each function of a lowered module that writes an implicit, so the printer spells an implicit by its name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-diagnostics','spelled::written_blocks','function','Names the written `[ … ]` block of each function of a lowered module that writes an implicit, so the printer supplies a call''s leading atoms by position.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-diagnostics','spelled::written_stages','function','Names the stage binders of each function of a lowered module, each beside its bound, so a printed definition writes its stages.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-diagnostics','verbosity::Verbosity','enum','Names how much of a diagnostic a face shows, so a level chooses what to show, never what the diagnostic holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','Invocation','enum','One understood driver invocation, ready to route.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','Outcome','enum','What an invocation routed to, for the driver to render.',NULL,'fits','sound',NULL);
@@ -4525,6 +4526,7 @@ INSERT INTO purpose VALUES('surface-pretty','core_source::Forgetting','struct','
 INSERT INTO purpose VALUES('surface-pretty','core_source::Modelled','struct','Holds a modelled component, so the component''s type is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','core_source::Restoration','struct','Holds the nodes an elaboration rebuilt, so an elaborated body is read as the body the checker read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','core_source::WrittenForms','struct','Holds the forms a source writes that the core erases, each beside its node, so every reader keeps them and crosses them as one record.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-pretty','core_source::WrittenStage','struct','Holds a stage binder''s name and its bound, so a printed definition writes the stage in its block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','error::PresentationError','enum','Names why a node could not be laid out, so the layout engine''s refusal is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Answered','enum','Names the model answering a capability scope as written, so the scope is spelled `with N` or with no `with` in place of its derived clauses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-pretty','former::Arity','struct','Names the arity a former''s spelling takes, so the former''s arity is read.',NULL,'fits','sound',NULL);

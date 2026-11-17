@@ -117,6 +117,7 @@ use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_pretty::Style;
+use gandr_surface_pretty::WrittenStage;
 use gandr_surface_pretty::present_computation;
 use gandr_surface_pretty::present_type_line;
 use gandr_surface_syntax::SourceFragment;
@@ -1447,6 +1448,52 @@ pub fn written_blocks<'module>(
     blocks.sort_by_key(|&(constant, _)| constant);
     blocks.dedup_by_key(|&mut (constant, _)| constant);
     blocks
+}
+
+/// The stage binders of each function of `module` quantified over stages.
+///
+/// Ascending by its constant, as [`CoreSource::staging`] reads them: each
+/// stage's name, in stage order, joined by position with the bound the
+/// declaration holds for it. A declaration whose names and bounds differ in
+/// count records none.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the stages and their names, growth within the module's
+///   declarations.
+#[inline]
+#[must_use]
+pub fn written_stages<'module>(
+    module: &'module LoweredModule<'_>
+) -> Vec<(ConstantIndex, Vec<WrittenStage<'module>>)>
+{
+    let mut stages: Vec<(ConstantIndex, Vec<WrittenStage<'module>>)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let constant = declaration.constant();
+            let names = module.stage_names(constant);
+            let bounds = module.stages(declaration);
+            (!names.is_empty() && names.len() == bounds.len()).then(|| {
+                (
+                    constant,
+                    names
+                        .iter()
+                        .zip(bounds)
+                        .map(|(name, &bound)| WrittenStage {
+                            name: Name::from(name.as_ref()),
+                            bound,
+                        })
+                        .collect(),
+                )
+            })
+        })
+        .collect();
+    stages.sort_by_key(|&(constant, _)| constant);
+    stages.dedup_by_key(|&mut (constant, _)| constant);
+    stages
 }
 
 /// The model implicits of each function of `module` whose telescope writes

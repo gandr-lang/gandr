@@ -30,6 +30,7 @@ use gandr_surface_diagnostics::modelled;
 use gandr_surface_diagnostics::named_forms;
 use gandr_surface_diagnostics::telescopes;
 use gandr_surface_diagnostics::written_blocks;
+use gandr_surface_diagnostics::written_stages;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::classify;
@@ -642,10 +643,6 @@ enum Held
     /// A `let` of a call that the formatter keeps and the printer folds into
     /// its one read (#6423).
     LetFolded,
-    /// A call printed against a callee whose printed definition drops a
-    /// stage binder of its written block, so the block that a positional
-    /// supply follows moves under the reprint (#7856).
-    StageDropped,
 }
 
 impl fmt::Display for Held
@@ -667,7 +664,6 @@ impl fmt::Display for Held
             Self::SeveralResults => "#5173, a bind of a call's outputs",
             Self::BareName => "#5779, a constructor written bare where its name is ambiguous",
             Self::LetFolded => "#6423, a let of a call the printer folds into its read",
-            Self::StageDropped => "#7856, a callee's printed definition drops a stage binder",
         })
     }
 }
@@ -1029,6 +1025,7 @@ fn read(
     maps.sort_by_key(|&(map, _)| map);
     let implicits = telescopes(&module);
     let blocks = written_blocks(&module);
+    let stages = written_stages(&module);
     let slots = model_slots(&module);
     // Each dependent pair's binder and second label as the source writes
     // them, as the language server's spellings name them (#3278), each
@@ -1056,6 +1053,7 @@ fn read(
         .manifesting(&rows)
         .naming_implicits(&implicits)
         .ordering_implicits(&blocks)
+        .staging(&stages)
         .flattening(&slots)
         .operating(module.operators());
     // A body leaves each written reduct's or forgetting map's call to the
@@ -1556,18 +1554,6 @@ fn bodies(
         });
     }
     let back = back.unwrap_or_default();
-    // A definition whose source writes a stage binder, `[i : Size]`, that its
-    // printing leaves out (#7856): a call against it reads a shorter written
-    // block in the variant, so its positional run moves under the reprint.
-    let source: &str = <&str>::from(written.text);
-    let stage_dropped = all.iter().any(|declaration| {
-        let writes = declaration.forms.iter().any(|&span| {
-            source
-                .get(usize::from(span.start()) .. usize::from(span.end()))
-                .is_some_and(|text| text.contains(": Size"))
-        });
-        writes && !declaration.written(Form::Sugared).contains(": Size")
-    });
     let (read_back, unread): (Vec<&Printed>, Vec<&Printed>) = all
         .into_iter()
         .partition(|declaration| back.contains(&declaration.name));
@@ -1576,7 +1562,6 @@ fn bodies(
     for declaration in unread {
         match held_again.get(&declaration.name) {
             Some(&why) => holding.push((why, declaration.name.as_str())),
-            None if stage_dropped => holding.push((Held::StageDropped, declaration.name.as_str())),
             None => found.misses.push(format!(
                 "{name}: `{}` does not lower back to itself",
                 declaration.name
@@ -1840,6 +1825,58 @@ fn an_inverse_in_a_type_s_endpoint_is_spelled_as_the_printer_does_5205()
     );
     let misses = misses(&grammar, written, &source.name);
     assert!(misses.is_empty(), "{}", misses.join("\n"));
+}
+
+/// #7856: a definition's stage binders stand first in its printed block, in
+/// stage order, each bound directly after its stage, and the printing reads
+/// back to itself with no hold. `kept` writes a stage before a type
+/// implicit, and `boundedAt` a stage below another.
+#[test]
+fn a_definition_s_stage_binders_are_printed_in_its_block_7856()
+{
+    let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+    let sources = gandr_workflow_sweep::corpus::sources().expect("the corpus reads");
+    for (path, declaration, header) in [
+        (
+            "classifier/implicit-telescope.gandr",
+            "kept",
+            "def kept[i : Size, a : Type](",
+        ),
+        (
+            "model/data/sized-higher-order.gandr",
+            "boundedAt",
+            "def boundedAt[j : Size, k : Size, k < j](",
+        ),
+    ] {
+        let source = sources
+            .iter()
+            .find(|source| source.path.ends_with(path))
+            .expect("the source stands in the corpus");
+        let text = std::fs::read_to_string(&source.path).expect("the source is readable");
+        let written = Written {
+            path: &source.path,
+            text: SourceText::from(text.as_str()),
+        };
+        let read = read(&grammar, written).expect("the source lowers");
+        let printed = read
+            .printed
+            .iter()
+            .find(|printed| printed.name == declaration)
+            .expect("the printer spells the declaration whole");
+        for form in [Form::Sugared, Form::Explicit] {
+            let spelled = printed.written(form);
+            assert!(
+                spelled.starts_with(header),
+                "{declaration} in {form:?} opens with {header}: {spelled}"
+            );
+        }
+        let found = bodies(&grammar, written, &source.name);
+        assert!(
+            found.misses.is_empty(),
+            "{path}: {}",
+            found.misses.join("\n")
+        );
+    }
 }
 
 /// The parity sweeps: a sample on every pull request, every source under the

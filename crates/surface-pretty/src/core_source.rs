@@ -467,6 +467,18 @@ pub struct ForgetMap<'arena>
     pub sorts: Vec<Name<'arena>>,
 }
 
+/// One stage binder of a function's written block, which no arrow of its
+/// type carries: the name the source writes, and the bound the checker's
+/// declaration holds at the same stage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WrittenStage<'arena>
+{
+    /// The binder's name, `i` in `[i : Size]`.
+    pub name: Name<'arena>,
+    /// Its bound: `Below(n)` writes the entry `i < n` after it.
+    pub bound: gandr_kernel_term::StageBound,
+}
+
 /// The forms a source writes that the core erases, each beside its node.
 ///
 /// The record holds the name each dependent arrow binds, the labels of each
@@ -786,6 +798,9 @@ pub struct CoreSource<'arena>
     /// The names of each such function's written `[ … ]` block, in written
     /// order, ascending by the function's constant.
     blocks: &'arena [(ConstantIndex, Vec<Name<'arena>>)],
+    /// The stage binders of each function quantified over stages, in stage
+    /// order, ascending by the function's constant.
+    stages: &'arena [(ConstantIndex, Vec<WrittenStage<'arena>>)],
     /// The model implicits of each function whose telescope writes one, in
     /// telescope order, ascending by the function's constant.
     slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
@@ -832,6 +847,7 @@ impl<'arena> CoreSource<'arena>
             implied: &[],
             telescopes: &[],
             blocks: &[],
+            stages: &[],
             slots: &[],
             operators: &[],
             homes: &[],
@@ -1190,6 +1206,39 @@ impl<'arena> CoreSource<'arena>
             .ok()
             .and_then(|at| self.blocks.get(at))
             .map_or(&[], |&(_, ref names)| names.as_slice())
+    }
+
+    /// This source, writing the stage binders of each function `stages`
+    /// records, ascending by the function's constant, first in the written
+    /// block of its definition.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn staging(
+        self,
+        stages: &'arena [(ConstantIndex, Vec<WrittenStage<'arena>>)],
+    ) -> Self
+    {
+        Self { stages, ..self }
+    }
+
+    /// The stage binders this source records for the function `constant`,
+    /// in stage order; the empty slice for a function it records none for.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn stages(
+        &self,
+        constant: ConstantIndex,
+    ) -> &'arena [WrittenStage<'arena>]
+    {
+        self.stages
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.stages.get(at))
+            .map_or(&[], |&(_, ref stages)| stages.as_slice())
     }
 
     /// This source, writing the model implicits of each function `slots`
