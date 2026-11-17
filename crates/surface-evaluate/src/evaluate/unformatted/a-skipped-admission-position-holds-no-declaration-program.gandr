@@ -1,0 +1,3 @@
+module M where { type T = Integer ; def seed : T ; def seed = 41 ; }
+def copy : Integer ;
+def copy = M.seed ;

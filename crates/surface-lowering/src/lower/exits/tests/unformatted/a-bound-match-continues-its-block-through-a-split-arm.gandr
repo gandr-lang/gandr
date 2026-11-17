@@ -1,0 +1,2 @@
+{NAT}def split(n : Nat) -> -F Nat {{ let m = match n {{ | Zero => return n | Succ(p) => {{ let *{{a, b}} = *{{p, n}} ; pure a }} }} ; return Succ m }}
+def split_by_hand(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => {{ let *{{a, b}} = *{{p, n}} ; return Succ a }} }} }}

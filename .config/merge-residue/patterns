@@ -1,0 +1,5 @@
+^(<<<<<<<|=======|>>>>>>>|\|\|\|\|\|\|\|)([[:space:]]|$)
+weave[:] run
+weave[ ]check
+^[[:space:]]*(//|--|#) refused_by:
+([/]/|[-]-|[#]) refused_by: [[:alnum:]_]+ · collision:
