@@ -398,13 +398,13 @@ pub const BACK: &str = "back";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Layout
 {
-    /// `A ≅ B`: `#{into, from, sect, retr}`.
+    /// `A ≅ B`: `*{into, from, sect, retr}`.
     Isomorphism,
-    /// `A ≃ B`: `#{into, linv, rinv}`, `linv` and `rinv` records of their own.
+    /// `A ≃ B`: `*{into, linv, rinv}`, `linv` and `rinv` records of their own.
     Equivalence,
-    /// The equivalence's left inverse `linv`: `#{from, sect}`.
+    /// The equivalence's left inverse `linv`: `*{from, sect}`.
     LeftInverse,
-    /// The equivalence's right inverse `rinv`: `#{from, retr}`.
+    /// The equivalence's right inverse `rinv`: `*{from, retr}`.
     RightInverse,
 }
 

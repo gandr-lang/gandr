@@ -1479,9 +1479,9 @@ pub enum Plan
     StaticPi(NodeIndex, NodeIndex),
     /// One eager product of the value types in the lowerer's operand store,
     /// in order: an unparenthesized `*` chain is one former, and the
-    /// positional telescope type `#{A, …}` another, of any arity.
+    /// positional telescope type `*{A, …}` another, of any arity.
     Product(FormStretch),
-    /// The type over labels `#{ l : A, … }`: its fields by label, the binders
+    /// The type over labels `*{ l : A, … }`: its fields by label, the binders
     /// of every entry but the last in the lowerer's parameter store, each
     /// over the entries after it, the last entry's type and where its label
     /// is written. The record type of its fields when no later entry names an
@@ -1507,10 +1507,10 @@ pub enum Plan
     /// The native list of the values in the lowerer's operand store, in
     /// order: their cons cells ending in the empty list.
     List(FormStretch),
-    /// The record of the values its labels name: `#{ .l = v, … }`.
+    /// The record of the values its labels name: `*{ .l = v, … }`.
     Record(BTreeMap<FieldLabel, NodeIndex>),
     /// The update of its base by the record of the values its labels name:
-    /// `#{ b | l = v, … }`.
+    /// `*{ b | l = v, … }`.
     RecordUpdate(NodeIndex, BTreeMap<FieldLabel, NodeIndex>),
     /// The injection of its value into the summand at this index.
     Injection(Summand, NodeIndex),
@@ -1532,7 +1532,7 @@ pub enum Plan
     /// off the record type the value synthesises.
     Field(NodeIndex, FieldLabel),
     /// The record of the fields the labels select off the value at the node,
-    /// `r.#{ .a, .b }`: each field projected in turn as its selection `r.a`
+    /// `r.*{ .a, .b }`: each field projected in turn as its selection `r.a`
     /// is, bound, and the record of the bound fields returned.
     SubRecord(NodeIndex, Vec<arity::Selected>),
     /// The field a label names of the data value the name at the node is,

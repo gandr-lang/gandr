@@ -578,7 +578,7 @@ impl<'source> Context<'_, 'source>
     /// `.l`, a renamed `.l = p`, or a positional `p`.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past the pattern's `#{`.
+    /// - requires: `cursor` stands just past the pattern's `*{`.
     /// - ensures: every entry in written order, the cursor exhausted; a punned
     ///   entry holds its label tile.
     /// - fails: a misplaced tile at an undotted key `k = p`, at a punned index,

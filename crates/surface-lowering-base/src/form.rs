@@ -406,7 +406,7 @@ impl FormName
     pub const LIST_PATTERN: Self = Self("list_pattern");
     /// The rest pattern `..p` inside a list pattern.
     pub const REST_PATTERN: Self = Self("rest_pattern");
-    /// The telescope pattern `#{p, …}` or `#{.l = p, …}`.
+    /// The telescope pattern `*{p, …}` or `*{.l = p, …}`.
     pub const TELESCOPE_PATTERN: Self = Self("telescope_pattern");
     /// The injection pattern `+{ .l = p }`.
     pub const LABELLED_SUM_PATTERN: Self = Self("labelled_sum_pattern");
@@ -962,7 +962,7 @@ pub enum Former
     /// or one more conditional: the match of its condition over the two
     /// booleans.
     If,
-    /// The telescope value `#{…}`: the tuple of its positional entries, or the
+    /// The telescope value `*{…}`: the tuple of its positional entries, or the
     /// record of its labelled ones.
     Telescope,
     /// The list literal `#[v, …]`: the native list of its elements in order,
@@ -1016,7 +1016,7 @@ pub enum Former
     SumType,
     /// The lazy product type `C & D & …`, the lazy record of its operands.
     LazyProductType,
-    /// The telescope type `#{…}`: the product of its positional entries, or
+    /// The telescope type `*{…}`: the product of its positional entries, or
     /// the record of its labelled ones.
     TelescopeType,
     /// The sum over labels `+{…}`, positional or labelled.

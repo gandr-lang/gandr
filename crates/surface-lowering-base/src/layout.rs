@@ -83,7 +83,7 @@ quenchant_shape::reason_enum! {
 pub enum Nesting
 {
     /// An opener of this family: `(`, `[`, `{`, or a compound opener ending in
-    /// one, such as `type(`, `@[` or `#{`.
+    /// one, such as `type(`, `@[` or `*{`.
     Opens(ClosingClass),
     /// A closer of this family.
     Closes(ClosingClass),
