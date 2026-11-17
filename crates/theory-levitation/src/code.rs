@@ -38,6 +38,7 @@
 
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
@@ -59,11 +60,12 @@ use crate::tree::TreeRef;
 /// A description-level name: a constructor, field, parameter, sort, port or
 /// type head.
 ///
-/// A boxed string, so [`Code`] stays a plain value with derived structural
-/// equality.
+/// An immutable reference-counted string.
+///
+/// Copies share its text.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Name(Box<str>);
+pub struct Name(Arc<str>);
 
 impl From<&str> for Name
 {
@@ -71,6 +73,9 @@ impl From<&str> for Name
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name's text, durable by the name.
     #[inline]
     fn from(value: &str) -> Self
     {
@@ -84,6 +89,9 @@ impl From<NameRef<'_>> for Name
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name's text, durable by the name.
     #[inline]
     fn from(value: NameRef<'_>) -> Self
     {
@@ -110,10 +118,13 @@ impl From<String> for Name
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name's text, durable by the name.
     #[inline]
     fn from(value: String) -> Self
     {
-        Self(value.into_boxed_str())
+        Self(Arc::from(value))
     }
 }
 
@@ -123,10 +134,13 @@ impl From<Box<str>> for Name
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name's text, durable by the name.
     #[inline]
     fn from(value: Box<str>) -> Self
     {
-        Self(value)
+        Self(Arc::from(value))
     }
 }
 
@@ -136,10 +150,13 @@ impl From<Name> for Box<str>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the boxed spelling, durable by the returned box.
     #[inline]
     fn from(value: Name) -> Self
     {
-        value.0
+        Self::from(value.0.as_ref())
     }
 }
 
@@ -152,7 +169,7 @@ impl AsRef<str> for Name
     #[inline]
     fn as_ref(&self) -> &str
     {
-        &self.0
+        self.0.as_ref()
     }
 }
 
@@ -182,7 +199,7 @@ impl Name
     #[must_use]
     pub fn as_name_ref(&self) -> NameRef<'_>
     {
-        NameRef::from(&*self.0)
+        NameRef::from(self.0.as_ref())
     }
 }
 
@@ -1170,6 +1187,22 @@ mod tests
 
     use super::*;
     use crate::test_support::Grade;
+
+    /// A name clone shares its spelling allocation.
+    ///
+    /// # Specification
+    ///
+    /// A clone points to the same immutable spelling allocation.
+    #[test]
+    fn cloned_name_shares_text_7936()
+    {
+        let name = Name::from("constructor");
+        let copied = name.clone();
+        assert!(
+            Arc::ptr_eq(&name.0, &copied.0),
+            "the clone shares its immutable spelling allocation"
+        );
+    }
 
     /// A `Maybe`-shaped payload code for a `Some(x: a)` constructor.
     ///

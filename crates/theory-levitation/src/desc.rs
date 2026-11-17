@@ -617,6 +617,10 @@ impl<G> CtorDesc<G>
     ///   stack's top two monomial sets — cross-concatenation for a product,
     ///   union for an inline sum.
     ///
+    /// # Cost
+    /// - allocation: the arity worklists and tables, durable by the returned
+    ///   arity.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — unit, product, sum, abstraction and function payloads
     ///   are observed through exact ports and maps, including a product of
@@ -676,7 +680,10 @@ impl<G> CtorDesc<G>
                         .into_iter()
                         .flat_map(|left_monomial| {
                             rights.iter().map(move |right_monomial| {
-                                let mut joined = left_monomial.clone();
+                                let mut joined = Vec::with_capacity(
+                                    left_monomial.len().saturating_add(right_monomial.len()),
+                                );
+                                joined.extend(left_monomial.iter().cloned());
                                 joined.extend(right_monomial.iter().cloned());
                                 joined
                             })

@@ -14,6 +14,7 @@ use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -125,18 +126,16 @@ impl<N> TermHead<N>
 /// At the root of a rule's right-hand side, a term may also be the results
 /// tuple a many-out operation's rule returns ([`FreeTerm::results`]).
 ///
-/// Held as one flat table, so a term of any depth is built, compared, walked
-/// and dropped without recursion.
+/// Held in one shared flat table, so a term of any depth is built, compared,
+/// walked and dropped without recursion.
 ///
-/// The term is a functor in the names `N` it holds ([`FreeTerm::map_names`]).
-/// Its builders take text, the default [`Name`]. A decode mints the form that
-/// holds [`NameId`]s into a description's table, and a copy of that form
-/// copies no text.
+/// A copy shares the table. A parent that consumes a shared child makes the
+/// required structural copy.
 ///
 /// [`NameId`]: crate::NameId
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct FreeTerm<N = Name>(Tree<TermHead<N>>);
+pub struct FreeTerm<N = Name>(Arc<Tree<TermHead<N>>>);
 
 impl FreeTerm
 {
@@ -144,13 +143,16 @@ impl FreeTerm
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term.
     #[inline]
     #[must_use]
     pub fn var<N>(name: N) -> Self
     where
         N: Into<Name>,
     {
-        Self(Tree::leaf(TermHead::Var(name.into())))
+        Self(Arc::new(Tree::leaf(TermHead::Var(name.into()))))
     }
 
     /// A constructor application `C(t₀, …, tₙ)`; `n = 0` is a nullary
@@ -255,20 +257,26 @@ impl FreeTerm
     where
         N: Into<Name>,
     {
-        Self(Tree::node(TermHead::Abs(atom.into()), alloc::vec![body.0]))
+        Self(Arc::new(Tree::node(
+            TermHead::Abs(atom.into()),
+            alloc::vec![Arc::unwrap_or_clone(body.0)],
+        )))
     }
 
     /// The atom `a` named inside an abstraction `bind a . t` that binds it.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term.
     #[inline]
     #[must_use]
     pub fn atom<N>(name: N) -> Self
     where
         N: Into<Name>,
     {
-        Self(Tree::leaf(TermHead::Atom(name.into())))
+        Self(Arc::new(Tree::leaf(TermHead::Atom(name.into()))))
     }
 
     /// The binding field `bind x . t` of the variable `x` over `body`, at a
@@ -290,7 +298,10 @@ impl FreeTerm
     where
         N: Into<Name>,
     {
-        Self(Tree::node(TermHead::Lam(var.into()), alloc::vec![body.0]))
+        Self(Arc::new(Tree::node(
+            TermHead::Lam(var.into()),
+            alloc::vec![Arc::unwrap_or_clone(body.0)],
+        )))
     }
 
     /// The variable `x` named inside a binding field `bind x . t` that binds
@@ -298,13 +309,16 @@ impl FreeTerm
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term.
     #[inline]
     #[must_use]
     pub fn bound<N>(name: N) -> Self
     where
         N: Into<Name>,
     {
-        Self(Tree::leaf(TermHead::Bound(name.into())))
+        Self(Arc::new(Tree::leaf(TermHead::Bound(name.into()))))
     }
 
     /// The canonical name of the atom an abstraction `depth` abstractions deep
@@ -603,7 +617,7 @@ impl FreeTerm<NameId>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn var_id(name: NameId) -> Self
+    pub fn var_id(name: NameId) -> Self
     {
         Self::leaf_of(TermHead::Var(name))
     }
@@ -634,11 +648,14 @@ impl<N> FreeTerm<N>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term.
     #[inline]
     #[must_use]
-    pub(crate) const fn leaf_of(head: TermHead<N>) -> Self
+    pub(crate) fn leaf_of(head: TermHead<N>) -> Self
     {
-        Self(Tree::leaf(head))
+        Self(Arc::new(Tree::leaf(head)))
     }
 
     /// A term whose root is the head `head` gives at the arity of `args`,
@@ -656,12 +673,16 @@ impl<N> FreeTerm<N>
         args: A,
     ) -> Self
     where
+        N: Clone,
         H: FnOnce(ArgumentCount) -> TermHead<N>,
         A: IntoIterator<Item = Self>,
     {
-        let args: Vec<Tree<TermHead<N>>> = args.into_iter().map(|arg| arg.0).collect();
+        let args: Vec<Tree<TermHead<N>>> = args
+            .into_iter()
+            .map(|arg| Arc::unwrap_or_clone(arg.0))
+            .collect();
         let arity = ArgumentCount::from(args.len());
-        Self(Tree::node(head(arity), args))
+        Self(Arc::new(Tree::node(head(arity), args)))
     }
 
     /// The term with each name replaced by its image under `name`: the map of
@@ -694,7 +715,9 @@ impl<N> FreeTerm<N>
     where
         F: FnMut(&N) -> Result<M, E>,
     {
-        self.0.try_map(|head| head.try_map(&mut name)).map(FreeTerm)
+        self.0
+            .try_map(|head| head.try_map(&mut name))
+            .map(|tree| FreeTerm(Arc::new(tree)))
     }
 
     /// The term as a borrowed node.
@@ -877,7 +900,7 @@ impl<N> FreeTerm<N>
             })
         });
         match read {
-            Ok(tree) => Self(tree),
+            Ok(tree) => Self(Arc::new(tree)),
             Err(never) => match never {},
         }
     }
@@ -893,6 +916,9 @@ impl FreeTerm
     ///   head, kind and argument order.
     /// - panics: none.
     /// - intension: one pass over the table, appending each image whole.
+    ///
+    /// # Cost
+    /// - allocation: the rewritten term's table, durable by the term.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — root and nested variables with present/absent images,
@@ -911,17 +937,19 @@ impl FreeTerm
     where
         I: FnMut(&Name) -> Maybe<TermNode<'image>, leaf_image::Absent>,
     {
-        Self(self.0.to_ref().replace_leaves(|head| match *head {
-            TermHead::Var(ref name) => image(name).map(|replacement| replacement.0),
-            TermHead::Ctor(..)
-            | TermHead::Op(..)
-            | TermHead::Results(_)
-            | TermHead::Inst(..)
-            | TermHead::Abs(_)
-            | TermHead::Atom(_)
-            | TermHead::Lam(_)
-            | TermHead::Bound(_) => Maybe::Absent(leaf_image::Absent::Kept),
-        }))
+        Self(Arc::new(self.0.to_ref().replace_leaves(
+            |head| match *head {
+                TermHead::Var(ref name) => image(name).map(|replacement| replacement.0),
+                TermHead::Ctor(..)
+                | TermHead::Op(..)
+                | TermHead::Results(_)
+                | TermHead::Inst(..)
+                | TermHead::Abs(_)
+                | TermHead::Atom(_)
+                | TermHead::Lam(_)
+                | TermHead::Bound(_) => Maybe::Absent(leaf_image::Absent::Kept),
+            },
+        )))
     }
 }
 
@@ -1090,13 +1118,16 @@ impl<'term, N> TermNode<'term, N>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copied term's table, durable by the copied term.
     #[inline]
     #[must_use]
     pub fn to_term(self) -> FreeTerm<N>
     where
         N: Clone,
     {
-        FreeTerm(self.0.to_tree())
+        FreeTerm(Arc::new(self.0.to_tree()))
     }
 }
 
