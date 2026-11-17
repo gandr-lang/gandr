@@ -4,6 +4,7 @@ members = [
   "crates/core-checker",
   "crates/core-checker-base",
   "crates/core-checker-bridge",
+  "crates/core-content",
   "crates/core-fork",
   "crates/core-incremental",
   "crates/core-nbe",
@@ -477,6 +478,18 @@ path = "crates/core-checker-base"
 [workspace.dependencies.gandr-core-checker-bridge]
 path = "crates/core-checker-bridge"
 
+# The content form of a core node: its canonical table, numbered by
+# discovery, free of arena ids and admission positions, and its mint.
+# consumers:
+# - core-incremental
+# - surface-dispatcher
+# - surface-pretty
+# - surface-repl
+# - surface-session
+# - surface-tui (dev)
+[workspace.dependencies.gandr-core-content]
+path = "crates/core-content"
+
 # The fork a check hands its independent jobs to, and its serial reference.
 # consumers:
 # - core-checker
@@ -493,7 +506,7 @@ path = "crates/core-fork"
 # consumers:
 # - surface-driver
 # - surface-lsp
-# - surface-pretty
+# - surface-pretty (dev)
 # - surface-repl
 # - surface-session
 # - surface-tui (dev)

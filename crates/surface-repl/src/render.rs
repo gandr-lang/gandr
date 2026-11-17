@@ -61,8 +61,8 @@
 //! merely storing a classifier is not enough.
 
 use anodized::spec;
-use gandr_core_incremental::ContentNode;
-use gandr_core_incremental::NodeIndex;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
 use gandr_surface_pretty::ContentSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;
@@ -102,6 +102,9 @@ pub const TRANSCRIPT_WIDTH: u32 = 100;
 ///   sources retain their written type spelling at the transcript's width; the
 ///   former-by-former spellings are witnessed where [`ContentSource`] is.
 /// - witness: `tests::repl_loop::corpus_types_spell_as_their_source_writes_them`
+///
+/// # Cost
+/// - allocation: the laid out presentation, growth within the table
 #[spec(ensures: |ret| match nodes.get(usize::from(root)) {
     None | Some(&ContentNode::Unresolved(_)) => ret.as_ref().is_ok_and(|shown|
         shown.as_ref() == "?" && shown.fidelity() == gandr_surface_pretty::Fidelity::Approximate),

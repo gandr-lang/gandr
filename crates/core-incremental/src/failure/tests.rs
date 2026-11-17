@@ -6,6 +6,12 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::Mismatch;
 use gandr_core_checker::OriginToken;
+use gandr_core_content::ArenaNode;
+use gandr_core_content::ChildPosition;
+use gandr_core_content::ItemKey;
+use gandr_core_content::Occurrence;
+use gandr_core_content::Reference;
+use gandr_core_content::TypeContent;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -16,18 +22,12 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::StringLiteral;
 use quenchant_shape::shape::Maybe;
 
-use crate::boundary::ChildPosition;
 use crate::boundary::ItemOrdinal;
-use crate::boundary::Occurrence;
-use crate::content::ArenaNode;
-use crate::content::TypeContent;
 use crate::content::anchors;
 use crate::content::encode_item;
 use crate::failure::Rooted;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
-use crate::region::Reference;
 use crate::typing::Projection;
 use crate::typing::Typing;
 
@@ -102,7 +102,7 @@ fn a_failure_seats_at_the_nodes_it_names()
         arena: &arena,
         layout: fresh.layout(),
         sites: &encoded.sites,
-        types: &crate::content::TypeMemo::default(),
+        types: &gandr_core_content::TypeMemo::default(),
         read: core::cell::RefCell::new(None),
     };
     assert_eq!(

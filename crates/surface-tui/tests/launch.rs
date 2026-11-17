@@ -13,8 +13,8 @@ use alloc::collections::VecDeque;
 use std::io;
 
 use anodized::spec;
-use gandr_core_incremental::ContentNode;
-use gandr_core_incremental::NodeIndex;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
 use gandr_kernel_term::BaseType;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_render_remote::HlRole;

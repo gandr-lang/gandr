@@ -1,5 +1,8 @@
 use alloc::vec;
 
+use gandr_core_content::ArenaNode;
+use gandr_core_content::ItemKey;
+use gandr_core_content::TypeContent;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
@@ -14,15 +17,12 @@ use quenchant_shape::shape::Maybe;
 
 use super::elaborated;
 use super::written;
-use crate::content::ArenaNode;
-use crate::content::TypeContent;
 use crate::fixture::Digits;
 use crate::fixture::Position;
 use crate::fixture::checked;
 use crate::fixture::declaration;
 use crate::fixture::integer;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
 
 /// The call of the identity that omits its implicit enters elaborated, its

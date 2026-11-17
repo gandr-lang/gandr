@@ -28,11 +28,11 @@
 //! lowering to file it for refused forms too.
 
 use anodized::spec;
-use gandr_core_incremental::ContentNode;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Reference;
 use gandr_core_incremental::DeclarationRoots;
 use gandr_core_incremental::ItemCheckpoint;
-use gandr_core_incremental::NodeIndex;
-use gandr_core_incremental::Reference;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::submitted;
@@ -136,6 +136,9 @@ pub fn type_of(
 ///   checks precedence without printing twice.
 /// - witness: `typed::tests::missing_and_refused_types_keep_their_absence_reasons`
 /// - witness: `typed::tests::a_synthesised_type_is_spelled`
+///
+/// # Cost
+/// - allocation: the spelled type, growth within the checkpoint
 #[spec(ensures: |ret| match *checkpoint.typing() {
     Typing::Refused(_) => matches!(ret, Maybe::Absent(spelled::Absent::Refused)),
     Typing::Checked { .. } | Typing::Owed | Typing::Suspended

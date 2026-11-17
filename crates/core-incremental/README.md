@@ -50,9 +50,9 @@ use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::Item;
-use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::check_program;
 use gandr_core_incremental::resume;
@@ -107,8 +107,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | ----- | ------ |
 | The incremental specification and validated resume | [`checkpoint`](src/checkpoint.rs) |
 | Restriction of a checked set by source keys | [`bundle`](src/bundle.rs) |
-| References, content, the co-de Bruijn table and handles | [`region`](src/region.rs), [`content`](src/content.rs), [`support`](src/support.rs), [`order`](src/order.rs) |
-| Native, recursive and control content and their cache tags | [`content`](src/content.rs) |
+| The admission layout, its resolver and handles | [`region`](src/region.rs), [`order`](src/order.rs) |
+| The roots of a declaration and the encoding of an item over the node form of `gandr-core-content` | [`content`](src/content.rs) |
 | The canonical encoding | [`codec`](src/codec.rs) |
 | Stores, their frame, addresses and atomicity | [`persistence`](src/persistence.rs), [`record`](src/record.rs) |
 | The synthesis stream | [`stream`](src/stream.rs) |

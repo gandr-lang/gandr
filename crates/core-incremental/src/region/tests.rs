@@ -4,6 +4,8 @@ use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::Occurrence;
+use gandr_core_content::SourceTag;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
@@ -13,9 +15,7 @@ use super::ItemKey;
 use super::Program;
 use super::ProgramError;
 use super::Reference;
-use super::SourceTag;
 use crate::boundary::ItemOrdinal;
-use crate::boundary::Occurrence;
 
 /// A fixture item's key text.
 #[repr(transparent)]

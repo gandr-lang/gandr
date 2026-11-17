@@ -3,6 +3,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use gandr_core_checker::body;
+use gandr_core_content::ItemKey;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::TablePlace;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
@@ -15,16 +18,13 @@ use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemOrdinal;
-use crate::boundary::NodeIndex;
 use crate::boundary::OutsideIndex;
-use crate::content::TablePlace;
 use crate::fixture::Digits;
 use crate::fixture::Position;
 use crate::fixture::checked;
 use crate::fixture::declaration;
 use crate::fixture::integer;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
 
 /// A body that runs two nested calls of the identity is elaborated, and a

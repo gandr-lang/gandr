@@ -32,6 +32,13 @@ use gandr_core_checker::Declaration;
 use gandr_core_checker::DeclarationContent;
 use gandr_core_checker::Entered;
 use gandr_core_checker::Verdict;
+use gandr_core_content::ArenaNode;
+use gandr_core_content::Minted;
+use gandr_core_content::Opacity;
+use gandr_core_content::Placer;
+use gandr_core_content::TypeContent;
+use gandr_core_content::TypeMemo;
+use gandr_core_content::seating;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -39,13 +46,6 @@ use gandr_kernel_term::StageSignature;
 use gandr_kernel_term::StagedPosition;
 use quenchant_shape::shape::Maybe;
 
-use crate::content::ArenaNode;
-use crate::content::Minted;
-use crate::content::Opacity;
-use crate::content::Placer;
-use crate::content::TypeContent;
-use crate::content::TypeMemo;
-use crate::content::seating;
 use crate::region::Layout;
 use crate::region::Program;
 
@@ -308,6 +308,9 @@ impl EntryContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`EntryContent`].
     /// - witness: `entry::tests::an_elaborated_item_keeps_its_filled_body_and_mints_it_back`
+    ///
+    /// # Cost
+    /// - allocation: the minted body and type, growth within `arena`
     pub(crate) fn seat(
         &self,
         arena: &mut CoreArena,

@@ -6,9 +6,10 @@
 //! # Six pieces
 //!
 //! **The item seam.** [`Program`] holds [`Item`]s — a front end's
-//! [`ItemKey`] beside the checker's own [`gandr_core_checker::Declaration`] —
-//! over one arena. Constants are read as the [`Reference`] their position
-//! resolves to, so nothing that must survive an edit is stated in positions.
+//! [`ItemKey`](gandr_core_content::ItemKey) beside the checker's own
+//! [`gandr_core_checker::Declaration`] — over one arena. Constants are read as
+//! the [`Reference`](gandr_core_content::Reference) their position resolves to,
+//! so nothing that must survive an edit is stated in positions.
 //!
 //! **The conservative footprint.** [`footprint_of`] lists every reference an
 //! item mentions, and those in type positions apart: the read relation a value
@@ -46,9 +47,9 @@
 //! use gandr_core_checker::Declaration;
 //! use gandr_core_checker::OriginToken;
 //! use gandr_core_checker::signature;
+//! use gandr_core_content::ItemKey;
 //! use gandr_core_incremental::Adoption;
 //! use gandr_core_incremental::Item;
-//! use gandr_core_incremental::ItemKey;
 //! use gandr_core_incremental::Program;
 //! use gandr_core_incremental::check_program;
 //! use gandr_core_incremental::resume;
@@ -186,15 +187,12 @@ mod region;
 mod report;
 mod session;
 mod stream;
-mod support;
 mod typing;
 
 pub use crate::boundary::ItemCount;
 pub use crate::boundary::ItemOrdinal;
 pub use crate::boundary::LivenessEmpty;
 pub use crate::boundary::MatchOrdinal;
-pub use crate::boundary::NodeIndex;
-pub use crate::boundary::Occurrence;
 pub use crate::boundary::RecordCount;
 pub use crate::boundary::SourceItemOrdinal;
 pub use crate::boundary::SourceOrdinal;
@@ -233,22 +231,14 @@ pub use crate::checkpoint::reuse::Reuse;
 pub use crate::codec::CheckpointBytes;
 pub use crate::codec::UnsupportedPersistence;
 pub use crate::content::AbstractRoots;
-pub use crate::content::ArenaNode;
-pub use crate::content::ContentNode;
 pub use crate::content::DataContent;
-pub use crate::content::DataRoots;
 pub use crate::content::DeclarationRoots;
 pub use crate::content::EntryRoots;
 pub use crate::content::InterfaceRoots;
 pub use crate::content::ItemContent;
-pub use crate::content::Opacity;
-pub use crate::content::Sort;
-pub use crate::content::TypeContent;
-pub use crate::content::WorldContent;
 pub use crate::content::WorldRoots;
-pub use crate::content::map_children;
-pub use crate::content::referencing;
-pub use crate::content::seating;
+pub use crate::content::mint_in;
+pub use crate::content::of_node;
 pub use crate::content::site;
 pub use crate::entry::EntryContent;
 pub use crate::entry::SeatedEntry;
@@ -281,16 +271,12 @@ pub use crate::persistence::restored;
 pub use crate::persistence::stored;
 pub use crate::persistence::traceless;
 pub use crate::region::Item;
-pub use crate::region::ItemKey;
 pub use crate::region::ItemSource;
-pub use crate::region::KeyName;
 pub use crate::region::Layout;
 pub use crate::region::Opened;
 pub use crate::region::Opener;
 pub use crate::region::Program;
 pub use crate::region::ProgramError;
-pub use crate::region::Reference;
-pub use crate::region::SourceTag;
 pub use crate::region::Tier;
 pub use crate::region::naming;
 pub use crate::report::ReportContent;
@@ -309,7 +295,6 @@ pub use crate::stream::MatchOrigin;
 pub use crate::stream::SynthesisEvent;
 pub use crate::stream::SynthesisStream;
 pub use crate::stream::displaced;
-pub use crate::support::SupportedNode;
 pub use crate::typing::Form;
 pub use crate::typing::Refusal;
 pub use crate::typing::Site;

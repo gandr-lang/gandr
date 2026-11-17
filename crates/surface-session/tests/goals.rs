@@ -1,8 +1,8 @@
 //! Goals against checkpoints: the declarations a submission reports as goals
 //! are exactly the items whose checkpoint marks the body a hole.
 
+use gandr_core_content::ItemKey;
 use gandr_core_incremental::HoleMark;
-use gandr_core_incremental::ItemKey;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Shown;

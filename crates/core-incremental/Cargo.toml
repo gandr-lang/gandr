@@ -39,6 +39,7 @@ anodized.workspace = true
 blake3.workspace = true
 foldhash.workspace = true
 gandr-core-checker.workspace = true
+gandr-core-content.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-publish.workspace = true
 gandr-core-term.workspace = true

@@ -49,6 +49,7 @@ digraph crates {
     "core-checker";
     "core-checker-base";
     "core-checker-bridge";
+    "core-content";
     "core-fork";
     "core-incremental";
     "core-nbe";
@@ -155,8 +156,12 @@ digraph crates {
   "core-checker-bridge" -> "kernel-strata";
   "core-checker-bridge" -> "kernel-term";
   "core-checker-bridge" -> "theory-deep-inference";
+  "core-content" -> "core-term";
+  "core-content" -> "kernel-strata";
+  "core-content" -> "kernel-term";
   "core-fork" -> "kernel-core";
   "core-incremental" -> "core-checker";
+  "core-incremental" -> "core-content";
   "core-incremental" -> "core-nbe";
   "core-incremental" -> "core-publish";
   "core-incremental" -> "core-term";
@@ -271,6 +276,7 @@ digraph crates {
   "surface-diagnostics" -> "theory-levitation";
   "surface-diagnostics" -> "theory-sites";
   "surface-dispatcher" -> "core-checker";
+  "surface-dispatcher" -> "core-content";
   "surface-dispatcher" -> "core-fork";
   "surface-dispatcher" -> "core-incremental";
   "surface-dispatcher" -> "core-nbe";
@@ -495,7 +501,7 @@ digraph crates {
   "surface-parser" -> "surface-syntax";
   "surface-parser" -> "theory-graphs";
   "surface-parser" -> "theory-spec-combinators";
-  "surface-pretty" -> "core-incremental";
+  "surface-pretty" -> "core-content";
   "surface-pretty" -> "core-term";
   "surface-pretty" -> "kernel-strata";
   "surface-pretty" -> "kernel-term";
@@ -504,6 +510,7 @@ digraph crates {
   "surface-render-terminal" -> "surface-diagnostics";
   "surface-render-terminal" -> "surface-syntax";
   "surface-repl" -> "core-checker";
+  "surface-repl" -> "core-content";
   "surface-repl" -> "core-incremental";
   "surface-repl" -> "core-nbe";
   "surface-repl" -> "core-term";
@@ -520,6 +527,7 @@ digraph crates {
   "surface-repl" -> "surface-session";
   "surface-repl" -> "surface-syntax";
   "surface-session" -> "core-checker";
+  "surface-session" -> "core-content";
   "surface-session" -> "core-fork";
   "surface-session" -> "core-incremental";
   "surface-session" -> "core-nbe";

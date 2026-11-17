@@ -6,6 +6,10 @@ use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
+use gandr_core_content::Occurrence;
+use gandr_core_content::Opacity;
+use gandr_core_content::Reference;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -20,13 +24,9 @@ use super::Footprint;
 use super::HoleMark;
 use super::footprint_of;
 use crate::boundary::ItemOrdinal;
-use crate::boundary::Occurrence;
-use crate::content::Opacity;
 use crate::content::encode_item;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
-use crate::region::Reference;
 
 /// The reference of the first item of `key`.
 ///
@@ -277,7 +277,7 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
     let key = ItemKey::from("reachable");
     let filled = crate::content::DeclarationRoots::Value {
         signature: Maybe::Absent(signature::Absent::Unsigned),
-        body: Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
+        body: Maybe::Present(gandr_core_content::NodeIndex::from(0_usize)),
         laws: Vec::new(),
         rules: Vec::new(),
         stages: Vec::new(),
@@ -286,12 +286,12 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
         entry: Maybe::Absent(gandr_core_checker::entry::Absent::Unstated),
     };
     let cyclic = crate::fixture::item_content(Reference::Unoccupied, &filled, &[
-        crate::content::ContentNode::Tuple(vec![
-            crate::boundary::NodeIndex::from(0_usize),
-            crate::boundary::NodeIndex::from(1_usize),
+        gandr_core_content::ContentNode::Tuple(vec![
+            gandr_core_content::NodeIndex::from(0_usize),
+            gandr_core_content::NodeIndex::from(1_usize),
         ]),
-        crate::content::ContentNode::Constant(named(&key)),
-        crate::content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),
+        gandr_core_content::ContentNode::Constant(named(&key)),
+        gandr_core_content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),
     ]);
     let footprint = footprint_of(&cyclic);
     assert_eq!(

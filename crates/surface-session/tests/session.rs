@@ -7,8 +7,8 @@
 
 use anodized::spec;
 use gandr_core_checker::VerdictOf;
+use gandr_core_content::ContentNode;
 use gandr_core_incremental::Adoption;
-use gandr_core_incremental::ContentNode;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::SynthesisEvent;
 use gandr_core_incremental::Typing;

@@ -25,14 +25,14 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_content::Opacity;
+use gandr_core_content::Reference;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemOrdinal;
 use crate::content::ItemContent;
-use crate::content::Opacity;
 use crate::content::encode_item;
 use crate::region::Program;
-use crate::region::Reference;
 
 /// Whether an item's body is a hole.
 ///
@@ -217,6 +217,10 @@ fn entered_worlds(content: &ItemContent) -> impl Iterator<Item = &Reference> + '
 /// - witness: `footprint::tests::a_term_position_does_not_suppress_a_type_position`
 /// - witness: `footprint::tests::a_quoted_abstract_type_reads_its_own_reference_in_type_position`
 /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
+///
+/// # Cost
+/// - allocation: the sets of references of the footprint, growth within the
+///   content
 #[spec(ensures: |ret| ret.type_reads.is_subset(&ret.reads)
     && ret.opacity == content.opacity()
     && content.declaration().iter().all(|(root, _)| content.nodes().get(usize::from(root)).is_none_or(|node|

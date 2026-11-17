@@ -6,6 +6,7 @@ use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerLiteral;
@@ -25,7 +26,6 @@ use crate::boundary::SubmissionOrdinal;
 use crate::checkpoint::Resume;
 use crate::checkpoint::check_program;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
 
 /// A coordinate of a fixture origin.
@@ -271,7 +271,7 @@ fn a_plain_stream_addresses_each_source_item_once()
         };
         assert_eq!(usize::from(index), ordinal);
         assert!(
-            matches!(resume.reference(handle), Maybe::Present(&crate::region::Reference::Item { occurrence, .. }) if usize::from(occurrence) == ordinal)
+            matches!(resume.reference(handle), Maybe::Present(&gandr_core_content::Reference::Item { occurrence, .. }) if usize::from(occurrence) == ordinal)
         );
     }
     assert_eq!(stream.next(), Some(SynthesisEvent::Completed));

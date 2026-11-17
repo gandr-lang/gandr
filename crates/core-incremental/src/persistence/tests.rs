@@ -7,6 +7,12 @@ use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::ContentNode;
+use gandr_core_content::ItemKey;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Occurrence;
+use gandr_core_content::Reference;
+use gandr_core_content::Sort;
 use gandr_core_term::CoreArena;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelOffset;
@@ -32,8 +38,6 @@ use super::persist;
 use super::restore;
 use super::restored;
 use super::stored;
-use crate::boundary::NodeIndex;
-use crate::boundary::Occurrence;
 use crate::boundary::RecordCount;
 use crate::checkpoint::Answer;
 use crate::checkpoint::Checkpoints;
@@ -42,8 +46,6 @@ use crate::codec::Bytes;
 use crate::codec::CheckpointBytes;
 use crate::codec::UnsupportedPersistence;
 use crate::codec::reference_bytes;
-use crate::content::ContentNode;
-use crate::content::Sort;
 use crate::fixture::Digits;
 use crate::fixture::Key;
 use crate::fixture::Label;
@@ -58,9 +60,7 @@ use crate::fixture::integers;
 use crate::fixture::noisy;
 use crate::footprint::footprint_of;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
-use crate::region::Reference;
 use crate::typing::Refusal;
 use crate::typing::Typing;
 
@@ -248,14 +248,14 @@ fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
         .into_iter()
         .map(|former| {
             let edges = former.children().iter().count();
-            crate::support::NodeParts {
+            gandr_core_content::NodeParts {
                 former,
                 cover: vec![gandr_core_term::support::Thinning::empty(); edges],
                 scope: gandr_core_term::support::Scope::default(),
             }
         })
         .collect();
-    let nodes = crate::support::assemble(parts).expect("a closed acyclic table");
+    let nodes = gandr_core_content::assemble(parts).expect("a closed acyclic table");
     let content = crate::content::ItemContent::from_parts(
         Reference::Item {
             key: ItemKey::from("hand"),
@@ -601,11 +601,15 @@ fn canonical_maps_and_supported_semantic_variants_round_trip()
             "some support holds a structured answer"
         );
     assert!(
-        checkpoints.items().iter().any(|checkpoint| checkpoint
-            .content()
-            .nodes()
+        checkpoints
+            .items()
             .iter()
-            .any(|node| matches!(*node.former(), crate::content::ContentNode::Patched { .. }))),
+            .any(
+                |checkpoint| checkpoint.content().nodes().iter().any(|node| matches!(
+                    *node.former(),
+                    gandr_core_content::ContentNode::Patched { .. }
+                ))
+            ),
         "some content holds a patched type"
     );
     let bytes = bytes_of(&checkpoints);
@@ -738,7 +742,7 @@ fn universe_sorts_and_levels_round_trip()
                 .content()
                 .nodes()
                 .iter()
-                .map(crate::support::SupportedNode::former)
+                .map(gandr_core_content::SupportedNode::former)
                 .cloned()
                 .collect()
         })

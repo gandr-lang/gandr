@@ -2,6 +2,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
@@ -21,7 +22,6 @@ use crate::fixture::checked;
 use crate::fixture::declaration;
 use crate::fixture::integer;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
 
 /// What a fixture item declares.

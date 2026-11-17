@@ -51,6 +51,11 @@ use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::LinearityDefect;
 use gandr_core_checker::session::LiveEndpoint;
 use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_content::ArenaNode;
+use gandr_core_content::Discovery;
+use gandr_core_content::Reference;
+use gandr_core_content::TypeContent;
+use gandr_core_content::seating;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -61,21 +66,16 @@ use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
-use crate::boundary::Discovery;
 use crate::boundary::ItemOrdinal;
 use crate::boundary::OutsideIndex;
 use crate::boundary::RootOrdinal;
 use crate::content::Anchor;
-use crate::content::ArenaNode;
 use crate::content::Sites;
-use crate::content::TypeContent;
 use crate::content::anchors;
 use crate::content::item_roots;
 use crate::content::place;
 use crate::content::root_walk;
-use crate::content::seating;
 use crate::region::Layout;
-use crate::region::Reference;
 use crate::typing::EndpointSite;
 use crate::typing::Forcing;
 use crate::typing::Form;
@@ -350,10 +350,12 @@ impl Placing<'_, '_, '_, '_, '_, '_>
                     .types
                     .content(self.projection.arena, self.projection.layout, node);
             let rooted = self.rooted(node);
-            let unresolved = content
-                .nodes()
-                .iter()
-                .any(|node| matches!(*node.former(), crate::content::ContentNode::Unresolved(_)));
+            let unresolved = content.nodes().iter().any(|node| {
+                matches!(
+                    *node.former(),
+                    gandr_core_content::ContentNode::Unresolved(_)
+                )
+            });
             let (content, anchors) = if unresolved {
                 (Maybe::Absent(seating::Absent::Unresolved), Vec::new())
             }
@@ -389,6 +391,10 @@ impl Placing<'_, '_, '_, '_, '_, '_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Placing::place`].
     /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+    ///
+    /// # Cost
+    /// - allocation: the map of roots of the candidates on the first call,
+    ///   growth within the candidates
     fn rooted(
         &mut self,
         node: ArenaNode,
@@ -696,6 +702,9 @@ impl Seat<'_>
     /// - witness: `failure::tests::a_failure_seats_at_the_nodes_it_names`
     /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
     /// - witness: `failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
+    ///
+    /// # Cost
+    /// - allocation: the minted node, growth within `arena`
     fn node(
         &mut self,
         placed: Placed,
@@ -763,6 +772,9 @@ impl Seat<'_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`FailureContent`].
     /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+    ///
+    /// # Cost
+    /// - allocation: the walk of the item, growth within the edited program
     fn rooted(
         &mut self,
         rooted: &Rooted,

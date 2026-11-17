@@ -223,9 +223,9 @@ use gandr_core_checker::worlds::Entry;
 use gandr_core_checker::worlds::HostEntry;
 use gandr_core_checker::worlds::Mobility;
 use gandr_core_checker::worlds::WorldName;
+use gandr_core_content::SourceTag;
 use gandr_core_incremental::NodeKeys;
 use gandr_core_incremental::ProgramError;
-use gandr_core_incremental::SourceTag;
 use gandr_core_sequent::Writers;
 use gandr_core_term::Carried;
 use gandr_core_term::Computation;
@@ -5575,8 +5575,8 @@ pub fn item_layout(
             let surface = lowered.name();
             let name: &str = surface.as_ref();
             let key = tags.get(source).copied().flatten().map_or_else(
-                || gandr_core_incremental::ItemKey::from(name),
-                |tag| gandr_core_incremental::ItemKey::from((tag, name)),
+                || gandr_core_content::ItemKey::from(name),
+                |tag| gandr_core_content::ItemKey::from((tag, name)),
             );
             gandr_core_incremental::Item::new(key, declaration)
         })
@@ -5642,7 +5642,7 @@ pub fn item_sources(module: &LoweredModule<'_>) -> Vec<gandr_core_incremental::S
 }
 
 /// The key of the item `lowered` declares in `unit`: the tag of its source's
-/// name, then its name ([`gandr_core_incremental::ItemKey`]), or its name alone
+/// name, then its name ([`gandr_core_content::ItemKey`]), or its name alone
 /// for an unnamed source. A source's tag tells its items from another
 /// source's items of the same name, so an item's reference counts its
 /// occurrence within its own source, whatever other sources the unit lays
@@ -5657,12 +5657,15 @@ pub fn item_sources(module: &LoweredModule<'_>) -> Vec<gandr_core_incremental::S
 /// # Adequacy
 /// - hypothesis: L3 — as [`item_program`].
 /// - witness: `tests::locality::sweeps::a_sub_closure_keeps_the_checkpoints_of_its_fresh_check_6522`
+///
+/// # Cost
+/// - allocation: the bytes of the key, growth within the key
 #[spec(ensures: |ret| <[u8]>::len(ret.name().as_ref()) == str::len(lowered.name().as_ref()))]
 #[must_use]
 fn item_key(
     unit: &Unit,
     lowered: &LoweredDeclaration<'_>,
-) -> gandr_core_incremental::ItemKey
+) -> gandr_core_content::ItemKey
 {
     let surface = lowered.name();
     let name: &str = surface.as_ref();
@@ -5672,9 +5675,9 @@ fn item_key(
         .map(gandr_surface_lowering::UnitSource::name)
     {
         Some(Maybe::Present(source)) => {
-            gandr_core_incremental::ItemKey::from((SourceTag::from(source.as_ref()), name))
+            gandr_core_content::ItemKey::from((SourceTag::from(source.as_ref()), name))
         },
-        Some(Maybe::Absent(_)) | None => gandr_core_incremental::ItemKey::from(name),
+        Some(Maybe::Absent(_)) | None => gandr_core_content::ItemKey::from(name),
     }
 }
 

@@ -5,6 +5,12 @@ use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::ContentNode;
+use gandr_core_content::ItemKey;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Occurrence;
+use gandr_core_content::Reference;
+use gandr_core_content::seating;
 use gandr_core_term::CoreArena;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
@@ -20,11 +26,7 @@ use super::Supplied;
 use super::content_key;
 use super::touches;
 use crate::boundary::ItemOrdinal;
-use crate::boundary::NodeIndex;
-use crate::boundary::Occurrence;
-use crate::content::ContentNode;
 use crate::content::encode_item;
-use crate::content::seating;
 use crate::fixture::Digits;
 use crate::fixture::Key;
 use crate::fixture::Noise;
@@ -32,9 +34,7 @@ use crate::fixture::integers;
 use crate::fixture::noisy;
 use crate::footprint::footprint_of;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
-use crate::region::Reference;
 use crate::typing::Typing;
 
 #[test]
@@ -211,7 +211,7 @@ fn a_take_past_another_answer_than_the_judgement_read_panics_6727()
     );
     let ordinal = ItemOrdinal::from(1_usize);
     let item = encode_item(program.arena(), program.layout(), ordinal);
-    let types = crate::content::TypeMemo::default();
+    let types = gandr_core_content::TypeMemo::default();
     let _taken = judgement.take(&mut context, &super::Taking {
         item: &item,
         declaration: program.items()[1].declaration(),
@@ -513,7 +513,7 @@ fn a_node_s_key_moves_only_with_its_content_7403()
                     body,
                     super::node_key(
                         (program.arena(), program.layout()),
-                        crate::content::ArenaNode::Value(body),
+                        gandr_core_content::ArenaNode::Value(body),
                     ),
                 ),
                 gandr_core_checker::DeclarationContent::Value { .. }
@@ -583,7 +583,7 @@ fn a_staged_type_keys_as_its_base_7403()
     let staged_thunk = arena.value_type_thunk(returns_staged);
     let key = |node| match super::node_key(
         (&arena, program.layout()),
-        crate::content::ArenaNode::ValueType(node),
+        gandr_core_content::ArenaNode::ValueType(node),
     ) {
         Maybe::Present(key) => key,
         Maybe::Absent(absent) => panic!("each type here has a key: {absent:?}"),

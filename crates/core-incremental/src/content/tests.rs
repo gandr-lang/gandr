@@ -6,6 +6,10 @@ use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Occurrence;
+use gandr_core_content::Reference;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
@@ -26,22 +30,18 @@ use super::TypeContent;
 use super::encode_item;
 use super::seating;
 use crate::boundary::ItemOrdinal;
-use crate::boundary::NodeIndex;
-use crate::boundary::Occurrence;
 use crate::region::Item;
-use crate::region::ItemKey;
 use crate::region::Program;
-use crate::region::Reference;
 
 /// The formers of `nodes`, in table order.
 ///
 /// # Specification
 /// trivial.
-fn formers(nodes: &[crate::support::SupportedNode]) -> Vec<ContentNode>
+fn formers(nodes: &[gandr_core_content::SupportedNode]) -> Vec<ContentNode>
 {
     nodes
         .iter()
-        .map(crate::support::SupportedNode::former)
+        .map(gandr_core_content::SupportedNode::former)
         .cloned()
         .collect()
 }
@@ -238,7 +238,7 @@ fn control_graphs_preserve_scopes_and_signature_edges()
             .iter()
             .any(|node| matches!(*node.former(), ContentNode::Unresolved(_)))
     );
-    let content = TypeContent::of_node(&source, ArenaNode::ValueType(ty));
+    let content = super::of_node(&source, ArenaNode::ValueType(ty));
     let mut target = CoreArena::new();
     let _ = target.value_type_base(BaseType::String);
     let mut target = single(
@@ -251,7 +251,7 @@ fn control_graphs_preserve_scopes_and_signature_edges()
     else {
         panic!("closed Stack/With codes seat");
     };
-    assert_eq!(TypeContent::of_node(&target, minted), content);
+    assert_eq!(super::of_node(&target, minted), content);
 }
 
 #[test]
@@ -379,7 +379,7 @@ fn capability_graphs_keep_authority_region_and_scope()
             "region, grade, authority and the scope each contribute to identity"
         );
     }
-    let table = TypeContent::of_node(&source, ArenaNode::ValueType(ty));
+    let table = super::of_node(&source, ArenaNode::ValueType(ty));
     let mut target = single(
         CoreArena::new(),
         Maybe::Absent(signature::Absent::Unsigned),
@@ -390,7 +390,7 @@ fn capability_graphs_keep_authority_region_and_scope()
     else {
         panic!("a capability type seats");
     };
-    assert_eq!(TypeContent::of_node(&target, minted), table);
+    assert_eq!(super::of_node(&target, minted), table);
 }
 
 /// The integer literal zero.
@@ -445,7 +445,7 @@ fn a_type_minted_back_has_its_own_content()
         Maybe::Present(ty),
         Maybe::Absent(body::Absent::Hole),
     );
-    let content = TypeContent::of_node(&program, ArenaNode::ValueType(ty));
+    let content = super::of_node(&program, ArenaNode::ValueType(ty));
     assert_eq!(
         content.nodes().len(),
         4_usize,
@@ -469,7 +469,7 @@ fn a_type_minted_back_has_its_own_content()
         panic!("a type table of admitted formers seats: {minted:?}");
     };
     assert_eq!(
-        TypeContent::of_node(&minted_into, minted),
+        super::of_node(&minted_into, minted),
         content,
         "the minted type reads back as the table it came from, sharing and all"
     );
@@ -492,7 +492,7 @@ fn every_dependent_former_mints_back_as_its_own_table()
         Maybe::Present(ty),
         Maybe::Absent(body::Absent::Hole),
     );
-    let content = TypeContent::of_node(&program, ArenaNode::ValueType(ty));
+    let content = super::of_node(&program, ArenaNode::ValueType(ty));
     let mut target = CoreArena::new();
     let _noise = target.value_type_unit();
     let mut minted_into = single(
@@ -508,7 +508,7 @@ fn every_dependent_former_mints_back_as_its_own_table()
     else {
         panic!("a sigma, a static pi and a pi seat: {minted:?}");
     };
-    assert_eq!(TypeContent::of_node(&minted_into, minted), content);
+    assert_eq!(super::of_node(&minted_into, minted), content);
 }
 
 #[test]
@@ -535,12 +535,12 @@ fn a_data_type_mints_with_its_arguments()
         ContentNode::Literal(zero()),
     ]);
     for (content, holds) in [(&bare, "no argument"), (&applied, "a literal argument")] {
-        let Maybe::Present(minted) = content.mint_in(&mut program)
+        let Maybe::Present(minted) = super::mint_in(content, &mut program)
         else {
             panic!("a data type of {holds} seats at its declaration");
         };
         assert_eq!(
-            &TypeContent::of_node(&program, minted),
+            &super::of_node(&program, minted),
             content,
             "a data type of {holds} reads back as its table"
         );
@@ -553,7 +553,7 @@ fn a_data_type_mints_with_its_arguments()
         ContentNode::Constant(Reference::Unoccupied),
     ]);
     assert_eq!(
-        unplaced.mint_in(&mut program),
+        super::mint_in(&unplaced, &mut program),
         Maybe::Absent(seating::Absent::Unplaced),
         "an argument naming no item of the program is refused by name"
     );
@@ -582,7 +582,7 @@ fn a_codata_type_mints_and_renumbers_with_its_arguments_7403()
         },
         ContentNode::Literal(zero()),
     ]);
-    let Maybe::Present(minted) = applied.mint_in(&mut program)
+    let Maybe::Present(minted) = super::mint_in(&applied, &mut program)
     else {
         panic!("a codata type seats at its declaration");
     };
@@ -591,13 +591,13 @@ fn a_codata_type_mints_and_renumbers_with_its_arguments_7403()
         "a codata type is a computation type: {minted:?}"
     );
     assert_eq!(
-        TypeContent::of_node(&program, minted),
+        super::of_node(&program, minted),
         applied,
         "a codata type reads back as its table"
     );
     let mut shifted = |child: NodeIndex| NodeIndex::from(usize::from(child).saturating_add(10));
     assert_eq!(
-        super::map_children(
+        gandr_core_content::map_children(
             &ContentNode::Codata {
                 declaration: it(),
                 arguments: vec![NodeIndex::from(1_usize), NodeIndex::from(2_usize)],
@@ -666,8 +666,7 @@ fn alpha_equal_terms_mint_to_one_name()
         Maybe::Absent(signature::Absent::Unsigned),
         Maybe::Present(shared),
     );
-    let names =
-        [shared, apart, other].map(|term| TypeContent::of_node(&source, ArenaNode::Value(term)));
+    let names = [shared, apart, other].map(|term| super::of_node(&source, ArenaNode::Value(term)));
     let [ref shared, ref apart, ref other] = names;
     assert_eq!(shared, apart, "a term shared or built apart has one name");
     assert_ne!(
@@ -689,12 +688,12 @@ fn alpha_equal_terms_mint_to_one_name()
     let mut target = Program::new(target, Vec::new()).expect("empty declaration order");
     let minted = names
         .each_ref()
-        .map(|name| match name.mint_in(&mut target) {
+        .map(|name| match super::mint_in(name, &mut target) {
             Maybe::Present(node) => node,
             Maybe::Absent(reason) => panic!("a lambda over a bind mints: {reason:?}"),
         });
     assert_eq!(
-        minted.map(|node| TypeContent::of_node(&target, node)),
+        minted.map(|node| super::of_node(&target, node)),
         names,
         "each minted term reads back as its own name"
     );
@@ -723,7 +722,7 @@ fn renumbering_carries_every_frame_and_clause_body_to_its_image()
         ]))
     };
     assert_eq!(
-        super::map_children(&reify([1, 2]), &mut shifted),
+        gandr_core_content::map_children(&reify([1, 2]), &mut shifted),
         reify([11, 12])
     );
     let handle = |[subject, on_return, payload, body]: [usize; 4]| {
@@ -744,7 +743,7 @@ fn renumbering_carries_every_frame_and_clause_body_to_its_image()
         }
     };
     assert_eq!(
-        super::map_children(&handle([1, 2, 3, 4]), &mut shifted),
+        gandr_core_content::map_children(&handle([1, 2, 3, 4]), &mut shifted),
         handle([11, 12, 13, 14])
     );
 }
@@ -785,14 +784,14 @@ fn effect_rows_round_trip_without_losing_operation_types()
     let returner = arena.comp_type_returner_with_effects(unit, effects);
     let root = arena.value_type_thunk(returner);
     let source = Program::new(arena, Vec::new()).expect("empty declaration order");
-    let content = TypeContent::of_node(&source, ArenaNode::ValueType(root));
+    let content = super::of_node(&source, ArenaNode::ValueType(root));
     let Some(&ContentNode::Returner {
         result,
         ref effects,
     }) = content
         .nodes()
         .get(1)
-        .map(crate::support::SupportedNode::former)
+        .map(gandr_core_content::SupportedNode::former)
     else {
         panic!("thunk's returner");
     };
@@ -819,7 +818,7 @@ fn effect_rows_round_trip_without_losing_operation_types()
     assert_eq!(
         content.nodes().get(2 ..).map(|nodes| nodes
             .iter()
-            .map(crate::support::SupportedNode::former)
+            .map(gandr_core_content::SupportedNode::former)
             .cloned()
             .collect::<Vec<_>>()),
         Some(vec![
@@ -840,7 +839,7 @@ fn effect_rows_round_trip_without_losing_operation_types()
         panic!("portable row types seat");
     };
     assert_ne!(minted, ArenaNode::ValueType(root));
-    assert_eq!(TypeContent::of_node(&target, minted), content);
+    assert_eq!(super::of_node(&target, minted), content);
 }
 
 #[test]
@@ -918,7 +917,7 @@ fn an_unmintable_table_is_refused_by_name()
     let (arena, layout) = program.parts_mut();
     assert!(
         matches!(
-            super::mint_table(&cyclic, arena, (layout, &[])),
+            gandr_core_content::mint_table(&cyclic, arena, (layout, &[])),
             Maybe::Absent(seating::Absent::Cyclic)
         ),
         "a de Bruijn table no arena can mint child before parent"
@@ -1190,7 +1189,7 @@ fn a_signature_renumbers_to_its_own_type_content()
     let interleaved: Vec<&ContentNode> = content
         .nodes()
         .iter()
-        .map(crate::support::SupportedNode::former)
+        .map(gandr_core_content::SupportedNode::former)
         .collect();
     assert!(
         matches!(interleaved.get(1), Some(&&ContentNode::Thunk(_))),
@@ -1198,13 +1197,13 @@ fn a_signature_renumbers_to_its_own_type_content()
     );
     assert_eq!(
         content.signature_type(),
-        Some(TypeContent::of_node(&program, ArenaNode::ValueType(ty))),
+        Some(super::of_node(&program, ArenaNode::ValueType(ty))),
         "the signature renumbered from its root is the type encoded alone"
     );
     let signature = NodeIndex::from(0_usize);
     assert_eq!(
         content.debruijn(signature),
-        TypeContent::of_node(&program, ArenaNode::ValueType(ty)).debruijn(),
+        super::of_node(&program, ArenaNode::ValueType(ty)).debruijn(),
         "and its projection is the type's"
     );
 }
@@ -1345,10 +1344,7 @@ fn abstract_types_relocate_by_key_and_occurrence()
             42_usize
         )))
     );
-    assert_eq!(
-        TypeContent::of_node(&program, ArenaNode::ValueType(id)),
-        content
-    );
+    assert_eq!(super::of_node(&program, ArenaNode::ValueType(id)), content);
     let absent = crate::fixture::type_content(&[ContentNode::Abstract(Reference::Item {
         key: ItemKey::from("repeated"),
         occurrence: Occurrence::from(2_usize),
@@ -1388,7 +1384,7 @@ fn unfolded(table: &[ContentNode]) -> Vec<ContentNode>
             continue;
         };
         let first = pending.len();
-        spelled.push(super::map_children(node, &mut |child| {
+        spelled.push(gandr_core_content::map_children(node, &mut |child| {
             pending.push(child);
             NodeIndex::default()
         }));
@@ -1437,7 +1433,7 @@ fn probed(former: &ContentNode) -> Vec<ContentNode>
         let _first = crossed.entry(child).or_insert((sort, crossing));
     }
     let mut placeholders = Vec::new();
-    let _named = super::map_children(former, &mut |child| {
+    let _named = gandr_core_content::map_children(former, &mut |child| {
         placeholders.push(child);
         child
     });
@@ -1485,7 +1481,7 @@ fn probed(former: &ContentNode) -> Vec<ContentNode>
         };
         images.push((placeholder, probe));
     }
-    let root = super::map_children(former, &mut |placeholder| {
+    let root = gandr_core_content::map_children(former, &mut |placeholder| {
         images
             .iter()
             .find(|&&(seen, _)| seen == placeholder)
@@ -2139,7 +2135,7 @@ fn open_roots_project_under_their_own_supports()
         results: Vec::new(),
         constructors: vec![vec![index(1_usize), index(2_usize)]],
         kind: index(4_usize),
-        presentation: super::PresentationRoots::free(),
+        presentation: gandr_core_content::PresentationRoots::free(),
     };
     let selected = |content: &[gandr_core_term::support::Thinning]| {
         content
@@ -2305,8 +2301,10 @@ fn debruijn_projection_reports_index_overflow()
         Ok(raw.to_vec()),
         "the ceiling under a binder is representable"
     );
-    content.root =
-        Thinning::from_ascending(&[DeBruijnIndex::from(u32::MAX)], &[]).expect("one index");
+    content = TypeContent::from_parts(
+        content.nodes().to_vec(),
+        Thinning::from_ascending(&[DeBruijnIndex::from(u32::MAX)], &[]).expect("one index"),
+    );
     assert_eq!(
         content.debruijn(),
         Err(PlacementError::IndexOverflow),
@@ -2398,7 +2396,7 @@ fn a_root_names_its_holes_by_their_place_under_it()
     };
     assert_eq!(
         encoded.content.rooted(index),
-        TypeContent::of_node(&program, ArenaNode::Value(inner)),
+        super::of_node(&program, ArenaNode::Value(inner)),
         "the inner tuple's hole takes the first place under it, as its own content names it"
     );
 }

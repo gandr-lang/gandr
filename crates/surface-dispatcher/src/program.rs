@@ -24,8 +24,8 @@ use anodized::spec;
 use gandr_core_checker::Judged;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Verdict;
+use gandr_core_content::Reference;
 use gandr_core_incremental::Footprint;
-use gandr_core_incremental::Reference;
 use gandr_core_incremental::footprints;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -1242,11 +1242,14 @@ fn footprint_spellings(
 /// # Adequacy
 /// - hypothesis: L3 — as [`footprint_spellings`].
 /// - witness: `tests::corpus::a_reads_claim_settles_against_the_carried_footprint_2520`
-#[spec(ensures: |ref ret| (footprint.opacity() == gandr_core_incremental::Opacity::Opaque)
+///
+/// # Cost
+/// - allocation: the spelling of the reads, growth within the footprint
+#[spec(ensures: |ref ret| (footprint.opacity() == gandr_core_content::Opacity::Opaque)
     == (*ret == RunSpelling::from(String::from(UNRESOLVED_NODE))))]
 fn footprint_spelled(footprint: &Footprint) -> RunSpelling
 {
-    if footprint.opacity() == gandr_core_incremental::Opacity::Opaque {
+    if footprint.opacity() == gandr_core_content::Opacity::Opaque {
         return RunSpelling::from(String::from(UNRESOLVED_NODE));
     }
     let mut names = Vec::with_capacity(footprint.reads().len());

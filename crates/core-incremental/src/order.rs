@@ -34,13 +34,13 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use anodized::spec;
+use gandr_core_content::Reference;
 use gandr_theory_order_maintenance::OrderError;
 use gandr_theory_order_maintenance::OrderMaintenance;
 use gandr_theory_order_maintenance::Pos;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemCount;
-use crate::region::Reference;
 
 quenchant_shape::reason_enum! {
     /// Why a handle answers nothing.
@@ -151,6 +151,10 @@ impl ItemOrder
     ///   witnesses do not exhaust its identifiers or storage.
     /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
     /// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
+    ///
+    /// # Cost
+    /// - allocation: the order and one handle for each reference, growth within
+    ///   the references
     #[spec(ensures: |ret| match ret {
         Ok((ref order, ref handles)) => handles.len() == references.len()
             && handles.iter().zip(references).all(|(&handle, reference)|
@@ -209,6 +213,10 @@ impl ItemOrder
     /// - witness: `order::tests::handles_compare_in_the_edited_order`
     /// - witness: `order::tests::a_moved_item_costs_only_its_own_handle`
     /// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
+    ///
+    /// # Cost
+    /// - allocation: the handles of the edited revision, growth within the
+    ///   edited revision
     #[spec(
         requires: base.len() == base_references.len()
             && base.iter().zip(base_references).all(|(&handle, &reference)|
@@ -316,6 +324,9 @@ impl ItemOrder
     /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
     /// - witness: `order::tests::handles_compare_in_the_edited_order`
     /// - witness: `order::tests::comparisons_refuse_stale_and_foreign_operands`
+    ///
+    /// # Cost
+    /// - allocation: the keys of the comparison, growth within the order
     #[spec(ensures: |ret| self.order.cmp(left.0, right.0).map_or_else(
         || ret == Maybe::Absent(handle::Absent::Stale),
         |ordering| ret == Maybe::Present(ordering),
@@ -347,6 +358,9 @@ impl ItemOrder
     /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
     /// - witness: `order::tests::a_deleted_items_handle_goes_stale`
     /// - witness: `order::tests::comparisons_refuse_stale_and_foreign_operands`
+    ///
+    /// # Cost
+    /// - allocation: a copy of the key of the handle, growth within the order
     #[spec(ensures: |ret| self.order.get(handle.0).map_or_else(
         || ret == Maybe::Absent(handle::Absent::Stale),
         |reference| ret == Maybe::Present(reference),

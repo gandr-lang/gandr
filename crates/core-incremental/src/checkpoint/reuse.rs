@@ -26,6 +26,8 @@ use gandr_core_checker::elaborated;
 use gandr_core_checker::kept;
 use gandr_core_checker::taken;
 use gandr_core_checker::waits;
+use gandr_core_content::Reference;
+use gandr_core_content::TypeMemo;
 use gandr_core_term::ValueId;
 use quenchant_shape::shape::Maybe;
 
@@ -49,14 +51,12 @@ use super::started_after;
 use crate::boundary::ItemCount;
 use crate::boundary::ItemOrdinal;
 use crate::content::Encoded;
-use crate::content::TypeMemo;
 use crate::content::encode_item;
 use crate::footprint::Footprint;
 use crate::footprint::footprint_of;
 use crate::region::Item;
 use crate::region::Layout;
 use crate::region::Program;
-use crate::region::Reference;
 use crate::report::reported;
 use crate::report::tabled;
 use crate::typing::Typing;
@@ -125,6 +125,10 @@ impl<'base> Reuse<'base>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the taker of the held checkpoints, growth within the
+    ///   resume
     pub(crate) fn of(
         resume: Option<&'base Resume>,
         program: &'base Program,
@@ -207,6 +211,10 @@ impl<'base> Reuse<'base>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the answer of each item before the position, growth within
+    ///   the context
     fn catch_up(
         &mut self,
         context: &CheckingContext<'_>,
