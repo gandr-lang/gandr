@@ -93,7 +93,7 @@ pub const MAX_DECODED_LEVEL_OFFSET: u64 = 4096;
 /// - hypothesis: L3 — unresolved nodes of all four sorts are rejected with the
 ///   corresponding sort. This is a finite semantic-form corpus, not evidence
 ///   about every possible arena.
-/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `gandr-core-incremental::persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum UnsupportedPersistence
 {
@@ -115,9 +115,9 @@ pub enum UnsupportedPersistence
 ///   offsets and unresolved nodes exercise distinct refusals; a length wider
 ///   than 64 bits has no witness.
 /// - witness: `gandr-core-incremental::codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
-/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
-/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `gandr-core-incremental::persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `gandr-core-incremental::persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+/// - witness: `gandr-core-incremental::persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CodecError
 {
@@ -856,8 +856,8 @@ pub fn read_world(reader: &mut Reader<'_>) -> Result<crate::WorldContent, CodecE
 /// - hypothesis: L3 — universe sorts and levels round-trip, including an offset
 ///   immediately below the decoder cap. Raw frames can represent a capped
 ///   offset for decoder fixtures; validated checkpoint encoding refuses it.
-/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
-/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+/// - witness: `gandr-core-incremental::persistence::tests::universe_sorts_and_levels_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::oversized_level_offset_is_refused_with_exact_error`
 ///
 /// # Errors
 /// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
@@ -902,8 +902,8 @@ where
 ///   the exact refused offset. The predicate checks the successful offset bound
 ///   and the offending input word; it does not rebuild the level or
 ///   independently prove normalization of every atom sequence.
-/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+/// - witness: `gandr-core-incremental::persistence::tests::universe_sorts_and_levels_round_trip`
 ///
 /// # Errors
 /// A [`CodecError`] for bytes that the writer does not give.
@@ -960,7 +960,7 @@ pub fn read_level(reader: &mut Reader<'_>) -> Result<Level, CodecError>
 /// - hypothesis: L3 — signed integer and numeric literals cross the persistent
 ///   boundary. An unknown tag with available payload bytes is rejected before
 ///   that payload is consumed; the finite corpus does not enumerate magnitudes.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `gandr-core-incremental::codec::tests::decoders_reject_unknown_tags_before_payloads`
 #[spec(
     captures: [before = reader.cursor],
@@ -1002,7 +1002,7 @@ pub fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
 ///   semantic corpus cross persistence. The predicate states field
 ///   representability; the corpus, rather than a generic sink observer,
 ///   witnesses payload preservation.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[spec(
     ensures: |ret| {
         ret == if match *literal {
@@ -1080,7 +1080,7 @@ where
 ///   through persistence. The predicate checks tag classification, not a second
 ///   construction of normalized decimal text. Unknown tags reject before
 ///   consuming available payload bytes.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `gandr-core-incremental::codec::tests::decoders_reject_unknown_tags_before_payloads`
 ///
 /// # Errors
@@ -1172,7 +1172,7 @@ pub fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
 /// # Adequacy
 /// - hypothesis: L3 — the finite semantic corpus carries a width literal
 ///   through persistence.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 ///
 /// # Cost
 /// - allocation: the decoded literal, growth within the bytes
@@ -1417,8 +1417,8 @@ fn read_region(
 ///   all four unresolved sorts are rejected with their exact sort. The
 ///   predicate classifies failures; a generic sink does not expose the emitted
 ///   fields.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 ///
 /// # Errors
 /// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
@@ -2354,7 +2354,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — native round trips distinguish argument and branch order.
-/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 ///
 /// # Errors
 /// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
@@ -2383,7 +2383,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — native round trips retain variadic order and reject
 ///   truncation.
-/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 ///
 /// # Cost
 /// - allocation: the list of child indices, growth within the bytes
@@ -2411,7 +2411,7 @@ pub fn read_indices(reader: &mut Reader<'_>) -> Result<Vec<NodeIndex>, CodecErro
 ///
 /// # Adequacy
 /// - hypothesis: L3 — native records preserve exact labels across persistence.
-/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 ///
 /// # Cost
 /// - allocation: the text of the label, growth within the bytes
@@ -2432,7 +2432,7 @@ fn read_field_label(reader: &mut Reader<'_>) -> Result<gandr_core_term::FieldLab
 ///
 /// # Adequacy
 /// - hypothesis: L3 — record persistence retains labels and field association.
-/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 fn write_fields<Out>(
     writer: &mut Writer<'_, Out>,
     fields: &alloc::collections::BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
@@ -2458,7 +2458,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — duplicate labels cannot silently overwrite a record
 ///   field.
-/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+/// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 ///
 /// # Cost
 /// - allocation: the map of record fields, growth within the bytes
@@ -2859,7 +2859,7 @@ fn read_session_action(
 /// # Adequacy
 /// - hypothesis: L3 — a statement's descriptions survive persistence with their
 ///   generators' order and profiles.
-/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+/// - witness: `gandr-core-incremental::tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
 fn write_description<Out>(
     writer: &mut Writer<'_, Out>,
     description: &gandr_core_term::ua::Description,
@@ -2887,7 +2887,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a statement's descriptions survive persistence with their
 ///   generators' order and profiles.
-/// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+/// - witness: `gandr-core-incremental::tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
 ///
 /// # Cost
 /// - allocation: the decoded description, growth within the bytes
@@ -3231,8 +3231,8 @@ pub fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, Codec
 ///   the resulting class, not every payload field; unresolved nodes have no
 ///   accepted tag. Unknown node tags and invalid zone, side and base fields
 ///   stop at the tag.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::universe_sorts_and_levels_round_trip`
 /// - witness: `gandr-core-incremental::codec::tests::decoders_reject_unknown_tags_before_payloads`
 /// - witness: `gandr-core-incremental::codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `gandr-core-incremental::codec::tests::every_node_former_round_trips_under_its_own_frame`
@@ -4230,7 +4230,7 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
 /// - hypothesis: L3 — nested unresolved nodes in all four sorts retain the
 ///   precise refusal; a written table reads back equal. Structural validation
 ///   is a reader responsibility.
-/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `gandr-core-incremental::persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 /// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
 /// - witness: `gandr-core-incremental::codec::tests::a_stored_form_refuses_a_codata_application_7403`
 ///
@@ -4427,7 +4427,7 @@ fn read_scope(reader: &mut Reader<'_>) -> Result<Scope, CodecError>
 ///   unused slots, duplicates and cycles are refused.
 /// - witness: `gandr-core-incremental::codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
-/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+/// - witness: `gandr-core-incremental::persistence::tests::oversized_level_offset_is_refused_with_exact_error`
 ///
 /// # Cost
 /// - allocation: the nodes and their lists of children, growth within the
@@ -4501,7 +4501,7 @@ pub fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<SupportedNode>, CodecEr
 ///   another root are refused; empty tables and repeated roots are accepted.
 ///   The predicate uses a scalar contiguous-frontier oracle, not a second
 ///   allocated queue or visited set.
-/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `gandr-core-incremental::persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `gandr-core-incremental::codec::tests::discovery_accepts_repeated_roots_and_empty_tables`
 ///
 /// # Cost
@@ -4651,7 +4651,7 @@ where
 ///   allocating another traversal state.
 /// - witness: `gandr-core-incremental::codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
-/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::universe_sorts_and_levels_round_trip`
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {
@@ -4858,7 +4858,7 @@ pub enum CodataWrite
 /// - hypothesis: L3 — the finite persisted semantic corpus exercises signed
 ///   literal encodings. The const predicate compares the primitive tag field
 ///   directly.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[spec(
     ensures: |ret| {
         ret.0

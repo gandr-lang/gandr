@@ -4257,6 +4257,9 @@ macro_rules! delegated {
                 ///
                 /// # Specification
                 /// trivial.
+                ///
+                /// # Cost
+                /// - allocation: the bytes that the sink takes, growth within the checkpoint
                 #[inline]
                 fn write<Out>(
                     &self,
@@ -4504,6 +4507,10 @@ macro_rules! field {
             ///
             /// # Specification
             /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the bytes that the sink takes, growth within the
+            ///   checkpoint
             #[inline]
             fn write<Out>(
                 &self,
@@ -4520,6 +4527,9 @@ macro_rules! field {
             ///
             /// # Specification
             /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the decoded parts, growth within the bytes
             #[inline]
             fn read($reader: &mut Reader<'_>) -> Result<Self, CodecError>
             {
