@@ -1026,6 +1026,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Errors
     /// As the specification's fails clause.
     ///
+    /// # Cost
+    /// - allocation: the module's tables, growth within its declarations.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`lower_unit`]; a document resumed after its
     ///   closure finishes as the whole lowering does.

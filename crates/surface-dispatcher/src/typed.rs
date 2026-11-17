@@ -1983,6 +1983,9 @@ impl TypeTable
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the refusal's message, diagnostic.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the table of a source refused whole equals the one
     ///   its typing answers.
@@ -2023,6 +2026,10 @@ impl TypeTable
     /// - panics: none.
     /// - executable: none — as [`of_unit`](Self::of_unit), which types through
     ///   this.
+    ///
+    /// # Cost
+    /// - allocation: the table's entries and the printer's tables, growth
+    ///   within the module's declarations.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a table assembled from a judgement's typed run is the

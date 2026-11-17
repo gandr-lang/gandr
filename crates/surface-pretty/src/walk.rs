@@ -11431,6 +11431,10 @@ impl Walk<'_, '_>
     /// Every turn adds one argument, and the loop stops at [`DEPTH_LIMIT`]
     /// arguments.
     ///
+    /// # Cost
+    /// - allocation: the arguments, the residents and the written block's
+    ///   index, growth within the call's spine.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a call of a forced constant on two arguments and a
     ///   call whose head is a returner observe argument order, the elided force

@@ -454,6 +454,10 @@ impl TypeSpellings
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the spellings and the printer's tables, growth within the
+///   declarations and the failures.
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`TypeSpellings::of`], and a split opening two binders
 ///   at once, the second's type naming the first.
@@ -1237,6 +1241,10 @@ pub fn telescopes<'module>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the blocks and their names, growth within the module's
+///   declarations.
 #[inline]
 #[must_use]
 pub fn written_blocks<'module>(
