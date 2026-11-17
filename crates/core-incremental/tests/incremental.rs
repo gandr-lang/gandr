@@ -20,6 +20,10 @@ use gandr_core_checker::OriginToken;
 use gandr_core_checker::Unretired;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
+use gandr_core_content::Opacity;
+use gandr_core_content::Reference;
+use gandr_core_content::TypeContent;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::Answer;
 use gandr_core_incremental::Answered;
@@ -30,16 +34,12 @@ use gandr_core_incremental::IncrementalSession;
 use gandr_core_incremental::Item;
 use gandr_core_incremental::ItemCheckpoint;
 use gandr_core_incremental::ItemCount;
-use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::Judgement;
 use gandr_core_incremental::MemoryCheckpointStore;
-use gandr_core_incremental::Opacity;
 use gandr_core_incremental::Opener;
 use gandr_core_incremental::Program;
-use gandr_core_incremental::Reference;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::Tier;
-use gandr_core_incremental::TypeContent;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::check_program;
 use gandr_core_incremental::decode_checkpoints;
@@ -100,7 +100,7 @@ impl CheckpointObserver for Quiet
 #[spec(
     ensures: |ret| {
         ret.debruijn()
-            == Ok(vec![gandr_core_incremental::ContentNode::Base(
+            == Ok(vec![gandr_core_content::ContentNode::Base(
                 gandr_kernel_term::BaseType::String,
             )])
     },
@@ -118,7 +118,7 @@ fn string_type() -> TypeContent
     else {
         panic!("the fixture is ascribed");
     };
-    TypeContent::of_node(&program, gandr_core_incremental::ArenaNode::ValueType(*ty))
+    gandr_core_incremental::of_node(&program, gandr_core_content::ArenaNode::ValueType(*ty))
 }
 
 /// The base checkpoints of `statements`, replacing every row named `at`.
@@ -1033,7 +1033,7 @@ fn an_ascription_endpoint_is_a_read()
     );
     let one = Reference::Item {
         key: ItemKey::from("one"),
-        occurrence: gandr_core_incremental::Occurrence::from(0_usize),
+        occurrence: gandr_core_content::Occurrence::from(0_usize),
     };
     assert_eq!(
         reader.reads().collect::<Vec<_>>(),
@@ -1121,7 +1121,7 @@ fn a_changed_value_reaches_through_an_untouched_definition()
         b.footprint().reads().collect::<Vec<_>>(),
         [&Reference::Item {
             key: ItemKey::from("c"),
-            occurrence: gandr_core_incremental::Occurrence::from(0_usize),
+            occurrence: gandr_core_content::Occurrence::from(0_usize),
         }],
         "b's own term reads c and is untouched by the edit"
     );

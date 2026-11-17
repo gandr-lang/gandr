@@ -14,9 +14,9 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_content::ItemKey;
 use gandr_core_fork::Serial;
 use gandr_core_incremental::ContentKey;
-use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::ItemOrdinal;
 use gandr_core_incremental::content_key;
 use gandr_kernel_term::AdmissionMark;

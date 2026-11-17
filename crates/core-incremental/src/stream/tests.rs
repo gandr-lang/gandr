@@ -271,7 +271,7 @@ fn a_plain_stream_addresses_each_source_item_once()
         };
         assert_eq!(usize::from(index), ordinal);
         assert!(
-            matches!(resume.reference(handle), Maybe::Present(&crate::region::Reference::Item { occurrence, .. }) if usize::from(occurrence) == ordinal)
+            matches!(resume.reference(handle), Maybe::Present(&gandr_core_content::Reference::Item { occurrence, .. }) if usize::from(occurrence) == ordinal)
         );
     }
     assert_eq!(stream.next(), Some(SynthesisEvent::Completed));

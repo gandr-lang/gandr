@@ -91,9 +91,9 @@ use crate::reference::Reference;
 /// - hypothesis: L2 — an independent arena walk observes the references; L3 —
 ///   relocation under unused binders and forged covers separate the support
 ///   from cached indices.
-/// - witness: `tests::supports::carried_footprint_matches_reference_walk`
-/// - witness: `content::tests::unused_binder_interleavings_share_one_node`
-/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
+/// - witness: `gandr-core-incremental::content::tests::unused_binder_interleavings_share_one_node`
+/// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupportedNode
 {
@@ -255,7 +255,7 @@ impl SupportedNode
 /// # Adequacy
 /// - hypothesis: L2 — an independent arena walk observes the union at every
 ///   root.
-/// - witness: `tests::supports::carried_footprint_matches_reference_walk`
+/// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Reads(Option<Arc<[Reference]>>);
@@ -282,7 +282,7 @@ impl Reads
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the arena walk observes every root's union.
-/// - witness: `tests::supports::carried_footprint_matches_reference_walk`
+/// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
 #[derive(Default)]
 struct Union<'part>
 {
@@ -320,7 +320,7 @@ impl<'part> Union<'part>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the arena walk observes every root's union.
-    /// - witness: `tests::supports::carried_footprint_matches_reference_walk`
+    /// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
     fn add(
         &mut self,
         part: &'part Reads,
@@ -355,7 +355,7 @@ impl<'part> Union<'part>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the arena walk observes every root's union.
-    /// - witness: `tests::supports::carried_footprint_matches_reference_walk`
+    /// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
     #[spec(ensures: |ret| ret.as_slice().windows(2).all(|pair| pair.first() < pair.last()))]
     fn finish(self) -> Reads
     {
@@ -386,8 +386,8 @@ impl<'part> Union<'part>
 /// - hypothesis: L2 — the independent arena walk distinguishes omitted reads
 ///   and false promotion through quotes, element types and signatures; L3 —
 ///   forged reference sets cannot be persisted, since a reader rebuilds them.
-/// - witness: `tests::supports::carried_footprint_matches_reference_walk`
-/// - witness: `footprint::tests::type_support_holds_only_type_positions`
+/// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
+/// - witness: `gandr-core-incremental::footprint::tests::type_support_holds_only_type_positions`
 #[spec(ensures: |ret| (!matches!(former.sort(), Sort::ValueType | Sort::CompType) || ret.0.as_slice().is_empty())
     && former.children().iter().all(|(child, _)| lookup(child).is_none_or(|child|
         child.type_reads.as_slice().iter().all(|read| ret.1.as_slice().binary_search(read).is_ok())
@@ -461,7 +461,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a subterm under unused binder interleavings is interned
 ///   once, and distinct wiring stays distinct.
-/// - witness: `content::tests::unused_binder_interleavings_share_one_node`
+/// - witness: `gandr-core-incremental::content::tests::unused_binder_interleavings_share_one_node`
 #[derive(Default)]
 struct Interner
 {
@@ -498,7 +498,7 @@ impl Interner
     /// - hypothesis: L3 — the same pair under two unused-binder interleavings
     ///   interns once, in a table below [`LINEAR`] and in one past it; altered
     ///   wiring interns twice.
-    /// - witness: `content::tests::unused_binder_interleavings_share_one_node`
+    /// - witness: `gandr-core-incremental::content::tests::unused_binder_interleavings_share_one_node`
     #[spec(
         captures: [entry = self.nodes.len(), sort = former.sort(), arity = cover.len()],
         ensures: |ret| self.nodes.get(usize::from(ret)).is_some_and(|node|
@@ -575,7 +575,7 @@ impl Interner
 ///
 /// # Adequacy
 /// - hypothesis: L3 — expanding a placement recovers the de Bruijn node.
-/// - witness: `content::tests::covers_preserve_every_binding_former`
+/// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Placement
 {
@@ -592,7 +592,7 @@ pub struct Placement
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`factor`].
-/// - witness: `content::tests::unused_binder_interleavings_share_one_node`
+/// - witness: `gandr-core-incremental::content::tests::unused_binder_interleavings_share_one_node`
 pub struct Factored
 {
     /// The hash-consed nodes, children before parents.
@@ -642,10 +642,10 @@ enum Visit<Kept>
 ///   L3 — relocation under unused binders, altered wiring and the de Bruijn
 ///   projection separate false sharing from failure to share; an unresolved id
 ///   stays opaque.
-/// - witness: `tests::supports::carried_footprint_matches_reference_walk`
-/// - witness: `content::tests::unused_binder_interleavings_share_one_node`
-/// - witness: `content::tests::covers_preserve_every_binding_former`
-/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+/// - witness: `gandr-core-incremental::tests::supports::carried_footprint_matches_reference_walk`
+/// - witness: `gandr-core-incremental::content::tests::unused_binder_interleavings_share_one_node`
+/// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+/// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
 #[spec(ensures: |ret| ret.placements.len() == raw.len()
     && ret.placements.iter().zip(raw).all(|(placed, node)|
         ret.nodes.get(usize::from(placed.node)).is_some_and(|compact|
@@ -774,7 +774,7 @@ pub fn factor(raw: &[ContentNode]) -> Factored
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`number`].
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
 pub struct Numbered
 {
     /// The reached nodes, numbered by discovery.
@@ -798,7 +798,7 @@ pub struct Numbered
 /// # Adequacy
 /// - hypothesis: L3 — a signature interleaved with a body renumbers to the
 ///   table its type encodes to on its own, covers and root support included.
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
 #[spec(ensures: |ret| ret.numbers.len() == usize::from(end)
     && ret.numbers.iter().flatten().all(|index| usize::from(*index) < ret.nodes.len())
     && ret.numbers.iter().flatten().count() == ret.nodes.len())]
@@ -845,7 +845,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`number`].
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
 struct Discovery
 {
     /// The new index of each old index numbered so far.
@@ -870,7 +870,7 @@ impl Discovery
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`number`]: a shared node keeps one number.
-    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
     #[spec(
         captures: [held = self.numbers.get(usize::from(old)).copied().flatten(), written = self.nodes.len()],
         ensures: |ret| match held {
@@ -921,9 +921,9 @@ impl Discovery
 /// - hypothesis: L3 — the same pair under two unused-binder interleavings and
 ///   every binding former of both zones expand to their original indices; a
 ///   placement at the index ceiling under a binder overflows.
-/// - witness: `content::tests::unused_binder_interleavings_share_one_node`
-/// - witness: `content::tests::covers_preserve_every_binding_former`
-/// - witness: `content::tests::debruijn_projection_reports_index_overflow`
+/// - witness: `gandr-core-incremental::content::tests::unused_binder_interleavings_share_one_node`
+/// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+/// - witness: `gandr-core-incremental::content::tests::debruijn_projection_reports_index_overflow`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |table| table.iter().all(|node|
     node.children().iter().all(|(child, _)| table.get(usize::from(child)).is_some()))))]
 pub fn expand(
@@ -962,7 +962,7 @@ pub struct Expanded
 /// # Adequacy
 /// - hypothesis: L3 — the places of the nodes of a report expand to entries
 ///   that mint back to the nodes they were taken from.
-/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+/// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
 pub fn expand_from<Roots>(
     nodes: &[SupportedNode],
     roots: Roots,
@@ -1031,7 +1031,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — forged covers, scopes and duplicates are refused.
-/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NodeParts
 {
@@ -1077,7 +1077,7 @@ pub enum TableFault
 /// - hypothesis: L3 — a factored table round-trips; a widened scope, an edge
 ///   past its node's scope, an unused slot, a cycle and a duplicated node are
 ///   each refused.
-/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
 #[spec(
     captures: [count = parts.len()],
     ensures: |ret| ret.as_ref().map_or(true, |table| table.len() == count),

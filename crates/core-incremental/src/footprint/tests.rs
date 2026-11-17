@@ -287,8 +287,8 @@ fn bounded_tables_separate_reachability_opacity_and_holes()
     };
     let cyclic = crate::fixture::item_content(Reference::Unoccupied, &filled, &[
         gandr_core_content::ContentNode::Tuple(vec![
-            crate::boundary::NodeIndex::from(0_usize),
-            crate::boundary::NodeIndex::from(1_usize),
+            gandr_core_content::NodeIndex::from(0_usize),
+            gandr_core_content::NodeIndex::from(1_usize),
         ]),
         gandr_core_content::ContentNode::Constant(named(&key)),
         gandr_core_content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),

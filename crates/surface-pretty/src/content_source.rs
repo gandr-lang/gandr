@@ -8,10 +8,10 @@
 //! spelling.
 
 use anodized::spec;
-use gandr_core_incremental::ContentNode;
-use gandr_core_incremental::NodeIndex;
-use gandr_core_incremental::Reference;
-use gandr_core_incremental::WorldContent;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Reference;
+use gandr_core_content::WorldContent;
 use gandr_core_term::compose::Composite;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
@@ -102,9 +102,9 @@ impl<'nodes> ContentSource<'nodes>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the text of the item key's name
-///   ([`gandr_core_incremental::ItemKey::name`]) when the reference names an
-///   item and that name is UTF-8; none for an unoccupied position and for a
-///   name that is not text.
+///   ([`gandr_core_content::ItemKey::name`]) when the reference names an item
+///   and that name is UTF-8; none for an unoccupied position and for a name
+///   that is not text.
 /// - provides: the constant, abstract-type and family readings.
 /// - fails: never.
 /// - panics: none.
@@ -1209,12 +1209,12 @@ mod tests
     use alloc::vec::Vec;
 
     use anodized::spec;
-    use gandr_core_incremental::ContentNode;
-    use gandr_core_incremental::ItemKey;
-    use gandr_core_incremental::NodeIndex;
-    use gandr_core_incremental::Occurrence;
-    use gandr_core_incremental::Reference;
-    use gandr_core_incremental::Sort;
+    use gandr_core_content::ContentNode;
+    use gandr_core_content::ItemKey;
+    use gandr_core_content::NodeIndex;
+    use gandr_core_content::Occurrence;
+    use gandr_core_content::Reference;
+    use gandr_core_content::Sort;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::FieldLabel;
 

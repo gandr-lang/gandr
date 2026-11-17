@@ -18,8 +18,8 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
-# The printer reads core types and values and the incremental checker's
-# content tables, the leaf vocabularies and levels they carry, and lays its
+# The printer reads core types and values and the content tables of the
+# content crate, the leaf vocabularies and levels they carry, and lays its
 # documents out through the layout engine; a name the printer cannot spell
 # says why through the shape crate's named absence. The grammar's spelling
 # table names each glyph's ASCII spelling. The binder scopes index the nodes
@@ -29,7 +29,7 @@ path = "tests/lib.rs"
 [dependencies]
 anodized.workspace = true
 foldhash.workspace = true
-gandr-core-incremental.workspace = true
+gandr-core-content.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
@@ -41,10 +41,12 @@ quenchant-shape.workspace = true
 # The goldens compare whole files, and the value goldens print normal forms
 # evaluation and readback produce. A univalence statement's golden names its
 # descriptions and its stratum. The content witnesses check a one-item
-# program, which takes the checker's declaration and budget.
+# program of the incremental checker, which takes the checker's declaration
+# and budget.
 [dev-dependencies]
 expect-test.workspace = true
 gandr-core-checker.workspace = true
+gandr-core-incremental.workspace = true
 gandr-core-nbe.workspace = true
 gandr-theory-levitation.workspace = true
 gandr-theory-sites.workspace = true

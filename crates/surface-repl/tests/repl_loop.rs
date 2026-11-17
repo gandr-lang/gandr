@@ -14,10 +14,10 @@ use std::io;
 use std::path::Path;
 
 use anodized::spec;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
 use gandr_core_incremental::BackendArtifact;
-use gandr_core_incremental::ContentNode;
 use gandr_core_incremental::MemoryCheckpointStore;
-use gandr_core_incremental::NodeIndex;
 use gandr_kernel_term::BaseType;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::Severity;

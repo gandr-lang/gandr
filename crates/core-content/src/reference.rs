@@ -84,7 +84,7 @@ impl From<&str> for SourceTag
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two names of one source and two sources of one name.
-    /// - witness: `region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
+    /// - witness: `gandr-core-incremental::region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
     #[spec(ensures: |ret| blake3::hash(name.as_bytes()).as_bytes().get(.. TAG_DIGEST) == Some(ret.0.as_slice()))]
     #[inline]
     fn from(name: &str) -> Self
@@ -142,7 +142,7 @@ impl ItemKey
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a tagged key, an untagged key and an empty key.
-    /// - witness: `region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
+    /// - witness: `gandr-core-incremental::region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
     #[spec(ensures: |ret| ret.0.as_ptr_range().end == self.0.as_ptr_range().end
         && ret.0.len() == self.0.get(TAG_PREFIX ..)
             .filter(|_| self.0.first() == Some(&TAGGED))
@@ -174,7 +174,7 @@ impl From<(SourceTag, &str)> for ItemKey
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ItemKey::name`].
-    /// - witness: `region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
+    /// - witness: `gandr-core-incremental::region::tests::a_tagged_key_keeps_its_name_and_tells_its_source_6522`
     #[spec(ensures: |ret| ret.0.first() == Some(&TAGGED)
         && ret.0.get(1 .. TAG_PREFIX) == Some(tag.0.as_slice())
         && ret.name().0 == name.as_bytes())]
@@ -243,9 +243,9 @@ impl AsRef<[u8]> for ItemKey
 /// - hypothesis: L3 — empty, skipped and maximum positions, interleaved
 ///   repeated keys and unknown references distinguish missing names, wrong
 ///   occurrence counts and accidental naming by exact references and ordinals.
-/// - witness: `region::tests::positions_must_ascend_and_may_skip`
-/// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
-/// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+/// - witness: `gandr-core-incremental::region::tests::positions_must_ascend_and_may_skip`
+/// - witness: `gandr-core-incremental::region::tests::a_repeated_key_counts_its_occurrences`
+/// - witness: `gandr-core-incremental::region::tests::empty_and_extreme_programs_resolve_exactly`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Reference
 {

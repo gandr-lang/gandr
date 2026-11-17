@@ -804,7 +804,7 @@ fn a_located_refusal_projects_its_worlds_and_types()
                         arena: context.arena(),
                         layout,
                         sites: &encoded[2].sites,
-                        types: &crate::content::TypeMemo::default(),
+                        types: &gandr_core_content::TypeMemo::default(),
                         read: core::cell::RefCell::new(None),
                     }
                     .value_type(thunk),

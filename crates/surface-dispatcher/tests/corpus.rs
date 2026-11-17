@@ -2156,11 +2156,10 @@ mod sweeps
     fn mints_alike(sweep: &Sweep)
     {
         use gandr_core_checker::CheckBudget;
+        use gandr_core_content::Sort;
+        use gandr_core_content::seating;
         use gandr_core_incremental::Program;
-        use gandr_core_incremental::Sort;
-        use gandr_core_incremental::TypeContent;
         use gandr_core_incremental::check_program;
-        use gandr_core_incremental::seating;
 
         let grammar = built_in().expect("the built-in grammar builds");
         eprintln!("{}", sweep.rotation());
@@ -2193,11 +2192,11 @@ mod sweeps
                 let content = item.content();
                 for (root, sort) in content.declaration().iter() {
                     let table = content.rooted(root);
-                    match table.mint_in(&mut fresh) {
+                    match gandr_core_incremental::mint_in(&table, &mut fresh) {
                         Maybe::Present(node) => {
                             let count = minted.entry(sort).or_default();
                             *count = count.saturating_add(1);
-                            if TypeContent::of_node(&fresh, node) != table {
+                            if gandr_core_incremental::of_node(&fresh, node) != table {
                                 differing.push((
                                     source.path.clone(),
                                     content.reference().clone(),
@@ -2290,17 +2289,16 @@ mod sweeps
         use gandr_core_checker::CheckBudget;
         use gandr_core_checker::Entered;
         use gandr_core_checker::Unretired;
-        use gandr_core_incremental::ArenaNode;
+        use gandr_core_content::ArenaNode;
+        use gandr_core_content::seating;
         use gandr_core_incremental::BackendArtifact;
         use gandr_core_incremental::IncrementalSession;
         use gandr_core_incremental::Judgement;
         use gandr_core_incremental::MemoryCheckpointStore;
         use gandr_core_incremental::Program;
-        use gandr_core_incremental::TypeContent;
         use gandr_core_incremental::decode_checkpoints;
         use gandr_core_incremental::elaborated;
         use gandr_core_incremental::encode_checkpoints;
-        use gandr_core_incremental::seating;
         use gandr_surface_dispatcher::Checking;
         use gandr_surface_dispatcher::Recording;
         use gandr_surface_dispatcher::Supporting;
@@ -2467,7 +2465,7 @@ mod sweeps
                     };
                     let count = minted.entry(part).or_default();
                     *count = count.saturating_add(1);
-                    if TypeContent::of_node(&fresh, node) != *content {
+                    if gandr_core_incremental::of_node(&fresh, node) != *content {
                         differing.push((source.path.clone(), reference.clone(), part));
                     }
                 }
@@ -2535,6 +2533,7 @@ mod sweeps
     {
         use gandr_core_checker::CheckBudget;
         use gandr_core_checker::Unretired;
+        use gandr_core_content::seating;
         use gandr_core_incremental::BackendArtifact;
         use gandr_core_incremental::IncrementalSession;
         use gandr_core_incremental::ItemOrdinal;
@@ -2543,7 +2542,6 @@ mod sweeps
         use gandr_core_incremental::decode_checkpoints;
         use gandr_core_incremental::encode_checkpoints;
         use gandr_core_incremental::reported;
-        use gandr_core_incremental::seating;
         use gandr_surface_dispatcher::Checking;
         use gandr_surface_dispatcher::Recording;
         use gandr_surface_dispatcher::Supporting;
@@ -2575,11 +2573,11 @@ mod sweeps
             /// The seated reports, by each part that they hold.
             seated: BTreeMap<&'static str, usize>,
             /// The reported items that keep no report.
-            unkept: Vec<(PathBuf, gandr_core_incremental::Reference)>,
+            unkept: Vec<(PathBuf, gandr_core_content::Reference)>,
             /// The reports that do not seat, by reason.
             unseated: BTreeMap<seating::Absent, usize>,
             /// The reports that differ from the report kept, and where.
-            differing: Vec<(PathBuf, gandr_core_incremental::Reference, &'static str)>,
+            differing: Vec<(PathBuf, gandr_core_content::Reference, &'static str)>,
         }
 
         /// Judge the source at `path` whole, seat each report from its
@@ -3089,6 +3087,7 @@ mod sweeps
     {
         use gandr_core_checker::CheckBudget;
         use gandr_core_checker::Unretired;
+        use gandr_core_content::seating;
         use gandr_core_incremental::BackendArtifact;
         use gandr_core_incremental::IncrementalSession;
         use gandr_core_incremental::ItemOrdinal;
@@ -3097,7 +3096,6 @@ mod sweeps
         use gandr_core_incremental::Typing;
         use gandr_core_incremental::decode_checkpoints;
         use gandr_core_incremental::encode_checkpoints;
-        use gandr_core_incremental::seating;
         use gandr_surface_corpus::Refusal;
         use gandr_surface_diagnostics::Failures;
         use gandr_surface_diagnostics::Locations;
@@ -3255,7 +3253,7 @@ mod sweeps
                 tally.refused = tally.refused.saturating_add(1);
                 // An opaque item keeps no failure: no pass takes its
                 // checkpoint.
-                if checkpoint.content().opacity() == gandr_core_incremental::Opacity::Opaque {
+                if checkpoint.content().opacity() == gandr_core_content::Opacity::Opaque {
                     tally.opaque = tally.opaque.saturating_add(1);
                     continue;
                 }

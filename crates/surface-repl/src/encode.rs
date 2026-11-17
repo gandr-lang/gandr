@@ -18,9 +18,9 @@ use alloc::vec::Vec;
 use std::path::Path;
 
 use anodized::spec;
-use gandr_core_incremental::ContentNode;
+use gandr_core_content::ContentNode;
+use gandr_core_content::Reference;
 use gandr_core_incremental::ItemCheckpoint;
-use gandr_core_incremental::Reference;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::submitted;

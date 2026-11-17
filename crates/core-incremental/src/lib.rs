@@ -46,9 +46,9 @@
 //! use gandr_core_checker::Declaration;
 //! use gandr_core_checker::OriginToken;
 //! use gandr_core_checker::signature;
+//! use gandr_core_content::ItemKey;
 //! use gandr_core_incremental::Adoption;
 //! use gandr_core_incremental::Item;
-//! use gandr_core_incremental::ItemKey;
 //! use gandr_core_incremental::Program;
 //! use gandr_core_incremental::check_program;
 //! use gandr_core_incremental::resume;

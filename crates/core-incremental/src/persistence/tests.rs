@@ -248,7 +248,7 @@ fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
         .into_iter()
         .map(|former| {
             let edges = former.children().iter().count();
-            crate::support::NodeParts {
+            gandr_core_content::NodeParts {
                 former,
                 cover: vec![gandr_core_term::support::Thinning::empty(); edges],
                 scope: gandr_core_term::support::Scope::default(),
@@ -601,11 +601,15 @@ fn canonical_maps_and_supported_semantic_variants_round_trip()
             "some support holds a structured answer"
         );
     assert!(
-        checkpoints.items().iter().any(|checkpoint| checkpoint
-            .content()
-            .nodes()
+        checkpoints
+            .items()
             .iter()
-            .any(|node| matches!(*node.former(), crate::content::ContentNode::Patched { .. }))),
+            .any(
+                |checkpoint| checkpoint.content().nodes().iter().any(|node| matches!(
+                    *node.former(),
+                    gandr_core_content::ContentNode::Patched { .. }
+                ))
+            ),
         "some content holds a patched type"
     );
     let bytes = bytes_of(&checkpoints);

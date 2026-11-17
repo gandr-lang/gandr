@@ -403,7 +403,7 @@ quenchant_shape::reason_enum! {
 /// # Adequacy
 /// - hypothesis: L2 — the finite content corpus exercises all four sorts; the
 ///   tag alone does not certify a table edge.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Sort
 {
@@ -427,8 +427,8 @@ pub enum Sort
 /// - hypothesis: L2 — arena-relative identity is separated by allocation noise
 ///   and an unresolved value identifier; other unresolved sorts are not claimed
 ///   here.
-/// - witness: `content::tests::content_is_free_of_arena_ids`
-/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+/// - witness: `gandr-core-incremental::content::tests::content_is_free_of_arena_ids`
+/// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ArenaNode
 {
@@ -487,9 +487,9 @@ impl ArenaNode
 /// - hypothesis: L3 — shared and unresolved nodes, interleaved roots and the
 ///   finite persistence corpus bound the former and edge evidence; raw entries
 ///   need not form a closed or well-sorted table.
-/// - witness: `content::tests::a_shared_node_is_listed_once`
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ContentNode
 {
@@ -1165,10 +1165,10 @@ pub struct ChildSlot(pub usize);
 ///   slots; the persistence corpus covers selected multi-sort formers, not
 ///   every graph. Every binding former's crossings are checked by projecting
 ///   its cover back to de Bruijn indices.
-/// - witness: `content::tests::a_shared_node_is_listed_once`
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-/// - witness: `content::tests::covers_preserve_every_binding_former`
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Children<'node>
 {
@@ -1235,9 +1235,9 @@ impl<'node> Children<'node>
     /// - hypothesis: L2 — shared nodes and the signature walk exercise active
     ///   child slots through graph consumers; the finite corpus adds selected
     ///   arities.
-    /// - witness: `content::tests::a_shared_node_is_listed_once`
-    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(
         requires: children.len() <= 5,
         ensures: |ret| ret.count == children.len()
@@ -1269,8 +1269,8 @@ impl<'node> Children<'node>
     /// # Adequacy
     /// - hypothesis: L2 — the named graph consumer exercises the iterator; that
     ///   bounded evidence does not instrument the opaque return.
-    /// - witness: `content::tests::a_shared_node_is_listed_once`
-    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
     pub fn iter(self) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort)> + Clone + 'node
     {
         self.crossed().map(|(child, sort, _)| (child, sort))
@@ -1295,8 +1295,8 @@ impl<'node> Children<'node>
     ///   the wrong slot or zone shifts an index. Interface types, clause bodies
     ///   and recorded payloads are walked whenever the former carries them,
     ///   checked against `map_children`'s independent enumeration.
-    /// - witness: `content::tests::covers_preserve_every_binding_former`
-    /// - witness: `content::tests::projection_keeps_every_variadic_child`
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+    /// - witness: `gandr-core-incremental::content::tests::projection_keeps_every_variadic_child`
     pub fn crossed(
         self
     ) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort, Crossing)> + Clone + 'node
@@ -1496,8 +1496,8 @@ impl ContentNode
     /// - hypothesis: L2 — the finite persistence corpus exercises all four
     ///   families; the unresolved witness bounds the foreign-identifier case to
     ///   values.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| match *self {
         | Self::Constructor { .. }
         | Self::Record(_)
@@ -1780,9 +1780,9 @@ impl ContentNode
     /// - hypothesis: L3 — shared edges and interleaved signature roots test
     ///   graph discovery; the finite persistence corpus supplies selected edges
     ///   across the four sorts. This is not exhaustive evidence for all graphs.
-    /// - witness: `content::tests::a_shared_node_is_listed_once`
-    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| {
         use Sort::CompType as C;
         use Sort::Computation as M;
@@ -2317,7 +2317,7 @@ impl ContentNode
     /// - hypothesis: L2 — the footprint corpus separates reachable references
     ///   from unreachable and unresolved entries; the attribute does not assert
     ///   borrowed payload identity in a const expression.
-    /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
+    /// - witness: `gandr-core-incremental::footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } | Self::Codata { .. } => matches!(ret, Maybe::Present(_)),
         Self::Leta { ref world, .. } | Self::Migrate { ref world, .. } | Self::HeldType { ref world, .. } | Self::CapabilityType(ref world) => matches!(ret, Maybe::Present(_)) == matches!(*world, WorldContent::Declared(_)),
@@ -2483,7 +2483,7 @@ impl ContentNode
     /// - hypothesis: L3 — every occurrence-bearing former under binders of both
     ///   zones is projected back from its compact form to its original index; a
     ///   missed occurrence keeps a stale index.
-    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
     #[spec(ensures: |ret| match ret {
         Maybe::Present((zone, index)) => matches!(*self, Self::Variable { zone: own, index: named } if own == zone && named == index)
             || matches!(*self, Self::Session(ref action) if zone == Zone::Linear && action.endpoint() == Maybe::Present(index))
@@ -2523,7 +2523,7 @@ impl ContentNode
     /// - hypothesis: L3 — as [`ContentNode::occurrence`]: the compact form of
     ///   every occurrence-bearing former carries its rank, and its projection
     ///   its ambient index.
-    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
     #[spec(
         captures: [named = self.occurrence()],
         ensures: |ret| match named {
@@ -2586,8 +2586,8 @@ impl ContentNode
 /// # Adequacy
 /// - hypothesis: L2 — a foreign unresolved value makes content opaque; the
 ///   supported persistence corpus supplies resolving tables.
-/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Opacity
 {
@@ -2664,8 +2664,8 @@ impl WorldContent
 /// # Adequacy
 /// - hypothesis: L3 — independent type encoding and minting preserve a shared
 ///   arrow; a finite malformed corpus separates the named mint refusals.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TypeContent
 {
@@ -2719,8 +2719,8 @@ impl TypeContent
     /// - hypothesis: L3 — every binding former of both zones projects back to
     ///   its indices, and a root support at the index ceiling under a binder
     ///   reports overflow.
-    /// - witness: `content::tests::covers_preserve_every_binding_former`
-    /// - witness: `content::tests::debruijn_projection_reports_index_overflow`
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+    /// - witness: `gandr-core-incremental::content::tests::debruijn_projection_reports_index_overflow`
     #[spec(ensures: |ret| self.nodes.is_empty() || ret.as_ref().is_err() || ret.as_ref().is_ok_and(|table|
         table.first().map(ContentNode::sort) == self.nodes.first().map(SupportedNode::sort)))]
     #[inline]
@@ -2742,7 +2742,7 @@ impl TypeContent
     /// # Adequacy
     /// - hypothesis: L3 — a recorded answer naming a changed definition in a
     ///   type position, an abstract type or a code invalidates its reader.
-    /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    /// - witness: `gandr-core-incremental::checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
     pub fn reads(&self) -> impl Iterator<Item = &Reference>
     {
         self.nodes
@@ -2776,8 +2776,8 @@ impl TypeContent
     /// - hypothesis: L2 — independent type extraction and shared-node minting
     ///   exercise a rooted value-type graph; other root families are not
     ///   claimed here.
-    /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
     #[spec(ensures: |ret| {
             ret.nodes.first().is_some_and(|node| {
                 node.sort()
@@ -2817,7 +2817,7 @@ impl TypeContent
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Encoder::read_as`].
-    /// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    /// - witness: `gandr-core-incremental::checkpoint::tests::a_staged_type_keys_as_its_base_7403`
     #[spec(ensures: |ret| {
             ret.nodes.first().is_some_and(|node| {
                 node.sort()
@@ -2859,7 +2859,7 @@ impl TypeContent
     /// # Adequacy
     /// - hypothesis: L3 — the judged body's nodes that a report names mint back
     ///   to themselves from their places.
-    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
     pub fn placed(
         arena: &CoreArena,
         layout: &Layout,
@@ -2898,7 +2898,7 @@ impl TypeContent
     /// # Adequacy
     /// - hypothesis: L3 — the judged body's nodes that a report names mint back
     ///   to themselves from their places.
-    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
     pub fn mint_placed(
         &self,
         arena: &mut CoreArena,
@@ -2934,7 +2934,7 @@ impl TypeContent
     /// - hypothesis: L3 — as [`TypeContent::of`], which builds through it; a
     ///   table read back through [`TypeContent::debruijn`] is the table
     ///   factored.
-    /// - witness: `content::tests::covers_preserve_every_binding_former`
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
     #[spec(ensures: |ret| ret.nodes.iter().all(|node| node.former().children()
         .iter()
         .all(|(child, _)| usize::from(child) < ret.nodes.len())))]
@@ -2972,9 +2972,9 @@ impl TypeContent
     ///   terms with a lambda and a bind into a fresh one; one table for each
     ///   refusal reason bounds error evidence, closed and open alike. The
     ///   predicate checks successful seat resolution, not a second encoding.
-    /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-    /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
-    /// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+    /// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+    /// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+    /// - witness: `gandr-core-incremental::content::tests::alpha_equal_terms_mint_to_one_name`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(node) => node.held(arena).is_some()
             && self.nodes.first().is_some_and(|root| root.sort() == node.sort()),
@@ -3008,7 +3008,7 @@ impl TypeContent
     /// # Adequacy
     /// - hypothesis: L3 — a content outside an item that holds the item's body
     ///   mints over that body, and a node the item does not hold is minted.
-    /// - witness: `failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
+    /// - witness: `gandr-core-incremental::failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(node) => node.held(arena).is_some()
             && self.nodes.first().is_some_and(|root| root.sort() == node.sort()),
@@ -3048,7 +3048,7 @@ impl TypeContent
     /// # Adequacy
     /// - hypothesis: L2 — no-op reuse seats synthesised types; a returner table
     ///   is refused by sort.
-    /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+    /// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(id) => arena.value_type(id).is_some(),
         Maybe::Absent(_) => true,
@@ -3081,7 +3081,7 @@ impl TypeContent
 /// # Adequacy
 /// - hypothesis: L2 — the incremental differential compares every judged item's
 ///   answers and typings with a from-scratch pass.
-/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `gandr-core-incremental::tests::incremental::incremental_equals_from_scratch`
 #[repr(transparent)]
 #[derive(Debug, Default)]
 pub struct TypeMemo(core::cell::RefCell<BTreeMap<ArenaNode, TypeContent>>);
@@ -3099,7 +3099,7 @@ impl TypeMemo
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`TypeMemo`].
-    /// - witness: `tests::incremental::incremental_equals_from_scratch`
+    /// - witness: `gandr-core-incremental::tests::incremental::incremental_equals_from_scratch`
     #[spec(ensures: |ret| ret == TypeContent::of(arena, layout, node))]
     pub fn content(
         &self,
@@ -3142,9 +3142,9 @@ enum Stages
 /// - hypothesis: L3 — distinct arena allocations, shared nodes and interleaved
 ///   roots separate the breadth-first identity cases without a universal graph
 ///   claim.
-/// - witness: `content::tests::content_is_free_of_arena_ids`
-/// - witness: `content::tests::a_shared_node_is_listed_once`
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::content_is_free_of_arena_ids`
+/// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
 pub struct Encoder<'arena, 'layout>
 {
     /// The arena read.
@@ -3218,7 +3218,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Adequacy
     /// - hypothesis: L3 — a staged type, a former over one, and two staged
     ///   types over two bases separate the reading from the stage.
-    /// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    /// - witness: `gandr-core-incremental::checkpoint::tests::a_staged_type_keys_as_its_base_7403`
     #[spec(ensures: |ret| ret == node || (self.stages == Stages::Erased && matches!(node, ArenaNode::ValueType(_))))]
     fn read_as(
         &self,
@@ -3246,7 +3246,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Adequacy
     /// - hypothesis: L2 — a shared node retains one number; separately
     ///   allocated equal nodes retain distinct numbers.
-    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
     ///
     /// # Cost
     /// - allocation: the number and the queue entry of a node discovered now,
@@ -3284,7 +3284,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Adequacy
     /// - hypothesis: L3 — shared fields and changed constructor signatures
     ///   remain distinct.
-    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     #[spec(ensures: |ret| ret.parameters.len() == signature.parameters().len()
         && ret.constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
         && ret.iter().all(|root| usize::from(root) < self.seen.len()))]
@@ -3358,8 +3358,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Adequacy
     /// - hypothesis: L2 — shared and interleaved roots are exhausted into one
     ///   discovery-numbered table.
-    /// - witness: `content::tests::a_shared_node_is_listed_once`
-    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3389,8 +3389,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - hypothesis: L2 — the finite corpus exercises four resolving node
     ///   families; the foreign-id witness exercises the unresolved value
     ///   branch.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| ret.sort() == match node {
         ArenaNode::Value(_) => Sort::Value,
         ArenaNode::Computation(_) => Sort::Computation,
@@ -3443,7 +3443,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::discover`]; a shared child hands over one
     ///   number each time the enumeration meets it.
-    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
     #[spec(
         captures: [count = self.seen.len()],
         ensures: |ret| self.seen.len() >= count
@@ -3484,7 +3484,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Adequacy
     /// - hypothesis: L2 — the finite persistence corpus exercises selected
     ///   formers and sharing. [`value_content`] checks every child's place.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::Value
         && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
@@ -3515,7 +3515,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - hypothesis: L2 — the finite persistence corpus exercises selected
     ///   formers and sharing. [`computation_content`] checks every child's
     ///   place.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::Computation
         && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
@@ -3547,7 +3547,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - hypothesis: L2 — the finite persistence corpus exercises selected
     ///   formers and sharing. [`value_type_content`] checks every child's
     ///   place.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::ValueType
         && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. }))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
@@ -3581,7 +3581,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// # Adequacy
     /// - hypothesis: L2 — the finite persistence corpus exercises selected
     ///   formers and sharing. [`comp_type_content`] checks every child's place.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::CompType
         && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
@@ -3677,8 +3677,8 @@ impl Discovered
     /// - hypothesis: L3 — the enforcing lane states it after every translation,
     ///   so a slot filled from another family or out of turn fails the encoding
     ///   of any item holding that former.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    /// - witness: `content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
     fn placed(
         &self,
         node: &ContentNode,
@@ -3739,7 +3739,7 @@ impl Slots<'_>
     /// - hypothesis: L3 — a translation reads every value slot through it, and
     ///   the enforcing lane checks each placed former; a reader that skipped a
     ///   child or repeated one misplaces the next slot.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(
         captures: [before = self.values.len()],
         ensures: |ret| ret.is_ok() == (before > 0) && self.values.len() == before.saturating_sub(1),
@@ -3762,7 +3762,7 @@ impl Slots<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::value`], over the computation slots.
-    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(
         captures: [before = self.computations.len()],
         ensures: |ret| ret.is_ok() == (before > 0)
@@ -3787,7 +3787,7 @@ impl Slots<'_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::value`], over the value-type slots; a
     ///   signature's operation types are read through it in order.
-    /// - witness: `content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
     #[spec(
         captures: [before = self.value_types.len()],
         ensures: |ret| ret.is_ok() == (before > 0)
@@ -3811,7 +3811,7 @@ impl Slots<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::value`], over the computation-type slots.
-    /// - witness: `content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
     #[spec(
         captures: [before = self.comp_types.len()],
         ensures: |ret| ret.is_ok() == (before > 0)
@@ -3839,7 +3839,7 @@ impl Slots<'_>
     /// - hypothesis: L3 — a tuple's components, a case's branches and a
     ///   `with`'s components are read through it; a run one short or one long
     ///   misplaces the slots after it, which the enforcing lane refuses.
-    /// - witness: `content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |taken| taken.len() == slots.len()))]
     fn take<Slot>(
         &mut self,
@@ -3950,7 +3950,7 @@ impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
 /// - hypothesis: L3 — the enforcing lane checks every encoded value against the
 ///   enumeration; a slot filled from the wrong family or out of order fails the
 ///   postcondition.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Value && found.placed(node).0),
 )]
@@ -4118,7 +4118,7 @@ fn value_content(
 /// - hypothesis: L3 — the enforcing lane checks every encoded computation
 ///   against the enumeration; a slot filled from the wrong family or out of
 ///   order fails the postcondition.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Computation && found.placed(node).0),
 )]
@@ -4357,7 +4357,7 @@ fn computation_content(
 /// - hypothesis: L3 — the enforcing lane checks every encoded value type
 ///   against the enumeration; a slot filled from the wrong family or out of
 ///   order fails the postcondition.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::ValueType && found.placed(node).0),
 )]
@@ -4501,7 +4501,7 @@ fn value_type_content(
 /// - hypothesis: L3 — the enforcing lane checks every encoded computation type
 ///   against the enumeration; a slot filled from the wrong family or out of
 ///   order fails the postcondition.
-/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 ///
 /// # Cost
 /// - allocation: the former's lists of children, growth within the children
@@ -4573,9 +4573,9 @@ fn comp_type_content(
 /// - hypothesis: L2 — an interleaved signature is renumbered independently. The
 ///   malformed-table witness checks cycles, dangling children and root
 ///   selection.
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-/// - witness: `content::tests::factoring_closes_dangling_and_cyclic_tables`
-/// - witness: `content::tests::renumbering_carries_every_frame_and_clause_body_to_its_image`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::factoring_closes_dangling_and_cyclic_tables`
+/// - witness: `gandr-core-incremental::content::tests::renumbering_carries_every_frame_and_clause_body_to_its_image`
 ///
 /// # Cost
 /// - allocation: the image's lists of children, growth within the children of
@@ -5284,8 +5284,8 @@ where
 /// # Adequacy
 /// - hypothesis: L2 — Shared-node reuse and a cycle distinguish completed from
 ///   open entries.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MintState
 {
@@ -5306,8 +5306,8 @@ enum MintState
 /// # Adequacy
 /// - hypothesis: L2 — The shared-arrow and refusal corpus bound post-order
 ///   traversal evidence.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MintFrame
 {
@@ -5319,7 +5319,7 @@ enum MintFrame
 
 /// An entry of a table a mint reads: a de Bruijn former, or a closed node of
 /// a supported table, which is its own former.
-trait MintEntry
+pub trait MintEntry
 {
     /// The former the entry mints.
     ///
@@ -5368,16 +5368,16 @@ impl MintEntry for SupportedNode
 ///   table for each named refusal bounds failures. Empty, dangling and
 ///   wrong-sort child tables add structural boundaries without claiming
 ///   arbitrary graphs.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
-/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(minted) => minted.held(arena).is_some()
         && nodes.first().is_some_and(|node| node.minted_former().sort() == minted.sort()),
     Maybe::Absent(reason) => !nodes.is_empty()
         || matches!(reason, seating::Absent::IllSorted | seating::Absent::Unwalked),
 })]
-fn mint_table<Entry>(
+pub fn mint_table<Entry>(
     nodes: &[Entry],
     arena: &mut CoreArena,
     (layout, held): (&Layout, &[(&[ChildPosition], ArenaNode)]),
@@ -5442,7 +5442,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`mint_table`].
-/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+/// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
 fn mint_reached<Entry>(
     nodes: &[Entry],
     states: &mut [MintState],
@@ -5507,7 +5507,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — the nodes of a report mint back to nodes whose content is
 ///   their own.
-/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+/// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
 fn mint_all<Entry>(
     nodes: &[Entry],
     arena: &mut CoreArena,
@@ -5615,9 +5615,9 @@ impl Seated for CompTypeId
 ///   and a bind exercise completed seats; malformed child sorts are refused
 ///   through the enclosing mint. Fresh and open states are not claimed as
 ///   direct witness coverage.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
-/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::alpha_equal_terms_mint_to_one_name`
+/// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
 #[spec(ensures: |ret| match states.get(usize::from(index)) {
     Some(&MintState::Done(node)) => ret == Id::of(node).ok_or(seating::Absent::IllSorted),
     _ => ret == Err(seating::Absent::IllSorted),
@@ -5648,8 +5648,8 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L2 — products, sums and tuples mint each part in order.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::alpha_equal_terms_mint_to_one_name`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |ids| ids.len() == indices.len()))]
 fn seats<Id>(
     states: &[MintState],
@@ -5675,7 +5675,7 @@ where
 /// # Adequacy
 /// - hypothesis: L2 — a record type and a patched type mint each field under
 ///   its label.
-/// - witness: `content::tests::every_dependent_former_mints_back_as_its_own_table`
+/// - witness: `gandr-core-incremental::content::tests::every_dependent_former_mints_back_as_its_own_table`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |seated| seated.keys().eq(fields.keys())))]
 fn seat_fields<Id>(
     states: &[MintState],
@@ -5709,12 +5709,12 @@ where
 ///   check reconstruction; named refusal tables and wrong-sort children bound
 ///   failures. The predicate checks seat resolution, result sort and refusal
 ///   class, not a duplicate arena encoding.
-/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
-/// - witness: `content::tests::alpha_equal_terms_mint_to_one_name`
-/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
-/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
-/// - witness: `content::tests::every_dependent_former_mints_back_as_its_own_table`
-/// - witness: `content::tests::a_data_type_mints_with_its_arguments`
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::alpha_equal_terms_mint_to_one_name`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
+/// - witness: `gandr-core-incremental::content::tests::every_dependent_former_mints_back_as_its_own_table`
+/// - witness: `gandr-core-incremental::content::tests::a_data_type_mints_with_its_arguments`
 ///
 /// # Cost
 /// - allocation: the minted node and its lists of children, durable by the
@@ -6360,7 +6360,7 @@ fn mint_node(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`mint_node`].
-/// - witness: `content::tests::an_item_of_a_located_program_is_transparent_3381`
+/// - witness: `gandr-core-incremental::content::tests::an_item_of_a_located_program_is_transparent_3381`
 #[spec(ensures: |ref ret| match *world {
     WorldContent::Host => matches!(*ret, Ok(gandr_core_term::world::World::Host)),
     WorldContent::Declared(_) => !matches!(*ret, Ok(gandr_core_term::world::World::Host)),
@@ -6454,8 +6454,8 @@ impl DataRoots
     /// # Adequacy
     /// - hypothesis: L3 — native checkpoint round trips preserve each signature
     ///   slot; a signature whose fields are open keeps one support per root.
-    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
-    /// - witness: `content::tests::open_roots_project_under_their_own_supports`
+    /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    /// - witness: `gandr-core-incremental::content::tests::open_roots_project_under_their_own_supports`
     pub fn iter(&self) -> impl Iterator<Item = NodeIndex> + Clone + '_
     {
         self.parameters
@@ -6478,7 +6478,7 @@ impl DataRoots
     /// # Adequacy
     /// - hypothesis: L3 — a vector's stated lengths are values beside its
     ///   classifiers, and its checkpoint round-trips.
-    /// - witness: `codec::tests::an_indexed_family_round_trips_its_indices`
+    /// - witness: `gandr-core-incremental::codec::tests::an_indexed_family_round_trips_its_indices`
     pub fn sorted(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
     {
         let classifiers = self
@@ -6512,7 +6512,7 @@ impl DataRoots
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`DeclarationRoots::renumbered`].
-    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     #[spec(ensures: |ret| ret.kind == image(self.kind)
         && ret.parameters.len() == self.parameters.len()
         && ret.constructors.len() == self.constructors.len()
@@ -6548,7 +6548,7 @@ impl DataRoots
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`tabled`].
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
 pub struct Tabled
 {
     /// The supported nodes, numbered by discovery from the roots.
@@ -6644,7 +6644,7 @@ pub struct Placer
 /// # Adequacy
 /// - hypothesis: L3 — the nodes of a report that neither its item nor its entry
 ///   holds mint back to themselves from this table.
-/// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+/// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
 pub fn tabled_roots(
     arena: &CoreArena,
     layout: &Layout,
@@ -6719,7 +6719,7 @@ impl Minted
     /// # Adequacy
     /// - hypothesis: L3 — the places of a report mint back to the nodes that
     ///   they were taken from.
-    /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
     pub fn of<Roots>(
         nodes: &[SupportedNode],
         roots: Roots,
@@ -6770,8 +6770,8 @@ impl Minted
 /// # Adequacy
 /// - hypothesis: L3 — an item's signature renumbered from its table equals its
 ///   type encoded alone; a shared subterm is one node.
-/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-/// - witness: `content::tests::a_shared_node_is_listed_once`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
 #[spec(ensures: |ret| ret.placed.len() == raw.len())]
 pub fn tabled(
     raw: &[ContentNode],
@@ -6836,8 +6836,8 @@ pub fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
 /// - hypothesis: L3 — two holes met twice each, in two arenas that name them
 ///   apart, take the same two names in both tables; a hole under a root of an
 ///   item takes the name that the root's own table gives it.
-/// - witness: `content::tests::a_hole_is_named_by_its_place_in_the_table_6522`
-/// - witness: `content::tests::a_root_names_its_holes_by_their_place_under_it`
+/// - witness: `gandr-core-incremental::content::tests::a_hole_is_named_by_its_place_in_the_table_6522`
+/// - witness: `gandr-core-incremental::content::tests::a_root_names_its_holes_by_their_place_under_it`
 #[spec(
     captures: [old = holes.get(&hole).copied(), count = holes.len()],
     ensures: |ret| holes.get(&hole) == Some(&ret) && ret.origin() == hole.origin()

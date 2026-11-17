@@ -22,12 +22,12 @@ use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
+use gandr_core_content::ItemKey;
+use gandr_core_content::Opacity;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::Item;
 use gandr_core_incremental::ItemCount;
-use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::ItemOrdinal;
-use gandr_core_incremental::Opacity;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::Typing;
@@ -436,10 +436,10 @@ pub fn batch(program: &Program) -> Vec<Typing>
             && ret.adoptions().iter().all(|mark| *mark == Adoption::Judged)
             && ret.checkpoints().items().iter().zip(statements).all(
                 |(checkpoint, statement)| match *checkpoint.content().reference() {
-                    | gandr_core_incremental::Reference::Item { ref key, .. } => {
+                    | gandr_core_content::Reference::Item { ref key, .. } => {
                         key.as_ref() == statement.name.as_bytes()
                     },
-                    | gandr_core_incremental::Reference::Unoccupied => false,
+                    | gandr_core_content::Reference::Unoccupied => false,
                 },
             )
     },
@@ -629,10 +629,10 @@ pub fn step(
             && ret.resumed.checkpoints().items().len() == edited.len()
             && ret.resumed.checkpoints().items().iter().zip(edited).all(
                 |(checkpoint, statement)| match *checkpoint.content().reference() {
-                    | gandr_core_incremental::Reference::Item { ref key, .. } => {
+                    | gandr_core_content::Reference::Item { ref key, .. } => {
                         key.as_ref() == statement.name.as_bytes()
                     },
-                    | gandr_core_incremental::Reference::Unoccupied => false,
+                    | gandr_core_content::Reference::Unoccupied => false,
                 },
             )
     },
@@ -803,59 +803,53 @@ fn lowering_handles_numeric_and_binding_boundaries()
     ];
     let resumed = checked(&source);
     let literal = |digits: &str| {
-        gandr_core_incremental::ContentNode::Literal(Literal::Integer(IntegerLiteral::new(
+        gandr_core_content::ContentNode::Literal(Literal::Integer(IntegerLiteral::new(
             Sign::NonNegative,
             Magnitude::from_decimal_text(String::from(digits)).expect("fixed decimal golden"),
         )))
     };
     let expected = [
         vec![
-            gandr_core_incremental::ContentNode::Base(BaseType::Integer),
+            gandr_core_content::ContentNode::Base(BaseType::Integer),
             literal("18446744073709551615"),
         ],
-        vec![gandr_core_incremental::ContentNode::Constant(
-            gandr_core_incremental::Reference::Unoccupied,
+        vec![gandr_core_content::ContentNode::Constant(
+            gandr_core_content::Reference::Unoccupied,
         )],
-        vec![gandr_core_incremental::ContentNode::Constant(
-            gandr_core_incremental::Reference::Item {
+        vec![gandr_core_content::ContentNode::Constant(
+            gandr_core_content::Reference::Item {
                 key: ItemKey::from("x"),
-                occurrence: gandr_core_incremental::Occurrence::from(0_usize),
+                occurrence: gandr_core_content::Occurrence::from(0_usize),
             },
         )],
         vec![literal("0")],
         vec![
-            gandr_core_incremental::ContentNode::Element {
-                code: gandr_core_incremental::NodeIndex::from(1_usize),
+            gandr_core_content::ContentNode::Element {
+                code: gandr_core_content::NodeIndex::from(1_usize),
                 target: Level::zero(),
             },
-            gandr_core_incremental::ContentNode::Constant(
-                gandr_core_incremental::Reference::Item {
-                    key: ItemKey::from("x"),
-                    occurrence: gandr_core_incremental::Occurrence::from(1_usize),
-                },
-            ),
+            gandr_core_content::ContentNode::Constant(gandr_core_content::Reference::Item {
+                key: ItemKey::from("x"),
+                occurrence: gandr_core_content::Occurrence::from(1_usize),
+            }),
         ],
         vec![
-            gandr_core_incremental::ContentNode::Base(BaseType::String),
-            gandr_core_incremental::ContentNode::Literal(Literal::Text(StringLiteral::new(
+            gandr_core_content::ContentNode::Base(BaseType::String),
+            gandr_core_content::ContentNode::Literal(Literal::Text(StringLiteral::new(
                 String::from("λ\0"),
             ))),
         ],
         vec![
-            gandr_core_incremental::ContentNode::ThunkType(
-                gandr_core_incremental::NodeIndex::from(2_usize),
-            ),
-            gandr_core_incremental::ContentNode::Thunk(gandr_core_incremental::NodeIndex::from(
-                3_usize,
+            gandr_core_content::ContentNode::ThunkType(gandr_core_content::NodeIndex::from(
+                2_usize,
             )),
-            gandr_core_incremental::ContentNode::Returner {
-                result: gandr_core_incremental::NodeIndex::from(4_usize),
+            gandr_core_content::ContentNode::Thunk(gandr_core_content::NodeIndex::from(3_usize)),
+            gandr_core_content::ContentNode::Returner {
+                result: gandr_core_content::NodeIndex::from(4_usize),
                 effects: gandr_core_term::effect::EffectRow::EMPTY,
             },
-            gandr_core_incremental::ContentNode::Return(gandr_core_incremental::NodeIndex::from(
-                5_usize,
-            )),
-            gandr_core_incremental::ContentNode::Base(BaseType::Integer),
+            gandr_core_content::ContentNode::Return(gandr_core_content::NodeIndex::from(5_usize)),
+            gandr_core_content::ContentNode::Base(BaseType::Integer),
             literal("7"),
         ],
     ];
@@ -866,7 +860,7 @@ fn lowering_handles_numeric_and_binding_boundaries()
                 .content()
                 .nodes()
                 .iter()
-                .map(gandr_core_incremental::SupportedNode::former)
+                .map(gandr_core_content::SupportedNode::former)
                 .eq(expected.iter()),
             "each checkpoint holds the formers its item lowers to"
         );

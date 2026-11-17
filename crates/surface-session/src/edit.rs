@@ -160,13 +160,13 @@ use core::mem;
 use anodized::spec;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
-use gandr_core_incremental::ContentNode;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
+use gandr_core_content::Reference;
+use gandr_core_content::Sort;
+use gandr_core_content::map_children;
 use gandr_core_incremental::ItemOrdinal;
-use gandr_core_incremental::NodeIndex;
 use gandr_core_incremental::Program;
-use gandr_core_incremental::Reference;
-use gandr_core_incremental::Sort;
-use gandr_core_incremental::map_children;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -4308,12 +4308,12 @@ where
 fn world_content(
     program: &Program,
     world: gandr_core_term::world::World,
-) -> gandr_core_incremental::WorldContent
+) -> gandr_core_content::WorldContent
 {
     match world {
-        gandr_core_term::world::World::Host => gandr_core_incremental::WorldContent::Host,
+        gandr_core_term::world::World::Host => gandr_core_content::WorldContent::Host,
         gandr_core_term::world::World::Declared(constant) => {
-            gandr_core_incremental::WorldContent::Declared(program.resolve(constant))
+            gandr_core_content::WorldContent::Declared(program.resolve(constant))
         },
     }
 }
@@ -5206,9 +5206,9 @@ mod tests
         use alloc::collections::BTreeMap;
         use alloc::sync::Arc;
 
-        use gandr_core_incremental::ItemKey;
-        use gandr_core_incremental::Occurrence;
-        use gandr_core_incremental::Reference;
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
         use gandr_core_term::Component;
         use gandr_core_term::ConstructorTag;
         use gandr_core_term::FieldLabel;
@@ -5692,10 +5692,10 @@ mod tests
     #[test]
     fn a_value_declaration_reports_its_signature_and_an_unsigned_one_none()
     {
-        use gandr_core_incremental::ItemKey;
-        use gandr_core_incremental::Occurrence;
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
         use gandr_core_incremental::Program;
-        use gandr_core_incremental::Reference;
         use gandr_core_term::CoreArena;
         use gandr_surface_lowering::OriginTable;
 
@@ -5724,10 +5724,10 @@ mod tests
     #[test]
     fn effect_row_edits_preserve_names_and_rebuild_operation_types()
     {
-        use gandr_core_incremental::ItemKey;
-        use gandr_core_incremental::Occurrence;
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
         use gandr_core_incremental::Program;
-        use gandr_core_incremental::Reference;
         use gandr_core_term::CoreArena;
         use gandr_core_term::effect::EffectName;
         use gandr_core_term::effect::EffectOp;
@@ -5789,10 +5789,10 @@ mod tests
     #[test]
     fn control_edits_preserve_names_scopes_and_frame_order()
     {
-        use gandr_core_incremental::ItemKey;
-        use gandr_core_incremental::Occurrence;
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
         use gandr_core_incremental::Program;
-        use gandr_core_incremental::Reference;
         use gandr_core_term::Component;
         use gandr_core_term::CoreArena;
         use gandr_core_term::Zone;
@@ -5896,12 +5896,12 @@ mod tests
     {
         use alloc::sync::Arc;
 
-        use gandr_core_incremental::ContentNode;
-        use gandr_core_incremental::ItemKey;
-        use gandr_core_incremental::NodeIndex;
-        use gandr_core_incremental::Occurrence;
+        use gandr_core_content::ContentNode;
+        use gandr_core_content::ItemKey;
+        use gandr_core_content::NodeIndex;
+        use gandr_core_content::Occurrence;
+        use gandr_core_content::Reference;
         use gandr_core_incremental::Program;
-        use gandr_core_incremental::Reference;
         use gandr_core_term::CoreArena;
         use gandr_kernel_term::BaseType;
         use gandr_kernel_term::PathEvidence;

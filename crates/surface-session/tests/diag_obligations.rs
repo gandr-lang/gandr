@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use anodized::spec;
-use gandr_core_incremental::ItemKey;
+use gandr_core_content::ItemKey;
 use gandr_core_term::FailureClass;
 use gandr_surface_diagnostics::Class;
 use gandr_surface_diagnostics::Severity;

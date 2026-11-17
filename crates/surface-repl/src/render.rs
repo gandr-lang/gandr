@@ -61,8 +61,8 @@
 //! merely storing a classifier is not enough.
 
 use anodized::spec;
-use gandr_core_incremental::ContentNode;
-use gandr_core_incremental::NodeIndex;
+use gandr_core_content::ContentNode;
+use gandr_core_content::NodeIndex;
 use gandr_surface_pretty::ContentSource;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::PageWidth;

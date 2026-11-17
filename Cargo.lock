@@ -1858,6 +1858,7 @@ dependencies = [
  "allocation-counter",
  "blake3",
  "gandr-core-checker",
+ "gandr-core-content",
  "gandr-core-fork",
  "gandr-core-incremental",
  "gandr-core-nbe",
@@ -2312,6 +2313,7 @@ dependencies = [
  "expect-test",
  "foldhash 0.2.0",
  "gandr-core-checker",
+ "gandr-core-content",
  "gandr-core-incremental",
  "gandr-core-nbe",
  "gandr-core-term",
@@ -2360,6 +2362,7 @@ name = "gandr-surface-repl"
 version = "0.0.0"
 dependencies = [
  "gandr-core-checker",
+ "gandr-core-content",
  "gandr-core-incremental",
  "gandr-core-nbe",
  "gandr-core-term",
@@ -2389,6 +2392,7 @@ dependencies = [
  "allocation-counter",
  "blake3",
  "gandr-core-checker",
+ "gandr-core-content",
  "gandr-core-fork",
  "gandr-core-incremental",
  "gandr-core-nbe",
@@ -2428,6 +2432,7 @@ name = "gandr-surface-tui"
 version = "0.0.0"
 dependencies = [
  "expect-test",
+ "gandr-core-content",
  "gandr-core-incremental",
  "gandr-kernel-term",
  "gandr-surface-dispatcher",

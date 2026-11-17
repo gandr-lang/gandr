@@ -1006,7 +1006,7 @@ fn control_nodes_persist_names_frames_and_branch_order()
         super::Refusal::CapabilityEscaped { at, found: typed },
         super::Refusal::CapabilityConsumable(at),
         super::Refusal::CapabilityUngranted {
-            constant: crate::region::Reference::Unoccupied,
+            constant: gandr_core_content::Reference::Unoccupied,
             declared: at,
         },
         super::Refusal::NotSynthesisable {
@@ -1839,7 +1839,7 @@ fn type_tables_validate_roots_child_extents_and_sorts()
         computation
             .nodes()
             .first()
-            .map(crate::support::SupportedNode::sort),
+            .map(gandr_core_content::SupportedNode::sort),
         Some(Sort::CompType)
     );
 }
@@ -2815,7 +2815,7 @@ fn a_type_of_words_round_trips_its_cells()
     let checkpoints = |presentation: PresentationRoots| {
         let content = crate::fixture::item_content(
             Reference::Unoccupied,
-            &crate::content::DeclarationRoots::Data(crate::content::DataRoots {
+            &crate::content::DeclarationRoots::Data(gandr_core_content::DataRoots {
                 parameters: Vec::new(),
                 indices: Vec::new(),
                 results: Vec::new(),
@@ -2910,7 +2910,7 @@ fn an_indexed_family_round_trips_its_indices()
         };
         let content = crate::fixture::item_content(
             Reference::Unoccupied,
-            &crate::content::DeclarationRoots::Data(crate::content::DataRoots {
+            &crate::content::DeclarationRoots::Data(gandr_core_content::DataRoots {
                 parameters: Vec::new(),
                 indices,
                 constructors: vec![Vec::new(), vec![NodeIndex::from(0_usize)]],
@@ -3548,7 +3548,8 @@ fn an_offer_narrowed_fault_is_read_only_at_step_zero()
 ///
 /// # Specification
 /// trivial.
-fn read_table(bytes: &CheckpointBytes) -> Result<Vec<crate::support::SupportedNode>, CodecError>
+fn read_table(bytes: &CheckpointBytes)
+-> Result<Vec<gandr_core_content::SupportedNode>, CodecError>
 {
     super::read_nodes(&mut Reader {
         bytes: bytes.as_ref(),
@@ -3646,7 +3647,7 @@ fn supported_tables_round_trip_and_reject_forged_support()
     // A signature whose field is scoped under its parameter: the field's root
     // support selects the parameter, so the placements carry bytes.
     let data = crate::content::DataContent::tabulated(
-        &crate::content::DataRoots {
+        &gandr_core_content::DataRoots {
             parameters: vec![index(1_usize)],
             indices: Vec::new(),
             results: Vec::new(),
@@ -3884,29 +3885,29 @@ fn a_failure_content_round_trips()
                 crate::failure::OutsideContent {
                     content: Maybe::Present(typed),
                     rooted: Maybe::Present(crate::failure::Rooted {
-                        item: crate::region::Reference::Item {
-                            key: crate::region::ItemKey::from("a"),
-                            occurrence: crate::boundary::Occurrence::from(1_usize),
+                        item: gandr_core_content::Reference::Item {
+                            key: gandr_core_content::ItemKey::from("a"),
+                            occurrence: gandr_core_content::Occurrence::from(1_usize),
                         },
                         root: crate::boundary::RootOrdinal::from(2_usize),
-                        at: crate::boundary::Discovery::from(3_usize),
+                        at: gandr_core_content::Discovery::from(3_usize),
                     }),
                     anchors: vec![
                         crate::content::Anchor {
                             path: vec![
-                                crate::boundary::ChildPosition::from(1_usize),
-                                crate::boundary::ChildPosition::from(0_usize),
+                                gandr_core_content::ChildPosition::from(1_usize),
+                                gandr_core_content::ChildPosition::from(0_usize),
                             ],
-                            at: crate::boundary::Discovery::from(4_usize),
+                            at: gandr_core_content::Discovery::from(4_usize),
                         },
                         crate::content::Anchor {
-                            path: vec![crate::boundary::ChildPosition::from(2_usize)],
-                            at: crate::boundary::Discovery::from(9_usize),
+                            path: vec![gandr_core_content::ChildPosition::from(2_usize)],
+                            at: gandr_core_content::Discovery::from(9_usize),
                         },
                     ],
                 },
                 crate::failure::OutsideContent {
-                    content: Maybe::Absent(crate::content::seating::Absent::Unresolved),
+                    content: Maybe::Absent(gandr_core_content::seating::Absent::Unresolved),
                     rooted: Maybe::Absent(crate::failure::rooted::Absent::Unrooted),
                     anchors: Vec::new(),
                 },

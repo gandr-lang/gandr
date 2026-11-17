@@ -767,9 +767,9 @@ pub fn every_former(noise: Noise) -> Program
 ///
 /// # Specification
 /// trivial.
-pub fn type_content(raw: &[crate::content::ContentNode]) -> crate::content::TypeContent
+pub fn type_content(raw: &[gandr_core_content::ContentNode]) -> gandr_core_content::TypeContent
 {
-    crate::content::TypeContent::tabulated(raw, gandr_core_content::NodeIndex::from(0_usize))
+    gandr_core_content::TypeContent::tabulated(raw, gandr_core_content::NodeIndex::from(0_usize))
 }
 
 /// The unlocated content of an item whose roots `declaration` index the de
@@ -778,13 +778,14 @@ pub fn type_content(raw: &[crate::content::ContentNode]) -> crate::content::Type
 /// # Specification
 /// trivial.
 pub fn item_content(
-    reference: crate::region::Reference,
+    reference: gandr_core_content::Reference,
     declaration: &crate::content::DeclarationRoots,
-    raw: &[crate::content::ContentNode],
+    raw: &[gandr_core_content::ContentNode],
 ) -> crate::content::ItemContent
 {
-    let roots: Vec<crate::boundary::NodeIndex> = declaration.iter().map(|(root, _)| root).collect();
-    let tabled = crate::content::tabled(raw, &roots);
+    let roots: Vec<gandr_core_content::NodeIndex> =
+        declaration.iter().map(|(root, _)| root).collect();
+    let tabled = gandr_core_content::tabled(raw, &roots);
     let declaration = declaration.renumbered(|root| tabled.of(root));
     let placements = tabled.supports(&roots);
     crate::content::ItemContent::from_parts(reference, declaration, tabled.nodes, placements)

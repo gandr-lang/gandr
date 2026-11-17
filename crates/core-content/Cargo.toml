@@ -10,13 +10,6 @@ license.workspace = true
 keywords = ["content-addressing", "gandr", "hash-consing"]
 categories = ["compilers"]
 publish.workspace = true
-autotests = false
-
-# One integration target, each area file its own `cfg(test)` module, so a
-# witness path reads `tests::<area>::<name>`.
-[[test]]
-name = "tests"
-path = "tests/lib.rs"
 
 # The crate reads the core vocabulary and the leaves that it shares with the
 # kernel: the term crate's literals and indices and the levels of the strata

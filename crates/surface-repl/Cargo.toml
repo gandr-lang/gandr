@@ -32,6 +32,7 @@ path = "tests/lib.rs"
 [dependencies]
 anodized.workspace = true
 gandr-core-checker.workspace = true
+gandr-core-content.workspace = true
 gandr-core-incremental.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-term.workspace = true
