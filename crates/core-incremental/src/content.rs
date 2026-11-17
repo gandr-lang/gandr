@@ -4285,12 +4285,28 @@ impl TypeContent
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`TypeContent::of`] the node with each staged type read as
-    ///   its base, so it holds no staged type.
+    ///   its base, so it holds no staged type. The root is of the sort of
+    ///   `root`, and each child names a node of the table.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Encoder::read_as`].
     /// - witness: `checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    #[spec(ensures: |ret| {
+            ret.nodes.first().is_some_and(|node| {
+                node.sort()
+                    == match root {
+                        | ArenaNode::Value(_) => Sort::Value,
+                        | ArenaNode::Computation(_) => Sort::Computation,
+                        | ArenaNode::ValueType(_) => Sort::ValueType,
+                        | ArenaNode::CompType(_) => Sort::CompType,
+                    }
+            }) && ret.nodes.iter().all(|node| {
+                node.former().children()
+                    .iter()
+                    .all(|(child, _)| usize::from(child) < ret.nodes.len())
+            })
+        })]
     pub(crate) fn unstaged(
         arena: &CoreArena,
         layout: &Layout,
@@ -5123,6 +5139,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - hypothesis: L2 — a shared node retains one number; separately
     ///   allocated equal nodes retain distinct numbers.
     /// - witness: `content::tests::a_shared_node_is_listed_once`
+    ///
+    /// # Cost
+    /// - allocation: the number and the queue entry of a node discovered now,
+    ///   growth within the nodes the root reaches
     #[spec(
         captures: [old = self.seen.get(&self.read_as(node)).copied(), count = self.seen.len(), queued = self.queue.len()],
         ensures: |ret| self.seen.get(&self.read_as(node)) == Some(&ret) && match old {
@@ -6374,6 +6394,10 @@ fn value_type_content(
 ///   against the enumeration; a slot filled from the wrong family or out of
 ///   order fails the postcondition.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the former's lists of children, growth within the children
+///   `found` holds
 #[spec(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::CompType && found.placed(node).0),
 )]
@@ -6444,6 +6468,10 @@ fn comp_type_content(
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `content::tests::factoring_closes_dangling_and_cyclic_tables`
 /// - witness: `content::tests::renumbering_carries_every_frame_and_clause_body_to_its_image`
+///
+/// # Cost
+/// - allocation: the image's lists of children, growth within the children of
+///   `node`
 #[spec(ensures: |ret| {
         core::mem::discriminant(&ret) == core::mem::discriminant(node)
             && ret.sort() == node.sort()
@@ -7642,6 +7670,10 @@ where
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
 /// - witness: `content::tests::every_dependent_former_mints_back_as_its_own_table`
 /// - witness: `content::tests::a_data_type_mints_with_its_arguments`
+///
+/// # Cost
+/// - allocation: the minted node and its lists of children, durable by the
+///   arena that holds the mint
 #[spec(
     requires: node.children().iter().all(|(child, _)| matches!(states.get(usize::from(child)), Some(&MintState::Done(_)))),
     ensures: |ret| match ret {

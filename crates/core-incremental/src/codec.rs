@@ -5670,6 +5670,10 @@ fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecErro
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `codec::tests::every_node_former_round_trips_under_its_own_frame`
 /// - witness: `codec::tests::a_patched_frame_that_fixes_no_label_is_refused`
+///
+/// # Cost
+/// - allocation: the node's own lists of children and fields, growth within the
+///   stored table
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -6884,6 +6888,10 @@ where
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+///
+/// # Cost
+/// - allocation: the nodes and their lists of children, growth within the
+///   stored table
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref nodes) => {
@@ -7389,6 +7397,10 @@ fn read_operation_side(reader: &mut Reader<'_>)
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 /// - witness: `tests::native_formers::an_atom_interface_persists_and_an_edit_to_it_reaches_every_reader`
 /// - witness: `codec::tests::an_atom_interface_round_trips_with_and_without_its_law`
+///
+/// # Cost
+/// - allocation: the tables and the roots of the item's content, growth within
+///   the stored item
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {

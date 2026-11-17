@@ -330,6 +330,10 @@ impl Placing<'_, '_, '_, '_, '_, '_>
     /// - hypothesis: L3 — as [`FailureContent`].
     /// - witness: `failure::tests::a_failure_seats_at_the_nodes_it_names`
     /// - witness: `failure::tests::a_node_of_another_item_seats_at_its_root`
+    ///
+    /// # Cost
+    /// - allocation: the index and the content of a node outside the item,
+    ///   error path
     fn place(
         &mut self,
         node: ArenaNode,
