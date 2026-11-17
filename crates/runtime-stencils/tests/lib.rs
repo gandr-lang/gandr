@@ -13,8 +13,9 @@ mod agreement;
 mod count;
 #[cfg(test)]
 mod exits;
-#[cfg(test)]
 mod generate;
+#[cfg(test)]
+mod image;
 #[cfg(test)]
 mod layout;
 #[cfg(test)]

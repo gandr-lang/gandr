@@ -186,6 +186,7 @@ mod executor;
 mod function;
 mod fuse;
 mod host;
+pub mod image;
 mod lower;
 #[cfg(gandr_patcher)]
 mod native;
