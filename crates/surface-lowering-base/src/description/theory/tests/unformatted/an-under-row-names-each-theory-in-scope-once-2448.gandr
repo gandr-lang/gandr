@@ -1,0 +1,2 @@
+{theories}theory Unknown where {{ {signature} rule r : f(x) <=> x where {{ | under [State, Missing] }}; }}
+theory Twice where {{ {signature} rule r : f(x) <=> x where {{ | under [State, Console, State | r] }}; }}

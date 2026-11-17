@@ -1,0 +1,102 @@
+test: operation_rules::tests::a_law_parting_at_its_call_is_refused_1510
+package: gandr-kernel-term
+command: mise run debug:test gandr-kernel-term operation_rules::tests::a_law_parting_at_its_call_is_refused_1510 --break interior_pair
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_kernel_term-c80ee408b6b98559"
+Current executable set to 'target/debug-trace/debug/deps/gandr_kernel_term-c80ee408b6b98559' (x86_64).
+(lldb) settings set -- target.run-args  "operation_rules::tests::a_law_parting_at_its_call_is_refused_1510" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex interior_pair
+Breakpoint 1: where = gandr_kernel_term-c80ee408b6b98559`<gandr_kernel_term::operation_rules::Reader<gandr_kernel_term::operation_rules::tests::Scope>>::interior_pair + 72 at operation_rules.rs:1068:32, address = 0x00000000003eafc8
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_kernel_term-c80ee408b6b98559`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x000000000059cf58
+(lldb) run
+
+running 1 test
+test operation_rules::tests::a_law_parting_at_its_call_is_refused_1510 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3913088 launched: 'target/debug-trace/debug/deps/gandr_kernel_term-c80ee408b6b98559' (x86_64)
+Process 3913088 stopped
+* thread #2, name = 'operation_rules', stop reason = breakpoint 1.1
+       frame #0: 0x000055555593efc8 gandr_kernel_term-c80ee408b6b98559`<gandr_kernel_term::operation_rules::Reader<gandr_kernel_term::operation_rules::tests::Scope>>::interior_pair(self={own:({0:1}, {0:2}), scope:{families:size=1, operations:size=0}}, rule={left:{data_ptr:Operation{constant:{0:1}, arity:{0:2}}, length:5}, right:{data_ptr:Variable({0:2}), length:1}}, other={left:{data_ptr:Operation{constant:{0:1}, arity:{0:2}}, length:3}, right:{data_ptr:Variable({0:0}), length:1}}, at={0:1}, scratch={left:size=0, right:size=0, rewritten:size=0, first:size=2, second:size=3}) at operation_rules.rs:1068:32
+   1065	        scratch: &mut Scratch,
+   1066	    ) -> Option<()>
+   1067	    {
+-> 1068	        let offset = variables(&rule.left);
+    	                               ^
+   1069	        let end = self.extent(&rule.left, at)?;
+   1070	        self.unify((&rule.left, at), (&other.left, Position(0)), scratch)?;
+   1071	        scratch.left.clear();
+(lldb) bt 24
+* thread #2, name = 'operation_rules', stop reason = breakpoint 1.1
+   * frame #0: 0x000055555593efc8 gandr_kernel_term-c80ee408b6b98559`<gandr_kernel_term::operation_rules::Reader<gandr_kernel_term::operation_rules::tests::Scope>>::interior_pair(self={own:({0:1}, {0:2}), scope:{families:size=1, operations:size=0}}, rule={left:{data_ptr:Operation{constant:{0:1}, arity:{0:2}}, length:5}, right:{data_ptr:Variable({0:2}), length:1}}, other={left:{data_ptr:Operation{constant:{0:1}, arity:{0:2}}, length:3}, right:{data_ptr:Variable({0:0}), length:1}}, at={0:1}, scratch={left:size=0, right:size=0, rewritten:size=0, first:size=2, second:size=3}) at operation_rules.rs:1068:32
+     frame #1: 0x000055555592fa96 gandr_kernel_term-c80ee408b6b98559`<gandr_kernel_term::operation_rules::OperationRules>::converge::<gandr_kernel_term::operation_rules::tests::Scope>::{closure#0} at operation_rules.rs:494:31
+     frame #2: 0x00005555559e8e18 gandr_kernel_term-c80ee408b6b98559`anodized::__::eval_once::<core::result::Result<(), gandr_kernel_term::operation_rules::OperationRuleRefusal>, <gandr_kernel_term::operation_rules::OperationRules>::converge<gandr_kernel_term::operation_rules::tests::Scope>::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #3: 0x0000555555929210 gandr_kernel_term-c80ee408b6b98559`<gandr_kernel_term::operation_rules::OperationRules>::converge::<gandr_kernel_term::operation_rules::tests::Scope>(self={__0:strong=1, weak=0}, own={0:1}, scope={families:size=1, operations:size=0}, fuel={__0:10000}) at operation_rules.rs:407:5
+     frame #4: 0x0000555555867f0b gandr_kernel_term-c80ee408b6b98559`gandr_kernel_term::operation_rules::tests::a_law_parting_at_its_call_is_refused_1510 at tests.rs:63:37
+     frame #5: 0x0000555555857077 gandr_kernel_term-c80ee408b6b98559`gandr_kernel_term::operation_rules::tests::a_law_parting_at_its_call_is_refused_1510::{closure#0}((null)={}) at tests.rs:502:47
+     frame #6: 0x0000555555a48a56 gandr_kernel_term-c80ee408b6b98559`<gandr_kernel_term::operation_rules::tests::a_law_parting_at_its_call_is_refused_1510::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #7: 0x0000555555a925eb gandr_kernel_term-c80ee408b6b98559`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #8: 0x0000555555a925e9 gandr_kernel_term-c80ee408b6b98559`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #9: 0x0000555555a9fc45 gandr_kernel_term-c80ee408b6b98559`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #10: 0x0000555555a9fc40 gandr_kernel_term-c80ee408b6b98559`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #11: 0x0000555555a9fc40 gandr_kernel_term-c80ee408b6b98559`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #12: 0x0000555555a9fc2b gandr_kernel_term-c80ee408b6b98559`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #13: 0x0000555555a9fc2b gandr_kernel_term-c80ee408b6b98559`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #14: 0x0000555555a9fc2b gandr_kernel_term-c80ee408b6b98559`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #15: 0x0000555555a9fc16 gandr_kernel_term-c80ee408b6b98559`test::run_test::{closure#0} at lib.rs:668:43
+     frame #16: 0x0000555555a9a7a4 gandr_kernel_term-c80ee408b6b98559`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #17: 0x0000555555a9a729 gandr_kernel_term-c80ee408b6b98559`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #18: 0x0000555555aa2d82 gandr_kernel_term-c80ee408b6b98559`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #19: 0x0000555555aa2d73 gandr_kernel_term-c80ee408b6b98559`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #20: 0x0000555555aa2d73 gandr_kernel_term-c80ee408b6b98559`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #21: 0x0000555555aa2d63 gandr_kernel_term-c80ee408b6b98559`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #22: 0x0000555555aa2d63 gandr_kernel_term-c80ee408b6b98559`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #23: 0x0000555555aa2d63 gandr_kernel_term-c80ee408b6b98559`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+(lldb) frame variable --depth 3
+(gandr_kernel_term::operation_rules::Reader<gandr_kernel_term::operation_rules::tests::Scope> *) self = 0x00007ffff7bfd5d0 {own:({0:1}, {0:2}), scope:{families:size=1, operations:size=0}}
+(gandr_kernel_term::operation_rules::OperationRule *) rule = 0x00007ffff0001220 {left:{data_ptr:Operation{constant:{0:1}, arity:{0:2}}, length:5}, right:{data_ptr:Variable({0:2}), length:1}}
+(gandr_kernel_term::operation_rules::OperationRule *) other = 0x00007ffff00011e0 {left:{data_ptr:Operation{constant:{0:1}, arity:{0:2}}, length:3}, right:{data_ptr:Variable({0:0}), length:1}}
+(gandr_kernel_term::operation_rules::Position) at = {0:1}
+(gandr_kernel_term::operation_rules::Scratch *) scratch = 0x00007ffff7bfd860 {left:size=0, right:size=0, rewritten:size=0, first:size=2, second:size=3}
+(lldb) up
+frame #1: 0x000055555592fa96 gandr_kernel_term-c80ee408b6b98559`<gandr_kernel_term::operation_rules::OperationRules>::converge::<gandr_kernel_term::operation_rules::tests::Scope>::{closure#0} at operation_rules.rs:494:31
+   491 	                    scope.rules(constant)
+   492 	                };
+   493 	                for (index, other) in called.into_iter().flat_map(|called| called.0.iter()).enumerate() {
+-> 494 	                    if reader.interior_pair(rule, other, Position(at), &mut scratch).is_none() {
+    	                              ^
+   495 	                        continue;
+   496 	                    }
+   497 	                    let overlapped = if constant == own {
+(lldb) frame variable --depth 3
+(gandr_kernel_term::presented::RewriteFuel) fuel = {0:10000}
+(gandr_kernel_term::operation_rules::tests::Scope) scope = {families:size=1, operations:size=0}
+(gandr_kernel_term::term::ConstantIndex) own = {0:1}
+(gandr_kernel_term::operation_rules::OperationRules *) self = 0x00007ffff7bfe2e0 {__0:strong=1, weak=0}
+(gandr_kernel_term::presented::FieldCount) arity = {0:2}
+(gandr_kernel_term::operation_rules::Reader<gandr_kernel_term::operation_rules::tests::Scope>) reader = {own:({0:1}, {0:2}), scope:{families:size=1, operations:size=0}}
+(gandr_theory_path_orders::lpo::Buffers) order = {table:size=5, functional:size=1, reached:size=5, pending:size=0, scratch:{lefts:size=0, matched:size=0, partners:size=0}}
+(gandr_kernel_term::operation_rules::System) system = {rules:size=3, presentations:size=0}
+(gandr_kernel_term::operation_rules::Scratch) scratch = {left:size=0, right:size=0, rewritten:size=0, first:size=2, second:size=3}
+(core::iter::adapters::enumerate::Enumerate<core::slice::iter::Iter<gandr_kernel_term::operation_rules::OperationRule> >) iter = {iter:{ptr:{pointer:{left:{data_ptr:Operation{…}, length:37}, right:{data_ptr:Operation{…}, length:0}}}, end_or_len:{left:{data_ptr:Operation{$variants$:{…}}, length:37}, right:{data_ptr:Operation{$variants$:{…}}, length:0}}, _marker:{}}, count:3}
+(unsigned long) later = 2
+(gandr_kernel_term::operation_rules::OperationRule *) rule = 0x00007ffff0001220 {left:{data_ptr:Operation{constant:{0:1}, arity:{0:2}}, length:5}, right:{data_ptr:Variable({0:2}), length:1}}
+(core::iter::adapters::skip::Skip<core::iter::adapters::enumerate::Enumerate<core::slice::iter::Iter<gandr_kernel_term::operation_rules::OperationNode> > >) iter = {iter:{iter:{ptr:{pointer:Variable({…})}, end_or_len:Operation{constant:{0:8589934595}, arity:{0:0}}, _marker:{}}, count:2}, n:0}
+(gandr_kernel_term::operation_rules::OperationNode) node = Operation{constant:{0:1}, arity:{0:2}} {
+  constant = {0:1}
+  arity = {0:2}
+}
+(unsigned long) at = 1
+(gandr_kernel_term::term::ConstantIndex) constant = {0:1}
+(core::option::Option<&gandr_kernel_term::operation_rules::OperationRules>) called = Some({__0:strong=1, weak=0}) {
+  0 = 0x00007ffff7bfe2e0 {__0:strong=1, weak=0}
+}
+(core::iter::adapters::enumerate::Enumerate<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<gandr_kernel_term::operation_rules::OperationRules *>, core::slice::iter::Iter<gandr_kernel_term::operation_rules::OperationRule>, gandr_kernel_term::operation_rules::{impl#1}::converge::{closure#0}::{closure_env#3}<gandr_kernel_term::operation_rules::tests::Scope> > >) iter = {iter:{inner:{iter:{iter:Some({…})}, frontiter:Some({ptr:{…}, end_or_len:{…}, _marker:{…}}), backiter:None}}, count:1}
+(unsigned long) index = 0
+(gandr_kernel_term::operation_rules::OperationRule *) other = 0x00007ffff00011e0 {left:{data_ptr:Operation{constant:{0:1}, arity:{0:2}}, length:3}, right:{data_ptr:Variable({0:0}), length:1}}

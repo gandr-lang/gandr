@@ -1,0 +1,245 @@
+[
+  {
+    "name": "#6954: a merge unclaims the issues it closes, keeps the claim of an open issue it advances, and reads every other claim's silence as the sweep does",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 1250,
+          "state": "open",
+          "labels": ["kind:feature", "status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z"
+        },
+        {
+          "number": 1264,
+          "state": "closed",
+          "labels": ["kind:feature", "status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z"
+        },
+        {
+          "number": 1263,
+          "state": "open",
+          "labels": ["kind:feature", "status:claimed"],
+          "claimed_at": "2025-10-08T07:53:20Z"
+        }
+      ],
+      "open_prs": [],
+      "merged_body": "The pool.\n\nAdvances #1250\nAdvances #1252\nCloses #1264\n"
+    },
+    "output": "1264\tclosed\n1263\tsilent"
+  },
+  {
+    "name": "a merge reads every closing keyword, and a target both advanced and closed is closed",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 5,
+          "state": "closed",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z"
+        },
+        {
+          "number": 6,
+          "state": "closed",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z"
+        },
+        {
+          "number": 7,
+          "state": "open",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z"
+        },
+        {
+          "number": 8,
+          "state": "open",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z"
+        }
+      ],
+      "open_prs": [],
+      "merged_body": "fixes #5, Resolved #6\nAdvances #7 closes #7\nsee #8"
+    },
+    "output": "5\tclosed\n6\tclosed\n7\tclosed"
+  },
+  {
+    "name": "the sweep takes the claim off a closed issue however fresh",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 40,
+          "state": "closed",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z"
+        },
+        {
+          "number": 41,
+          "state": "open",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z"
+        }
+      ],
+      "open_prs": [{ "number": 9, "body": "Closes #40", "head": "lane-40" }],
+      "merged_body": null
+    },
+    "output": "40\tclosed"
+  },
+  {
+    "name": "a merge reads the keyword in any case and the number whole",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        { "number": 12, "labels": ["status:claimed"], "claimed_at": "2025-10-09T06:53:20Z" },
+        { "number": 123, "labels": ["status:claimed"], "claimed_at": "2025-10-09T06:53:20Z" }
+      ],
+      "open_prs": [],
+      "merged_body": "CLOSES #123"
+    },
+    "output": "123\tclosed"
+  },
+  {
+    "name": "#6954: a claim whose label is 5 hours old keeps its seat while a release of its own lane is 1 hour old, and a release of another lane renews nothing",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 60,
+          "state": "open",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T03:53:20Z",
+          "lane": "triage",
+          "released": { "lane": "triage", "at": 1759996400 }
+        },
+        {
+          "number": 61,
+          "state": "open",
+          "labels": ["status:claimed"],
+          "claimed_at": "2025-10-09T03:53:20Z",
+          "lane": "triage",
+          "released": { "lane": "flex", "at": 1759996400 }
+        }
+      ],
+      "open_prs": [],
+      "merged_body": null
+    },
+    "output": "61\tsilent"
+  },
+  {
+    "name": "an epic loses the claim however fresh",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 2,
+          "labels": ["kind:epic", "status:claimed"],
+          "claimed_at": "2025-10-09T08:53:20Z"
+        }
+      ],
+      "open_prs": [{ "number": 9, "body": "Advances #2", "head": "lane-1" }],
+      "merged_body": null
+    },
+    "output": "2\tepic"
+  },
+  {
+    "name": "a claim whose label is 4 hours old with no pull request naming it comes off, so 5 hours does; 3 hours, or a second under 4, stays",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 20,
+          "labels": ["kind:defect", "status:claimed"],
+          "claimed_at": "2025-10-09T03:53:20Z"
+        },
+        {
+          "number": 21,
+          "labels": ["kind:defect", "status:claimed"],
+          "claimed_at": "2025-10-09T05:53:20Z"
+        },
+        {
+          "number": 22,
+          "labels": ["kind:defect", "status:claimed"],
+          "claimed_at": "2025-10-09T04:53:20Z"
+        },
+        {
+          "number": 23,
+          "labels": ["kind:defect", "status:claimed"],
+          "claimed_at": "2025-10-09T04:53:21Z"
+        }
+      ],
+      "open_prs": [],
+      "merged_body": null
+    },
+    "output": "20\tsilent\n22\tsilent"
+  },
+  {
+    "name": "an open pull request naming the issue in its body or its branch keeps a silent claim",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        { "number": 30, "labels": ["status:claimed"], "claimed_at": "2025-10-08T07:53:20Z" },
+        { "number": 31, "labels": ["status:claimed"], "claimed_at": "2025-10-08T07:53:20Z" },
+        { "number": 32, "labels": ["status:claimed"], "claimed_at": "2025-10-08T07:53:20Z" },
+        { "number": 33, "labels": ["status:claimed"], "claimed_at": "2025-10-08T07:53:20Z" }
+      ],
+      "open_prs": [
+        { "number": 40, "body": "Fixes #30", "head": "defect-fix" },
+        { "number": 41, "body": "No keyword.", "head": "triage-31-pool" },
+        { "number": 42, "body": "See #32 for the background.", "head": "triage-3201-other" },
+        { "number": 43, "body": "Advances #33", "head": "lane" }
+      ],
+      "merged_body": null
+    },
+    "output": "32\tsilent"
+  },
+  {
+    "name": "a claim with fresh comments and no pull request lapses when its label is 4 hours old: the issue's last update leaves the age alone (#3915)",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 3811,
+          "state": "open",
+          "labels": ["kind:defect", "status:claimed"],
+          "claimed_at": "2025-10-09T02:53:20Z",
+          "updated_at": "2025-10-09T08:43:20Z"
+        },
+        {
+          "number": 3812,
+          "state": "open",
+          "labels": ["kind:defect", "status:claimed"],
+          "claimed_at": "2025-10-09T06:53:20Z",
+          "updated_at": "2025-10-09T06:53:20Z"
+        }
+      ],
+      "open_prs": [],
+      "merged_body": null
+    },
+    "output": "3811\tsilent"
+  },
+  {
+    "name": "a merge's run lapses a claim 4 hours old that its body does not name and no open pull request names (#3915)",
+    "input": {
+      "now": 1760000000,
+      "claimed": [
+        {
+          "number": 3680,
+          "state": "open",
+          "labels": ["kind:defect", "status:claimed"],
+          "claimed_at": "2025-10-09T03:53:20Z",
+          "updated_at": "2025-10-09T08:40:00Z"
+        },
+        {
+          "number": 3699,
+          "state": "open",
+          "labels": ["kind:defect", "status:claimed"],
+          "claimed_at": "2025-10-09T03:53:20Z"
+        }
+      ],
+      "open_prs": [{ "number": 3900, "body": "Closes #3699", "head": "surface-3699-fix" }],
+      "merged_body": "Closes #3001\n"
+    },
+    "output": "3680\tsilent"
+  }
+]

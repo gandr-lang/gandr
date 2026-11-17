@@ -1,0 +1,112 @@
+error[ComposeDoesNotFill]: a composite needs its cells to meet end to end along the chain
+  ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:8:3
+  │
+7 │   def apart(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(x, z)) -> Path(x, z) =
+  │   │         ┬         ┬      ┬      ┬      ┬               ─ checked against `Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds q : Path[.A = A](x, z)
+  │   │         │         │      │      │      │
+  │   │         │         │      │      │      checked against `Path[.A = A](x, y) -> Path[.A = A](x, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds p : Path[.A = A](x, y)
+  │   │         │         │      │      checked against `(a : A) -> Path[.A = A](x, y) -> Path[.A = A](x, a) -> -F Path[.A = A](x, a)`; while checking the body of this function; binds z : A
+  │   │         │         │      checked against `(a : A) -> (b : A) -> Path[.A = A](x, a) -> Path[.A = A](x, b) -> -F Path[.A = A](x, b)`; while checking the body of this function; binds y : A
+  │   │         │         checked against `(a : A) -> (b : A) -> (c : A) -> Path[.A = A](a, b) -> Path[.A = A](a, c) -> -F Path[.A = A](a, c)`; while checking the body of this function; binds x : A
+  │ ┌─┘         checked; while checking the body of this function; binds A : Type
+  │ │
+8 │ │   compose[3, 5] (chain 2) (p, q)
+  │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+  │ └───│────────────────────────────┤
+  │     │                            checked against `(a : Type, b : a, c : a, d : a, Path[.A = a](b, c), Path[.A = a](b, d)) -> Path[.A = a](b, d)`; while checking the body of this thunk
+  │     cells that do not fill the chain
+  │
+  ├ note: `apart` is refused with ComposeDoesNotFill, as its expectation states
+  ╰ help: start each cell at the point where the cell before it ends
+
+error[ComposeDoesNotFill]: a composite needs each column's 2-cells to meet end to end
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:35:3
+   │
+24 │ ┌ def columnApart(
+25 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+26 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+27 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+28 │ │   f : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+29 │ │   g : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+30 │ │   h : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds h : Path[.A = A](x, y)
+31 │ │   k : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds k : Path[.A = A](x, y)
+32 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+   │ │   ─ checked; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+33 │ │   b : Path[.A = Path[.A = A](x, y)](h, k)
+   │ │   ─ checked against `Path[.A = Path[.A = A](x, y)](h, k) -> -F Path[.A = Path[.A = A](x, y)](f, k)`; while checking the body of this function; binds b : Path[.A = Path[.A = A](x, y)](h, k)
+34 │ │ ) -> Path[.A = Path[.A = A](x, y)](f, k) =
+35 │ │   compose[4, 9] (chain 1 2) (a, b)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│──────────────────────────────┤
+   │     │                              checked; while checking the body of this thunk
+   │     2-cells that do not fill their column
+   │
+   ├ note: `columnApart` is refused with ComposeDoesNotFill, as its expectation states
+   ╰ help: start each 2-cell of a column at the 1-cell where the 2-cell before it ends
+
+error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column of 2-cells
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:52:3
+   │
+42 │ ┌ def columnFlat(
+43 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+44 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+45 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+46 │ │   z : A,
+   │ │   ─ checked; while checking the body of this function; binds z : A
+47 │ │   f : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+48 │ │   g : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+49 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+   │ │   ─ checked against `Path[.A = Path[.A = A](x, y)](f, g) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+50 │ │   h : Path(y, z)
+   │ │   ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds h : Path[.A = A](y, z)
+51 │ │ ) -> Path[.A = A](x, z) =
+52 │ │   compose[5, 11] (chain 2 (1, 1)) (a, h)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│────────────────────────────────────┤
+   │     │                                    checked; while checking the body of this thunk
+   │     a 1-cell in a column of 2-cells
+   │
+   ├ note: `columnFlat` is refused with ComposeDoesNotFill, as its expectation states
+   ╰ help: write a 2-cell at this place, or give its column the height 0 to hold one 1-cell
+
+error[ComposeDoesNotFill]: a composite needs a 2-cell at each place of a column of 2-cells
+   ╭▸ corpus/ledger/diagnostics/ComposeDoesNotFill.gandr:69:3
+   │
+59 │ ┌ def emptyThenFlat(
+60 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+61 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+62 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+63 │ │   z : A,
+   │ │   ─ checked; while checking the body of this function; binds z : A
+64 │ │   f : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds f : Path[.A = A](x, y)
+65 │ │   g : Path(x, y),
+   │ │   ─ checked; while checking the body of this function; binds g : Path[.A = A](x, y)
+66 │ │   a : Path[.A = Path[.A = A](x, y)](f, g),
+   │ │   ─ checked against `Path[.A = Path[.A = A](x, y)](f, g) -> Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds a : Path[.A = Path[.A = A](x, y)](f, g)
+67 │ │   h : Path(y, z)
+   │ │   ─ checked against `Path[.A = A](y, z) -> -F Path[.A = A](x, z)`; while checking the body of this function; binds h : Path[.A = A](y, z)
+68 │ │ ) -> Path[.A = A](x, z) =
+69 │ │   compose[4, 9] (chain 2 (0, 1)) (a, h)
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+   │ └───│───────────────────────────────────┤
+   │     │                                   checked; while checking the body of this thunk
+   │     a 1-cell in a column of 2-cells
+   │
+   ├ note: `emptyThenFlat` is refused with ComposeDoesNotFill, as its expectation states
+   ╰ help: write a 2-cell at this place, or give its column the height 0 to hold one 1-cell

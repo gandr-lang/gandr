@@ -1,0 +1,5 @@
+{CONFIG}
+
+def both(c : Config[secure ↦ *{{.port = 443, .tls = true}}, addr ↦ *{{.host = "localhost", .port = 443}}]) -> Integer {{ c.port }}
+
+def twice(c : Config[secure ↦ *{{.port = 443, .tls = true}}, secure ↦ *{{.port = 443, .tls = true}}]) -> Integer {{ 0 }}

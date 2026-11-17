@@ -1,0 +1,3 @@
+/// [guide]: https://example.org
+/// See [guide].
+def x = 1;
