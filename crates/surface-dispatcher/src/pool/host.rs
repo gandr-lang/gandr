@@ -1864,6 +1864,27 @@ mod tests
         drop(std::fs::remove_dir_all(&directory));
     }
 
+    /// #7687: a child that a spawn forks holds a copy of each descriptor until
+    /// it execs. The copy here stands for that child, and lives past the drop.
+    #[test]
+    fn a_copy_of_the_owner_s_file_keeps_no_lock_past_the_hub_s_drop_7687()
+    {
+        let directory = scratch(Scratch("copied"));
+        let counter =
+            HostCounter::with(&directory, Threads::from(NonZeroUsize::new(2).unwrap())).unwrap();
+        let copy = counter._owner.try_clone().unwrap();
+        drop(counter);
+        assert!(
+            matches!(
+                Host::join(&directory, Class::Batch),
+                Maybe::Absent(unhosted::Absent::Unowned)
+            ),
+            "the hub's drop lets the owner's lock go while a copy lives"
+        );
+        drop(copy);
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
     /// #7706: the hub sets the counter to the profile's width, and each joiner
     /// reads that width, not the host's topology.
     #[test]
