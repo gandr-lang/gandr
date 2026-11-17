@@ -606,6 +606,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the help text, diagnostic
 fn malformed(
     form: Spoken,
     fault: FormFault,

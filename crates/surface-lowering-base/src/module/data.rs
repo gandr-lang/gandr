@@ -1851,6 +1851,11 @@ impl<'source> Collector<'_, 'source>
     ///   vector's `Cons` states one index past its parameter.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_non_uniform_generator_is_refused`
     /// - witness: `gandr-surface-lowering::lower::native::tests::an_indexed_family_lowers_its_indices`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the result, growth within the result's own
+    ///   buffer
+    /// - allocation: the indices of the result, durable by the generator
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|indices| indices.len() == kinds.len())
         || matches!(ret, Err(LoweringRefusal::UnknownMold { .. }))
         || matches!(ret, Err(LoweringRefusal::NonUniformResult { span }) if span == result.span))]

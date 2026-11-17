@@ -621,6 +621,10 @@ pub(super) fn verify(
 /// [`ExemplarFault::Unparsed`], [`ExemplarFault::Refused`] for a source the
 /// lowering refuses whole, or [`ExemplarFault::Unrefused`].
 ///
+/// # Cost
+/// - allocation: the exemplar's text and the text of each finding, growth
+///   within the exemplar's file
+///
 /// # Adequacy
 /// - hypothesis: L3 — every committed exemplar holds; one stating another name,
 ///   and one whose boundary declaration is not refused there, are unrefused.

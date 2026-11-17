@@ -678,6 +678,9 @@ struct Lowerer<'run, 'source>
 /// # Adequacy
 /// - hypothesis: L3 — every witness of [`lower_unit`] runs through this entry.
 /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+///
+/// # Cost
+/// - allocation: the lowered module and its tables, durable by the source
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| {
     usize::from(module.origins().declaration_count()) == module.declarations().iter().len()
 }))]
@@ -838,6 +841,9 @@ pub fn lower_module<'source>(
 /// - witness: `tests::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
 /// - witness: `tests::recognition::user_shadowing_is_the_only_observable_delta`
 /// - witness: `tests::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+///
+/// # Cost
+/// - allocation: the lowered module and its tables, durable by the source
 #[spec(
     ensures: |ret| {
         let agrees = tree.grammar() == pbg.fingerprint();

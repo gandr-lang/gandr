@@ -853,6 +853,10 @@ impl<'source> Context<'_, 'source>
     ///   unanswered and two as ambiguous, naming both.
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::an_omitted_instance_is_refused_when_none_or_several_stand_2271`
+    ///
+    /// # Cost
+    /// - allocation: the name of the wanted interface, growth within the
+    ///   omitted instances
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::InstanceUnanswered { .. } | LoweringRefusal::InstanceAmbiguous { .. } | LoweringRefusal::MalformedForm { .. })))]
     #[inline]
     pub fn resolved_instance(

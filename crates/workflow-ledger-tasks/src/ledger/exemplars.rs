@@ -988,6 +988,9 @@ struct Header
 /// [`ExemplarFault::Refused`] with the lowering's account, or
 /// [`ExemplarFault::Unfiled`] naming the attribute.
 ///
+/// # Cost
+/// - allocation: the text of each finding, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — every committed attribute exemplar files its attribute;
 ///   an exemplar naming an unregistered attribute is refused, and a `doc`

@@ -156,6 +156,9 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 ///   are not exhausted.
 /// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+///
+/// # Cost
+/// - allocation: the theory rule and its adaptation records, setup
 #[spec(captures: before = out.len(), ensures: |()| out.len() == before.saturating_add(1) && out.get(before).is_some_and(|rule| rule.name().0 == "theory_declaration" && rule.provenance().0 == "theory_declaration" && rule.sort() == Sort::Item && rule.prec() == p))]
 fn theory_declaration(
     out: &mut Vec<Rule>,

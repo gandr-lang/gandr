@@ -689,6 +689,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::foreign`].
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
+    ///
+    /// # Cost
+    /// - allocation: the parameters and the name of the operation, durable by
+    ///   the extern block
     #[spec(ensures: |ref ret| ret.as_ref().is_ok() || matches!(*ret, Err(LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::MalformedForm { .. })))]
     fn operation(
         &self,

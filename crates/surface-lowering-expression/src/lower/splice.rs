@@ -116,6 +116,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   [`Self::splice`](crate::lower::Expressions::splice).
     /// - witness: `gandr-surface-lowering::lower::splice::tests::a_splice_is_a_hole_carrying_its_tactic_2762`
     /// - witness: `gandr-surface-lowering::lower::splice::tests::an_operand_writing_no_tactic_is_refused_2762`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of a form out of shape, error path
     #[spec(ensures: |ret| ret.as_ref().map_or_else(
         |refusal| matches!(*refusal, LoweringRefusal::UnknownTactic { span } if span == operand.span)
             || !matches!(*refusal, LoweringRefusal::UnknownTactic { .. }),

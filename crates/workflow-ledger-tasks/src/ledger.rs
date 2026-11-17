@@ -665,6 +665,10 @@ impl SyntaxLedger
     /// [`LedgerFault::Grammar`], [`LedgerFault::Molds`],
     /// [`LedgerFault::Group`] or [`LedgerFault::Attribute`].
     ///
+    /// # Cost
+    /// - allocation: the rows of the ledger, growth within the rules and the
+    ///   attributes
+    ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — the built-in grammar is a finite census: the rows'
     ///   count equals the rules', the molds the rows name are every mold once,
@@ -2075,6 +2079,10 @@ impl core::fmt::Display for RuleStatus
 ///
 /// # Errors
 /// [`LedgerFault::Unshown`] naming the exemplar.
+///
+/// # Cost
+/// - allocation: the exemplar's path and text, growth within the exemplar's
+///   file
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every committed rule's exemplar is read, and the rules

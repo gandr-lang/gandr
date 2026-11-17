@@ -652,6 +652,9 @@ fn upstream<'step>(
 ///   and the normal forms in order; a refusal of another kind, and a divergent
 ///   refusal whose pair the composition does not hold, read none.
 /// - witness: `tests::entry::a_rules_refusal_reads_its_parting_pair_and_no_other_refusal_does`
+///
+/// # Cost
+/// - allocation: the parting pair of a refused block, diagnostic
 #[spec(ensures: |ret| match (refusal, ret) {
     (Refusal::Lowering(LoweringRefusal::RulesDiverge { span, first } | LoweringRefusal::RulesUncompleted { span, first }), Maybe::Present(pair)) =>
         pair.cells.later == span && pair.cells.earlier == first,

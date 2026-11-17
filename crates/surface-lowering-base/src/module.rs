@@ -4003,6 +4003,10 @@ pub fn source_pieces(
 /// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
 /// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
+///
+/// # Cost
+/// - allocation: the slots, the imports and the marks of the source, durable by
+///   the module
 #[spec(
     captures: before = collected.slots.len(),
     ensures: |ret| {
@@ -5257,6 +5261,10 @@ impl<'source> Collector<'_, 'source>
     ///   refuse.
     /// - witness: `gandr-surface-lowering::tests::description::a_held_member_states_its_own_expectation_1462`
     /// - witness: `gandr-surface-lowering::tests::description::member_refusals_keep_their_spans_and_other_declarations`
+    ///
+    /// # Cost
+    /// - allocation: the held slots of the members and their attribute blocks,
+    ///   durable by the slot
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -7572,6 +7580,10 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
     /// - witness: `gandr-surface-lowering::tests::modules::a_top_level_module_is_named_in_either_case_4529`
     /// - witness: `gandr-surface-lowering::tests::modules::a_repaired_container_keeps_its_member`
+    ///
+    /// # Cost
+    /// - allocation: the header of the module and the members it lists, durable
+    ///   by the module form
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or_else(
