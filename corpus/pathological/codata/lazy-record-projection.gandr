@@ -20,19 +20,19 @@ def swapped(n : Integer) -> &{get : -F Integer, put : -F String} =
 
 /// `missing_label` selects a size label that the record does not have.
 @[refuses("UnresolvedName")]
-def missing_label(m : +U &{get : -F Integer, put : -F String}) -> -F Integer =
+def missing_label(m : +U &{get : -F Integer, put : -F String}) -> Integer =
   m.size
 
 /// `past_the_end` selects position two from a two-entry record.
 /// The positions of a two-entry record are `0` and `1`.
 @[refuses("UnresolvedName")]
-def past_the_end(m : +U &{get : -F Integer, put : -F String}) -> -F Integer =
+def past_the_end(m : +U &{get : -F Integer, put : -F String}) -> Integer =
   m.2
 
 /// `chain_label` selects a label from a positional product.
 /// The product has positional entries only.
 @[refuses("UnresolvedName")]
-def chain_label(m : +U (-F Integer & -F String)) -> -F Integer =
+def chain_label(m : +U (-F Integer & -F String)) -> Integer =
   m.get
 
 /// `wrong_place` requests an Integer from position one.
@@ -42,5 +42,5 @@ def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> Integer =
 
 /// `not_a_record` selects a record label from a product.
 @[refuses("OutOfFragment.WrongSort")]
-def not_a_record(m : +U (-F Integer)) -> -F Integer =
+def not_a_record(m : () -> Integer) -> Integer =
   become m.get

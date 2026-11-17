@@ -41,6 +41,7 @@ use crate::leaf::Documentation;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
 use crate::leaf::Offside;
+use crate::leaf::Origin;
 use crate::leaf::Owner;
 use crate::leaf::copied;
 use crate::merge::Joining;
@@ -1621,6 +1622,7 @@ impl<'source> Respelling<'_, 'source>
         let mut out = Builder {
             leaves: Vec::new(),
             position: ByteSpan::new(extent.start(), extent.start()).unwrap_or(extent),
+            form: extent,
             owner: Owner::Form(self.form),
         };
         let mut index = Position::First;
@@ -1999,6 +2001,7 @@ impl<'source> Respelling<'_, 'source>
         let mut out = Builder {
             leaves: Vec::new(),
             position,
+            form: extent,
             owner: Owner::Form(self.form),
         };
         let direction = self.chosen.direction;
@@ -3784,6 +3787,8 @@ struct Builder<'source>
     /// Where a leaf the rewrite writes stands: the form's start, no bytes
     /// wide.
     position: ByteSpan,
+    /// The source extent of the form the leaves respell.
+    form: ByteSpan,
     /// The top-level form the leaves belong to.
     owner: Owner,
 }
@@ -3809,6 +3814,7 @@ impl<'source> Builder<'source>
             context: Spacing::Written,
             offside: Offside::Written,
             branch: None,
+            origin: Origin::Rewrite(self.form),
         }
     }
 
@@ -3913,6 +3919,9 @@ impl<'source> Builder<'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the operand's leaves, growth within the form's leaves
     fn place(
         &mut self,
         operand: &Operand<'source>,

@@ -292,7 +292,7 @@ def joined_elided(n : Nat) -> -F Nat =
   m
 
 @[refuses("MalformedForm")]
-def rec stream(n : Nat) -> Stream(Nat) {
+def rec stream(n : Nat) -> Stream Nat {
   .head => return n,
   .tail => stream[>] (Succ n)
 }

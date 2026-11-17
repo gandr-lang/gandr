@@ -40,6 +40,8 @@ use quenchant_shape::shape::Maybe;
 
 use crate::Withdrawal;
 use crate::Withdrawn;
+use crate::site::Placement;
+use crate::site::Sites;
 
 /// Whether two lowerings mean one thing.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,6 +49,8 @@ pub enum Agreement
 {
     /// Every declaration lowered to the same core.
     Same,
+    /// The rewritten text has other parser obligations.
+    ParserObligations(Vec<Differing>),
     /// These declarations of the first lowered otherwise in the second, in
     /// order.
     Declarations(Vec<Differing>),
@@ -144,42 +148,6 @@ pub fn lowered<'source>(
     .ok()
 }
 
-/// The declarations `module` refused at or after `base`, where no rewrite's
-/// meaning can be checked: the keys of the forms holding each — its
-/// signature, definition and duplicate — and its withdrawal, the refusal its
-/// reason.
-///
-/// # Specification
-/// trivial.
-pub fn refused(
-    module: &LoweredModule<'_>,
-    base: ByteOffset,
-) -> Vec<Differing>
-{
-    module
-        .declarations()
-        .iter()
-        .filter(|declaration| declaration.span().start() >= base)
-        .filter_map(|declaration| match declaration.outcome() {
-            DeclarationOutcome::Refused(refusal) => Some(Differing {
-                keys: halves(declaration).collect(),
-                withdrawal: Withdrawal {
-                    declaration: format!("{}", declaration.name()),
-                    span: own(declaration.span(), base),
-                    reason: Withdrawn::Unchecked(format!("{refusal}")),
-                },
-            }),
-            DeclarationOutcome::Completed { .. }
-            | DeclarationOutcome::Uncompleted { .. }
-            | DeclarationOutcome::Bodied { .. }
-            | DeclarationOutcome::Data(_)
-            | DeclarationOutcome::Codata(_)
-            | DeclarationOutcome::Abstract(_)
-            | DeclarationOutcome::World => None,
-        })
-        .collect()
-}
-
 /// The withdrawal of each declaration `module` lowered at or after `base`
 /// whose forms' keys `held` accepts and whose name `reader` maps to the
 /// declaration that reads it: the declarations a reader's meaning depends on
@@ -218,6 +186,47 @@ where
             })
         })
         .collect()
+}
+
+/// The declarations whose rewritten candidate has other parser obligations.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the obligations of each text and the differing declarations,
+///   growth within the parser's obligations
+pub fn parser_obligations(
+    module: &LoweredModule<'_>,
+    base: ByteOffset,
+    forms: &[(NodeKey, ByteSpan)],
+) -> Vec<Differing>
+{
+    let mut differing = Vec::with_capacity(forms.len());
+    for &(key, form) in forms {
+        let declaration = module.declarations().iter().find(|declaration| {
+            let span = own(declaration.span(), base);
+            span.start() < form.end() && form.start() < span.end()
+        });
+        let (declaration, span) = declaration.map_or_else(
+            || (String::from("source"), form),
+            |declaration| {
+                (
+                    format!("{}", declaration.name()),
+                    own(declaration.span(), base),
+                )
+            },
+        );
+        differing.push(Differing {
+            keys: Vec::from([key]),
+            withdrawal: Withdrawal {
+                declaration,
+                span,
+                reason: Withdrawn::Obligations,
+            },
+        });
+    }
+    differing
 }
 
 /// The keys of the forms holding `declaration`: its signature, its
@@ -272,10 +281,12 @@ pub fn unelaborated(
 ///   returned composite read as its fold, as the bridge erases it — bodies that
 ///   are not counting as equal where `elaborated` holds equal elaborations of
 ///   both, whose seals agree but for their types' positions, and whose refusals
-///   are of one kind; else [`Agreement::Declarations`] with each of `before`'s
-///   declarations whose pair is not so, in order: the keys of the forms holding
-///   it, its name, its span in the source starting at `base`, and why — the
-///   refusal the rewritten declaration met, or that it lowered otherwise.
+///   are of one kind at one site under `sites`; else
+///   [`Agreement::Declarations`] with each of `before`'s declarations whose
+///   pair is not so, in order: the keys of the forms holding it, its name, its
+///   span in the source starting at `base`, and why — the refusal the rewritten
+///   declaration met, refused otherwise where both are refused, or that it
+///   lowered otherwise.
 /// - provides: the check a rewrite's output passes.
 /// - fails: never.
 /// - panics: none.
@@ -287,11 +298,16 @@ pub fn unelaborated(
 /// - witness: `rewrite::tests::a_rewrite_that_changes_what_a_source_means_is_withdrawn`
 /// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
 /// - witness: `tests::rewrite::a_rewrite_is_checked_beside_every_kind_of_declaration`
+/// - witness: `tests::rewrite::a_rewrite_that_moves_a_refusal_keeps_its_site_6726`
+///
+/// # Cost
+/// - allocation: the differing declarations, growth within the module's
+///   declarations
 #[spec(ensures: |ret| !matches!(ret, Agreement::Declarations(ref keys) if keys.is_empty()))]
 pub fn agree(
     arena: &CoreArena,
     (before, after): (&LoweredModule<'_>, &LoweredModule<'_>),
-    base: ByteOffset,
+    (base, sites): (ByteOffset, &Sites),
     elaborated: Option<&Elaborated<'_>>,
 ) -> Agreement
 {
@@ -420,6 +436,7 @@ pub fn agree(
                     (DeclarationOutcome::World, DeclarationOutcome::World) => true,
                     (DeclarationOutcome::Refused(left), DeclarationOutcome::Refused(right)) => {
                         discriminant(&left) == discriminant(&right)
+                            && sites.placed(base, (left.span(), right.span())) == Placement::Same
                     },
                     _ => false,
                 }
@@ -429,7 +446,7 @@ pub fn agree(
             withdrawal: Withdrawal {
                 declaration: format!("{}", left.name()),
                 span: own(left.span(), base),
-                reason: reason(right.outcome()),
+                reason: reason(left.outcome(), right.outcome()),
             },
         })
         .collect();
@@ -457,22 +474,34 @@ fn own(
     ByteSpan::new(shift(span.start()), shift(span.end())).unwrap_or(span)
 }
 
-/// Why a declaration whose rewritten text lowered to `outcome` keeps its
-/// spelling.
+/// Why a declaration that lowered to `written` and, rewritten, to `outcome`
+/// keeps its spelling.
 ///
 /// # Specification
 /// trivial.
-fn reason(outcome: DeclarationOutcome<'_>) -> Withdrawn
+///
+/// # Cost
+/// - allocation: the text of the reason, diagnostic
+fn reason(
+    written: DeclarationOutcome<'_>,
+    outcome: DeclarationOutcome<'_>,
+) -> Withdrawn
 {
-    match outcome {
-        DeclarationOutcome::Refused(refusal) => Withdrawn::Refused(format!("{refusal}")),
-        DeclarationOutcome::Completed { .. }
-        | DeclarationOutcome::Uncompleted { .. }
-        | DeclarationOutcome::Bodied { .. }
-        | DeclarationOutcome::Data(_)
-        | DeclarationOutcome::Codata(_)
-        | DeclarationOutcome::Abstract(_)
-        | DeclarationOutcome::World => Withdrawn::Lowered,
+    match (written, outcome) {
+        (DeclarationOutcome::Refused(_), DeclarationOutcome::Refused(refusal)) => {
+            Withdrawn::Otherwise(format!("{refusal}"))
+        },
+        (_, DeclarationOutcome::Refused(refusal)) => Withdrawn::Refused(format!("{refusal}")),
+        (
+            _,
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World,
+        ) => Withdrawn::Lowered,
     }
 }
 

@@ -21,7 +21,7 @@ def seed : Integer = prim.const 40 (prim.id 999);
 /// The lowering accepts no grade other than `ω`.
 @[refuses("GradedBridge")]
 def plus_two : +U[1] (Integer -> -F Integer);
-def plus_two(x : Integer) -> -F Integer =
+def plus_two(x : Integer) -> Integer =
   return (x + 2)
 
 /// `seeded` applies `plus_two`, which the checker refuses above, to `seed`.

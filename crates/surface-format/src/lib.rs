@@ -292,6 +292,8 @@ mod reduct;
 
 mod rewrite;
 
+mod site;
+
 mod space;
 
 mod tail;
@@ -354,6 +356,8 @@ pub use crate::rewrite::Rewrite;
 pub use crate::rewrite::RewriteName;
 pub use crate::rewrite::Selection;
 pub use crate::rewrite::Spelling;
+use crate::site::Placement;
+use crate::site::Sites;
 
 /// How a source is formatted.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -454,6 +458,8 @@ pub enum Change
     Material,
     /// A comment's owner or its role among the owner's children.
     Attachment,
+    /// The output pieces cannot map to the source pieces.
+    Pieces,
 }
 
 impl From<BuildError> for FormatError
@@ -511,6 +517,9 @@ impl fmt::Display for FormatError
                     "formatting would move a comment off the node it belongs to"
                 )
             },
+            Self::Changed(Change::Pieces) => {
+                write!(f, "formatting could not map output pieces to the source")
+            },
         }
     }
 }
@@ -526,6 +535,18 @@ pub struct Formatted
     /// Each declaration whose rewrites were withdrawn, in the order the
     /// checks found them.
     withdrawn: Vec<Withdrawal>,
+}
+/// One formatter pass and its rewrite state.
+///
+/// # Specification
+///
+/// trivial.
+struct Pass
+{
+    /// The formatted source from this pass.
+    formatted: Formatted,
+    /// Whether this pass admitted a rewrite.
+    rewritten: bool,
 }
 
 impl Formatted
@@ -594,14 +615,17 @@ pub struct Withdrawal
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Withdrawn
 {
+    /// Rewritten, the text has other parser obligations.
+    Obligations,
     /// Rewritten, the declaration is refused: the refusal, as the lowering
     /// writes it.
     Refused(String),
     /// Rewritten, the declaration lowers to other core.
     Lowered,
-    /// As written, the declaration is refused, so no rewrite's meaning can be
-    /// checked: the refusal, as the lowering writes it.
-    Unchecked(String),
+    /// As written, the declaration is refused, and rewritten, it is refused
+    /// by another refusal or at another site under the map of the rewrite:
+    /// the rewritten refusal, as the lowering writes it.
+    Otherwise(String),
     /// Rewritten, a declaration that reads it — named here — would lower
     /// otherwise, though the declaration's own meaning holds: that reader
     /// reads its spelling, not only its type.
@@ -621,12 +645,13 @@ impl fmt::Display for Withdrawn
     ) -> fmt::Result
     {
         match *self {
+            Self::Obligations => f.write_str("rewritten, it has other parser obligations"),
             Self::Refused(ref refusal) => write!(f, "rewritten, it is refused: {refusal}"),
             Self::Lowered => f.write_str("rewritten, it would lower to other core"),
-            Self::Unchecked(ref refusal) => {
+            Self::Otherwise(ref refusal) => {
                 write!(
                     f,
-                    "as written, it is refused, so no rewrite can be checked: {refusal}"
+                    "as written, it is refused, and rewritten, it is refused otherwise: {refusal}"
                 )
             },
             Self::Read(ref reader) => write!(
@@ -798,6 +823,10 @@ pub fn declared_form(
 /// - witness: `tests::rewrite::a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255`
 /// - witness: `tests::rewrite::an_inserted_thunk_follows_the_checker_s_elaborations`
 /// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
+///
+/// # Cost
+/// - allocation: the text, the pieces and the withdrawals of each pass, growth
+///   within the source's leaves
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |formatted| formatted.pieces.windows(2).all(|pair| matches!(pair, [left, right] if left.source.end() <= right.source.start() && left.formatted.end() <= right.formatted.start()))))]
 #[inline]
 pub fn format_beside(
@@ -806,6 +835,51 @@ pub fn format_beside(
     options: FormatOptions,
     (beside, checker): (Beside<'_>, Option<&dyn Elaborate>),
 ) -> Result<Formatted, FormatError>
+{
+    let first = format_once(grammar, parsed, options, (beside, checker))?;
+    if !first.rewritten {
+        return Ok(first.formatted);
+    }
+    let mut source = first.formatted.text;
+    let mut pieces = first.formatted.pieces;
+    loop {
+        let parsed =
+            parse(grammar, SourceText::from(source.as_str())).map_err(FormatError::Reparse)?;
+        let next = format_once(grammar, &parsed, options, (beside, checker))?;
+        let rewritten = next.rewritten;
+        let Formatted {
+            text,
+            pieces: next_pieces,
+            withdrawn,
+        } = next.formatted;
+        let composed = compose_pieces(&pieces, &next_pieces)?;
+        if !rewritten || text == source {
+            return Ok(Formatted {
+                text,
+                pieces: composed,
+                withdrawn,
+            });
+        }
+        source = text;
+        pieces = composed;
+    }
+}
+
+/// Format one candidate before a later rewrite pass.
+///
+/// # Specification
+///
+/// trivial.
+///
+/// # Cost
+/// - allocation: the leaves, the text, the pieces and the withdrawals of the
+///   pass, growth within the source's leaves
+fn format_once(
+    grammar: &Pbg,
+    parsed: &ParseResult<'_>,
+    options: FormatOptions,
+    (beside, checker): (Beside<'_>, Option<&dyn Elaborate>),
+) -> Result<Pass, FormatError>
 {
     let tree = parsed.tree();
     let source = tree.source();
@@ -848,14 +922,8 @@ pub fn format_beside(
             &mut arena,
         )
     });
-    let refused = lowered
-        .as_ref()
-        .map_or_default(|module| meaning::refused(module, base));
-    let mut withdrawn: Vec<NodeKey> = refused
-        .iter()
-        .flat_map(|declaration| declaration.keys.iter().copied())
-        .collect();
-    let mut held: BTreeSet<NodeKey> = withdrawn.iter().copied().collect();
+    let mut withdrawn: Vec<NodeKey> = Vec::new();
+    let mut held: BTreeSet<NodeKey> = BTreeSet::new();
     let composites = match (chosen, lowered.as_ref()) {
         (Some(_), Some(module)) => composite::Composites::of(module, &arena, base),
         (Some(_) | None, _) => composite::Composites::default(),
@@ -939,51 +1007,6 @@ pub fn format_beside(
         ByteOffset::from(<&str>::from(source).len()),
     )
     .ok();
-    if let (Some(chosen), false) = (chosen, refused.is_empty()) {
-        let any = composite::Composites::any();
-        let every = tail::Tails::any();
-        // A refused declaration has no lowering to list its linear runs from,
-        // so none is reported for one.
-        let unthunked = thunk::Thunks::default();
-        let unapplied = Reducts::default();
-        let whole: Vec<ByteSpan> = everywhere.into_iter().collect();
-        let unchecked = |called: &[ByteSpan]| {
-            write(
-                grammar,
-                tree,
-                &flat,
-                (
-                    Some(rewrite::Rewrites {
-                        chosen,
-                        withdrawn: &[],
-                        composites: &any,
-                        tails: &every,
-                        thunks: &unthunked,
-                        reducts: &unapplied,
-                        unreduced: &[],
-                        called,
-                    }),
-                    &merge::Apart::default(),
-                ),
-                &layout,
-                ending,
-                options.comment,
-            )
-        };
-        let unchecked = match unchecked(&[]) {
-            Err(FormatError::Unbalanced) => unchecked(&whole),
-            written => written,
-        }?;
-        let respelled: BTreeSet<NodeIndex> = unchecked.respelled.iter().copied().collect();
-        for declaration in refused {
-            if top_forms(tree, &declaration.keys)
-                .iter()
-                .any(|form| respelled.contains(form))
-            {
-                reports.push(declaration.withdrawal);
-            }
-        }
-    }
     let mut stuck = Vec::new();
     let mut fresh: Vec<NodeKey> = Vec::new();
     let mut retried: Vec<ByteSpan> = Vec::new();
@@ -1047,7 +1070,7 @@ pub fn format_beside(
         }
         let agreement = verify_rewritten(
             grammar,
-            (parsed, &laid.leaves, text),
+            (parsed, &laid.leaves, &laid.respelled, text),
             (SourceText::from(before), unit),
             (&mut arena, lowered),
             checker.map(|checker| (checker, &mut elaborations)),
@@ -1055,6 +1078,27 @@ pub fn format_beside(
         match agreement {
             Agreement::Same => {
                 return Ok(laid.formatted(reports));
+            },
+            Agreement::ParserObligations(differing) => {
+                let before = withdrawn.len();
+                for declaration in differing {
+                    fresh.clear();
+                    fresh.extend(
+                        declaration
+                            .keys
+                            .iter()
+                            .copied()
+                            .filter(|key| !held.contains(key)),
+                    );
+                    if !fresh.is_empty() {
+                        held.extend(fresh.iter().copied());
+                        withdrawn.append(&mut fresh);
+                        reports.push(declaration.withdrawal);
+                    }
+                }
+                if withdrawn.len() == before {
+                    return Err(FormatError::Changed(Change::Meaning));
+                }
             },
             Agreement::Declarations(differing) => {
                 let before = withdrawn.len();
@@ -1072,6 +1116,44 @@ pub fn format_beside(
                 stuck.clear();
                 recalled.clear();
                 for declaration in differing {
+                    // A declaration that is refused as written and refused
+                    // otherwise once rewritten keeps its spelling, reported.
+                    // Where no key of its own is left to hold, as for a root
+                    // expression, the top-level form that holds its span keeps
+                    // its spelling.
+                    if let Withdrawn::Otherwise(_) = declaration.withdrawal.reason {
+                        fresh.clear();
+                        fresh.extend(
+                            declaration
+                                .keys
+                                .iter()
+                                .copied()
+                                .filter(|key| !held.contains(key)),
+                        );
+                        if fresh.is_empty() {
+                            let span = declaration.withdrawal.span;
+                            fresh.extend(
+                                tree.children(tree.root())
+                                    .filter(|&form| {
+                                        tree.node(form).is_some_and(|form| {
+                                            form.span().start() <= span.start()
+                                                && span.end() <= form.span().end()
+                                        })
+                                    })
+                                    .filter_map(|form| tree.key(form))
+                                    .filter(|key| !held.contains(key)),
+                            );
+                        }
+                        if fresh.is_empty() {
+                            stuck.push(declaration);
+                        }
+                        else {
+                            held.extend(fresh.iter().copied());
+                            withdrawn.append(&mut fresh);
+                            reports.push(declaration.withdrawal);
+                        }
+                        continue;
+                    }
                     let forms = forms_of(tree, &declaration.keys);
                     if checker.is_some()
                         && thunk::thunked(&flat.leaves, Some(&forms)) == thunk::Thunked::Written
@@ -1185,6 +1267,47 @@ pub fn format_beside(
             },
         }
     }
+}
+
+/// Compose pieces through one candidate source.
+///
+/// # Specification
+///
+/// trivial.
+///
+/// # Cost
+/// - allocation: the composed pieces, growth within the pieces of the passes
+fn compose_pieces(
+    previous: &[Piece],
+    next: &[Piece],
+) -> Result<Vec<Piece>, FormatError>
+{
+    let mut composed: Vec<Piece> = Vec::with_capacity(next.len());
+    for later in next {
+        let mut matching = previous.iter().filter(|earlier| {
+            earlier.formatted.start() < later.source.end()
+                && later.source.start() < earlier.formatted.end()
+        });
+        let Some(first) = matching.next()
+        else {
+            return Err(FormatError::Changed(Change::Pieces));
+        };
+        let source = matching.fold(first.source, |source, earlier| source.join(earlier.source));
+        if let Some(previous) = composed.last_mut()
+            && previous.source == source
+        {
+            previous.formatted = previous.formatted.join(later.formatted);
+            previous.layout = later.layout;
+        }
+        else {
+            composed.push(Piece {
+                source,
+                formatted: later.formatted,
+                layout: later.layout,
+            });
+        }
+    }
+    Ok(composed)
 }
 
 /// Which type applications the formatter writes back in their call form.
@@ -1343,12 +1466,16 @@ impl Written<'_>
     fn formatted(
         self,
         withdrawn: Vec<Withdrawal>,
-    ) -> Formatted
+    ) -> Pass
     {
-        Formatted {
-            text: self.text,
-            pieces: self.pieces,
-            withdrawn,
+        let rewritten = !self.respelled.is_empty();
+        Pass {
+            formatted: Formatted {
+                text: self.text,
+                pieces: self.pieces,
+                withdrawn,
+            },
+            rewritten,
         }
     }
 }
@@ -2097,16 +2224,27 @@ type Elaborations = Option<Elaboration>;
 
 /// Check that `text`, the source rewritten, spells the tokens and block
 /// comments of `written`, and keeps each line comment's words in its role;
-/// then lower it after `before` in `unit` into `arena` beside `lowered`, and
-/// say which declarations lowered otherwise — where some did and `checked`
-/// gives a checker, those it does not elaborate alike, the source elaborated
-/// into `checked`'s slot the first time one does.
+/// then compare its parser obligations with the source's, each by its class
+/// and its site through the map of the pass that `written` holds; then lower
+/// it after `before` in `unit` into `arena` beside `lowered`, and say which
+/// declarations lowered otherwise — where some did and `checked` gives a
+/// checker, those it does not elaborate alike, the source elaborated into
+/// `checked`'s slot the first time one does.
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the candidate's parse and lowering, the map and the
+///   elaborations, growth within the candidate's leaves
 fn verify_rewritten(
     grammar: &Pbg,
-    (parsed, written, text): (&ParseResult<'_>, &[Leaf<'_>], SourceText<'_>),
+    (parsed, written, respelled, text): (
+        &ParseResult<'_>,
+        &[Leaf<'_>],
+        &[NodeIndex],
+        SourceText<'_>,
+    ),
     (before, unit): (SourceText<'_>, &LoweringUnit),
     (arena, lowered): (&mut CoreArena, &LoweredModule<'_>),
     checked: Option<(&dyn Elaborate, &mut Elaborations)>,
@@ -2123,6 +2261,36 @@ fn verify_rewritten(
         .ne(&kept_runs(reparsed.tree().source(), &after_comments))
     {
         return Err(FormatError::Changed(Change::Attachment));
+    }
+    let base = ByteOffset::from(<&str>::from(before).len());
+    let sites = Sites::new(written, &again.leaves);
+    // The parser reads the text alone, so its obligations stand in the text's
+    // own offsets.
+    let obliged = parsed.obligations().len() == reparsed.obligations().len()
+        && parsed
+            .obligations()
+            .iter()
+            .zip(reparsed.obligations())
+            .all(|(left, right)| {
+                left.class == right.class && sites.spanned(left.span, right.span) == Placement::Same
+            });
+    if !obliged {
+        let forms: Vec<_> = respelled
+            .iter()
+            .filter_map(|&form| {
+                parsed.tree().key(form).zip(
+                    parsed
+                        .tree()
+                        .node(form)
+                        .map(gandr_surface_syntax::Node::span),
+                )
+            })
+            .collect();
+        let differing = meaning::parser_obligations(lowered, base, &forms);
+        if differing.is_empty() {
+            return Err(FormatError::Changed(Change::Meaning));
+        }
+        return Ok(Agreement::ParserObligations(differing));
     }
     let before = <&str>::from(before);
     let whole = (!before.is_empty()).then(|| alloc::format!("{before}{}", <&str>::from(text)));
@@ -2141,8 +2309,7 @@ fn verify_rewritten(
     else {
         return Ok(Agreement::Unpaired);
     };
-    let base = ByteOffset::from(before.len());
-    let agreement = meaning::agree(arena, (lowered, &respelled), base, None);
+    let agreement = meaning::agree(arena, (lowered, &respelled), (base, &sites), None);
     // Only a declaration that lowered otherwise asks the checker: a source no
     // rewrite moved between such spellings is never checked here.
     let (&Agreement::Declarations(_), Some((checker, source))) = (&agreement, checked)
@@ -2157,7 +2324,7 @@ fn verify_rewritten(
     Ok(meaning::agree(
         arena,
         (lowered, &respelled),
-        base,
+        (base, &sites),
         Some(&elaborated),
     ))
 }
@@ -2346,13 +2513,21 @@ fn material<'leaves, 'source>(
     leaves: &'leaves [Leaf<'source>]
 ) -> impl Iterator<Item = (Material, SourceFragment<'source>)> + 'leaves
 {
-    leaves
-        .iter()
-        .filter(|leaf| {
-            !matches!(leaf.material, Material::Whitespace | Material::LineComment)
-                && !<&str>::from(leaf.text).is_empty()
-        })
-        .map(|leaf| (leaf.material, leaf.text))
+    material_leaves(leaves).map(|leaf| (leaf.material, leaf.text))
+}
+
+/// The leaves of `leaves` that [`material`] reads, in order.
+///
+/// # Specification
+/// trivial.
+fn material_leaves<'leaves, 'source>(
+    leaves: &'leaves [Leaf<'source>]
+) -> impl Iterator<Item = &'leaves Leaf<'source>> + 'leaves
+{
+    leaves.iter().filter(|leaf| {
+        !matches!(leaf.material, Material::Whitespace | Material::LineComment)
+            && !<&str>::from(leaf.text).is_empty()
+    })
 }
 
 /// The form the source's head declares: `form(explicit)` or `form(sugared)`

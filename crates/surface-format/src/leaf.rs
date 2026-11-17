@@ -87,6 +87,19 @@ pub struct Leaf<'source>
     /// Where it stands among the items of the block around it; none outside
     /// every block, and for a leaf a rewrite wrote.
     pub branch: Option<Branch>,
+    /// Whether the formatter copies it from the source, or a rewrite writes
+    /// it.
+    pub origin: Origin,
+}
+
+/// Where a leaf of a formatted text comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Origin
+{
+    /// The source holds it at its span: the formatter copies it.
+    Source,
+    /// A rewrite writes it for the form whose source extent this is.
+    Rewrite(ByteSpan),
 }
 
 /// Where a leaf stands among the items of a block: of the innermost block
@@ -212,6 +225,10 @@ impl Leaves<'_>
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 /// - witness: `tests::format::a_repaired_form_is_copied_as_written`
 /// - witness: `tests::format::strings_shell_blocks_and_holes_are_copied_as_written`
+///
+/// # Cost
+/// - allocation: the leaves and the repaired spans, growth within the tree's
+///   leaves
 #[spec(ensures: |ret| ret.leaves.windows(2).all(|pair| matches!(pair, [left, right] if left.span.end() <= right.span.start()))
     && ret.repaired.windows(2).all(|pair| matches!(pair, [left, right] if left < right)))]
 pub fn flatten<'source>(
@@ -345,6 +362,7 @@ pub fn flatten<'source>(
             context,
             offside,
             branch,
+            origin: Origin::Source,
         });
     }
     // The walk visits in preorder and the sort is stable, so empty leaves at

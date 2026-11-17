@@ -17,6 +17,7 @@ use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
 use gandr_surface_format::RewriteName;
 use gandr_surface_format::Selection;
+use gandr_surface_format::Withdrawal;
 use gandr_surface_format::Withdrawn;
 use gandr_surface_format::format;
 use gandr_surface_format::format_beside;
@@ -29,6 +30,7 @@ use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 
 /// Every pair of the table in the explicit spelling, nested and
@@ -804,24 +806,43 @@ fn a_composite_of_flows_keeps_its_then()
 
 /// A transport whose motive is no path type, or no abstraction at all, or a
 /// path type whose endpoints, or a call whose arguments, fit none of the
-/// derived operations, derives no path operation: the sugared form keeps it
-/// as written.
+/// derived operations, derives no path operation: the sugared form keeps the
+/// transport as written. A thunked motive, which the lowering refuses at the
+/// same leaf in both spellings, takes the value-function alias.
 #[test]
 fn a_transport_along_no_path_motive_keeps_its_spelling()
 {
     let grammar = grammar();
-    for value in [
-        "Path.walk (fun (a) { Integer }) loop 5",
-        "Path.walk (+U (Circle -> -F Integer)) loop 5",
-        "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
-        "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
-        "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
-        "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop",
+    for (value, sugared) in [
+        (
+            "Path.walk (fun (a) { Integer }) loop 5",
+            "Path.walk (fun (a) { Integer }) loop 5",
+        ),
+        (
+            "Path.walk (+U (Circle -> -F Integer)) loop 5",
+            "Path.walk (Circle -> Integer) loop 5",
+        ),
+        (
+            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
+            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
+        ),
+        (
+            "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
+            "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
+        ),
+        (
+            "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
+            "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
+        ),
+        (
+            "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop",
+            "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop",
+        ),
     ] {
         let source = format!("{CIRCLE}def m : Integer = {value};\n");
         assert_eq!(
             spelled(&grammar, source.as_str(), Form::Sugared, Selection::Every),
-            source
+            format!("{CIRCLE}def m : Integer = {sugared};\n")
         );
     }
 }
@@ -1106,9 +1127,10 @@ fn a_body_hole_keeps_its_meaning_beside_a_rewrite_893()
 }
 
 /// A source that imports a sibling is lowered beside it: the rewrite whose
-/// meaning reads the sibling's declarations applies, where alone the
-/// declaration's lowering is refused and it keeps its spelling, reported.
-/// Here the explicit form folds a transport into the composite it derives.
+/// meaning reads the sibling's declarations applies. Here the explicit form
+/// folds a transport into the composite it derives. Alone, the lowering
+/// refuses the declaration and derives no composite, so the source keeps its
+/// spelling, and no rewrite is withdrawn.
 #[test]
 fn an_importing_source_is_rewritten_beside_its_imports()
 {
@@ -1146,17 +1168,7 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     );
     let alone = format_beside(&grammar, &parsed, options, (Beside::Alone, None))
         .unwrap_or_else(|error| panic!("the source formats alone: {error}"));
-    let kept: Vec<(&str, bool)> = alone
-        .withdrawn()
-        .iter()
-        .map(|withdrawal| {
-            (
-                withdrawal.declaration.as_str(),
-                matches!(withdrawal.reason, Withdrawn::Unchecked(_)),
-            )
-        })
-        .collect();
-    assert_eq!(kept, [("twice", true)]);
+    assert_eq!(alone.withdrawn(), []);
     assert_eq!(alone.into_text(), source);
 }
 
@@ -1400,18 +1412,20 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
         FormatError::Changed(Change::Meaning),
         FormatError::Changed(Change::Material),
         FormatError::Changed(Change::Attachment),
+        FormatError::Changed(Change::Pieces),
     ]
     .map(|refusal| refusal.to_string());
     apart(&refusals);
     let withdrawals = [
+        Withdrawn::Obligations,
         Withdrawn::Refused(String::from("the refusal")),
         Withdrawn::Lowered,
-        Withdrawn::Unchecked(String::from("the refusal")),
+        Withdrawn::Otherwise(String::from("the refusal")),
         Withdrawn::Read(String::from("reader")),
     ]
     .map(|reason| reason.to_string());
     apart(&withdrawals);
-    for (index, carried) in [(0, "the refusal"), (2, "the refusal"), (3, "`reader`")] {
+    for (index, carried) in [(1, "the refusal"), (3, "the refusal"), (4, "`reader`")] {
         assert!(
             withdrawals[index].contains(carried),
             "`{}` names {carried}",
@@ -1445,6 +1459,76 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "type-application",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
+    );
+}
+
+/// A declaration that the lowering refuses keeps its refusal at its site
+/// while a rewrite respells the declaration beside it, so the rewrite stands
+/// and nothing is withdrawn.
+#[test]
+fn a_rewrite_keeps_a_matching_refusal_6681()
+{
+    let grammar = grammar();
+    let source = include_str!("rewrite/unformatted/a-rewrite-keeps-a-matching-refusal-6681.gandr");
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), []);
+    assert_eq!(
+        formatted.into_text(),
+        "def rejected : Integer = selfComposite;\ndef pair : Integer * String;\n"
+    );
+}
+
+/// A rewrite whose text the parser reads with obligations that the source
+/// does not have is withdrawn, though the lowering refuses both texts by one
+/// variant.
+#[test]
+fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
+{
+    let grammar = grammar();
+    let source = include_str!("../../../corpus/surface/data-field-decorations.gandr");
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), [Withdrawal {
+        declaration: String::from("Expr"),
+        span: ByteSpan::new(ByteOffset::from(433_usize), ByteOffset::from(561_usize))
+            .expect("a span"),
+        reason: Withdrawn::Obligations,
+    }]);
+    assert_eq!(formatted.into_text(), source);
+}
+
+/// The explicit form writes the refused declaration as a signature and a
+/// definition, so its refusal moves from `24..37` to `37..50`. Both copy the
+/// one leaf `selfComposite` of the source, so the refusal keeps its site, and
+/// the chain of rewrites stands with nothing withdrawn.
+#[test]
+fn a_rewrite_that_moves_a_refusal_keeps_its_site_6726()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "rewrite/unformatted/a-rewrite-that-moves-a-refusal-keeps-its-site-6726.gandr"
+    );
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), []);
+    assert_eq!(
+        formatted.into_text(),
+        "def refused : Integer;\ndef refused = selfComposite;\ndef pair : +U (Integer -> String \
+         -> -F Integer);\ndef pair = fun (_pair) { 1 };\ndef post : +U (Integer -> -F \
+         Type);\ndef post = fun (_o) { return Unit };\n"
     );
 }
 
@@ -1570,8 +1654,9 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
 /// are written as the function form that declares them, in either form: a
 /// `become`, a statement block and a computation alike. A thunk holding a
 /// comment, a graded one and a definition of a value keep their function
-/// halves; the graded one, which the checker refuses, keeps both halves, its
-/// join withdrawn (#1449).
+/// halves. The lowering refuses the graded one at the same leaf before and
+/// after the sugared form joins its halves into one definition, so the join
+/// stands and nothing is withdrawn (#1449).
 #[test]
 fn a_signed_thunk_merges_into_its_function_form_1449()
 {
@@ -1585,18 +1670,10 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
             ..FormatOptions::default()
         };
         let formatted = format(&grammar, &parsed, options).expect("the source formats");
-        let withdrawn: Vec<&str> = formatted
-            .withdrawn()
-            .iter()
-            .map(|withdrawal| withdrawal.declaration.as_str())
-            .collect();
-        let expected: &[&str] = match form {
-            Form::Sugared => &["graded"],
-            Form::Explicit | Form::Source => &[],
-        };
         assert_eq!(
-            withdrawn, expected,
-            "only the refused join is withdrawn in {form:?}"
+            formatted.withdrawn(),
+            [],
+            "nothing is withdrawn in {form:?}"
         );
         formatted.into_text()
     };
@@ -1616,8 +1693,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
           become twice 2
         };
 
-        def graded : +U[1] (-F Integer);
-        def graded = thunk[1] { become twice 3 };
+        def graded : +U[1] (-F Integer) = thunk[1] { become twice 3 };
 
         def value : Integer = 3;
     "#]]
@@ -2172,5 +2248,34 @@ mod sweeps
             "every source formats:\n{}",
             refused.join("\n")
         );
+    }
+}
+
+/// A refusal that stands after a respelled form in its own declaration is
+/// admitted, and so is a refusal whose site ends at the respelled form: the
+/// copied name keeps its site, and the end of the product maps to the end of
+/// the leaves the pass wrote for it.
+#[test]
+fn a_refusal_beside_or_at_a_respelled_form_keeps_its_site_6726()
+{
+    let grammar = grammar();
+    for (source, sugared) in [
+        (
+            "def p : *{Integer, String} = selfComposite;\n",
+            "def p : Integer * String = selfComposite;\n",
+        ),
+        (
+            "def p : -F *{Integer, Integer};\n",
+            "def p : -F (Integer * Integer);\n",
+        ),
+    ] {
+        let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+        let options = FormatOptions {
+            form: Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(formatted.withdrawn(), [], "{source}");
+        assert_eq!(formatted.into_text(), sugared);
     }
 }
