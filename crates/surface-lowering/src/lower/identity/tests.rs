@@ -3548,16 +3548,19 @@ fn a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121()
 {
     // A path or bridge type that supplies its carrier and leaves its endpoint
     // list out is the head that the juxtaposition applies to its endpoints:
-    // `Path[.A = Integer] 4 4` is `Path[.A = Integer](4, 4)`. A spine of one
-    // endpoint is refused as a form out of shape.
+    // `Path[.A = Integer] 4 4` is `Path[.A = Integer](4, 4)`. An endpoint in
+    // its parentheses reads alike (#5750). A spine of one endpoint, or of
+    // three, is refused as a form out of shape.
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(include_str!(
-            "tests/unformatted/a-carried-path-head-takes-its-endpoints-by-juxtaposition-6121-module.gandr"
-        )),
-        &mut arena,
+    let source = include_str!(
+        "tests/unformatted/a-carried-path-head-takes-its-endpoints-by-juxtaposition-6121-module.gandr"
     );
-    for (spaced, listed) in [("spaced", "listed"), ("bridged", "called")] {
+    let module = lowered(SourceText::from(source), &mut arena);
+    for (spaced, listed) in [
+        ("spaced", "listed"),
+        ("bridged", "called"),
+        ("grouped", "grouped_listed"),
+    ] {
         assert_eq!(
             equal_type_syntax(
                 &arena,
@@ -3575,5 +3578,33 @@ fn a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121()
         ),
         "a carried head over one endpoint is refused: {:?}",
         outcome_of(&module, "short".into())
+    );
+    // The refusal stands at the zero-width tile of the third application,
+    // right before the third endpoint.
+    let third = source.find("4 4 4;").map(|at| at + 4);
+    assert!(
+        matches!(
+            outcome_of(&module, "long".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                fault: crate::FormFault::MisplacedTile,
+                span,
+                ..
+            }) if Some(usize::from(span.start())) == third && span.end() == span.start()
+        ),
+        "a carried head over three endpoints is refused at its third: {:?}",
+        outcome_of(&module, "long".into())
+    );
+    let lone = source.find("Path;");
+    assert!(
+        matches!(
+            outcome_of(&module, "lone".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                fault: crate::FormFault::MissingOperand,
+                span,
+                ..
+            }) if Some(usize::from(span.start())) == lone && usize::from(span.end()) == usize::from(span.start()) + 4
+        ),
+        "a head that stands alone is refused at the head: {:?}",
+        outcome_of(&module, "lone".into())
     );
 }

@@ -1177,8 +1177,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a supply naming an
     ///   implicit other than `A`; the retired carrier of [`FormFault::Retired`]
     ///   at the head of a bare form over three operands, its carrier written
-    ///   first; a misplaced-tile or extra-operand fault for a form out of
-    ///   shape; the budget refusal once no hole name is left.
+    ///   first; [`FormFault::MissingOperand`] at the head of a head that stands
+    ///   alone, with no carrier and no endpoint; a misplaced-tile or
+    ///   extra-operand fault for a form out of shape; the budget refusal once
+    ///   no hole name is left.
     /// - panics: none.
     ///
     /// # Errors
@@ -1241,6 +1243,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
         else {
             None
         };
+        // A head that stands alone, `Path` where a type is read, writes no
+        // endpoint (#5750).
+        if let (None, Maybe::Absent(_)) = (supplied, cursor.at(TileName::PAREN_OPEN)) {
+            return Err(site.fault(written, FormFault::MissingOperand));
+        }
         closed(site, cursor, TileName::PAREN_OPEN)?;
         let left = site.one(cursor.operands())?;
         closed(site, cursor, TileName::COMMA)?;
