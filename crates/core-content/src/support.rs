@@ -4,8 +4,12 @@
 //! A [`SupportedNode`] holds a [`ContentNode`] former, a cover and a scope.
 //! Each variable occurrence of the former is a rank in the scope of the
 //! node. The cover holds one [`Thinning`] for each child. It places the scope
-//! of the child in the scope of the node, past the binders of the former. So
-//! a variable is a bare leaf. One subterm under unused binders is one node.
+//! of the child in the scope of the node, past the binders of the former.
+//!
+//! A former names at most one occurrence of its own: the index of a variable,
+//! the endpoint of a session action, or the slot of a memory form. Every other
+//! index of the subterm lives in the covers. So a variable is a bare leaf. One
+//! subterm under unused binders is one node.
 //!
 //! # Items
 //!
@@ -22,8 +26,13 @@
 //!
 //! The references of a node are its own reference and those of its children.
 //! Beneath a type former, a value read of a child becomes a type read. Each
-//! ancestor that adds nothing to a set shares it. The references are
-//! syntactic. They over-approximate what the judgement reads.
+//! ancestor that adds nothing to a set shares it.
+//!
+//! The references are syntactic. They over-approximate what the judgement
+//! reads. They never decide a strengthening.
+//!
+//! The factor and the numbering are iterative. Their work is linear in the de
+//! Bruijn table, the covers and the reference sets.
 //!
 //! The interner searches the first nodes of a small table in order. It
 //! indexes a larger table in a `hashbrown` table under the fixed seed of

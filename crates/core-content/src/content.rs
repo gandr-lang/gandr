@@ -4,9 +4,11 @@
 //! The encoder lists every node that the roots reach as a de Bruijn table. It
 //! reads the children of each node from `gandr_core_term::children`. A
 //! constant becomes the [`Reference`] that the resolver gives its position.
-//! The factor then gives the co-de Bruijn table of `crate::support`. A
-//! breadth-first walk from the roots numbers the table. So equal terms in two
-//! arenas give equal tables.
+//! The factor then gives the co-de Bruijn table of `crate::support`.
+//!
+//! A breadth-first walk from the roots numbers the table. So equal terms in two
+//! arenas give equal tables. The table names a node up to alpha-equivalence
+//! and sharing.
 //!
 //! # Items
 //!
