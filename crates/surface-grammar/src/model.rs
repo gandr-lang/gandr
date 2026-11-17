@@ -1082,6 +1082,18 @@ impl Adaptation
     }
 }
 
+/// What a rule whose form opens on its left operand takes there.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum LeftOperand
+{
+    /// Any whole operand of the rule's operand sort.
+    #[default]
+    Any,
+    /// A name: a lone tile, or the rule's own form over a name, `M.N.T`. A
+    /// whole form over other tiles, as a lone `Path`, is no left operand.
+    Name,
+}
+
 /// One grammar rule: a named form of one sort at one precedence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rule
@@ -1102,6 +1114,8 @@ pub struct Rule
     /// `Path a b`, where the form states it and the head's sort does not
     /// decide it.
     pub operands: Option<Sort>,
+    /// What the form takes as its left operand, when it opens on one.
+    pub left: LeftOperand,
 }
 
 impl Rule
@@ -1137,6 +1151,7 @@ impl Rule
             regex,
             adaptations: Vec::new(),
             operands: None,
+            left: LeftOperand::Any,
         }
     }
 
@@ -1162,6 +1177,7 @@ impl Rule
             provenance: provenance.0,
             adaptations: Vec::new(),
             operands: None,
+            left: LeftOperand::Any,
         }
     }
 
@@ -1197,6 +1213,21 @@ impl Rule
     ) -> Self
     {
         self.operands = Some(sort);
+        self
+    }
+
+    /// Declares what the form takes as its left operand.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn with_left(
+        mut self,
+        left: LeftOperand,
+    ) -> Self
+    {
+        self.left = left;
         self
     }
 
@@ -1276,6 +1307,17 @@ impl Rule
     pub const fn operands(&self) -> Option<Sort>
     {
         self.operands
+    }
+
+    /// What the form takes as its left operand, when it opens on one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn left(&self) -> LeftOperand
+    {
+        self.left
     }
 }
 

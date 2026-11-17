@@ -244,6 +244,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_surface_grammar::LabelId;
 use gandr_surface_grammar::LabelText;
+use gandr_surface_grammar::LeftOperand;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
@@ -3989,11 +3990,12 @@ impl<'pbg> MeldState<'pbg>
                 if absorb_left {
                     // The absorbing start applies only to a head operand of its
                     // own sort — never a top-level `def` item's Item-sorted
-                    // head.
+                    // head — and only to a name where its rule states one.
                     bool::from(frontier.head_operand)
                         && self.pbg.mold(mold).is_ok_and(|def| {
                             frontier.head_sort == Some(def.sort) || def.sort == Sort::Item
                         })
+                        && bool::from(self.left_admits(mold))
                 }
                 else {
                     bool::from(self.sort_admits(mold, frontier.expected))
@@ -4018,6 +4020,53 @@ impl<'pbg> MeldState<'pbg>
             Kind::Operator(OpShape::Prefix) => bool::from(self.prefix_admits(mold, frontier)),
         };
         MoldAdmissibility::from(admissible)
+    }
+
+    /// Return whether the head operand is a left side that `mold`'s rule
+    /// takes: any whole operand, or a name where the rule states
+    /// [`LeftOperand::Name`]. A name is a lone tile, or the rule's own form
+    /// over a name, `M.N.T`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `mold`'s rule states [`LeftOperand::Any`],
+    ///   or the slope's top is a token or a form of `mold`'s own rule; leaves
+    ///   `self` unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `M.T` and `M.N.T` read as qualified types, and a lone
+    ///   `Path` before `.` takes no `type_path`; a gate that ignores the rule's
+    ///   statement or refuses a chain changes one of them.
+    /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    fn left_admits(
+        &self,
+        mold: MoldId,
+    ) -> MoldAdmissibility
+    {
+        let Ok(rule) = self.pbg.rule_of(mold)
+        else {
+            return MoldAdmissibility::from(true);
+        };
+        if rule.left() == LeftOperand::Any {
+            return MoldAdmissibility::from(true);
+        }
+        let name = rule.name();
+        MoldAdmissibility::from(self.stack.last().is_some_and(|cell| {
+            match self
+                .emit
+                .get(usize::try_from(cell.emit.0).unwrap_or(usize::MAX))
+            {
+                Some(EmitOp::Token { .. }) => true,
+                Some(&EmitOp::Interior {
+                    label: NodeLabel::Meld(form),
+                    ..
+                }) => self.pbg.rule_of(form).is_ok_and(|own| own.name() == name),
+                Some(EmitOp::Interior { .. }) | None => false,
+            }
+        }))
     }
 
     /// Return whether an operand `mold`'s sort fills the expected slot sort.
