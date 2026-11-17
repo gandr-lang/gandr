@@ -1297,6 +1297,49 @@ fn ends_declaration(
     }))
 }
 
+/// The byte where the layout opener of the block that the layout close at
+/// `index` ends starts.
+///
+/// The layout pass writes one close for each block that it opened, so its
+/// opens and closes nest as brackets do. The walk runs back from the close
+/// and counts the blocks that open and close between: the first open that
+/// no close between ends is its own. A close reads it only when it continues
+/// no open form, so a source with no fault walks nothing.
+///
+/// # Specification
+/// - requires: `tokens` came from the labeler.
+/// - ensures: the start of the last [`Lexeme::LayoutOpen`] before `index` that
+///   no [`Lexeme::LayoutClose`] between ends, or `None` when every one is
+///   ended.
+/// - panics: none.
+///
+/// # Cost
+/// - time: one step for each token between the opener and the close.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `match` block inside a `def` body puts two closes at
+///   one byte, and each reads its own opener.
+/// - witness: `tests::acceptance::a_layout_close_closes_its_own_block_7902`
+#[spec(ensures: |ret| ret.is_none_or(|start| tokens.get(.. usize::from(index)).is_some_and(|before| before.iter().any(|token| token.lexeme == Lexeme::LayoutOpen && token.start == start))))]
+fn layout_opener(
+    tokens: &[Token],
+    index: TokenIndex,
+) -> Option<u32>
+{
+    let mut ended = 0_usize;
+    for token in tokens.get(.. usize::from(index))?.iter().rev() {
+        match token.lexeme {
+            Lexeme::LayoutClose => ended = ended.saturating_add(1),
+            Lexeme::LayoutOpen => match ended.checked_sub(1) {
+                Some(fewer) => ended = fewer,
+                None => return Some(token.start),
+            },
+            _ => {},
+        }
+    }
+    None
+}
+
 /// The reserved uppercase words (the tree-sitter grammar's `KW` / primitive
 /// type names).
 ///
@@ -3080,6 +3123,10 @@ impl<'pbg> Molder<'pbg>
         ahead: Ahead<'_, '_>,
     )
     {
+        let Ahead::Stream { tokens, index, .. } = ahead
+        else {
+            return;
+        };
         if lexeme != Lexeme::LayoutClose
             || self
                 .candidates
@@ -3088,9 +3135,13 @@ impl<'pbg> Molder<'pbg>
         {
             return;
         }
+        let Some(opener) = layout_opener(tokens, index)
+        else {
+            return;
+        };
         let frontier = state.admissibility_frontier();
         self.gather_menu(labels, frontier.open, CandidateMenu::Declared);
-        if let Some(close) = state.layout_close(&self.candidates) {
+        if let Some(close) = state.layout_close(opener, &self.candidates) {
             state.close_statement(close);
         }
         self.gather(state, lexeme, text, labels, ahead);

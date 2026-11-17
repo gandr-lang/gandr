@@ -2779,21 +2779,23 @@ impl<'pbg> MeldState<'pbg>
         innermost
     }
 
-    /// The close a layout close that continues no open form takes: the
-    /// innermost open frontier whose form a mold of `candidates` continues,
-    /// next to it or past one to [`STATEMENT_REACH`] mid tiles.
+    /// The close a layout close takes when it continues no open form: the
+    /// open frontier of the block that the layout opener at byte `opener`
+    /// opened, which a mold of `candidates` continues next to it or past one
+    /// to [`STATEMENT_REACH`] mid tiles.
     ///
-    /// The layout pass writes a close only for a block that it opened, and
-    /// layout blocks nest. So the innermost frontier that the close continues
-    /// is the block that it ends, and a form above that block stands open
-    /// only for a fault inside the block.
+    /// The layout pass writes a close only for a block that it opened. So the
+    /// close ends the block of its own opener, and a form above that block
+    /// stands open only for a fault inside it. The close never takes the
+    /// frontier of another block.
     ///
     /// # Specification
     /// - requires: `candidates` are sorted molds of this state's PBG.
-    /// - ensures: `None` exactly when no open frontier reaches a candidate
-    ///   within [`STATEMENT_REACH`] mid tiles; otherwise a close at the
-    ///   innermost such frontier, its chain empty when a candidate continues
-    ///   the frontier next to it; leaves `self` unchanged.
+    /// - ensures: `None` when no open frontier's form holds a tile that starts
+    ///   at `opener`, or when no candidate continues that frontier within
+    ///   [`STATEMENT_REACH`] mid tiles; otherwise a close at that frontier, its
+    ///   chain empty when a candidate continues the frontier next to it; leaves
+    ///   `self` unchanged.
     /// - provides: the layout close the molder applies.
     /// - fails: never.
     /// - panics: none.
@@ -2801,40 +2803,52 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — an arm that lost its `=>` before the close of its
     ///   block exposes the close: read as a stray end, each close owes a
-    ///   missing opener at one byte; closed at the block, the arm owes its `=>`
+    ///   missing opener at one byte; closed at its block, the arm owes its `=>`
     ///   once.
     /// - witness: `tests::acceptance::a_layout_close_closes_its_own_block_7902`
     #[spec(ensures: |ret| ret.is_none_or(|close| close.chain.length <= STATEMENT_REACH && self.frontiers.contains(&close.index)))]
     pub(crate) fn layout_close(
         &self,
+        opener: u32,
         candidates: &[MoldId],
     ) -> Option<StatementClose>
     {
-        self.frontiers.iter().rev().find_map(|&index| {
-            let Some(&Cell {
-                role: Role::FormTile {
-                    mold, open: true, ..
+        let index = self.frontiers.iter().rev().copied().find(|&index| {
+            self.form_start_index(StackIndex::from(index))
+                .is_some_and(|start| {
+                    self.barriers
+                        .iter()
+                        .filter(|&&tile| (usize::from(start) ..= index).contains(&tile))
+                        .any(|&tile| {
+                            self.stack
+                                .get(tile)
+                                .is_some_and(|cell| cell.start == opener)
+                        })
+                })
+        })?;
+        let Some(&Cell {
+            role: Role::FormTile {
+                mold, open: true, ..
+            },
+            ..
+        }) = self.stack.get(index)
+        else {
+            return None;
+        };
+        if candidates
+            .iter()
+            .any(|&candidate| bool::from(self.adjacent(mold, candidate)))
+        {
+            return Some(StatementClose {
+                index,
+                chain: StatementChain {
+                    tiles: [MoldId::from(0_u32); STATEMENT_REACH],
+                    length: 0,
                 },
-                ..
-            }) = self.stack.get(index)
-            else {
-                return None;
-            };
-            if candidates
-                .iter()
-                .any(|&candidate| bool::from(self.adjacent(mold, candidate)))
-            {
-                return Some(StatementClose {
-                    index,
-                    chain: StatementChain {
-                        tiles: [MoldId::from(0_u32); STATEMENT_REACH],
-                        length: 0,
-                    },
-                });
-            }
-            self.statement_chain(mold, candidates)
-                .map(|chain| StatementClose { index, chain })
-        })
+            });
+        }
+        self.statement_chain(mold, candidates)
+            .map(|chain| StatementClose { index, chain })
     }
 
     /// Apply `close`: every form and operator above its frontier closes,
