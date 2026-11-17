@@ -394,7 +394,7 @@ model/desc/lc/syntax.gandr:LC.law6:2d80a041c2c28b34 uncommented
 model/desc/lc/syntax.gandr:LC.liftTm:f4a6df45f4168975 uncommented
 model/desc/lc/syntax.gandr:LC.pTm:006d996c86d71ce7 uncommented
 model/desc/lc/syntax.gandr:LC.qTm:58e1a0543d1ea868 uncommented
-model/desc/lc/syntax.gandr:LC.singleTm:69de59ef2f492923 uncommented
+model/desc/lc/syntax.gandr:LC.singleTm:bb47acf2eb9d1f7f uncommented
 model/desc/lc/syntax.gandr:LC.subTm:9ca77d512b67d3aa uncommented
 model/desc/lc/syntax.gandr:Ren.RLift:9424ee2e307c9716 uncommented
 model/desc/lc/syntax.gandr:Ren.RShift:92cfab4c93f7b150 uncommented
@@ -1748,9 +1748,9 @@ pathological/universe/vacuous-pi.gandr:Nat.Zero:d5b53cc69ba075a3 uncommented
 pending/model/higher-cells/cat-shape-bicartesian.gandr:<file> uncommented
 pending/model/higher-cells/cat-shape-bicartesian.gandr:Empty:0aae19bdbc777973 uncommented
 pending/model/higher-cells/cat-shape-bicartesian.gandr:EmptyHom:5a1ed91e1fc0f724 uncommented
-pending/model/higher-cells/cat-shape-bicartesian.gandr:HomPlus.HomInl:7559d307a34d0950 uncommented
-pending/model/higher-cells/cat-shape-bicartesian.gandr:HomPlus.HomInr:4c4e6c116679cfc2 uncommented
-pending/model/higher-cells/cat-shape-bicartesian.gandr:HomPlus:d286f9a595bf481a uncommented
+pending/model/higher-cells/cat-shape-bicartesian.gandr:HomPlus.HomInl:5b58d9665fa55143 uncommented
+pending/model/higher-cells/cat-shape-bicartesian.gandr:HomPlus.HomInr:f0449cc579433653 uncommented
+pending/model/higher-cells/cat-shape-bicartesian.gandr:HomPlus:494b0c6c6c07af4b uncommented
 pending/model/higher-cells/cat-shape-bicartesian.gandr:PairOb.Pair:3be07dfe1d735f50 uncommented
 pending/model/higher-cells/cat-shape-bicartesian.gandr:PairOb:5c66b191da049d6d uncommented
 pending/model/higher-cells/cat-shape-bicartesian.gandr:ProdHom.PairHom:d66e735d96ffe2c7 uncommented

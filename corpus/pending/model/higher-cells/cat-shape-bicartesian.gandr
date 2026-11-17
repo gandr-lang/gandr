@@ -22,8 +22,8 @@ data SumOb(a : Type, b : Type) : Type where
   | Inr : (y : b) --> SumOb a b
 
 data HomPlus(l : Type, r : Type, x : SumOb l r, y : SumOb l r) : Type where
-  | HomInl : (a : l, b : l, f : Integer) --> HomPlus(l, r, Inl a, Inl b)
-  | HomInr : (c : r, d : r, g : Integer) --> HomPlus(l, r, Inr c, Inr d)
+  | HomInl : (a : l, b : l, f : Integer) --> HomPlus l r (Inl a) (Inl b)
+  | HomInr : (c : r, d : r, g : Integer) --> HomPlus l r (Inr c) (Inr d)
 
 data ProdHom(a : PairOb Integer String, b : PairOb Integer String) : Type where
   | PairHom : (f : Integer, g : Integer) --> ProdHom a b
