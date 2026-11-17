@@ -11720,6 +11720,32 @@ pub struct FlattenedSlot<'source>
     pub fixed: Vec<(Name, ValueTypeId)>,
 }
 
+/// The implicits of a function's telescope, as a printed call supplies them:
+/// by name in the merged telescope's order, and by position in the order
+/// the declaration writes its `[ … ]` block.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `merged` holds one entry per parameter of the merged telescope,
+///   an implicit's name and none for an explicit parameter or a model
+///   implicit's component; `written` holds the name of each entry of the
+///   written block, of any sort, in written order.
+/// - executable: none — the record is data the lowering reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an implicit whose type names an explicit parameter
+///   written after it stands after that parameter in `merged` and first in
+///   `written`.
+/// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_names_its_implicits_in_the_merged_order_2267`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ImplicitTelescope<'source>
+{
+    /// The merged telescope: an implicit's name, none for the rest.
+    pub merged: Vec<Option<SurfaceName<'source>>>,
+    /// The written block's names, in written order.
+    pub written: Vec<SurfaceName<'source>>,
+}
+
 /// The tables a declaration's checking reads by its key, as the module a
 /// closure's lowering finishes alone holds them: shared with every module
 /// lowered after the closure.
@@ -11746,7 +11772,7 @@ pub struct KeyedTables<'source>
     /// As [`LoweredModule::region_names`] reads them.
     region_names: Arc<BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>>,
     /// As [`LoweredModule::implicits`] reads them.
-    implicits: Arc<BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>>,
+    implicits: Arc<BTreeMap<ConstantIndex, ImplicitTelescope<'source>>>,
     /// As [`LoweredModule::model_slots`] reads them.
     model_slots: Arc<BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>>>,
     /// As [`LoweredModule::supplies`] reads them.
@@ -11861,9 +11887,10 @@ pub struct LoweredModule<'source>
     /// ordinal, by the definition's position.
     region_names: Layered<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
     /// Each function written with an implicit telescope, the parameters of
-    /// its merged telescope in order: an implicit's name, none for an
-    /// explicit parameter, by the function's position.
-    implicits: Layered<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+    /// its merged telescope in order, an implicit's name and none for an
+    /// explicit parameter, beside the names its written block holds, by the
+    /// function's position.
+    implicits: Layered<ConstantIndex, ImplicitTelescope<'source>>,
     /// Each function written with a model implicit, each such slot of its
     /// merged telescope, by the function's position.
     model_slots: Layered<ConstantIndex, Vec<FlattenedSlot<'source>>>,
@@ -12221,7 +12248,7 @@ impl<'source> LoweredModule<'source>
     }
 
     /// This module, carrying `implicits`, each function's merged telescope
-    /// with its implicits named, by its position.
+    /// with its implicits named and its written block, by its position.
     ///
     /// # Specification
     /// trivial.
@@ -12229,7 +12256,7 @@ impl<'source> LoweredModule<'source>
     #[must_use]
     pub fn with_implicits(
         mut self,
-        implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+        implicits: BTreeMap<ConstantIndex, ImplicitTelescope<'source>>,
     ) -> Self
     {
         self.implicits = Layered::whole(implicits);
@@ -13727,7 +13754,38 @@ impl<'source> LoweredModule<'source>
     ) -> &[Option<SurfaceName<'source>>]
     {
         match self.implicits.get(&constant) {
-            Maybe::Present(names) => names.as_slice(),
+            Maybe::Present(telescope) => telescope.merged.as_slice(),
+            Maybe::Absent(_) => &[],
+        }
+    }
+
+    /// The names the written `[ … ]` block of the function at `constant`
+    /// holds, in written order: the order a call's positional supply `f[T,
+    /// U]` follows, and a printed call writes it in.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name of each entry of the block, of any sort, in written
+    ///   order; the empty slice for a position whose function writes no
+    ///   implicit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function whose implicit's type names the explicit
+    ///   parameter written after it answers that implicit first, and a function
+    ///   with no telescope answers nothing.
+    /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_telescope_names_its_implicits_in_the_merged_order_2267`
+    #[spec(ensures: |ret| ret.is_empty() || matches!(self.implicits.get(&constant), Maybe::Present(_)))]
+    #[inline]
+    #[must_use]
+    pub fn written_implicits(
+        &self,
+        constant: ConstantIndex,
+    ) -> &[SurfaceName<'source>]
+    {
+        match self.implicits.get(&constant) {
+            Maybe::Present(telescope) => telescope.written.as_slice(),
             Maybe::Absent(_) => &[],
         }
     }

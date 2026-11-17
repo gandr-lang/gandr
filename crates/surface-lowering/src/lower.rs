@@ -559,6 +559,7 @@ use crate::module::Collected;
 use crate::module::Container;
 use crate::module::FlattenedSlot;
 use crate::module::Forgetting;
+use crate::module::ImplicitTelescope;
 use crate::module::LoweredModule;
 use crate::module::Plicity;
 use crate::module::SlotIndex;
@@ -1358,12 +1359,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
                 .collect();
         // Each function whose merged telescope binds an implicit or an
-        // instance names it, so a printed call supplies it by name. A model
-        // implicit binds one parameter per component, which no single name
-        // supplies: each is left unnamed there, and the slot is kept whole
-        // beside it.
-        let mut implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>> =
-            BTreeMap::new();
+        // instance names it, so a printed call supplies it by name, and keeps
+        // its written block, so a printed call supplies it by position. A
+        // model implicit binds one parameter per component, which no single
+        // name supplies: each is left unnamed there, and the slot is kept
+        // whole beside it.
+        let mut implicits: BTreeMap<ConstantIndex, ImplicitTelescope<'source>> = BTreeMap::new();
         let mut model_slots: BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>> = BTreeMap::new();
         for (&slot, merged) in collected.plicities.range(own ..) {
             let Ok(entries) = merged.as_ref()
@@ -1405,7 +1406,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if !flattened.is_empty() {
                 let _first = model_slots.insert(constant, flattened);
             }
-            let _first = implicits.insert(constant, names);
+            let written = collected
+                .written_implicits
+                .get(&slot)
+                .cloned()
+                .unwrap_or_default();
+            let _first = implicits.insert(constant, ImplicitTelescope {
+                merged: names,
+                written,
+            });
         }
         // Each constructor a printer writes by its family's path, by its
         // family's constant: one a source's own shadows, or a module family's.

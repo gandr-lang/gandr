@@ -2145,6 +2145,38 @@ pub trait Source
         &[]
     }
 
+    /// The names the written `[ … ]` block of the function `head` names
+    /// holds, in written order, when `head` is a constant whose telescope
+    /// writes an implicit: the order a call's positional supply `f[T, U]`
+    /// follows.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the block the source records for `head`'s constant, or the
+    ///   empty slice; the default records none, so every implicit a call
+    ///   supplies is written by name.
+    /// - provides: the positional residents `f[T](…)` a printed call writes
+    ///   before its named ones.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call whose atoms fill the block's first entries
+    ///   writes them by position, and one past an omitted entry by name.
+    /// - witness: `tests::goldens::a_call_supplies_its_callee_s_implicits_by_position_6320`
+    #[inline]
+    fn written_implicits(
+        &self,
+        head: Self::Node,
+    ) -> &[Name<'_>]
+    {
+        let _ = head;
+        &[]
+    }
+
     /// The model implicits the telescope of the function `head` names writes,
     /// in telescope order, when `head` is a constant whose telescope writes
     /// one: each a slot of parameters, one per component, that a printed call

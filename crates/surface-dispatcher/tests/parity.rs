@@ -29,6 +29,7 @@ use gandr_surface_diagnostics::model_slots;
 use gandr_surface_diagnostics::modelled;
 use gandr_surface_diagnostics::named_forms;
 use gandr_surface_diagnostics::telescopes;
+use gandr_surface_diagnostics::written_blocks;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::classify;
@@ -1022,6 +1023,7 @@ fn read(
         .collect();
     maps.sort_by_key(|&(map, _)| map);
     let implicits = telescopes(&module);
+    let blocks = written_blocks(&module);
     let slots = model_slots(&module);
     // Each dependent pair's binder and second label as the source writes
     // them, as the language server's spellings name them (#3278), each
@@ -1048,6 +1050,7 @@ fn read(
         .answering(&answers)
         .manifesting(&rows)
         .naming_implicits(&implicits)
+        .ordering_implicits(&blocks)
         .flattening(&slots)
         .operating(module.operators());
     // A body leaves each written reduct's or forgetting map's call to the

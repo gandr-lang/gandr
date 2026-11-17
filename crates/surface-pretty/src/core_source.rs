@@ -783,6 +783,9 @@ pub struct CoreSource<'arena>
     /// in the order the core applies them, an implicit's name and none for
     /// an explicit one, ascending by the function's constant.
     telescopes: &'arena [(ConstantIndex, Vec<Option<Name<'arena>>>)],
+    /// The names of each such function's written `[ … ]` block, in written
+    /// order, ascending by the function's constant.
+    blocks: &'arena [(ConstantIndex, Vec<Name<'arena>>)],
     /// The model implicits of each function whose telescope writes one, in
     /// telescope order, ascending by the function's constant.
     slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
@@ -828,6 +831,7 @@ impl<'arena> CoreSource<'arena>
             maps: &[],
             implied: &[],
             telescopes: &[],
+            blocks: &[],
             slots: &[],
             operators: &[],
             homes: &[],
@@ -1151,6 +1155,40 @@ impl<'arena> CoreSource<'arena>
             .binary_search_by_key(&constant, |&(held, _)| held)
             .ok()
             .and_then(|at| self.telescopes.get(at))
+            .map_or(&[], |&(_, ref names)| names.as_slice())
+    }
+
+    /// This source, writing a call's implicits by position in the written
+    /// block of each function `blocks` records, ascending by the function's
+    /// constant, where the block's order serves.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn ordering_implicits(
+        self,
+        blocks: &'arena [(ConstantIndex, Vec<Name<'arena>>)],
+    ) -> Self
+    {
+        Self { blocks, ..self }
+    }
+
+    /// The written block this source records for the function `constant`:
+    /// the name of each entry, in written order; the empty slice for a
+    /// function it records none for.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn block(
+        &self,
+        constant: ConstantIndex,
+    ) -> &'arena [Name<'arena>]
+    {
+        self.blocks
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.blocks.get(at))
             .map_or(&[], |&(_, ref names)| names.as_slice())
     }
 
@@ -3645,6 +3683,27 @@ impl Source for CoreSource<'_>
         };
         match self.arena.value(id) {
             Some(&Value::Constant(constant)) => self.telescope(constant),
+            Some(_) | None => &[],
+        }
+    }
+
+    /// The written block of the constant `head` reads as, through any
+    /// restoration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn written_implicits(
+        &self,
+        head: CoreNode,
+    ) -> &[Name<'_>]
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return &[];
+        };
+        match self.arena.value(id) {
+            Some(&Value::Constant(constant)) => self.block(constant),
             Some(_) | None => &[],
         }
     }

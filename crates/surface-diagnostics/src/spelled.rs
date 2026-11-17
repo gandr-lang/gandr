@@ -726,6 +726,7 @@ fn spell<'failure>(
     let spans = written_spans(origins);
     let forms = named_forms(&spans, text);
     let implicits = telescopes(module);
+    let blocks = written_blocks(module);
     let slots = model_slots(module);
     let sources: Vec<CoreSource<'_>> = names
         .iter()
@@ -736,6 +737,7 @@ fn spell<'failure>(
                 .naming(&constructors)
                 .writing(&forms)
                 .naming_implicits(&implicits)
+                .ordering_implicits(&blocks)
                 .flattening(&slots)
                 .operating(module.operators())
         })
@@ -1226,6 +1228,38 @@ pub fn telescopes<'module>(
     telescopes.sort_by_key(|&(constant, _)| constant);
     telescopes.dedup_by_key(|&mut (constant, _)| constant);
     telescopes
+}
+
+/// The written block of each function of `module` that writes an implicit.
+///
+/// Ascending by its constant, as [`CoreSource::ordering_implicits`] reads it:
+/// the name of each entry of the `[ … ]` block, in written order.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn written_blocks<'module>(
+    module: &'module LoweredModule<'_>
+) -> Vec<(ConstantIndex, Vec<Name<'module>>)>
+{
+    let mut blocks: Vec<(ConstantIndex, Vec<Name<'module>>)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let constant = declaration.constant();
+            let held = module.written_implicits(constant);
+            (!held.is_empty()).then(|| {
+                (
+                    constant,
+                    held.iter().map(|name| Name::from(name.as_ref())).collect(),
+                )
+            })
+        })
+        .collect();
+    blocks.sort_by_key(|&(constant, _)| constant);
+    blocks.dedup_by_key(|&mut (constant, _)| constant);
+    blocks
 }
 
 /// The model implicits of each function of `module` whose telescope writes
