@@ -840,10 +840,25 @@
           "name": "gandr-surface-evaluate",
           "dir": "crates/surface-evaluate",
           "deps": ["gandr-surface-dispatcher"]
+        },
+        {
+          "name": "gandr-surface-grammar",
+          "dir": "crates/surface-grammar",
+          "deps": []
+        },
+        {
+          "name": "gandr-surface-parser",
+          "dir": "crates/surface-parser",
+          "deps": ["gandr-surface-grammar"]
         }
       ]
     },
-    "output": ["gandr-surface-dispatcher", "gandr-surface-evaluate"]
+    "output": [
+      "gandr-surface-dispatcher",
+      "gandr-surface-evaluate",
+      "gandr-surface-grammar",
+      "gandr-surface-parser"
+    ]
   },
   {
     "name": "#5014: a workflow-only change scopes no package",
