@@ -2832,7 +2832,7 @@ fn application_spine(
 /// - fails: never.
 /// - panics: none.
 /// - economy: one walk over the path's children, written into `read`'s buffer,
-///   with no allocation beyond the buffer's growth.
+///   with no allocation beyond the buffer's growth (#6968).
 /// - executable: none — the pieces are the path's children in the tree, which a
 ///   predicate could check only by repeating the walk.
 ///
