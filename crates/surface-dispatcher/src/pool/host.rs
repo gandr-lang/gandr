@@ -657,6 +657,19 @@ pub struct HostCounter
     _owner: File,
 }
 
+impl Drop for HostCounter
+{
+    /// Let the owner's lock go before the owner's file closes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn drop(&mut self)
+    {
+        let_go(&self._owner);
+    }
+}
+
 impl HostCounter
 {
     /// The host's counter in `directory`, set to `width` tokens when no
@@ -1169,6 +1182,7 @@ impl Drop for Host
         if reclaim(&self.mapping.segment().counter, self.slot()) == Audit::Due {
             audit(self.mapping.segment());
         }
+        let_go(&self._claim);
     }
 }
 
@@ -1183,11 +1197,30 @@ fn owned(directory: &Path) -> Owned
         return Owned::Unowned;
     };
     // An exclusive lock that this process takes means that no hub holds the
-    // shared one; the file's close lets it go.
+    // shared one. The probe lets its lock go before the close.
     match owner.try_lock() {
         Err(TryLockError::WouldBlock) => Owned::Owned,
-        Ok(()) | Err(TryLockError::Error(_)) => Owned::Unowned,
+        Ok(()) => {
+            let_go(&owner);
+            Owned::Unowned
+        },
+        Err(TryLockError::Error(_)) => Owned::Unowned,
     }
+}
+
+/// Let the lock on `file` go before the file closes (#7687).
+///
+/// A close lets a lock go only when no other descriptor of the open file
+/// lives. A child that a spawn forks holds a copy of each descriptor until
+/// it execs, so a close in that window keeps the lock past the close. An
+/// unlock lets it go at once, whatever copies live.
+///
+/// # Specification
+/// trivial.
+fn let_go(file: &File)
+{
+    // economy: an unlock that fails leaves the lock to the close, as before.
+    let _unlocked: std::io::Result<()> = file.unlock();
 }
 
 /// The file of the slot at `place`.
@@ -1243,9 +1276,12 @@ fn reap(
             continue;
         };
         // A lock that the reaper takes means that the holder died: the kernel
-        // let its lock go. The file's close lets the reaper's lock go.
-        if file.try_lock().is_ok() && reclaim(&segment.counter, slot) == Audit::Due {
-            audit_due = Audit::Due;
+        // let its lock go. The reaper lets its own lock go before the close.
+        if file.try_lock().is_ok() {
+            if reclaim(&segment.counter, slot) == Audit::Due {
+                audit_due = Audit::Due;
+            }
+            let_go(&file);
         }
     }
     if audit_due == Audit::Due {
