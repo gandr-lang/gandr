@@ -303,7 +303,7 @@
 1200..1201 Other ")"
 1202..1203 Other "}"
 1205..1281 Comment "/// A field selected by its label off a record no field depends on reads the"
-1282..1322 Comment "/// field the pattern `#{.n = m}` reads."
+1282..1322 Comment "/// field the pattern `*{.n = m}` reads."
 1323..1325 Other "@["
 1325..1331 Other "checks"
 1331..1332 Other "]"

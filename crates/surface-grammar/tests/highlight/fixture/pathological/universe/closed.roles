@@ -112,7 +112,7 @@
 918..919 Other "}"
 919..919 Other ""
 919..919 Other ""
-921..997 Comment "/// One is a natural, and the decode of the arrow code runs to `Nat => Nat`."
+921..997 Comment "/// One is a natural, and the decode of the arrow code runs to `Nat -> Nat`."
 998..1000 Other "@["
 1000..1007 Other "refuses"
 1007..1008 Other "("
