@@ -11,7 +11,7 @@ import "../../model/effects/state.gandr";
 def forgetful() -> Integer =
   handle st : StatePutGet with sort S = Integer {
     st.put 1;
-    let a = st.get ();
+    let a = st.get;
     pure a
   } with {
     | pure(x) => pure x
@@ -26,7 +26,7 @@ def forgetful() -> Integer =
 def accumulating() -> (Integer -> Integer) =
   handle st : StatePutLaws with sort S = Integer {
     st.put 1;
-    let a = st.get ();
+    let a = st.get;
     pure thunk { fun (s : Integer) { pure a } }
   } with {
     | pure(x) => pure x

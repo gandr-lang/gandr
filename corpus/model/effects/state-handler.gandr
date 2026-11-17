@@ -15,9 +15,9 @@ import "./state-model.gandr";
 @[runs("9")]
 def constant() -> Integer =
   handle st : State.Eff with sort S = Integer {
-    let a = st.get ();
+    let a = st.get;
     st.put a;
-    let b = st.get ();
+    let b = st.get;
     pure a + b + 1
   } with {
     | pure(x) => pure x
@@ -29,8 +29,8 @@ def constant() -> Integer =
 def answeredByPassing() -> Integer -> Integer =
   handle st : State.Eff with sort S = Integer {
     st.put 4;
-    let a = st.get ();
-    let b = st.get ();
+    let a = st.get;
+    let b = st.get;
     pure fun (_s) { pure a * 10 + b }
   } with Passing
 
@@ -44,8 +44,8 @@ def answeredFromZero() -> Integer =
 def answeredInScope() -> Integer -> Integer =
   handle st : State.Eff with sort S = Integer {
     st.put 4;
-    let a = st.get ();
-    let b = st.get ();
+    let a = st.get;
+    let b = st.get;
     pure fun (_s) { pure a * 10 + b }
   }
 

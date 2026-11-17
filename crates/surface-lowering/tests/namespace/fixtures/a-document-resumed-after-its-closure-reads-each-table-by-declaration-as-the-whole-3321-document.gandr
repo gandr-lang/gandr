@@ -6,7 +6,7 @@ def fixed[s : Model Counter with sort C = Integer](c : Integer) -> Integer = s.r
 def omittedAgain() -> Integer = stepped 5;
 def forgetfulAgain() -> Integer = handle st : StatePutLaws with sort S = Integer {
   st.put 2;
-  st.get ()
+  st.get
 } with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{} };
 data Bit : Type where {
   | Off : Bit

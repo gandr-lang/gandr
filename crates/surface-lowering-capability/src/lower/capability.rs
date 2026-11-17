@@ -195,6 +195,7 @@ use gandr_core_term::handler::subject;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering_base::lower::arity::Planned;
 use gandr_surface_lowering_base::lower::arity::clause_body;
 pub(super) use gandr_surface_lowering_base::lower::capability::Authority;
@@ -1298,6 +1299,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// The call's refusal.
     ///
+    /// # Cost
+    /// - allocation: the operation's name, the call's arguments and its plan,
+    ///   growth within the module's calls
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — exercises through a parameter, a declaration and a
     ///   scope's binder lower and check, and one outside the authority is
@@ -1329,58 +1334,24 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         }
         let name = self.cx().name_at(selected);
         let operation = OperationName::from(name.as_ref());
-        let interface = if let Performer::Capability(_, Some(ref theory)) = performer {
-            if theory.operation(&operation).is_none() {
-                return Err(LoweringRefusal::UnresolvedName {
-                    span: selected.span,
-                    name,
-                });
-            }
-            Interface::Theory(Arc::clone(theory))
-        }
-        else if let Performer::Interface(ref named) = performer
-            && let Some(&Provider::Block(ref foreign)) =
-                self.cx().collected.interface(head.span.start(), named)
-        {
-            if !foreign
-                .operations
-                .iter()
-                .any(|offered| offered.name == operation)
-            {
-                return Err(LoweringRefusal::UnresolvedName {
-                    span: selected.span,
-                    name,
-                });
-            }
-            Interface::Foreign(Arc::clone(foreign))
-        }
-        else {
-            let table = host(site)?;
-            let Maybe::Present(offered) = table.offering(&operation)
-            else {
-                return Err(LoweringRefusal::UnresolvedName {
-                    span: selected.span,
-                    name,
-                });
-            };
-            let interface = offered.name().clone();
-            if let Performer::Interface(ref named) = performer
-                && *named != interface
-            {
-                return Err(LoweringRefusal::UnresolvedName {
-                    span: selected.span,
-                    name,
-                });
-            }
-            Interface::Host(interface)
-        };
+        let interface =
+            self.offering(site, (&performer, head.span.start()), selected, &operation)?;
         let frame = self.host().require(site, Produced::Computation)?;
         let start = self.cx().operands.entries().len();
+        let list = ahead.here();
         arguments(site, &mut ahead, &mut self.cx_mut().operands)?;
         let payload = Stretch {
             start,
             end: self.cx().operands.entries().len(),
         };
+        // An operation of no input is called by its bare name: the reader
+        // refuses the empty argument list `()` by its name.
+        if payload.start == payload.end {
+            return Err(LoweringRefusal::RetiredName {
+                span: ByteSpan::new(list.start(), site.at.span.end()).unwrap_or(list),
+                form: RetiredForm::EmptyOperationCall,
+            });
+        }
         if let Performer::Capability(capability, _) = performer {
             self.host().read(capability, Reading::Value(frame));
         }
@@ -1406,6 +1377,142 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         Ok(Planned(true))
     }
 
+    /// Plan the bare selection `x.op` at `site` as the exercise of `op` with
+    /// no input, when `x` holds a capability or names a host interface.
+    ///
+    /// # Specification
+    /// - requires: `site` stands at a projection.
+    /// - ensures: a projection [`Self::exercise`] would read as a call head
+    ///   stands as the same exercise with the unit payload, the encoding of no
+    ///   input; any other projection is left unplanned.
+    /// - fails: as [`Self::exercise`], save the argument list's fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Cost
+    /// One read of the projection's pieces and one plan.
+    /// - allocation: the operation's name and its plan, growth within the
+    ///   module's calls
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare perform by an interface's name checks at the
+    ///   unit payload, and the call `()` of it is refused by name.
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_of_no_input_is_performed_by_its_bare_name_7935`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Exercise(_))))]
+    #[inline]
+    pub fn exercise_bare(
+        &mut self,
+        site: Site,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let Some((performer, selected)) = self.exercised(site, site.reading.frame(), site.at)?
+        else {
+            return Ok(Planned(false));
+        };
+        if let Performer::Interface(ref named) = performer {
+            self.cx_mut()
+                .collected
+                .reach_host(site.at.span.start(), named);
+        }
+        let name = self.cx().name_at(selected);
+        let operation = OperationName::from(name.as_ref());
+        let interface = self.offering(
+            site,
+            (&performer, site.at.span.start()),
+            selected,
+            &operation,
+        )?;
+        let frame = self.host().require(site, Produced::Computation)?;
+        if let Performer::Capability(capability, _) = performer {
+            self.host().read(capability, Reading::Value(frame));
+        }
+        let none = self.cx().operands.entries().len();
+        let kept = self.cx().kept(Stretch {
+            start: none,
+            end: none,
+        });
+        self.host().plan(
+            site,
+            super::Plan::Exercise(Exercised {
+                performer,
+                interface,
+                operation,
+                frame,
+                head: site.at.span,
+                payload: kept,
+            }),
+        );
+
+        Ok(Planned(true))
+    }
+
+    /// The interface that offers `operation` to `performer`, where the head
+    /// starting at `at` stands: a theory capability's theory, an extern
+    /// block's interface, or the host interface offering it.
+    ///
+    /// # Specification
+    /// - ensures: the interface whose signature holds `operation`.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] at `selected` for an
+    ///   operation the interface does not offer, or one a named host interface
+    ///   does not; the host table's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The refusal above.
+    ///
+    /// # Cost
+    /// One lookup of `operation` in one signature.
+    /// - allocation: the host interface's name, durable by the call's plan
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::exercise`].
+    /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
+    fn offering(
+        &self,
+        site: Site,
+        (performer, at): (&Performer, ByteOffset),
+        selected: Placed,
+        operation: &OperationName,
+    ) -> Result<Interface, LoweringRefusal<'source>>
+    {
+        let unresolved = || LoweringRefusal::UnresolvedName {
+            span: selected.span,
+            name: self.cx().name_at(selected),
+        };
+        if let Performer::Capability(_, Some(ref theory)) = *performer {
+            if theory.operation(operation).is_none() {
+                return Err(unresolved());
+            }
+            return Ok(Interface::Theory(Arc::clone(theory)));
+        }
+        if let Performer::Interface(ref named) = *performer
+            && let Some(&Provider::Block(ref foreign)) = self.cx().collected.interface(at, named)
+        {
+            if !foreign
+                .operations
+                .iter()
+                .any(|offered| offered.name == *operation)
+            {
+                return Err(unresolved());
+            }
+            return Ok(Interface::Foreign(Arc::clone(foreign)));
+        }
+        let table = host(site)?;
+        let Maybe::Present(offered) = table.offering(operation)
+        else {
+            return Err(unresolved());
+        };
+        let interface = offered.name().clone();
+        if let Performer::Interface(ref named) = *performer
+            && *named != interface
+        {
+            return Err(unresolved());
+        }
+        Ok(Interface::Host(interface))
+    }
+
     /// What performs the operation a call head `x.op` selects, and the
     /// selected `op`, when `x` holds a capability where `frame` stands or
     /// names an interface's module and no value.
@@ -1424,6 +1531,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Errors
     /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the head and the name it is written with,
+    ///   growth within the head's pieces
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::exercise`].

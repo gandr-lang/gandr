@@ -5,7 +5,7 @@ theory State where {
 }
 def read() -> Integer {
   handle st : State with sort S = Integer {
-    st.get ()
+    st.get
   } with {
     | pure(x) => pure x
     | oper get(k) => k 4
