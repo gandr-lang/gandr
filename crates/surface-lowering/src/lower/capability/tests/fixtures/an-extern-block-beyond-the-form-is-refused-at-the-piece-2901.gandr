@@ -1,0 +1,2 @@
+extern "rust" from "m" as M { def f(x : u32) -> u32; }
+extern "rust" from "n" as M { def g(x : u32) -> u32; }

@@ -1,0 +1,1315 @@
+//! The parser's report: today's grammar read on each axis a syntax candidate
+//! is measured against, one Markdown table row per measure.
+//!
+//! Run with `mise run parser:report`, which builds it under the release
+//! profile and writes `target/parser-report.md`.
+//!
+//! # Boundaries
+//!
+//! The report prints the rows of each axis to its standard output:
+//!
+//! | Axis | Measure | Read from |
+//! | ---- | ------- | --------- |
+//! | latency | each keystroke's time from its change to its settled answer, p50 and p99 | a language-server session per [`SAMPLE`] source, one line typed back a character per change |
+//! | throughput | bytes and significant tokens per second of the corpus's cold parse | each corpus source parsed [`RUNS`] times, the fastest run kept |
+//! | recovery | each mutant's fate over the syntax exemplars, and the obligations a line owes outside itself while it is typed | `ledger recovery`'s sweep, and every [`STRIDE`]th indented line of each [`SAMPLE`] source typed back, indented first and at column zero |
+//! | ambiguity | each decision's settling stage, the candidates it read, and the windows and window tokens it molded | the molder's [`DecisionCensus`] over every corpus source |
+//! | incremental | per edit, the tokens re-labelled and the forms re-molded against what the edit touches | a form store per [`SAMPLE`] source, through the latency workload's keystrokes and the edit sweep's form edits |
+//! | parallel | the units the form split molds apart, the seams that break, the bytes in units that join as molded, and the split's scan against the cold parse | [`FormSplit`] over each corpus source, its runs molded and joined as [`parse_by_form`](gandr_surface_parser::parse_by_form) does, the scan's fastest of [`RUNS`] |
+//!
+//! # Dependencies
+//!
+//! The corpus is the sweeps' corpus, its strict and fixture roots, listed by
+//! `gandr-workflow-sweep`. The latency workload's client is the driver's
+//! benchmark client (`crates/surface-driver/benches/shared/lsp.rs`).
+
+#[path = "../../surface-driver/benches/shared/lsp.rs"]
+mod lsp;
+
+use core::fmt;
+use core::fmt::Write as _;
+use core::time::Duration;
+use std::io;
+use std::io::Write as _;
+use std::path::Path;
+use std::time::Instant;
+
+use gandr_core_fork::Serial;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::PbgError;
+use gandr_surface_grammar::built_in;
+use gandr_surface_parser::DecisionCensus;
+use gandr_surface_parser::DecisionCount;
+use gandr_surface_parser::FormSplit;
+use gandr_surface_parser::FormUnit;
+use gandr_surface_parser::Lexeme;
+use gandr_surface_parser::MeldError;
+use gandr_surface_parser::MeldState;
+use gandr_surface_parser::Molder;
+use gandr_surface_parser::UnitSeam;
+use gandr_surface_parser::label;
+use gandr_surface_parser::parse;
+use gandr_surface_session::FormStore;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
+use gandr_workflow_ledger_tasks::LedgerRun;
+use gandr_workflow_ledger_tasks::LedgerTask;
+use gandr_workflow_ledger_tasks::RecoveryTally;
+use gandr_workflow_sweep::SweepError;
+use quenchant_shape::shape::Maybe;
+
+/// How many times each source is parsed cold; the fastest run stands for it,
+/// as the acceptance test's latency budget reads it.
+const RUNS: u32 = 5;
+
+/// The directory of syntax exemplars the recovery sweep mutates.
+const EXEMPLARS: &str = "corpus/ledger";
+
+/// The latency workload's sources, from the repository root: eight model
+/// sources from 1.3 kB to 15 kB, the largest model closure among them. Every
+/// candidate types the same keystrokes into them.
+const SAMPLE: [&str; 8] = [
+    "corpus/model/deployments/offers.gandr",
+    "corpus/model/control/accessor-place.gandr",
+    "corpus/model/universe/decoded-descent.gandr",
+    "corpus/model/identity/group-laws.gandr",
+    "corpus/model/modules/prelude-resolve.gandr",
+    "corpus/model/identity/model-counter-manifest.gandr",
+    "corpus/model/desc/lc/model-record.gandr",
+    "corpus/model/specification/niche-realizability.gandr",
+];
+
+/// The least code a typed line holds past its indentation: the workload types
+/// the first line at or after a source's middle that holds this much and is
+/// no comment.
+const TYPED: usize = 20;
+
+/// The typing workload's stride: it types every fourth indented code line of
+/// a sample source.
+const STRIDE: usize = 4;
+
+/// Why the report stopped.
+#[derive(Debug)]
+enum Failure
+{
+    /// The built-in grammar did not build.
+    Grammar(PbgError),
+    /// The corpus could not be listed.
+    Corpus(SweepError),
+    /// A source could not be read, or the table not written.
+    Io(io::Error),
+    /// A parse could not assemble its tree.
+    Parse(MeldError),
+    /// The recovery sweep faulted, its fault rendered.
+    Recovery(String),
+    /// A latency session stopped before its keystrokes were answered.
+    Session(lsp::Fault),
+    /// A sample source holds no line the latency workload types, by its path.
+    Untyped(&'static str),
+}
+
+impl From<PbgError> for Failure
+{
+    /// The grammar's fault.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(fault: PbgError) -> Self
+    {
+        Self::Grammar(fault)
+    }
+}
+
+impl From<SweepError> for Failure
+{
+    /// The corpus listing's fault.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(fault: SweepError) -> Self
+    {
+        Self::Corpus(fault)
+    }
+}
+
+impl From<io::Error> for Failure
+{
+    /// A read's or a write's refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(fault: io::Error) -> Self
+    {
+        Self::Io(fault)
+    }
+}
+
+impl From<MeldError> for Failure
+{
+    /// A parse's fault.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(fault: MeldError) -> Self
+    {
+        Self::Parse(fault)
+    }
+}
+
+impl From<lsp::Fault> for Failure
+{
+    /// A latency session's fault.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(fault: lsp::Fault) -> Self
+    {
+        Self::Session(fault)
+    }
+}
+
+impl From<fmt::Error> for Failure
+{
+    /// The table's formatting refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(fault: fmt::Error) -> Self
+    {
+        Self::Io(io::Error::other(fault))
+    }
+}
+
+impl fmt::Display for Failure
+{
+    /// Writes why the report stopped.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Grammar(ref fault) => write!(f, "the built-in grammar did not build: {fault}"),
+            Self::Corpus(ref fault) => write!(f, "the corpus could not be listed: {fault}"),
+            Self::Io(ref fault) => write!(f, "a source or the table refused: {fault}"),
+            Self::Parse(ref fault) => write!(f, "a parse could not assemble its tree: {fault}"),
+            Self::Recovery(ref fault) => write!(f, "the recovery sweep faulted: {fault}"),
+            Self::Session(ref fault) => write!(f, "a latency session stopped: {fault}"),
+            Self::Untyped(path) => write!(
+                f,
+                "`{path}` holds no line of {TYPED} code characters at or after its middle"
+            ),
+        }
+    }
+}
+
+impl core::error::Error for Failure
+{
+}
+
+/// A count the report reads.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+struct Tally(usize);
+
+impl Tally
+{
+    /// This count and `more`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn and(
+        self,
+        more: Self,
+    ) -> Self
+    {
+        Self(self.0.saturating_add(more.0))
+    }
+}
+
+impl From<DecisionCount> for Tally
+{
+    /// The census's count.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(count: DecisionCount) -> Self
+    {
+        Self(count.0)
+    }
+}
+
+impl fmt::Display for Tally
+{
+    /// Writes the count.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A part of a whole, written as a percentage with one decimal, `48.0%`.
+#[derive(Clone, Copy, Debug)]
+struct Share
+{
+    /// The part.
+    part: Tally,
+    /// The whole.
+    whole: Tally,
+}
+
+impl fmt::Display for Share
+{
+    /// Writes the percentage, `0.0%` of an empty whole.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let tenths = self
+            .part
+            .0
+            .saturating_mul(1000)
+            .checked_div(self.whole.0)
+            .unwrap_or(0);
+        write!(
+            f,
+            "{}.{}%",
+            tenths.checked_div(10).unwrap_or(0),
+            tenths.checked_rem(10).unwrap_or(0)
+        )
+    }
+}
+
+/// A count per unit of another, written with two decimals, `3.24`.
+#[derive(Clone, Copy, Debug)]
+struct Ratio
+{
+    /// The count.
+    part: Tally,
+    /// The units it is spread over.
+    whole: Tally,
+}
+
+impl fmt::Display for Ratio
+{
+    /// Writes the ratio, `0.00` over no unit.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let hundredths = self
+            .part
+            .0
+            .saturating_mul(100)
+            .checked_div(self.whole.0)
+            .unwrap_or(0);
+        write!(
+            f,
+            "{}.{:02}",
+            hundredths.checked_div(100).unwrap_or(0),
+            hundredths.checked_rem(100).unwrap_or(0)
+        )
+    }
+}
+
+/// A count over a wall time, written per second in whole units.
+#[derive(Clone, Copy, Debug)]
+struct PerSecond
+{
+    /// The count.
+    count: Tally,
+    /// The wall time it took.
+    wall: Duration,
+}
+
+impl fmt::Display for PerSecond
+{
+    /// Writes the rate, `0` over no time.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let count = u128::try_from(self.count.0).unwrap_or(u128::MAX);
+        let rate = count
+            .saturating_mul(1_000_000_000)
+            .checked_div(self.wall.as_nanos())
+            .unwrap_or(0);
+        write!(f, "{rate}")
+    }
+}
+
+/// What the corpus's cold parse cost.
+#[derive(Clone, Copy, Debug, Default)]
+struct Throughput
+{
+    /// The sources parsed.
+    sources: Tally,
+    /// The bytes parsed.
+    bytes: Tally,
+    /// The significant tokens parsed.
+    tokens: Tally,
+    /// The fastest run of each source, summed.
+    wall: Duration,
+}
+
+/// What the form split holds of the corpus.
+#[derive(Clone, Copy, Debug, Default)]
+struct Parallel
+{
+    /// The split's runs, each a unit molded apart.
+    units: Tally,
+    /// The units whose seam broke, molded again onto the state before them.
+    broken: Tally,
+    /// The bytes of the units that joined as molded.
+    held: Tally,
+    /// The fastest split of each source, summed.
+    scan: Duration,
+}
+
+/// The fastest of [`RUNS`] form splits of `text`.
+///
+/// # Specification
+/// trivial.
+fn fastest_split(
+    molder: &Molder<'_>,
+    text: SourceText<'_>,
+) -> Duration
+{
+    let mut best = Duration::MAX;
+    for _ in 0 .. RUNS {
+        let start = Instant::now();
+        let split = FormSplit::new(molder, text);
+        let wall = start.elapsed();
+        drop(core::hint::black_box(split));
+        best = best.min(wall);
+    }
+    best
+}
+
+/// Split `text` into its form runs, mold each apart and join them, adding to
+/// `parallel` the units, the broken seams, the bytes of the units that joined
+/// as molded, and the split's fastest scan.
+///
+/// # Specification
+/// trivial.
+fn parallel_of(
+    pbg: &Pbg,
+    text: SourceText<'_>,
+    parallel: &mut Parallel,
+) -> Result<(), Failure>
+{
+    let mut molder = Molder::new(pbg);
+    parallel.scan = parallel.scan.saturating_add(fastest_split(&molder, text));
+    let split = FormSplit::new(&molder, text);
+    let runs = split.runs().to_vec();
+    let units: Vec<FormUnit<'_>> = runs
+        .iter()
+        .map(|&run| split.mold(&mut molder, run))
+        .collect();
+    let joined = split.join(&mut molder, units)?;
+    let labeling = split.into_labeling();
+    let tokens = labeling.tokens();
+    for (run, seam) in runs.iter().zip(joined.seams()) {
+        parallel.units = parallel.units.and(Tally(1));
+        let (UnitSeam::Joined, Some(first), Some(last)) = (
+            *seam,
+            tokens.get(usize::from(run.start())),
+            usize::from(run.end())
+                .checked_sub(1)
+                .and_then(|end| tokens.get(end)),
+        )
+        else {
+            parallel.broken = parallel
+                .broken
+                .and(Tally(usize::from(matches!(seam, UnitSeam::Broken(_)))));
+            continue;
+        };
+        let bytes = last.end.saturating_sub(first.start);
+        parallel.held = parallel
+            .held
+            .and(Tally(usize::try_from(bytes).unwrap_or(usize::MAX)));
+    }
+    Ok(())
+}
+
+/// Mold `text` once, adding the molder's census to `census`, and count its
+/// significant tokens.
+///
+/// # Specification
+/// trivial.
+fn census_of(
+    pbg: &Pbg,
+    text: SourceText<'_>,
+    census: &mut DecisionCensus,
+) -> Tally
+{
+    let mut molder = Molder::new(pbg);
+    let mut state = MeldState::new(pbg);
+    let tokens = label(SourceFragment::from(<&str>::from(text)));
+    molder.mold_stream(&mut state, &tokens, text);
+    let read = molder.census();
+    let add = |total: &mut DecisionCount, more: DecisionCount| {
+        total.0 = total.0.saturating_add(more.0);
+    };
+    add(&mut census.sole, read.sole);
+    add(&mut census.least_key, read.least_key);
+    add(&mut census.opener, read.opener);
+    add(&mut census.next_token, read.next_token);
+    add(&mut census.window, read.window);
+    add(&mut census.candidates, read.candidates);
+    add(&mut census.windows, read.windows);
+    add(&mut census.window_tokens, read.window_tokens);
+    Tally(
+        tokens
+            .iter()
+            .filter(|token| token.lexeme != Lexeme::Space)
+            .count(),
+    )
+}
+
+/// The fastest of [`RUNS`] cold parses of `text`.
+///
+/// # Specification
+/// trivial.
+fn fastest_parse(
+    pbg: &Pbg,
+    text: SourceText<'_>,
+) -> Result<Duration, Failure>
+{
+    let mut best = Duration::MAX;
+    for _ in 0 .. RUNS {
+        let start = Instant::now();
+        let parsed = parse(pbg, text)?;
+        let wall = start.elapsed();
+        drop(core::hint::black_box(parsed));
+        best = best.min(wall);
+    }
+    Ok(best)
+}
+
+/// The recovery sweep's tally over [`EXEMPLARS`], from the repository root.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the paths of the sweep, setup; the text of a fault, error path
+fn recovery() -> Result<RecoveryTally, Failure>
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let task = LedgerTask::Recovery {
+        directory: root.join(EXEMPLARS),
+    };
+    match task
+        .run()
+        .map_err(|fault| Failure::Recovery(fault.to_string()))?
+    {
+        LedgerRun::Swept(report) => Ok(report.tally()),
+        LedgerRun::Written(_)
+        | LedgerRun::Verified(_)
+        | LedgerRun::Listed(_)
+        | LedgerRun::Shown(_)
+        | LedgerRun::Fenced(_) => Err(Failure::Recovery(String::from(
+            "the task answered no sweep",
+        ))),
+    }
+}
+
+/// A wall time written in milliseconds with one decimal, `61.3`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Millis(Duration);
+
+impl fmt::Display for Millis
+{
+    /// Writes the time in tenths of a millisecond, rounded down.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let tenths = self.0.as_micros().checked_div(100).unwrap_or(0);
+        write!(
+            f,
+            "{}.{}",
+            tenths.checked_div(10).unwrap_or(0),
+            tenths.checked_rem(10).unwrap_or(0)
+        )
+    }
+}
+
+/// The reading of one row of the table: the closed set of the kinds a row
+/// reads.
+#[derive(Clone, Copy, Debug)]
+enum Reading
+{
+    /// A count.
+    Tally(Tally),
+    /// A wall time in milliseconds with one decimal.
+    Millis(Millis),
+    /// A count per second.
+    PerSecond(PerSecond),
+    /// A part of a whole, as a percentage.
+    Share(Share),
+    /// A count per unit.
+    Ratio(Ratio),
+}
+
+impl fmt::Display for Reading
+{
+    /// Writes the reading as its kind writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Tally(ref tally) => tally.fmt(f),
+            Self::Millis(ref millis) => millis.fmt(f),
+            Self::PerSecond(ref rate) => rate.fmt(f),
+            Self::Share(ref share) => share.fmt(f),
+            Self::Ratio(ref ratio) => ratio.fmt(f),
+        }
+    }
+}
+
+/// What the latency workload read: how many keystrokes it typed, and the
+/// median and the 99th percentile of their times to a settled answer.
+#[derive(Clone, Copy, Debug)]
+struct Latency
+{
+    /// The keystrokes typed over every sample source.
+    keystrokes: Tally,
+    /// The nearest-rank median.
+    p50: Duration,
+    /// The nearest-rank 99th percentile.
+    p99: Duration,
+}
+
+/// Why a source yields no keystrokes.
+#[derive(Clone, Copy, Debug)]
+enum Untyped
+{
+    /// No line at or after the source's middle holds [`TYPED`] code
+    /// characters past its indentation outside a comment.
+    NoLine,
+}
+
+/// The texts one sample source passes through: the text it opens at, and the
+/// text after each keystroke.
+struct Keystrokes
+{
+    /// The source with its typed line's code left out, its indentation kept.
+    opened: String,
+    /// The source after each keystroke, the last the source itself.
+    typed: Vec<String>,
+}
+
+/// The texts `text` passes through when its typed line is typed back one
+/// character per change: the first line at or after its middle that holds
+/// [`TYPED`] code characters past its indentation and is no comment.
+///
+/// # Specification
+/// trivial.
+fn keystrokes(text: SourceText<'_>) -> Maybe<Keystrokes, Untyped>
+{
+    let text = <&str>::from(text);
+    let lines: Vec<(usize, &str)> = text
+        .split_inclusive('\n')
+        .scan(0_usize, |start, line| {
+            let at = *start;
+            *start = start.saturating_add(line.len());
+            Some((at, line))
+        })
+        .collect();
+    let middle = lines.len().checked_div(2).unwrap_or(0);
+    let found = lines.iter().skip(middle).find_map(|&(at, line)| {
+        let content = line.trim_end_matches(['\n', '\r']);
+        let code = content.trim_start();
+        let typed = code.chars().take(TYPED).count() == TYPED && !code.starts_with("//");
+        typed.then(|| {
+            let start = at.saturating_add(content.len().saturating_sub(code.len()));
+            (start, start.saturating_add(code.len()))
+        })
+    });
+    let Some((start, end)) = found
+    else {
+        return Maybe::Absent(Untyped::NoLine);
+    };
+    let (Some(before), Some(code), Some(after)) =
+        (text.get(.. start), text.get(start .. end), text.get(end ..))
+    else {
+        return Maybe::Absent(Untyped::NoLine);
+    };
+    let typed = code
+        .char_indices()
+        .map(|(at, character)| at.saturating_add(character.len_utf8()))
+        .filter_map(|typed| code.get(.. typed))
+        .map(|typed| format!("{before}{typed}{after}"))
+        .collect();
+    Maybe::Present(Keystrokes {
+        opened: format!("{before}{after}"),
+        typed,
+    })
+}
+
+/// The latency workload: each [`SAMPLE`] source opened in a language-server
+/// session with its typed line's code left out, then typed back one
+/// character per change, each change timed from its write to its settled
+/// answer.
+///
+/// # Specification
+/// trivial.
+fn latency() -> Result<Latency, Failure>
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut times = Vec::new();
+    for relative in SAMPLE {
+        let path = std::fs::canonicalize(root.join(relative))?;
+        let text = std::fs::read_to_string(&path)?;
+        let Maybe::Present(Keystrokes { opened, typed }) =
+            keystrokes(SourceText::from(text.as_str()))
+        else {
+            return Err(Failure::Untyped(relative));
+        };
+        let taken = lsp::live(&path, opened, move |client| {
+            let mut taken = Vec::with_capacity(typed.len());
+            for text in &typed {
+                let start = Instant::now();
+                client.change(core::slice::from_ref(text))?;
+                taken.push(start.elapsed());
+            }
+            Ok(taken)
+        })?;
+        times.extend(taken);
+    }
+    times.sort_unstable();
+    // The nearest rank of the `percent`th percentile, as an index into the
+    // sorted times.
+    let rank = |percent: usize| {
+        times
+            .len()
+            .saturating_mul(percent)
+            .div_ceil(100)
+            .saturating_sub(1)
+    };
+    let at = |percent| times.get(rank(percent)).copied().unwrap_or_default();
+    Ok(Latency {
+        keystrokes: Tally(times.len()),
+        p50: at(50),
+        p99: at(99),
+    })
+}
+
+/// What one part of the incremental script read, summed over its edits.
+#[derive(Clone, Copy, Debug, Default)]
+struct Incremental
+{
+    /// The edits.
+    edits: Tally,
+    /// The tokens the form store's relabel labeled afresh.
+    relabeled: Tally,
+    /// The tokens each edit touches.
+    tokens: Tally,
+    /// The forms the form store molded rather than took up.
+    molded: Tally,
+    /// The forms each edit touches.
+    forms: Tally,
+}
+
+impl Incremental
+{
+    /// This reading and `more`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn and(
+        self,
+        more: Self,
+    ) -> Self
+    {
+        Self {
+            edits: self.edits.and(more.edits),
+            relabeled: self.relabeled.and(more.relabeled),
+            tokens: self.tokens.and(more.tokens),
+            molded: self.molded.and(more.molded),
+            forms: self.forms.and(more.forms),
+        }
+    }
+}
+
+/// What an edit touches in the revision after it: the tokens and the
+/// predicted form runs that meet the bytes the edit rewrote, at least one of
+/// each. The rewritten bytes run from the end of the two revisions' longest
+/// common prefix to the start of their longest common suffix. A run of bytes
+/// meets them when it overlaps them, or holds their point when the edit only
+/// deleted.
+///
+/// # Specification
+/// trivial.
+fn touched(
+    molder: &Molder<'_>,
+    before: SourceText<'_>,
+    after: SourceText<'_>,
+) -> (Tally, Tally)
+{
+    let old = <&str>::from(before).as_bytes();
+    let new = <&str>::from(after).as_bytes();
+    let prefix = old
+        .iter()
+        .zip(new)
+        .take_while(|&(left, right)| left == right)
+        .count();
+    let room = old.len().min(new.len()).saturating_sub(prefix);
+    let suffix = old
+        .iter()
+        .rev()
+        .zip(new.iter().rev())
+        .take(room)
+        .take_while(|&(left, right)| left == right)
+        .count();
+    let (start, end) = (prefix, new.len().saturating_sub(suffix));
+    let meets = |from: usize, to: usize| {
+        if start == end {
+            from <= start && start <= to
+        }
+        else {
+            from < end && to > start
+        }
+    };
+    let offset = |at: u32| usize::try_from(at).unwrap_or(usize::MAX);
+    let tokens = label(SourceFragment::from(<&str>::from(after)));
+    let own = tokens
+        .iter()
+        .filter(|token| meets(offset(token.start), offset(token.end)))
+        .count();
+    let forms = molder
+        .form_runs(&tokens, after)
+        .iter()
+        .filter(|run| {
+            let first = tokens.get(usize::from(run.start()));
+            let last = usize::from(run.end())
+                .checked_sub(1)
+                .and_then(|at| tokens.get(at));
+            first
+                .zip(last)
+                .is_some_and(|(first, last)| meets(offset(first.start), offset(last.end)))
+        })
+        .count();
+    (Tally(own.max(1)), Tally(forms.max(1)))
+}
+
+/// The revisions of `revisions` parsed in order through one form store, each
+/// after the first read as an edit of the one before it.
+///
+/// # Specification
+/// trivial.
+fn script(
+    pbg: &Pbg,
+    molder: &Molder<'_>,
+    revisions: &[String],
+) -> Result<Incremental, Failure>
+{
+    let mut store = FormStore::default();
+    let mut read = Incremental::default();
+    let mut prior: Maybe<&String, Unparsed> = Maybe::Absent(Unparsed::First);
+    for revision in revisions {
+        let text = SourceText::from(revision.as_str());
+        let (parsed, census) = store.parse(pbg, text, &Serial)?;
+        drop(core::hint::black_box(parsed));
+        if let Maybe::Present(before) = prior {
+            let (tokens, forms) = touched(molder, SourceText::from(before.as_str()), text);
+            read = read.and(Incremental {
+                edits: Tally(1),
+                relabeled: Tally(census.relabeled().0),
+                tokens,
+                molded: Tally(usize::from(census.molded())),
+                forms,
+            });
+        }
+        prior = Maybe::Present(revision);
+    }
+    Ok(read)
+}
+
+/// Why a revision of a script has no revision before it.
+#[derive(Clone, Copy, Debug)]
+enum Unparsed
+{
+    /// It is the script's first revision, which the store parses whole.
+    First,
+}
+
+/// The edit sweep's revisions of `text`: the source, a declaration inserted
+/// at its middle form, its first form deleted, its last form moved first,
+/// and the source again.
+///
+/// # Specification
+/// trivial.
+fn form_edits(
+    molder: &Molder<'_>,
+    text: SourceText<'_>,
+) -> Vec<String>
+{
+    let original = <&str>::from(text);
+    let tokens = label(SourceFragment::from(original));
+    let mut starts: Vec<usize> = molder
+        .form_runs(&tokens, text)
+        .iter()
+        .filter_map(|run| tokens.get(usize::from(run.start())))
+        .filter_map(|token| usize::try_from(token.start).ok())
+        .collect();
+    starts.push(original.len());
+    let cut = |at: usize| original.split_at_checked(at).unwrap_or((original, ""));
+    let middle = starts.get(starts.len().div_euclid(2)).copied().unwrap_or(0);
+    let first_end = starts.get(1).copied().unwrap_or(original.len());
+    let last_start = starts.iter().rev().nth(1).copied().unwrap_or(0);
+    let (head, tail) = cut(middle);
+    let (front, last) = cut(last_start);
+    vec![
+        String::from(original),
+        format!("{head}def inserted = 1;\n{tail}"),
+        String::from(cut(first_end).1),
+        format!("{last}\n{front}"),
+        String::from(original),
+    ]
+}
+
+/// The incremental workload: over each [`SAMPLE`] source, the keystroke
+/// part types the latency workload's line back one character per revision,
+/// and the form part runs the edit sweep's revisions, each through a form
+/// store of its own. Answers the keystroke part's reading, then the form
+/// part's.
+///
+/// # Specification
+/// trivial.
+fn incremental(pbg: &Pbg) -> Result<(Incremental, Incremental), Failure>
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let molder = Molder::new(pbg);
+    let mut keystroke = Incremental::default();
+    let mut form = Incremental::default();
+    for relative in SAMPLE {
+        let text = std::fs::read_to_string(root.join(relative))?;
+        let source = SourceText::from(text.as_str());
+        let Maybe::Present(Keystrokes { opened, typed }) = keystrokes(source)
+        else {
+            return Err(Failure::Untyped(relative));
+        };
+        let mut revisions = Vec::with_capacity(typed.len().saturating_add(1));
+        revisions.push(opened);
+        revisions.extend(typed);
+        let typed = script(pbg, &molder, &revisions)?;
+        keystroke = keystroke.and(typed);
+        let edited = script(pbg, &molder, &form_edits(&molder, source))?;
+        form = form.and(edited);
+    }
+    Ok((keystroke, form))
+}
+
+/// What one typing scenario read: the revisions it parsed, and the
+/// obligations they owe outside the line being typed.
+#[derive(Clone, Copy, Debug, Default)]
+struct Typing
+{
+    /// The revisions parsed, one per keystroke.
+    keystrokes: Tally,
+    /// The obligations owed outside the typed line, summed over the revisions.
+    elsewhere: Tally,
+}
+
+impl Typing
+{
+    /// This reading and one more revision, which owes `elsewhere`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn and(
+        self,
+        elsewhere: Tally,
+    ) -> Self
+    {
+        Self {
+            keystrokes: self.keystrokes.and(Tally(1)),
+            elsewhere: self.elsewhere.and(elsewhere),
+        }
+    }
+}
+
+/// How many obligations `revision` owes outside `typed`, the bytes of the
+/// line being typed.
+///
+/// # Specification
+/// trivial.
+fn owed(
+    pbg: &Pbg,
+    revision: SourceText<'_>,
+    typed: core::ops::Range<ByteOffset>,
+) -> Result<Tally, Failure>
+{
+    let parsed = parse(pbg, revision)?;
+    Ok(Tally(
+        parsed
+            .obligations()
+            .iter()
+            .filter(|obligation| {
+                obligation.span.end() < typed.start || obligation.span.start() > typed.end
+            })
+            .count(),
+    ))
+}
+
+/// The typing workload: every [`STRIDE`]th indented code line of each
+/// [`SAMPLE`] source typed back one character per revision, in two
+/// scenarios. Indented first, the line's indentation stands before its first
+/// character. At column zero, the code comes first, and then its
+/// indentation, one space per revision. Answers the indented scenario's
+/// reading, then the column-zero one's.
+///
+/// # Specification
+/// trivial.
+fn typing(pbg: &Pbg) -> Result<(Typing, Typing), Failure>
+{
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut indented = Typing::default();
+    let mut zero = Typing::default();
+    // Each revision is written into this one buffer.
+    let mut revision = String::new();
+    for relative in SAMPLE {
+        let text = std::fs::read_to_string(root.join(relative))?;
+        // Each indented code line: its start, its code's start and its end.
+        let mut lines = Vec::new();
+        let mut at = 0_usize;
+        for line in text.split_inclusive('\n') {
+            let content = line.trim_end_matches(['\n', '\r']);
+            let code = content.trim_start();
+            let indent = content.len().saturating_sub(code.len());
+            if indent > 0 && !code.is_empty() && !code.starts_with("//") {
+                lines.push((
+                    at,
+                    at.saturating_add(indent),
+                    at.saturating_add(content.len()),
+                ));
+            }
+            at = at.saturating_add(line.len());
+        }
+        for &(start, code_start, end) in lines.iter().step_by(STRIDE) {
+            let (Some(before), Some(spaces), Some(code), Some(after)) = (
+                text.get(.. start),
+                text.get(start .. code_start),
+                text.get(code_start .. end),
+                text.get(end ..),
+            )
+            else {
+                continue;
+            };
+            let first = ByteOffset::from(start);
+            for (offset, character) in code.char_indices() {
+                let length = offset.saturating_add(character.len_utf8());
+                let typed = code.get(.. length).unwrap_or_default();
+                revision.clear();
+                revision.extend([before, spaces, typed, after]);
+                indented = indented.and(owed(
+                    pbg,
+                    SourceText::from(revision.as_str()),
+                    first .. ByteOffset::from(code_start.saturating_add(length)),
+                )?);
+                revision.clear();
+                revision.extend([before, typed, after]);
+                zero = zero.and(owed(
+                    pbg,
+                    SourceText::from(revision.as_str()),
+                    first .. ByteOffset::from(start.saturating_add(length)),
+                )?);
+            }
+            for width in 1 ..= spaces.len() {
+                let spaced = spaces.get(.. width).unwrap_or_default();
+                revision.clear();
+                revision.extend([before, spaced, code, after]);
+                zero = zero.and(owed(
+                    pbg,
+                    SourceText::from(revision.as_str()),
+                    first
+                        .. ByteOffset::from(start.saturating_add(width).saturating_add(code.len())),
+                )?);
+            }
+        }
+    }
+    Ok((indented, zero))
+}
+
+/// Read every axis this report holds and print its table.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the grammar's tables, each axis's samples and the table's
+///   text, setup
+fn main() -> Result<(), Failure>
+{
+    let pbg = built_in()?;
+    let mut throughput = Throughput::default();
+    let mut census = DecisionCensus::default();
+    let mut parallel = Parallel::default();
+    for source in gandr_workflow_sweep::corpus::sources()? {
+        let text = std::fs::read_to_string(&source.path)?;
+        let text = SourceText::from(text.as_str());
+        let tokens = census_of(&pbg, text, &mut census);
+        throughput.wall = throughput.wall.saturating_add(fastest_parse(&pbg, text)?);
+        throughput.sources = throughput.sources.and(Tally(1));
+        throughput.bytes = throughput.bytes.and(Tally(<&str>::from(text).len()));
+        throughput.tokens = throughput.tokens.and(tokens);
+        parallel_of(&pbg, text, &mut parallel)?;
+    }
+    let tally = recovery()?;
+    let latency = latency()?;
+    let (keystroke, form) = incremental(&pbg)?;
+    let (indented, zero) = typing(&pbg)?;
+    let swept = Tally(tally.swept);
+    let of_swept = |part: usize| Share {
+        part: Tally(part),
+        whole: swept,
+    };
+    let decisions = Tally::from(census.decisions());
+    let of_decisions = |part: DecisionCount| Share {
+        part: Tally::from(part),
+        whole: decisions,
+    };
+    let mut table = String::from("| Axis | Measure | Reading |\n| --- | --- | --- |\n");
+    let whole_millis =
+        |wall: Duration| Tally(usize::try_from(wall.as_millis()).unwrap_or(usize::MAX));
+    let rows: [(&str, &str, Reading); 26] = [
+        (
+            "latency",
+            "keystrokes typed",
+            Reading::Tally(latency.keystrokes),
+        ),
+        (
+            "latency",
+            "time from a keystroke to its settled answer, ms, p50",
+            Reading::Millis(Millis(latency.p50)),
+        ),
+        (
+            "latency",
+            "time from a keystroke to its settled answer, ms, p99",
+            Reading::Millis(Millis(latency.p99)),
+        ),
+        ("throughput", "sources", Reading::Tally(throughput.sources)),
+        ("throughput", "bytes", Reading::Tally(throughput.bytes)),
+        (
+            "throughput",
+            "significant tokens",
+            Reading::Tally(throughput.tokens),
+        ),
+        (
+            "throughput",
+            "cold parse, ms, the fastest of each source's runs summed",
+            Reading::Tally(whole_millis(throughput.wall)),
+        ),
+        (
+            "throughput",
+            "bytes per second",
+            Reading::PerSecond(PerSecond {
+                count: throughput.bytes,
+                wall: throughput.wall,
+            }),
+        ),
+        (
+            "throughput",
+            "significant tokens per second",
+            Reading::PerSecond(PerSecond {
+                count: throughput.tokens,
+                wall: throughput.wall,
+            }),
+        ),
+        ("recovery", "mutants swept", Reading::Tally(swept)),
+        (
+            "recovery",
+            "marked where they were made",
+            Reading::Share(of_swept(tally.where_made)),
+        ),
+        (
+            "recovery",
+            "accepted",
+            Reading::Share(of_swept(tally.accepted)),
+        ),
+        (
+            "recovery",
+            "well formed and refused",
+            Reading::Share(of_swept(tally.formed)),
+        ),
+        (
+            "recovery",
+            "closed early",
+            Reading::Share(of_swept(tally.early)),
+        ),
+        (
+            "recovery",
+            "marked elsewhere",
+            Reading::Share(of_swept(tally.elsewhere)),
+        ),
+        (
+            "recovery",
+            "keystrokes typed, indented first",
+            Reading::Tally(indented.keystrokes),
+        ),
+        (
+            "recovery",
+            "obligations owed outside the typed line, indented first",
+            Reading::Tally(indented.elsewhere),
+        ),
+        (
+            "recovery",
+            "keystrokes typed, at column zero",
+            Reading::Tally(zero.keystrokes),
+        ),
+        (
+            "recovery",
+            "obligations owed outside the typed line, at column zero",
+            Reading::Tally(zero.elsewhere),
+        ),
+        ("ambiguity", "decisions", Reading::Tally(decisions)),
+        (
+            "ambiguity",
+            "settled by one admissible mold",
+            Reading::Share(of_decisions(census.sole)),
+        ),
+        (
+            "ambiguity",
+            "settled by the least local key",
+            Reading::Share(of_decisions(census.least_key)),
+        ),
+        (
+            "ambiguity",
+            "settled by refuting or folding tied openers",
+            Reading::Share(of_decisions(census.opener)),
+        ),
+        (
+            "ambiguity",
+            "settled by the next token",
+            Reading::Share(of_decisions(census.next_token)),
+        ),
+        (
+            "ambiguity",
+            "settled by a lookahead window",
+            Reading::Share(of_decisions(census.window)),
+        ),
+        (
+            "ambiguity",
+            "candidates per decision",
+            Reading::Ratio(Ratio {
+                part: Tally::from(census.candidates),
+                whole: decisions,
+            }),
+        ),
+    ];
+    for (axis, measure, reading) in rows {
+        writeln!(table, "| {axis} | {measure} | {reading} |")?;
+    }
+    writeln!(
+        table,
+        "| ambiguity | windows per windowed decision | {} |",
+        Ratio {
+            part: Tally::from(census.windows),
+            whole: Tally::from(census.window),
+        }
+    )?;
+    writeln!(
+        table,
+        "| ambiguity | window tokens per decision | {} |",
+        Ratio {
+            part: Tally::from(census.window_tokens),
+            whole: decisions,
+        }
+    )?;
+    for (part, read) in [("keystroke", keystroke), ("form", form)] {
+        writeln!(table, "| incremental | {part} edits | {} |", read.edits)?;
+        writeln!(
+            table,
+            "| incremental | {part}: tokens re-labelled per edit | {} |",
+            Ratio {
+                part: read.relabeled,
+                whole: read.edits,
+            }
+        )?;
+        writeln!(
+            table,
+            "| incremental | {part}: tokens re-labelled per token the edit touches | {} |",
+            Ratio {
+                part: read.relabeled,
+                whole: read.tokens,
+            }
+        )?;
+        writeln!(
+            table,
+            "| incremental | {part}: forms re-molded per form the edit touches | {} |",
+            Ratio {
+                part: read.molded,
+                whole: read.forms,
+            }
+        )?;
+    }
+    let micros = |wall: Duration| Tally(usize::try_from(wall.as_micros()).unwrap_or(usize::MAX));
+    let parallel_rows: [(&str, Reading); 5] = [
+        (
+            "units, the form split's runs",
+            Reading::Tally(parallel.units),
+        ),
+        (
+            "seams broken, each unit molded again",
+            Reading::Tally(parallel.broken),
+        ),
+        (
+            "bytes in units that join as molded",
+            Reading::Share(Share {
+                part: parallel.held,
+                whole: throughput.bytes,
+            }),
+        ),
+        (
+            "split scan, ms, the fastest of each source's runs summed",
+            Reading::Tally(whole_millis(parallel.scan)),
+        ),
+        (
+            "split scan against the cold parse",
+            Reading::Share(Share {
+                part: micros(parallel.scan),
+                whole: micros(throughput.wall),
+            }),
+        ),
+    ];
+    for (measure, reading) in parallel_rows {
+        writeln!(table, "| parallel | {measure} | {reading} |")?;
+    }
+    io::stdout().write_all(table.as_bytes())?;
+    Ok(())
+}

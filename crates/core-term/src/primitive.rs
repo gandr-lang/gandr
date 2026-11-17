@@ -1,0 +1,1574 @@
+//! The native prelude: one table for names, signatures and exact evaluation.
+//!
+//! # Native prelude
+//!
+//! `primitive::PRELUDE` is the single table of native names, operator
+//! spellings, ordered argument classifiers, result classifiers and evaluation
+//! instructions. Recognition seeds these rows; the checker reads their
+//! signatures; the sequent machine calls their evaluator. Native function
+//! values are closed, typed thunks of ordinary curried lambdas, so partial
+//! application uses the closure machine rather than a second calling
+//! convention.
+//!
+//! | Family | Names | Types |
+//! | ------ | ----- | ----- |
+//! | Integer arithmetic | `add`, `sub`, `mul`, `int.div`, `int.mod`, `neg` | Integer operands and result |
+//! | Integer comparison | `eq`, `ne`, `lt`, `le`, `gt`, `ge` | Integer operands, boolean result |
+//! | Boolean logic | `and`, `or`, `bool.not` | Boolean operands and result |
+//! | Text | `string.append` | String operands and result |
+//! | Integer combinators | `prim.id`, `prim.const` | Integer operands and result |
+//! | Floating-point arithmetic | `float64.add`, `float64.sub`, `float64.mul`, `float64.div`, `float64.neg`, `float64.exp` | Float64 operands and result |
+//! | Floating-point comparison | `float64.eq`, `float64.ne`, `float64.lt`, `float64.le`, `float64.gt`, `float64.ge` | Float64 operands, boolean result |
+//! | Conversion | `float64.from_integer`, `float64.round` | Integer to Float64, Float64 to Integer |
+//! | Width conversion | `u32.to_integer`, `u64.to_integer`, `i32.to_integer`, `i64.to_integer`, `u32.from_integer`, `u64.from_integer`, `i32.from_integer`, `i64.from_integer` | a width to Integer, Integer to a width |
+//!
+//! Booleans are `Unit + Unit`, with the left injection true. Division truncates
+//! toward zero; remainder has the dividend's sign. Division and remainder by
+//! zero return `PrimitiveError::DivisionByZero`, not a host panic. Arity and
+//! classifier errors stay distinct. Integer arithmetic preserves the literal
+//! vocabulary's unbounded magnitude, including values wider than a machine
+//! integer.
+//!
+//! Floating-point rows are IEEE 754 binary64 under round-to-nearest, ties to
+//! even: division by zero is an infinity or a NaN, not an error, and the
+//! comparisons are IEEE's, so a NaN equals nothing, itself included.
+//! `float64.from_integer` rounds the exact integer to the nearest binary64
+//! value; `float64.round` rounds to the nearest integer, ties to even, and
+//! refuses an infinity or a NaN as [`PrimitiveError::NotFinite`]. Every result
+//! NaN is the one canonical NaN the literal holds.
+//!
+//! A width's `to_integer` is exact. A width's `from_integer` reduces the
+//! integer modulo two to the width's bit count and reads the remainder in the
+//! width's two's complement, as Rust's `as` cast between integers does, so
+//! `u32.from_integer(-1)` is the greatest `u32` and `i32.from_integer` of one
+//! past the greatest `i32` is the least.
+//!
+//! **Choice.** `libm`, with defaults off, supplies `exp` and the rounding: its
+//! soft implementation runs alike on every platform, so a run's floating-point
+//! answer is the same wherever it runs, and it works in `no_std`. The host's
+//! `f64::exp` calls the platform's C library, whose last bit differs across
+//! platforms, and `no_std` lacks it; a hand-written series would be a second,
+//! unmaintained math library. Revisit if a correctly rounded `exp` is needed
+//! (the `core-math` family) or if `libm` loses its maintenance in the Rust
+//! project.
+//!
+//! **Choice.** `num-bigint`, with defaults off, supplies exact arithmetic in
+//! `no_std + alloc`. The maintained pure-Rust implementation avoids
+//! hand-written arithmetic and a native build dependency. Fixed-width `bnum`
+//! cannot implement the literal contract; `rug` brings GMP; `malachite` brings
+//! a larger arithmetic surface and LGPL licensing. Revisit if measured
+//! arithmetic workloads justify a different backend without changing integer
+//! semantics. Native operands borrow decimal payloads until arithmetic requires
+//! conversion, and text operands their contents until an append writes one
+//! result.
+//!
+//! Native execution belongs to the sequent runtime. The pure normalizer runs
+//! one kind of native operation only, a literal identity test: `int.eq`, `eq`,
+//! `ne` and `string.eq` on two literals answer as the kernel computes them.
+//! It holds every other call as a neutral standing on the operation, forced
+//! and applied to its arguments, the shape erasure gives the kernel, so two
+//! such calls convert exactly when their operations and their arguments do.
+//! Persistence records the table name and ordered operands, never a function
+//! pointer or process-local address.
+//!
+//! Witnesses: `primitive::tests::exact_arithmetic_and_errors`,
+//! `primitive::tests::comparisons_and_booleans` and
+//! `primitive::tests::table_signatures_and_currying_agree`.
+//!
+//! # Native runtime assumptions
+//!
+//! Native values synthesize their thunked curried signatures from the native
+//! table, `PRELUDE`. Saturated operations check each argument against that same
+//! row and synthesize its result returner.
+//!
+//! The kernel remains pure: it gains neither primitive syntax nor an arithmetic
+//! evaluator. The checker bridge admits each distinct native row present in the
+//! core arena as a named opaque axiom of its table signature, before the source
+//! module's declarations. Erasure turns a native value into that constant and a
+//! saturated operation into ordinary force and application nodes. Export
+//! retains these named assumptions, and a declaration's kernel audit reports
+//! the native constants it depends on. Kernel admission verifies types; it does
+//! not certify the host arithmetic implementation or introduce arithmetic
+//! equations into conversion. No unchecked admission is used.
+//!
+//! A literal identity test is the exception: the bridge admits its row as the
+//! kernel's literal identity form, `LiteralIdentity`, which the kernel admits
+//! only at the row's type and computes on two literals by its own comparison
+//! of canonical payloads. The audit reports it as a kernel primitive, not as
+//! an axiom. The checker's evaluator computes the same answer, so a conversion
+//! that rests on it replays.
+//!
+//! **Choice.** Explicit, auditable runtime assumptions rather than silently
+//! skipping kernel admission or adding host arithmetic to the trusted kernel.
+//! Identity of literals is no arithmetic: it is equality of canonical
+//! payloads, which the kernel already decides. Revisit when a certified
+//! arithmetic implementation can replace an opaque signature while preserving
+//! the runtime contract. The checker witness
+//! `bridge::tests::native_operations_cross_as_audited_assumptions` checks the
+//! exported axiom, reference remapping and audit.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the four identity
+//!   rows compute in the kernel, priced as permanent trusted surface, and every
+//!   other row stays an opaque assumption.
+
+use alloc::string::String;
+use core::cmp::Ordering;
+use core::fmt;
+use core::ops::Add as _;
+use core::ops::Mul as _;
+use core::ops::Neg as _;
+use core::ops::Rem as _;
+use core::ops::Shl as _;
+use core::ops::Sub as _;
+
+use anodized::spec;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixedInteger;
+use gandr_kernel_term::Float64Literal;
+use gandr_kernel_term::IdentityBase;
+use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::IntegerWidth;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::LiteralIdentity;
+use gandr_kernel_term::Magnitude;
+use gandr_kernel_term::Polarity;
+use gandr_kernel_term::Side;
+use gandr_kernel_term::Sign;
+use gandr_kernel_term::StringLiteral;
+use gandr_kernel_term::Summand;
+use num_bigint::BigInt;
+
+use crate::CompTypeId;
+use crate::CoreArena;
+use crate::ValueId;
+use crate::ValueTypeId;
+use crate::Zone;
+
+/// The bounded argument list of a native operation, without heap allocation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Arguments<Id = ValueId>
+{
+    /// One operand.
+    Unary(Id),
+    /// Two operands in source order.
+    Binary([Id; 2]),
+}
+
+impl<Id> core::ops::Deref for Arguments<Id>
+{
+    type Target = [Id];
+    /// Borrow the ordered arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn deref(&self) -> &Self::Target
+    {
+        match *self {
+            Self::Unary(ref value) => core::slice::from_ref(value),
+            Self::Binary(ref values) => values,
+        }
+    }
+}
+
+impl<Id> core::ops::DerefMut for Arguments<Id>
+{
+    /// Borrow the ordered arguments for an arena rewrite.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target
+    {
+        match *self {
+            Self::Unary(ref mut value) => core::slice::from_mut(value),
+            Self::Binary(ref mut values) => values,
+        }
+    }
+}
+
+/// A native operand or result classifier.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PrimitiveType
+{
+    /// An exact, unbounded signed integer.
+    Integer,
+    /// The canonical boolean sum `Unit + Unit`, true on the left.
+    Boolean,
+    /// A string of Unicode scalar values.
+    Text,
+    /// An IEEE 754 binary64 floating-point number.
+    Float64,
+    /// An integer width atom: `u32`, `u64`, `i32` or `i64`.
+    Fixed(IntegerWidth),
+}
+
+impl PrimitiveType
+{
+    /// Mint this classifier in the receiving arena.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn mint(
+        self,
+        arena: &mut CoreArena,
+    ) -> ValueTypeId
+    {
+        match self {
+            Self::Integer => arena.value_type_base(BaseType::Integer),
+            Self::Boolean => {
+                let unit = arena.value_type_unit();
+                arena.value_type_sum(&[unit, unit])
+            },
+            Self::Text => arena.value_type_base(BaseType::String),
+            Self::Float64 => arena.value_type_base(BaseType::Float64),
+            Self::Fixed(width) => arena.value_type_base(BaseType::Fixed(width)),
+        }
+    }
+}
+
+/// The operator spelling, or a callable name without operator syntax.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Operator
+{
+    /// Called by its prelude name only.
+    Named,
+    /// A prefix operator.
+    Prefix(&'static str),
+    /// An infix operator.
+    Infix(&'static str),
+}
+
+/// The first-order instruction evaluated by a native table row.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Operation
+{
+    /// Return the first integer argument.
+    First,
+    /// Addition.
+    Add,
+    /// Subtraction.
+    Sub,
+    /// Multiplication.
+    Mul,
+    /// Truncating division.
+    Div,
+    /// Remainder with the dividend's sign.
+    Mod,
+    /// Arithmetic negation.
+    Neg,
+    /// Integer equality.
+    Eq,
+    /// Integer inequality.
+    Ne,
+    /// Strict ascending comparison.
+    Lt,
+    /// Ascending comparison including equality.
+    Le,
+    /// Strict descending comparison.
+    Gt,
+    /// Descending comparison including equality.
+    Ge,
+    /// Boolean conjunction.
+    And,
+    /// Boolean disjunction.
+    Or,
+    /// Boolean negation.
+    Not,
+    /// The first string followed by the second.
+    Append,
+    /// The natural exponential.
+    Exp,
+    /// An integer converted to the nearest floating-point number.
+    FromInteger,
+    /// A floating-point number rounded to the nearest integer, ties to even.
+    Round,
+    /// A width's value as the exact integer it is.
+    ToInteger,
+    /// An integer reduced modulo two to the result's width, in that width's
+    /// two's complement.
+    FromIntegerToWidth,
+}
+
+/// A law the host asserts of a primitive.
+///
+/// A model at the primitive's carrier admits it rather than proves it. The
+/// statement of each, over the primitive `op` at its carrier, is a path type
+/// in the shape a theory writes its laws.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Law
+{
+    /// `(a) -> Path[.A = Bool](op(a, a), true)`.
+    Reflexive,
+    /// `(a, b) -> Path[.A = Bool](op(a, b), op(b, a))`.
+    Symmetric,
+    /// `(a, b, c, p : Path[.A = Bool](op(a, b), true), q : Path[.A =
+    /// Bool](op(b, c), true)) => Path[.A = Bool](op(a, c), true)`.
+    Transitive,
+}
+
+/// The laws of an equivalence: equality at the integers and at the strings.
+const EQUIVALENCE: &[Law] = &[Law::Reflexive, Law::Symmetric, Law::Transitive];
+
+/// The laws of a partial equivalence: IEEE 754 equality, under which a NaN
+/// equals nothing, itself included.
+const PARTIAL_EQUIVALENCE: &[Law] = &[Law::Symmetric, Law::Transitive];
+
+/// A table-owned native primitive. Callers cannot manufacture a mismatched row.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Primitive(&'static Definition);
+
+/// The immutable metadata and instruction shared by every occurrence of a row.
+#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Definition
+{
+    /// The callable spelling, qualified when it belongs to a module.
+    name: &'static str,
+    /// Its operator syntax, when one exists.
+    operator: Operator,
+    /// The ordered argument classifiers.
+    arguments: &'static [PrimitiveType],
+    /// The returned classifier.
+    result: PrimitiveType,
+    /// The instruction selected by this row.
+    operation: Operation,
+}
+
+/// The single native prelude table, including its operator spellings.
+pub const PRELUDE: &[Primitive] = &[
+    Primitive(&Definition {
+        name: "prim.id",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Integer,
+        operation: Operation::First,
+    }),
+    Primitive(&Definition {
+        name: "prim.const",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Integer,
+        operation: Operation::First,
+    }),
+    Primitive(&Definition {
+        name: "add",
+        operator: Operator::Infix("+"),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Integer,
+        operation: Operation::Add,
+    }),
+    Primitive(&Definition {
+        name: "sub",
+        operator: Operator::Infix("-"),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Integer,
+        operation: Operation::Sub,
+    }),
+    Primitive(&Definition {
+        name: "mul",
+        operator: Operator::Infix("*"),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Integer,
+        operation: Operation::Mul,
+    }),
+    Primitive(&Definition {
+        name: "int.div",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Integer,
+        operation: Operation::Div,
+    }),
+    Primitive(&Definition {
+        name: "int.mod",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Integer,
+        operation: Operation::Mod,
+    }),
+    Primitive(&Definition {
+        name: "int.eq",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Eq,
+    }),
+    Primitive(&Definition {
+        name: "int.lt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Lt,
+    }),
+    Primitive(&Definition {
+        name: "int.le",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Le,
+    }),
+    Primitive(&Definition {
+        name: "int.gt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Gt,
+    }),
+    Primitive(&Definition {
+        name: "int.ge",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Ge,
+    }),
+    Primitive(&Definition {
+        name: "neg",
+        operator: Operator::Prefix("-"),
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Integer,
+        operation: Operation::Neg,
+    }),
+    Primitive(&Definition {
+        name: "eq",
+        operator: Operator::Infix("=="),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Eq,
+    }),
+    Primitive(&Definition {
+        name: "ne",
+        operator: Operator::Infix("!="),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Ne,
+    }),
+    Primitive(&Definition {
+        name: "lt",
+        operator: Operator::Infix("<"),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Lt,
+    }),
+    Primitive(&Definition {
+        name: "le",
+        operator: Operator::Infix("<="),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Le,
+    }),
+    Primitive(&Definition {
+        name: "gt",
+        operator: Operator::Infix(">"),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Gt,
+    }),
+    Primitive(&Definition {
+        name: "ge",
+        operator: Operator::Infix(">="),
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Ge,
+    }),
+    Primitive(&Definition {
+        name: "and",
+        operator: Operator::Infix("&&"),
+        arguments: &[PrimitiveType::Boolean, PrimitiveType::Boolean],
+        result: PrimitiveType::Boolean,
+        operation: Operation::And,
+    }),
+    Primitive(&Definition {
+        name: "or",
+        operator: Operator::Infix("||"),
+        arguments: &[PrimitiveType::Boolean, PrimitiveType::Boolean],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Or,
+    }),
+    Primitive(&Definition {
+        name: "bool.not",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Boolean],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Not,
+    }),
+    Primitive(&Definition {
+        name: "string.append",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Text, PrimitiveType::Text],
+        result: PrimitiveType::Text,
+        operation: Operation::Append,
+    }),
+    Primitive(&Definition {
+        name: "string.eq",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Text, PrimitiveType::Text],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Eq,
+    }),
+    Primitive(&Definition {
+        name: "string.lt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Text, PrimitiveType::Text],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Lt,
+    }),
+    Primitive(&Definition {
+        name: "float64.add",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Add,
+    }),
+    Primitive(&Definition {
+        name: "float64.sub",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Sub,
+    }),
+    Primitive(&Definition {
+        name: "float64.mul",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Mul,
+    }),
+    Primitive(&Definition {
+        name: "float64.div",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Div,
+    }),
+    Primitive(&Definition {
+        name: "float64.neg",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Neg,
+    }),
+    Primitive(&Definition {
+        name: "float64.exp",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64],
+        result: PrimitiveType::Float64,
+        operation: Operation::Exp,
+    }),
+    Primitive(&Definition {
+        name: "float64.eq",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Eq,
+    }),
+    Primitive(&Definition {
+        name: "float64.ne",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Ne,
+    }),
+    Primitive(&Definition {
+        name: "float64.lt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Lt,
+    }),
+    Primitive(&Definition {
+        name: "float64.le",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Le,
+    }),
+    Primitive(&Definition {
+        name: "float64.gt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Gt,
+    }),
+    Primitive(&Definition {
+        name: "float64.ge",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64, PrimitiveType::Float64],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Ge,
+    }),
+    Primitive(&Definition {
+        name: "float64.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Float64,
+        operation: Operation::FromInteger,
+    }),
+    Primitive(&Definition {
+        name: "float64.round",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Float64],
+        result: PrimitiveType::Integer,
+        operation: Operation::Round,
+    }),
+    Primitive(&Definition {
+        name: "u32.to_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Fixed(IntegerWidth::U32)],
+        result: PrimitiveType::Integer,
+        operation: Operation::ToInteger,
+    }),
+    Primitive(&Definition {
+        name: "u64.to_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Fixed(IntegerWidth::U64)],
+        result: PrimitiveType::Integer,
+        operation: Operation::ToInteger,
+    }),
+    Primitive(&Definition {
+        name: "i32.to_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Fixed(IntegerWidth::I32)],
+        result: PrimitiveType::Integer,
+        operation: Operation::ToInteger,
+    }),
+    Primitive(&Definition {
+        name: "i64.to_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Fixed(IntegerWidth::I64)],
+        result: PrimitiveType::Integer,
+        operation: Operation::ToInteger,
+    }),
+    Primitive(&Definition {
+        name: "u32.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Fixed(IntegerWidth::U32),
+        operation: Operation::FromIntegerToWidth,
+    }),
+    Primitive(&Definition {
+        name: "u64.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Fixed(IntegerWidth::U64),
+        operation: Operation::FromIntegerToWidth,
+    }),
+    Primitive(&Definition {
+        name: "i32.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Fixed(IntegerWidth::I32),
+        operation: Operation::FromIntegerToWidth,
+    }),
+    Primitive(&Definition {
+        name: "i64.from_integer",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer],
+        result: PrimitiveType::Fixed(IntegerWidth::I64),
+        operation: Operation::FromIntegerToWidth,
+    }),
+];
+
+/// A native scalar supplied to or returned from the table evaluator.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Scalar<Integer = IntegerLiteral, Text = StringLiteral>
+{
+    /// An exact integer, in the syntax's canonical decimal representation.
+    Integer(Integer),
+    /// A boolean's injection side; left is true.
+    Boolean(Side),
+    /// A string.
+    Text(Text),
+    /// An IEEE 754 binary64 number, its NaN canonical.
+    Float64(Float64Literal),
+    /// A value of an integer width atom.
+    Fixed(FixedInteger),
+}
+
+/// Why a native evaluation cannot produce its result.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PrimitiveError
+{
+    /// The number of arguments differs from the row's signature.
+    Arity,
+    /// An argument is not of the row's classifier.
+    ArgumentType,
+    /// Integer division or remainder was supplied a zero divisor.
+    DivisionByZero,
+    /// A numeric conversion violated canonical decimal representation.
+    InvalidInteger,
+    /// A floating-point number with no integer nearest it: an infinity or a
+    /// NaN.
+    NotFinite,
+}
+
+impl fmt::Display for PrimitiveError
+{
+    /// Render the native failure.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Arity => "native primitive argument count mismatch",
+            Self::ArgumentType => "native primitive argument type mismatch",
+            Self::DivisionByZero => "native integer division by zero",
+            Self::InvalidInteger => "invalid native integer representation",
+            Self::NotFinite => "native floating-point number is not finite",
+        })
+    }
+}
+
+impl core::error::Error for PrimitiveError
+{
+}
+
+impl Primitive
+{
+    /// Borrow the qualified prelude spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn name(self) -> PrimitiveName
+    {
+        PrimitiveName(self.0.name)
+    }
+
+    /// The operator spelling this row owns.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operator(self) -> Operator
+    {
+        self.0.operator
+    }
+
+    /// The ordered argument classifiers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn arguments(self) -> &'static [PrimitiveType]
+    {
+        self.0.arguments
+    }
+
+    /// The result classifier.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn result(self) -> PrimitiveType
+    {
+        self.0.result
+    }
+
+    /// The literal identity test this row is, when it is one: equality or
+    /// inequality of two integers or two texts, answering a boolean.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some` exactly for a row answering a boolean over two
+    ///   arguments that are both integers or both texts, by [`Operation::Eq`]
+    ///   or [`Operation::Ne`]: `int.eq`, `eq`, `ne` and `string.eq`. The test's
+    ///   base is the arguments' type, and its polarity is [`Polarity::Same`]
+    ///   for equality.
+    /// - provides: the rows the checker's evaluator and the kernel compute on
+    ///   literals, read off the table rather than listed by name.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — on every pair of literals the test answers what the
+    ///   row's own evaluation answers, and every other row is no test.
+    /// - witness: `primitive::tests::an_identity_row_answers_as_its_evaluation`
+    #[spec(ensures: |ret| ret.is_none_or(|test| self.0.result == PrimitiveType::Boolean
+        && matches!(self.0.operation, Operation::Eq | Operation::Ne)
+        && (test.polarity() == Polarity::Same) == matches!(self.0.operation, Operation::Eq)))]
+    #[inline]
+    #[must_use]
+    pub fn literal_identity(self) -> Option<LiteralIdentity>
+    {
+        let base = match *self.0.arguments {
+            [PrimitiveType::Integer, PrimitiveType::Integer] => IdentityBase::Integer,
+            [PrimitiveType::Text, PrimitiveType::Text] => IdentityBase::Text,
+            _ => return None,
+        };
+        let polarity = match self.0.operation {
+            Operation::Eq => Polarity::Same,
+            Operation::Ne => Polarity::Different,
+            Operation::First
+            | Operation::Add
+            | Operation::Sub
+            | Operation::Mul
+            | Operation::Div
+            | Operation::Mod
+            | Operation::Neg
+            | Operation::Lt
+            | Operation::Le
+            | Operation::Gt
+            | Operation::Ge
+            | Operation::And
+            | Operation::Or
+            | Operation::Not
+            | Operation::Append
+            | Operation::Exp
+            | Operation::FromInteger
+            | Operation::Round
+            | Operation::ToInteger
+            | Operation::FromIntegerToWidth => return None,
+        };
+        (self.0.result == PrimitiveType::Boolean).then_some(LiteralIdentity::new(base, polarity))
+    }
+
+    /// Mint the curried computation signature described by this row.
+    ///
+    /// # Specification
+    /// - ensures: one arrow per ordered argument, ending in the result's
+    ///   returner.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every row's curried signature has the expected
+    ///   argument and result classifiers.
+    /// - witness: `primitive::tests::table_signatures_and_currying_agree`
+    #[spec(ensures: |ret| arena.comp_type(ret).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn declared_type(
+        self,
+        arena: &mut CoreArena,
+    ) -> CompTypeId
+    {
+        let result = self.0.result.mint(arena);
+        let mut result = arena.comp_type_returner(result);
+        for argument in self.0.arguments.iter().rev() {
+            let domain = argument.mint(arena);
+            result = arena.comp_type_arrow(domain, result);
+        }
+        result
+    }
+
+    /// Mint a thunked curried primitive using ordinary core lambdas.
+    ///
+    /// # Specification
+    /// - ensures: the saturated operation receives arguments left to right,
+    ///   including after partial application.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — asymmetric binary arguments distinguish reversed
+    ///   binder order.
+    /// - witness: `primitive::tests::table_signatures_and_currying_agree`
+    #[spec(ensures: |ret| arena.value(ret).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn thunk(
+        self,
+        arena: &mut CoreArena,
+    ) -> ValueId
+    {
+        let last = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let arguments = if self.0.arguments.len() == 1 {
+            Arguments::Unary(last)
+        }
+        else {
+            let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+            Arguments::Binary([first, last])
+        };
+        let mut body = arena.computation_primitive(self, arguments);
+        for _ in self.0.arguments {
+            body = arena.computation_lambda(body);
+        }
+        arena.value_primitive(self, body)
+    }
+
+    /// The host's law table: the laws it asserts of this row, and the carrier
+    /// they quantify over.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly for the equality rows — an equivalence at
+    ///   [`PrimitiveType::Integer`] and [`PrimitiveType::Text`], a partial
+    ///   equivalence at [`PrimitiveType::Float64`] — with that carrier; absent
+    ///   for every other row, which asserts no law.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the table is the predicate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the integers' and strings' equalities assert all
+    ///   three laws, the floats' symmetry and transitivity only, and an
+    ///   ordering none.
+    /// - witness: `primitive::tests::the_host_asserts_the_laws_of_its_equalities_2302`
+    #[inline]
+    #[must_use]
+    pub fn laws(self) -> Option<(PrimitiveType, &'static [Law])>
+    {
+        match (self.0.operation, self.0.arguments) {
+            (Operation::Eq, &[PrimitiveType::Integer, PrimitiveType::Integer]) => {
+                Some((PrimitiveType::Integer, EQUIVALENCE))
+            },
+            (Operation::Eq, &[PrimitiveType::Text, PrimitiveType::Text]) => {
+                Some((PrimitiveType::Text, EQUIVALENCE))
+            },
+            (Operation::Eq, &[PrimitiveType::Float64, PrimitiveType::Float64]) => {
+                Some((PrimitiveType::Float64, PARTIAL_EQUIVALENCE))
+            },
+            _ => None,
+        }
+    }
+
+    /// The statement of `law` over this row, closed: the type a law of a
+    /// model at the row's carrier converts with when the host asserts it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly when [`Self::laws`] lists `law`: the thunk of
+    ///   a Π over the carrier per variable — then, for [`Law::Transitive`], a Π
+    ///   per hypothesis — returning the path [`Law`]'s alternative states, each
+    ///   `op(x, y)` the value this row returns at `x` and `y`; absent
+    ///   otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every prelude row states exactly the laws it lists,
+    ///   each a thunked chain.
+    /// - witness: `primitive::tests::the_host_asserts_the_laws_of_its_equalities_2302`
+    #[spec(ensures: |ret| ret.is_some() == self.laws().is_some_and(|(_, laws)| laws.contains(&law)))]
+    #[inline]
+    #[must_use]
+    pub fn law_statement(
+        self,
+        law: Law,
+        arena: &mut CoreArena,
+    ) -> Option<ValueTypeId>
+    {
+        let (carrier, laws) = self.laws()?;
+        if !laws.contains(&law) {
+            return None;
+        }
+        let carrier = carrier.mint(arena);
+        let boolean = PrimitiveType::Boolean.mint(arena);
+        let unit = arena.value_unit();
+        let truth = arena.value_injection(Summand::from(0_usize), unit);
+        // `op(x, y)` read by the de Bruijn indices of `x` and `y`.
+        let decided = |arena: &mut CoreArena, left: u32, right: u32| {
+            let left = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(left));
+            let right = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(right));
+            let decision = arena.computation_primitive(self, Arguments::Binary([left, right]));
+            arena.value_returned(decision)
+        };
+        let held = |arena: &mut CoreArena, left: u32, right: u32| {
+            let decision = decided(arena, left, right);
+            arena.value_type_path(boolean, decision, truth)
+        };
+        let (stated, hypotheses, variables) = match law {
+            Law::Reflexive => (held(arena, 0, 0), alloc::vec::Vec::new(), 1_usize),
+            Law::Symmetric => {
+                let forward = decided(arena, 1, 0);
+                let backward = decided(arena, 0, 1);
+                (
+                    arena.value_type_path(boolean, forward, backward),
+                    alloc::vec::Vec::new(),
+                    2,
+                )
+            },
+            // Under `a b c`: `p` reads `a` and `b` at two and one; under `a
+            // b c p`, `q` reads `b` and `c` at two and one; under all five,
+            // the conclusion reads `a` and `c` at four and two.
+            Law::Transitive => {
+                let first = held(arena, 2, 1);
+                let second = held(arena, 2, 1);
+                (held(arena, 4, 2), alloc::vec::Vec::from([first, second]), 3)
+            },
+        };
+        let mut chain = arena.comp_type_returner(stated);
+        for &hypothesis in hypotheses.iter().rev() {
+            chain = arena.comp_type_pi(hypothesis, chain);
+        }
+        for _variable in 0 .. variables {
+            chain = arena.comp_type_pi(carrier, chain);
+        }
+        Some(arena.value_type_thunk(chain))
+    }
+
+    /// Evaluate a saturated application on canonical native scalars.
+    ///
+    /// # Specification
+    /// - requires: nothing; unchecked callers receive typed refusals.
+    /// - ensures: exact integer arithmetic; division truncates toward zero,
+    ///   remainder has the dividend's sign; booleans use left for true; an
+    ///   append is the first string's characters followed by the second's; two
+    ///   strings are equal when their bytes are, and one is below another when
+    ///   its bytes are lexicographically, a proper prefix below the text it
+    ///   begins; floating-point rows are IEEE 754 binary64, ties to even, with
+    ///   `exp` from `libm` and every NaN canonical; a width converts to its
+    ///   exact integer, and an integer to a width modulo two to the width's bit
+    ///   count, in its two's complement.
+    /// - fails: arity before argument classifiers, then zero division; invalid
+    ///   decimal conversion is named separately; a floating-point number with
+    ///   no nearest integer is not finite.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PrimitiveError`] preserves argument, arity, division and
+    /// representation failures, and a floating-point number rounded to an
+    /// integer that is not finite.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — asymmetric signed operands, zero divisors, integers
+    ///   beyond machine width, every boolean pair, two strings appended in both
+    ///   orders, two strings equal only byte for byte, two ordered by their
+    ///   bytes, and each width's bounds converted both ways distinguish
+    ///   operation and error drift.
+    /// - witness: `primitive::tests::exact_arithmetic_and_errors`
+    /// - witness: `primitive::tests::comparisons_and_booleans`
+    /// - witness: `primitive::tests::an_append_writes_the_first_string_then_the_second`
+    /// - witness: `primitive::tests::a_string_equality_compares_the_texts_byte_for_byte`
+    /// - witness: `primitive::tests::a_string_order_compares_the_texts_byte_for_byte`
+    /// - witness: `primitive::tests::floating_point_rows_are_ieee_binary64`
+    /// - witness: `primitive::tests::a_width_converts_exactly_and_an_integer_by_its_remainder`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| value.classifier() == self.0.result))]
+    #[inline]
+    pub fn evaluate(
+        self,
+        arguments: &[Scalar<&IntegerLiteral, &StringLiteral>],
+    ) -> Result<Scalar, PrimitiveError>
+    {
+        if arguments.len() != self.0.arguments.len() {
+            return Err(PrimitiveError::Arity);
+        }
+        if arguments
+            .iter()
+            .zip(self.0.arguments)
+            .any(|(value, expected)| value.classifier() != *expected)
+        {
+            return Err(PrimitiveError::ArgumentType);
+        }
+        let first = arguments.first().ok_or(PrimitiveError::Arity)?;
+        if self.0.operation == Operation::First {
+            return Ok(match *first {
+                Scalar::Integer(integer) => Scalar::Integer(integer.clone()),
+                Scalar::Boolean(side) => Scalar::Boolean(side),
+                Scalar::Text(text) => Scalar::Text(text.clone()),
+                Scalar::Float64(float) => Scalar::Float64(float),
+                Scalar::Fixed(fixed) => Scalar::Fixed(fixed),
+            });
+        }
+        // Only the `string` rows take text, the classifiers say: a text
+        // operand is their first, and the second is text too.
+        if let Scalar::Text(left) = *first {
+            let Some(&Scalar::Text(right)) = arguments.get(1)
+            else {
+                return Err(PrimitiveError::ArgumentType);
+            };
+            let (left, right): (&str, &str) = (left.as_ref(), right.as_ref());
+            return match self.0.operation {
+                Operation::Append => {
+                    let mut appended =
+                        String::with_capacity(left.len().saturating_add(right.len()));
+                    appended.push_str(left);
+                    appended.push_str(right);
+                    Ok(Scalar::Text(StringLiteral::new(appended)))
+                },
+                Operation::Eq => Ok(Scalar::Boolean(if left == right {
+                    Side::Left
+                }
+                else {
+                    Side::Right
+                })),
+                Operation::Lt => Ok(Scalar::Boolean(if left.as_bytes() < right.as_bytes() {
+                    Side::Left
+                }
+                else {
+                    Side::Right
+                })),
+                Operation::First
+                | Operation::Add
+                | Operation::Sub
+                | Operation::Mul
+                | Operation::Div
+                | Operation::Mod
+                | Operation::Neg
+                | Operation::Ne
+                | Operation::Le
+                | Operation::Gt
+                | Operation::Ge
+                | Operation::And
+                | Operation::Or
+                | Operation::Not
+                | Operation::Exp
+                | Operation::FromInteger
+                | Operation::Round
+                | Operation::ToInteger
+                | Operation::FromIntegerToWidth => Err(PrimitiveError::ArgumentType),
+            };
+        }
+        if let Scalar::Float64(left) = *first {
+            return float64(self.0.operation, left, arguments);
+        }
+        // Only the `to_integer` rows take a width, and they take it alone.
+        if let Scalar::Fixed(fixed) = *first {
+            if self.0.operation != Operation::ToInteger {
+                return Err(PrimitiveError::ArgumentType);
+            }
+            return scalar(&widened(fixed));
+        }
+        if self.0.operation == Operation::FromIntegerToWidth {
+            let PrimitiveType::Fixed(width) = self.0.result
+            else {
+                return Err(PrimitiveError::ArgumentType);
+            };
+            return narrowed(&first.integer()?, width).map(Scalar::Fixed);
+        }
+        if self.0.operation == Operation::FromInteger {
+            let integer = first.integer()?;
+            let value = alloc::format!("{integer}")
+                .parse::<f64>()
+                .map_err(|_invalid_decimal| PrimitiveError::InvalidInteger)?;
+            return Ok(Scalar::Float64(Float64Literal::from(value)));
+        }
+        if let Scalar::Boolean(left) = *first {
+            let right = match arguments.get(1) {
+                Some(&Scalar::Boolean(side)) => side,
+                _ => Side::Right,
+            };
+            let answer = match self.0.operation {
+                Operation::And => left == Side::Left && right == Side::Left,
+                Operation::Or => left == Side::Left || right == Side::Left,
+                Operation::Not => left != Side::Left,
+                Operation::First
+                | Operation::Add
+                | Operation::Sub
+                | Operation::Mul
+                | Operation::Div
+                | Operation::Mod
+                | Operation::Neg
+                | Operation::Eq
+                | Operation::Ne
+                | Operation::Lt
+                | Operation::Le
+                | Operation::Gt
+                | Operation::Ge
+                | Operation::Append
+                | Operation::Exp
+                | Operation::FromInteger
+                | Operation::Round
+                | Operation::ToInteger
+                | Operation::FromIntegerToWidth => return Err(PrimitiveError::ArgumentType),
+            };
+            return Ok(Scalar::Boolean(if answer {
+                Side::Left
+            }
+            else {
+                Side::Right
+            }));
+        }
+        let left = first.integer()?;
+        if self.0.operation == Operation::Neg {
+            return scalar(&left.neg());
+        }
+        let right = arguments.get(1).ok_or(PrimitiveError::Arity)?;
+        let right = right.integer()?;
+        let answer = match self.0.operation {
+            Operation::Add => return scalar(&left.add(right)),
+            Operation::Sub => return scalar(&left.sub(right)),
+            Operation::Mul => return scalar(&left.mul(right)),
+            Operation::Div => {
+                let quotient = left
+                    .checked_div(&right)
+                    .ok_or(PrimitiveError::DivisionByZero)?;
+                return scalar(&quotient);
+            },
+            Operation::Mod => {
+                if right == BigInt::ZERO {
+                    return Err(PrimitiveError::DivisionByZero);
+                }
+                return scalar(&left.rem(right));
+            },
+            Operation::Eq => left == right,
+            Operation::Ne => left != right,
+            Operation::Lt => left < right,
+            Operation::Le => left <= right,
+            Operation::Gt => left > right,
+            Operation::Ge => left >= right,
+            Operation::First
+            | Operation::Neg
+            | Operation::And
+            | Operation::Or
+            | Operation::Not
+            | Operation::Append
+            | Operation::Exp
+            | Operation::FromInteger
+            | Operation::Round
+            | Operation::ToInteger
+            | Operation::FromIntegerToWidth => {
+                return Err(PrimitiveError::ArgumentType);
+            },
+        };
+        Ok(Scalar::Boolean(if answer {
+            Side::Left
+        }
+        else {
+            Side::Right
+        }))
+    }
+}
+
+/// A borrowed prelude spelling, kept distinct from arbitrary source text.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PrimitiveName(&'static str);
+
+impl AsRef<str> for PrimitiveName
+{
+    /// Borrow the spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        self.0
+    }
+}
+
+impl From<PrimitiveName> for &'static str
+{
+    /// Expose the table's static source spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: PrimitiveName) -> Self
+    {
+        name.0
+    }
+}
+
+impl<Integer, Text> Scalar<Integer, Text>
+{
+    /// The native classifier of this scalar.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn classifier(&self) -> PrimitiveType
+    {
+        match *self {
+            Self::Integer(_) => PrimitiveType::Integer,
+            Self::Boolean(_) => PrimitiveType::Boolean,
+            Self::Text(_) => PrimitiveType::Text,
+            Self::Float64(_) => PrimitiveType::Float64,
+            Self::Fixed(fixed) => PrimitiveType::Fixed(fixed.width()),
+        }
+    }
+}
+
+impl<Integer: core::borrow::Borrow<IntegerLiteral>, Text> Scalar<Integer, Text>
+{
+    /// Convert the canonical integer payload into the arithmetic
+    /// representation.
+    ///
+    /// # Specification
+    /// - ensures: preserves magnitude and sign exactly.
+    /// - fails: non-integers and invalid decimal representations are
+    ///   distinguished.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PrimitiveError::ArgumentType`] or [`PrimitiveError::InvalidInteger`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — negative and beyond-machine-width inputs survive
+    ///   arithmetic unchanged where required.
+    /// - witness: `primitive::tests::exact_arithmetic_and_errors`
+    #[spec(ensures: |ret| ret.is_err() || self.classifier() == PrimitiveType::Integer)]
+    fn integer(&self) -> Result<BigInt, PrimitiveError>
+    {
+        let Self::Integer(ref value) = *self
+        else {
+            return Err(PrimitiveError::ArgumentType);
+        };
+        let value = value.borrow();
+        let magnitude = value
+            .magnitude()
+            .as_ref()
+            .parse::<BigInt>()
+            .map_err(|_invalid_decimal| PrimitiveError::InvalidInteger)?;
+        Ok(if value.sign() == Sign::Negative {
+            magnitude.neg()
+        }
+        else {
+            magnitude
+        })
+    }
+}
+
+impl Scalar
+{
+    /// Borrow an operand without cloning its decimal or text payload.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn borrowed(&self) -> Scalar<&IntegerLiteral, &StringLiteral>
+    {
+        match *self {
+            Self::Integer(ref value) => Scalar::Integer(value),
+            Self::Boolean(side) => Scalar::Boolean(side),
+            Self::Text(ref text) => Scalar::Text(text),
+            Self::Float64(float) => Scalar::Float64(float),
+            Self::Fixed(fixed) => Scalar::Fixed(fixed),
+        }
+    }
+
+    /// Mint a scalar as a core value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn mint(
+        self,
+        arena: &mut CoreArena,
+    ) -> ValueId
+    {
+        match self {
+            Self::Integer(integer) => arena.value_literal(Literal::Integer(integer)),
+            Self::Boolean(side) => {
+                let unit = arena.value_unit();
+                arena.value_injection(side.into(), unit)
+            },
+            Self::Text(text) => arena.value_literal(Literal::Text(text)),
+            Self::Float64(float) => arena.value_literal(Literal::Float64(float)),
+            Self::Fixed(fixed) => arena.value_literal(Literal::Fixed(fixed)),
+        }
+    }
+}
+
+/// Convert an arithmetic result back into canonical syntax.
+///
+/// # Specification
+/// - ensures: preserves exact magnitude and canonicalizes zero's sign.
+/// - fails: a non-decimal backend representation is refused.
+/// - panics: none.
+///
+/// # Errors
+/// [`PrimitiveError::InvalidInteger`] for a malformed backend decimal result.
+///
+/// # Adequacy
+/// - hypothesis: L3 — negative, zero and beyond-machine-width results
+///   distinguish sign and truncation errors.
+/// - witness: `primitive::tests::exact_arithmetic_and_errors`
+#[spec(ensures: |ret| matches!(ret, Ok(Scalar::Integer(_)) | Err(PrimitiveError::InvalidInteger)))]
+fn scalar(value: &BigInt) -> Result<Scalar, PrimitiveError>
+{
+    let sign = if value.sign() == num_bigint::Sign::Minus {
+        Sign::Negative
+    }
+    else {
+        Sign::NonNegative
+    };
+    let magnitude = Magnitude::from_decimal_text(value.magnitude().to_str_radix(10))
+        .ok_or(PrimitiveError::InvalidInteger)?;
+    Ok(Scalar::Integer(IntegerLiteral::new(sign, magnitude)))
+}
+
+/// The exact integer a width's value is.
+///
+/// # Specification
+/// - ensures: the value's magnitude and sign, which `narrowed` reads back as
+///   the value at its width.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each width's least and greatest values convert to their
+///   integers, a signed width's negatives negative.
+/// - witness: `primitive::tests::a_width_converts_exactly_and_an_integer_by_its_remainder`
+#[spec(ensures: |ref ret| narrowed(ret, fixed.width()) == Ok(fixed))]
+fn widened(fixed: FixedInteger) -> BigInt
+{
+    match fixed {
+        FixedInteger::U32(value) => BigInt::from(value),
+        FixedInteger::U64(value) => BigInt::from(value),
+        FixedInteger::I32(value) => BigInt::from(value),
+        FixedInteger::I64(value) => BigInt::from(value),
+    }
+}
+
+/// `value` reduced modulo two to `width`'s bit count, read in `width`'s two's
+/// complement: Rust's `as` cast from an integer to the width.
+///
+/// # Specification
+/// - ensures: the value of `width` congruent to `value` modulo two to its bit
+///   count.
+/// - fails: never; the remainder lies in the width by construction, and a
+///   pattern that did not is refused rather than truncated.
+/// - panics: none.
+///
+/// # Errors
+/// [`PrimitiveError::InvalidInteger`] for a remainder no width holds, which
+/// the reduction rules out.
+///
+/// # Adequacy
+/// - hypothesis: L3 — negatives, one past each width's greatest value and
+///   integers beyond machine width each land on their remainder.
+/// - witness: `primitive::tests::a_width_converts_exactly_and_an_integer_by_its_remainder`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |fixed| fixed.width() == width))]
+fn narrowed(
+    value: &BigInt,
+    width: IntegerWidth,
+) -> Result<FixedInteger, PrimitiveError>
+{
+    let bits: u32 = match width {
+        IntegerWidth::U32 | IntegerWidth::I32 => 32,
+        IntegerWidth::U64 | IntegerWidth::I64 => 64,
+    };
+    let modulus = BigInt::from(1_u8).shl(bits);
+    // The remainder takes the dividend's sign; one modulus more is the least
+    // non-negative one.
+    let remainder = value.rem(&modulus);
+    let remainder = if remainder.sign() == num_bigint::Sign::Minus {
+        remainder.add(&modulus)
+    }
+    else {
+        remainder
+    };
+    let pattern = u64::try_from(&remainder).map_err(|_wide| PrimitiveError::InvalidInteger)?;
+    FixedInteger::try_from((width, pattern)).map_err(|_wider| PrimitiveError::InvalidInteger)
+}
+
+/// Evaluate a floating-point row whose first operand is `left` and whose
+/// operands are `arguments`.
+///
+/// # Specification
+/// - requires: `operation` belongs to a row whose first classifier is
+///   [`PrimitiveType::Float64`].
+/// - ensures: IEEE 754 binary64 arithmetic and comparison, round to nearest,
+///   ties to even; `exp` is `libm`'s; a rounding is the nearest integer, ties
+///   to even; every NaN result is the canonical NaN.
+/// - fails: [`PrimitiveError::NotFinite`] when rounding an infinity or a NaN;
+///   [`PrimitiveError::ArgumentType`] for a second operand that is no
+///   floating-point number, or an operation no floating-point row names.
+/// - panics: none.
+///
+/// # Errors
+/// [`PrimitiveError::NotFinite`] or [`PrimitiveError::ArgumentType`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — sums, quotients by zero, a NaN compared with itself,
+///   `exp` at zero and at one (`libm`'s double, pinned by its bits), ties
+///   rounded to even and an infinity rounded each meet their answer or named
+///   refusal.
+/// - witness: `primitive::tests::floating_point_rows_are_ieee_binary64`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(PrimitiveError::NotFinite | PrimitiveError::ArgumentType | PrimitiveError::InvalidInteger)))]
+fn float64(
+    operation: Operation,
+    left: Float64Literal,
+    arguments: &[Scalar<&IntegerLiteral, &StringLiteral>],
+) -> Result<Scalar, PrimitiveError>
+{
+    let left = f64::from(left);
+    let float = |value: f64| Ok(Scalar::Float64(Float64Literal::from(value)));
+    match operation {
+        Operation::Neg => return float(-left),
+        Operation::Exp => return float(libm::exp(left)),
+        Operation::Round => {
+            if !left.is_finite() {
+                return Err(PrimitiveError::NotFinite);
+            }
+            let rounded = libm::rint(left);
+            let sign = if rounded < 0.0_f64 {
+                Sign::Negative
+            }
+            else {
+                Sign::NonNegative
+            };
+            let magnitude =
+                Magnitude::from_decimal_text(alloc::format!("{:.0}", libm::fabs(rounded)))
+                    .ok_or(PrimitiveError::InvalidInteger)?;
+            return Ok(Scalar::Integer(IntegerLiteral::new(sign, magnitude)));
+        },
+        Operation::First
+        | Operation::Add
+        | Operation::Sub
+        | Operation::Mul
+        | Operation::Div
+        | Operation::Mod
+        | Operation::Eq
+        | Operation::Ne
+        | Operation::Lt
+        | Operation::Le
+        | Operation::Gt
+        | Operation::Ge
+        | Operation::And
+        | Operation::Or
+        | Operation::Not
+        | Operation::Append
+        | Operation::FromInteger
+        | Operation::ToInteger
+        | Operation::FromIntegerToWidth => {},
+    }
+    let Some(&Scalar::Float64(right)) = arguments.get(1)
+    else {
+        return Err(PrimitiveError::ArgumentType);
+    };
+    let right = f64::from(right);
+    let answer = match operation {
+        Operation::Add => return float(left + right),
+        Operation::Sub => return float(left - right),
+        Operation::Mul => return float(left * right),
+        Operation::Div => return float(left / right),
+        // IEEE equality: the zeros are equal, and a NaN equals nothing.
+        Operation::Eq => left.partial_cmp(&right) == Some(Ordering::Equal),
+        Operation::Ne => left.partial_cmp(&right) != Some(Ordering::Equal),
+        Operation::Lt => left < right,
+        Operation::Le => left <= right,
+        Operation::Gt => left > right,
+        Operation::Ge => left >= right,
+        Operation::First
+        | Operation::Mod
+        | Operation::Neg
+        | Operation::And
+        | Operation::Or
+        | Operation::Not
+        | Operation::Append
+        | Operation::Exp
+        | Operation::FromInteger
+        | Operation::Round
+        | Operation::ToInteger
+        | Operation::FromIntegerToWidth => return Err(PrimitiveError::ArgumentType),
+    };
+    Ok(Scalar::Boolean(if answer {
+        Side::Left
+    }
+    else {
+        Side::Right
+    }))
+}
+
+#[cfg(test)]
+mod tests;

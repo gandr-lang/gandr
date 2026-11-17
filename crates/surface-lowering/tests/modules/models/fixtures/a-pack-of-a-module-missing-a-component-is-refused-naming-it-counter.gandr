@@ -1,0 +1,4 @@
+theory Counter where {
+  sort C : Type;
+  oper start : () --> C;
+}

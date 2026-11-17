@@ -1,0 +1,4 @@
+// file
+
+@[ checks ]
+def bare = 1;

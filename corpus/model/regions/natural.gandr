@@ -1,0 +1,66 @@
+//! `natural` compares a region-polymorphic function across a widening.
+//!
+//! A view at an outer region stands at an inner region. The pathological twin
+//! refuses a reversed widening as `TypeMismatch`. It refuses
+//! unequal functions as
+//! `EndpointMismatch`.
+//! Rust lets a `&'long T` stand where a function expects a `&'short T`. A
+//! function generic in its region cannot tell which one it receives.
+//!
+//! The checker verifies each square by conversion. Both examples run to `5`.
+//!
+//! - owes: #2139 — a value type that quantifies a region
+//! - see: corpus/pathological/regions/natural.gandr — invalid squares
+
+// `pass` returns a thunk in its input region.
+import "./passed.gandr";
+// The source imports the early exit host interface.
+import std.process;
+
+/// `touch` forces its thunk, then returns it at the same region.
+pub def touch[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) =
+  let _ = force k
+  pure k
+
+/// `passNatural` compares `pass` across an outer-to-inner widening.
+@[runs("5")]
+def passNatural() -> Integer =
+  var s = 5
+  handle outer : std.process.Exit.Eff {
+    let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+    handle inner : std.process.Exit.Eff {
+      let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner](
+        fun (x) { let y : (() -> Integer) at outer = pass x; pure y },
+        fun (x) { let z : (() -> Integer) at inner = x; pass z }
+      ) = Path.here (fun (x) { let y : (() -> Integer) at outer = pass x; pure y });
+      force k
+    } with {
+      | pure(y) => pure y
+      | oper exit(code, rest) => pure 0
+    }
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, rest) => pure 0
+  }
+
+/// `touchNatural` compares `touch` across the widening. Conversion reassociates
+/// the binds.
+@[runs("5")]
+def touchNatural() -> Integer =
+  var s = 5
+  handle outer : std.process.Exit.Eff {
+    let k : (() -> Integer) at outer = access shared s as w { pure pure w };
+    handle inner : std.process.Exit.Eff {
+      let _ : Path[.A = (() -> Integer) at outer -> (() -> Integer) at inner](
+        fun (x) { let y : (() -> Integer) at outer = touch x; pure y },
+        fun (x) { let z : (() -> Integer) at inner = x; touch z }
+      ) = Path.here (fun (x) { let y : (() -> Integer) at outer = touch x; pure y });
+      force k
+    } with {
+      | pure(y) => pure y
+      | oper exit(code, rest) => pure 0
+    }
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, rest) => pure 0
+  }
