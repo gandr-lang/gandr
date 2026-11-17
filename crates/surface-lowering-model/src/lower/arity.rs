@@ -1,4 +1,4 @@
-//! The arity-shaped formers in the lowering: the telescope `#{…}`, the sum
+//! The arity-shaped formers in the lowering: the telescope `*{…}`, the sum
 //! over labels `+{…}` and the lazy record over labels `&{…}`.
 //!
 //! Each stands at the type, the value and the observation, beside the
@@ -8,8 +8,8 @@
 //! # One core former per reading of a delimiter
 //!
 //! A positional telescope is the core's product of its entries, of any
-//! arity: `#{}` is the unit, `#{A}` the product of one component, distinct
-//! from `A`, and its value `#{a}` the tuple of one. A labelled telescope is
+//! arity: `*{}` is the unit, `*{A}` the product of one component, distinct
+//! from `A`, and its value `*{a}` the tuple of one. A labelled telescope is
 //! the core's record, whose fields the labels key, so two records that list
 //! the same fields in another order are one record. A sum over labels is the
 //! core's sum of its entries in written order, the labels erased; a lazy
@@ -20,13 +20,13 @@
 //! An entry is positional, labelled by its index, or labelled by name, and a
 //! form holds one kind throughout. An index is a position: the indices of a
 //! form are exactly `0` to `n - 1`, each once, and the entries are reordered
-//! by them, so `#{ .1 = b, .0 = a }` is `#{a, b}`. A label names one entry.
+//! by them, so `*{ .1 = b, .0 = a }` is `*{a, b}`. A label names one entry.
 //!
 //! - Alternatives: a record as the product of its fields in written order,
 //!   which makes field order observable and two spellings of one record two
 //!   types; mixed positional and labelled entries, which leaves an unlabelled
 //!   entry's label to a rule the reader has to know; a lazy record as the
-//!   record of its entries' thunks, `U &{l : C} ≅ #{l : U C}`, which loses the
+//!   record of its entries' thunks, `U &{l : C} ≅ *{l : U C}`, which loses the
 //!   lazy product's η and makes the codata it abstracts matchable data.
 //! - Reversal: a core sum or lazy record keyed by labels would carry them where
 //!   the positional formers drop them.
@@ -64,14 +64,14 @@
 //! # A later label reads an earlier one: the dependent record
 //!
 //! A labelled telescope type binds each label in the entries after it, as a
-//! telescope Π binds its entries: `#{n : Integer, v : Path[.A = Integer](n,
+//! telescope Π binds its entries: `*{n : Integer, v : Path[.A = Integer](n,
 //! n)}`. Where no later entry names an earlier label it is the record of its
 //! fields, so a record's type is unchanged by the labels it binds; where one
 //! does, it is the core's dependent pairs nested to the right, the labels
 //! erased, each link a `Σ` when a later entry names its label and the eager
-//! product of two otherwise: `#{a : A, b : B, c : C(a)}` is `Σ a : A. B ×
+//! product of two otherwise: `*{a : A, b : B, c : C(a)}` is `Σ a : A. B ×
 //! C(a)`. Its value is the tuple of its entries in written order, nested
-//! as the type is, `#{x, y}` for two.
+//! as the type is, `*{x, y}` for two.
 //!
 //! Whether a later entry names a label is read from the source: a name
 //! spelling the label anywhere in a later entry marks the label's frame
@@ -86,7 +86,7 @@
 //! a type over labels projects the entry the label names along the nesting,
 //! `p.1` in the core, whose type reads the first component as `p.0` (the
 //! checker's projection rule); a pattern at a scrutinee written with a
-//! dependent record, positional `#{m, w}` or labelled `#{.n = m, .v = w}`, is
+//! dependent record, positional `*{m, w}` or labelled `*{.n = m, .v = w}`, is
 //! the dependent split of each link, whose motive is the match's answer with
 //! the scrutinee abstracted (`lower::native`). A record has no projection,
 //! so a selection off one is the projection of a type that is not a
@@ -248,7 +248,7 @@ pub(super) enum Telescoped<'source>
 {
     /// The telescope's own entries.
     Entries(Vec<Entry<'source>>),
-    /// The update `#{ e | l = a, … }`: its base, and the fields it writes.
+    /// The update `*{ e | l = a, … }`: its base, and the fields it writes.
     Update(Placed, Vec<Entry<'source>>),
 }
 
@@ -542,10 +542,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
 
     /// Read the hole-led entries of a telescope value up to `}`: each a
     /// positional `e`, or the shorthand `l = e` whose key is a bare name; or
-    /// the update `#{ e | l = a, … }`.
+    /// the update `*{ e | l = a, … }`.
     ///
     /// # Specification
-    /// - requires: `cursor` stands just past the telescope's `#{`.
+    /// - requires: `cursor` stands just past the telescope's `*{`.
     /// - ensures: every entry in written order, the cursor exhausted; for an
     ///   update, its base and the fields it writes.
     /// - fails: a key that is not a bare name, a misplaced tile — a `|` after
@@ -1190,7 +1190,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         self.host().labelled(written.span, held.node, read);
     }
 
-    /// Classify a telescope type, `#{A, …}` or `#{l : A, …}`.
+    /// Classify a telescope type, `*{A, …}` or `*{l : A, …}`.
     ///
     /// # Specification
     /// - requires: `site` is a telescope type in type position, or an operand
@@ -1523,8 +1523,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         Ok(())
     }
 
-    /// Classify a telescope value, `#{a, …}`, `#{.l = a, …}`, `#{.l, …}` or
-    /// `#{l = a, …}`, or the update `#{e | l = a, …}`.
+    /// Classify a telescope value, `*{a, …}`, `*{.l = a, …}`, `*{.l, …}` or
+    /// `*{l = a, …}`, or the update `*{e | l = a, …}`.
     ///
     /// # Specification
     /// - requires: `site` is a telescope value in term position.
@@ -1640,7 +1640,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// The type over labels `former` the type at `node` states, read through
     /// parentheses and, when `thunked`, one `+U`: its own node and its
     /// entries. A sum chain `A + B + …` states the labelled sum `+{A, B, …}`,
-    /// a product chain `A * B * …` the telescope `#{A, B, …}`, and a lazy
+    /// a product chain `A * B * …` the telescope `*{A, B, …}`, and a lazy
     /// product chain `C & D & …` the lazy record `&{C, D, …}`.
     ///
     /// # Specification
@@ -2009,7 +2009,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
 {
     /// The components of the chain of `link` at `chain`, `A + B + …`, `A * B *
     /// …` or `C & D & …`, as the positional entries of the labelled sum `+{A,
-    /// B, …}`, the telescope `#{A, B, …}` or the lazy record `&{C, D, …}` it
+    /// B, …}`, the telescope `*{A, B, …}` or the lazy record `&{C, D, …}` it
     /// is.
     ///
     /// # Specification
@@ -2794,7 +2794,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
     /// - ensures: planned when the selection is one link off a name whose
-    ///   binder or declaration was written with the type `#{l : A, …}`: the
+    ///   binder or declaration was written with the type `*{l : A, …}`: the
     ///   entry the label names, the name read as a value under the form's
     ///   frame, with the stated type and the label, so the mint projects a
     ///   record by its label and a dependent record along the nesting; a label
@@ -2968,7 +2968,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
         Ok(Planned(true))
     }
 
-    /// Classify a sub-record `r.#{ .a, .b }` as the record of the fields its
+    /// Classify a sub-record `r.*{ .a, .b }` as the record of the fields its
     /// labels select off `r`, each projected as the selection `r.a` is.
     ///
     /// # Specification
@@ -3291,7 +3291,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     }
 
     /// The entries of the type list `at` is, when it is one whose keys bind:
-    /// a telescope type `#{l : A, …}` or a parenthesised type `(x : A, …)`.
+    /// a telescope type `*{l : A, …}` or a parenthesised type `(x : A, …)`.
     ///
     /// # Specification
     /// - requires: `form` is the form `at` holds.
@@ -5234,7 +5234,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// # Specification
     /// - requires: the subject is already minted or absent; `selected` is the
     ///   plan's fields, each labelled once.
-    /// - ensures: `bind p₀ ; … ; bind pₙ₋₁ ; return #{l₀ = xₙ₋₁, …}`, each `pᵢ`
+    /// - ensures: `bind p₀ ; … ; bind pₙ₋₁ ; return *{l₀ = xₙ₋₁, …}`, each `pᵢ`
     ///   the projection [`Self::mint_select`] mints for a stated field, or the
     ///   record projection at the label for a field, raised past the `i`
     ///   binders before it, and each label bound to its own field's variable;
