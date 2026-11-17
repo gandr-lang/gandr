@@ -1,0 +1,2 @@
+def head(n : Integer) -> -F Integer =
+  matc n { | 0 => return 1 | _ => return 0 }

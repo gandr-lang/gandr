@@ -1,0 +1,3 @@
+
+import std.list as l ;
+def xs : l.List(Integer) = #[1, 2] ;

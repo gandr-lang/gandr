@@ -1,0 +1,356 @@
+//! The terminal face: a line editor feeding the loop.
+//!
+//! # The line editor
+//!
+//! The terminal face edits lines with `rustyline` 18.0.1, defaults off. Off are
+//! `with-file-history`, which writes history in plain text, `with-dirs`, which
+//! only locates that file, and `custom-bindings`, a keymap the face does not
+//! use; history lives in memory for the run. On this workspace the editor adds
+//! six crates to a build — itself, `nix`, `cfg_aliases`, `log`,
+//! `unicode-segmentation` and `utf8parse` — beside `libc`, `bitflags`,
+//! `cfg-if`, `memchr` and `unicode-width`, which the build already carries, and
+//! compiles in about a second.
+//!
+//! The alternative, `reedline`, supplies menus, multiline editing and a painter
+//! this face does not use. A raw-mode loop over `crossterm` would hand-write
+//! line editing that `rustyline` provides. The choice reverses on a high-risk
+//! advisory or an unmaintained mark against `rustyline`, or when the face needs
+//! completion menus or whole-buffer editing.
+//!
+//! The face is always built: `gandr repl` on a terminal needs it, so a feature
+//! gate would only make the default binary unable to do what its verb says.
+
+use alloc::string::String;
+use alloc::sync::Arc;
+use std::io;
+use std::io::Write;
+use std::path::Path;
+
+use anodized::spec;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_grammar::Spelling;
+use gandr_surface_render_terminal::RenderStyle;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+use rustyline::DefaultEditor;
+use rustyline::ExternalPrinter as _;
+use rustyline::error::ReadlineError;
+
+use crate::batch::Ended;
+use crate::batch::Fault;
+use crate::batch::write_block;
+use crate::session_loop::LoopEvent;
+use crate::session_loop::Prompt;
+use crate::session_loop::SessionLoop;
+use crate::session_loop::disk_notice;
+use crate::watch::DiskWatch;
+
+/// What one read from a line source answered.
+#[derive(Debug)]
+pub enum Read
+{
+    /// A line, without its terminator.
+    Line(String),
+    /// The user interrupted the line being edited.
+    Interrupted,
+    /// The input ended.
+    End,
+    /// The source failed.
+    Failed(Fault),
+}
+
+/// Where a face's lines come from.
+pub trait LineSource
+{
+    /// The next line, read under `prompt`.
+    ///
+    /// # Specification
+    /// - requires: the caller stops this session after an answer of
+    ///   [`Read::End`] or [`Read::Failed`].
+    /// - ensures: one next input event under the supplied prompt.
+    /// - provides: the reads [`drive`] takes.
+    /// - fails: never; a failure is [`Read::Failed`].
+    /// - panics: none.
+    /// - executable: none — this abstract source has no history observer; a
+    ///   return-value predicate cannot establish that a caller stops reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the scripted source records prompts and retains
+    ///   unread events when the driver sees an ending.
+    /// - witness: `tests::repl_loop::terminal_endings_stop_reads_and_flush_once`
+    fn read(
+        &mut self,
+        prompt: Prompt,
+    ) -> Read;
+
+    /// Follow `loaded`, the files the loop holds, after a line was offered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn watch<'path, Loaded>(
+        &mut self,
+        loaded: Loaded,
+    ) where
+        Loaded: Iterator<Item = &'path Path>,
+    {
+        drop(loaded);
+    }
+}
+
+/// The text a terminal prompt shows.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PromptText(&'static str);
+
+/// The prompt `prompt` shows on a terminal.
+///
+/// # Specification
+/// trivial.
+const fn prompt_text(prompt: Prompt) -> PromptText
+{
+    PromptText(match prompt {
+        Prompt::Fresh => "gandr> ",
+        Prompt::Continuing => "  ...> ",
+    })
+}
+
+/// A terminal read through the line editor, with in-memory history, and the
+/// watch over the files the loop loaded when one started.
+struct Terminal
+{
+    /// The editor.
+    editor: DefaultEditor,
+    /// The watch noticing a loaded file changed on disk.
+    watch: Option<DiskWatch>,
+}
+
+impl LineSource for Terminal
+{
+    /// The next line the user enters, remembered in the session's history.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a line the editor returns is added to its history and
+    ///   answered; an interrupt and the end of input answer as themselves; any
+    ///   other editor error, or a history that refuses the line, is a failure.
+    /// - provides: the terminal's reads.
+    /// - fails: never; a failure is [`Read::Failed`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the face it feeds is asserted over a scripted source,
+    ///   and the editor's reads over piped lines in a child process; an
+    ///   interrupt and the end of input on a terminal were exercised by hand on
+    ///   a pseudo-terminal.
+    /// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+    /// - witness: `tests::terminal::the_terminal_face_reads_its_input_through_the_editor`
+    /// - witness: `tests::terminal::the_terminal_face_ends_at_the_end_of_input_and_faults_on_unreadable_input`
+    #[spec(ensures: |ret| !matches!(ret,
+        Read::Failed(Fault::Grammar(_) | Fault::Input(_) | Fault::Session(_))))]
+    fn read(
+        &mut self,
+        prompt: Prompt,
+    ) -> Read
+    {
+        let PromptText(text) = prompt_text(prompt);
+        match self.editor.readline(text) {
+            Ok(line) => match self.editor.add_history_entry(line.as_str()) {
+                Ok(_) => Read::Line(line),
+                Err(error) => Read::Failed(Fault::Editor(error)),
+            },
+            Err(ReadlineError::Interrupted) => Read::Interrupted,
+            Err(ReadlineError::Eof) => Read::End,
+            Err(error) => Read::Failed(Fault::Editor(error)),
+        }
+    }
+
+    /// Follow the files the loop holds, so a change to one is noticed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn watch<'path, Loaded>(
+        &mut self,
+        loaded: Loaded,
+    ) where
+        Loaded: Iterator<Item = &'path Path>,
+    {
+        if let Some(ref mut watch) = self.watch {
+            watch.follow(loaded);
+        }
+    }
+}
+
+/// Run the loop over the lines `source` answers, its session molding on
+/// `pool`, writing each block to `output`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each read is made under the loop's prompt; a line is offered and
+///   its block written and flushed at once; an interrupt drops the waiting
+///   buffer; the end of input, or `:quit`, submits a buffer still waiting and
+///   writes its block. A grammar that does not build, a failed read and a
+///   session fault each end the run faulted, after a flush. Every type and
+///   value a block writes is in `spelling`.
+/// - provides: the interactive half of the faces, over any source.
+/// - fails: the writer's error.
+/// - panics: none.
+/// - executable: none — the generic source and writer expose no transcript or
+///   flush observer, and the source may return any fault kind.
+///
+/// # Errors
+/// The writer's error.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over a scripted source, the prompts asked, an interrupted
+///   buffer's absence from the transcript, and the block of a buffer left open
+///   at the end are asserted exactly.
+/// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `tests::repl_loop::terminal_endings_stop_reads_and_flush_once`
+#[inline]
+pub fn drive<Source, Output>(
+    source: &mut Source,
+    output: &mut Output,
+    style: RenderStyle,
+    (spelling, pool): (Spelling, Arc<Pool>),
+) -> io::Result<Ended>
+where
+    Source: LineSource,
+    Output: Write,
+{
+    let ended = converse(source, output, style, (spelling, pool))?;
+    output.flush()?;
+    Ok(ended)
+}
+
+/// Offer every line `source` answers to a fresh loop on `pool`, writing each
+/// block to `output`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`drive`] states, short of the final flush.
+/// - provides: the body [`drive`] flushes after, on every ending.
+/// - fails: the writer's error.
+/// - panics: none.
+/// - executable: none — the generic source and writer expose no transcript or
+///   flush observer, and the source may return any fault kind.
+///
+/// # Errors
+/// The writer's error.
+///
+/// # Adequacy
+/// - hypothesis: L3 — through [`drive`]'s witness, the prompts and the
+///   transcript asserted exactly.
+/// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `tests::repl_loop::terminal_endings_stop_reads_and_flush_once`
+fn converse<Source, Output>(
+    source: &mut Source,
+    output: &mut Output,
+    style: RenderStyle,
+    (spelling, pool): (Spelling, Arc<Pool>),
+) -> io::Result<Ended>
+where
+    Source: LineSource,
+    Output: Write,
+{
+    let mut repl = match SessionLoop::new(style) {
+        Ok(repl) => repl.spelling(spelling).pooled(pool),
+        Err(error) => return Ok(Ended::Faulted(Fault::Grammar(error))),
+    };
+    loop {
+        match source.read(repl.prompt()) {
+            Read::Line(line) => {
+                let offered = repl.offer(SourceText::from(line.as_str()));
+                source.watch(repl.loaded());
+                match offered {
+                    Ok(LoopEvent::Continue) => {},
+                    Ok(LoopEvent::Block(block)) => {
+                        write_block(output, &block)?;
+                        output.flush()?;
+                    },
+                    Ok(LoopEvent::Quit) => break,
+                    Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+                }
+            },
+            Read::Interrupted => repl.discard(),
+            Read::End => break,
+            Read::Failed(fault) => return Ok(Ended::Faulted(fault)),
+        }
+    }
+    match repl.finish() {
+        Ok(Maybe::Present(block)) => write_block(output, &block)?,
+        Ok(Maybe::Absent(_)) => {},
+        Err(error) => return Ok(Ended::Faulted(Fault::Session(error))),
+    }
+    Ok(Ended::Completed)
+}
+
+/// Run the loop on the terminal, its session molding on `pool`, through the
+/// line editor, writing each block to `output`.
+///
+/// # Specification
+/// - requires: standard input is a terminal; the editor falls back to plain
+///   reads otherwise.
+/// - ensures: as [`drive`] states, over the editor's reads: `gandr> ` prompts a
+///   fresh line and `  ...> ` a continued buffer; the editor's keys edit the
+///   line; history lives for the run and is never written to disk. An editor
+///   that cannot start ends the run faulted. Each file the loop loaded is
+///   watched: a change to one on disk prints, above the line being edited, the
+///   notice naming it and asking for `:reload`, once until the next line; when
+///   no watch starts, that is said once and the run goes on unwatched.
+/// - provides: `gandr repl` on a terminal.
+/// - fails: the writer's error.
+/// - panics: none.
+///
+/// # Errors
+/// The writer's error.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the face is asserted over a scripted source through
+///   [`drive`], over piped lines through the editor in a child process, where
+///   the watch is reported as off, and the watch by its own witness; the editor
+///   and the printed notice on a terminal, which the test runner lacks, were
+///   exercised by hand on a pseudo-terminal.
+/// - witness: `tests::repl_loop::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `tests::terminal::the_terminal_face_reads_its_input_through_the_editor`
+/// - witness: `watch::tests::a_loaded_file_rewritten_is_noticed_once_per_line`
+#[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Input(_)))))]
+#[inline]
+pub fn run_interactive<Output>(
+    output: &mut Output,
+    style: RenderStyle,
+    (spelling, pool): (Spelling, Arc<Pool>),
+) -> io::Result<Ended>
+where
+    Output: Write,
+{
+    let mut editor = match DefaultEditor::new() {
+        Ok(editor) => editor,
+        Err(error) => return Ok(Ended::Faulted(Fault::Editor(error))),
+    };
+    let watch = editor
+        .create_external_printer()
+        .map_err(|error| error.to_string())
+        .and_then(|mut printer| {
+            DiskWatch::new(move |path: &Path| {
+                let mut notice = Vec::new();
+                if write_block(&mut notice, &disk_notice(path)).is_ok() {
+                    let _printed = printer.print(String::from_utf8_lossy(&notice).into_owned());
+                }
+            })
+            .map_err(|error| error.to_string())
+        });
+    let watch = match watch {
+        Ok(watch) => Some(watch),
+        Err(error) => {
+            writeln!(output, "loaded files are not watched for changes: {error}")?;
+            None
+        },
+    };
+    drive(
+        &mut Terminal { editor, watch },
+        output,
+        style,
+        (spelling, pool),
+    )
+}
