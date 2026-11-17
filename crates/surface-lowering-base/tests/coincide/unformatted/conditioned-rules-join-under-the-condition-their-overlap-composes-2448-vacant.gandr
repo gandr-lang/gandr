@@ -1,0 +1,2 @@
+{scope}
+    rule vacant : nu (bind a . (nil ())) <=> nil ();

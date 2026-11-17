@@ -1,0 +1,5 @@
+import "./base.gandr" as old : {signature} via downgrade ;
+def one : Integer ;
+def one = 1 ;
+def read : Integer ;
+def read = old.answer ;

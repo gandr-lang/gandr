@@ -1,0 +1,15 @@
+module Passing : Model(StatePutPut) with sort S = Integer where {
+  type C = Integer -> Integer;
+  def get(k : Integer -> (Integer -> Integer)) -> Integer -> Integer {
+    thunk { fun (s) { let after = k s; after s } }
+  }
+  def put(s : Integer, k : Integer -> Integer) -> Integer -> Integer {
+    thunk { fun (_old) { k s } }
+  }
+  def putPut(s : Integer, u : Integer, k : Integer -> Integer) -> Path[.A = Integer -> Integer](
+    put s (put u k),
+    put u k
+  ) {
+    Path.here (put u k)
+  }
+}

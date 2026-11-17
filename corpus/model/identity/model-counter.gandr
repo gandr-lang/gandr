@@ -1,0 +1,114 @@
+/// This source gives counter models for one counter theory.
+///
+/// Each model counts modulo three at the same carrier type.
+/// Negation relates the counting-up and counting-down models.
+///
+/// The packed model record contains every declared theory member.
+/// A consumer reads both related models by construction.
+///
+/// - see: corpus/model/identity/model-counter-manifest.gandr
+
+/// The `Counter` theory has a carrier, zero, step, and reading.
+pub theory Counter where
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+
+/// The `Up` model counts upward modulo three.
+pub module Up : Model(Counter) where {
+  type C = Unit + (Unit + Unit);
+  /// Zero.
+  @[checks]
+  def zero = +{.0 = *{}};
+  /// One count more.
+  @[checks]
+  def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
+    match c where
+      | +{.0 = u} => +{.1 = +{.0 = u}}
+      | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
+      | +{.1 = +{.1 = u}} => +{.0 = u}
+  /// The count as an integer.
+  @[checks]
+  def read(c : Unit + (Unit + Unit)) -> Integer =
+    match c where
+      | +{.0 = u} => 0
+      | +{.1 = +{.0 = u}} => 1
+      | +{.1 = +{.1 = u}} => 2
+}
+
+/// The `Down` model counts downward modulo three.
+module Down : Model(Counter) where {
+  type C = Unit + (Unit + Unit);
+  /// Zero.
+  @[checks]
+  def zero = +{.0 = *{}};
+  /// One count less.
+  @[checks]
+  def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
+    match c where
+      | +{.0 = u} => +{.1 = +{.1 = u}}
+      | +{.1 = +{.0 = u}} => +{.0 = u}
+      | +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
+  /// The negated count as an integer.
+  @[checks]
+  def read(c : Unit + (Unit + Unit)) -> Integer =
+    match c where
+      | +{.0 = u} => 0
+      | +{.1 = +{.0 = u}} => 2
+      | +{.1 = +{.1 = u}} => 1
+}
+
+/// The `upModel` value packs the `Up` model.
+pub def upModel : Model Counter = pack Up at Model Counter;
+
+/// The `downModel` value packs the `Down` model.
+pub def downModel : Model Counter = pack Down at Model Counter;
+
+/// The `negateCount` function keeps zero and exchanges one with two.
+def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
+  match c where
+    | +{.0 = u} => +{.0 = u}
+    | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
+    | +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
+
+/// The `countsNegated` path makes negation its own inverse.
+pub def countsNegated : Path[.A = Type](
+  Unit + (Unit + Unit),
+  Unit + (Unit + Unit)
+) = equiv negateCount negateCount;
+
+/// The `stepNegated` path maps the up step to the down step.
+def stepNegated : Path(
+  Path.walk (fun (t) { t -> t }) countsNegated Up.incr,
+  Down.incr
+) = Path.funext (Path.walk (fun (t) { t -> t }) countsNegated Up.incr) Down.incr;
+
+/// The `readNegated` path maps the up reading to the down reading.
+def readNegated : Path(
+  Path.walk (fun (t) { t -> Integer }) countsNegated Up.read,
+  Down.read
+) = Path.funext (Path.walk (fun (t) { t -> Integer }) countsNegated Up.read) Down.read;
+
+/// The `oneCounter` path relates the packed counter models.
+pub def oneCounter : Path(upModel, downModel) = *{
+  countsNegated,
+  *{Path.here (+{.0 = *{}}), *{stepNegated, readNegated}}
+};
+
+/// The `observe` function reads the value after one step.
+pub def observe(m : Model Counter) -> Integer =
+  match m where
+    | *{.zero = z, .incr = i, .read = r} => r (i z)
+
+/// The consumer reads the upward counter.
+@[runs("1")]
+def observedUp() -> Integer { observe upModel }
+
+/// The consumer reads the downward counter.
+@[runs("1")]
+def observedDown() -> Integer { observe downModel }
+
+/// The consumer gives equal readings for related models.
+def observedAlike() -> Path(observe upModel, observe downModel) =
+  Path.ap observe oneCounter

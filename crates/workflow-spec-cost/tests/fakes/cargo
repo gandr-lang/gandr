@@ -1,0 +1,3 @@
+#!/bin/sh
+printf 'cargo %s | %s | %s | %s\n' "$*" "$RUSTFLAGS" "$CARGO_TARGET_DIR" "$CARGO_PROFILE_TEST_DEBUG" >> "$FAKE_LOG"
+printf '{"rust-build-meta":{},"rust-suites":{"gandr-a::tests":{"binary-id":"gandr-a::tests","binary-path":"%s/bin/test-binary","cwd":"%s/crates/a","testcases":{"pick::first":{"ignored":false},"skip::me":{"ignored":true}}}}}\n' "$FAKE_ROOT" "$FAKE_ROOT"
