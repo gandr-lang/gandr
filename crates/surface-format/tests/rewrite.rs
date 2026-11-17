@@ -1286,6 +1286,7 @@ impl Elaborate for Oracle
                     (Answer::Apart | Answer::Refused, _) => None,
                 })
                 .collect(),
+            refusals: Vec::new(),
             crossings: BTreeMap::new(),
         }
     }

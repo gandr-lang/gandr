@@ -5208,11 +5208,14 @@ pub struct Elaborating;
 impl gandr_surface_format::Elaborate for Elaborating
 {
     /// Check `module` beside the host's built-ins and answer each
-    /// declaration's elaborated body and each crossing, as [`Elaborating`]
-    /// states.
+    /// declaration's elaborated body, its refusal located through the
+    /// lowering's origin table, and each crossing, as [`Elaborating`] states.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the refusals by position, diagnostic
     #[inline]
     fn elaborate(
         &self,
@@ -5224,11 +5227,42 @@ impl gandr_surface_format::Elaborate for Elaborating
         let mut context = checking_context(arena, Opening::UNBOUNDED, &ModuleSettings::of(module));
         let report = check_module(&mut context, &declarations);
         let definitions = report.definitions();
+        let refused: BTreeMap<ConstantIndex, gandr_core_checker::CheckRefusal> = report
+            .judged()
+            .iter()
+            .filter_map(|judged| match judged.verdict() {
+                VerdictOf::Refused(refusal) => Some((judged.constant(), refusal)),
+                VerdictOf::Data
+                | VerdictOf::Checked { .. }
+                | VerdictOf::Synthesised { .. }
+                | VerdictOf::Owed(_)
+                | VerdictOf::Suspended(_) => None,
+            })
+            .collect();
         gandr_surface_format::Elaboration {
             definitions: module
                 .declarations()
                 .iter()
                 .map(|declaration| definitions.get(&declaration.constant()).copied())
+                .collect(),
+            refusals: module
+                .declarations()
+                .iter()
+                .map(|declaration| {
+                    let refusal = *refused.get(&declaration.constant())?;
+                    Some(gandr_surface_format::Refused {
+                        culprit: gandr_surface_diagnostics::Label::Culprit(
+                            gandr_surface_diagnostics::Culprit::of(
+                                gandr_surface_corpus::RefusalOf::Checking(refusal),
+                            ),
+                        ),
+                        site: gandr_surface_diagnostics::blamed(
+                            refusal,
+                            declaration.span(),
+                            module.origins(),
+                        ),
+                    })
+                })
                 .collect(),
             crossings: report
                 .nested_elaborations()

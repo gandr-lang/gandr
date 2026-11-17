@@ -43,6 +43,7 @@ use crate::locus::node;
 use crate::model::Locus;
 use crate::model::binding;
 use crate::model::context_locus;
+use crate::report::report_span;
 
 quenchant_shape::reason_enum! {
     /// Why a declaration has no located record, or a record names no call or
@@ -348,6 +349,36 @@ impl Locations
             return Maybe::Absent(locating::Absent::Unrefused);
         };
         Maybe::Present(record)
+    }
+}
+
+/// The bytes that `refusal`, a checker refusal of the declaration that spans
+/// `declaration`, blames, through `origins`.
+///
+/// # Specification
+/// - requires: `refusal` names nodes of the arena that `origins` records.
+/// - ensures: the span of the primary locus [`Annotations::refusal`] gives the
+///   refusal, or the reason it gives none.
+/// - provides: the site a formatter compares two refusals of one declaration
+///   at.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the site is what the walk of the refusal's loci
+///   answers, which a predicate would walk again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Annotations::refusal`].
+/// - witness: `gandr-surface-dispatcher::format::tests::a_tail_return_leaves_a_declaration_the_checker_refuses_6261`
+#[inline]
+pub fn blamed(
+    refusal: CheckRefusal,
+    declaration: ByteSpan,
+    origins: &OriginTable,
+) -> Maybe<ByteSpan, report_span::Absent>
+{
+    match Annotations::refusal(RefusalOf::Checking(refusal), declaration, origins).primary {
+        Maybe::Present(annotation) => Maybe::Present(annotation.span),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
     }
 }
 

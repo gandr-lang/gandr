@@ -344,6 +344,7 @@ use crate::leaf::Owner;
 use crate::meaning::Agreement;
 pub use crate::meaning::Elaborate;
 pub use crate::meaning::Elaboration;
+pub use crate::meaning::Refused;
 use crate::reduct::Reduct;
 use crate::reduct::Reducts;
 use crate::rewrite::Chosen;
@@ -2318,8 +2319,8 @@ fn verify_rewritten(
     };
     let source = source.get_or_insert_with(|| checker.elaborate(arena, lowered));
     let elaborated = meaning::Elaborated {
-        before: &source.definitions,
-        after: checker.elaborate(arena, &respelled).definitions,
+        before: source,
+        after: checker.elaborate(arena, &respelled),
     };
     Ok(meaning::agree(
         arena,

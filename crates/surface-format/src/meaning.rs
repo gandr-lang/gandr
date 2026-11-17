@@ -24,6 +24,8 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_folded;
 use gandr_core_term::equal_comp_type_folded;
 use gandr_core_term::equal_type_folded;
+use gandr_surface_diagnostics::Label;
+use gandr_surface_diagnostics::report_span;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredDeclaration;
@@ -79,6 +81,7 @@ pub enum Agreement
 /// - ensures: an implementation answers, for each declaration of `module`
 ///   lowered into `arena`, in the module's order, the body the checker
 ///   elaborates for it, minting into `arena`, or none where it defines none;
+///   the refusal the checker refuses it with, or none where it refuses none;
 ///   and each value of `module`'s lowering the checker applied a reduct or a
 ///   forgetting map to, with the map's constant and the carriers it applied the
 ///   map at, minted into `arena`.
@@ -106,6 +109,9 @@ pub struct Elaboration
     /// The body for each declaration, in the module's order; none for one it
     /// defines nothing for.
     pub definitions: Vec<Option<ValueId>>,
+    /// The refusal for each declaration the checker refuses, in the module's
+    /// order; none for one it does not refuse.
+    pub refusals: Vec<Option<Refused>>,
     /// Each value of the module's lowering standing where a model of a theory
     /// its own model's theory includes is asked, or where its theory's model
     /// is asked of a model whose sorts are manifest: the map the checker
@@ -113,15 +119,26 @@ pub struct Elaboration
     pub crossings: BTreeMap<ValueId, Crossing>,
 }
 
-/// The bodies a checker elaborated for two lowerings of one source, each in
-/// its module's declaration order.
+/// What the checker refuses one declaration with: what the refusal blames,
+/// and where it stands in the unit's text.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Refused
+{
+    /// What the refused bytes are.
+    pub culprit: Label,
+    /// The bytes the refusal blames, absent where the origin table records
+    /// none.
+    pub site: Maybe<ByteSpan, report_span::Absent>,
+}
+
+/// What a checker elaborated for two lowerings of one source.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Elaborated<'source>
 {
     /// The source's.
-    pub before: &'source [Option<ValueId>],
+    pub before: &'source Elaboration,
     /// The rewritten text's.
-    pub after: Vec<Option<ValueId>>,
+    pub after: Elaboration,
 }
 
 /// `tree`, the text `unit` lays out, lowered into `arena`, or nothing when
@@ -280,13 +297,14 @@ pub fn unelaborated(
 ///   signatures are syntactically equal — evidence erased, no reduction, a
 ///   returned composite read as its fold, as the bridge erases it — bodies that
 ///   are not counting as equal where `elaborated` holds equal elaborations of
-///   both, whose seals agree but for their types' positions, and whose refusals
-///   are of one kind at one site under `sites`; else
-///   [`Agreement::Declarations`] with each of `before`'s declarations whose
-///   pair is not so, in order: the keys of the forms holding it, its name, its
-///   span in the source starting at `base`, and why — the refusal the rewritten
-///   declaration met, refused otherwise where both are refused, or that it
-///   lowered otherwise.
+///   both, or no elaboration of either and a checker refusal of each that
+///   blames one culprit at one recorded site under `sites`, whose seals agree
+///   but for their types' positions, and whose refusals are of one kind at one
+///   site under `sites`; else [`Agreement::Declarations`] with each of
+///   `before`'s declarations whose pair is not so, in order: the keys of the
+///   forms holding it, its name, its span in the source starting at `base`, and
+///   why — the refusal the rewritten declaration met, refused otherwise where
+///   both are refused, or that it lowered otherwise.
 /// - provides: the check a rewrite's output passes.
 /// - fails: never.
 /// - panics: none.
@@ -299,6 +317,7 @@ pub fn unelaborated(
 /// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
 /// - witness: `tests::rewrite::a_rewrite_is_checked_beside_every_kind_of_declaration`
 /// - witness: `tests::rewrite::a_rewrite_that_moves_a_refusal_keeps_its_site_6726`
+/// - witness: `gandr-surface-dispatcher::format::tests::a_tail_return_leaves_a_declaration_the_checker_refuses_6261`
 ///
 /// # Cost
 /// - allocation: the differing declarations, growth within the module's
@@ -324,17 +343,29 @@ pub fn agree(
     let values =
         |left, right| equal_certificate_folded(arena, left, right) == CertificateEquality::Equal;
     // Bodies that lower otherwise agree where the checker elaborates them
-    // alike, when it was asked.
+    // alike, when it was asked, or refuses both at one recorded site.
     let elaborates = |position: usize| {
-        let pair = elaborated.and_then(|elaborated| {
-            Some((
-                *elaborated.before.get(position)?,
-                *elaborated.after.get(position)?,
-            ))
-        });
-        match pair {
-            Some((Some(left), Some(right))) => values(left, right),
-            Some((Some(_) | None, _)) | None => false,
+        let Some(elaborated) = elaborated
+        else {
+            return false;
+        };
+        let at = |elaboration: &Elaboration| {
+            (
+                elaboration.definitions.get(position).copied().flatten(),
+                elaboration.refusals.get(position).copied().flatten(),
+            )
+        };
+        match (at(elaborated.before), at(&elaborated.after)) {
+            ((Some(left), _), (Some(right), _)) => values(left, right),
+            ((None, Some(left)), (None, Some(right))) => {
+                left.culprit == right.culprit
+                    && matches!(
+                        (left.site, right.site),
+                        (Maybe::Present(_), Maybe::Present(_))
+                    )
+                    && sites.placed(base, (left.site, right.site)) == Placement::Same
+            },
+            _ => false,
         }
     };
     let declared = before.declarations();

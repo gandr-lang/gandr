@@ -856,6 +856,53 @@ mod tests
         );
     }
 
+    /// #6261: a tail's `return` before a function value leaves a declaration
+    /// the checker refuses where the bare value meets the same refusal at the
+    /// same site, and stays, reported, where the refusal changes.
+    #[test]
+    fn a_tail_return_leaves_a_declaration_the_checker_refuses_6261()
+    {
+        let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+        let source = include_str!(
+            "format/unformatted/a-tail-return-leaves-a-declaration-the-checker-refuses-6261.gandr"
+        );
+        let scratch = Scratch::new(Path::new("format-refused-tail"));
+        scratch.file(Path::new("a.gandr"), SourceText::from(source));
+        let path = scratch.root().join("a.gandr");
+        let options = FormatOptions {
+            form: gandr_surface_format::Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let laid = super::lay_out(
+            &Reader::new(),
+            &path,
+            Ok(&grammar),
+            options,
+            Rewrite::InPlace,
+        )
+        .expect("the source formats");
+        let super::Laid::Changed(kept) = laid
+        else {
+            panic!("the source changes: {laid:?}");
+        };
+        let kept: Vec<(String, gandr_surface_format::Withdrawn)> = kept
+            .into_iter()
+            .map(|kept| (kept.withdrawal.declaration, kept.withdrawal.reason))
+            .collect();
+        assert_eq!(
+            (read(&path), kept),
+            (
+                source.replacen("return fun", "fun", 1),
+                Vec::from([(
+                    String::from("flat"),
+                    gandr_surface_format::Withdrawn::Lowered
+                )])
+            ),
+            "`bad` meets one mismatch at `e` either way and loses its `return`; `flat` meets \
+             another refusal without it and keeps it, reported"
+        );
+    }
+
     #[test]
     fn a_reduct_the_checker_applies_is_written_in_the_explicit_form_and_left_out_in_the_sugared()
     {
