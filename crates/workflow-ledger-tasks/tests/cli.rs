@@ -197,6 +197,9 @@ fn the_exemplars_verify_and_a_stray_one_is_named()
     for folder in ["syntax", "attributes", "diagnostics"] {
         for entry in std::fs::read_dir(committed.join(folder)).expect("the folder lists") {
             let source = entry.expect("the entry reads").path();
+            if source.is_dir() {
+                continue;
+            }
             let name = source.file_name().expect("an exemplar is a file");
             let text = std::fs::read_to_string(&source).expect("the exemplar reads");
             let _path = scratch.file(&Path::new(folder).join(name), Text(&text));

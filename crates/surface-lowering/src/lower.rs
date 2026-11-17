@@ -7188,31 +7188,39 @@ mod tests
         }
     }
 
+    /// #7877: `unit`, where no declaration binds it, is the retired spelling
+    /// of the unit value, refused at the name; a source that binds `unit`
+    /// reads its own name.
     #[test]
-    fn probe_retired_forms_7877()
+    fn the_retired_unit_is_refused_by_name_7877()
     {
-        let pbg = grammar();
-        let mut seen = alloc::string::String::new();
-        for source in [
-            "def c : *{};\ndef c = unit;\n",
-            "def d(A : Type, a : A, b : A) -> -F Type { return (Path(A, a, b)) }\n",
-            "theory T where { shape S { a, b }; }\n",
-        ] {
-            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
-                .expect("parses")
-                .into_tree();
-            let mut arena = CoreArena::new();
-            let module = lower_module(
-                &pbg,
-                &tree,
-                &mut arena,
-                LoweringBudget::DEFAULT,
-                Recognition::default(),
-            )
-            .unwrap();
-            seen.push_str(&alloc::format!("{source:?}: {:?}\n", outcomes(&module)));
-        }
-        panic!("{seen}");
+        let mut arena = CoreArena::new();
+        let source = crate::fixture::listing("def c : *{} ; def c = unit ;");
+        let module = crate::fixture::listed(&source, &mut arena);
+        let text: &str = source.as_ref();
+        let start = text.find("unit").unwrap_or_default();
+        assert_eq!(
+            outcomes(&module).first().copied(),
+            Some(DeclarationOutcome::Refused(LoweringRefusal::RetiredName {
+                span: span(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(4))
+                ),
+                form: gandr_surface_grammar::RetiredForm::UnitValue,
+            })),
+            "an unbound `unit` is the retired spelling, at the name"
+        );
+        let mut arena = CoreArena::new();
+        let source = crate::fixture::listing(
+            "def unit : Integer ; def unit = 1 ; def c : Integer ; def c = unit ;",
+        );
+        let module = crate::fixture::listed(&source, &mut arena);
+        assert!(
+            outcomes(&module)
+                .iter()
+                .all(|outcome| !matches!(outcome, DeclarationOutcome::Refused(_))),
+            "a bound `unit` reads the declaration that binds it"
+        );
     }
 
     #[test]

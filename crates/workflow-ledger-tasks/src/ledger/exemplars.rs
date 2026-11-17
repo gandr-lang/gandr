@@ -1091,6 +1091,9 @@ mod tests
             std::fs::create_dir_all(&target).expect("the copy's folder is created");
             for entry in std::fs::read_dir(committed().join(folder)).expect("the folder lists") {
                 let source = entry.expect("the entry reads").path();
+                if source.is_dir() {
+                    continue;
+                }
                 let _bytes =
                     std::fs::copy(&source, target.join(source.file_name().expect("a file")))
                         .expect("the exemplar copies");

@@ -1295,8 +1295,8 @@ fn refusal_name(form: RetiredForm) -> String
 /// [`LedgerFault::Retired`] naming the arm's surface and its count of rows.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the built-in grammar gives each arm one row; a list
-///   with one arm's row left out is refused naming that arm and zero.
+/// - hypothesis: L3 — the built-in grammar gives each arm one row; a list with
+///   one arm's row left out is refused naming that arm and zero.
 /// - witness: `ledger::tests::each_retired_form_has_one_refused_row_7877`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |kept| RetiredForm::ALL.iter().all(|form| kept.iter().filter(|row| row.removal == Withdrawal::Refused(*form)).count() == 1)))]
 fn refused_once(rows: Vec<SupersededRow>) -> Result<Vec<SupersededRow>, LedgerFault>
@@ -2314,8 +2314,8 @@ mod tests
     use super::SupersededRow;
     use super::SyntaxLedger;
     use super::Withdrawal;
-    use super::refused_once;
     use super::molds_by_rule;
+    use super::refused_once;
     use super::spelled;
     use super::standing::Internal;
     use super::standing::standing;
@@ -3028,7 +3028,7 @@ mod tests
         for entry in std::fs::read_dir(committed().join("syntax")).expect("the exemplars list") {
             let path = entry.expect("an entry").path();
             let name = path.file_name().expect("a file name").to_owned();
-            if name.to_str() != Some(missing.as_str()) {
+            if name.to_str() != Some(missing.as_str()) && !path.is_dir() {
                 let _bytes = std::fs::copy(&path, folder.join(name)).expect("the exemplar copies");
             }
         }

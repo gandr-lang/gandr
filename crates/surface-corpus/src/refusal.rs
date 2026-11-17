@@ -1631,7 +1631,6 @@ impl RefusalName
             .chain(MEMBER_FAULTS.map(|fault| Self::UndescribedMember(member_tag(fault))))
             .chain(BOUNDARY_CLAUSES.map(|clause| Self::BoundaryUnrealised(clause.tag())))
             .chain(SIGNATURE_FAULTS.map(|fault| Self::SignatureMismatch(signature_tag(fault))))
-            .chain(RetiredForm::ALL.map(Self::RetiredSpelling))
             .chain([
                 Self::UnprovenLaw,
                 Self::NoFiller(FillerAsk::Omitted),

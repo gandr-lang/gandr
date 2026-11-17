@@ -11975,8 +11975,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: true exactly when the node is a tuple form whose children
-    ///   hold two `,` tiles.
+    /// - ensures: true exactly when the node is a tuple or a parenthesized form
+    ///   whose children hold two `,` tiles.
     /// - panics: none.
     ///
     /// # Cost
@@ -11993,13 +11993,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     {
         let cx = self.cx();
         let tupled = cx.tree.node(argument).is_some_and(|node| {
-            matches!(shape_of(cx.pbg, node), Ok(Shape::Form { name, .. }) if name == FormName::TUPLE)
+            matches!(shape_of(cx.pbg, node), Ok(Shape::Form { name, former }) if name == FormName::TUPLE || former == Former::Parenthesized)
         });
         tupled
             && cx
                 .tree
                 .children(argument)
-                .filter(|&child| cx.tree.fragment(child).is_some_and(|text| <&str>::from(text) == ","))
+                .filter(|&child| {
+                    cx.tree
+                        .fragment(child)
+                        .is_some_and(|text| <&str>::from(text) == ",")
+                })
                 .count()
                 == 2_usize
     }
