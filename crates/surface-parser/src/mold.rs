@@ -1253,15 +1253,15 @@ fn ends_declaration(
 }
 
 /// The end of the tokens that a weighing of the form open at `index` reads:
-/// past the first `;` or layout separator outside a bracket, or before the
+/// before the closer of the block that encloses the form, or before the
 /// first token that starts its line and heads or prefixes a declaration,
 /// whichever comes first. The end is never past the stream.
 ///
 /// # Specification
 /// - requires: `tokens` came from the labeler over `source`.
-/// - ensures: an index after `index` and at most `tokens.len()`. Each token
-///   before it and after `index` is no separator at bracket depth zero, and no
-///   line-start declaration head or prefix.
+/// - ensures: an index after `index` and at most `tokens.len()`. No token
+///   before it and after `index` closes a bracket that opens before `index`, or
+///   starts its line and heads or prefixes a declaration.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
 fn form_end(
@@ -1288,14 +1288,9 @@ fn form_end(
         {
             return TokenIndex::from(at);
         }
-        let separates = matches!(token.lexeme, Lexeme::LayoutSemi)
-            || (matches!(token.lexeme, Lexeme::Punct)
-                && AsRef::<str>::as_ref(&token.text(source)) == ";");
-        if depth == 0 && separates {
-            return TokenIndex::from(at.saturating_add(1));
-        }
         match bracket(token, bytes) {
             Bracket::Open => depth = depth.saturating_add(1),
+            Bracket::Close if depth == 0 => return TokenIndex::from(at),
             Bracket::Close => depth = depth.saturating_sub(1),
             Bracket::Neither => {},
         }
@@ -2491,13 +2486,15 @@ impl<'pbg> Molder<'pbg>
                     &source,
                     (token.lexeme, text, &labels),
                 );
-                self.settle_owed_tile(
-                    state,
-                    tokens,
-                    TokenIndex::from(index),
-                    &source,
-                    (token.lexeme, text, &labels),
-                );
+                if halt == Halt::Never {
+                    self.settle_owed_tile(
+                        state,
+                        tokens,
+                        TokenIndex::from(index),
+                        &source,
+                        (token.lexeme, text, &labels),
+                    );
+                }
                 let taken = bool::from(ends_declaration(
                     self.pbg,
                     tokens,
@@ -2981,6 +2978,14 @@ impl<'pbg> Molder<'pbg>
             let mark = state.mark();
             state.push_missing(tile);
             self.gather(state, lexeme, text, labels, ahead);
+            let frontier = state.admissibility_frontier();
+            if !self.candidates.iter().any(|&mold| {
+                bool::from(state.would_continue_form(mold))
+                    || bool::from(state.admits_at(mold, &frontier))
+            }) {
+                state.rollback_to(&mark);
+                continue;
+            }
             let reading = self.reading;
             let choice = self.choose_stream(state, tokens, index, source);
             Self::push_choice(state, choice, text, reading);
