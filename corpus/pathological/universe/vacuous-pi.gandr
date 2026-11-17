@@ -22,4 +22,4 @@ def pick(n : Nat) -> -F Type =
 /// A function over `pick` is no function to the naturals: `pick(x)` names
 /// `x`, so the dependent arrow is not the plain one.
 @[refuses("TypeMismatch")]
-def notArrow(f : +U ((x : Nat) -> -F pick(x))) -> -F +U (Nat -> -F Nat) { return f }
+def notArrow(f : +U ((x : Nat) -> -F pick(x))) -> -F +U (Nat -> -F Nat) = return f;

@@ -60,7 +60,7 @@ def familyRecord = *{Unit, *{thunk { fun (g) { return Unit } }, thunk { fun (g) 
 
 /// The `appliedVia` function applies a family through a definition. The call
 /// `appliedVia(post, x)` unfolds to `post(x)`.
-def appliedVia(post : +U (Unit -> -F Type), x : Unit) -> Type { post x }
+def appliedVia(post : +U (Unit -> -F Type), x : Unit) -> Type = post x;
 
 /// The `appliedWrittenOut` function returns `post(x)` at the type
 /// `appliedVia(post, x)`. The unfolded definition converts with the call of the
@@ -72,4 +72,4 @@ def appliedWrittenOut(post : +U (Unit -> -F Type), x : Unit, h : post(x)) -> app
 /// The `appliedFolded` function converts in the other direction. It returns
 /// `appliedVia(post, x)` at the type `post(x)`.
 @[checks]
-def appliedFolded(post : +U (Unit -> -F Type), x : Unit, h : appliedVia(post, x)) -> post(x) { h }
+def appliedFolded(post : +U (Unit -> -F Type), x : Unit, h : appliedVia(post, x)) -> post(x) = h;

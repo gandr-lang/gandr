@@ -62,10 +62,10 @@ def mismatched_elided(n : Nat) -> -F Nat =
   count n
 
 @[checks]
-def identity(n : Nat) -> -F Nat { return n }
+def identity(n : Nat) -> -F Nat = return n;
 
 @[checks]
-def identity_elided(n : Nat) -> -F Nat { n }
+def identity_elided(n : Nat) -> -F Nat = n;
 
 @[checks]
 def ret : Nat;
@@ -218,22 +218,22 @@ def pick_elided(n : Nat) -> -F Nat =
   Succ m
 
 @[runs("Zero")]
-def pick_zero() -> -F Nat { become pick Zero }
+def pick_zero() -> -F Nat = become pick Zero;
 
 @[runs("Zero")]
-def pick_zero_elided() -> -F Nat { pick_elided Zero }
+def pick_zero_elided() -> -F Nat = pick_elided Zero;
 
 @[runs("Succ Zero")]
-def pick_one() -> -F Nat { become pick (Succ Zero) }
+def pick_one() -> -F Nat = become pick (Succ Zero);
 
 @[runs("Succ Zero")]
-def pick_one_elided() -> -F Nat { pick_elided (Succ Zero) }
+def pick_one_elided() -> -F Nat = pick_elided (Succ Zero);
 
 @[runs("Succ (Succ Zero)")]
-def pick_three() -> -F Nat { become pick (Succ (Succ (Succ Zero))) }
+def pick_three() -> -F Nat = become pick (Succ (Succ (Succ Zero)));
 
 @[runs("Succ (Succ Zero)")]
-def pick_three_elided() -> -F Nat { pick_elided (Succ (Succ (Succ Zero))) }
+def pick_three_elided() -> -F Nat = pick_elided (Succ (Succ (Succ Zero)));
 
 @[checks]
 def handed(n : Nat) -> -F Nat =
@@ -272,10 +272,10 @@ def rec skim_elided(n : Nat) -> -F Nat =
     }
 
 @[runs("Zero")]
-def skimmed() -> -F Nat { become skim (Succ (Succ (Succ Zero))) }
+def skimmed() -> -F Nat = become skim (Succ (Succ (Succ Zero)));
 
 @[runs("Zero")]
-def skimmed_elided() -> -F Nat { skim_elided (Succ (Succ (Succ Zero))) }
+def skimmed_elided() -> -F Nat = skim_elided (Succ (Succ (Succ Zero)));
 
 @[refuses("OutOfFragment.JoinsBlock")]
 def joined(n : Nat) -> -F Nat =
