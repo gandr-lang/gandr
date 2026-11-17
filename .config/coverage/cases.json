@@ -149,5 +149,18 @@
       }
     },
     "output": "[]"
+  },
+  {
+    "name": "#7851: an invalid count cannot replace a true coverage count",
+    "input": {
+      "coverage-merge": {
+        "reports": [
+          "SF:crates/example/src/lib.rs\nDA:1,3\nDA:2,18446744073709551616\nend_of_record\n",
+          "SF:crates/example/src/lib.rs\nDA:1,18446744073709551616\nDA:2,18446744073709551616\nend_of_record\n"
+        ],
+        "output": "SF:crates/example/src/lib.rs\nDA:1,3\nLH:1\nLF:1\nend_of_record\n"
+      }
+    },
+    "output": "[]"
   }
 ]

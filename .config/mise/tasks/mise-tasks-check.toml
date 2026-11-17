@@ -3038,6 +3038,29 @@ if [[ -n "$refusals" ]]; then
 fi
 .config/cases/run.bash coverage .config/coverage/targets.json --program .config/coverage/targets.jq --mode c
 .config/coverage/targets.bash
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+failed=0
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  mapfile -t reports < <(jq -r '.input["coverage-merge"].reports[] | @base64' <<< "$case")
+  paths=()
+  index=0
+  for report in "${reports[@]}"; do
+    path="$scratch/$index.lcov"
+    base64 --decode <<< "$report" > "$path"
+    paths+=("$path")
+    index=$((index + 1))
+  done
+  wanted=$(jq -r '.input["coverage-merge"].output' <<< "$case")
+  got=$(awk -f .config/coverage/merge.awk "${paths[@]}")
+  if [[ $got != "${wanted%$'\n'}" ]]; then
+    printf 'coverage merge case FAILED: %s\n  got:\n%s\n  wanted:\n%s\n' \
+      "$name" "$got" "$wanted" >&2
+    failed=1
+  fi
+done < <(jq -c '.[] | select(.input["coverage-merge"] != null)' .config/coverage/cases.json)
+(( failed == 0 )) || exit 1
 echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as recorded; the measure runs in parts that make up the whole; $(jq length .config/coverage/targets.json) target cases read as recorded, and every integration target holds an item"
 '''
 
