@@ -17,7 +17,7 @@ def slogan = "types are machines";
 /// The top level accepts declarations only. `string.contains` must run inside
 /// a declaration, `main` or another block.
 @[refuses("OutOfFragment.TopLevel")]
-(string.contains slogan "machine");
+(string.contains slogan "machine")
 
 /// `same` compares `slogan` with itself through `EqString`.
 @[runs("+{.0 = *{}}")]

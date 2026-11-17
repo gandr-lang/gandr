@@ -7,5 +7,5 @@ def a = 1 ; def b = 2 ; // trailing
 
 
 /* own */
-(f a)   ;
-(g b);
+def c = (f a)   ;
+def d = (g b);
