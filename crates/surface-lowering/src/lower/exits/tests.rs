@@ -351,7 +351,7 @@ fn a_block_final_semicolon_returns_the_unit_in_both_spellings_7733()
     let names: Vec<SurfaceName<'_>> = module
         .declarations()
         .iter()
-        .map(|declaration| declaration.name())
+        .map(crate::module::LoweredDeclaration::name)
         .collect();
     assert_eq!(
         names,
@@ -361,7 +361,7 @@ fn a_block_final_semicolon_returns_the_unit_in_both_spellings_7733()
     let verdicts: Vec<Verdict> = report
         .judged()
         .iter()
-        .map(|judged| judged.verdict())
+        .map(gandr_core_checker::Judged::verdict)
         .collect();
     assert!(
         matches!(verdicts.as_slice(), [
