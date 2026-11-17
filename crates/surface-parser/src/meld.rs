@@ -2404,8 +2404,7 @@ impl<'pbg> MeldState<'pbg>
     ///   connective's opener `*{`, `+{`, `&{` or `#{`, and a form is open.
     ///   `None` otherwise.
     /// - panics: none.
-    /// - economy: a few comparisons and three byte reads. No string is
-    ///   compared.
+    /// - bound: a few comparisons and three byte reads. No string is compared.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `f x y` applies twice, `if c { a } else { b } x`
