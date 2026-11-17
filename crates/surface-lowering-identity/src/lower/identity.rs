@@ -1038,6 +1038,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> IdentitiesRef<'_, F>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Identities::carried_path`].
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carried_path_head_takes_its_endpoints_by_juxtaposition_6121`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of an unknown mold, error path
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     #[inline]
     pub fn carried_head(
@@ -1172,10 +1175,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     ///   as the codes of the types they spell. A carrier the form leaves out is
     ///   a hole it nominates for the implicit `A` of `head`.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a supply naming an
-    ///   implicit other than `A`; [`FormFault::PositionalCarrier`] at the head
-    ///   of a bare form over three operands, its carrier written first; a
-    ///   misplaced-tile or extra-operand fault for a form out of shape; the
-    ///   budget refusal once no hole name is left.
+    ///   implicit other than `A`; the retired carrier of [`FormFault::Retired`]
+    ///   at the head of a bare form over three operands, its carrier written
+    ///   first; a misplaced-tile or extra-operand fault for a form out of
+    ///   shape; the budget refusal once no hole name is left.
     /// - panics: none.
     ///
     /// # Errors
@@ -1186,6 +1189,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     ///   refused at `B`, and a carrier written first at the head.
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_supplied_by_name_is_the_type_it_names_4932`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_refused_5024`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of a form out of shape, error path
     #[spec(ensures: |ret| ret.as_ref().is_err_and(|refusal| matches!(*refusal, LoweringRefusal::UnresolvedName { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::BudgetExceeded { .. }))
         || ret.as_ref().is_ok_and(|&(_, left, right)| self.cx().reading(left) == Reading::Value(frame)
             && self.cx().reading(right) == Reading::Value(frame)
@@ -1240,7 +1246,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
         closed(site, cursor, TileName::COMMA)?;
         let right = site.one(cursor.operands())?;
         if let (None, Maybe::Present(_)) = (supplied, cursor.at(TileName::COMMA)) {
-            return Err(site.fault(written, FormFault::PositionalCarrier(head)));
+            return Err(site.fault(written, FormFault::carrier_first(head)));
         }
         closed(site, cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, cursor)?;

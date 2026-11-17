@@ -119,6 +119,8 @@ use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::FailureClass;
 use gandr_core_term::generic::Uncovered;
 use gandr_kernel_term::StringLiteral;
+use gandr_surface_grammar::RetiredForm;
+use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
 use gandr_surface_lowering::LoweringRefusal;
@@ -964,6 +966,9 @@ pub enum RefusalName
     NoUniverseAbove,
     /// A form whose pieces fall short of its rule.
     MalformedForm,
+    /// A retired spelling of a form, qualified by the surface the syntax
+    /// ledger's row names it by.
+    RetiredSpelling(RetiredForm),
     /// An attribute name the registry does not hold.
     UnknownAttribute,
     /// One attribute written twice for one name.
@@ -1673,6 +1678,7 @@ impl RefusalName
         (Self::GradedBridge, b"GradedBridge") | (Self::MalformedLiteral,
         b"MalformedLiteral") | (Self::NoUniverseAbove, b"NoUniverseAbove") |
         (Self::MalformedForm, b"MalformedForm") |
+        (Self::RetiredSpelling(_), b"RetiredSpelling") |
         (Self::UnknownAttribute, b"UnknownAttribute") | (Self::DuplicateAttribute,
         b"DuplicateAttribute") | (Self::MissingPayload, b"MissingPayload") |
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
@@ -1892,7 +1898,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::RetiredSpelling(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
         == ret.qualifier.is_some()
 },
     )]
@@ -1952,6 +1958,7 @@ impl RefusalName
             Self::ImportCycle => "ImportCycle",
             Self::UnlockedDependency => "UnlockedDependency",
             Self::SignatureMismatch(_) => "SignatureMismatch",
+            Self::RetiredSpelling(_) => "RetiredSpelling",
             Self::ImportShadows => "ImportShadows",
             Self::UnexportedName => "UnexportedName",
             Self::PathCode => "PathCode",
@@ -2168,6 +2175,9 @@ impl RefusalName
         {
             Some(Qualifier::Named(fault))
         }
+        else if let Self::RetiredSpelling(form) = self {
+            Some(Qualifier::Named(Tag(form.surface().0)))
+        }
         else if matches!(self, Self::UnprovenLaw) {
             Some(Qualifier::Named(ADMITTED))
         }
@@ -2262,6 +2272,10 @@ impl RefusalName
                 "SignatureMismatch" => {
                     tagged(&SIGNATURE_FAULTS.map(signature_tag)).map(Self::SignatureMismatch)
                 },
+                "RetiredSpelling" => RetiredForm::ALL
+                    .into_iter()
+                    .find(|form| form.surface().0 == rest)
+                    .map(Self::RetiredSpelling),
                 "UnprovenLaw" => (rest == ADMITTED.0).then_some(Self::UnprovenLaw),
                 "NoFiller" => (rest == OMITTED.0).then_some(Self::NoFiller(FillerAsk::Omitted)),
                 "GenericUncovered" => (rest == DEPENDENT.0)
@@ -2874,7 +2888,8 @@ impl<'source> RefusalOf<'source, Arena>
                 | gandr_surface_lowering::WfKind::SplitCircuitOutputs
                 | gandr_surface_lowering::WfKind::SharedCircuitPort,
             ..
-        } | LoweringRefusal::MalformedForm { .. }, RefusalName::MalformedForm) | (
+        } | LoweringRefusal::MalformedForm { .. }, RefusalName::MalformedForm | RefusalName::RetiredSpelling(_)) | (
+        LoweringRefusal::RetiredName { .. }, RefusalName::RetiredSpelling(_)) | (
         LoweringRefusal::IllFormedDescription { .. }, RefusalName::IllFormedDescription) | (
         LoweringRefusal::GradedBridge { .. }, RefusalName::GradedBridge) | (
         LoweringRefusal::MalformedLiteral { .. }, RefusalName::MalformedLiteral) | (
@@ -2955,6 +2970,10 @@ impl<'source> RefusalOf<'source, Arena>
         ret == RefusalName::UndescribedMember(member_tag(fault))
     } else if let LoweringRefusal::SignatureMismatch { fault, .. } = refusal {
         ret == RefusalName::SignatureMismatch(signature_tag(fault))
+    } else if let LoweringRefusal::MalformedForm { fault: FormFault::Retired(form), .. } = refusal {
+        ret == RefusalName::RetiredSpelling(form)
+    } else if let LoweringRefusal::RetiredName { form, .. } = refusal {
+        ret == RefusalName::RetiredSpelling(form)
     } else if let LoweringRefusal::GenericUncovered { fault, .. } = refusal {
         ret == RefusalName::GenericUncovered(GenericCoverage::of(fault))
     } else {
@@ -2984,6 +3003,11 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
             ..
         } => RefusalName::OutOfFragment(fragment(FragmentFeature::of(form, sort, boundary))),
         LoweringRefusal::BareFeedback { .. } => RefusalName::BareFeedback,
+        LoweringRefusal::RetiredName { form, .. }
+        | LoweringRefusal::MalformedForm {
+            fault: FormFault::Retired(form),
+            ..
+        } => RefusalName::RetiredSpelling(form),
         LoweringRefusal::IllFormedDescription {
             kind:
                 gandr_surface_lowering::WfKind::CyclicCircuitWiring

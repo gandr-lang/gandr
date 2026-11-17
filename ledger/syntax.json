@@ -411,6 +411,11 @@
     {"label":"≅","molds":1,"opening":1,"rules":1}
   ],
   "superseded": [
-    {"issue":5330,"reason":"the glued head `T(a, b)` stays read until the sources move to `T a b`","replaced_by":"type_application.juxtaposed","rule":"type_application","surface":"glued_type_application"}
+    {"exemplar":"../corpus/ledger/syntax/superseded/unit-value.gandr","reason":"the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name","refused":"RetiredSpelling.unit_value","replaced_by":"*{}","rule":"telescope_expression","surface":"unit_value"},
+    {"exemplar":"../corpus/ledger/syntax/superseded/positional-path-carrier.gandr","reason":"a carrier written first, by position, is refused by name: the head takes its carrier by name","refused":"RetiredSpelling.positional_path_carrier","replaced_by":"Path[.A = A](a, b)","rule":"path_type","surface":"positional_path_carrier"},
+    {"exemplar":"../corpus/ledger/syntax/superseded/positional-bridge-carrier.gandr","reason":"a carrier written first, by position, is refused by name: the head takes its carrier by name","refused":"RetiredSpelling.positional_bridge_carrier","replaced_by":"Bridge[.A = A](a, b)","rule":"bridge_type","surface":"positional_bridge_carrier"},
+    {"exemplar":"../corpus/ledger/syntax/superseded/positional-flow-carrier.gandr","reason":"a carrier written first, by position, is refused by name: the head takes its carrier by name","refused":"RetiredSpelling.positional_flow_carrier","replaced_by":"Flow[.A = A](a, b)","rule":"flow_type","surface":"positional_flow_carrier"},
+    {"issue":5330,"reason":"the glued head `T(a, b)` stays read until the sources move to `T a b`","replaced_by":"type_application.juxtaposed","rule":"type_application","surface":"glued_type_application"},
+    {"exemplar":"../corpus/ledger/syntax/superseded/shape-member.gandr","reason":"the member `shape` is refused by name: `boundary` states the carrier of the signature's cells","refused":"RetiredSpelling.shape_member","replaced_by":"boundary","rule":"theory_declaration","surface":"shape_member"}
   ]
 }

@@ -1158,6 +1158,10 @@ impl<'source> ModuleImports<'source>
     /// - witness: `gandr-surface-lowering::tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
     /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
     /// - witness: `import::tests::each_source_binds_its_own_aliases`
+    ///
+    /// # Cost
+    /// - allocation: the declaration, the path of its name and the scope that
+    ///   binds it, durable by the import's index
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

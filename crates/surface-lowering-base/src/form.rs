@@ -2453,6 +2453,10 @@ pub fn written_children<'tree>(
 /// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
 /// - witness: `form::tests::unknown_root_molds_clear_the_reused_buffer`
 /// - witness: `form::tests::a_form_whose_own_children_are_whole_reports_no_repair_of_an_operand`
+///
+/// # Cost
+/// - allocation: the pieces of the form, growth within `read`'s buffer
+/// - allocation: the worklist of an inner repair, error path
 #[inline]
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -3186,6 +3190,9 @@ fn agreed(
 /// - witness: `gandr-surface-lowering::lower::tests::a_missing_close_is_reported_at_the_innermost_form`
 /// - witness: `gandr-surface-lowering::lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
 /// - witness: `gandr-surface-lowering::lower::tests::an_unended_form_reports_its_deepest_repair_first_written_among_equals`
+///
+/// # Cost
+/// - allocation: the worklist of the walk over the operands, error path
 #[spec(ensures: |ret| match ret {
     | Ok(Maybe::Present(found)) => matches!(found.nested, Maybe::Present(_)),
     | Ok(Maybe::Absent(_)) | Err(LoweringRefusal::UnknownMold { .. }) => true,

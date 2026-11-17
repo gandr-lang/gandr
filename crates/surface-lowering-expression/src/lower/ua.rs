@@ -145,6 +145,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::ua::tests::a_later_member_named_ua_is_a_forward_reference`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_composite_lowers_to_its_cells_and_their_fold`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_fill_lowers_to_its_generator_and_cells`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of a form out of shape, error path
     #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.cx().tree.node(head.node).is_some())]
     #[inline]
     pub fn stratum_head(

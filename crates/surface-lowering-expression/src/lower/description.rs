@@ -108,6 +108,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   codata family beside it is left to the decoder.
     /// - witness: `gandr-surface-lowering::tests::description::native_data_keeps_telescope_and_nominal_heads`
     /// - witness: `gandr-surface-lowering::tests::description::a_codata_declaration_lowers_to_its_signature`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of a form out of shape, error path
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     fn natively_read(
         cx: &Context<'_, 'source>,

@@ -81,6 +81,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   functor are each refused by name, and a path off a call of a function
     ///   is not.
     /// - witness: `gandr-surface-lowering::tests::modules::functors::an_application_is_bound_before_anything_projects_from_it`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of the application, error path
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

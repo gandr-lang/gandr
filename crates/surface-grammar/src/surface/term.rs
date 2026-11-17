@@ -80,6 +80,7 @@ use crate::PrecName;
 use crate::PrecTable;
 use crate::Provenance;
 use crate::Regex;
+use crate::RetiredForm;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -4260,6 +4261,10 @@ fn h(sort: Sort) -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
+///
+/// # Cost
+/// - allocation: the atomic expression rules and their adaptation records,
+///   setup
 #[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 26 && added.iter().zip(["hole", "wildcard.expression", "parenthesized_expression", "type_quote_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "match_expression", "handle_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "break_value_expression", "continue_expression", "glob_expression", "telescope_expression", "labelled_sum_expression", "lazy_record_expression", "offer_expression", "migrate_expression", "fork_expression", "access_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name.split_once('.').map_or(name, |(stem, _)| stem))))]
 fn primary_expressions(
     out: &mut Vec<Rule>,
@@ -4743,6 +4748,11 @@ fn primary_expressions(
         RuleName("telescope_expression"),
         SurfaceForm("record_update_expression"),
         AdaptationReason("factored into the #{ expression family: the update tail `| id = E, … }` shares the `#{ E` prefix and discriminates on the `|` tile after the source expression"),
+    ));
+    telescope.adaptations.push(Adaptation::refused(
+        RuleName("telescope_expression"),
+        RetiredForm::UnitValue,
+        AdaptationReason("the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name"),
     ));
     out.push(telescope);
     // The injection `+{ .ok = E }` into a sum over labels, positional as

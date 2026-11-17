@@ -137,12 +137,12 @@ use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
-use gandr_surface_grammar::RefusalName;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
 use gandr_surface_grammar::Removal;
 use gandr_surface_grammar::RemovalIssue;
 use gandr_surface_grammar::Replacement;
+use gandr_surface_grammar::RetiredForm;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::SPELLED;
@@ -312,6 +312,15 @@ pub enum LedgerFault
     },
     /// The features ledger could not be read or could not answer.
     Features(FeaturesFault),
+    /// A retired form of the grammar has no refused row, or more than one: its
+    /// refusal names no row, or two.
+    Retired
+    {
+        /// The surface form that the retired form writes.
+        surface: &'static str,
+        /// How many refused rows name it.
+        rows: usize,
+    },
 }
 
 impl core::fmt::Display for LedgerFault
@@ -355,6 +364,10 @@ impl core::fmt::Display for LedgerFault
                 path.display()
             ),
             Self::Features(ref fault) => write!(f, "{fault}"),
+            Self::Retired { surface, rows } => write!(
+                f,
+                "the retired form `{surface}` has {rows} refused rows, and each has exactly one"
+            ),
         }
     }
 }
@@ -608,8 +621,8 @@ enum Withdrawal
 {
     /// The grammar still parses it, and this open issue removes it.
     Open(RemovalIssue),
-    /// A source that writes it meets this refusal.
-    Refused(RefusalName),
+    /// A source that writes it meets the refusal of this retired form.
+    Refused(RetiredForm),
 }
 
 /// The syntax ledger: every rule of the built-in grammar and every attribute
@@ -651,6 +664,10 @@ impl SyntaxLedger
     /// # Errors
     /// [`LedgerFault::Grammar`], [`LedgerFault::Molds`],
     /// [`LedgerFault::Group`] or [`LedgerFault::Attribute`].
+    ///
+    /// # Cost
+    /// - allocation: the rows of the ledger, growth within the rules and the
+    ///   attributes
     ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — the built-in grammar is a finite census: the rows'
@@ -740,7 +757,7 @@ impl SyntaxLedger
             menus: decisions::menus(&pbg)?,
             rules,
             attributes,
-            superseded: superseded(pbg.adaptations()),
+            superseded: refused_once(superseded(pbg.adaptations()))?,
         })
     }
 
@@ -955,8 +972,12 @@ impl SyntaxLedger
             for row in &self.superseded {
                 let removal = match row.removal {
                     Withdrawal::Open(issue) => format!("removed by #{}", issue.0),
-                    Withdrawal::Refused(refusal) => {
-                        format!("refused as [`{}`]({})", refusal.0, refused_exemplar(row))
+                    Withdrawal::Refused(form) => {
+                        format!(
+                            "refused as [`{}`]({})",
+                            refusal_name(form),
+                            refused_exemplar(row)
+                        )
                     },
                 };
                 writeln!(
@@ -1114,8 +1135,8 @@ impl SyntaxLedger
                     Withdrawal::Open(issue) => {
                         fields.insert("issue".to_owned(), Value::from(issue.0));
                     },
-                    Withdrawal::Refused(refusal) => {
-                        fields.insert("refused".to_owned(), Value::from(refusal.0));
+                    Withdrawal::Refused(form) => {
+                        fields.insert("refused".to_owned(), Value::from(refusal_name(form)));
                         fields.insert("exemplar".to_owned(), Value::from(refused_exemplar(row)));
                     },
                 }
@@ -1237,9 +1258,7 @@ fn superseded(adaptations: &[Adaptation]) -> Vec<SupersededRow>
         .filter_map(|record| {
             let (removal, replaced_by) = match record.removal {
                 Removal::By(issue, replaced_by) => (Withdrawal::Open(issue), replaced_by),
-                Removal::Refused(refusal, replaced_by) => {
-                    (Withdrawal::Refused(refusal), replaced_by)
-                },
+                Removal::Refused(form) => (Withdrawal::Refused(form), form.replaced_by()),
                 Removal::Kept => return None,
             };
             Some(SupersededRow {
@@ -1251,6 +1270,54 @@ fn superseded(adaptations: &[Adaptation]) -> Vec<SupersededRow>
             })
         })
         .collect()
+}
+
+/// The name of the refusal that a source meets when it writes `form`:
+/// `RetiredSpelling.<surface>`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the name, growth within the surface form
+fn refusal_name(form: RetiredForm) -> String
+{
+    format!("RetiredSpelling.{}", form.surface().0)
+}
+
+/// `rows`, when each retired form of the grammar has exactly one refused row
+/// among them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `rows` unchanged when each arm of [`RetiredForm`] names exactly
+///   one row; otherwise [`LedgerFault::Retired`] for the first arm, in the
+///   enum's order, that names none or more than one.
+/// - panics: none.
+///
+/// # Errors
+/// [`LedgerFault::Retired`] naming the arm's surface and its count of rows.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the built-in grammar gives each arm one row; a list with
+///   one arm's row left out is refused naming that arm and zero.
+/// - witness: `ledger::tests::each_retired_form_has_one_refused_row_7877`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |kept| RetiredForm::ALL.iter().all(|form| kept.iter().filter(|row| row.removal == Withdrawal::Refused(*form)).count() == 1)))]
+fn refused_once(rows: Vec<SupersededRow>) -> Result<Vec<SupersededRow>, LedgerFault>
+{
+    for form in RetiredForm::ALL {
+        let count = rows
+            .iter()
+            .filter(|row| row.removal == Withdrawal::Refused(form))
+            .count();
+        if count != 1 {
+            return Err(LedgerFault::Retired {
+                surface: form.surface().0,
+                rows: count,
+            });
+        }
+    }
+    Ok(rows)
 }
 
 /// The path of a refused spelling's exemplar, from the ledger's folder:
@@ -2013,6 +2080,10 @@ impl core::fmt::Display for RuleStatus
 /// # Errors
 /// [`LedgerFault::Unshown`] naming the exemplar.
 ///
+/// # Cost
+/// - allocation: the exemplar's path and text, growth within the exemplar's
+///   file
+///
 /// # Adequacy
 /// - hypothesis: L3 — every committed rule's exemplar is read, and the rules
 ///   whose exemplars state an `OutOfFragment` refusal of their own kind are
@@ -2228,10 +2299,10 @@ mod tests
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::PrecName;
     use gandr_surface_grammar::Provenance;
-    use gandr_surface_grammar::RefusalName;
     use gandr_surface_grammar::Regex;
     use gandr_surface_grammar::RemovalIssue;
     use gandr_surface_grammar::Replacement;
+    use gandr_surface_grammar::RetiredForm;
     use gandr_surface_grammar::Rule;
     use gandr_surface_grammar::RuleName;
     use gandr_surface_grammar::Sort;
@@ -2248,8 +2319,11 @@ mod tests
     use super::LedgerTask;
     use super::RuleRow;
     use super::Standing;
+    use super::SupersededRow;
     use super::SyntaxLedger;
+    use super::Withdrawal;
     use super::molds_by_rule;
+    use super::refused_once;
     use super::spelled;
     use super::standing::Internal;
     use super::standing::standing;
@@ -2672,27 +2746,28 @@ mod tests
         );
     }
 
-    /// #6896: an old spelling that a source meets as a refusal keeps its row,
-    /// with the refusal's name and the exemplar that states it, and no issue.
+    /// #6896, #7877: an old spelling that a source meets as a refusal keeps
+    /// its row, with the name `RetiredSpelling.<surface>` of its refusal, the
+    /// replacement its retired form gives, the exemplar that states it, and no
+    /// issue.
     #[test]
     fn a_refused_spelling_writes_its_refusal_and_its_exemplar_6896()
     {
         let mut ledger = SyntaxLedger::build().expect("the ledger builds");
         ledger.superseded = superseded(&[Adaptation::refused(
-            RuleName("theory_member"),
-            SurfaceForm("shape_member"),
+            RuleName("theory_declaration"),
+            RetiredForm::ShapeMember,
             AdaptationReason("the word stays the site's alone"),
-            (Replacement("boundary_member"), RefusalName("MalformedForm")),
         )]);
         let parsed: serde_json::Value =
             serde_json::from_str(&ledger.json()).expect("the ledger is JSON");
         assert_eq!(
             parsed.get("superseded"),
             Some(&serde_json::json!([{
-                "rule": "theory_member",
+                "rule": "theory_declaration",
                 "surface": "shape_member",
-                "replaced_by": "boundary_member",
-                "refused": "MalformedForm",
+                "replaced_by": "boundary",
+                "refused": "RetiredSpelling.shape_member",
                 "exemplar": "../corpus/ledger/syntax/superseded/shape-member.gandr",
                 "reason": "the word stays the site's alone",
             }])),
@@ -2700,9 +2775,41 @@ mod tests
         );
         assert!(
             ledger.markdown().contains(
-                "| `theory_member` | `shape_member` | `boundary_member` | refused as [`MalformedForm`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the word stays the site's alone |"
+                "| `theory_declaration` | `shape_member` | `boundary` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the word stays the site's alone |"
             ),
             "the row links the exemplar under the refusal's name"
+        );
+    }
+
+    /// #7877: each retired form of the built-in grammar has exactly one
+    /// refused row, and a list that leaves one out is refused by its surface.
+    #[test]
+    fn each_retired_form_has_one_refused_row_7877()
+    {
+        let rows = superseded(built_in().expect("the grammar builds").adaptations());
+        for form in RetiredForm::ALL {
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row.removal == Withdrawal::Refused(form))
+                    .count(),
+                1_usize,
+                "{}",
+                form.surface().0
+            );
+        }
+        let short: Vec<SupersededRow> = rows
+            .into_iter()
+            .filter(|row| row.removal != Withdrawal::Refused(RetiredForm::UnitValue))
+            .collect();
+        assert!(
+            matches!(
+                refused_once(short),
+                Err(LedgerFault::Retired {
+                    surface: "unit_value",
+                    rows: 0_usize,
+                })
+            ),
+            "a retired form with no row is refused by its surface"
         );
     }
 
@@ -2929,7 +3036,7 @@ mod tests
         for entry in std::fs::read_dir(committed().join("syntax")).expect("the exemplars list") {
             let path = entry.expect("an entry").path();
             let name = path.file_name().expect("a file name").to_owned();
-            if name.to_str() != Some(missing.as_str()) {
+            if name.to_str() != Some(missing.as_str()) && !path.is_dir() {
                 let _bytes = std::fs::copy(&path, folder.join(name)).expect("the exemplar copies");
             }
         }

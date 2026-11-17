@@ -265,6 +265,10 @@ quenchant_shape::reason_enum! {
 /// - witness: `gandr-surface-lowering::tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
 /// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
 /// - witness: `gandr-surface-lowering::tests::namespace::an_import_repaired_inside_a_nested_form_is_refused_by_that_form`
+///
+/// # Cost
+/// - allocation: the address of the import and the names it lists, durable by
+///   the import's span
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref entry) => entry.span == import.span && {

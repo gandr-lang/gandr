@@ -988,6 +988,9 @@ struct Header
 /// [`ExemplarFault::Refused`] with the lowering's account, or
 /// [`ExemplarFault::Unfiled`] naming the attribute.
 ///
+/// # Cost
+/// - allocation: the text of each finding, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — every committed attribute exemplar files its attribute;
 ///   an exemplar naming an unregistered attribute is refused, and a `doc`
@@ -1091,6 +1094,9 @@ mod tests
             std::fs::create_dir_all(&target).expect("the copy's folder is created");
             for entry in std::fs::read_dir(committed().join(folder)).expect("the folder lists") {
                 let source = entry.expect("the entry reads").path();
+                if source.is_dir() {
+                    continue;
+                }
                 let _bytes =
                     std::fs::copy(&source, target.join(source.file_name().expect("a file")))
                         .expect("the exemplar copies");

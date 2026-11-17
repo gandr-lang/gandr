@@ -242,13 +242,18 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 1 spelling
+## Superseded — 6 spellings
 
 An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
 
 | Rule | Old spelling | Replaced by | Removal | Why the record stands |
 | ---- | ------------ | ----------- | ------- | --------------------- |
+| `telescope_expression` | `unit_value` | `*{}` | refused as [`RetiredSpelling.unit_value`](../corpus/ledger/syntax/superseded/unit-value.gandr) | the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name |
+| `path_type` | `positional_path_carrier` | `Path[.A = A](a, b)` | refused as [`RetiredSpelling.positional_path_carrier`](../corpus/ledger/syntax/superseded/positional-path-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
+| `bridge_type` | `positional_bridge_carrier` | `Bridge[.A = A](a, b)` | refused as [`RetiredSpelling.positional_bridge_carrier`](../corpus/ledger/syntax/superseded/positional-bridge-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
+| `flow_type` | `positional_flow_carrier` | `Flow[.A = A](a, b)` | refused as [`RetiredSpelling.positional_flow_carrier`](../corpus/ledger/syntax/superseded/positional-flow-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
 | `type_application` | `glued_type_application` | `type_application.juxtaposed` | removed by #5330 | the glued head `T(a, b)` stays read until the sources move to `T a b` |
+| `theory_declaration` | `shape_member` | `boundary` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells |
 
 ## Attributes — 20 attributes
 

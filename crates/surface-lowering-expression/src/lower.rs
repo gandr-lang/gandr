@@ -72,6 +72,7 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
+use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering_base::lower::Block;
 use gandr_surface_lowering_base::lower::Body;
 use gandr_surface_lowering_base::lower::Bridge;
@@ -1750,6 +1751,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
     /// - witness: `gandr-surface-lowering::tests::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
     /// - witness: `gandr-surface-lowering::tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    ///
+    /// # Cost
+    /// - allocation: the derived rules of each slot, growth within the slots
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1937,6 +1941,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
     /// - witness: `gandr-surface-lowering::tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     /// - witness: `gandr-surface-lowering::tests::modules::a_signed_member_of_a_sealed_module_exports_its_witness`
+    ///
+    /// # Cost
+    /// - allocation: the name paths of the members and the worklist, growth
+    ///   within the members
     #[spec(
         captures: before = (self.cx().exported.len(), self.cx().exported_types.len(), self.cx().collected.slots.len()),
         ensures: |_| {
@@ -2058,6 +2066,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - hypothesis: L3 — a module and a functor named as a builtin under the
     ///   reject policy are each refused at their name.
     /// - witness: `gandr-surface-lowering::tests::recognition::a_module_or_functor_shadowing_a_builtin_is_rejected_under_policy`
+    ///
+    /// # Cost
+    /// - allocation: the held slot of a shadowing name, error path
     #[spec(
         captures: before = self.cx().collected.slots.len(),
         ensures: self.cx().collected.slots.len() <= before.saturating_add(1)
@@ -2122,6 +2133,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   [`Self::hidden_by`] finds them.
     /// - witness: `gandr-surface-lowering::tests::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
     /// - witness: `gandr-surface-lowering::tests::scopes::each_shadowing_binder_keeps_the_binding_it_hides_6270`
+    ///
+    /// # Cost
+    /// - allocation: the record of a shadow, growth within the binders
     #[spec(
         captures: before = self.cx().shadows.entries().len(),
         ensures: |ret| {
@@ -2198,6 +2212,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `gandr-surface-lowering::lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `gandr-surface-lowering::tests::modules::a_manifest_type_component_expands_in_later_components`
+    ///
+    /// # Cost
+    /// - allocation: the seeds, the payloads and the members, growth within the
+    ///   structures
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -3683,6 +3701,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   twice on one line keeps the doubled closer's refusal.
     /// - witness: `gandr-surface-lowering::lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_doubled_closer_before_a_scope_s_clauses_is_refused_there_5302`
+    ///
+    /// # Cost
+    /// - allocation: the refusal it files on a slot, error path
     fn place_by_layout(&mut self)
     {
         let pbg = self.cx().pbg;
@@ -3755,6 +3776,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Adequacy
     /// - hypothesis: L3 — as [`misspelt_keyword`].
     /// - witness: `gandr-surface-lowering::lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+    ///
+    /// # Cost
+    /// - allocation: the refusal it files on a slot, error path
     fn place_misspelt(&mut self)
     {
         let pbg = self.cx().pbg;
@@ -3887,6 +3911,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   mints just before the name yields to it.
     /// - witness: `gandr-surface-lowering::lower::tests::an_operator_written_twice_is_refused_at_the_run_5301`
     /// - witness: `gandr-surface-lowering::lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
+    ///
+    /// # Cost
+    /// - allocation: the refusal it files on a slot, error path
     fn place_misspelt_operator(&mut self)
     {
         self.record_runs_behind_repairs();
@@ -4009,6 +4036,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   supply keeps its refusal at its entry.
     /// - witness: `gandr-surface-lowering::lower::tests::a_bare_index_that_parses_as_no_argument_is_refused_at_its_bracket_4944`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_misplaced_positional_supply_is_refused_at_its_entry_4945`
+    ///
+    /// # Cost
+    /// - allocation: the refusal it files on a slot, error path
     fn place_bare_index(&mut self)
     {
         let pbg = self.cx().pbg;
@@ -4523,6 +4553,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::native::tests::an_unmarked_self_reference_is_refused_with_its_claim`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of an unresolved name, error path
     #[spec(
         captures: before = self.cx().fuel.remaining(),
         ensures: |ret| {
@@ -4867,6 +4900,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::namespace::two_imports_binding_one_name_refuse_its_use`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_pending_declaration_is_not_exported`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of an unreached import, error path
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(LoweringRefusal::ImportShadows { name: found, .. } | LoweringRefusal::UnexportedName { name: found, .. }) => {
@@ -5094,6 +5130,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::namespace::a_name_read_through_an_unlocked_alias_is_refused_at_it_3072`
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_at_a_narrower_signature_settles_3098`
     /// - witness: `gandr-surface-lowering::tests::namespace::an_import_via_a_flow_reads_its_source_through_it_3378`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of an unresolved member, error path
     #[spec(ensures: |ref ret| matches!(
         *ret,
         Ok(_) | Err(LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnexportedName { .. }
@@ -5206,6 +5245,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::tests::modules::a_backward_member_reference_resolves`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     /// - witness: `gandr-surface-lowering::lower::tests::a_number_takes_float64_from_its_suffix_or_annotation_1830`
+    ///
+    /// # Cost
+    /// - allocation: the path of the name, growth within the names
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -5251,6 +5293,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     Err(LoweringRefusal::RegionAsValue {
                         span: site.at.span,
                         name,
+                    })
+                }
+                else if name.as_ref() == RetiredForm::UnitValue.written().0 {
+                    Err(LoweringRefusal::RetiredName {
+                        span: site.at.span,
+                        form: RetiredForm::UnitValue,
                     })
                 }
                 else {
@@ -11884,6 +11932,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_relation_lowers_to_the_type_it_abbreviates`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::an_omitted_carrier_is_a_nominated_hole_4932`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_refused_5024`
+    ///
+    /// # Cost
+    /// - allocation: the refusal of an unresolved head, error path
     #[spec(
         ensures: |ret| {
             self.cx().operands.entries().len() == written.start
@@ -11906,7 +11957,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let start = written.start;
         let count = written.end.saturating_sub(start);
         let first = self.cx().operands.entries().get(start).copied();
-        let written_first = count == 3_usize;
         let pair = self
             .cx()
             .operands
@@ -11930,8 +11980,24 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let path_shaped = [TileName::PATH, TileName::BRIDGE, TileName::FLOW_TYPE]
             .into_iter()
             .find(|shaped| name.as_ref() == shaped.as_ref());
-        if let (Some(shaped), true) = (path_shaped, written_first) {
-            return Err(site.fault(head.span, FormFault::PositionalCarrier(shaped)));
+        if let Some(shaped) = path_shaped {
+            // A path-shaped head written where a value is read takes its three
+            // members as one parenthesized argument: `Path(A, a, b)`.
+            let tripled = |argument: NodeIndex| {
+                let cx = self.cx();
+                let parenthesized = cx.tree.node(argument).is_some_and(|node| {
+                    matches!(shape_of(cx.pbg, node), Ok(Shape::Form { name, former }) if name == FormName::TUPLE || former == Former::Parenthesized)
+                });
+                let mut commas = cx.tree.children(argument).filter(|&child| {
+                    cx.tree
+                        .fragment(child)
+                        .is_some_and(|text| <&str>::from(text) == ",")
+                });
+                parenthesized && commas.nth(1).is_some() && commas.next().is_none()
+            };
+            if count == 3_usize || (count == 1_usize && first.is_some_and(tripled)) {
+                return Err(site.fault(head.span, FormFault::carrier_first(shaped)));
+            }
         }
         if let Some(written) = pair
             && let Some(relating) = [Relating::Path, Relating::Bridge]

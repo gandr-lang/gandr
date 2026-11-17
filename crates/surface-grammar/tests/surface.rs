@@ -387,12 +387,19 @@ fn named_kind_coverage_is_semantic() -> Result<(), Failure>
     assert!(pbg_only.is_disjoint(&committed));
     let recognised: BTreeSet<&str> = committed.union(&pbg_only).copied().collect();
 
-    // Every provenance and every adaptation surface is a recognised kind.
+    // Every provenance and every adaptation surface is a recognised kind. A
+    // refused spelling is no node kind: the reader refuses it by name.
     let provenances: BTreeSet<&str> = pbg.rules().iter().map(|rule| rule.provenance().0).collect();
     assert!(provenances.is_subset(&recognised));
     let folded: BTreeSet<&str> = pbg
         .adaptations()
         .iter()
+        .filter(|adaptation| {
+            !matches!(
+                adaptation.removal,
+                gandr_surface_grammar::Removal::Refused(_)
+            )
+        })
         .map(|adaptation| adaptation.surface)
         .collect();
     assert!(folded.is_subset(&recognised));

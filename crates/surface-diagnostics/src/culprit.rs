@@ -158,6 +158,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
 {
     Culprit(match refusal {
         LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
+        LoweringRefusal::RetiredName { .. } => "a retired spelling",
         LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
         LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
         LoweringRefusal::DuplicateSignature { .. }
@@ -257,14 +258,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FormFault::MissingOpen(ClosingClass::Brace) => "missing `{`",
             FormFault::Misspelt(_) => "a keyword misspelt",
             FormFault::MisspeltOperator(_) => "an operator misspelt",
-            FormFault::Retired(_) => "a retired keyword",
+            FormFault::Retired(_) => "a retired spelling",
             FormFault::NotAName => "a pattern where a name goes",
             FormFault::BareIndex => "a bare index",
             FormFault::PositionalAfterNamed => "a positional implicit after a named one",
             FormFault::PositionalPastBlock => "a positional implicit past the block",
             FormFault::CompoundPositional => "a compound positional implicit",
             FormFault::SuppliedTwice => "an implicit supplied twice",
-            FormFault::PositionalCarrier(_) => "a carrier written by position",
         },
         LoweringRefusal::UnknownAttribute { .. } => "unknown attribute",
         LoweringRefusal::MissingPayload { .. } => "takes a payload",
@@ -729,6 +729,7 @@ mod tests
     {
         Culprit(match refusal {
             LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
+            LoweringRefusal::RetiredName { .. } => "a retired spelling",
             LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
             LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
             LoweringRefusal::DuplicateSignature { .. }
@@ -836,14 +837,13 @@ mod tests
                 FormFault::MissingOpen(ClosingClass::Brace) => "missing `{`",
                 FormFault::Misspelt(_) => "a keyword misspelt",
                 FormFault::MisspeltOperator(_) => "an operator misspelt",
-                FormFault::Retired(_) => "a retired keyword",
+                FormFault::Retired(_) => "a retired spelling",
                 FormFault::NotAName => "a pattern where a name goes",
                 FormFault::BareIndex => "a bare index",
                 FormFault::PositionalAfterNamed => "a positional implicit after a named one",
                 FormFault::PositionalPastBlock => "a positional implicit past the block",
                 FormFault::CompoundPositional => "a compound positional implicit",
                 FormFault::SuppliedTwice => "an implicit supplied twice",
-                FormFault::PositionalCarrier(_) => "a carrier written by position",
             },
             LoweringRefusal::UnknownAttribute { .. } => "unknown attribute",
             LoweringRefusal::MissingPayload { .. } => "takes a payload",

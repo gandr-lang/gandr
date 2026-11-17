@@ -63,6 +63,7 @@ use crate::PrecName;
 use crate::PrecTable;
 use crate::Provenance;
 use crate::Regex;
+use crate::RetiredForm;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -155,6 +156,9 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 ///   are not exhausted.
 /// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+///
+/// # Cost
+/// - allocation: the theory rule and its adaptation records, setup
 #[spec(captures: before = out.len(), ensures: |()| out.len() == before.saturating_add(1) && out.get(before).is_some_and(|rule| rule.name().0 == "theory_declaration" && rule.provenance().0 == "theory_declaration" && rule.sort() == Sort::Item && rule.prec() == p))]
 fn theory_declaration(
     out: &mut Vec<Rule>,
@@ -192,6 +196,11 @@ fn theory_declaration(
         RuleName("theory_declaration"),
         SurfaceForm("circuit_signature"),
         AdaptationReason("inlined signature: the arrow-separated two-sided port list is kept LOCAL to each member so a named port list `( name : Type, … )` never becomes a standalone `(`-opened form competing with the parenthesized type at every type slot (the `op_result` precedent)"),
+    ));
+    theory.adaptations.push(Adaptation::refused(
+        RuleName("theory_declaration"),
+        RetiredForm::ShapeMember,
+        AdaptationReason("the member `shape` is refused by name: `boundary` states the carrier of the signature's cells"),
     ));
     out.push(theory);
 }

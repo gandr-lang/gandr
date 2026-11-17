@@ -711,6 +711,10 @@ fn mutants(
 /// naming an exemplar, or [`LedgerFault::Unwritable`] naming the scratch
 /// directory.
 ///
+/// # Cost
+/// - allocation: the text of each exemplar and its mutants, growth within the
+///   exemplars
+///
 /// # Adequacy
 /// - hypothesis: L3 — a definition's exemplar is swept tile by tile, every
 ///   mutant counted and each first error read against its site; a deletion

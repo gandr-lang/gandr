@@ -678,6 +678,9 @@ struct Lowerer<'run, 'source>
 /// # Adequacy
 /// - hypothesis: L3 — every witness of [`lower_unit`] runs through this entry.
 /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+///
+/// # Cost
+/// - allocation: the lowered module and its tables, durable by the source
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |module| {
     usize::from(module.origins().declaration_count()) == module.declarations().iter().len()
 }))]
@@ -838,6 +841,9 @@ pub fn lower_module<'source>(
 /// - witness: `tests::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
 /// - witness: `tests::recognition::user_shadowing_is_the_only_observable_delta`
 /// - witness: `tests::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+///
+/// # Cost
+/// - allocation: the lowered module and its tables, durable by the source
 #[spec(
     ensures: |ret| {
         let agrees = tree.grammar() == pbg.fingerprint();
@@ -7258,6 +7264,41 @@ mod tests
             };
             assert_eq!(named.as_ref(), word, "{source}: the refusal names the word");
         }
+    }
+
+    /// #7877: `unit`, where no declaration binds it, is the retired spelling
+    /// of the unit value, refused at the name; a source that binds `unit`
+    /// reads its own name.
+    #[test]
+    fn the_retired_unit_is_refused_by_name_7877()
+    {
+        let mut arena = CoreArena::new();
+        let source = crate::fixture::listing("def c : *{} ; def c = unit ;");
+        let module = crate::fixture::listed(&source, &mut arena);
+        let text: &str = source.as_ref();
+        let start = text.find("unit").unwrap_or_default();
+        assert_eq!(
+            outcomes(&module).first().copied(),
+            Some(DeclarationOutcome::Refused(LoweringRefusal::RetiredName {
+                span: span(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(4))
+                ),
+                form: gandr_surface_grammar::RetiredForm::UnitValue,
+            })),
+            "an unbound `unit` is the retired spelling, at the name"
+        );
+        let mut arena = CoreArena::new();
+        let source = crate::fixture::listing(
+            "def unit : Integer ; def unit = 1 ; def c : Integer ; def c = unit ;",
+        );
+        let module = crate::fixture::listed(&source, &mut arena);
+        assert!(
+            outcomes(&module)
+                .iter()
+                .all(|outcome| !matches!(outcome, DeclarationOutcome::Refused(_))),
+            "a bound `unit` reads the declaration that binds it"
+        );
     }
 
     #[test]
