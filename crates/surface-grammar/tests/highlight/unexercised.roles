@@ -59,8 +59,6 @@
 83 Type def_value type_identifier L[.] R[;]
 84 Member def_value identifier L[.] R[;]
 85 Other def_value ; L[identifier type_identifier] R[<expression> }]
-87 Other def_value = L[) <type>] R[<expression>]
-88 Other def_value ; L[<expression>] R[]
 89 Other def_value : L[)] R[<type>]
 90 Keyword def_value where L[<type>] R[{]
 91 Other def_value { L[where] R[arm_bar }]
