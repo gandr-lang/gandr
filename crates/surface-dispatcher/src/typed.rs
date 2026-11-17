@@ -2070,6 +2070,7 @@ impl TypeTable
     /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
     /// - witness: `typed::tests::a_term_after_a_declaration_refused_as_shadowing_still_answers_677`
     /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
+    /// - witness: `typed::tests::a_block_answers_at_its_own_tiles_7855`
     pub(crate) fn assemble(
         source: SourceText<'_>,
         (module, mut arena): (LoweredModule<'_>, CoreArena),
@@ -2338,6 +2339,30 @@ impl TypeTable
                     standing: Standing::Judged(Within {
                         constant,
                         node,
+                        depth: Some(depth),
+                    }),
+                });
+            }
+        }
+        // A block is minted as the chain of its statements, and that chain
+        // answers at its first statement. The block answers at its own span,
+        // at the types the run judged the chain at.
+        for &(chain, block) in origins.blocks() {
+            if let Some(&(_, first, last, _, (constant, depth))) = kept
+                .binary_search_by_key(&TermNode::Computation(chain), |&(held, ..)| held)
+                .ok()
+                .and_then(|at| kept.get(at))
+            {
+                let (subject, last) = term_subject(&arena, (first, last));
+                entries.push(Entry {
+                    span: block.span(),
+                    subject,
+                    provenance: block.provenance(),
+                    ty: first,
+                    last,
+                    standing: Standing::Judged(Within {
+                        constant,
+                        node: CoreNode::Computation(chain),
                         depth: Some(depth),
                     }),
                 });
@@ -9476,6 +9501,28 @@ mod tests
             }),
             "the term has its own type and the one it was checked against"
         );
+    }
+
+    /// #7855: a block bound by a `let` answers at its own `{`, last `;` and
+    /// `}` with the type the run judged the block at, and the `pure` inside
+    /// it still answers at its own span.
+    #[test]
+    fn a_block_answers_at_its_own_tiles_7855()
+    {
+        let source =
+            SourceText::from("def nested() -> -F Unit {\n  let u = { pure *{}; };\n  pure u\n}\n");
+        let table = table(source);
+        for needle in ["{ pure", "; };", "};\n  pure u", "pure *{}"] {
+            let answered = answer(&table, source, SourceText::from(needle));
+            assert!(
+                matches!(
+                    answered,
+                    Maybe::Present(Answer { subject: Subject::Term, ref ty, expected: Maybe::Absent(_) })
+                        if ty == "-F Unit"
+                ),
+                "`{needle}` answers the block's returner: {answered:?}"
+            );
+        }
     }
 
     /// The outermost term inside a slot's argument answers the type the slot

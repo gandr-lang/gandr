@@ -774,6 +774,11 @@ pub struct OriginTable
     /// Each element transport with where its motive is written, in the order
     /// lowered; the arena shares a transport written twice alike.
     motives: Vec<(ComputationId, Origin)>,
+    /// Each block with the computation it lowers to, in the order lowered.
+    /// A block is minted as the chain of its statements, and that chain
+    /// carries the origin of its first statement, so the block's own span
+    /// stands here.
+    blocks: Vec<(ComputationId, Origin)>,
     /// Each label written against an entry, with what it labels, in the
     /// order lowered.
     labels: Vec<Label>,
@@ -2209,6 +2214,45 @@ impl OriginTable
     pub fn motives(&self) -> &[(ComputationId, Origin)]
     {
         &self.motives
+    }
+
+    /// Record that the block written at `block` lowers to `computation`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a block whose computation the arena shares with
+    ///   another node is recorded at its own span.
+    /// - ensures: the pair is appended, so [`Self::blocks`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block bound by a `let` records its span beside the
+    ///   computation it lowers to.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_block_records_its_span_beside_its_computation_7855`
+    #[spec(
+        captures: before = self.blocks.len(),
+        ensures: self.blocks.len() == before.saturating_add(1)
+            && self.blocks.last() == Some(&(computation, block)),
+    )]
+    #[inline]
+    pub fn record_block(
+        &mut self,
+        computation: ComputationId,
+        block: Origin,
+    )
+    {
+        self.blocks.push((computation, block));
+    }
+
+    /// Each block with the computation it lowers to, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn blocks(&self) -> &[(ComputationId, Origin)]
+    {
+        &self.blocks
     }
 
     /// Record that the label written at `label.span` names an entry.

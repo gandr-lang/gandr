@@ -16022,7 +16022,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             Plan::Projected(projected) => {
                 NativeRef::over(self.cx()).mint_projected(projected, sink, origin)
             },
-            Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
+            Plan::Block(block) => self.mint_block(block, sink).map(|id| {
+                sink.origins.record_block(id, origin);
+                Lowered::Computation(id)
+            }),
             Plan::Loop(body) => ExitsRef::new(self.host_ref()).mint_loop(body, sink, origin),
             Plan::While(condition, body) => {
                 ExitsRef::new(self.host_ref()).mint_while(condition, body, sink, origin)

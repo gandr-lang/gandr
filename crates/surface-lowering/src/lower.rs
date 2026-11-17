@@ -1766,6 +1766,7 @@ mod tests
     use gandr_core_term::CompType;
     use gandr_core_term::CompTypeId;
     use gandr_core_term::Computation;
+    use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Sort;
     use gandr_core_term::Value;
@@ -1790,6 +1791,7 @@ mod tests
     use gandr_surface_lowering_expression::lower::Expressions;
     use gandr_surface_lowering_expression::lower::ExpressionsRef;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
     use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::MoldId;
@@ -4416,6 +4418,50 @@ mod tests
             Maybe::Present(at(16_usize, 19_usize)),
             "a bind's origin is its statement's `let`"
         );
+    }
+
+    /// #7855: a block bound by a `let` records its own span beside the
+    /// computation it lowers to. The block `{ pure *{}; }` is the bind of its
+    /// one statement, the `pure`, over the unit it returns, and that bind
+    /// carries the origin of its statement, not the block's. A function's
+    /// body records no block.
+    #[test]
+    fn a_block_records_its_span_beside_its_computation_7855()
+    {
+        let written = "def nested() -> -F Unit {\n  let u = { pure *{}; };\n  pure u\n}\n";
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(written), &mut arena);
+        let start = written.find("{ pure").expect("the source writes the block");
+        let block = span(
+            ByteOffset::from(start),
+            ByteOffset::from(start.saturating_add("{ pure *{}; }".len())),
+        );
+        let pure = written
+            .find("pure *{}")
+            .expect("the source writes the return");
+        let statement = module
+            .origins()
+            .computations()
+            .iter()
+            .find(|&&(id, origin)| {
+                usize::from(origin.span().start()) == pure
+                    && matches!(arena.computation(id), Some(&Computation::Return(_)))
+            })
+            .map(|&(id, _)| id);
+        let recorded: Vec<(ByteSpan, Option<ComputationId>)> = module
+            .origins()
+            .blocks()
+            .iter()
+            .map(|&(id, origin)| {
+                let first = match arena.computation(id) {
+                    Some(&Computation::Bind(first, _)) => Some(first),
+                    Some(_) | None => None,
+                };
+                (origin.span(), first)
+            })
+            .collect();
+        assert!(statement.is_some(), "the `pure` lowers to a return");
+        assert_eq!(recorded, [(block, statement)]);
     }
 
     /// `let` returns a value once and binds it, so the name reads the bind's
