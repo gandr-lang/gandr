@@ -1,0 +1,14 @@
+def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](f, f) {
+  thunk { fun (f) { Path.here f } }
+}
+
+def filled(
+  A : Type,
+  x : A,
+  y : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp)
+) -> Path[.A = Path[.A = Path[.A = Path[.A = A](x, y)](fm, fp)](Path.step (Path.here fm) fa, Path.step fa (Path.here fp))](fill[1, 3] (chain 1) (selfLoop A x y) fa, fill[1, 3] (chain 1) (selfLoop A x y) fa) {
+  Path.here (fill[1, 3] (chain 1) (selfLoop A x y) fa)
+}

@@ -1,0 +1,3 @@
+def atTrue(p : Bool -> Bool) -> Bool { p true }
+def inTypeAnnotated : Path[.A = Bool](atTrue (fun (a : Bool) { a }), true) = Path.here true;
+def inTypeBare : Path[.A = Bool](atTrue (fun (a) { a }), true) = Path.here true;

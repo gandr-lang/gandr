@@ -1,0 +1,7 @@
+{theory}def early : Model(Counter) ;
+def early = Opened ;
+module Opened{module}module Plain where {{
+  def start() -> -F Integer {{ 0 }}
+}}
+def plain : Model(Counter) ;
+def plain = Plain ;

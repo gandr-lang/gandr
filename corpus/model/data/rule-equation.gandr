@@ -1,0 +1,20 @@
+//! Equation rules relate two spellings of one term.
+//!
+//! The order of terms selects the reduction direction.
+//! `x <=> S(P(x))` reduces `S(P(x))` to `x`.
+//!
+//! `IntEq` uses rules opposite to the base integers.
+//!
+//! - cites: [Huet-1980-confluent_reductions]
+//!
+//! [Huet-1980-confluent_reductions]: https://doi.org/10.1145/322217.322230 "Huet, Confluent reductions"
+
+/// The first `IntEq` rule lists its smaller side first.
+@[normalizes("S(P(Z)) ~> Z")]
+data IntEq : Type where {
+  | Z : IntEq
+  | S : (x : IntEq) --> IntEq
+  | P : (x : IntEq) --> IntEq
+  rule : x <=> S (P x);
+  rule : P (S x) <=> x;
+}

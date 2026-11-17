@@ -1,0 +1,46 @@
+// A role states what it needs of the site that hosts it, as a row.
+//
+// The requirement travels with the program, and the offer stays with the
+// site. A deployment that pairs them wrongly is refused before any process
+// starts.
+//
+// `far` requires the console, and a store of strings under the label
+// `store`. A site hosting `far` must grant the console and bind a model of
+// `Store` at `V = String` to `store`. `gandr check` of the manifold judges
+// each entry of the row against the site's `offers`. The migration to `far`
+// prints through the console, because code at `far` performs under that row.
+// `main` itself performs nothing, because its print runs at `far`.
+//
+// - see: `offers.site.gandr` — the site answering the row
+// - see: `offers.manifold.gandr` — the manifold placing `far` there
+// - see: `corpus/pathological/worlds/offers.gandr` — sites leaving an entry
+//   unanswered, and a world the program lacks
+// - see: `corpus/pathological/worlds/rows.gandr` — a print at a world that
+//   requires nothing
+
+// The console's host interface.
+import std.io;
+
+/// What a role at `far` reads and writes: values held by key. Each operation
+/// hands what it reads to what runs after, so a model answers it.
+pub theory Store where
+  /// The store holds values of this sort.
+  sort V : Type+;
+  /// What a computation over the store answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  /// Holds `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
+
+/// The world the entry runs at.
+pub world near;
+
+/// The world the work runs at: the console, and a store of strings under
+/// `store`.
+pub world far requires [std.io.Console.Eff, store : Store with sort V = String];
+
+/// `far` prints its name, computes forty-two and returns it.
+@[entry(*{near, far}), runs("far\n42")]
+def main() -> Integer =
+  migrate [far] { std.io.Console.print "far"; pure (6 * 7) }

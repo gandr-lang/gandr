@@ -1,0 +1,9 @@
+import "./base.gandr";
+module Counting : Model(Nat) where {
+  type Nat = Integer;
+  def zero() -> -F Integer { return 0 }
+  def succ(n : Integer) -> -F Integer { return n + 1 }
+}
+def again : Point;
+def again = one;
+def later = ?named;
