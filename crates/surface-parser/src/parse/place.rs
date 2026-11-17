@@ -1737,6 +1737,65 @@ fn holding(
         .find(|&(_, span)| span.start() < end && end <= span.end())
 }
 
+/// `top` run on to the token that closes each bracket its text leaves open.
+///
+/// The melder can end a top-level form inside a written brace, a parenthesis
+/// or a bracket that the form opens, as it ends `theory Named where {` at its
+/// first member when a later member lacks its keyword. A copy of that form
+/// alone holds the opener and not its closer, so no tile written in it parses.
+/// The copy runs on through the top-level forms after it to the closer.
+///
+/// # Specification
+/// - requires: `top` is a span of `text` on token bounds.
+/// - ensures: `top` when its tokens leave no bracket open ([`balance`]), or
+///   when no later token closes them all; else `top` from its start to the end
+///   of the first later token after which no bracket stands open.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a member's name left out inside a theory is minted where
+///   its member parses, and the copy holds the theory's `}`.
+/// - witness: `parse::place::tests::a_name_left_out_of_a_member_is_minted_in_its_theory_7884`
+fn bracketed(
+    text: &str,
+    top: ByteSpan,
+) -> ByteSpan
+{
+    let Some(rest) = text.get(usize::from(top.start()) ..)
+    else {
+        return top;
+    };
+    let fragment = SourceFragment::from(rest);
+    let held = usize::from(top.end()).saturating_sub(usize::from(top.start()));
+    let mut open = 0_usize;
+    let mut past = false;
+    for token in label(fragment) {
+        let end = usize::try_from(token.end).unwrap_or(usize::MAX);
+        if end > held && !past {
+            if open == 0 {
+                return top;
+            }
+            past = true;
+        }
+        let Some((found, _class)) = bracketing(fragment, token)
+        else {
+            continue;
+        };
+        match found {
+            Bracket::Open => open = open.saturating_add(1),
+            Bracket::Close => open = open.saturating_sub(1),
+            Bracket::Neither => {},
+        }
+        if past && open == 0 {
+            let close = ByteOffset::from(usize::from(top.start()).saturating_add(end));
+            return ByteSpan::new(top.start(), close).unwrap_or(top);
+        }
+    }
+    top
+}
+
 /// The spans of the tiles of `tree` that end at `end`.
 ///
 /// # Specification
@@ -1796,6 +1855,7 @@ fn settled<'source>(
         Reach::Widest => keyword(pbg, tree, form)
             .map_or(Some(held), |start| ByteSpan::new(start, held.end()).ok())?,
     };
+    let top = bracketed(<&str>::from(tree.source()), top);
     let lead = usize::from(top.start());
     let shifted = |offset: ByteOffset| usize::from(offset).checked_sub(lead).map(ByteOffset::from);
     let (repair_start, repair_end) = (
@@ -3096,6 +3156,37 @@ mod tests
                 parsed.obligations()
             );
         }
+    }
+
+    /// #7884: a member's name left out inside a theory ends the theory's
+    /// top-level form at that member, and each member after it reads as a
+    /// form of its own. The copy runs on to the theory's `}`, so the name is
+    /// minted where its member parses, and the parse owes the one repair over
+    /// the member's keyword.
+    #[test]
+    fn a_name_left_out_of_a_member_is_minted_in_its_theory_7884()
+    {
+        let pbg = built_in().unwrap();
+        let source = include_str!(
+            "place/unformatted/a-name-left-out-of-a-member-is-minted-in-its-theory-7884.gandr"
+        );
+        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+        assert_eq!(
+            reconstruct(parsed.tree()),
+            source,
+            "the tree reconstructs the source"
+        );
+        let keyword = source.find("oper  :").unwrap();
+        assert!(
+            matches!(
+                parsed.obligations(),
+                [repair] if repair.class == Oblig::MissingTile
+                    && usize::from(repair.span.start()) == keyword
+                    && usize::from(repair.span.end()) == keyword.saturating_add(4)
+            ),
+            "the theory owes the name of its first member alone: {:?}",
+            parsed.obligations()
+        );
     }
 
     /// #6028: a `(` left out before a juxtaposed operand leaves its
