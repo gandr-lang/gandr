@@ -215,7 +215,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 66_usize] = [
+    pub const ALL: [Self; 67_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -261,6 +261,7 @@ impl FormName
         Self::OFFER_SESSION_TYPE,
         Self::HOLE,
         Self::IDENTIFIER,
+        Self::TYPE_APPLICATION,
         Self::TYPE_VARIABLE,
         Self::CONSTRUCTOR,
         Self::BOOLEAN,
@@ -430,6 +431,9 @@ impl FormName
     /// A builtin type's name where a type is read. Spelled as a lowercase
     /// word, `f32`, it is also a telescope entry's key, read as its label.
     pub const PRIMITIVE_TYPE: Self = Self("primitive_type");
+    /// A type former applied to its arguments, `Path a b` or `List A`: the
+    /// form a type application has, wherever it is written.
+    pub const TYPE_APPLICATION: Self = Self("type_application");
     /// A boolean literal standing as its own pattern.
     pub const BOOLEAN: Self = Self("boolean");
     /// A number standing as its own pattern.
