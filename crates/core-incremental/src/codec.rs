@@ -6645,8 +6645,9 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
 ///
 /// # Specification
 /// - ensures: successful tables contain no unresolved node; an unsupported
-///   refusal names the first one. The references each node carries are not
-///   written: a reader rebuilds them.
+///   refusal names the first one. A sink that stores refuses a codata
+///   application, which a table then holds. The references each node carries
+///   are not written: a reader rebuilds them.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — nested unresolved nodes in all four sorts retain the
@@ -6654,6 +6655,7 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
 ///   is a reader responsibility.
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 /// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `codec::tests::a_stored_form_refuses_a_codata_application_7403`
 #[spec(
     ensures: |ret| match ret {
         | Ok(()) => nodes
@@ -6664,6 +6666,10 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
                 | ContentNode::Unresolved(found) => Some(found),
                 | _ => None,
             }) == Some(sort)
+        },
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => {
+            Out::CODATA == CodataWrite::Refused
+                && nodes.iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. }))
         },
         | Err(CodecError::Unrepresentable) => true,
         | _ => false,
@@ -9650,7 +9656,7 @@ fn first_unresolved(nodes: &[SupportedNode]) -> Result<(), Sort>
         match ret {
             | Ok(()) => first.is_ok(),
             | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
-            | Err(CodecError::Unrepresentable) => true,
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
             | _ => false,
         }
     },
@@ -9811,7 +9817,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             match ret {
                 | Ok(()) => first.is_ok(),
                 | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
-                | Err(CodecError::Unrepresentable) => true,
+                | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
                 | _ => false,
             }
         },
