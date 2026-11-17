@@ -2823,8 +2823,9 @@ impl<'pbg> Molder<'pbg>
         let reading = self.reading;
         let choice = self.choose_stream(state, tokens, index, source);
         Self::push_choice(state, choice, text, reading);
-        let bound = standing.map_or(WindowBound::Unbounded, WindowBound::Below);
-        let end = self.mold_window(state, tokens, next, source, &mark, bound);
+        // A tie closes, so the closed window is never cut at the standing
+        // reading's cost: a bound would end it as dominated at an equal one.
+        let end = self.mold_window(state, tokens, next, source, &mark, WindowBound::Unbounded);
         let closed =
             (end == WindowEnd::Molded).then(|| state.completion_delta(state.delta_since(&mark)));
         state.rollback_to(&mark);
