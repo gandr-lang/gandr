@@ -1219,7 +1219,7 @@ fn owned(directory: &Path) -> Owned
 /// trivial.
 fn let_go(file: &File)
 {
-    // economy: an unlock that fails leaves the lock to the close, as before.
+    // An unlock that fails leaves the lock to the close.
     let _unlocked: std::io::Result<()> = file.unlock();
 }
 
