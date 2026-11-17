@@ -73,6 +73,9 @@ pub enum Pushed
 /// # Errors
 /// As `fails` lists.
 ///
+/// # Cost
+/// - allocation: command arguments and marker path, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a tool's key removes its receiver's incomplete install
 ///   marker after its copy, and mise's key gives its command line and marker. A
