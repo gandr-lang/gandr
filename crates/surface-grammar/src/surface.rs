@@ -608,6 +608,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "data_generator",
     "def_rec",
     "feed_statement",
+    "glued_type_application",
     "grade_prefix",
     "if_answer_type",
     "import_statement",
