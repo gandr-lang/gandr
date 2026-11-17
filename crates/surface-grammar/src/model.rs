@@ -817,26 +817,45 @@ fn first_child(rest: &[RegexEntry]) -> RegexView<'_>
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RemovalIssue(pub u32);
 
-/// Whether an adaptation keeps an old spelling that a unit removes.
+/// The spelling that stays in the place of an old one: a rule's name, or a
+/// surface form inside a rule.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Replacement(pub &'static str);
+
+/// The name of the refusal that a source meets when it writes an old
+/// spelling, as an exemplar's `refuses` states it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RefusalName(pub &'static str);
+
+/// Whether an adaptation records an old spelling, and how far its removal
+/// stands.
 ///
-/// An old spelling stays in the grammar only so that a stale source reaches
-/// the decline of the elaborator. Each one names the open issue that removes
-/// it: `ledger:syntax` writes the mark, and `check:ledger` refuses a mark
-/// whose issue does not stand open.
+/// An old spelling that the grammar still parses names the open issue that
+/// removes it: `ledger:syntax` writes the mark, and `check:ledger` refuses a
+/// mark whose issue does not stand open. An old spelling that the parser or
+/// the lowering refuses names its refusal: the mark stays, so a later change
+/// that reads the spelling again meets the exemplar that states the refusal.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Removal
 {
     /// The adaptation keeps a shape that the surface keeps.
     Kept,
-    /// The adaptation keeps an old spelling, and this issue removes it.
-    By(RemovalIssue),
+    /// The grammar still parses the old spelling: this issue removes it, and
+    /// the replacement stays.
+    By(RemovalIssue, Replacement),
+    /// A source that writes the old spelling meets this refusal, and the
+    /// replacement stays.
+    Refused(RefusalName, Replacement),
 }
 
 /// An adaptation record: where a rule's shape departs from the surface form
 /// it realises, and why.
 ///
-/// The parser never reads it. The syntax ledger writes each record that keeps
-/// an old spelling, with the issue that removes it.
+/// The parser never reads it. The syntax ledger writes each record of an old
+/// spelling, with the spelling that replaces it and how far its removal
+/// stands.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Adaptation
 {
@@ -846,7 +865,8 @@ pub struct Adaptation
     pub surface: &'static str,
     /// Why the shape departs.
     pub reason: &'static str,
-    /// Whether the record keeps an old spelling, and what removes it.
+    /// Whether the record keeps an old spelling, and how far its removal
+    /// stands.
     pub removal: Removal,
 }
 
@@ -872,8 +892,8 @@ impl Adaptation
         }
     }
 
-    /// Records an old spelling that the grammar still parses, with the issue
-    /// that removes it.
+    /// Records an old spelling that the grammar still parses, the spelling
+    /// that replaces it, and the issue that removes it.
     ///
     /// # Specification
     /// trivial.
@@ -883,14 +903,36 @@ impl Adaptation
         rule: RuleName,
         surface: SurfaceForm,
         reason: AdaptationReason,
-        removal: RemovalIssue,
+        (replaced_by, removal): (Replacement, RemovalIssue),
     ) -> Self
     {
         Self {
             rule: rule.0,
             surface: surface.0,
             reason: reason.0,
-            removal: Removal::By(removal),
+            removal: Removal::By(removal, replaced_by),
+        }
+    }
+
+    /// Records an old spelling that a source meets as a refusal, the spelling
+    /// that replaces it, and the refusal's name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn refused(
+        rule: RuleName,
+        surface: SurfaceForm,
+        reason: AdaptationReason,
+        (replaced_by, refusal): (Replacement, RefusalName),
+    ) -> Self
+    {
+        Self {
+            rule: rule.0,
+            surface: surface.0,
+            reason: reason.0,
+            removal: Removal::Refused(refusal, replaced_by),
         }
     }
 }
