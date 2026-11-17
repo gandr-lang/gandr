@@ -43,6 +43,9 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_core_content::codec::Bytes;
+use gandr_core_content::codec::CodecError;
+use gandr_core_content::codec::UnsupportedPersistence;
 use gandr_kernel_strata::LevelOffset;
 use quenchant_shape::shape::Maybe;
 
@@ -50,10 +53,7 @@ use crate::boundary::ItemOrdinal;
 use crate::boundary::RecordCount;
 use crate::checkpoint::Checkpoints;
 use crate::checkpoint::ItemCheckpoint;
-use crate::codec::Bytes;
 use crate::codec::CheckpointBytes;
-use crate::codec::CodecError;
-use crate::codec::UnsupportedPersistence;
 use crate::codec::write_program;
 use crate::content::ItemContent;
 use crate::content::encode_item;
@@ -1205,7 +1205,7 @@ where
 #[spec(
     ensures: |ret| match ret {
         | Err(CheckpointStoreError::LevelOffsetTooLarge { offset }) => {
-            u64::from(offset) >= crate::codec::MAX_DECODED_LEVEL_OFFSET
+            u64::from(offset) >= gandr_core_content::codec::MAX_DECODED_LEVEL_OFFSET
         },
         | Ok(_)
         | Err(CheckpointStoreError::UnsupportedPersistence(_) | CheckpointStoreError::Rejected) => true,

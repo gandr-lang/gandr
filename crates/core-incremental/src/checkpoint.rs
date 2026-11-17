@@ -184,6 +184,7 @@ use gandr_core_content::Opacity;
 use gandr_core_content::Reference;
 use gandr_core_content::Resolver as _;
 use gandr_core_content::TypeContent;
+use gandr_core_content::codec::write_node_content;
 use gandr_core_content::seating;
 #[cfg(feature = "instrument")]
 use gandr_core_term::ArenaWatermark;
@@ -210,7 +211,6 @@ use quenchant_shape::shape::Maybe;
 use crate::boundary::ItemCount;
 use crate::boundary::ItemOrdinal;
 use crate::codec::write_item_content;
-use crate::codec::write_node_content;
 use crate::content::Encoded;
 use crate::content::ItemContent;
 #[cfg(feature = "instrument")]

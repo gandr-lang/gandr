@@ -26,6 +26,8 @@ foldhash.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-theory-levitation.workspace = true
+gandr-theory-sites.workspace = true
 hashbrown.workspace = true
 quenchant-shape.workspace = true
 

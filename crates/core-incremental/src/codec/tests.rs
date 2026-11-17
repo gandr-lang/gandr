@@ -22,12 +22,12 @@ fn native_names_and_operand_order_survive_persistence()
         ContentNode::Primitive(neg, Arguments::Unary(NodeIndex::from(3_usize))),
     ] {
         let mut bytes = CheckpointBytes::default();
-        super::write_node(&mut Writer { sink: &mut bytes }, &node).unwrap();
+        gandr_core_content::codec::write_node(&mut Writer { sink: &mut bytes }, &node).unwrap();
         let mut reader = Reader {
             bytes: bytes.as_ref(),
             cursor: 0,
         };
-        assert_eq!(super::read_node(&mut reader), Ok(node));
+        assert_eq!(gandr_core_content::codec::read_node(&mut reader), Ok(node));
         assert_eq!(reader.finish(), Ok(()));
     }
     let mut bytes = CheckpointBytes::default();
@@ -38,7 +38,10 @@ fn native_names_and_operand_order_survive_persistence()
         bytes: bytes.as_ref(),
         cursor: 0,
     };
-    assert_eq!(super::read_node(&mut reader), Err(CodecError::Corrupt));
+    assert_eq!(
+        gandr_core_content::codec::read_node(&mut reader),
+        Err(CodecError::Corrupt)
+    );
 }
 
 #[test]
@@ -65,7 +68,7 @@ fn holes_marks_and_the_unknown_types_round_trip()
     let mut tags = BTreeSet::new();
     for node in nodes {
         let mut bytes = CheckpointBytes::default();
-        super::write_node(&mut Writer { sink: &mut bytes }, &node).unwrap();
+        gandr_core_content::codec::write_node(&mut Writer { sink: &mut bytes }, &node).unwrap();
         assert!(
             tags.insert(bytes.as_ref().first().copied()),
             "each former has its own tag: {node:?}"
@@ -75,14 +78,14 @@ fn holes_marks_and_the_unknown_types_round_trip()
             cursor: 0,
         };
         assert_eq!(
-            super::read_node(&mut reader),
+            gandr_core_content::codec::read_node(&mut reader),
             Ok(node),
             "the node reads back"
         );
         assert_eq!(reader.finish(), Ok(()), "and nothing is left over");
     }
     let mut bytes = CheckpointBytes::default();
-    super::write_node(
+    gandr_core_content::codec::write_node(
         &mut Writer { sink: &mut bytes },
         &ContentNode::Hole(HoleId::from(9_u32)),
     )
@@ -93,7 +96,7 @@ fn holes_marks_and_the_unknown_types_round_trip()
         cursor: 0,
     };
     assert!(
-        super::read_node(&mut reader).is_err(),
+        gandr_core_content::codec::read_node(&mut reader).is_err(),
         "a hole's name cut short does not decode"
     );
 }
@@ -115,10 +118,10 @@ fn every_node_former_round_trips_under_its_own_frame()
     use gandr_core_term::memory::MemoryForm;
     use gandr_core_term::session::RecordedMove;
     use gandr_core_term::session::SessionRelation;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::Summand;
 
     use super::DeBruijnIndex;
-    use super::Level;
-    use super::Summand;
     use super::Zone;
 
     let [a, b, c, d, e] = [1_usize, 2, 3, 4, 5].map(NodeIndex::from);
@@ -443,7 +446,8 @@ fn every_node_former_round_trips_under_its_own_frame()
     let mut encodings = BTreeSet::new();
     for node in nodes {
         let mut bytes = CheckpointBytes::default();
-        super::write_node(&mut Writer { sink: &mut bytes }, &node).expect("a portable node");
+        gandr_core_content::codec::write_node(&mut Writer { sink: &mut bytes }, &node)
+            .expect("a portable node");
         assert!(
             encodings.insert(bytes.as_ref().to_vec()),
             "{node:?} keeps its own encoding"
@@ -452,7 +456,7 @@ fn every_node_former_round_trips_under_its_own_frame()
             bytes: bytes.as_ref(),
             cursor: 0,
         };
-        assert_eq!(super::read_node(&mut reader), Ok(node));
+        assert_eq!(gandr_core_content::codec::read_node(&mut reader), Ok(node));
         assert_eq!(reader.finish(), Ok(()));
     }
 }
@@ -468,12 +472,16 @@ fn a_patched_frame_that_fixes_no_label_is_refused()
         meets: Vec::new(),
     };
     let mut bytes = CheckpointBytes::default();
-    super::write_node(&mut Writer { sink: &mut bytes }, &empty).expect("the writer frames it");
+    gandr_core_content::codec::write_node(&mut Writer { sink: &mut bytes }, &empty)
+        .expect("the writer frames it");
     let mut reader = Reader {
         bytes: bytes.as_ref(),
         cursor: 0,
     };
-    assert_eq!(super::read_node(&mut reader), Err(CodecError::NonCanonical));
+    assert_eq!(
+        gandr_core_content::codec::read_node(&mut reader),
+        Err(CodecError::NonCanonical)
+    );
 }
 
 #[test]
@@ -560,7 +568,8 @@ fn a_stored_form_refuses_a_codata_application_7403()
         arguments: vec![NodeIndex::from(1_usize), NodeIndex::from(2_usize)],
     };
     let mut keyed = KeyedBytes::default();
-    super::write_node(&mut Writer { sink: &mut keyed }, &node).expect("a key takes codata");
+    gandr_core_content::codec::write_node(&mut Writer { sink: &mut keyed }, &node)
+        .expect("a key takes codata");
     assert_eq!(
         keyed.0.as_ref().first(),
         Some(&0x99_u8),
@@ -571,7 +580,7 @@ fn a_stored_form_refuses_a_codata_application_7403()
         cursor: 0,
     };
     assert_eq!(
-        super::read_node(&mut reader),
+        gandr_core_content::codec::read_node(&mut reader),
         Ok(node.clone()),
         "the node reads back"
     );
@@ -579,7 +588,7 @@ fn a_stored_form_refuses_a_codata_application_7403()
     let refused = Err(CodecError::Unsupported(UnsupportedPersistence::Codata));
     let mut stored = CheckpointBytes::default();
     assert_eq!(
-        super::write_node(&mut Writer { sink: &mut stored }, &node),
+        gandr_core_content::codec::write_node(&mut Writer { sink: &mut stored }, &node),
         refused,
         "a stored node refuses codata"
     );
@@ -600,6 +609,8 @@ fn a_stored_form_refuses_a_codata_application_7403()
     );
 }
 
+use gandr_core_content::ItemKey;
+use gandr_core_content::Occurrence;
 use gandr_kernel_term::BaseType;
 
 use super::Answer;
@@ -616,10 +627,8 @@ use super::Count;
 use super::Footprint;
 use super::HoleMark;
 use super::ItemCheckpoint;
-use super::ItemKey;
 use super::Maybe;
 use super::NodeIndex;
-use super::Occurrence;
 use super::Opacity;
 use super::Reader;
 use super::Reference;
@@ -818,13 +827,14 @@ fn a_split_persists_its_arity_between_its_children()
     let mut encodings = alloc::collections::BTreeSet::new();
     for node in nodes {
         let mut bytes = CheckpointBytes::default();
-        super::write_node(&mut Writer { sink: &mut bytes }, &node).expect("portable split");
+        gandr_core_content::codec::write_node(&mut Writer { sink: &mut bytes }, &node)
+            .expect("portable split");
         assert!(encodings.insert(bytes.as_ref().to_vec()), "distinct splits");
         let mut reader = Reader {
             bytes: bytes.as_ref(),
             cursor: 0,
         };
-        assert_eq!(super::read_node(&mut reader), Ok(node));
+        assert_eq!(gandr_core_content::codec::read_node(&mut reader), Ok(node));
         assert_eq!(reader.finish(), Ok(()));
     }
 }
@@ -952,7 +962,8 @@ fn control_nodes_persist_names_frames_and_branch_order()
     let mut encodings = alloc::collections::BTreeSet::new();
     for node in nodes {
         let mut bytes = CheckpointBytes::default();
-        super::write_node(&mut Writer { sink: &mut bytes }, &node).expect("portable control node");
+        gandr_core_content::codec::write_node(&mut Writer { sink: &mut bytes }, &node)
+            .expect("portable control node");
         assert!(
             encodings.insert(bytes.as_ref().to_vec()),
             "distinct control identities"
@@ -961,7 +972,7 @@ fn control_nodes_persist_names_frames_and_branch_order()
             bytes: bytes.as_ref(),
             cursor: 0,
         };
-        assert_eq!(super::read_node(&mut reader), Ok(node));
+        assert_eq!(gandr_core_content::codec::read_node(&mut reader), Ok(node));
         assert_eq!(reader.finish(), Ok(()));
     }
     let at = super::Site::Node(index(7_usize));
@@ -1131,7 +1142,8 @@ fn session_nodes_persist_their_protocol_and_children()
     let mut encodings = alloc::collections::BTreeSet::new();
     for node in nodes {
         let mut bytes = CheckpointBytes::default();
-        super::write_node(&mut Writer { sink: &mut bytes }, &node).expect("portable session node");
+        gandr_core_content::codec::write_node(&mut Writer { sink: &mut bytes }, &node)
+            .expect("portable session node");
         assert!(
             encodings.insert(bytes.as_ref().to_vec()),
             "distinct session identities, a state and a dual included"
@@ -1140,7 +1152,7 @@ fn session_nodes_persist_their_protocol_and_children()
             bytes: bytes.as_ref(),
             cursor: 0,
         };
-        assert_eq!(super::read_node(&mut reader), Ok(node));
+        assert_eq!(gandr_core_content::codec::read_node(&mut reader), Ok(node));
         assert_eq!(reader.finish(), Ok(()));
     }
 
@@ -1161,7 +1173,7 @@ fn session_nodes_persist_their_protocol_and_children()
         cursor: 0,
     };
     assert_eq!(
-        super::read_node(&mut reader),
+        gandr_core_content::codec::read_node(&mut reader),
         Err(CodecError::Corrupt),
         "a non-contractive protocol is refused at the one constructor"
     );
@@ -1567,14 +1579,17 @@ fn fixpoint_evidence_round_trips_with_its_staged_position()
         (FixpointEvidence::Guarded, vec![4]),
     ] {
         let mut bytes = CheckpointBytes::default();
-        super::write_evidence(&mut Writer { sink: &mut bytes }, evidence)
+        gandr_core_content::codec::write_evidence(&mut Writer { sink: &mut bytes }, evidence)
             .expect("evidence encodes");
         assert_eq!(bytes.as_ref(), expected.as_slice(), "{evidence:?}");
         let mut reader = Reader {
             bytes: bytes.as_ref(),
             cursor: 0,
         };
-        assert_eq!(super::read_evidence(&mut reader), Ok(evidence));
+        assert_eq!(
+            gandr_core_content::codec::read_evidence(&mut reader),
+            Ok(evidence)
+        );
         assert_eq!(reader.finish(), Ok(()));
     }
     for corrupt in [&[5_u8][..], &[3], &[3, 15, 0, 0, 0, 0, 0, 0, 0], &[
@@ -1585,7 +1600,7 @@ fn fixpoint_evidence_round_trips_with_its_staged_position()
             cursor: 0,
         };
         assert_eq!(
-            super::read_evidence(&mut past),
+            gandr_core_content::codec::read_evidence(&mut past),
             Err(CodecError::Corrupt),
             "{corrupt:?}: a tag past 3, a short joint claim, fifteen components or a position \
              of 256"
@@ -1605,7 +1620,7 @@ fn effect_rows_reject_duplicate_and_noncanonical_names()
         let mut writer = Writer { sink: &mut bytes };
         writer.count(Count(2)).expect("count");
         for (region, name) in entries {
-            super::write_region(&mut writer, region);
+            gandr_core_content::codec::write_region(&mut writer, region);
             writer.bytes(Bytes(name.as_bytes())).expect("name");
             writer.count(Count(0)).expect("count");
         }
@@ -1639,7 +1654,7 @@ fn effect_rows_reject_duplicate_and_noncanonical_names()
         let mut bytes = CheckpointBytes::from(Vec::new());
         let mut writer = Writer { sink: &mut bytes };
         writer.count(Count(1)).expect("count");
-        super::write_region(&mut writer, Region::Held);
+        gandr_core_content::codec::write_region(&mut writer, Region::Held);
         writer.bytes(Bytes(b"State")).expect("name");
         writer.count(Count(2)).expect("count");
         for name in names {
@@ -1661,7 +1676,7 @@ fn effect_rows_reject_duplicate_and_noncanonical_names()
     super::write_index(&mut writer, NodeIndex::from(0_usize)).expect("result");
     writer.count(Count(0)).expect("empty row");
     assert_eq!(
-        super::read_node(&mut Reader {
+        gandr_core_content::codec::read_node(&mut Reader {
             bytes: bytes.as_ref(),
             cursor: 0
         }),
@@ -1741,15 +1756,15 @@ fn write_closed(
     formers: &[ContentNode],
 )
 {
-    let closed = super::Scope::new(
+    let closed = gandr_core_term::support::Scope::new(
         gandr_core_term::BinderDepth::from(0_usize),
         gandr_core_term::BinderDepth::from(0_usize),
     );
     let mut writer = Writer { sink: bytes };
     writer.count(Count(formers.len())).expect("count");
     for former in formers {
-        super::write_node(&mut writer, former).expect("former");
-        super::write_scope(&mut writer, closed).expect("scope");
+        gandr_core_content::codec::write_node(&mut writer, former).expect("former");
+        gandr_core_content::codec::write_scope(&mut writer, closed).expect("scope");
     }
 }
 
@@ -2031,9 +2046,9 @@ fn decoders_reject_unknown_tags_before_payloads()
     let mut malformed = [0_u8; 65];
     *malformed.first_mut().expect("tag") = u8::MAX;
     let decoders: [TagDecoder; 7] = [
-        |reader| super::read_sign(reader).map(|_value| ()),
-        |reader| super::read_literal(reader).map(|_value| ()),
-        |reader| super::read_node(reader).map(|_value| ()),
+        |reader| gandr_core_content::codec::read_sign(reader).map(|_value| ()),
+        |reader| gandr_core_content::codec::read_literal(reader).map(|_value| ()),
+        |reader| gandr_core_content::codec::read_node(reader).map(|_value| ()),
         |reader| super::read_site(reader).map(|_value| ()),
         |reader| super::read_refusal(reader).map(|_value| ()),
         |reader| super::read_typing(reader).map(|_value| ()),
@@ -2056,7 +2071,10 @@ fn decoders_reject_unknown_tags_before_payloads()
             bytes: &bytes,
             cursor: 0,
         };
-        assert_eq!(super::read_node(&mut reader), Err(CodecError::Corrupt));
+        assert_eq!(
+            gandr_core_content::codec::read_node(&mut reader),
+            Err(CodecError::Corrupt)
+        );
         assert_eq!(reader.cursor, 2, "zone and base tags reject at their field");
     }
 
@@ -2106,7 +2124,9 @@ fn decoders_reject_unknown_tags_before_payloads()
 #[test]
 fn encoding_bounds_levels_in_every_node_family_and_plane()
 {
-    let mut level = super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(0_u32)));
+    let mut level = gandr_kernel_strata::Level::var(gandr_kernel_strata::LevelVar::new(
+        gandr_kernel_strata::LevelVarIndex::from(0_u32),
+    ));
     for _ in 0 .. super::MAX_DECODED_LEVEL_OFFSET {
         level = level.succ().expect("representable offset");
     }
@@ -2152,7 +2172,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
             Typing::Refused(Refusal::TypeMismatch(crate::typing::Mismatched {
                 at,
                 synthesised: crate::fixture::type_content(&[ContentNode::Universe {
-                    sort: super::TypeSort::Ground(super::GroundSort::Value),
+                    sort: gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
                     level: level.clone(),
                 }]),
                 expected: valid_type(),
@@ -2205,7 +2225,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
         assert_eq!(
             encode_checkpoints(&checkpoints),
             Err(CodecError::LevelOffsetTooLarge {
-                offset: super::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
+                offset: gandr_kernel_strata::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
             })
         );
     }
@@ -2215,13 +2235,15 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
 fn encoding_bounds_levels_in_every_auxiliary_type_table()
 {
     type Mismatch = fn(TypeContent, TypeContent) -> Refusal;
-    let mut level = super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(0_u32)));
+    let mut level = gandr_kernel_strata::Level::var(gandr_kernel_strata::LevelVar::new(
+        gandr_kernel_strata::LevelVarIndex::from(0_u32),
+    ));
     for _ in 0 .. super::MAX_DECODED_LEVEL_OFFSET {
         level = level.succ().expect("representable offset");
     }
     let capped = || {
         crate::fixture::type_content(&[ContentNode::Universe {
-            sort: super::TypeSort::Ground(super::GroundSort::Value),
+            sort: gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
             level: level.clone(),
         }])
     };
@@ -2323,7 +2345,7 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
         assert_eq!(
             encode_checkpoints(&checkpoints),
             Err(CodecError::LevelOffsetTooLarge {
-                offset: super::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
+                offset: gandr_kernel_strata::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
             })
         );
     }
@@ -2335,13 +2357,15 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
 #[test]
 fn every_refusal_holding_a_capped_level_is_refused_when_written_4451()
 {
-    let mut level = super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(0_u32)));
+    let mut level = gandr_kernel_strata::Level::var(gandr_kernel_strata::LevelVar::new(
+        gandr_kernel_strata::LevelVarIndex::from(0_u32),
+    ));
     for _ in 0 .. super::MAX_DECODED_LEVEL_OFFSET {
         level = level.succ().expect("representable offset");
     }
     let capped = || {
         crate::fixture::type_content(&[ContentNode::Universe {
-            sort: super::TypeSort::Ground(super::GroundSort::Value),
+            sort: gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
             level: level.clone(),
         }])
     };
@@ -2382,7 +2406,7 @@ fn every_refusal_holding_a_capped_level_is_refused_when_written_4451()
             Err(error) => assert_eq!(
                 error,
                 CodecError::LevelOffsetTooLarge {
-                    offset: super::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
+                    offset: gandr_kernel_strata::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
                 },
                 "{refusal:?} is refused for its level"
             ),
@@ -3562,14 +3586,20 @@ fn read_table(bytes: &CheckpointBytes)
 ///
 /// # Specification
 /// trivial.
-fn write_parts(parts: &[(ContentNode, super::Scope, Vec<super::Thinning>)]) -> CheckpointBytes
+fn write_parts(
+    parts: &[(
+        ContentNode,
+        gandr_core_term::support::Scope,
+        Vec<super::Thinning>,
+    )]
+) -> CheckpointBytes
 {
     let mut bytes = CheckpointBytes::default();
     let mut writer = Writer { sink: &mut bytes };
     writer.count(Count(parts.len())).expect("count");
     for &(ref former, scope, _) in parts {
-        super::write_node(&mut writer, former).expect("former");
-        super::write_scope(&mut writer, scope).expect("scope");
+        gandr_core_content::codec::write_node(&mut writer, former).expect("former");
+        gandr_core_content::codec::write_scope(&mut writer, scope).expect("scope");
     }
     for &(_, _, ref cover) in parts {
         for edge in cover {
@@ -3584,9 +3614,9 @@ fn supported_tables_round_trip_and_reject_forged_support()
 {
     use gandr_core_term::BinderDepth;
     use gandr_core_term::Zone;
+    use gandr_core_term::support::Scope;
     use gandr_kernel_term::DeBruijnIndex;
 
-    use super::Scope;
     use super::Thinning;
     let index = NodeIndex::from;
     let named = Reference::Item {
@@ -3598,7 +3628,7 @@ fn supported_tables_round_trip_and_reject_forged_support()
     let ty = crate::fixture::type_content(&[
         ContentNode::Element {
             code: index(1_usize),
-            target: super::Level::zero(),
+            target: gandr_kernel_strata::Level::zero(),
         },
         ContentNode::StaticLambda(index(2_usize)),
         ContentNode::Tuple(vec![
@@ -3660,7 +3690,7 @@ fn supported_tables_round_trip_and_reject_forged_support()
             ContentNode::Base(BaseType::Integer),
             ContentNode::Element {
                 code: index(3_usize),
-                target: super::Level::zero(),
+                target: gandr_kernel_strata::Level::zero(),
             },
             ContentNode::Variable {
                 zone: Zone::Intuitionistic,
@@ -4071,7 +4101,8 @@ fn world_formers_round_trip_under_their_own_tags_3381()
     let mut encodings = BTreeSet::new();
     for node in nodes {
         let mut bytes = CheckpointBytes::default();
-        super::write_node(&mut Writer { sink: &mut bytes }, &node).expect("a portable node");
+        gandr_core_content::codec::write_node(&mut Writer { sink: &mut bytes }, &node)
+            .expect("a portable node");
         assert!(
             encodings.insert(bytes.as_ref().to_vec()),
             "{node:?} keeps its own encoding"
@@ -4081,7 +4112,7 @@ fn world_formers_round_trip_under_their_own_tags_3381()
             cursor: 0,
         };
         assert_eq!(
-            super::read_node(&mut reader),
+            gandr_core_content::codec::read_node(&mut reader),
             Ok(node),
             "the node reads back"
         );
@@ -4096,7 +4127,7 @@ fn world_formers_round_trip_under_their_own_tags_3381()
         cursor: 0,
     };
     assert_eq!(
-        super::read_node(&mut reader),
+        gandr_core_content::codec::read_node(&mut reader),
         Err(CodecError::Corrupt),
         "a world tag past one is refused"
     );

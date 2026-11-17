@@ -1357,6 +1357,8 @@ dependencies = [
  "gandr-core-term",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "gandr-theory-levitation",
+ "gandr-theory-sites",
  "hashbrown 0.17.1",
  "quenchant-anodized",
  "quenchant-shape",

@@ -25,6 +25,7 @@
 extern crate alloc;
 
 mod boundary;
+pub mod codec;
 mod content;
 mod reference;
 mod support;

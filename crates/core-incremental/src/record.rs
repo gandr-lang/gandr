@@ -41,10 +41,9 @@ use std::ffi::OsStr;
 use std::path::Path;
 
 use anodized::spec;
+use gandr_core_content::codec::Bytes;
 use gandr_core_publish::Contents;
 use quenchant_shape::shape::Maybe;
-
-use crate::codec::Bytes;
 
 /// The byte length of a frame's magic and version.
 const OPENING_LEN: usize = 12;
