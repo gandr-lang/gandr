@@ -4982,7 +4982,7 @@ mod tests
             SourceText::from(
                 "def g = thunk { fun (x) { fun (y) { return x } } } ; def nested = thunk { become \
                  g (g 1 2) 3 } ; def first[a : Type, b : Type](x : a, y : b) -> -F a { return x } \
-                 ; def inferred = thunk { become first 5 7 } ;",
+                 def inferred = thunk { become first 5 7 } ;",
             ),
             &mut arena,
         );
