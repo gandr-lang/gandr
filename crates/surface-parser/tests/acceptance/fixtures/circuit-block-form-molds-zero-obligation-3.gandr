@@ -1,0 +1,5 @@
+theory N where {
+  sort Nat : Type;
+  data Zero : () --> (_ : Nat);
+  data Succ : (_ : Nat) --> (_ : Nat);
+}

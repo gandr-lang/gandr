@@ -1,0 +1,21 @@
+/// `Immobile`: a value crossing to a world its type does not reach.
+module Seat :> *{
+  type Dispatch,
+  task : Dispatch
+} where {
+  type Dispatch = String;
+  /// The dispatch a seat receives.
+  @[checks]
+  def task = "task";
+}
+
+@[checks]
+world operator;
+
+@[checks]
+world seat;
+
+@[refuses("Immobile")]
+@[entry(*{operator, seat})]
+def unmarkedBack() -> Seat.Dispatch =
+  migrate [seat] { pure Seat.task }

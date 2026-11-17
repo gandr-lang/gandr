@@ -1,0 +1,9 @@
+def named(m : Integer) -> (q : Integer, r : String) { m }
+def unnamed(m : Integer) -> (Integer, String) { m }
+def none(m : Integer) -> () { m }
+def one(m : Integer) -> (q : Integer) { m }
+def bare(m : Integer) -> Integer { m }
+def grouped(m : Integer) -> (Integer) { m }
+def dependent(m : Integer) -> (a : Type, x : a) { m }
+def explicit(m : Integer) -> (Integer, String) { m }
+def signed : Integer -> (Integer, String);
