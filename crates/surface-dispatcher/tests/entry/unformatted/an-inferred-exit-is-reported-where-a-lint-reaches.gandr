@@ -1,0 +1,5 @@
+def add : Integer ;
+def add = 1 ;
+@[ explicit_exits ]
+def asked(n : Integer) -> -F Integer { n }
+def unasked(n : Integer) -> -F Integer { n }

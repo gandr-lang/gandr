@@ -1,0 +1,21 @@
+// This source shows an omitted model implicit.
+//
+// `Up` and `Flips` both provide a model of `Count`.
+//
+// The checker selects the candidate that the argument carrier requires. No
+// module carries an instance mark. Each model of `Count`, or of a theory that
+// includes `Count`, is a candidate. The checker ignores the order that imports
+// introduce candidates.
+//
+// - see: #739
+import "./model-resolution-tally.gandr";
+import "./model-resolution-up.gandr";
+import "./model-resolution-flips.gandr";
+
+/// The integers force `Up`.
+@[runs("5")]
+def counted() -> Integer { advanced 4 }
+
+/// A flag forces `Flips`, a tally through its include.
+@[runs("1")]
+def flipped() -> Integer { advanced (false : Bool) }
