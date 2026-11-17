@@ -474,7 +474,7 @@ enum Kind
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::Member(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
+        | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. } | Former::Staged { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::Returns(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::LinearArrow { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -529,7 +529,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::PrefixType(_)
         | Former::DialogueType(_)
         | Former::Located { .. }
-        | Former::Kept { .. } => Kind::ValueType,
+        | Former::Kept { .. }
+        | Former::Staged { .. } => Kind::ValueType,
         Former::Returner(_)
         | Former::Returns(_)
         | Former::With(..)
@@ -1162,6 +1163,9 @@ where
 /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
 /// - witness: `tests::goldens::a_recorded_run_without_payloads_spells_its_moves_1871`
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
+///
+/// # Cost
+/// - allocation: the child slots, growth within the former's arity
 #[spec(ensures: |ref ret| match *former {
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
@@ -1499,7 +1503,8 @@ where
         | Former::Returner(child)
         | Former::Quote(child)
         | Former::Located { inner: child, .. }
-        | Former::Kept { inner: child, .. } => Vec::from([value_type(child)]),
+        | Former::Kept { inner: child, .. }
+        | Former::Staged { inner: child, .. } => Vec::from([value_type(child)]),
         Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
@@ -4444,6 +4449,9 @@ enum Breaks<Node>
 ///   following it, a `while` breaking in its true branch, and a `loop` whose
 ///   two breaks go on with different nodes.
 /// - witness: `tests::goldens::a_loop_a_rest_follows_writes_its_breaks_bare_3231`
+///
+/// # Cost
+/// - allocation: the pending nodes, growth within `VISIT_BUDGET`
 #[spec(ensures: |ret| !matches!(broken(source, pass), Some(Break::Rest(_))) || matches!(ret, Breaks::One(_, under) if under.0 == 0_usize))]
 fn breaks<S>(
     source: &S,
@@ -8371,6 +8379,10 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
     /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+    ///
+    /// # Cost
+    /// - allocation: the chain's links, growth within the walk's remaining
+    ///   visits
     #[spec(
         captures: [entry = self.remaining],
         ensures: |ret| self.remaining <= entry
@@ -8594,6 +8606,7 @@ impl Walk<'_, '_>
                 | Former::ConsumeHeld(_)
                 | Former::Located { .. }
                 | Former::Kept { .. }
+                | Former::Staged { .. }
                 | Former::WorldHold(_)
                 | Former::Leta { .. }
                 | Former::Migrate { .. }
@@ -9530,6 +9543,10 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_positional_projection_the_surface_does_not_read_is_notation`
     /// - witness: `tests::goldens::a_family_argument_leaves_its_function_s_thunk_out_5408`
     /// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+    ///
+    /// # Cost
+    /// - allocation: the node's pieces and tasks, growth within the walk's
+    ///   remaining visits
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened
@@ -10044,6 +10061,7 @@ impl Walk<'_, '_>
             | Former::ConsumeHeld(_)
             | Former::Located { .. }
             | Former::Kept { .. }
+            | Former::Staged { .. }
             | Former::WorldHold(_)
             | Former::Leta { .. }
             | Former::Migrate { .. } => Some(self.form(source, node, &former, admits)),
@@ -13411,6 +13429,19 @@ impl Walk<'_, '_>
                 );
                 let _ = parts.piece(Binding::Atom).text(" at ").text(scope);
                 writes(Production("at_type"), Binding::Cons)
+            },
+            // `Nat[i]` at the definition's stage binder `i`, and `Nat[< i]`
+            // one step below it: a postfix bracket in the path band, so the
+            // refined type is an atom.
+            Former::Staged { stage, reach, .. } => {
+                let opener = match reach {
+                    gandr_kernel_term::StageReach::At => "[",
+                    gandr_kernel_term::StageReach::Below(_) => "[< ",
+                };
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(format!("{opener}{}]", stage.as_ref()));
+                writes(Production("staged_type"), Binding::Atom)
             },
             Former::WorldHold(_) => {
                 // Parenthesized, as the surface writes it.

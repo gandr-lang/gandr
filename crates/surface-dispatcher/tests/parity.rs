@@ -1879,6 +1879,41 @@ fn a_definition_s_stage_binders_are_printed_in_its_block_7856()
     }
 }
 
+/// #7906: a printed definition over stages writes each type of its header at
+/// the stage its source writes. `boundedAt` takes `Nat[j]` and `Nat[k]` and
+/// returns `Nat[< j]`; a printer that reads a staged type as the type it
+/// refines writes `Nat` for each.
+#[test]
+fn a_definition_writes_each_type_at_its_stage_7906()
+{
+    let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+    let source = gandr_workflow_sweep::corpus::sources()
+        .expect("the corpus reads")
+        .into_iter()
+        .find(|source| source.path.ends_with("model/data/sized-higher-order.gandr"))
+        .expect("the source stands in the corpus");
+    let text = std::fs::read_to_string(&source.path).expect("the source is readable");
+    let written = Written {
+        path: &source.path,
+        text: SourceText::from(text.as_str()),
+    };
+    let read = read(&grammar, written).expect("the source lowers");
+    let printed = read
+        .printed
+        .iter()
+        .find(|printed| printed.name == "boundedAt")
+        .expect("the printer spells the declaration whole");
+    for form in [Form::Sugared, Form::Explicit] {
+        let spelled = printed.written(form);
+        let header = spelled.lines().next().unwrap_or_default();
+        assert_eq!(
+            header,
+            "def boundedAt[j : Size, k : Size, k < j](a : Nat[j], b : Nat[k]) -> Nat[< j] {",
+            "boundedAt in {form:?} writes each type at its stage"
+        );
+    }
+}
+
 /// The parity sweeps: a sample on every pull request, every source under the
 /// `sweeps` profile.
 mod sweeps
