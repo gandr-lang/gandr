@@ -1,0 +1,6 @@
+{counter}def fixed : (a : Model(Counter) with sort C = Integer, c : a.C) -> Integer ;
+def fixedWritten : (a : Model(Counter) with sort C = Integer, c : Integer) -> Integer ;
+def open : (x : Type, a : Model(Counter) with sort C = x, n : Integer, c : a.C) -> x ;
+def openWritten : (x : Type, a : Model(Counter) with sort C = x, n : Integer, c : x) -> x ;
+def named : (x : Type, a : Model(Counter) with sort C = x, p : Path[.A = Model(Counter) with sort C = x](a, a), c : a.C) -> x ;
+def namedWritten : (x : Type, a : Model(Counter) with sort C = x, p : Path[.A = Model(Counter) with sort C = x](a, a), c : x) -> x ;

@@ -1,0 +1,4777 @@
+//! The run stage: a checked module focused into the command IL, one
+//! declaration run — on emitted native code or the portable executor — and
+//! its terminal read back and spelled.
+//!
+//! # A program is its declarations
+//!
+//! A program is the module's declarations, each a constant the machine
+//! unfolds on demand. An accepted declaration's elaborated body is focused
+//! once, when the program is built; a declaration owed its body, refused, or
+//! whose body does not focus is carried as itself, the machine's opaque
+//! constant. `gandr run` runs the program's entry, the `main` its source
+//! declares at the top level, and refuses a source that declares none. The
+//! session and the corpus run any accepted declaration by its admission
+//! position, and a position the program skips holds no declaration.
+//!
+//! # Running a declaration
+//!
+//! A declaration is a value. Running it returns that value, and when the value
+//! is a thunk — a computation suspended, a function's body among them — the
+//! thunk is forced, so `def main = thunk { return 42 }` runs to `42` and a
+//! function runs to its own terminal, `fun (a) { a }`. The run's terminal is
+//! read back into the core and spelled by `gandr-surface-pretty`, the printer
+//! a hover answers with; the spelling is the one `gandr run` prints, the
+//! session's value line carries and a `runs` expectation compares.
+//!
+//! **The value spelling is the shared printer's.** A run's value is the
+//! computation the printer presents: constructors by their declared names,
+//! constants by their paths, a function as its `fun`, a thunk as its body, a
+//! tuple as `*{a, b}`, an injection as `+{.0 = v}` and a record as `*{.l =
+//! v}` — the grammar's own spellings, laid out on one line. The focused
+//! command IL carries a data constructor's family when the core names one,
+//! so the read-back value names its constructors. The alternative was the
+//! run stage's own renderer, which wrote `ctor[i](…)` and `<fun>` and so
+//! answered differently from a hover over the same value; the choice
+//! reverses only if a run's value needs a spelling the grammar cannot write.
+//!
+//! **A run that names a hidden member is opaque at its seal.** A module
+//! matched against a signature keeps every member outside the signature out
+//! of its interface, so a normal form that mentions one — `SetoidCat.ident(a)`
+//! under `SetoidCat : Model(CatShape)` — has no spelling a reader outside the
+//! module can write. Such a run is [`Evaluation::Sealed`], reported
+//! `⟨opaque at M⟩ : T`: the module whose signature hides the first hidden
+//! member the read-back mentions, and the declared type of the declaration
+//! run. The report is never a source spelling, so nothing reads it back; the
+//! certificate is unchanged. The alternative was to print the hidden member's
+//! path, which no source outside the module resolves. The choice reverses if
+//! a signature can export a member's spelling without its definition.
+//!
+//! # Classification
+//!
+//! A run that returns a value succeeds. A run that reaches a declaration owed
+//! its body — returning it, forcing it, applying it or matching on it — is
+//! blamed on that declaration, the obligation it met; any other stop short of
+//! a value is stuck; a run that could not finish, its jump budget spent, a
+//! region exhausted or a form the lowering refuses, is unfinished. Each of
+//! these reached the machine. A declaration that did not focus, or that
+//! refers, directly or through others, to one that was refused or to a code
+//! never reaches it: the reference is found by walking the program's
+//! references before any command runs. A referenced declaration whose body
+//! did not focus is carried opaque, as an owed one is: a run that reaches it
+//! is unrunnable, naming it, and a run that never does — the laws an
+//! equivalence carries beside the maps a transport applies — runs to its
+//! value. Classification keeps the identity of the declaration it names, and a
+//! value read back keeps its fields' order and every repeated reference.
+//!
+//! # The run stage follows the check
+//!
+//! `judge` builds the `Program` from the checker's verdicts, before the kernel
+//! is offered anything: nothing the program holds is read from the readmission.
+//! Each declaration the checker accepted has its body focused into the command
+//! IL by `gandr-core-sequent` and is held as a transparent definition; a
+//! declaration owed its body is held opaque, and a refused one, and a code — a
+//! type, of which the machine carries no image — are held as the reason they do
+//! not run. `Program::evaluate` mints `return c` for the declaration at `c`,
+//! runs it on the tier `gandr-runtime-emitter`'s policy picks — emitted
+//! native code by default where the host has a patcher, the portable
+//! executor elsewhere, both under a budget of 2²⁴ jumps — forces the
+//! terminal when it is a thunk, so a suspended computation runs and a
+//! function answers its `fun`, and reads the terminal back into the core.
+//! `Program::evaluate_on` runs one engine alone, so a differential holds
+//! native code to the executor.
+//! Nothing runs that no caller asked for: the settle comparison runs the
+//! declarations that state a `runs` outcome, the session runs what the user
+//! entered, and `gandr run` runs one declaration. The alternative was a run
+//! pipeline of its own that composed the source again, which lowers twice and
+//! could judge differently from the `check` it follows; the choice reverses if
+//! building the program shows on the check path's measurements, when it would
+//! move behind a request.
+//!
+//! **A tier's decline is unfinished.** A tier answers with the evaluation
+//! or declines, and a decline is [`Unfinished::Declined`] naming why. The
+//! alternative, a second interpreter taking what a tier declines, kept two
+//! implementations of one transition table that only tests held together;
+//! every corpus `runs` form lowers. The choice reverses if a form the
+//! lowering cannot take reaches a `runs` item, when the lowering grows it.
+//!
+//! | What the run came to | `RunStatus` | `gandr run` exits |
+//! | -------------------- | ----------- | ----------------- |
+//! | `Evaluation::Value`: a value, spelled; `Evaluation::Sealed`: a value naming a member its module hides, opaque at that module | `Value` | `0` |
+//! | `Evaluation::Blamed`: the run reached a declaration owed its body — returned it outside any suspension, forced, applied or matched it | `Failed` | `1` |
+//! | `Evaluation::Stuck`, `Evaluation::Unfinished`: any other stop short of a value; the budget spent, the store refusing, a terminal with no reading | `Failed` | `1` |
+//! | `Evaluation::Unrunnable`: the declaration, or one it refers to, was refused or is a code | `Unreached` | `2` |
+//! | `Ran::Refused`, `Ran::NoProgram`: a declaration of the source was refused, or it declares no name | `Unreached` | `2` |
+//!
+//! The three statuses are the script contract: `0` for a value, `1` for blame
+//! or a stuck configuration, `2` for a source that never reached the machine. A
+//! source holding any refusal — the lowering's, the checker's or its root's —
+//! does not run even when the target never refers to the refused declaration; a
+//! goal is no refusal, and a run that reaches one is blamed on it. Unrunnable
+//! references are found by walking the program's references before any command
+//! runs, so a run never starts that would meet a declaration the machine cannot
+//! carry.
+//!
+//! # Native universe-path boundaries
+//!
+//! Programmatic native `Path_U` declarations use ordinary checker export and
+//! kernel readmission; their portable evidence remains part of the artifact.
+//! The command IL runs a native path as the pair of its two maps and a
+//! transport along it as the forward map, by the rows `gandr-core-sequent`'s
+//! focusing states; a transport whose motive no row reads does not focus and
+//! is reported by its head. The printer spells a native path value and an
+//! unreduced transport as the core holds them, without executing evidence
+//! while printing them. Dependency discovery traverses native classifiers,
+//! maps and product components.
+//!
+//! **Choice.** Keep admission, evaluation and presentation as separate
+//! observations. A path accepted by the kernel runs only where focusing has a
+//! row for it. **Reversal.** A motive the machine refuses gains a run with
+//! its focusing row; no parser syntax or coercion from `Flow_U` is implied
+//! here.
+//!
+//! # A run is a local artifact
+//!
+//! A source `gandr run` runs is a local artifact: the endpoint of a one-role
+//! choreography, deployed as the driver's own process. It is the degenerate
+//! case of projection, which takes a choreography to one endpoint per role
+//! (`crates/README.md` § Compilation).
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — background: the futures
+//!   design (§ futures-try-first) — the tree sum whose two cuts run on two
+//!   threads and whose writer runs from the store, run by this module's tests.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-vocabulary) — a source run here is a local
+//!   artifact, the one-role endpoint.
+
+use alloc::collections::BTreeSet;
+use core::ops::Deref;
+use core::ops::DerefMut;
+
+use anodized::spec;
+use gandr_core_sequent::CommandId;
+use gandr_core_sequent::CommandNode;
+use gandr_core_sequent::Definitions;
+use gandr_core_sequent::FocusRefusal;
+use gandr_core_sequent::HeapValue;
+use gandr_core_sequent::HeapValueId;
+use gandr_core_sequent::NodeAddress;
+use gandr_core_sequent::Outcome;
+use gandr_core_sequent::Provenance;
+use gandr_core_sequent::Store;
+use gandr_core_sequent::Stuck;
+use gandr_core_sequent::focus_computation;
+use gandr_core_sequent::reach;
+use gandr_core_sequent::read_back_terminal;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::World;
+use gandr_core_term::world::WorldForm;
+use gandr_kernel_term::ConstantIndex;
+use gandr_runtime_emitter::Choice;
+use gandr_runtime_emitter::Declined;
+use gandr_runtime_emitter::HostHandler;
+use gandr_runtime_emitter::HostOutcome;
+use gandr_runtime_emitter::RunInputs;
+use gandr_runtime_emitter::TaskOrder;
+use gandr_runtime_emitter::Tier;
+use gandr_runtime_emitter::Trace;
+use gandr_runtime_emitter::budget;
+use gandr_runtime_emitter::evaluate_on;
+use gandr_runtime_emitter::evaluate_on_with_host;
+use gandr_runtime_emitter::evaluate_scheduled_on;
+use gandr_runtime_emitter::evaluate_with_host;
+use gandr_runtime_net::Net;
+use gandr_surface_corpus::Bits;
+use gandr_surface_corpus::Channel;
+use gandr_surface_corpus::PastQuota;
+use gandr_surface_corpus::Performer;
+use gandr_surface_corpus::RunSpelling;
+use gandr_surface_corpus::Runner;
+use gandr_surface_corpus::TracedRun;
+use gandr_surface_corpus::Undistributed;
+use gandr_surface_dispatcher::Captured;
+use gandr_surface_dispatcher::DeclaredRun;
+use gandr_surface_dispatcher::Entered;
+use gandr_surface_dispatcher::Entry;
+use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::Hosted;
+use gandr_surface_dispatcher::MigrationCount;
+use gandr_surface_dispatcher::Opacity;
+use gandr_surface_dispatcher::Parts;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Program;
+use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::SealedRun;
+use gandr_surface_dispatcher::Slot;
+use gandr_surface_dispatcher::Streams;
+use gandr_surface_dispatcher::Terminal;
+use gandr_surface_dispatcher::Unfinished;
+use gandr_surface_dispatcher::Unrunnable;
+use gandr_surface_dispatcher::ValueSpelling;
+use gandr_surface_dispatcher::Worlds;
+use gandr_surface_dispatcher::concurrent;
+use gandr_surface_dispatcher::hole_site;
+use gandr_surface_dispatcher::references;
+use gandr_surface_lowering::ChannelName;
+use gandr_surface_pretty::CoreNode;
+use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Name;
+use gandr_surface_pretty::Style;
+use gandr_surface_pretty::present_computation_line;
+use gandr_surface_pretty::web_spelled;
+use quenchant_shape::shape::Maybe;
+
+/// How a declaration reads when no item of the module's item program is it:
+/// no `reads` payload writes this.
+const NO_ITEM: &str = "no footprint: no item stands at this position";
+
+mod console;
+mod entry;
+mod hole;
+mod net;
+mod rand;
+mod reals;
+mod worlds;
+
+pub use reals::RealsAdapter;
+
+quenchant_shape::reason_enum! {
+    /// Why a walk over a run found nothing the machine cannot carry.
+    mod carried {
+        /// Everything the walk reached is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Every declaration or value the walk reached the machine
+            /// carries as it is.
+            Carried,
+        }
+    }
+}
+
+/// The engine a run takes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Engine
+{
+    /// Code the emitter copies and patches, where the host has a patcher.
+    Native,
+    /// The portable executor dispatching the same stencils.
+    Executor,
+}
+
+impl Engine
+{
+    /// The emitter's tier the engine runs on.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source of values, functions, thunks, a text and
+    ///   applications runs on each engine as the policy runs it.
+    /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
+    const fn tier(self) -> Tier
+    {
+        match self {
+            Self::Native => Tier::Native,
+            Self::Executor => Tier::Executor,
+        }
+    }
+}
+
+/// What hosts the operations a run offers, and whether it records its
+/// channels.
+///
+/// # Specification
+/// trivial.
+enum Hosting<'run>
+{
+    /// Nothing: an offered operation stops the run.
+    Bare,
+    /// A console each `Console.print` writes its line to before the run
+    /// resumes.
+    Printing(Streams<'run>),
+    /// As [`Self::Printing`], each channel's play appended to the trace.
+    Traced(Streams<'run>, &'run mut Trace),
+    /// As [`Self::Printing`], each `Rand.draw` answered from the exact
+    /// model's path, and the ready tasks switched in the order given.
+    Drawing(Streams<'run>, &'run mut rand::Draws, TaskOrder),
+}
+
+impl Hosting<'_>
+{
+    /// The inputs of a run over `store` as this hosting asks, the console a
+    /// hosted run's host writes to, none for a bare run, and the exact
+    /// model's path with the task order when the run takes its draws from
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn inputs<'run>(
+        &'run mut self,
+        store: &'run mut Store,
+    ) -> (
+        RunInputs<'run, 'run>,
+        Option<Streams<'run>>,
+        Option<(&'run mut rand::Draws, TaskOrder)>,
+    )
+    {
+        match *self {
+            Self::Bare => (RunInputs::new(store), None, None),
+            Self::Printing(ref mut console) => {
+                (RunInputs::new(store), Some(console.reborrow()), None)
+            },
+            Self::Traced(ref mut console, ref mut trace) => (
+                RunInputs::new(store).traced(trace),
+                Some(console.reborrow()),
+                None,
+            ),
+            Self::Drawing(ref mut console, ref mut draws, order) => (
+                RunInputs::new(store),
+                Some(console.reborrow()),
+                Some((&mut **draws, order)),
+            ),
+        }
+    }
+}
+
+/// Which declaration a run may start from.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Start
+{
+    /// A declaration the checker accepted: one it refused stops the run
+    /// wherever it is reached.
+    Accepted,
+    /// The declaration at the root, though the checker refused it: its body
+    /// and its references to itself run, and any other refused declaration
+    /// stops the run.
+    Refused,
+}
+
+/// What a run starting from a declaration computes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reach
+{
+    /// The declaration's value, forced when it is a suspension.
+    Value,
+    /// The causal web the dialogue the declaration holds decomposes to:
+    /// `decompose` applied to it.
+    Web,
+}
+
+/// A run of a program: the parts of it a run reads, borrowed from it, the
+/// arena the run mints its commands into among them.
+///
+/// # Specification
+/// - executable: none — a data type; each run states its own contract.
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Machine<'run, 'source>(Parts<'run, 'source>);
+
+impl<'run, 'source> Machine<'run, 'source>
+{
+    /// The machine that runs `program`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn new(program: &'run mut Program<'source>) -> Self
+    {
+        Self(program.parts())
+    }
+}
+
+impl<'run, 'source> Deref for Machine<'run, 'source>
+{
+    type Target = Parts<'run, 'source>;
+
+    /// The parts the machine runs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn deref(&self) -> &Self::Target
+    {
+        &self.0
+    }
+}
+
+impl DerefMut for Machine<'_, '_>
+{
+    /// The parts the machine runs, the arena to mint into among them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target
+    {
+        &mut self.0
+    }
+}
+
+impl<'source> Machine<'_, 'source>
+{
+    /// Run the declaration at `constant`, read its terminal back and spell it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: [`Unrunnable`] when the position holds no declaration, or the
+    ///   declaration or one it refers to, transitively, was refused or did not
+    ///   focus, decided before any command runs. Otherwise the declaration runs
+    ///   on the tier the emitter's policy picks — emitted native code by
+    ///   default where the host has a patcher, the portable executor elsewhere
+    ///   — and its value is returned, forced when it is a thunk; a terminal
+    ///   that is, or holds outside any suspension, a declaration owed its body,
+    ///   and a run stuck observing one, is [`Evaluation::Blamed`] on it; any
+    ///   other stuck run is [`Evaluation::Stuck`]; a run the tier declines, a
+    ///   terminal with no core reading or one the printer cannot lay out is
+    ///   [`Evaluation::Unfinished`]; otherwise the terminal is read back and
+    ///   spelled as the grammar writes it: an integer in decimal, a text quoted
+    ///   with its escapes, `*{}`, a tuple as `*{a, b}`, an injection as `+{.i =
+    ///   v}`, a constructor by its name, a thunk as `thunk { … }` and a
+    ///   function as its `fun`; a read-back terminal that mentions a member its
+    ///   module's signature hides is instead [`Evaluation::Sealed`] at that
+    ///   module with the declared type of the declaration run, or
+    ///   [`Unfinished::Unspelled`] when that type has no layout.
+    /// - provides: the run stage every caller shares, so one declaration has
+    ///   one outcome and one spelling wherever it is run.
+    /// - fails: never; every failure is an outcome. A refused entry command
+    ///   also produces `Unrunnable`; its attempted focusing may already have
+    ///   appended command-arena nodes.
+    /// - panics: none.
+    /// - intension: each run is bounded by a jump budget; the reference walk,
+    ///   the readback and the spelling are recursion-free, their pending work
+    ///   explicit stacks.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one source per outcome class the fragment can write
+    ///   and per spelling arm it can reach, each run asserted at its exact
+    ///   evaluation; a goal met directly, through a force and through an
+    ///   application; a refused and a code reference reached directly and
+    ///   through another declaration. Exhaustion and every core spelling
+    ///   constructor are not generated by the source cases; structured
+    ///   terminals have separate core-to-store and spelling witnesses.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+    /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
+    /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
+    /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body's reachability walk marks every declaration; the check scans the declarations once for the reported name; #104 owns the cost of the clause"
+        )
+    )]
+    #[spec(
+        captures: [declarations = self.declarations.len(), definitions = self.definitions.len(),
+            watermark = self.arena.watermark(), blocked = self.root_unrunnable(constant)],
+        ensures: |ref ret| self.declarations.len() == declarations && self.definitions.len() == definitions
+            && match blocked {
+                Maybe::Present(reason) => matches!(*ret, Evaluation::Unrunnable(actual) if actual == reason)
+                    && self.arena.watermark() == watermark,
+                Maybe::Absent(carried::Absent::Carried) => true,
+            }
+            && match *ret {
+                Evaluation::Unrunnable(Unrunnable::Data(name)) => self.declarations.values().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
+                Evaluation::Blamed(name) => self.declarations.values().any(|declared|
+                    declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Owed))),
+                Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !self.declarations.contains_key(&index),
+                Evaluation::Unrunnable(Unrunnable::Refused(name)) => self.declarations.values().any(|declared|
+                    declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused) | Slot::Refused(_))),
+                Evaluation::Unrunnable(Unrunnable::Unfocused { declaration, .. }) =>
+                    self.declarations.values().any(|declared| declared.name == declaration),
+                Evaluation::Unrunnable(Unrunnable::UnboundWorld(_)) => false,
+                Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(&index)
+                    .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
+                Evaluation::Sealed(ref sealed) => (self.hidden.values().any(|module| module == sealed.module())
+                        || self.kept.get(&constant) == Some(sealed.module()))
+                    && self.sealed.get(&(constant, self.spelling)).is_some_and(|declared| declared == sealed.declared()),
+                Evaluation::Holed { hole, at } => self.holes.get(&hole).is_some_and(|site| *site == at)
+                    || (matches!(at, Maybe::Absent(hole_site::Absent::Unwritten)) && !self.holes.contains_key(&hole)),
+                Evaluation::Value(_) | Evaluation::Stuck(_)
+                    | Evaluation::Unfinished(Unfinished::Declined(_) | Unfinished::Readback(_) | Unfinished::Unspelled) => true,
+            }
+    )]
+    #[inline]
+    pub fn evaluate(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(constant, returned, forced, Choice::Policy, Hosting::Bare)
+            .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run the declaration at `constant` as [`Self::evaluate`] does, each line
+    /// it prints handed to `console`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate`] gives, but a `Console.print` the run
+    ///   performs and no handler of its own claims writes its line to
+    ///   `console`, in order, and resumes with the unit, where
+    ///   [`Self::evaluate`] leaves the run stuck at it.
+    /// - provides: `gandr run`'s run of a source's target, and a `runs`
+    ///   expectation's run under a capturing console.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    /// - executable: none — the run's clauses are [`Self::evaluate`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration printing a line runs to its value with
+    ///   the line captured, and its `runs` expectation states both.
+    /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
+    #[inline]
+    pub fn evaluate_printing(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut Streams<'_>,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(
+            constant,
+            returned,
+            forced,
+            Choice::Policy,
+            Hosting::Printing(console.reborrow()),
+        )
+        .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run the declaration at `constant` as [`Self::evaluate_printing`] does,
+    /// on the concurrent schedule: each independent writer the program's
+    /// definitions hold starts as a job of `pool`, and each read waits for it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate_printing`] gives. A writer performs
+    ///   nothing, so the schedule reorders no line `console` captures. A
+    ///   program that keeps no schedule runs as [`Self::evaluate_printing`]
+    ///   runs it.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: a writer's panic, where its read or its scope ends.
+    /// - executable: none — the agreement is observed by running both
+    ///   schedules.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the tree sum composed on the concurrent schedule
+    ///   answers its sequential sum at four threads and at one, and every
+    ///   corpus `runs` item settles as it settles sequentially.
+    /// - witness: `evaluate::tests::a_tree_sum_composed_concurrently_answers_as_the_sequential_schedule_2954`
+    fn evaluate_printing_scheduled(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut Captured,
+        pool: &Pool,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        let mut store = Store::new();
+        let ran = match *self.scheduled {
+            Maybe::Present(ref scheduled) => {
+                self.terminal_on((pool, scheduled), (returned, forced), (&mut store, console))
+            },
+            Maybe::Absent(concurrent::Absent::Unmarked | concurrent::Absent::Refused) => self
+                .terminal(
+                    (returned, forced),
+                    Choice::Policy,
+                    (&mut store, Hosting::Printing(Streams::Captured(console))),
+                ),
+        };
+        match ran {
+            Ok(Ok(terminal)) => self.finish(constant, &store, terminal),
+            Ok(Err(evaluation)) => evaluation,
+            Err(declined) => Evaluation::Unfinished(Unfinished::Declined(declined)),
+        }
+    }
+
+    /// Run the declaration at `constant` as [`Self::evaluate_printing`] does,
+    /// each channel the run forks recorded into `trace`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate_printing`] gives; `trace` gains one
+    ///   play per fork the run took, in the order taken.
+    /// - provides: a `traces` expectation's run, whose plays
+    ///   [`Program::channel`](gandr_surface_dispatcher::Program::channel)
+    ///   names.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    /// - executable: none — the run's clauses are [`Self::evaluate`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the seat exchange's channel plays the series its text
+    ///   orders, and the sessions corpus settles every stated channel.
+    /// - witness: `evaluate::tests::a_traced_run_names_each_channel_by_its_fork_3338`
+    #[inline]
+    pub fn evaluate_traced(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut Streams<'_>,
+        trace: &mut Trace,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(
+            constant,
+            returned,
+            forced,
+            Choice::Policy,
+            Hosting::Traced(console.reborrow(), trace),
+        )
+        .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run the declaration at `constant` though the checker refused it, read
+    /// its terminal back and spell it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate`] gives, but for a declaration the
+    ///   checker refused whose lowered body focused: that body runs as an
+    ///   accepted one would, its references to itself included, and any other
+    ///   refused declaration it reaches is [`Unrunnable::Refused`], decided
+    ///   before any command runs.
+    /// - provides: the run a `runs` beside a `refuses` compares, so a refusal's
+    ///   witness can also state what the refused program does.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    /// - executable: none — the walk's clauses are [`Self::unrunnable`]'s and
+    ///   the run's [`Self::evaluate`]'s; agreeing with them is the witnesses'.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused declaration runs to its value, one reaching
+    ///   another refused declaration stays unrunnable, and the strict run of
+    ///   the same declaration still refuses it.
+    /// - witness: `evaluate::tests::a_refused_declaration_runs_only_as_its_own_root`
+    #[inline]
+    pub fn evaluate_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Refused, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(constant, returned, forced, Choice::Policy, Hosting::Bare)
+            .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run `decompose` over the dialogue the declaration at `constant`
+    /// holds, read the web back and spell it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate`] gives for a declaration applying
+    ///   `decompose` to the one at `constant`: the web's spelling, or the
+    ///   outcome that stops the run short of one, a declaration whose value is
+    ///   no dialogue included.
+    /// - provides: the run a `decomposes` expectation compares.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    /// - executable: none — the run's clauses are [`Self::evaluate`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus's series-parallel dialogue and the one
+    ///   leaving a prime node settle only when this spells the webs `decompose`
+    ///   returns for them.
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::the_fixture_root_settles_every_fixture`
+    #[inline]
+    pub fn evaluate_decomposed(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Web) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(constant, returned, forced, Choice::Policy, Hosting::Bare)
+            .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run the declaration at `constant` on `engine` alone, declining rather
+    /// than spelling a decline as unfinished.
+    ///
+    /// # Specification
+    /// - ensures: the [`Evaluation::Unrunnable`] outcomes [`Self::evaluate`]
+    ///   gives, before any engine runs; an engine that answers gives the
+    ///   evaluation [`Self::evaluate`] gives on it.
+    /// - provides: the engines apart, so a differential holds native code to
+    ///   the executor and counts what either declines.
+    /// - panics: none.
+    /// - executable: none — agreeing across engines is the differential's to
+    ///   show; a postcondition would run every evaluation twice.
+    ///
+    /// # Errors
+    /// [`Declined`] naming why the engine did not answer: a form the lowering
+    /// refuses, an exhausted budget or region.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — one source of values, functions, thunks, a text and
+    ///   applications runs on every engine, and native code answers as the
+    ///   executor does.
+    /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
+    #[inline]
+    pub fn evaluate_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+    ) -> Result<Evaluation<'source>, Declined>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return Ok(evaluation),
+        };
+        self.tiered(
+            constant,
+            returned,
+            forced,
+            Choice::Tier(engine.tier()),
+            Hosting::Bare,
+        )
+    }
+
+    /// Run the declaration at `constant` on `engine` alone, as
+    /// [`Self::evaluate_on`] does, each line it prints handed to `console`.
+    ///
+    /// # Specification
+    /// - ensures: what [`Self::evaluate_on`] gives, but a `Console.print` the
+    ///   run performs writes its line to `console` and resumes with the unit,
+    ///   as under [`Self::evaluate_printing`].
+    /// - provides: the engines apart under a console, so a differential holds
+    ///   each to a `runs` expectation that states printed lines.
+    /// - panics: none.
+    /// - executable: none — as [`Self::evaluate_on`].
+    ///
+    /// # Errors
+    /// As [`Self::evaluate_on`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration printing two lines runs on the executor
+    ///   as under [`Self::evaluate_printing`].
+    /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
+    #[inline]
+    pub fn evaluate_printing_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+        console: &mut Streams<'_>,
+    ) -> Result<Evaluation<'source>, Declined>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return Ok(evaluation),
+        };
+        self.tiered(
+            constant,
+            returned,
+            forced,
+            Choice::Tier(engine.tier()),
+            Hosting::Printing(console.reborrow()),
+        )
+    }
+
+    /// Run the declaration at `constant` on `engine` alone, as
+    /// [`Self::evaluate_on`] does, and read its terminal value back into
+    /// `into` instead of spelling it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the [`Evaluation::Unrunnable`] [`Self::evaluate_on`] gives
+    ///   before any engine runs, and the evaluation a run that blames or sticks
+    ///   ends with, as [`Terminal::Ended`]; otherwise the run's terminal value,
+    ///   forced when it is a suspension, read back as a computation of `into`,
+    ///   or [`Unfinished::Readback`] when it does not read back. A run reaching
+    ///   a member its module's signature hides is read back like any other.
+    /// - provides: the run as a core term, so a differential holds it to
+    ///   another evaluator's normal form node for node.
+    /// - panics: none.
+    /// - executable: none — the read-back term is the clause, and holding it to
+    ///   the normaliser is the differential's.
+    ///
+    /// # Errors
+    /// [`Declined`], as [`Self::evaluate_on`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every `runs` item of the corpus reads back on the
+    ///   executor to the normaliser's answer.
+    /// - witness: `gandr-surface-dispatcher::tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    #[inline]
+    pub fn read_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+        into: &mut CoreArena,
+    ) -> Result<Terminal<'source>, Declined>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return Ok(Terminal::Ended(evaluation)),
+        };
+        let mut store = Store::new();
+        Ok(
+            match self.terminal(
+                (returned, forced),
+                Choice::Tier(engine.tier()),
+                (&mut store, Hosting::Bare),
+            )? {
+                Ok(terminal) => self.read_back(&store, terminal, into),
+                Err(evaluation) => Terminal::Ended(evaluation),
+            },
+        )
+    }
+
+    /// Call the definition at `constant` on `arguments`, values its caller
+    /// built in `into`, under `host`, and read the answer back into `into`.
+    ///
+    /// # Specification
+    /// - requires: each of `arguments` is a closed value of `into`.
+    /// - ensures: the [`Evaluation::Unrunnable`] [`Self::evaluate`] gives, as
+    ///   [`Terminal::Ended`], before any command is added. Otherwise the
+    ///   definition is forced and applied to `arguments`, the first applied
+    ///   first as a surface call applies its own, and run under the process's
+    ///   policy, each operation no handler of the run claims offered to `host`:
+    ///   a reply continues the run at the operation, and a decline leaves it
+    ///   stuck there. The terminal value is read back as the computation
+    ///   returning it into `into`, a suspension answered as itself. A run that
+    ///   blames or sticks, and a terminal that does not read back, end as
+    ///   [`Self::read_on`] ends them.
+    /// - provides: the boundary's two calls: a Rust caller holding a composed
+    ///   program runs one of its definitions on values of its own, and answers
+    ///   the operations the run performs that no handler of the program does,
+    ///   an extern block's among them.
+    /// - fails: the abort `host` ends the run with.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The host's abort.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition of one parameter answers the double of a
+    ///   positive, a negative and a zero integer; one of two parameters answers
+    ///   each order of its arguments apart, the first applied first; one
+    ///   answering a function answers it unforced; a refused definition ends
+    ///   unrunnable before a run; an extern block's operation is answered by
+    ///   the host, and sticks the run where the host declines it.
+    /// - witness: `gandr-surface-dispatcher::tests::boundary::a_definition_answers_the_integer_rust_passes`
+    /// - witness: `gandr-surface-dispatcher::tests::boundary::the_arguments_apply_in_the_order_passed`
+    /// - witness: `gandr-surface-dispatcher::tests::boundary::a_function_answered_is_not_forced`
+    /// - witness: `gandr-surface-dispatcher::tests::boundary::an_unrunnable_definition_ends_before_a_run`
+    /// - witness: `gandr-surface-dispatcher::tests::boundary::an_extern_operation_is_answered_by_the_rust_caller`
+    /// - witness: `gandr-surface-dispatcher::tests::boundary::an_extern_operation_no_host_answers_sticks_the_run`
+    #[spec(
+        captures: [watermark = self.arena.watermark(), blocked = self.root_unrunnable(constant)],
+        ensures: |ref ret| match blocked {
+            Maybe::Present(reason) => self.arena.watermark() == watermark
+                && matches!(*ret, Ok(Terminal::Ended(Evaluation::Unrunnable(actual))) if actual == reason),
+            Maybe::Absent(carried::Absent::Carried) => true,
+        },
+    )]
+    #[inline]
+    pub fn call<Host>(
+        &mut self,
+        constant: ConstantIndex,
+        arguments: &[ValueId],
+        into: &mut CoreArena,
+        host: &mut Host,
+    ) -> Result<Terminal<'source>, Host::Abort>
+    where
+        Host: HostHandler,
+    {
+        if let Maybe::Present(unrunnable) = self.unrunnable(constant, Start::Accepted) {
+            return Ok(Terminal::Ended(Evaluation::Unrunnable(unrunnable)));
+        }
+        let command = match self.rooted(constant, arguments, into) {
+            Ok(command) => command,
+            Err(evaluation) => return Ok(Terminal::Ended(evaluation)),
+        };
+        let mut store = Store::new();
+        Ok(match self.hosted(command, &mut store, host)? {
+            Ok(terminal) => self.read_back(&store, terminal, into),
+            Err(evaluation) => Terminal::Ended(evaluation),
+        })
+    }
+
+    /// The root a run of the definition at `constant` starts from, for
+    /// [`Self::call`] and [`Self::enter`] alike: the definition forced and
+    /// applied to `arguments`, values of `into`, the first applied first, and
+    /// focused into the program's command arena.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The [`Evaluation::Unrunnable`] naming `constant` when the root did not
+    /// focus.
+    fn rooted(
+        &mut self,
+        constant: ConstantIndex,
+        arguments: &[ValueId],
+        into: &mut CoreArena,
+    ) -> Result<CommandId, Evaluation<'source>>
+    {
+        let value = into.value_constant(constant);
+        let forced = into.computation_force(value);
+        let root = arguments.iter().fold(forced, |applied, &argument| {
+            into.computation_application(applied, argument)
+        });
+        let mut provenance = Provenance::new();
+        focus_computation(
+            into,
+            root,
+            self.arena,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .map_err(|refusal| Evaluation::Unrunnable(self.unfocused(constant, refusal)))
+    }
+
+    /// Run `command` into `store` under the process's policy, each operation
+    /// no handler of the run claims offered to `host`: the terminal value, or
+    /// the evaluation the run ends with when the machine declines it, or when
+    /// it halts on an opaque constant or sticks.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The abort `host` ends the run with.
+    fn hosted<Host>(
+        &self,
+        command: CommandId,
+        store: &mut Store,
+        host: &mut Host,
+    ) -> Result<Result<HeapValueId, Evaluation<'source>>, Host::Abort>
+    where
+        Host: HostHandler,
+    {
+        match evaluate_with_host(
+            self.arena,
+            self.definitions,
+            command,
+            (budget::bound(), RunInputs::new(store)),
+            host,
+        ) {
+            Ok(HostOutcome::Completed(outcome)) => Ok(self.halted(store, outcome)),
+            Ok(HostOutcome::Aborted(abort)) => Err(abort),
+            Err(declined) => Ok(Err(Evaluation::Unfinished(Unfinished::Declined(declined)))),
+        }
+    }
+
+    /// The two commands that run the declaration at `constant` to `reach`,
+    /// started as `start` allows: the one returning it and the one forcing
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The [`Evaluation::Unrunnable`] that blocks the run.
+    fn prepare(
+        &mut self,
+        constant: ConstantIndex,
+        start: Start,
+        reach: Reach,
+    ) -> Result<(CommandId, CommandId), Evaluation<'source>>
+    {
+        if let Maybe::Present(unrunnable) = self.unrunnable(constant, start) {
+            return Err(Evaluation::Unrunnable(unrunnable));
+        }
+        self.entries(constant, reach)
+            .map_err(|refusal| Evaluation::Unrunnable(self.unfocused(constant, refusal)))
+    }
+
+    /// What the declaration at `constant` is when a root running it did not
+    /// focus: unfocused under its name, or undeclared when no name stands at
+    /// the position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unfocused(
+        &self,
+        constant: ConstantIndex,
+        refusal: FocusRefusal,
+    ) -> Unrunnable<'source>
+    {
+        self.declarations
+            .get(&constant)
+            .map_or(Unrunnable::Undeclared(constant), |declared| {
+                Unrunnable::Unfocused {
+                    declaration: declared.name,
+                    refusal,
+                }
+            })
+    }
+
+    /// The terminal `terminal` of `store` read back into `into`, or the
+    /// refusal of its read-back as the evaluation that ends the run.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_back(
+        &self,
+        store: &Store,
+        terminal: HeapValueId,
+        into: &mut CoreArena,
+    ) -> Terminal<'source>
+    {
+        match read_back_terminal(self.arena, store, terminal, into) {
+            Ok(read) => Terminal::Read(read),
+            Err(refusal) => Terminal::Ended(Evaluation::Unfinished(Unfinished::Readback(refusal))),
+        }
+    }
+
+    /// Run the declaration at `constant` once for each sequence of answers
+    /// to its draws, depth first, its ready tasks switched in `order`, and
+    /// hand each outcome to `path` as [`Runner::run_distributed`] does.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Undistributed::PastQuota`] at the first run whose draws pass
+    /// `quota`, and [`Undistributed::Unanswered`] at the first run with a
+    /// declined draw, naming what performs it.
+    fn distributed_in(
+        &mut self,
+        constant: ConstantIndex,
+        (quota, order): (Bits, TaskOrder),
+        path: &mut impl FnMut(RunSpelling, Bits),
+    ) -> Result<(), Undistributed>
+    {
+        let mut captured = Captured::default();
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => {
+                path(printed(&captured, &evaluation), Bits::default());
+                return Ok(());
+            },
+        };
+        let mut draws = rand::Draws::new(quota);
+        loop {
+            captured.clear();
+            let evaluation = self
+                .tiered(
+                    constant,
+                    returned,
+                    forced,
+                    Choice::Policy,
+                    Hosting::Drawing(Streams::Captured(&mut captured), &mut draws, order),
+                )
+                .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)));
+            if let Some(drawn) = draws.past() {
+                return Err(Undistributed::PastQuota(PastQuota { drawn }));
+            }
+            if let Some(declined) = draws.declined() {
+                return Err(Undistributed::Unanswered {
+                    performer: self.performer(&evaluation),
+                    cause: declined.to_string(),
+                });
+            }
+            path(printed(&captured, &evaluation), draws.bits());
+            match draws.advance() {
+                rand::Advanced::Next => {},
+                rand::Advanced::Done => return Ok(()),
+            }
+        }
+    }
+
+    /// What performs the draw that a run ending as `evaluation` was declined
+    /// at: the world of a migration that answered nothing, the task whose
+    /// fork's child holds the stuck operation, the innermost when forks
+    /// nest, or else the run itself.
+    ///
+    /// # Specification
+    /// trivial.
+    fn performer(
+        &self,
+        evaluation: &Evaluation<'_>,
+    ) -> Performer
+    {
+        match *evaluation {
+            Evaluation::Unfinished(Unfinished::Declined(Declined::Migration(at, _))) => {
+                match self.arena.command(at) {
+                    Some(&CommandNode::World {
+                        form:
+                            WorldForm::Migrate {
+                                world: World::Declared(world),
+                                ..
+                            },
+                        ..
+                    }) => self
+                        .printed
+                        .get(usize::from(world))
+                        .map_or(Performer::Run, |name| Performer::World(name.clone())),
+                    Some(_) | None => Performer::Run,
+                }
+            },
+            Evaluation::Stuck(Stuck::PerformNoHandler(at)) => {
+                let mut innermost: Option<(usize, &ChannelName)> = None;
+                let mut seen = BTreeSet::new();
+                let mut order = Vec::new();
+                for (&fork, name) in self.channels {
+                    let Some(&CommandNode::Session {
+                        action: SessionAction::Fork { child, .. },
+                        ..
+                    }) = self.arena.command(fork)
+                    else {
+                        continue;
+                    };
+                    seen.clear();
+                    order.clear();
+                    if reach(
+                        self.arena,
+                        &[NodeAddress::Command(child)],
+                        &mut seen,
+                        &mut order,
+                    )
+                    .is_err()
+                        || !seen.contains(&NodeAddress::Command(at))
+                    {
+                        continue;
+                    }
+                    if innermost.is_none_or(|(held, _)| order.len() < held) {
+                        innermost = Some((order.len(), name));
+                    }
+                }
+                innermost.map_or(Performer::Run, |(_, name)| {
+                    Performer::Task(String::from(name.as_ref()))
+                })
+            },
+            Evaluation::Value(_)
+            | Evaluation::Sealed(_)
+            | Evaluation::Blamed(_)
+            | Evaluation::Holed { .. }
+            | Evaluation::Stuck(_)
+            | Evaluation::Unfinished(_)
+            | Evaluation::Unrunnable(_) => Performer::Run,
+        }
+    }
+
+    /// Run the commands on a tier the choice names, forcing a suspended
+    /// answer, and spell the terminal; or blame the opaque constant a run
+    /// observed or answers outside any suspension.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The tier's [`Declined`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — values, a text, functions, thunks and applications
+    ///   each run to their pinned spelling.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    fn tiered(
+        &self,
+        constant: ConstantIndex,
+        returned: CommandId,
+        forced: CommandId,
+        choice: Choice,
+        hosting: Hosting<'_>,
+    ) -> Result<Evaluation<'source>, Declined>
+    {
+        let mut store = Store::new();
+        Ok(
+            match self.terminal((returned, forced), choice, (&mut store, hosting))? {
+                Ok(terminal) => self.finish(constant, &store, terminal),
+                Err(evaluation) => evaluation,
+            },
+        )
+    }
+
+    /// Run the commands on a tier the choice names into `store`, forcing a
+    /// suspended answer: the terminal value, or the evaluation that ends the
+    /// run first, blaming the opaque constant it observed or answers outside
+    /// any suspension. Hosted by a console, each `Console.print` the run
+    /// offers writes its line there and resumes; bare, it stops the run. A
+    /// traced run records both commands' channels.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The tier's [`Declined`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::tiered`], and a terminal read back as a
+    ///   core term is the normaliser's answer.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `gandr-surface-dispatcher::tests::differential::a_transport_along_an_inline_equivalence_normalises_1677`
+    ///
+    /// # Cost
+    /// - allocation: the step budget's bound, read once, setup
+    /// - allocation: the run's store, frames and host replies, growth within
+    ///   the program's run
+    fn terminal(
+        &self,
+        (returned, forced): (CommandId, CommandId),
+        choice: Choice,
+        (store, mut hosting): (&mut Store, Hosting<'_>),
+    ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
+    {
+        let budget = budget::bound();
+        let run = |root, store: &mut Store| {
+            let (inputs, console, draws) = hosting.inputs(store);
+            let Some(console) = console
+            else {
+                return match choice {
+                    Choice::Policy => gandr_runtime_emitter::evaluate(
+                        self.arena,
+                        self.definitions,
+                        root,
+                        budget,
+                        inputs,
+                    ),
+                    Choice::Tier(tier) => {
+                        evaluate_on(tier, self.arena, self.definitions, root, budget, inputs)
+                    },
+                };
+            };
+            let mut host = match draws {
+                Some((draws, order)) => console::PrintingHost::drawing(console, draws, order),
+                None => console::PrintingHost::new(console),
+            };
+            let hosted = match choice {
+                Choice::Policy => evaluate_with_host(
+                    self.arena,
+                    self.definitions,
+                    root,
+                    (budget, inputs),
+                    &mut host,
+                ),
+                Choice::Tier(tier) => evaluate_on_with_host(
+                    tier,
+                    (self.arena, self.definitions, root),
+                    (budget, inputs),
+                    &mut host,
+                ),
+            }?;
+            Ok(match hosted {
+                HostOutcome::Completed(outcome) => outcome,
+                HostOutcome::Aborted(never) => match never {},
+            })
+        };
+        self.forced((returned, forced), store, run)
+    }
+
+    /// [`Self::terminal`] on the concurrent schedule, the policy's tier asked
+    /// for: each root runs over `scheduled` with its independent writers
+    /// started as jobs of `pool`, and each `Console.print` it offers is
+    /// written to `console`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The tier's [`Declined`].
+    ///
+    /// # Cost
+    /// - allocation: the step budget's bound, read once, setup
+    /// - allocation: the run's store, frames, jobs and host replies, growth
+    ///   within the program's run
+    fn terminal_on(
+        &self,
+        (pool, scheduled): (&Pool, &Definitions),
+        roots: (CommandId, CommandId),
+        (store, console): (&mut Store, &mut Captured),
+    ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
+    {
+        let budget = budget::bound();
+        let mut host = console::PrintingHost::new(Streams::Captured(console));
+        self.forced(
+            roots,
+            store,
+            |root, store: &mut Store| match evaluate_scheduled_on(
+                pool,
+                Choice::Policy,
+                (self.arena, scheduled, root),
+                (budget, store),
+                &mut host,
+            )? {
+                HostOutcome::Completed(outcome) => Ok(outcome),
+                HostOutcome::Aborted(never) => match never {},
+            },
+        )
+    }
+
+    /// Run `returned` into `store` with `run`, then `forced` when it answers
+    /// a suspension: the terminal value, or the evaluation that ends the run
+    /// first, blaming the opaque constant it observed or answers outside any
+    /// suspension.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The run's [`Declined`].
+    fn forced<Run>(
+        &self,
+        (returned, forced): (CommandId, CommandId),
+        store: &mut Store,
+        mut run: Run,
+    ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
+    where
+        Run: FnMut(CommandId, &mut Store) -> Result<Outcome, Declined>,
+    {
+        let outcome = run(returned, store)?;
+        let terminal = match self.halted(store, outcome) {
+            Ok(terminal) => terminal,
+            Err(evaluation) => return Ok(Err(evaluation)),
+        };
+        Ok(match store.value(terminal) {
+            Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
+                let outcome = run(forced, store)?;
+                self.halted(store, outcome)
+            },
+            Some(
+                &(HeapValue::Literal(_)
+                | HeapValue::Code(_)
+                | HeapValue::Constructed { .. }
+                | HeapValue::Stack { .. }
+                | HeapValue::Closure { .. }
+                | HeapValue::Opaque(_)
+                | HeapValue::Capability
+                | HeapValue::Free { .. }
+                | HeapValue::Accumulated { .. }),
+            )
+            | None => Ok(terminal),
+        })
+    }
+
+    /// Read the terminal `terminal` of `store` back and spell it, or name the
+    /// module whose seal keeps the declaration's type, or whose signature the
+    /// terminal reaches past.
+    ///
+    /// # Specification
+    /// trivial.
+    fn finish(
+        &self,
+        constant: ConstantIndex,
+        store: &Store,
+        terminal: HeapValueId,
+    ) -> Evaluation<'source>
+    {
+        let opaque = |module: &String| {
+            self.sealed
+                .get(&(constant, self.spelling))
+                .map_or(Evaluation::Unfinished(Unfinished::Unspelled), |declared| {
+                    Evaluation::Sealed(SealedRun::new(module.clone(), declared.clone()))
+                })
+        };
+        if let Some(module) = self.kept.get(&constant) {
+            return opaque(module);
+        }
+        let mut core = CoreArena::new();
+        match read_back_terminal(self.arena, store, terminal, &mut core) {
+            Ok(read) => match self.hidden_in(&mut core, read) {
+                Maybe::Present(module) => opaque(module),
+                Maybe::Absent(carried::Absent::Carried) => self
+                    .spell(&core, read)
+                    .map_or_else(Evaluation::Unfinished, Evaluation::Value),
+            },
+            Err(refusal) => Evaluation::Unfinished(Unfinished::Readback(refusal)),
+        }
+    }
+
+    /// The module whose signature hides the first hidden member the read-back
+    /// terminal `read` mentions, outside its types.
+    ///
+    /// # Specification
+    /// - requires: `read` was read back into `core`.
+    /// - ensures: the path of the module hiding the first constant, in the
+    ///   reference walk's order, that a module's signature hides; carried when
+    ///   the terminal mentions none, or when no module hides a member, without
+    ///   walking the terminal.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one reference walk over the terminal, wrapped in a thunk
+    ///   appended to the scratch arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function whose body applies a member its module's
+    ///   signature hides, and runs naming only exported members of a sealed
+    ///   module.
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    #[spec(ensures: |ret| !self.hidden.is_empty() || matches!(ret, Maybe::Absent(carried::Absent::Carried)))]
+    fn hidden_in(
+        &self,
+        core: &mut CoreArena,
+        read: ComputationId,
+    ) -> Maybe<&String, carried::Absent>
+    {
+        if self.hidden.is_empty() {
+            return Maybe::Absent(carried::Absent::Carried);
+        }
+        let terminal = core.value_thunk(read);
+        references(core, terminal)
+            .into_iter()
+            .find_map(|constant| self.hidden.get(&constant))
+            .map_or(Maybe::Absent(carried::Absent::Carried), Maybe::Present)
+    }
+
+    /// The reason the declaration at `constant` never runs as the root of an
+    /// accepted run, read off its own slot before any reference is followed:
+    /// [`Self::unrunnable`]'s answer whenever the root alone decides it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn root_unrunnable(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<Unrunnable<'source>, carried::Absent>
+    {
+        match self.declarations.get(&constant) {
+            None => Maybe::Present(Unrunnable::Undeclared(constant)),
+            Some(&DeclaredRun {
+                name,
+                slot: Slot::Opaque(Opacity::Data),
+            }) => Maybe::Present(Unrunnable::Data(name)),
+            Some(&DeclaredRun {
+                name,
+                slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_),
+            }) => Maybe::Present(Unrunnable::Refused(name)),
+            Some(&DeclaredRun {
+                name,
+                slot: Slot::Opaque(Opacity::Unfocused(refusal)),
+            }) => Maybe::Present(Unrunnable::Unfocused {
+                declaration: name,
+                refusal,
+            }),
+            Some(&DeclaredRun {
+                slot: Slot::Defined(_) | Slot::Opaque(Opacity::Owed),
+                ..
+            }) => Maybe::Absent(carried::Absent::Carried),
+        }
+    }
+
+    /// The first declaration reachable from `constant` through references
+    /// that the machine cannot carry, as the reason it never runs, the run
+    /// started as `start` allows.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `constant` itself when it did not focus, else the first
+    ///   reached absent, refused or code declaration, with its exact identity;
+    ///   an owed declaration, and a referenced one whose body did not focus, is
+    ///   carried. A checker-refused declaration whose body focused is carried
+    ///   only as the root of a [`Start::Refused`] run, each reference back to
+    ///   it included. Absence means the reachable reference graph contains no
+    ///   such obstacle.
+    /// - fails: an undeclared reference reports its own index, not the run
+    ///   target.
+    /// - panics: none.
+    /// - intension: each declared position is expanded at most once, including
+    ///   when references repeat or form a cycle.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — direct and transitive refusal and code references are
+    ///   blocked, while owed references and the laws of an equivalence reach
+    ///   the machine; cycles are not built by these admitted source fixtures.
+    /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `evaluate::tests::a_body_that_did_not_focus_is_carried_until_reached`
+    /// - witness: `evaluate::tests::a_refused_declaration_runs_only_as_its_own_root`
+    /// - witness: `evaluate::tests::a_run_reaching_a_static_code_is_blocked_by_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body marks each declaration its walk reaches; the check scans the declarations once for the reported name; #104 owns the cost of the clause"
+        )
+    )]
+    #[spec(ensures: |ret| {
+        let root = match self.declarations.get(&constant) {
+            None => ret == Maybe::Present(Unrunnable::Undeclared(constant)),
+            Some(&DeclaredRun {name,slot:Slot::Opaque(Opacity::Data)}) => ret == Maybe::Present(Unrunnable::Data(name)),
+            Some(&DeclaredRun { name, slot: Slot::Opaque(Opacity::Refused) }) => ret == Maybe::Present(Unrunnable::Refused(name)),
+            Some(&DeclaredRun { name, slot: Slot::Refused(_) }) => start == Start::Refused || ret == Maybe::Present(Unrunnable::Refused(name)),
+            Some(&DeclaredRun { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
+                ret == Maybe::Present(Unrunnable::Unfocused { declaration: name, refusal }),
+            Some(&DeclaredRun { slot: Slot::Opaque(Opacity::Owed), .. }) => matches!(ret, Maybe::Absent(carried::Absent::Carried)),
+            Some(&DeclaredRun { slot: Slot::Defined(_), .. }) => true,
+        };
+        root && match ret {
+            Maybe::Present(Unrunnable::Data(name)) => self.declarations.values().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
+            Maybe::Present(Unrunnable::Undeclared(index)) => !self.declarations.contains_key(&index),
+            Maybe::Present(Unrunnable::Refused(name)) => self.declarations.values().any(|declared|
+                declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused) | Slot::Refused(_))),
+            Maybe::Present(Unrunnable::Unfocused { declaration, refusal }) => self.declarations.values().any(|declared|
+                declared.name == declaration && matches!(declared.slot, Slot::Opaque(Opacity::Unfocused(actual)) if actual == refusal)),
+            Maybe::Present(Unrunnable::UnboundWorld(_)) => false,
+            Maybe::Absent(carried::Absent::Carried) => true,
+        }
+    })]
+    fn unrunnable(
+        &self,
+        constant: ConstantIndex,
+        start: Start,
+    ) -> Maybe<Unrunnable<'source>, carried::Absent>
+    {
+        let mut seen = BTreeSet::new();
+        let mut pending = Vec::from([constant]);
+        while let Some(reached) = pending.pop() {
+            let Some(declared) = self.declarations.get(&reached)
+            else {
+                return Maybe::Present(Unrunnable::Undeclared(reached));
+            };
+            if !seen.insert(reached) {
+                continue;
+            }
+            match declared.slot {
+                Slot::Opaque(Opacity::Data) => {
+                    return Maybe::Present(Unrunnable::Data(declared.name));
+                },
+                Slot::Defined(ref referred) => pending.extend(referred.iter().copied()),
+                Slot::Refused(ref referred) => {
+                    if reached != constant || start == Start::Accepted {
+                        return Maybe::Present(Unrunnable::Refused(declared.name));
+                    }
+                    pending.extend(referred.iter().copied());
+                },
+                Slot::Opaque(Opacity::Owed) => {},
+                Slot::Opaque(Opacity::Refused) => {
+                    return Maybe::Present(Unrunnable::Refused(declared.name));
+                },
+                // A body outside the command IL is carried opaque until a run
+                // reaches it; a code is a type, a value of which no run holds.
+                Slot::Opaque(Opacity::Unfocused(refusal)) => {
+                    if reached == constant || matches!(refusal, FocusRefusal::Code(_)) {
+                        return Maybe::Present(Unrunnable::Unfocused {
+                            declaration: declared.name,
+                            refusal,
+                        });
+                    }
+                },
+            }
+        }
+        Maybe::Absent(carried::Absent::Carried)
+    }
+
+    /// The two commands a run of `constant` to `reach` needs: for its value,
+    /// `return c`, and `force c` for a constant whose value is a thunk; for
+    /// its web, `decompose(c)` for both, a web being no thunk.
+    ///
+    /// # Specification
+    /// - requires: nothing; the constant need not have a definition yet.
+    /// - ensures: success returns allocated commands for the same constant in
+    ///   this program's arena: distinct return and force commands, in that
+    ///   order, for its value, and one decompose command twice for its web.
+    /// - fails: preserves the focusing refusal; nodes already appended are not
+    ///   rolled back when a later allocation fails.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ordinary value runs through the return entry and a
+    ///   thunk through both entries; allocation exhaustion is not forced.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    #[spec(ensures: |ret| match ret {
+        Ok((returned, forced)) => (returned != forced) == (reach == Reach::Value)
+            && self.arena.command(returned).is_some()
+            && self.arena.command(forced).is_some(),
+        Err(_) => true,
+    })]
+    /// # Errors
+    /// The [`FocusRefusal`] of a command arena that refused a node.
+    fn entries(
+        &mut self,
+        constant: ConstantIndex,
+        reach: Reach,
+    ) -> Result<(CommandId, CommandId), FocusRefusal>
+    {
+        let mut core = CoreArena::new();
+        let value = core.value_constant(constant);
+        let mut provenance = Provenance::new();
+        match reach {
+            Reach::Value => {
+                let returned = core.computation_return(value);
+                let forced = core.computation_force(value);
+                Ok((
+                    focus_computation(
+                        &core,
+                        returned,
+                        self.arena,
+                        &mut provenance,
+                        &gandr_core_sequent::Writers::NONE,
+                    )?,
+                    focus_computation(
+                        &core,
+                        forced,
+                        self.arena,
+                        &mut provenance,
+                        &gandr_core_sequent::Writers::NONE,
+                    )?,
+                ))
+            },
+            Reach::Web => {
+                let decomposed = core.computation_decompose(value);
+                let web = focus_computation(
+                    &core,
+                    decomposed,
+                    self.arena,
+                    &mut provenance,
+                    &gandr_core_sequent::Writers::NONE,
+                )?;
+                Ok((web, web))
+            },
+        }
+    }
+
+    /// The value `outcome` halted with, or the evaluation it ends the run
+    /// with: blame on a declaration owed its body met at the terminal or by an
+    /// observation, and the stuck state otherwise.
+    ///
+    /// # Specification
+    /// - requires: `outcome` was moved into `store` by a run; a halted id
+    ///   resolves there.
+    /// - ensures: success returns the identical halted id, never an immediately
+    ///   opaque value. A run stuck at the perform focusing leaves for a hole is
+    ///   [`Evaluation::Holed`] with that hole and its site; any other stuck
+    ///   result retains its precise stuck reason; opacity reached outside
+    ///   suspension is instead classified by declaration standing.
+    /// - fails: returns blame, unrunnability or inconsistency for an opaque
+    ///   declaration, the reached hole, or the unchanged stuck outcome; it
+    ///   never spells a value.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — direct, forced and applied goals preserve blame,
+    ///   while a constructed terminal selects its first opaque field and an
+    ///   unforced suspension does not expose its goal; other stuck reasons are
+    ///   not separately generated by these source and core fixtures.
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
+    /// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
+    #[spec(
+        requires: match outcome { Outcome::Halted(value) => store.value(value).is_some(), Outcome::Stuck(_) => true },
+        captures: [halted = match outcome { Outcome::Halted(value) => Some(value), Outcome::Stuck(_) => None },
+            stuck = match outcome { Outcome::Stuck(ref reason) => Some(core::mem::discriminant(reason)), Outcome::Halted(_) => None },
+            unhandled = matches!(outcome, Outcome::Stuck(Stuck::PerformNoHandler(_)))],
+        ensures: |ref ret| match *ret {
+            Ok(value) => halted == Some(value)
+                && !matches!(store.value(value), Some(&HeapValue::Opaque(_))),
+            Err(Evaluation::Stuck(ref actual)) => stuck == Some(core::mem::discriminant(actual)),
+            Err(Evaluation::Holed { .. }) => unhandled,
+            Err(Evaluation::Value(_) | Evaluation::Sealed(_)) => false,
+            Err(Evaluation::Blamed(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_)) => true,
+        }
+    )]
+    /// # Errors
+    /// The evaluation a run ends with when it halted on, or stuck at, an
+    /// opaque constant, or stuck otherwise.
+    fn halted(
+        &self,
+        store: &Store,
+        outcome: Outcome,
+    ) -> Result<HeapValueId, Evaluation<'source>>
+    {
+        match outcome {
+            Outcome::Halted(value) => match Self::opaque_within(store, value) {
+                Maybe::Present(constant) => Err(self.met(constant)),
+                Maybe::Absent(carried::Absent::Carried) => Ok(value),
+            },
+            Outcome::Stuck(Stuck::PerformNoHandler(at))
+                if let Maybe::Present(hole) = hole::reached(self.arena, at) =>
+            {
+                Err(Evaluation::Holed {
+                    hole,
+                    at: self
+                        .holes
+                        .get(&hole)
+                        .copied()
+                        .unwrap_or(Maybe::Absent(hole_site::Absent::Unwritten)),
+                })
+            },
+            Outcome::Stuck(stuck) => {
+                let observed = match stuck {
+                    Stuck::Unobservable { value, .. }
+                    | Stuck::ResumedNonStack { value, .. }
+                    | Stuck::Unmatched { value, .. }
+                    | Stuck::NonScalar(value) => store.value(value),
+                    Stuck::PerformNoHandler(_)
+                    | Stuck::ShiftNoReset(_)
+                    | Stuck::Primitive(_)
+                    | Stuck::UndefinedConstant(_)
+                    | Stuck::CyclicConstant(_)
+                    | Stuck::Unended(_)
+                    | Stuck::Outside(_)
+                    | Stuck::Deadlock(_)
+                    | Stuck::Cancelled(_) => None,
+                };
+                match observed {
+                    Some(&HeapValue::Opaque(constant)) => Err(self.met(constant)),
+                    Some(
+                        &(HeapValue::Literal(_)
+                        | HeapValue::Code(_)
+                        | HeapValue::Constructed { .. }
+                        | HeapValue::Stack { .. }
+                        | HeapValue::Thunk { .. }
+                        | HeapValue::Fixpoint { .. }
+                        | HeapValue::Closure { .. }
+                        | HeapValue::Capability
+                        | HeapValue::Free { .. }
+                        | HeapValue::Accumulated { .. }),
+                    )
+                    | None => Err(Evaluation::Stuck(stuck)),
+                }
+            },
+        }
+    }
+
+    /// The first opaque constant `value` holds outside any suspension.
+    ///
+    /// # Specification
+    /// - requires: the reachable constructed-value graph is finite and acyclic.
+    ///   A missing id is permitted and ignored.
+    /// - ensures: the first opaque field in left-to-right depth-first order is
+    ///   returned; literals, missing values and suspensions contribute none. A
+    ///   thunk or closure is never entered merely to look for blame.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested fields distinguish field order from admission
+    ///   order; a goal underneath an unforced thunk remains unobserved.
+    /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    #[spec(ensures: |ret| match store.value(value) {
+        Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
+        Some(&HeapValue::Constructed { .. }) => true,
+        Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Code(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. } | HeapValue::Capability | HeapValue::Free { .. } | HeapValue::Accumulated { .. })) | None =>
+            matches!(ret, Maybe::Absent(carried::Absent::Carried)),
+    })]
+    fn opaque_within(
+        store: &Store,
+        value: HeapValueId,
+    ) -> Maybe<ConstantIndex, carried::Absent>
+    {
+        let mut pending = Vec::from([value]);
+        while let Some(id) = pending.pop() {
+            match store.value(id) {
+                Some(&HeapValue::Opaque(constant)) => return Maybe::Present(constant),
+                Some(&HeapValue::Constructed { ref fields, .. }) => {
+                    pending.extend(fields.iter().rev().copied());
+                },
+                Some(
+                    &(HeapValue::Stack { .. }
+                    | HeapValue::Literal(_)
+                    | HeapValue::Code(_)
+                    | HeapValue::Thunk { .. }
+                    | HeapValue::Fixpoint { .. }
+                    | HeapValue::Closure { .. }
+                    | HeapValue::Capability
+                    | HeapValue::Free { .. }
+                    | HeapValue::Accumulated { .. }),
+                )
+                | None => {},
+            }
+        }
+        Maybe::Absent(carried::Absent::Carried)
+    }
+
+    /// The evaluation of a run that met the opaque constant `constant`.
+    ///
+    /// # Specification
+    /// - requires: nothing; missing and even defined positions are classified.
+    /// - ensures: owed positions blame their name, refused and unfocused ones —
+    ///   a checker-refused one whose body focused included — remain unrunnable
+    ///   with their identity, a defined position is inconsistent, and an absent
+    ///   position reports that exact undeclared index.
+    /// - fails: every classification is an evaluation, never a panic.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real composed declarations exercise every standing,
+    ///   including the inconsistent defined and out-of-range boundaries.
+    /// - witness: `evaluate::tests::terminal_classification_preserves_declaration_identity`
+    #[spec(ensures: |ref ret| match self.declarations.get(&constant) {
+        Some(&DeclaredRun {name,slot:Slot::Opaque(Opacity::Data)}) => matches!(*ret,Evaluation::Unrunnable(Unrunnable::Data(actual)) if actual == name),
+        Some(&DeclaredRun { name, slot: Slot::Opaque(Opacity::Owed) }) => matches!(*ret, Evaluation::Blamed(actual) if actual == name),
+        Some(&DeclaredRun { name, slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_) }) => matches!(*ret, Evaluation::Unrunnable(Unrunnable::Refused(actual)) if actual == name),
+        Some(&DeclaredRun { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) => matches!(*ret,
+            Evaluation::Unrunnable(Unrunnable::Unfocused { declaration, refusal: actual }) if declaration == name && actual == refusal),
+        Some(&DeclaredRun { slot: Slot::Defined(_), .. }) => matches!(*ret, Evaluation::Unfinished(Unfinished::Inconsistent(actual)) if actual == constant),
+        None => matches!(*ret, Evaluation::Unrunnable(Unrunnable::Undeclared(actual)) if actual == constant),
+    })]
+    fn met(
+        &self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        match self.declarations.get(&constant) {
+            Some(&DeclaredRun {
+                name,
+                slot: Slot::Opaque(Opacity::Data),
+            }) => Evaluation::Unrunnable(Unrunnable::Data(name)),
+            Some(&DeclaredRun {
+                name,
+                slot: Slot::Opaque(Opacity::Owed),
+            }) => Evaluation::Blamed(name),
+            Some(&DeclaredRun {
+                name,
+                slot: Slot::Opaque(Opacity::Refused) | Slot::Refused(_),
+            }) => Evaluation::Unrunnable(Unrunnable::Refused(name)),
+            Some(&DeclaredRun {
+                name,
+                slot: Slot::Opaque(Opacity::Unfocused(refusal)),
+            }) => Evaluation::Unrunnable(Unrunnable::Unfocused {
+                declaration: name,
+                refusal,
+            }),
+            Some(&DeclaredRun {
+                slot: Slot::Defined(_),
+                ..
+            }) => Evaluation::Unfinished(Unfinished::Inconsistent(constant)),
+            None => Evaluation::Unrunnable(Unrunnable::Undeclared(constant)),
+        }
+    }
+
+    /// The spelling of the terminal `read`, read back into `core`, through
+    /// the printer every face shares.
+    ///
+    /// # Specification
+    /// - requires: nothing; a malformed core graph is admissible.
+    /// - ensures: the terminal presented as the computation it is, in the
+    ///   sugared form and the program's spelling on one line without a break
+    ///   search: a returned value as the value, a function as its `fun`,
+    ///   constants by their paths from the top level and constructors by their
+    ///   names, every former as the grammar writes it and `?` where the printer
+    ///   cannot spell a node; the unspelled-layout absence where the printer
+    ///   cannot write it.
+    /// - provides: the one value spelling `gandr run`, the session and a `runs`
+    ///   expectation share, the same printer a hover answers with.
+    /// - fails: [`Unfinished::Unspelled`] when the presentation reaches a build
+    ///   ceiling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — source values cover integers, text, unit, functions,
+    ///   thunks, constructors, tuples and injections at their exact spellings;
+    ///   the corpus `runs` expectations pin every value the corpus runs to.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(ref spelled) => !AsRef::<str>::as_ref(spelled).is_empty(),
+        Err(ref unfinished) => *unfinished == Unfinished::Unspelled,
+    })]
+    fn spell(
+        &self,
+        core: &CoreArena,
+        read: ComputationId,
+    ) -> Result<ValueSpelling, Unfinished>
+    {
+        let names: Vec<Name<'_>> = self
+            .printed
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let constructors = self.families.naming();
+        let source = CoreSource::new(core, &names).naming(&constructors);
+        present_computation_line(&source, CoreNode::Computation(read), Style {
+            form: Form::Sugared,
+            spelling: self.spelling,
+        })
+        .map(ValueSpelling::new)
+        .map_err(|_refusal| Unfinished::Unspelled)
+    }
+}
+
+impl Runner for Machine<'_, '_>
+{
+    /// Spells the outcome of running the declaration at `constant` under a
+    /// capturing console: each line it printed, each followed by a newline,
+    /// then the outcome, as `gandr run` writes them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        let mut captured = Captured::default();
+        let evaluation = self.evaluate_printing(constant, &mut Streams::Captured(&mut captured));
+        printed(&captured, &evaluation)
+    }
+
+    /// Spells the outcome as [`Self::run`] does, and each channel the run
+    /// forked whose fork the source names, with the web its play decomposes
+    /// to, as `gandr run` spells a web.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the captured text, the trace and each channel's name and
+    ///   web, diagnostic
+    #[inline]
+    fn run_traced(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> TracedRun
+    {
+        let mut captured = Captured::default();
+        let mut trace = Trace::default();
+        let evaluation =
+            self.evaluate_traced(constant, &mut Streams::Captured(&mut captured), &mut trace);
+        let channels = trace
+            .plays
+            .iter()
+            .filter_map(|play| {
+                self.channels.get(&play.fork).map(|name| Channel {
+                    name: String::from(name.as_ref()),
+                    web: RunSpelling::from(play.web().decompose().map_or_else(
+                        // A play's moves are one linearization of its web,
+                        // which is therefore never cyclic.
+                        |refusal| format!("no web: {refusal:?}"),
+                        |pieces| web_spelled(&pieces),
+                    )),
+                })
+            })
+            .collect();
+        TracedRun {
+            run: printed(&captured, &evaluation),
+            channels,
+        }
+    }
+
+    /// Spells the outcome of running the declaration at `constant` though
+    /// the checker refused it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        RunSpelling::from(self.evaluate_refused(constant).to_string())
+    }
+
+    /// Spells the web the dialogue the declaration at `constant` holds
+    /// decomposes to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn decompose(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        RunSpelling::from(self.evaluate_decomposed(constant).to_string())
+    }
+
+    /// Spells the items the declaration at `constant` mentions, as the
+    /// footprint its content table carries names them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self.reads
+            .get(&constant)
+            .cloned()
+            .unwrap_or_else(|| RunSpelling::from(String::from(NO_ITEM)))
+    }
+
+    /// Runs the declaration at `constant` once for each sequence of answers
+    /// to its draws, depth first, and spells each outcome as [`Self::run`]
+    /// does. The two entry commands are focused once, and one console and one
+    /// path serve every run, so the program's arena does not grow with the
+    /// paths. A declaration that cannot run is one path of no bits, its
+    /// outcome the reason. Ready tasks take their turns oldest first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Undistributed`] at the first run whose draws pass `quota`, or whose
+    /// draw the exact model declines.
+    #[inline]
+    fn run_distributed(
+        &mut self,
+        constant: ConstantIndex,
+        quota: Bits,
+        path: &mut impl FnMut(RunSpelling, Bits),
+    ) -> Result<(), Undistributed>
+    {
+        self.distributed_in(constant, (quota, TaskOrder::Oldest), path)
+    }
+}
+
+/// A program whose `runs` take the concurrent schedule on a pool: what
+/// settles a composition scheduled concurrently. Every other run a
+/// settlement makes is the program's own, sequential.
+#[derive(Debug)]
+pub struct ScheduledRuns<'program, 'source, 'pool>
+{
+    /// The program run.
+    program: Machine<'program, 'source>,
+    /// The pool each independent writer starts on.
+    pool: &'pool Pool,
+}
+
+impl<'program, 'source, 'pool> ScheduledRuns<'program, 'source, 'pool>
+{
+    /// The runs of `program` on `pool`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn new(
+        program: Machine<'program, 'source>,
+        pool: &'pool Pool,
+    ) -> Self
+    {
+        Self { program, pool }
+    }
+}
+
+impl Runner for ScheduledRuns<'_, '_, '_>
+{
+    /// Spells the outcome as [`Program`]'s run does, its writers started on
+    /// the pool.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        let mut captured = Captured::default();
+        let evaluation =
+            self.program
+                .evaluate_printing_scheduled(constant, &mut captured, self.pool);
+        printed(&captured, &evaluation)
+    }
+
+    /// As [`Program`]'s traced run: a traced run records its channels in
+    /// the order its forks take them, so it stays sequential.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_traced(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> TracedRun
+    {
+        self.program.run_traced(constant)
+    }
+
+    /// As [`Program`]'s run of a refused declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self.program.run_refused(constant)
+    }
+
+    /// As [`Program`]'s decomposition.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn decompose(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self.program.decompose(constant)
+    }
+
+    /// As [`Program`]'s footprint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reads(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self.program.reads(constant)
+    }
+
+    /// As [`Program`]'s distributed run: the paths run in order on one
+    /// path state, so they stay sequential.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Undistributed`] as [`Program`]'s.
+    #[inline]
+    fn run_distributed(
+        &mut self,
+        constant: ConstantIndex,
+        quota: Bits,
+        path: &mut impl FnMut(RunSpelling, Bits),
+    ) -> Result<(), Undistributed>
+    {
+        self.program.run_distributed(constant, quota, path)
+    }
+}
+
+/// The runs of a program, as a caller above the dispatcher calls them: each
+/// is the run of a [`Machine`] over the program.
+///
+/// # Specification
+/// - executable: none — each run is the machine's, which states its contract.
+pub trait Runs<'source>
+{
+    /// As [`Machine::evaluate`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::evaluate`] gives for a machine over `self`.
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::evaluate`].
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    fn evaluate(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>;
+
+    /// As [`Machine::evaluate_printing`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::evaluate_printing`] gives for a machine over
+    ///   `self`.
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::evaluate_printing`].
+    /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
+    fn evaluate_printing(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut Streams<'_>,
+    ) -> Evaluation<'source>;
+
+    /// As [`Machine::evaluate_traced`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::evaluate_traced`] gives for a machine over
+    ///   `self`.
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::evaluate_traced`].
+    /// - witness: `evaluate::tests::a_traced_run_names_each_channel_by_its_fork_3338`
+    fn evaluate_traced(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut Streams<'_>,
+        trace: &mut Trace,
+    ) -> Evaluation<'source>;
+
+    /// As [`Machine::evaluate_refused`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::evaluate_refused`] gives for a machine over
+    ///   `self`.
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::evaluate_refused`].
+    /// - witness: `evaluate::tests::a_refused_declaration_runs_only_as_its_own_root`
+    fn evaluate_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>;
+
+    /// As [`Machine::evaluate_decomposed`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::evaluate_decomposed`] gives for a machine
+    ///   over `self`.
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::evaluate_decomposed`].
+    /// - witness: `gandr-surface-dispatcher::tests::corpus::sweeps::the_fixture_root_settles_every_fixture`
+    fn evaluate_decomposed(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>;
+
+    /// As [`Machine::evaluate_on`].
+    ///
+    /// # Errors
+    /// As [`Machine::evaluate_on`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::evaluate_on`] gives for a machine over
+    ///   `self`.
+    /// - fails: as [`Machine::evaluate_on`].
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::evaluate_on`].
+    /// - witness: `evaluate::tests::every_engine_spells_a_run_alike`
+    fn evaluate_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+    ) -> Result<Evaluation<'source>, Declined>;
+
+    /// As [`Machine::evaluate_printing_on`].
+    ///
+    /// # Errors
+    /// As [`Machine::evaluate_printing_on`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::evaluate_printing_on`] gives for a machine
+    ///   over `self`.
+    /// - fails: as [`Machine::evaluate_printing_on`].
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::evaluate_printing_on`].
+    /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
+    fn evaluate_printing_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+        console: &mut Streams<'_>,
+    ) -> Result<Evaluation<'source>, Declined>;
+
+    /// As [`Machine::read_on`].
+    ///
+    /// # Errors
+    /// As [`Machine::read_on`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::read_on`] gives for a machine over `self`.
+    /// - fails: as [`Machine::read_on`].
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::read_on`].
+    /// - witness: `gandr-surface-dispatcher::tests::differential::sweeps::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
+    fn read_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+        into: &mut CoreArena,
+    ) -> Result<Terminal<'source>, Declined>;
+
+    /// As [`Machine::call`].
+    ///
+    /// # Errors
+    /// As [`Machine::call`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::call`] gives for a machine over `self`.
+    /// - fails: as [`Machine::call`].
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::call`].
+    /// - witness: `gandr-surface-dispatcher::tests::boundary::a_definition_answers_the_integer_rust_passes`
+    fn call<Host>(
+        &mut self,
+        constant: ConstantIndex,
+        arguments: &[ValueId],
+        into: &mut CoreArena,
+        host: &mut Host,
+    ) -> Result<Terminal<'source>, Host::Abort>
+    where
+        Host: HostHandler;
+
+    /// As [`Machine::enter`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::enter`] gives for a machine over `self`.
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::enter`].
+    /// - witness: `evaluate::entry::tests::an_entry_runs_to_its_exit_status_1881`
+    fn enter(
+        &mut self,
+        entry: Entry,
+        arguments: &[String],
+        console: &mut Streams<'_>,
+        hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
+    ) -> Entered<'source>;
+
+    /// As [`Machine::host`].
+    ///
+    /// # Specification
+    /// - ensures: what [`Machine::host`] gives for a machine over `self`.
+    /// - panics: none.
+    /// - executable: none — a required trait method has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Machine::host`].
+    /// - witness: `gandr-surface-dispatcher::tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
+    fn host(
+        &mut self,
+        worlds: Worlds<'_>,
+        net: &mut Net,
+        hosting: (MigrationCount, RealsProfile),
+        console: &mut Streams<'_>,
+    ) -> Hosted;
+}
+
+impl<'source> Runs<'source> for Program<'source>
+{
+    /// A machine over `self` runs the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn evaluate(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        Machine::new(self).evaluate(constant)
+    }
+
+    /// A machine over `self` runs the declaration on `console`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn evaluate_printing(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut Streams<'_>,
+    ) -> Evaluation<'source>
+    {
+        Machine::new(self).evaluate_printing(constant, console)
+    }
+
+    /// A machine over `self` runs the declaration and traces its plays.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn evaluate_traced(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut Streams<'_>,
+        trace: &mut Trace,
+    ) -> Evaluation<'source>
+    {
+        Machine::new(self).evaluate_traced(constant, console, trace)
+    }
+
+    /// A machine over `self` runs the refused declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn evaluate_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        Machine::new(self).evaluate_refused(constant)
+    }
+
+    /// A machine over `self` runs the declaration's dialogue.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn evaluate_decomposed(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        Machine::new(self).evaluate_decomposed(constant)
+    }
+
+    /// A machine over `self` runs the declaration on `engine`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn evaluate_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+    ) -> Result<Evaluation<'source>, Declined>
+    {
+        Machine::new(self).evaluate_on(constant, engine)
+    }
+
+    /// A machine over `self` runs the declaration on `engine` and `console`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn evaluate_printing_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+        console: &mut Streams<'_>,
+    ) -> Result<Evaluation<'source>, Declined>
+    {
+        Machine::new(self).evaluate_printing_on(constant, engine, console)
+    }
+
+    /// A machine over `self` reads the declaration back into `into`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn read_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+        into: &mut CoreArena,
+    ) -> Result<Terminal<'source>, Declined>
+    {
+        Machine::new(self).read_on(constant, engine, into)
+    }
+
+    /// A machine over `self` calls the function under `host`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn call<Host>(
+        &mut self,
+        constant: ConstantIndex,
+        arguments: &[ValueId],
+        into: &mut CoreArena,
+        host: &mut Host,
+    ) -> Result<Terminal<'source>, Host::Abort>
+    where
+        Host: HostHandler,
+    {
+        Machine::new(self).call(constant, arguments, into, host)
+    }
+
+    /// A machine over `self` runs `entry`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn enter(
+        &mut self,
+        entry: Entry,
+        arguments: &[String],
+        console: &mut Streams<'_>,
+        hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
+    ) -> Entered<'source>
+    {
+        Machine::new(self).enter(entry, arguments, console, hosting)
+    }
+
+    /// A machine over `self` hosts the worlds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn host(
+        &mut self,
+        worlds: Worlds<'_>,
+        net: &mut Net,
+        hosting: (MigrationCount, RealsProfile),
+        console: &mut Streams<'_>,
+    ) -> Hosted
+    {
+        Machine::new(self).host(worlds, net, hosting, console)
+    }
+}
+
+/// The run stage, as the dispatcher's composition, walk, type table and run
+/// verb take it: the engine every crate above the dispatcher names.
+///
+/// # Specification
+/// - executable: none — a marker; each run is the machine's.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Evaluator;
+
+impl gandr_surface_dispatcher::Engine for Evaluator
+{
+    /// A machine over `program`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn runs<'run>(program: &'run mut Program<'_>) -> impl Runner + 'run
+    {
+        Machine::new(program)
+    }
+
+    /// A machine over `program` whose independent writers start on `pool`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn scheduled<'run>(
+        program: &'run mut Program<'_>,
+        pool: &'run Pool,
+    ) -> impl Runner + 'run
+    {
+        ScheduledRuns::new(Machine::new(program), pool)
+    }
+
+    /// A machine over `program` runs the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn evaluate<'source>(
+        program: &mut Program<'source>,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        Machine::new(program).evaluate(constant)
+    }
+
+    /// A machine over `program` calls the function under `host`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn call<'source, Host>(
+        program: &mut Program<'source>,
+        constant: ConstantIndex,
+        arguments: &[ValueId],
+        into: &mut CoreArena,
+        host: &mut Host,
+    ) -> Result<Terminal<'source>, Host::Abort>
+    where
+        Host: HostHandler,
+    {
+        Machine::new(program).call(constant, arguments, into, host)
+    }
+
+    /// A machine over `program` runs `entry`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn enter<'source>(
+        program: &mut Program<'source>,
+        entry: Entry,
+        arguments: &[String],
+        console: &mut Streams<'_>,
+        hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
+    ) -> Entered<'source>
+    {
+        Machine::new(program).enter(entry, arguments, console, hosting)
+    }
+
+    /// A machine over `program` hosts the worlds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn host(
+        program: &mut Program<'_>,
+        worlds: Worlds<'_>,
+        net: &mut Net,
+        hosting: (MigrationCount, RealsProfile),
+        console: &mut Streams<'_>,
+    ) -> Hosted
+    {
+        Machine::new(program).host(worlds, net, hosting, console)
+    }
+}
+
+/// A run's outcome as `gandr run` writes it: each line it printed, each
+/// followed by a newline, then the evaluation.
+///
+/// # Specification
+/// trivial.
+fn printed(
+    captured: &Captured,
+    evaluation: &Evaluation<'_>,
+) -> RunSpelling
+{
+    let mut spelled = String::new();
+    for line in captured.lines() {
+        spelled.push_str(line);
+        spelled.push('\n');
+    }
+    spelled.push_str(&evaluation.to_string());
+    RunSpelling::from(spelled)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use core::convert::Infallible;
+    use core::fmt::Write as _;
+    use core::ops::ControlFlow;
+
+    use anodized::spec;
+    use gandr_core_sequent::ClosureRefusal;
+    use gandr_core_sequent::CommandArena;
+    use gandr_core_sequent::CommandId;
+    use gandr_core_sequent::Definition;
+    use gandr_core_sequent::Definitions;
+    use gandr_core_sequent::FocusRefusal;
+    use gandr_core_sequent::NodeAddress;
+    use gandr_core_sequent::Store;
+    use gandr_core_sequent::Stuck;
+    use gandr_core_sequent::convert_all;
+    use gandr_core_sequent::enter_all;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_runtime_emitter::Budget;
+    use gandr_runtime_emitter::Declined;
+    use gandr_runtime_emitter::PATCHER;
+    use gandr_runtime_emitter::TaskOrder;
+    use gandr_runtime_emitter::Tier;
+    use gandr_surface_corpus::Bits;
+    use gandr_surface_corpus::Channel;
+    use gandr_surface_corpus::CorpusRoot;
+    use gandr_surface_corpus::Outcome;
+    use gandr_surface_corpus::RunSpelling;
+    use gandr_surface_corpus::Runner as _;
+    use gandr_surface_corpus::Stated;
+    use gandr_surface_dispatcher::Composed;
+    use gandr_surface_dispatcher::LoweringCount;
+    use gandr_surface_dispatcher::Pool;
+    use gandr_surface_dispatcher::RunStatus;
+    use gandr_surface_dispatcher::Scheduling;
+    use gandr_surface_dispatcher::Step;
+    use gandr_surface_dispatcher::Threads;
+    use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::Width;
+    use gandr_surface_dispatcher::compose;
+    use gandr_surface_dispatcher::declaration_name;
+    use gandr_surface_dispatcher::fixture::Listed;
+    use gandr_surface_dispatcher::last_declared;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_pretty::Spelling;
+    use gandr_surface_syntax::SourceText;
+    use gandr_workflow_sweep::Coverage;
+    use gandr_workflow_sweep::Portion;
+    use gandr_workflow_sweep::Sample;
+    use gandr_workflow_sweep::SampleName;
+    use gandr_workflow_sweep::SampleSize;
+    use quenchant_shape::shape::Maybe;
+
+    use super::Captured;
+    use super::Choice;
+    use super::Engine;
+    use super::Evaluation;
+    use super::Hosting;
+    use super::Machine;
+    use super::Program;
+    use super::Reach;
+    use super::Runs as _;
+    use super::SealedRun;
+    use super::Start;
+    use super::Streams;
+    use super::Unfinished;
+    use super::Unrunnable;
+    use crate::Evaluator;
+
+    /// The jumps that a test's run may take: far past every program that
+    /// these tests run to its end, and the count at which each loop stops.
+    const BUDGET: usize = 1_usize << 24_u32;
+
+    /// The program `source` composes to under the fixture root.
+    ///
+    /// # Specification
+    /// - requires: a flat source fixture that composes without an engine fault
+    ///   or whole-module refusal under the fixture root.
+    /// - ensures: every declared name stands at a position the definitions
+    ///   cover.
+    /// - panics: if the grammar or composition premise fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — values, goals, refusals, later definitions of
+    ///   existing names and an empty source have independent expected outcomes
+    ///   or targets.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::the_last_declared_is_the_last_name_a_source_declares`
+    #[spec(ensures: |ref ret| ret.declarations().keys().all(|&constant| ret.definitions().get(constant).is_some()))]
+    pub(super) fn program<'source>(source: impl Into<SourceText<'source>>) -> Program<'source>
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let mut lowerings = LoweringCount::default();
+        match compose::<Evaluator>(&grammar, CorpusRoot::Fixture, source.into(), &mut lowerings) {
+            Ok(Composed::Settled { program, .. }) => program,
+            Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
+            Err(fault) => panic!("faulted: {fault}"),
+        }
+    }
+
+    /// The program `listed` composes to under the fixture root (#4520).
+    ///
+    /// # Specification
+    /// - requires: as [`program`], over the laid unit.
+    /// - ensures: as [`program`].
+    /// - panics: if the composition refuses the source as a whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Listed::new`].
+    /// - witness: `evaluate::entry::tests::the_entry_is_the_main_of_the_source_run_1881`
+    #[spec(ensures: |ref ret| ret.declarations().keys().all(|&constant| ret.definitions().get(constant).is_some()))]
+    pub(super) fn listed_program(listed: &Listed) -> Program<'_>
+    {
+        match listed.composed::<Evaluator>(CorpusRoot::Fixture) {
+            Composed::Settled { program, .. } => program,
+            Composed::Refused(refusal) => panic!("refused as a whole: {refusal}"),
+        }
+    }
+
+    /// What running the declaration named `name` of `program` comes to.
+    ///
+    /// # Specification
+    /// - requires: `program` declares `name`.
+    /// - ensures: evaluates that name without changing declaration count; an
+    ///   undeclared-reference result lies outside the program, not at another
+    ///   name.
+    /// - panics: if the named declaration is absent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — named values, direct and indirect goals and refused
+    ///   references return independent expected evaluations.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the body searches the declarations for the name once; the check searches them once; #104 owns the cost of the clause"
+        )
+    )]
+    #[spec(
+        requires: program.declarations().values().any(|declared| declared.name == name),
+        captures: [declarations = program.declarations().len()],
+        ensures: |ref ret| program.declarations().len() == declarations
+            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => !program.declarations().contains_key(&index), Evaluation::Value(_) | Evaluation::Sealed(_) | Evaluation::Blamed(_) | Evaluation::Holed { .. } | Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => true }
+    )]
+    fn run<'source>(
+        program: &mut Program<'source>,
+        name: SurfaceName<'source>,
+    ) -> Evaluation<'source>
+    {
+        let position = program
+            .declarations()
+            .iter()
+            .find(|&(_, declared)| declared.name == name)
+            .map(|(&constant, _)| constant)
+            .expect("the program declares the name");
+        program.evaluate(position)
+    }
+
+    #[test]
+    fn a_value_runs_to_its_spelling()
+    {
+        let mut values = program(include_str!(
+            "evaluate/unformatted/a-value-runs-to-its-spelling-values.gandr"
+        ));
+        for (name, spelled) in [
+            ("answer", "42"),
+            ("greeting", r#""a \"quoted\"\nline""#),
+            ("nothing", "*{}"),
+            ("copy", "42"),
+            ("identity", "fun (a) { a }"),
+            ("first", "fun (a) { fun (b) { a } }"),
+            ("applied", "42"),
+            ("chosen", "42"),
+            ("delayed", r#""later""#),
+            ("nested", "thunk { 1 }"),
+        ] {
+            let evaluation = run(&mut values, SurfaceName::from(name));
+            assert!(
+                matches!(evaluation, Evaluation::Value(_)),
+                "`{name}` runs to a value: {evaluation}"
+            );
+            assert_eq!(
+                evaluation.to_string(),
+                spelled,
+                "`{name}` is spelled as pinned"
+            );
+        }
+    }
+
+    /// A `Console.print` the run performs hands its line to the console and
+    /// resumes with the unit, in order; with no console the run is stuck at
+    /// the first (#2279).
+    #[test]
+    fn a_printed_line_reaches_the_console_2279()
+    {
+        let listed = Listed::hosted(include_str!(
+            "evaluate/unformatted/a-printed-line-reaches-the-console-2279-listed.gandr"
+        ));
+        let mut printing = listed_program(&listed);
+        let greet = printing
+            .declarations()
+            .iter()
+            .find(|&(_, declared)| declared.name == SurfaceName::from("greet"))
+            .map(|(&constant, _)| constant)
+            .expect("the program declares `greet`");
+        let mut console = Captured::default();
+        assert_eq!(
+            printing
+                .evaluate_printing(greet, &mut Streams::Captured(&mut console))
+                .to_string(),
+            "*{}",
+            "the run returns the unit"
+        );
+        assert_eq!(console.lines(), ["a", "b"], "each line, in order");
+        let mut executed = Captured::default();
+        assert_eq!(
+            printing
+                .evaluate_printing_on(
+                    greet,
+                    Engine::Executor,
+                    &mut Streams::Captured(&mut executed)
+                )
+                .map(|evaluation| evaluation.to_string()),
+            Ok(String::from("*{}")),
+            "the executor alone runs it alike"
+        );
+        assert_eq!(executed.lines(), ["a", "b"], "and prints alike");
+        assert!(
+            matches!(printing.evaluate(greet), Evaluation::Stuck(_)),
+            "with no console the perform is stuck"
+        );
+    }
+
+    /// #3338: a traced run names each channel by the binder its fork writes
+    /// at the protocol, not the parent's, and spells the web each play
+    /// decomposes to: `a`'s echo before the root's receipt, its close beside
+    /// the root's tail, and `b`'s one send before the root's tail. Tracing
+    /// leaves the run's spelling as it was.
+    #[test]
+    fn a_traced_run_names_each_channel_by_its_fork_3338()
+    {
+        let mut forking = program(include_str!(
+            "evaluate/fixtures/a-traced-run-names-each-channel-by-its-fork-3338-forking.gandr"
+        ));
+        let ping = forking
+            .declarations()
+            .iter()
+            .find(|&(_, declared)| declared.name == SurfaceName::from("ping"))
+            .map(|(&constant, _)| constant)
+            .expect("the program declares `ping`");
+        let traced = Machine::new(&mut forking).run_traced(ping);
+        assert_eq!(
+            traced.run,
+            Machine::new(&mut forking).run(ping),
+            "tracing leaves the run as it was"
+        );
+        let channel = |name: &str, web: &str| Channel {
+            name: String::from(name),
+            web: RunSpelling::from(String::from(web)),
+        };
+        assert_eq!(
+            traced.channels,
+            [
+                channel(
+                    "a",
+                    "series (event right 0) (event left 0) (event left 1) (parallel (event left \
+                     2) (series (event right 1) (event right 2)))"
+                ),
+                channel(
+                    "b",
+                    "series (event left 0) (parallel (event left 1) (series (event right 0) \
+                     (event right 1)))"
+                ),
+            ],
+            "each channel by its fork's protocol binder, in the order forked"
+        );
+    }
+
+    /// #5712: the exact model weighs the same paths, whichever ready task
+    /// takes the next turn. The coin exchange draws at the desk, forks the
+    /// seat, and the seat draws. Under each order every one of the four
+    /// paths answers alike: true exactly when the two bits agree.
+    #[test]
+    fn a_session_distributes_alike_under_each_task_order_5712()
+    {
+        let listed = Listed::hosted(include_str!(
+            "../../../corpus/model/probability/coin-exchange.gandr"
+        ));
+        let mut exchange = listed_program(&listed);
+        let exchanged = exchange
+            .declarations()
+            .iter()
+            .find(|&(_, declared)| declared.name == SurfaceName::from("exchanged"))
+            .map(|(&constant, _)| constant)
+            .expect("the program declares `exchanged`");
+        let mut paths = |order| {
+            let mut ran = Vec::new();
+            Machine::new(&mut exchange)
+                .distributed_in(exchanged, (Bits::QUOTA, order), &mut |spelled, bits| {
+                    ran.push((spelled, bits));
+                })
+                .expect("the draws stay inside the quota");
+            ran
+        };
+        let oldest = paths(TaskOrder::Oldest);
+        let agreed = "*{+{.0 = *{}}, +{.0 = *{}}}";
+        let differed = "*{+{.1 = *{}}, +{.1 = *{}}}";
+        assert_eq!(
+            oldest
+                .iter()
+                .map(|&(ref spelled, _)| spelled.as_ref())
+                .collect::<Vec<_>>(),
+            [agreed, differed, differed, agreed],
+            "each path's answer, the desk's bit first"
+        );
+        assert_eq!(
+            paths(TaskOrder::Newest),
+            oldest,
+            "the newest task first draws and answers alike"
+        );
+    }
+
+    /// #782: a value is spelled in the program's spelling, Unicode until a
+    /// face asks for another.
+    #[test]
+    fn a_value_runs_to_its_spelling_in_either_spelling_782()
+    {
+        let mut words = program(include_str!(
+            "evaluate/unformatted/a-value-runs-to-its-spelling-in-either-spelling-782-words.gandr"
+        ));
+        for (spelling, spelled) in [
+            (Spelling::Unicode, "loop ∷ Path.here Base"),
+            (Spelling::Ascii, "loop :: Path.here Base"),
+        ] {
+            words.spell_in(spelling);
+            assert_eq!(
+                run(&mut words, SurfaceName::from("once")).to_string(),
+                spelled,
+                "the word in {spelling:?}"
+            );
+        }
+    }
+
+    /// A run whose declared type holds a sealed atom no signature marks
+    /// `mobile` is opaque at the seal, alone or in a list; a marked atom's run
+    /// spells its value, and a member run inside its own seal spells its
+    /// representation (#3375).
+    #[test]
+    fn a_run_answering_an_unmarked_sealed_type_is_opaque_at_its_seal_3375()
+    {
+        let listed = Listed::new(SourceText::from(include_str!(
+            "evaluate/fixtures/a-run-answering-an-unmarked-sealed-type-is-opaque-at-its-seal-3375-listed.gandr"
+        )));
+        let mut sealed = listed_program(&listed);
+        for (path, spelled) in [
+            ("returned", "⟨opaque at Secret⟩ : () -> Secret.T"),
+            ("listed", "⟨opaque at Secret⟩ : () -> List Secret.T"),
+            ("reported", "\"progress\""),
+            ("Counter.zero", "0"),
+        ] {
+            let Maybe::Present(constant) = sealed.named(SurfaceName::from(path))
+            else {
+                panic!("the program declares `{path}`");
+            };
+            assert_eq!(
+                sealed.evaluate(constant).to_string(),
+                spelled,
+                "`{path}` is spelled as pinned"
+            );
+        }
+    }
+
+    /// Every engine spells a run as the executor does: values, a text,
+    /// functions, thunks and applications answer on native code and under
+    /// the policy with the executor's evaluation.
+    #[test]
+    fn every_engine_spells_a_run_alike()
+    {
+        let mut values = program(include_str!(
+            "evaluate/unformatted/every-engine-spells-a-run-alike-values.gandr"
+        ));
+        let declared: Vec<_> = values.declarations().keys().copied().collect();
+        for constant in declared {
+            let name = values.name(constant);
+            let expected = values
+                .evaluate_on(constant, Engine::Executor)
+                .expect("the executor answers");
+            if PATCHER {
+                let ran = values.evaluate_on(constant, Engine::Native);
+                assert_eq!(Ok(&expected), ran.as_ref(), "{name:?} on native code");
+            }
+            assert_eq!(
+                expected,
+                values.evaluate(constant),
+                "{name:?} under the policy"
+            );
+        }
+    }
+
+    #[test]
+    fn a_run_reaching_a_goal_blames_it()
+    {
+        let mut goals = program(include_str!(
+            "evaluate/fixtures/a-run-reaching-a-goal-blames-it-goals.gandr"
+        ));
+        for (name, goal) in [
+            ("later", "later"),
+            ("copy", "later"),
+            ("forced", "suspended"),
+            ("applied", "function"),
+        ] {
+            assert_eq!(
+                run(&mut goals, SurfaceName::from(name)),
+                Evaluation::Blamed(SurfaceName::from(goal)),
+                "`{name}` is blamed on the goal it reaches"
+            );
+        }
+        assert_eq!(
+            run(&mut goals, SurfaceName::from("untouched")).to_string(),
+            "3",
+            "a run that reaches no goal is not blamed for one beside it"
+        );
+        assert_eq!(
+            run(&mut goals, SurfaceName::from("kept")).to_string(),
+            "thunk { force suspended }",
+            "a goal under a suspension the run returns is not reached"
+        );
+        let rendered = run(&mut goals, SurfaceName::from("forced")).to_string();
+        assert_eq!(rendered.split('`').nth(1), Some("suspended"));
+    }
+
+    #[test]
+    fn a_reference_the_machine_cannot_carry_is_never_run()
+    {
+        let mut carried = program(include_str!(
+            "evaluate/fixtures/a-reference-the-machine-cannot-carry-is-never-run-carried.gandr"
+        ));
+        let before = carried.arena().watermark();
+        for name in ["bad", "uses"] {
+            assert_eq!(
+                run(&mut carried, SurfaceName::from(name)),
+                Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("bad"))),
+                "`{name}` reaches the refused declaration and never runs"
+            );
+        }
+        assert_eq!(
+            carried.evaluate(ConstantIndex::from(9_usize)),
+            Evaluation::Unrunnable(Unrunnable::Undeclared(ConstantIndex::from(9_usize))),
+            "a position past the program holds nothing to run"
+        );
+        assert_eq!(
+            carried.arena().watermark(),
+            before,
+            "blocked runs mint no commands"
+        );
+        assert_eq!(
+            run(&mut carried, SurfaceName::from("lost")),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("lost")))
+        );
+        assert_eq!(
+            run(&mut carried, SurfaceName::from("answer")).to_string(),
+            "42"
+        );
+    }
+
+    #[test]
+    fn a_refused_declaration_runs_only_as_its_own_root()
+    {
+        let mut refused = program(include_str!(
+            "evaluate/fixtures/a-refused-declaration-runs-only-as-its-own-root-refused.gandr"
+        ));
+        let at = |program: &Program<'_>, name: &str| {
+            program
+                .declarations()
+                .iter()
+                .find(|&(_, declared)| declared.name == SurfaceName::from(name))
+                .map(|(&constant, _)| constant)
+                .expect("the program declares the name")
+        };
+        let wrong = at(&refused, "wrong");
+        assert_eq!(
+            refused.evaluate_refused(wrong).to_string(),
+            "42",
+            "the refused body runs as its own root"
+        );
+        assert_eq!(
+            refused.evaluate(wrong),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("wrong"))),
+            "the strict run still refuses it"
+        );
+        let leans = at(&refused, "leans");
+        assert_eq!(
+            refused.evaluate_refused(leans),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("bad"))),
+            "another refused declaration it reaches stops the run"
+        );
+        let lost = at(&refused, "lost");
+        assert_eq!(
+            refused.evaluate_refused(lost),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("lost"))),
+            "a body the lowering refused has nothing to run"
+        );
+        let answer = at(&refused, "answer");
+        assert_eq!(
+            refused.evaluate_refused(answer).to_string(),
+            "42",
+            "an accepted declaration runs alike either way"
+        );
+    }
+
+    /// A code focuses and runs to the type it quotes, through any chain of
+    /// references to it, as the run of an interface operation at a type
+    /// argument needs (#452); only a body that did not focus is listed as a
+    /// refusal.
+    #[test]
+    fn a_code_and_every_reference_to_it_run_to_the_type_it_quotes()
+    {
+        let mut codes = program(include_str!(
+            "evaluate/unformatted/a-code-and-every-reference-to-it-run-to-the-type-it-quotes-codes.gandr"
+        ));
+        assert!(
+            codes
+                .focus_refusals()
+                .map(|(name, _)| name)
+                .eq([SurfaceName::from("law")]),
+            "every code focuses; the transport the machine does not lower is the one refusal"
+        );
+        for (name, spelled) in [
+            ("small", "pure Integer"),
+            ("alias", "pure Integer"),
+            ("again", "pure Integer"),
+            ("wide", "pure String"),
+        ] {
+            assert_eq!(
+                run(&mut codes, SurfaceName::from(name)).to_string(),
+                spelled,
+                "`{name}` runs to the type it quotes"
+            );
+        }
+    }
+
+    /// A declaration whose body did not focus blocks its own run and every
+    /// run that reaches it, and no run that only carries it.
+    #[test]
+    fn a_body_that_did_not_focus_is_carried_until_reached()
+    {
+        let mut laws = program(include_str!(
+            "evaluate/unformatted/a-body-that-did-not-focus-is-carried-until-reached-laws.gandr"
+        ));
+        for name in ["law", "reached"] {
+            let evaluation = run(&mut laws, SurfaceName::from(name));
+            assert!(
+                matches!(
+                    evaluation,
+                    Evaluation::Unrunnable(Unrunnable::Unfocused {
+                        declaration,
+                        refusal: FocusRefusal::ElementTransport(_, gandr_core_sequent::MotiveHead::Path),
+                    }) if declaration == SurfaceName::from("law")
+                ),
+                "`{name}` reaches the unfocused body: {evaluation}"
+            );
+        }
+        assert_eq!(
+            run(&mut laws, SurfaceName::from("kept")).to_string(),
+            "thunk { law *{thunk { fun (a) { a } }, thunk { fun (a) { a } }} }",
+            "a run that carries the unfocused body without reaching it returns"
+        );
+    }
+
+    /// A static code has no image in the machine, so a run that reaches one
+    /// through a reference is blocked by it even where the run would only
+    /// carry it, as it carries a body that did not focus for another reason.
+    #[test]
+    fn a_run_reaching_a_static_code_is_blocked_by_it()
+    {
+        let mut codes = program(include_str!(
+            "evaluate/fixtures/a-run-reaching-a-static-code-is-blocked-by-it-codes.gandr"
+        ));
+        for name in ["twice", "again", "held", "kept"] {
+            let evaluation = run(&mut codes, SurfaceName::from(name));
+            assert!(
+                matches!(
+                    evaluation,
+                    Evaluation::Unrunnable(Unrunnable::Unfocused {
+                        declaration,
+                        refusal: FocusRefusal::Code(_),
+                    }) if declaration == SurfaceName::from("twice")
+                ),
+                "`{name}` reaches the static code: {evaluation}"
+            );
+        }
+    }
+
+    /// Only a member of a module a signature coerced is hidden: beside such a
+    /// module, a run naming a declaration outside it is spelled, not sealed.
+    #[test]
+    fn a_run_naming_a_declaration_outside_every_sealed_module_is_spelled()
+    {
+        let mut beside = program(include_str!(
+            "evaluate/unformatted/a-run-naming-a-declaration-outside-every-sealed-module-is-spelled-beside.gandr"
+        ));
+        let evaluation = run(&mut beside, SurfaceName::from("wrap"));
+        assert!(
+            matches!(evaluation, Evaluation::Value(_)),
+            "`wrap` names `helper`, which no signature hides: {evaluation}"
+        );
+    }
+
+    /// A run whose value names a member its module's signature hides is
+    /// opaque at that module, reported with the declared type of the
+    /// declaration run, as the program spelled it when it was built.
+    #[test]
+    fn a_run_naming_a_hidden_member_is_opaque_at_its_module()
+    {
+        let mut hiding = program(include_str!(
+            "evaluate/fixtures/a-run-naming-a-hidden-member-is-opaque-at-its-module-hiding.gandr"
+        ));
+        assert_eq!(
+            run(&mut hiding, SurfaceName::from("z")),
+            Evaluation::Sealed(SealedRun::new(
+                String::from("Stepped"),
+                String::from("Integer -> Integer")
+            )),
+            "`z` runs to a function applying `step`, which the signature hides"
+        );
+    }
+
+    #[test]
+    fn each_outcome_class_has_its_status()
+    {
+        let mut written = program(include_str!(
+            "evaluate/fixtures/each-outcome-class-has-its-status-written.gandr"
+        ));
+        let rows = [
+            (
+                run(&mut written, SurfaceName::from("answer")),
+                RunStatus::Value,
+            ),
+            (
+                run(&mut written, SurfaceName::from("copy")),
+                RunStatus::Failed,
+            ),
+            (
+                run(&mut written, SurfaceName::from("bad")),
+                RunStatus::Unreached,
+            ),
+            (
+                Evaluation::Stuck(Stuck::UndefinedConstant(ConstantIndex::from(0_usize))),
+                RunStatus::Failed,
+            ),
+            (
+                Evaluation::Unfinished(Unfinished::Declined(Declined::Spent(Budget::from(BUDGET)))),
+                RunStatus::Failed,
+            ),
+        ];
+        for (evaluation, status) in rows {
+            assert_eq!(
+                evaluation.status(),
+                status,
+                "{evaluation} has its pinned status"
+            );
+        }
+    }
+
+    #[test]
+    fn the_last_declared_is_the_last_name_a_source_declares()
+    {
+        let several = program(r#"def a = 1 ; def b = 2 ; def c = 3 ;"#);
+        assert_eq!(
+            several.last_declared(),
+            Maybe::Present(ConstantIndex::from(2_usize)),
+            "the last of several names"
+        );
+        let redeclared = program(r#"def x : Integer ; def y = 1 ; def x = 2 ;"#);
+        assert_eq!(
+            redeclared.last_declared(),
+            Maybe::Present(ConstantIndex::from(1_usize)),
+            "a later declaration of an earlier name keeps that name's position"
+        );
+        for (position, name) in [(0_usize, "x"), (1_usize, "y")] {
+            assert_eq!(
+                redeclared.name(ConstantIndex::from(position)),
+                Maybe::Present(SurfaceName::from(name))
+            );
+        }
+        assert_eq!(
+            redeclared.name(ConstantIndex::from(usize::MAX)),
+            Maybe::Absent(declaration_name::Absent::Undeclared)
+        );
+        let none = program(r#"// nothing declared"#);
+        assert_eq!(
+            none.last_declared(),
+            Maybe::Absent(last_declared::Absent::NoDeclaration),
+            "a source of no name has no last declaration"
+        );
+        assert_eq!(
+            none.name(ConstantIndex::from(0_usize)),
+            Maybe::Absent(declaration_name::Absent::Undeclared)
+        );
+        assert!(
+            program("").declarations().is_empty(),
+            "empty input admits no declaration"
+        );
+    }
+
+    /// #2687: a module's member is found by its whole path, not by its bare
+    /// name, which names the top-level declaration of that name; a path no
+    /// declaration holds is undeclared.
+    #[test]
+    fn a_member_is_named_by_its_whole_path_2687()
+    {
+        let mut package = program(
+            r#"def name = "outer" ; module Package where { def name = "hello" ; def version = "0.1.0" ; }"#,
+        );
+        let spelled =
+            |package: &mut Program<'_>, path: &str| match package.named(SurfaceName::from(path)) {
+                Maybe::Present(constant) => Some(package.evaluate(constant).to_string()),
+                Maybe::Absent(declaration_name::Absent::Undeclared) => None,
+            };
+        assert_eq!(
+            [
+                spelled(&mut package, "Package.name"),
+                spelled(&mut package, "Package.version"),
+                spelled(&mut package, "name"),
+                spelled(&mut package, "Package.license"),
+                spelled(&mut package, "version"),
+            ],
+            [
+                Some(String::from("\"hello\"")),
+                Some(String::from("\"0.1.0\"")),
+                Some(String::from("\"outer\"")),
+                None,
+                None,
+            ],
+            "each member by its path, the top-level name by its own"
+        );
+    }
+
+    /// #2687: a path is read among the declarations given and never outside
+    /// them, as a walk's package source reads its own model when its program
+    /// also holds another package source's; a path none of them holds is
+    /// undeclared.
+    #[test]
+    fn a_path_is_named_among_the_declarations_given_2687()
+    {
+        let mut package = program(
+            r#"module Package where { def name = "hello" ; } def name = "outer" ; def version = "0.1.0" ;"#,
+        );
+        let at = |package: &Program<'_>, path: &str| match package.named(SurfaceName::from(path)) {
+            Maybe::Present(constant) => constant,
+            Maybe::Absent(declaration_name::Absent::Undeclared) => {
+                panic!("`{path}` is declared")
+            },
+        };
+        let member = at(&package, "Package.name");
+        let outer = at(&package, "name");
+        let version = at(&package, "version");
+        let spelled = |package: &mut Program<'_>, path: &str, among: &[ConstantIndex]| match package
+            .named_among(SurfaceName::from(path), among.iter().copied())
+        {
+            Maybe::Present(constant) => Some(package.evaluate(constant).to_string()),
+            Maybe::Absent(declaration_name::Absent::Undeclared) => None,
+        };
+        assert_eq!(
+            [
+                spelled(&mut package, "Package.name", &[outer, member, version]),
+                spelled(&mut package, "Package.name", &[outer, version]),
+                spelled(&mut package, "name", &[member, outer]),
+                spelled(&mut package, "version", &[]),
+            ],
+            [
+                Some(String::from("\"hello\"")),
+                None,
+                Some(String::from("\"outer\"")),
+                None,
+            ],
+            "each path among the declarations given, none outside them"
+        );
+    }
+
+    #[test]
+    fn terminal_classification_preserves_declaration_identity()
+    {
+        let mut written = program(include_str!(
+            "evaluate/unformatted/terminal-classification-preserves-declaration-identity-written.gandr"
+        ));
+        let written = Machine::new(&mut written);
+        let defined = written.met(ConstantIndex::from(0_usize));
+        assert_eq!(
+            defined,
+            Evaluation::Unfinished(Unfinished::Inconsistent(ConstantIndex::from(0_usize)))
+        );
+        assert_eq!(
+            written.met(ConstantIndex::from(1_usize)),
+            Evaluation::Blamed(SurfaceName::from("later"))
+        );
+        assert_eq!(
+            written.met(ConstantIndex::from(2_usize)),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("bad")))
+        );
+        assert!(
+            matches!(written.met(ConstantIndex::from(3_usize)), Evaluation::Unrunnable(
+            Unrunnable::Unfocused { declaration, .. }) if declaration == SurfaceName::from("law"))
+        );
+        let absent = written.met(ConstantIndex::from(99_usize));
+        assert_eq!(
+            absent,
+            Evaluation::Unrunnable(Unrunnable::Undeclared(ConstantIndex::from(99_usize)))
+        );
+        for (evaluation, expected) in [(defined, 0_usize), (absent, 99_usize)] {
+            assert!(
+                evaluation
+                    .to_string()
+                    .split(|character: char| !character.is_ascii_digit())
+                    .filter_map(|digits| digits.parse::<usize>().ok())
+                    .eq([expected])
+            );
+        }
+    }
+
+    #[test]
+    fn a_constructed_terminal_blames_its_first_opaque_field()
+    {
+        let mut goals = program("def first : Integer ; def second : Integer ;");
+        let mut core = gandr_core_term::CoreArena::new();
+        let unit = core.value_unit();
+        let first = core.value_constant(ConstantIndex::from(0_usize));
+        let second = core.value_constant(ConstantIndex::from(1_usize));
+        let nested = core.value_tuple(&[second, first]);
+        let outer = core.value_tuple(&[unit, nested]);
+        let returned = core.computation_return(outer);
+        let mut commands = gandr_core_sequent::CommandArena::default();
+        let mut provenance = gandr_core_sequent::Provenance::new();
+        let command = gandr_core_sequent::focus_computation(
+            &core,
+            returned,
+            &mut commands,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the constructed terminal focuses");
+        let mut store = Store::new();
+        let outcome = gandr_runtime_emitter::evaluate_on(
+            Tier::Executor,
+            &commands,
+            goals.definitions(),
+            command,
+            Budget::from(100_usize),
+            gandr_runtime_emitter::RunInputs::new(&mut store),
+        )
+        .expect("the constructed terminal runs");
+        assert_eq!(
+            Machine::new(&mut goals).halted(&store, outcome),
+            Err(Evaluation::Blamed(SurfaceName::from("second")))
+        );
+    }
+
+    #[test]
+    fn structured_values_keep_repeated_references_and_field_order()
+    {
+        let mut names = program("def first : Integer ; def second : Integer ;");
+        let names = Machine::new(&mut names);
+        let mut core = gandr_core_term::CoreArena::new();
+        let first = core.value_constant(ConstantIndex::from(0_usize));
+        let second = core.value_constant(ConstantIndex::from(1_usize));
+        let nested = core.value_tuple(&[second, first]);
+        let outer = core.value_tuple(&[first, nested]);
+        let mut referred = super::references(&core, outer);
+        referred.sort_unstable();
+        assert_eq!(referred.as_slice(), &[
+            ConstantIndex::from(0_usize),
+            ConstantIndex::from(0_usize),
+            ConstantIndex::from(1_usize)
+        ]);
+        let returned = core.computation_return(outer);
+        let spelled = |core: &gandr_core_term::CoreArena, returned| {
+            names
+                .spell(core, returned)
+                .map(|spelling| spelling.as_ref().to_owned())
+        };
+        assert_eq!(
+            spelled(&core, returned),
+            Ok(String::from("*{first, *{second, first}}"))
+        );
+        for (summand, expected) in [
+            (0_usize, "+{.0 = second}"),
+            (1, "+{.1 = second}"),
+            (2, "+{.2 = second}"),
+        ] {
+            let injected = core.value_injection(summand.into(), second);
+            let returned = core.computation_return(injected);
+            assert_eq!(spelled(&core, returned), Ok(String::from(expected)));
+        }
+    }
+
+    #[test]
+    fn a_skipped_admission_position_holds_no_declaration()
+    {
+        let mut program = program(include_str!(
+            "evaluate/unformatted/a-skipped-admission-position-holds-no-declaration-program.gandr"
+        ));
+        assert_eq!(
+            program
+                .declarations()
+                .keys()
+                .map(|&constant| usize::from(constant))
+                .collect::<Vec<_>>(),
+            [1_usize, 2_usize],
+            "the type member takes the first position and declares nothing there"
+        );
+        assert_eq!(
+            program.name(ConstantIndex::from(0_usize)),
+            Maybe::Absent(declaration_name::Absent::Undeclared)
+        );
+        assert_eq!(
+            program.evaluate(ConstantIndex::from(0_usize)),
+            Evaluation::Unrunnable(Unrunnable::Undeclared(ConstantIndex::from(0_usize))),
+            "the skipped position holds nothing to run"
+        );
+        assert_eq!(
+            program.last_declared(),
+            Maybe::Present(ConstantIndex::from(2_usize))
+        );
+        assert!(
+            matches!(run(&mut program, SurfaceName::from("copy")), Evaluation::Value(ref value) if value.as_ref() == "41"),
+            "a reference past the skipped position reads the declaration it names"
+        );
+    }
+
+    /// The thunk declared as `name` in [`LOOPS`] is a thunk whose force, on
+    /// `tier`, runs until its 2²⁵ jumps are spent or its regions fill the
+    /// memory bound, without filling the frame region. Each pass gives its
+    /// window back, so a pass holding a frame would fill the frames within
+    /// those jumps;
+    /// `gandr-core-sequent`'s loop suite holds the plain loop to that
+    /// contrast. A tier this host lacks holds nothing to run.
+    ///
+    /// # Specification
+    /// trivial.
+    fn holds_no_frame(
+        name: SurfaceName<'_>,
+        tier: Tier,
+    )
+    {
+        if matches!(tier, Tier::Native) && !PATCHER {
+            return;
+        }
+        let mut program = program(LOOPS);
+        let position = program
+            .declarations()
+            .iter()
+            .find(|&(_, declared)| declared.name == name)
+            .map(|(&constant, _)| constant)
+            .expect("the program declares the name");
+        let (returned, forced) = Machine::new(&mut program)
+            .entries(position, Reach::Value)
+            .expect("the declaration focuses");
+        let run = |root, jumps| {
+            gandr_runtime_emitter::evaluate_on(
+                tier,
+                program.arena(),
+                program.definitions(),
+                root,
+                Budget::from(jumps),
+                gandr_runtime_emitter::RunInputs::new(&mut Store::new()),
+            )
+        };
+        assert!(
+            matches!(run(returned, BUDGET), Ok(super::Outcome::Halted(_))),
+            "`{name}` is a thunk on {tier:?}"
+        );
+        let spent = run(forced, 1_usize << 25_u32);
+        assert!(
+            matches!(spent, Err(Declined::Spent(_) | Declined::Memory(_))),
+            "`{name}` holds no frame on {tier:?}: {spent:?}"
+        );
+    }
+
+    /// Four loops a pass of runs through: a statement, a bound statement, a
+    /// bound inner loop that breaks, and a `while` whose test always holds.
+    /// The bound statement's loop states its `Partial`, so it checks and its
+    /// call runs as the bind the elaboration rebuilds it as.
+    const LOOPS: &str = include_str!("evaluate/unformatted/loops.gandr");
+
+    // One test per loop and tier: each spends its whole fuel, so the eight
+    // runs together passed the thirty-second bound on a loaded machine
+    // (#1857).
+
+    #[test]
+    fn a_loop_runs_in_constant_continuation()
+    {
+        holds_no_frame(SurfaceName::from("spin"), Tier::Executor);
+    }
+
+    #[test]
+    fn a_loop_runs_in_constant_continuation_natively()
+    {
+        holds_no_frame(SurfaceName::from("spin"), Tier::Native);
+    }
+
+    #[test]
+    fn a_bound_loop_body_runs_in_constant_continuation()
+    {
+        holds_no_frame(SurfaceName::from("bound"), Tier::Executor);
+    }
+
+    #[test]
+    fn a_bound_loop_body_runs_in_constant_continuation_natively()
+    {
+        holds_no_frame(SurfaceName::from("bound"), Tier::Native);
+    }
+
+    #[test]
+    fn a_loop_bound_to_an_inner_break_runs_in_constant_continuation()
+    {
+        holds_no_frame(SurfaceName::from("broken"), Tier::Executor);
+    }
+
+    #[test]
+    fn a_loop_bound_to_an_inner_break_runs_in_constant_continuation_natively()
+    {
+        holds_no_frame(SurfaceName::from("broken"), Tier::Native);
+    }
+
+    #[test]
+    fn a_while_loop_runs_in_constant_continuation()
+    {
+        holds_no_frame(SurfaceName::from("tested"), Tier::Executor);
+    }
+
+    #[test]
+    fn a_while_loop_runs_in_constant_continuation_natively()
+    {
+        holds_no_frame(SurfaceName::from("tested"), Tier::Native);
+    }
+
+    /// The source of a function whose exits stand one and two matches deep
+    /// under a bound statement, and of its runs over three inputs.
+    const PICK: &str = include_str!("evaluate/unformatted/pick.gandr");
+
+    #[test]
+    fn a_nested_return_delivers_its_value_from_its_function()
+    {
+        let mut program = program(PICK);
+        for (name, delivered) in [
+            ("zero", "Zero"),
+            ("one", "Succ Zero"),
+            ("three", "Succ (Succ Zero)"),
+        ] {
+            let evaluation = run(&mut program, SurfaceName::from(name));
+            assert_eq!(
+                evaluation.to_string(),
+                delivered,
+                "`{name}` delivers what its exit returns: {evaluation:?}"
+            );
+        }
+    }
+
+    /// What the IL reachable from the definition of `name` holds: its
+    /// commands and its consumers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reached(
+        program: &Program<'_>,
+        name: SurfaceName<'_>,
+    ) -> (
+        Vec<gandr_core_sequent::CommandNode>,
+        Vec<gandr_core_sequent::ConsumerNode>,
+    )
+    {
+        use gandr_core_sequent::CommandNode;
+        use gandr_core_sequent::ConsumerNode;
+        use gandr_core_sequent::ProducerNode;
+
+        /// One node of the walk.
+        enum Node
+        {
+            /// A producer.
+            Producer(gandr_core_sequent::ProducerId),
+            /// A consumer.
+            Consumer(gandr_core_sequent::ConsumerId),
+            /// A command.
+            Command(gandr_core_sequent::CommandId),
+        }
+        let position = program
+            .declarations()
+            .iter()
+            .find(|&(_, declared)| declared.name == name)
+            .map(|(&constant, _)| constant)
+            .expect("the program declares the name");
+        let Some(gandr_core_sequent::Definition::Transparent(root)) =
+            program.definitions().get(position)
+        else {
+            panic!("`{name}` focuses to a value");
+        };
+        let (mut commands, mut consumers) = (Vec::new(), Vec::new());
+        let mut pending = vec![Node::Producer(root)];
+        while let Some(next) = pending.pop() {
+            match next {
+                Node::Producer(id) => match program.arena().producer(id) {
+                    Some(
+                        &(ProducerNode::Thunk { body }
+                        | ProducerNode::Fixpoint { body, .. }
+                        | ProducerNode::Mu { body }),
+                    ) => pending.push(Node::Command(body)),
+                    Some(&ProducerNode::Cocase { ref arms }) => {
+                        pending.extend(arms.iter().map(|arm| Node::Command(arm.body)));
+                    },
+                    Some(&ProducerNode::Constructor {
+                        ref producers,
+                        consumers: ref fields,
+                        ..
+                    }) => {
+                        pending.extend(producers.iter().copied().map(Node::Producer));
+                        pending.extend(fields.iter().copied().map(Node::Consumer));
+                    },
+                    _ => {},
+                },
+                Node::Consumer(id) => {
+                    let Some(node) = program.arena().consumer(id)
+                    else {
+                        continue;
+                    };
+                    match *node {
+                        ConsumerNode::MuTilde { body } | ConsumerNode::MuTildeAll { body, .. } => {
+                            pending.push(Node::Command(body));
+                        },
+                        ConsumerNode::Destructor {
+                            ref producers,
+                            consumers: ref fields,
+                            ..
+                        } => {
+                            pending.extend(producers.iter().copied().map(Node::Producer));
+                            pending.extend(fields.iter().copied().map(Node::Consumer));
+                        },
+                        ConsumerNode::Case { ref arms } => {
+                            pending.extend(arms.iter().map(|arm| Node::Command(arm.body)));
+                        },
+                        ConsumerNode::DataCase {
+                            ref branches, then, ..
+                        } => {
+                            pending.extend(branches.iter().copied().map(Node::Producer));
+                            pending.push(Node::Consumer(then));
+                        },
+                        ConsumerNode::Covariable(_)
+                        | ConsumerNode::Select { .. }
+                        | ConsumerNode::ListFold { .. }
+                        | ConsumerNode::Top => {},
+                    }
+                    consumers.push(node.clone());
+                },
+                Node::Command(id) => {
+                    let Some(node) = program.arena().command(id)
+                    else {
+                        continue;
+                    };
+                    if let CommandNode::Cut {
+                        producer, consumer, ..
+                    } = *node
+                    {
+                        pending.extend([Node::Producer(producer), Node::Consumer(consumer)]);
+                    }
+                    else if let CommandNode::Deliver {
+                        ref producers,
+                        consumer,
+                    } = *node
+                    {
+                        pending.extend(producers.iter().copied().map(Node::Producer));
+                        pending.push(Node::Consumer(consumer));
+                    }
+                    commands.push(node.clone());
+                },
+            }
+        }
+
+        (commands, consumers)
+    }
+
+    #[test]
+    fn an_exit_under_nesting_cuts_its_value_against_the_return_continuation()
+    {
+        use gandr_core_sequent::CommandNode;
+        use gandr_core_sequent::ConsumerNode;
+        use gandr_core_sequent::ProducerNode;
+
+        let program = program(PICK);
+        let (commands, consumers) = reached(&program, SurfaceName::from("pick"));
+        assert!(
+            commands
+                .iter()
+                .all(|command| matches!(*command, CommandNode::Cut { .. })),
+            "an exit installs no delimiter, no handler and no resumption: {commands:?}"
+        );
+        assert!(
+            !consumers
+                .iter()
+                .any(|consumer| matches!(*consumer, ConsumerNode::MuTilde { .. })),
+            "no frame stands between an exit and the function's return continuation: \
+             {consumers:?}"
+        );
+        let exits = commands
+            .iter()
+            .filter(|command| {
+                matches!(
+                    **command,
+                    CommandNode::Cut { producer, consumer, .. }
+                        if matches!(program.arena().producer(producer), Some(&(ProducerNode::Variable { .. } | ProducerNode::Constructor { .. })))
+                            && matches!(program.arena().consumer(consumer), Some(&ConsumerNode::Covariable(_)))
+                )
+            })
+            .count();
+        assert_eq!(
+            exits, 3_usize,
+            "each of the three exits is the cut of its value against a covariable"
+        );
+        let (_, bound) = reached(&program, SurfaceName::from("bound"));
+        assert!(
+            bound
+                .iter()
+                .any(|consumer| matches!(*consumer, ConsumerNode::MuTilde { .. })),
+            "a match bound by a statement with no exit continues through a frame: {bound:?}"
+        );
+    }
+
+    /// A tree sum in two halves, each building and summing a complete tree of
+    /// depth ten: `both` cuts one half against the other, and `left` and
+    /// `right` are the halves alone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tree_sum() -> String
+    {
+        let depth =
+            (0_u32 .. 10_u32).fold(String::from("Zero"), |inner, _| format!("Succ({inner})"));
+        format!(
+            "data Depth : Type where {{\n  | Zero : Depth\n  | Succ : (p : Depth) --> Depth\n}}\n\
+             data Tree : Type where {{\n  | Leaf : (n : Integer) --> Tree\n  | Node : (l : Tree, r : Tree) --> Tree\n}}\n\
+             def rec full(d : Depth) -> Tree {{ match d {{ | Zero => Leaf 1 | Succ(p) => {{ let l = full[<] p; let r = full[<] p; Node l r }} }} }}\n\
+             def rec sum(t : Tree) -> Integer {{ match t {{ | Leaf(n) => n | Node(l, r) => {{ let a = sum[<] l; let b = sum[<] r; a + b }} }} }}\n\
+             def half(d : Depth) -> Integer {{ let t = full d; sum t }}\n\
+             def left : +U (-F Integer) ;\ndef left = thunk {{ half ({depth}) }} ;\n\
+             def right : +U (-F Integer) ;\ndef right = thunk {{ half ({depth}) }} ;\n\
+             def both : +U (-F Integer) ;\ndef both = thunk {{ let a = half ({depth}); let b = half ({depth}); a + b }} ;\n"
+        )
+    }
+
+    /// The root that forces `program`'s declaration `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forced(
+        program: &mut Program<'_>,
+        name: &SurfaceName<'_>,
+    ) -> CommandId
+    {
+        let position = program
+            .declarations()
+            .iter()
+            .find(|&(_, declared)| declared.name == *name)
+            .map(|(&constant, _)| constant)
+            .expect("the program declares the name");
+        Machine::new(program)
+            .entries(position, Reach::Value)
+            .expect("the declaration focuses")
+            .1
+    }
+
+    /// A tree sum's answer.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Sum(u64);
+
+    /// The sum `outcome` halts with in `store`, if it halts with an integer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn summed(
+        store: &Store,
+        outcome: &Result<super::Outcome, Declined>,
+    ) -> Option<Sum>
+    {
+        let &Ok(super::Outcome::Halted(value)) = outcome
+        else {
+            return None;
+        };
+        let gandr_core_sequent::HeapValue::Literal(gandr_kernel_term::Literal::Integer(
+            ref integer,
+        )) = *store.value(value)?
+        else {
+            return None;
+        };
+        integer.magnitude().as_ref().parse::<u64>().ok().map(Sum)
+    }
+
+    #[test]
+    fn two_cuts_on_two_threads_answer_as_the_sequential_schedule()
+    {
+        let source = tree_sum();
+        let mut program = program(source.as_str());
+        let (both, left, right) = (
+            forced(&mut program, &SurfaceName::from("both")),
+            forced(&mut program, &SurfaceName::from("left")),
+            forced(&mut program, &SurfaceName::from("right")),
+        );
+        for tier in [Tier::Executor, Tier::Native] {
+            if matches!(tier, Tier::Native) && !PATCHER {
+                continue;
+            }
+            let run = |root| {
+                let mut store = Store::new();
+                let outcome = gandr_runtime_emitter::evaluate_on(
+                    tier,
+                    program.arena(),
+                    program.definitions(),
+                    root,
+                    Budget::from(BUDGET),
+                    gandr_runtime_emitter::RunInputs::new(&mut store),
+                );
+                summed(&store, &outcome)
+            };
+            let sequential = run(both);
+            assert_eq!(
+                sequential,
+                Some(Sum(2048_u64)),
+                "the sequential schedule sums both halves on {tier:?}"
+            );
+            let (written, read) = std::thread::scope(|scope| {
+                let writer = scope.spawn(|| run(left));
+                let read = run(right);
+                (writer.join().expect("the writer's thread joins"), read)
+            });
+            assert_eq!(
+                written
+                    .zip(read)
+                    .and_then(|(written, read)| written.0.checked_add(read.0))
+                    .map(Sum),
+                sequential,
+                "the writer on its own thread and the reader on this one answer as the sequential schedule on {tier:?}"
+            );
+        }
+    }
+
+    /// The constant `program` declares as `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn constant(
+        program: &Program<'_>,
+        name: &SurfaceName<'_>,
+    ) -> ConstantIndex
+    {
+        program
+            .declarations()
+            .iter()
+            .find(|&(_, declared)| declared.name == *name)
+            .map(|(&constant, _)| constant)
+            .expect("the program declares the name")
+    }
+
+    /// A host that declines every operation offered to it.
+    #[derive(Debug)]
+    struct Declining;
+
+    impl gandr_runtime_emitter::HostHandler for Declining
+    {
+        type Abort = Infallible;
+
+        /// Decline the operation.
+        ///
+        /// # Specification
+        /// trivial.
+        fn handle(
+            &mut self,
+            _request: gandr_runtime_emitter::HostRequest<'_>,
+            _values: &mut gandr_runtime_emitter::HostValues<'_>,
+        ) -> gandr_runtime_emitter::HostReply<Infallible>
+        {
+            gandr_runtime_emitter::HostReply::Decline
+        }
+    }
+
+    /// The tree sum `x ← (a ← force left; b ← force right; return a + b);
+    /// y ← force left; return x + y`, every writer named and scheduled on the
+    /// driver's pool, at four threads and at one: the first writer spawns
+    /// writers of its own on the pool. On each tier the run answers the sum
+    /// of the same program's sequential schedule, three halves of 1024.
+    #[test]
+    fn a_tree_sum_scheduled_on_the_drivers_pool_answers_as_the_sequential_schedule()
+    {
+        let source = tree_sum();
+        let mut program = program(source.as_str());
+        let (left, right) = (
+            constant(&program, &SurfaceName::from("left")),
+            constant(&program, &SurfaceName::from("right")),
+        );
+        let mut terms = gandr_core_term::CoreArena::new();
+        let add = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "add")
+            .expect("the prelude adds integers");
+        let added = |terms: &mut gandr_core_term::CoreArena| {
+            let operands = [
+                terms.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into()),
+                terms.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into()),
+            ];
+            terms
+                .computation_primitive(add, gandr_core_term::primitive::Arguments::Binary(operands))
+        };
+        let (left, right) = (terms.value_constant(left), terms.value_constant(right));
+        let (forced_left, forced_right) = (
+            terms.computation_force(left),
+            terms.computation_force(right),
+        );
+        let inner = added(&mut terms);
+        let inner = terms.computation_bind(forced_right, inner);
+        let outer = terms.computation_bind(forced_left, inner);
+        let sum = added(&mut terms);
+        let then = terms.computation_bind(forced_left, sum);
+        let root = terms.computation_bind(outer, then);
+        let mut provenance = gandr_core_sequent::Provenance::new();
+        let parts = program.parts();
+        let sequential = gandr_core_sequent::focus_computation(
+            &terms,
+            root,
+            parts.arena,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
+        let named = gandr_core_sequent::focus_computation(
+            &terms,
+            root,
+            parts.arena,
+            &mut provenance,
+            &[outer, forced_left, forced_right].into_iter().collect(),
+        )
+        .expect("the program focuses with its writers named");
+        let (scheduled, definitions) =
+            gandr_core_sequent::spawn_independent(parts.arena, (named, parts.definitions))
+                .expect("the program schedules");
+        assert_ne!(
+            sequential, scheduled,
+            "the named writers are scheduled apart"
+        );
+        let program = &program;
+        let budget = Budget::from(BUDGET);
+        let wide = Pool::new(Width::Threads(Threads::from(
+            core::num::NonZeroUsize::new(4_usize).expect("four threads"),
+        )));
+        let serial = Pool::default();
+        for tier in [Tier::Executor, Tier::Native] {
+            if matches!(tier, Tier::Native) && !PATCHER {
+                continue;
+            }
+            let mut whole = Store::new();
+            let answered = gandr_runtime_emitter::evaluate_on(
+                tier,
+                program.arena(),
+                program.definitions(),
+                sequential,
+                budget,
+                gandr_runtime_emitter::RunInputs::new(&mut whole),
+            );
+            let answered = summed(&whole, &answered);
+            assert_eq!(
+                answered,
+                Some(Sum(3072_u64)),
+                "the sequential schedule sums three halves on {tier:?}"
+            );
+            for pool in [&wide, &serial] {
+                let mut store = Store::new();
+                let run = gandr_runtime_emitter::evaluate_scheduled_on(
+                    pool,
+                    Choice::Tier(tier),
+                    (program.arena(), &definitions, scheduled),
+                    (budget, &mut store),
+                    &mut Declining,
+                )
+                .map(|ended| match ended {
+                    gandr_runtime_emitter::HostOutcome::Completed(outcome) => outcome,
+                    gandr_runtime_emitter::HostOutcome::Aborted(never) => match never {},
+                });
+                assert_eq!(
+                    summed(&store, &run),
+                    answered,
+                    "the scheduled run answers the sequential schedule's sum on {tier:?} at {:?}",
+                    pool.width()
+                );
+            }
+        }
+    }
+
+    /// `(fix self. λd. b ← d == 0; case b of true ⇒ return 1 | false ⇒
+    /// p ← d - 1; x ← (force self) p; y ← (force self) p; return x + y) 10`,
+    /// both recursive calls named and scheduled on the driver's pool, at four
+    /// threads and at one. Each writer captures the fixpoint it runs in and
+    /// spawns writers of its own, so the spawns nest ten deep. The crossing
+    /// refused that fixpoint, so the read stuck. On each tier the run answers
+    /// the sequential schedule's count of leaves, 1024.
+    #[test]
+    fn a_recursive_writer_scheduled_on_the_drivers_pool_answers_as_the_sequential_schedule_2954()
+    {
+        use gandr_core_term::Zone::Intuitionistic;
+        use gandr_core_term::primitive::Arguments;
+
+        let mut terms = gandr_core_term::CoreArena::new();
+        let prelude = |name: &str| {
+            gandr_core_term::primitive::PRELUDE
+                .iter()
+                .copied()
+                .find(|primitive| primitive.name().as_ref() == name)
+                .expect("the prelude holds the primitive")
+        };
+        let integer = |terms: &mut gandr_core_term::CoreArena, digits: &str| {
+            terms.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::from_decimal_text(String::from(digits))
+                        .expect("decimal digits"),
+                ),
+            ))
+        };
+        let (zero, one, ten) = (
+            integer(&mut terms, "0"),
+            integer(&mut terms, "1"),
+            integer(&mut terms, "10"),
+        );
+        // Under `self, d, b, _`: the predecessor, then the two calls on it.
+        let d = terms.value_variable(Intuitionistic, 2_u32.into());
+        let predecessor = terms.computation_primitive(prelude("sub"), Arguments::Binary([d, one]));
+        let own = terms.value_variable(Intuitionistic, 4_u32.into());
+        let forced = terms.computation_force(own);
+        let p = terms.value_variable(Intuitionistic, 0_u32.into());
+        let first = terms.computation_application(forced, p);
+        let own = terms.value_variable(Intuitionistic, 5_u32.into());
+        let forced = terms.computation_force(own);
+        let p = terms.value_variable(Intuitionistic, 1_u32.into());
+        let second = terms.computation_application(forced, p);
+        let operands = [
+            terms.value_variable(Intuitionistic, 1_u32.into()),
+            terms.value_variable(Intuitionistic, 0_u32.into()),
+        ];
+        let added = terms.computation_primitive(prelude("add"), Arguments::Binary(operands));
+        let then = terms.computation_bind(second, added);
+        let then = terms.computation_bind(first, then);
+        let recursing = terms.computation_bind(predecessor, then);
+        let ending = terms.computation_return(one);
+        let b = terms.value_variable(Intuitionistic, 0_u32.into());
+        let case = terms.computation_case(b, &[ending, recursing]);
+        let d = terms.value_variable(Intuitionistic, 0_u32.into());
+        let tested = terms.computation_primitive(prelude("eq"), Arguments::Binary([d, zero]));
+        let body = terms.computation_bind(tested, case);
+        let function = terms.computation_lambda(body);
+        let fixpoint =
+            terms.computation_fixpoint(function, gandr_kernel_term::FixpointEvidence::Partial);
+        let root = terms.computation_application(fixpoint, ten);
+        let mut arena = CommandArena::new();
+        let mut provenance = gandr_core_sequent::Provenance::new();
+        let sequential = gandr_core_sequent::focus_computation(
+            &terms,
+            root,
+            &mut arena,
+            &mut provenance,
+            &gandr_core_sequent::Writers::NONE,
+        )
+        .expect("the program focuses");
+        let named = gandr_core_sequent::focus_computation(
+            &terms,
+            root,
+            &mut arena,
+            &mut provenance,
+            &[first, second].into_iter().collect(),
+        )
+        .expect("the program focuses with its writers named");
+        let (scheduled, definitions) =
+            gandr_core_sequent::spawn_independent(&mut arena, (named, &Definitions::new()))
+                .expect("the program schedules");
+        assert_ne!(
+            sequential, scheduled,
+            "the named writers are scheduled apart"
+        );
+        let budget = Budget::from(BUDGET);
+        let wide = Pool::new(Width::Threads(Threads::from(
+            core::num::NonZeroUsize::new(4_usize).expect("four threads"),
+        )));
+        let serial = Pool::default();
+        for tier in [Tier::Executor, Tier::Native] {
+            if matches!(tier, Tier::Native) && !PATCHER {
+                continue;
+            }
+            let mut whole = Store::new();
+            let answered = gandr_runtime_emitter::evaluate_on(
+                tier,
+                &arena,
+                &Definitions::new(),
+                sequential,
+                budget,
+                gandr_runtime_emitter::RunInputs::new(&mut whole),
+            );
+            let answered = summed(&whole, &answered);
+            assert_eq!(
+                answered,
+                Some(Sum(1024_u64)),
+                "the sequential schedule counts the leaves on {tier:?}"
+            );
+            for pool in [&wide, &serial] {
+                let mut store = Store::new();
+                let run = gandr_runtime_emitter::evaluate_scheduled_on(
+                    pool,
+                    Choice::Tier(tier),
+                    (&arena, &definitions, scheduled),
+                    (budget, &mut store),
+                    &mut Declining,
+                )
+                .map(|ended| match ended {
+                    gandr_runtime_emitter::HostOutcome::Completed(outcome) => outcome,
+                    gandr_runtime_emitter::HostOutcome::Aborted(never) => match never {},
+                });
+                assert_eq!(
+                    summed(&store, &run),
+                    answered,
+                    "the scheduled run answers the sequential schedule's count on {tier:?} at {:?}",
+                    pool.width()
+                );
+            }
+        }
+    }
+
+    /// The tree sum composed on the concurrent schedule: the judgement names
+    /// the recursive calls and the halves as writers, so the program keeps
+    /// its definitions scheduled. `both` then answers, on the driver's pool at
+    /// four threads and at one, the sum its sequential composition answers.
+    #[test]
+    fn a_tree_sum_composed_concurrently_answers_as_the_sequential_schedule_2954()
+    {
+        let source = tree_sum();
+        let grammar = built_in().expect("the built-in grammar builds");
+        let wide = Pool::new(Width::Threads(Threads::from(
+            core::num::NonZeroUsize::new(4_usize).expect("four threads"),
+        )));
+        let serial = Pool::default();
+        let composed = |scheduling| match gandr_surface_dispatcher::compose_on::<Evaluator>(
+            &grammar,
+            CorpusRoot::Fixture,
+            source.as_str().into(),
+            &mut LoweringCount::default(),
+            scheduling,
+            gandr_kernel_check_memo::MemoActivity::Active,
+        ) {
+            Ok(Composed::Settled { program, .. }) => program,
+            Ok(Composed::Refused(refusal)) => panic!("refused as a whole: {refusal}"),
+            Err(fault) => panic!("faulted: {fault}"),
+        };
+        let mut sequential = composed(Scheduling::Sequential);
+        let mut concurrent = composed(Scheduling::Concurrent(&wide));
+        assert!(
+            matches!(
+                sequential.scheduled(),
+                Maybe::Absent(gandr_surface_dispatcher::concurrent::Absent::Unmarked)
+            ),
+            "the sequential composition keeps no schedule"
+        );
+        assert!(
+            matches!(concurrent.scheduled(), Maybe::Present(_)),
+            "the concurrent composition keeps its definitions scheduled"
+        );
+        let both = constant(&sequential, &SurfaceName::from("both"));
+        let answered = sequential.evaluate(both).to_string();
+        assert_eq!(answered, "2048", "the sequential schedule sums both halves");
+        for pool in [&wide, &serial] {
+            let mut captured = Captured::default();
+            let evaluation = Machine::new(&mut concurrent).evaluate_printing_scheduled(
+                both,
+                &mut captured,
+                pool,
+            );
+            assert_eq!(
+                evaluation.to_string(),
+                answered,
+                "the concurrent schedule answers the sequential sum at {:?}",
+                pool.width()
+            );
+        }
+    }
+
+    /// The command a sweep answered for a command.
+    ///
+    /// # Specification
+    /// trivial.
+    fn command_of(swept: NodeAddress) -> CommandId
+    {
+        match swept {
+            NodeAddress::Command(command) => command,
+            NodeAddress::Producer(_) | NodeAddress::Consumer(_) => {
+                panic!("a sweep answers a command for a command")
+            },
+        }
+    }
+
+    /// A sweep of the command IL: [`convert_all`] or [`enter_all`].
+    type Sweep = fn(&mut CommandArena, NodeAddress) -> Result<NodeAddress, ClosureRefusal>;
+
+    /// `definitions` with every body swept by `sweep`, at the positions they
+    /// stood at.
+    ///
+    /// # Specification
+    /// trivial.
+    fn swept(
+        arena: &mut CommandArena,
+        definitions: &Definitions,
+        sweep: Sweep,
+    ) -> Definitions
+    {
+        let mut rebuilt = Definitions::new();
+        for position in 0 .. usize::from(definitions.len()) {
+            let definition = match definitions.get(ConstantIndex::from(position)) {
+                Some(Definition::Transparent(body)) => {
+                    match sweep(arena, NodeAddress::Producer(body))
+                        .expect("every corpus body sweeps")
+                    {
+                        NodeAddress::Producer(swept) => Definition::Transparent(swept),
+                        NodeAddress::Command(_) | NodeAddress::Consumer(_) => {
+                            panic!("a sweep answers a producer for a producer")
+                        },
+                    }
+                },
+                Some(Definition::Opaque) | None => Definition::Opaque,
+            };
+            let _pushed = rebuilt.push(definition);
+        }
+        rebuilt
+    }
+
+    /// Whether a sweep rewrote the run's commands or its program's
+    /// definitions.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Change
+    {
+        /// A command the run starts from, or a definition of its program,
+        /// came out rewritten.
+        Rewritten,
+        /// The sweep left every command and definition as it stood.
+        Unchanged,
+    }
+
+    /// One declaration run on the portable executor as written and with its
+    /// program swept.
+    struct Swept<'source>
+    {
+        /// The run as written.
+        written: Result<Evaluation<'source>, Declined>,
+        /// The run swept.
+        ran: Result<Evaluation<'source>, Declined>,
+        /// Whether the sweep rewrote the commands or the definitions.
+        change: Change,
+    }
+
+    /// Run the declaration at `constant` of `program`, prepared to return
+    /// through `returned` and force through `forced`, on the portable executor
+    /// as written, then with those commands and every definition it unfolds
+    /// swept by `sweep`, the written definitions put back after.
+    ///
+    /// # Specification
+    /// - requires: `returned` and `forced` are what `program.prepare` answered
+    ///   for `constant`.
+    /// - ensures: the two runs and whether the sweep rewrote a command or a
+    ///   definition; `program`'s definitions are the ones it held on entry.
+    /// - panics: on a refusal of the sweep.
+    /// - executable: none — the two runs are what the witnesses compare.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as the witnesses.
+    /// - witness: `evaluate::tests::sweeps::the_corpus_runs_items_run_converted_as_written`
+    /// - witness: `evaluate::tests::sweeps::the_corpus_runs_items_run_entered_as_written_3635`
+    fn run_swept<'source>(
+        program: &mut Program<'source>,
+        constant: ConstantIndex,
+        (returned, forced): (CommandId, CommandId),
+        sweep: Sweep,
+    ) -> Swept<'source>
+    {
+        let executor = Choice::Tier(Tier::Executor);
+        let written =
+            Machine::new(program).tiered(constant, returned, forced, executor, Hosting::Bare);
+        let parts = program.parts();
+        let swept_returned = command_of(
+            sweep(parts.arena, NodeAddress::Command(returned)).expect("a returning command sweeps"),
+        );
+        let swept_forced = command_of(
+            sweep(parts.arena, NodeAddress::Command(forced)).expect("a forcing command sweeps"),
+        );
+        let rebuilt = swept(parts.arena, parts.definitions, sweep);
+        let change = if (swept_returned, swept_forced) == (returned, forced)
+            && rebuilt == *parts.definitions
+        {
+            Change::Unchanged
+        }
+        else {
+            Change::Rewritten
+        };
+        let mut machine = Machine::new(program);
+        machine.definitions = &rebuilt;
+        let ran = machine.tiered(
+            constant,
+            swept_returned,
+            swept_forced,
+            executor,
+            Hosting::Bare,
+        );
+        Swept {
+            written,
+            ran,
+            change,
+        }
+    }
+
+    /// What a sweep did to the corpus's `runs` items.
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct Walked
+    {
+        /// Each item that ran apart from its written form, with both runs.
+        differing: alloc::string::String,
+        /// Each item whose program the sweep rewrote.
+        rewritten: alloc::vec::Vec<alloc::string::String>,
+    }
+
+    /// What each sweep did to the corpus's `runs` items, read from one walk
+    /// (#5256).
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct Sweeps
+    {
+        /// Every closure converted to an abstract closure.
+        converted: Walked,
+        /// Every closure redex entered.
+        entered: Walked,
+    }
+
+    /// Record in `walked` the run of `declaration` in `item` swept as `run`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn record(
+        walked: &mut Walked,
+        item: &impl core::fmt::Display,
+        name: &impl core::fmt::Display,
+        run: &Swept<'_>,
+    )
+    {
+        let spelled = |run: &Result<Evaluation<'_>, Declined>| match *run {
+            Ok(ref evaluation) => alloc::format!("{evaluation}"),
+            Err(declined) => alloc::format!("{declined}"),
+        };
+        if run.change == Change::Rewritten {
+            walked.rewritten.push(alloc::format!("{item} {name}"));
+        }
+        if run.written != run.ran {
+            writeln!(
+                walked.differing,
+                "{item} {name}\n    written: {}\n    swept:   {}",
+                spelled(&run.written),
+                spelled(&run.ran),
+            )
+            .expect("a string writes");
+        }
+    }
+
+    /// Run every `runs` item that `sweep` asks for on the portable executor as
+    /// written and with its program swept by each sweep, in one walk the tests
+    /// of a nextest run share. Each sweep puts the written definitions back,
+    /// so the second starts from the program as written.
+    ///
+    /// # Specification
+    /// trivial.
+    fn runs_swept(sweep: &gandr_workflow_sweep::Sweep) -> Sweeps
+    {
+        let key = match (sweep.coverage(), sweep.portion()) {
+            (Coverage::Full, Portion::Fixed) => "runs-swept",
+            (Coverage::Full, Portion::Changed) => "runs-swept-none",
+            (Coverage::Sampled, Portion::Fixed) => "runs-swept-sample",
+            (Coverage::Sampled, Portion::Changed) => "runs-swept-changed",
+        };
+        crate::digest::shared(std::path::Path::new(key), || walk_swept(sweep))
+    }
+
+    /// The sample of the `runs` sweep: thirty-two sources, ranked by their
+    /// BLAKE3 digest under this name, at least one of each corpus class.
+    /// - see: #7809
+    const RUNS: Sample = Sample {
+        name: SampleName("the_corpus_runs_items_run_as_written"),
+        size: SampleSize(32),
+    };
+
+    /// The exemplars whose programs a sweep must rewrite. A sample of the
+    /// fixed set always holds them, so the fixed set reads the rewrites.
+    const EXEMPLARS: [&str; 2] = [
+        "corpus/ledger/features/abstract-closures.gandr",
+        "corpus/model/data/recursive-addition.gandr",
+    ];
+
+    /// The paths from the workspace root that `sweep` walks: the corpus roots
+    /// whole in a full run, nothing for the change's portion of a full run,
+    /// and otherwise each sampled source, beside the exemplars for the fixed
+    /// set.
+    ///
+    /// # Specification
+    /// trivial.
+    fn swept_roots(sweep: &gandr_workflow_sweep::Sweep) -> alloc::vec::Vec<alloc::string::String>
+    {
+        match (sweep.coverage(), sweep.portion()) {
+            (Coverage::Full, Portion::Fixed) => [
+                "crates/surface-corpus/strict",
+                "corpus/classifier",
+                "corpus/fragment",
+                "corpus/ledger",
+                "corpus/model",
+                "corpus/pathological",
+                "corpus/pending",
+                "corpus/surface",
+            ]
+            .map(alloc::string::String::from)
+            .to_vec(),
+            (Coverage::Full, Portion::Changed) => alloc::vec::Vec::new(),
+            (Coverage::Sampled, portion) => {
+                let mut roots: alloc::vec::Vec<alloc::string::String> = sweep
+                    .visit(
+                        RUNS,
+                        &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                    )
+                    .into_iter()
+                    .map(|source| {
+                        let name = source.name.as_ref();
+                        match name.split_once('/') {
+                            Some(("strict", below)) => {
+                                alloc::format!("crates/surface-corpus/strict/{below}")
+                            },
+                            Some(("fixture", below)) => alloc::format!("corpus/{below}"),
+                            _ => panic!("{name}: a source names its root"),
+                        }
+                    })
+                    .collect();
+                if portion == Portion::Fixed {
+                    roots.extend(EXEMPLARS.map(alloc::string::String::from));
+                }
+                roots.sort();
+                roots.dedup();
+                roots
+            },
+        }
+    }
+
+    /// The walk [`runs_swept`] shares.
+    ///
+    /// # Specification
+    /// trivial.
+    fn walk_swept(sweep: &gandr_workflow_sweep::Sweep) -> Sweeps
+    {
+        let corpus = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let walk = Walk::new(
+            swept_roots(sweep)
+                .into_iter()
+                .map(|root| corpus.join(root))
+                .collect(),
+        );
+        let mut converted = Walked {
+            differing: alloc::string::String::new(),
+            rewritten: alloc::vec::Vec::new(),
+        };
+        let mut entered = Walked {
+            differing: alloc::string::String::new(),
+            rewritten: alloc::vec::Vec::new(),
+        };
+        let ControlFlow::Continue(_report) = walk.visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |step| -> ControlFlow<Infallible> {
+                let Step::Source {
+                    path,
+                    composed:
+                        Composed::Settled {
+                            report,
+                            mut program,
+                            ..
+                        },
+                    ..
+                } = step
+                else {
+                    return ControlFlow::Continue(());
+                };
+                let item = path.strip_prefix(&corpus).unwrap_or(path).display();
+                for declaration in report.declarations() {
+                    if !matches!(*declaration.stated(), Stated::Verdict(Outcome::Runs(_))) {
+                        continue;
+                    }
+                    let constant = declaration.constant();
+                    let Ok(prepared) =
+                        Machine::new(&mut program).prepare(constant, Start::Accepted, Reach::Value)
+                    else {
+                        continue;
+                    };
+                    let name = declaration.name();
+                    let run = run_swept(&mut program, constant, prepared, convert_all);
+                    record(&mut converted, &item, &name, &run);
+                    let run = run_swept(&mut program, constant, prepared, enter_all);
+                    record(&mut entered, &item, &name, &run);
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        Sweeps { converted, entered }
+    }
+
+    /// Every `runs` item of the corpus runs on the portable executor, every
+    /// closure of its program converted to an abstract closure, to the
+    /// evaluation it runs to as written; conversion rewrites the programs of
+    /// the `abstract-closures` exemplar, a closure a call returns and a thunk
+    /// over two arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    fn converted_as_written(sweep: &gandr_workflow_sweep::Sweep)
+    {
+        let Walked {
+            differing,
+            rewritten,
+        } = runs_swept(sweep).converted;
+        assert!(
+            differing.is_empty(),
+            "converted programs ran apart from their written forms:\n{differing}"
+        );
+        if sweep.portion() == Portion::Changed {
+            return;
+        }
+        for name in ["applied", "forced"] {
+            let exemplar = alloc::format!("corpus/ledger/features/abstract-closures.gandr {name}");
+            assert!(
+                rewritten.contains(&exemplar),
+                "conversion rewrote the program of `{exemplar}`"
+            );
+        }
+    }
+
+    /// Every `runs` item of the corpus runs on the portable executor, every
+    /// closure redex of its program entered, to the evaluation it runs to as
+    /// written; entering rewrites the program of an item that applies a
+    /// recursive function.
+    ///
+    /// # Specification
+    /// trivial.
+    fn entered_as_written(sweep: &gandr_workflow_sweep::Sweep)
+    {
+        let Walked {
+            differing,
+            rewritten,
+        } = runs_swept(sweep).entered;
+        assert!(
+            differing.is_empty(),
+            "entered programs ran apart from their written forms:\n{differing}"
+        );
+        if sweep.portion() == Portion::Changed {
+            return;
+        }
+        let recursive = "corpus/model/data/recursive-addition.gandr five";
+        assert!(
+            rewritten.iter().any(|item| item == recursive),
+            "entering rewrote the program of `{recursive}`"
+        );
+    }
+
+    /// A pull request walks the sample, and the nightly walks the corpus whole.
+    /// - see: #7809
+    mod sweeps
+    {
+        use gandr_workflow_sweep::Sweep;
+
+        use super::converted_as_written;
+        use super::entered_as_written;
+
+        #[test]
+        fn the_corpus_runs_items_run_converted_as_written()
+        {
+            converted_as_written(&Sweep::asked().expect("the run's sweep resolves"));
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn the_corpus_runs_items_run_converted_as_written_changed()
+        {
+            converted_as_written(&Sweep::asked().expect("the run's sweep resolves").changed());
+        }
+
+        #[test]
+        fn the_corpus_runs_items_run_entered_as_written_3635()
+        {
+            entered_as_written(&Sweep::asked().expect("the run's sweep resolves"));
+        }
+
+        /// The change's sources beside the fixed set.
+        /// - see: #4654
+        #[test]
+        fn the_corpus_runs_items_run_entered_as_written_3635_changed()
+        {
+            entered_as_written(&Sweep::asked().expect("the run's sweep resolves").changed());
+        }
+    }
+}

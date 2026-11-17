@@ -1,0 +1,11 @@
+pub theory Mag where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+}
+pub module Times : Model(Mag) where {
+  type M = Integer;
+  def mul(a : Integer, b : Integer) -> Integer { become a * b }
+}
+pub module Squaring(S : Model(Mag)) where {
+  def square(x : S.M) -> S.M { become S.mul (x, x) }
+}

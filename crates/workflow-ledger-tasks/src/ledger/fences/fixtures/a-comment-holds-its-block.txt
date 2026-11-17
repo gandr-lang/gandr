@@ -1,0 +1,10 @@
+/// A carrier.
+///
+/// ```gandr
+/// def p : Path(Integer, 4, 4);
+/// ```
+fn f() {}
+// ```gandr
+// def q : Path(Integer, 4, 4);
+fn g() {}
+// ```

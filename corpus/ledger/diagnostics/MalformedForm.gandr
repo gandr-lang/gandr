@@ -1,0 +1,4 @@
+/// `MalformedForm`: a form whose pieces fall short of its rule.
+@[refuses("MalformedForm")]
+theory Magma where
+  sort M : type;
