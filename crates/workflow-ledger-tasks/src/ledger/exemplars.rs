@@ -504,6 +504,10 @@ impl core::fmt::Display for ExemplarReport
 /// # Errors
 /// [`LedgerFault::Unreadable`] naming the directory.
 ///
+/// # Cost
+/// - allocation: each folder's listing and each subject's path and the
+///   findings, growth within the rules and the folders' files
+///
 /// # Adequacy
 /// - hypothesis: L3 — the committed exemplars verify with no finding; a renamed
 ///   exemplar is two findings, its rule missing and its file stray; an exemplar

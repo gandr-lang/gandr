@@ -831,6 +831,10 @@ impl SyntaxLedger
     /// # Errors
     /// The formatter's error.
     ///
+    /// # Cost
+    /// - allocation: the text of the ledger in `out`, growth within the rows of
+    ///   the ledger
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`markdown`](Self::markdown).
     /// - witness: `ledger::tests::both_files_carry_the_fingerprint_and_every_row`
@@ -1061,6 +1065,10 @@ impl SyntaxLedger
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the text and one object for each row, growth within the
+    ///   rows of the ledger
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the built ledger's text parses back as JSON whose
     ///   fingerprint, rule names and attribute names are the ledger's, and
@@ -1211,6 +1219,10 @@ fn elements(items: &[String]) -> String
 ///   for a record of a shape that the surface keeps.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: one row for each old spelling, growth within the adaptation
+///   records
+///
 /// # Adequacy
 /// - hypothesis: L3 — a list that holds a kept record, a superseded one and a
 ///   refused one gives two rows, each with its replacement, the first with its
@@ -1247,6 +1259,9 @@ fn superseded(adaptations: &[Adaptation]) -> Vec<SupersededRow>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the path, growth within the surface form
 fn refused_exemplar(row: &SupersededRow) -> String
 {
     format!(

@@ -113,6 +113,10 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
+///
+/// # Cost
+/// - allocation: the rules of the type grammar and their adaptation records,
+///   setup
 #[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 42 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
