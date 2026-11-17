@@ -1,0 +1,6 @@
+/// N.
+data N : Type where {
+/// Zero.
+  | Z : N
+  | S : (n : N) --> N
+}

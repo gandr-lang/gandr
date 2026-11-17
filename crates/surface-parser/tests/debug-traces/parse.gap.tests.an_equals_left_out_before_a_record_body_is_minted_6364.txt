@@ -1,0 +1,145 @@
+test: parse::gap::tests::an_equals_left_out_before_a_record_body_is_minted_6364
+package: gandr-surface-parser
+command: mise run debug:test gandr-surface-parser parse::gap::tests::an_equals_left_out_before_a_record_body_is_minted_6364 --break gaps
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-parser/b8b62d7b4e2c2e94/out/gandr_surface_parser-b8b62d7b4e2c2e94"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-parser/b8b62d7b4e2c2e94/out/gandr_surface_parser-b8b62d7b4e2c2e94' (x86_64).
+(lldb) settings set -- target.run-args  "parse::gap::tests::an_equals_left_out_before_a_record_body_is_minted_6364" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex gaps
+Breakpoint 1: 52 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_parser-b8b62d7b4e2c2e94`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000000729978
+(lldb) run
+
+running 1 test
+test parse::gap::tests::an_equals_left_out_before_a_record_body_is_minted_6364 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 233364 launched: 'target/debug-trace/debug/build/gandr-surface-parser/b8b62d7b4e2c2e94/out/gandr_surface_parser-b8b62d7b4e2c2e94' (x86_64)
+Process 233364 stopped
+* thread #2, name = 'parse::gap::tes', stop reason = breakpoint 1.27
+       frame #0: 0x0000555555915596 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::gap::gaps(text={0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}, tokens=size=52) at gap.rs:440:9
+   437 	    tokens: &[Token],
+   438 	) -> Places<'text>
+   439 	{
+-> 440 	    let mut places = Places::default();
+    	        ^
+   441 	    let mut stack: Vec<Frame> = Vec::new();
+   442 	    // How many frames of `stack` are a shell block or an interpolation, whose
+   443 	    // contents the search does not read.
+(lldb) bt 24
+* thread #2, name = 'parse::gap::tes', stop reason = breakpoint 1.27
+   * frame #0: 0x0000555555915596 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::gap::gaps(text={0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}, tokens=size=52) at gap.rs:440:9
+     frame #1: 0x000055555591a461 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::gap::gapped(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:175, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:18, items:206}, alloc:{}, marker:{}}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, parsed={tree:{source:{0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}, grammar:{0:3505423251622259450}, nodes:size=69, starts:size=2, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=69, digest:Some({0:"}8}v\xbc8o\xf3\xfc1\U0000001a\xcf\xea\xf0\xfe\0m\xdd\U0000000f\U00000006\xc7\xc7\09ؗ\xaf\a\xec\xa7'6"})}}, obligations:size=4}, inside=None) at gap.rs:1364:21
+     frame #2: 0x0000555555978e97 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::place::placed(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:175, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:18, items:206}, alloc:{}, marker:{}}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, parsed={tree:{source:{0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}, grammar:{0:3505423251622259450}, nodes:size=69, starts:size=2, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=69, digest:Some({0:"}8}v\xbc8o\xf3\xfc1\U0000001a\xcf\xea\xf0\xfe\0m\xdd\U0000000f\U00000006\xc7\xc7\09ؗ\xaf\a\xec\xa7'6"})}}, obligations:size=4}) at place.rs:423:17
+     frame #3: 0x000055555580dbb7 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::commit::{closure#0} at parse.rs:748:8
+     frame #4: 0x000055555581d033 gandr_surface_parser-b8b62d7b4e2c2e94`anodized::__::eval_once::<core::result::Result<gandr_surface_parser::parse::ParseResult, gandr_surface_parser::meld::MeldError>, gandr_surface_parser::parse::commit::{closure#0}>(closure={state:{pbg:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({…}), length:31, alloc:{value:{…}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some(…), length:175, alloc:{…}, _marker:{…}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{…}, table:{…}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, source:"�\0��\u{7}\0\0\0�L�^��\0�Model Counter with sort C = = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n}", emit:size=58, stack:size=17, frontiers:size=4, operators:size=3, barriers:size=9, obligations:size=1, spaces:size=24, edits:size=0, removed:size=0, live_marks:0, low_water:0, left_shortfalls:0, ended_applications:0, reach:{0:true}}, _ref__source:{__0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}, _ref__pbg:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:31, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some({…}), length:175, alloc:{value:{…}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}}) at __.rs:32:5 [inlined]
+     frame #5: 0x000055555581d007 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::commit(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:175, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:18, items:206}, alloc:{}, marker:{}}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, state=<unavailable>, source={0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}) at parse.rs:736:1
+     frame #6: 0x000055555580d80f gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::parse::{closure#0} at parse.rs:629:5
+     frame #7: 0x000055555581cee3 gandr_surface_parser-b8b62d7b4e2c2e94`anodized::__::eval_once::<core::result::Result<gandr_surface_parser::parse::ParseResult, gandr_surface_parser::meld::MeldError>, gandr_surface_parser::parse::parse::{closure#0}>(closure={_ref__pbg:{dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{…}, _marker:{…}}), length:31, alloc:{value:{0:{…}}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some({…}), length:175, alloc:{value:{…}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{…}, alloc:{…}, marker:{…}}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, _ref__source:{__0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}}) at __.rs:32:5 [inlined]
+     frame #8: 0x000055555581ced4 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::parse(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:175, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:18, items:206}, alloc:{}, marker:{}}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, source={0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}) at parse.rs:619:1
+     frame #9: 0x0000555555922355 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::gap::tests::owed_6364(source="def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n") at gap.rs:1898:22
+     frame #10: 0x00005555559258bf gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::gap::tests::an_equals_left_out_before_a_record_body_is_minted_6364 at gap.rs:1928:13
+     frame #11: 0x00005555558f6dc7 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::gap::tests::an_equals_left_out_before_a_record_body_is_minted_6364::{closure#0}((null)={}) at gap.rs:1918:68
+     frame #12: 0x00005555559b65e6 gandr_surface_parser-b8b62d7b4e2c2e94`<gandr_surface_parser::parse::gap::tests::an_equals_left_out_before_a_record_body_is_minted_6364::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #13: 0x0000555555a5660b gandr_surface_parser-b8b62d7b4e2c2e94`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #14: 0x0000555555a56609 gandr_surface_parser-b8b62d7b4e2c2e94`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #15: 0x0000555555a63b55 gandr_surface_parser-b8b62d7b4e2c2e94`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #16: 0x0000555555a63b50 gandr_surface_parser-b8b62d7b4e2c2e94`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x0000555555a63b50 gandr_surface_parser-b8b62d7b4e2c2e94`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #18: 0x0000555555a63b3b gandr_surface_parser-b8b62d7b4e2c2e94`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x0000555555a63b3b gandr_surface_parser-b8b62d7b4e2c2e94`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #20: 0x0000555555a63b3b gandr_surface_parser-b8b62d7b4e2c2e94`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #21: 0x0000555555a63b26 gandr_surface_parser-b8b62d7b4e2c2e94`test::run_test::{closure#0} at lib.rs:677:43
+     frame #22: 0x0000555555a5e514 gandr_surface_parser-b8b62d7b4e2c2e94`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #23: 0x0000555555a5e499 gandr_surface_parser-b8b62d7b4e2c2e94`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+(lldb) frame variable --depth 3
+(gandr_surface_syntax::span::SourceText) text = {0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}
+(&[gandr_surface_parser::label::Token]) tokens = size=52 {
+  [0] = {lexeme:LowerWord, start:0, end:3}
+  [1] = {lexeme:Space, start:3, end:4}
+  [2] = {lexeme:LowerWord, start:4, end:13}
+  [3] = {lexeme:Space, start:13, end:14}
+  [4] = {lexeme:Punct, start:14, end:15}
+  [5] = {lexeme:Space, start:15, end:16}
+  [6] = {lexeme:UpperWord, start:16, end:21}
+  [7] = {lexeme:Space, start:21, end:22}
+  [8] = {lexeme:UpperWord, start:22, end:29}
+  [9] = {lexeme:Space, start:29, end:30}
+  [10] = {lexeme:LowerWord, start:30, end:34}
+  [11] = {lexeme:Space, start:34, end:35}
+  [12] = {lexeme:LowerWord, start:35, end:39}
+  [13] = {lexeme:Space, start:39, end:40}
+  [14] = {lexeme:UpperWord, start:40, end:41}
+  [15] = {lexeme:Space, start:41, end:42}
+  ...
+}
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.
+(lldb) up
+frame #1: 0x000055555591a461 gandr_surface_parser-b8b62d7b4e2c2e94`gandr_surface_parser::parse::gap::gapped(pbg={dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:175, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:18, items:206}, alloc:{}, marker:{}}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}, parsed={tree:{source:{0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}, grammar:{0:3505423251622259450}, nodes:size=69, starts:size=2, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=69, digest:Some({0:"}8}v\xbc8o\xf3\xfc1\U0000001a\xcf\xea\xf0\xfe\0m\xdd\U0000000f\U00000006\xc7\xc7\09ؗ\xaf\a\xec\xa7'6"})}}, obligations:size=4}, inside=None) at gap.rs:1364:21
+   1361	        };
+   1362	        let shift =
+   1363	            |at: ByteOffset| ByteOffset::from(usize::from(at).saturating_add(usize::from(start)));
+-> 1364	        let found = gaps(
+    	                    ^
+   1365	            SourceText::from(region),
+   1366	            &label(SourceFragment::from(region)),
+   1367	        );
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::model::Pbg *) pbg = 0x00007ffff7bc8158 {dag:{names:size=27, assocs:size=27, edges:size=25, reachability:size=27, linear_extension:size=27}, forms:{root:Some({height:1, node:{pointer:{…}}, _marker:{}}), length:31, alloc:{value:{0:{}}}, _marker:{}}, rules:size=175, rule_names:{map:{root:Some({height:2, node:{…}, _marker:{…}}), length:175, alloc:{value:{0:{…}}}, _marker:{}}}, adaptations:size=66, molds:{molds:size=3132, rctxs:size=3132, bounds:size=3132, owners:size=3132, labels:{hash_builder:{per_hasher_seed:589684135938649225}, table:{table:{bucket_mask:255, ctrl:{…}, growth_left:18, items:206}, alloc:{}, marker:{}}}, menus:size=206, mold_labels:size=3132, adjacencies:size=7477, successor_starts:size=3133, has_pred:size=3132, has_succ:size=3132, form_first:size=211, is_first:size=3132, form_last:size=289, complete_last:size=239, is_complete_last:size=3132, required_tail:size=50, is_required_tail:size=3132, closing:size=3132, twins:size=3132, fingerprint:{0:3505423251622259450}}, automaton:{kinds:size=3132, observations:size=3132, width:49, sets:size=882}, application:Some({0:1591}), type_application:Some({0:2330}), flat:size=3}
+(gandr_surface_parser::parse::ParseResult *) parsed = 0x00007ffff7bc5ab0 {tree:{source:{0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}, grammar:{0:3505423251622259450}, nodes:size=69, starts:size=2, roots:size=1, index:{forms:size=1, digests:size=1, ranges:size=1, ranks:size=69, digest:Some({0:"}8}v\xbc8o\xf3\xfc1\U0000001a\xcf\xea\xf0\xfe\0m\xdd\U0000000f\U00000006\xc7\xc7\09ؗ\xaf\a\xec\xa7'6"})}}, obligations:size=4}
+(core::option::Option<gandr_surface_syntax::span::ByteSpan>) inside = None
+(gandr_surface_syntax::span::SourceText) source = {0:"def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n"}
+(&str) text = "def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n" {
+  [0] = 'd'
+  [1] = 'e'
+  [2] = 'f'
+  [3] = ' '
+  [4] = 'r'
+  [5] = 'i'
+  [6] = 'g'
+  [7] = 'h'
+  [8] = 't'
+  [9] = 'w'
+  [10] = 'a'
+  [11] = 'r'
+  [12] = 'd'
+  [13] = ' '
+  [14] = ':'
+  [15] = ' '
+  ...
+}
+(alloc::vec::Vec<(gandr_surface_syntax::span::ByteOffset, gandr_surface_syntax::span::ByteOffset), alloc::alloc::Global>) owing = size=1 {
+  [0] = ({0:0}, {0:107})
+}
+(alloc::vec::Vec<gandr_surface_parser::parse::gap::Gap, alloc::alloc::Global>) lines = size=0
+(alloc::vec::Vec<gandr_surface_parser::parse::gap::Gap, alloc::alloc::Global>) near = size=0
+(alloc::vec::Vec<(gandr_surface_syntax::span::ByteOffset, gandr_surface_syntax::span::SourceText), alloc::alloc::Global>) words = size=0
+(core::slice::iter::Iter<(gandr_surface_syntax::span::ByteOffset, gandr_surface_syntax::span::ByteOffset)>) iter = {ptr:{pointer:({0:0}, {0:107})}, end_or_len:({0:0}, {0:107}), _marker:{}}
+(gandr_surface_syntax::span::ByteOffset) start = {0:0}
+(gandr_surface_syntax::span::ByteOffset) end = {0:107}
+(&str) region = "def rightward : Model Counter with sort C = Unit + (Unit + Unit)  *{\n  .start = first,\n  .step = onward\n};\n" {
+  [0] = 'd'
+  [1] = 'e'
+  [2] = 'f'
+  [3] = ' '
+  [4] = 'r'
+  [5] = 'i'
+  [6] = 'g'
+  [7] = 'h'
+  [8] = 't'
+  [9] = 'w'
+  [10] = 'a'
+  [11] = 'r'
+  [12] = 'd'
+  [13] = ' '
+  [14] = ':'
+  [15] = ' '
+  ...
+}
+(gandr_surface_parser::parse::gap::gapped::{closure_env#1}) shift = {_ref__start:{__0:0}}
