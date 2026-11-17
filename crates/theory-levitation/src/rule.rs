@@ -14,6 +14,7 @@ use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString as _;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 
