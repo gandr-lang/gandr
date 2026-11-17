@@ -8126,6 +8126,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - hypothesis: L3 — a tail lambda against a returner of a box settles,
     ///   and a lambda against an arrow or the unknown type keeps its reading.
     /// - witness: `tests::module::a_tail_lambda_against_a_returner_of_a_box_returns_the_box_6390`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(function)) => self.context.arena().comp_type(function).is_some(),
+        | Ok(Maybe::Absent(())) | Err(_) => true,
+    })]
     fn boxed_expected(
         &mut self,
         expected: CompTypeId,

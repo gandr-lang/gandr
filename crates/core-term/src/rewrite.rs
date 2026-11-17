@@ -792,6 +792,10 @@ impl<'arena> Engine<'arena>
     /// - witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`
     /// - witness: `rewrite::tests::a_solution_fills_a_type_raised_past_its_scope_1216`
     /// - witness: `rewrite::tests::a_chain_of_solutions_is_read_in_one_walk_6181`
+    ///
+    /// # Cost
+    /// - allocation: the scheduled tasks and the memo entries, growth within
+    ///   the rewritten term's nodes
     #[spec(
         captures: [pending = self.tasks.len(), ready = self.results.len()],
         ensures: (ready.checked_add(1) == Some(self.results.len()) && self.tasks.len() == pending
@@ -1184,6 +1188,9 @@ impl<'arena> Engine<'arena>
     ///   a read noted from one missed: a missed read substitutes the call's
     ///   value where the bind belongs.
     /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+    ///
+    /// # Cost
+    /// - allocation: a read entry, growth within the rewritten term's nodes
     #[spec(ensures: self.reads.contains(&(node, depth))
         && self.reading.last().is_none_or(|&held| held == Mention::Present))]
     fn note_read(
@@ -1232,6 +1239,10 @@ impl<'arena> Engine<'arena>
     ///   it, and a decode of the binder itself separate the bind, the rotation,
     ///   the plain substitution and the returned call.
     /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
+    ///
+    /// # Cost
+    /// - allocation: the scheduled tasks, growth within the rewritten term's
+    ///   nodes
     #[spec(captures: pending = self.tasks.len(),
         ensures: |ret| matches!(ret, Maybe::Absent(())) || self.tasks.len() == pending.saturating_add(2) || self.tasks.len() == pending.saturating_add(3))]
     fn close_reading(
@@ -1481,7 +1492,8 @@ impl<'arena> Engine<'arena>
     ///   checker decided to suspend, a fresh returned value over it when the
     ///   checker decided it stands as what it returns, and the suspended call
     ///   itself when `node` forces a nested computation the checker suspended
-    ///   (#3935); `rewritten` itself otherwise.
+    ///   (#3935); a fresh return of a fresh thunk over `rewritten` when `node`
+    ///   is a lambda the checker boxed (#6390); `rewritten` itself otherwise.
     /// - provides: the one point a wrap differs from a congruence, and the one
     ///   point an elaboration suspends.
     /// - fails: never.
@@ -1496,6 +1508,10 @@ impl<'arena> Engine<'arena>
     /// - witness: `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`
     /// - witness: `rewrite::tests::an_elaboration_suspends_and_runs_as_decided`
     /// - witness: `rewrite::tests::a_forced_suspension_elaborates_as_its_call_3935`
+    ///
+    /// # Cost
+    /// - allocation: the wrapping nodes, growth within the rewritten term's
+    ///   nodes
     #[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&rewritten))]
     fn wrapped(
         &mut self,
@@ -1771,6 +1787,10 @@ impl<'arena> Engine<'arena>
     ///   list, beside a decode of an outer variable and inside a computation
     ///   type, relevelled at one: only the binder's decodes move.
     /// - witness: `rewrite::tests::a_relevelling_reads_only_the_binders_decodes_at_its_level`
+    ///
+    /// # Cost
+    /// - allocation: the relevelled decode, growth within the rewritten term's
+    ///   nodes
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(())) || matches!(node, Node::ValueType(_) | Node::CompType(_)))]
     fn relevelled(
         &mut self,
@@ -4500,6 +4520,9 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
     ///   missing children preserve their original identity.
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
     /// - witness: `rewrite::tests::every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does`
+    ///
+    /// # Cost
+    /// - allocation: the rebuilt node, growth within the rewritten term's nodes
     #[spec(
         captures: [ready = self.results.len(), children = self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
@@ -7496,6 +7519,10 @@ fn survey_computation(
 /// - witness: `rewrite::tests::a_pure_run_in_no_computation_stands_as_what_it_returns_4812`
 /// - witness: `rewrite::tests::a_decision_no_term_reaches_is_unenclosed`
 /// - witness: `rewrite::tests::an_undecided_elaboration_keeps_every_former_but_the_run`
+///
+/// # Cost
+/// - allocation: the rebuilt nodes, the binds and the reports, growth within
+///   the subject's nodes
 #[spec(captures: [entry = arena.watermark(), held = carried.len(), minted = binds.len()],
     ensures: |ret| ret.is_err() || carried.len() >= held && binds.len() >= minted
         && (binds.len() > minted || carried.len() > held || ret == Ok(subject) && arena.watermark() == entry))]
