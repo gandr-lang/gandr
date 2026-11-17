@@ -116,3 +116,9 @@ sites = [
 sites = [
   { file = "crates/surface-lowering-expression/src/lower/inert.rs", pattern = '^\s*Err\(LoweringRefusal::InertRead \{$' },
 ]
+
+[refusal.ShapeMismatch]
+sites = [
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*(return Err\(|Err\()?CheckRefusal::ShapeMismatch \{$' },
+  { file = "crates/core-checker-base/src/judgement.rs", pattern = '^\s*mismatch\(ExpectedShape::Product, head\),$' },
+]
