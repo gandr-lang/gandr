@@ -3,7 +3,7 @@ data Outer : Type where
   | Some : (n : Integer) --> Outer
 
 @[refuses("NonExhaustiveMatch")]
-def by_literal(m : Outer) -> -F Integer =
+def by_literal(m : Outer) -> Integer =
   match m where
     | Some(0) => return 0
     | None => return 1

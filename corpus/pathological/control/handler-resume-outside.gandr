@@ -12,7 +12,7 @@
 import std.process;
 
 @[refuses("UnresolvedName")]
-def stray() -> -F Unit =
+def stray() -> Unit =
   handle c : std.process.Exit.Eff {
     k *{}
   } with {

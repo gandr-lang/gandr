@@ -18,4 +18,4 @@
 /// A parameter inside a double-quoted argument beside a single-quoted format,
 /// in a definition.
 @[refuses("OutOfFragment.shell_block")]
-def formatted() -> -F Unit { #!{ printf '%s\n' "value $x"; } }
+def formatted() -> Unit { #!{ printf '%s\n' "value $x"; } }
