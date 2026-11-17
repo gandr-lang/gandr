@@ -1,0 +1,91 @@
+test: cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745
+package: gandr-lang
+command: mise run debug:test gandr-lang cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745 --break panicking::assert_failed
+
+(lldb) target create "target/debug-trace/debug/build/gandr-lang/7966ee873b550826/out/tests-7966ee873b550826"
+Current executable set to 'target/debug-trace/debug/build/gandr-lang/7966ee873b550826/out/tests-7966ee873b550826' (arm64).
+(lldb) settings set -- target.run-args  "cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex panicking::assert_failed
+Breakpoint 1: 38 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-7966ee873b550826`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x000000010073b168
+(lldb) run
+
+running 1 test
+test cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 69405 launched: 'target/debug-trace/debug/build/gandr-lang/7966ee873b550826/out/tests-7966ee873b550826' (arm64)
+Process 69405 stopped
+* thread #2, name = 'cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745', stop reason = breakpoint 1.4
+       frame #0: 0x000000010073359c tests-7966ee873b550826`core::panicking::assert_failed::<alloc::string::String, alloc::string::String>(kind=Eq, left="gandr: the pin /private/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n", right="gandr: the pin /var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n", args=None) at panicking.rs:407:5
+   404 	    T: fmt::Debug + ?Sized,
+   405 	    U: fmt::Debug + ?Sized,
+   406 	{
+-> 407 	    assert_failed_inner(kind, &left, &right, args)
+    	    ^
+   408 	}
+   409 	
+   410 	/// Internal function for `assert_match!`
+(lldb) bt 24
+* thread #2, name = 'cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745', stop reason = breakpoint 1.4
+   * frame #0: 0x000000010073359c tests-7966ee873b550826`core::panicking::assert_failed::<alloc::string::String, alloc::string::String>(kind=Eq, left="gandr: the pin /private/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n", right="gandr: the pin /var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n", args=None) at panicking.rs:407:5
+     frame #1: 0x000000010003460c tests-7966ee873b550826`tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745 at cli.rs:5069:5
+     frame #2: 0x0000000100005f3c tests-7966ee873b550826`tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745::{closure#0}((null)={}) at cli.rs:5062:63
+     frame #3: 0x000000010006693c tests-7966ee873b550826`<tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x0000000100075f18 tests-7966ee873b550826`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #5: 0x0000000100075f10 tests-7966ee873b550826`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #6: 0x0000000100081434 tests-7966ee873b550826`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #7: 0x0000000100081428 tests-7966ee873b550826`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #8: 0x0000000100081428 tests-7966ee873b550826`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #9: 0x0000000100081424 tests-7966ee873b550826`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #10: 0x0000000100081424 tests-7966ee873b550826`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #11: 0x0000000100081424 tests-7966ee873b550826`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #12: 0x0000000100081418 tests-7966ee873b550826`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #13: 0x000000010007be28 tests-7966ee873b550826`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #14: 0x000000010007bdc4 tests-7966ee873b550826`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #15: 0x00000001000838f8 tests-7966ee873b550826`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #16: 0x00000001000838e8 tests-7966ee873b550826`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #17: 0x00000001000838e8 tests-7966ee873b550826`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #18: 0x00000001000838e4 tests-7966ee873b550826`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #19: 0x00000001000838e4 tests-7966ee873b550826`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #20: 0x00000001000838e4 tests-7966ee873b550826`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #21: 0x00000001000838d4 tests-7966ee873b550826`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #22: 0x0000000100715f38 tests-7966ee873b550826`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #23: 0x0000000100715f2c tests-7966ee873b550826`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+(lldb) frame variable --depth 3
+(core::panicking::AssertKind) kind = Eq
+(alloc::string::String *) left = 0x0000000170006528 "gandr: the pin /private/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n"
+(alloc::string::String *) right = 0x0000000170006540 "gandr: the pin /var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n"
+(core::option::Option<core::fmt::Arguments>) args = None
+(lldb) up
+frame #1: 0x000000010003460c tests-7966ee873b550826`tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745 at cli.rs:5069:5
+   5066	    let pin = scratch.file(Path::new("gandr-toolchain"), Text::from("ghost\n"));
+   5067	    let refused = proxied(&["check"], &scratch.0, &data, Maybe::Absent(()));
+   5068	    assert_eq!(code(&refused), Code(2_i32));
+-> 5069	    assert_eq!(
+    	    ^
+   5070	        stderr(&refused),
+   5071	        format!(
+   5072	            "gandr: the pin {} names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n",
+(lldb) frame variable --depth 3
+(tests::cli::Scratch) scratch = {0:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405"}
+(std::path::PathBuf) data = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/data" {
+  inner = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/data" {
+    inner = {inner:size=90}
+  }
+}
+(std::path::PathBuf) pin = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain" {
+  inner = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain" {
+    inner = {inner:size=101}
+  }
+}
+(std::process::Output) refused = {status:{0:{0:512}}, stdout:size=0, stderr:size=226}
+(alloc::string::String *) left_val = 0x0000000170006528 "gandr: the pin /private/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n"
+(alloc::string::String *) right_val = 0x0000000170006540 "gandr: the pin /var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/gandr-driver-toolchain-unknown-69405/gandr-toolchain names the toolchain `ghost`, which is not installed: `gandr toolchain link ghost <path>` installs it\n"
+(core::panicking::AssertKind) kind = Eq

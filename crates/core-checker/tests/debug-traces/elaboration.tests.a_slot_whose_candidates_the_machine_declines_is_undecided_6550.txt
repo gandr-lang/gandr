@@ -1,0 +1,113 @@
+test: elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550
+package: gandr-core-checker
+command: mise run debug:test gandr-core-checker elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550 --break constraints::agreement
+
+(lldb) target create "target/debug-trace/debug/build/gandr-core-checker/2b5a2cbf8e3c8264/out/gandr_core_checker-2b5a2cbf8e3c8264"
+Current executable set to 'target/debug-trace/debug/build/gandr-core-checker/2b5a2cbf8e3c8264/out/gandr_core_checker-2b5a2cbf8e3c8264' (x86_64).
+(lldb) settings set -- target.run-args  "elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex constraints::agreement
+Breakpoint 1: 5 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_core_checker-2b5a2cbf8e3c8264`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x0000000002138e88
+(lldb) run
+
+running 1 test
+test elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1004559 launched: 'target/debug-trace/debug/build/gandr-core-checker/2b5a2cbf8e3c8264/out/gandr_core_checker-2b5a2cbf8e3c8264' (x86_64)
+Process 1004559 stopped
+* thread #2, name = 'elaboration::te', stop reason = breakpoint 1.3
+       frame #0: 0x0000555556b5134a gandr_core_checker-2b5a2cbf8e3c8264`gandr_core_checker::elaboration::constraints::agreement(arena={values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}, definitions={bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}, one={components:size=2, fixed:size=0}, other={components:size=2, fixed:size=0}) at constraints.rs:1202:1
+   1199	/// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
+   1200	/// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
+   1201	/// - witness: `elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550`
+-> 1202	#[spec(ensures: |ret| (!one.components.is_empty() && !other.components.is_empty()) || (!one.fixed.is_empty() && !other.fixed.is_empty()) || ret == Ok(MachineVerdict::Convertible))]
+    	^
+   1203	fn agreement(
+   1204	    arena: &CoreArena,
+   1205	    definitions: &crate::code::CodeDefinitions,
+(lldb) bt 24
+* thread #2, name = 'elaboration::te', stop reason = breakpoint 1.3
+   * frame #0: 0x0000555556b5134a gandr_core_checker-2b5a2cbf8e3c8264`gandr_core_checker::elaboration::constraints::agreement(arena={values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}, definitions={bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}, one={components:size=2, fixed:size=0}, other={components:size=2, fixed:size=0}) at constraints.rs:1202:1
+     frame #1: 0x0000555556a7676b gandr_core_checker-2b5a2cbf8e3c8264`<gandr_core_checker::elaboration::constraints::Deferrals>::resolve::{closure#0} at constraints.rs:1044:27
+     frame #2: 0x0000555556b1eb0e gandr_core_checker-2b5a2cbf8e3c8264`anodized::__::eval_once::<core::result::Result<(), (gandr_core_term::arena::ValueId, gandr_core_checker::refusal::CheckRefusal)>, <gandr_core_checker::elaboration::constraints::Deferrals>::resolve::{closure#0}>(closure={_ref__models:size=1, _ref__self__metas:{entries:size=2, by_hole:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, postponed:size=0, journal:None}, _ref__self__nominated:size=2, _ref__self__answered:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, _ref__arena:{values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}, _ref__definitions:{bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, environment:{frames:size=1}}, _ref__part:0x00007ffff7bfdb6f}) at __.rs:32:5 [inlined]
+     frame #3: 0x0000555556b1eae5 gandr_core_checker-2b5a2cbf8e3c8264`<gandr_core_checker::elaboration::constraints::Deferrals>::resolve(self={owed:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, suspended:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, collecting:On, residue:{equations:size=0, dependencies:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, emission:Off, metas:{entries:size=2, by_hole:{root:Some({height:0, node:{…}, _marker:{…}}), length:2, alloc:{value:{0:{…}}}, _marker:{}}, postponed:size=0, journal:None}, nominated:size=2, answered:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, spliced:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, signing:Body}, arena={values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}, definitions={bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}, models=size=1, part=Signature) at constraints.rs:966:5
+     frame #4: 0x000055555672395b gandr_core_checker-2b5a2cbf8e3c8264`gandr_core_checker::elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550 at tests.rs:1477:19
+     frame #5: 0x0000555556700107 gandr_core_checker-2b5a2cbf8e3c8264`gandr_core_checker::elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550::{closure#0}((null)={}) at tests.rs:1448:68
+     frame #6: 0x000055555684ab36 gandr_core_checker-2b5a2cbf8e3c8264`<gandr_core_checker::elaboration::tests::a_slot_whose_candidates_the_machine_declines_is_undecided_6550::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #7: 0x0000555556dece8b gandr_core_checker-2b5a2cbf8e3c8264`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #8: 0x0000555556dece89 gandr_core_checker-2b5a2cbf8e3c8264`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #9: 0x0000555556dfa3d5 gandr_core_checker-2b5a2cbf8e3c8264`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #10: 0x0000555556dfa3d0 gandr_core_checker-2b5a2cbf8e3c8264`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #11: 0x0000555556dfa3d0 gandr_core_checker-2b5a2cbf8e3c8264`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #12: 0x0000555556dfa3bb gandr_core_checker-2b5a2cbf8e3c8264`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #13: 0x0000555556dfa3bb gandr_core_checker-2b5a2cbf8e3c8264`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #14: 0x0000555556dfa3bb gandr_core_checker-2b5a2cbf8e3c8264`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #15: 0x0000555556dfa3a6 gandr_core_checker-2b5a2cbf8e3c8264`test::run_test::{closure#0} at lib.rs:677:43
+     frame #16: 0x0000555556df4d94 gandr_core_checker-2b5a2cbf8e3c8264`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #17: 0x0000555556df4d19 gandr_core_checker-2b5a2cbf8e3c8264`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #18: 0x0000555556dfd532 gandr_core_checker-2b5a2cbf8e3c8264`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #19: 0x0000555556dfd523 gandr_core_checker-2b5a2cbf8e3c8264`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #20: 0x0000555556dfd523 gandr_core_checker-2b5a2cbf8e3c8264`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #21: 0x0000555556dfd513 gandr_core_checker-2b5a2cbf8e3c8264`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #22: 0x0000555556dfd513 gandr_core_checker-2b5a2cbf8e3c8264`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #23: 0x0000555556dfd513 gandr_core_checker-2b5a2cbf8e3c8264`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+(lldb) frame variable --depth 3
+(gandr_core_term::arena::CoreArena *) arena = 0x00007ffff7bfdd78 {values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}
+(gandr_core_checker::code::CodeDefinitions *) definitions = 0x00007ffff7bfe1d0 {bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}
+(gandr_core_term::model::Candidate *) one = 0x00007ffff00014e0 {components:size=2, fixed:size=0}
+(gandr_core_term::model::Candidate *) other = 0x00007ffff0001510 {components:size=2, fixed:size=0}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000555556a7676b gandr_core_checker-2b5a2cbf8e3c8264`<gandr_core_checker::elaboration::constraints::Deferrals>::resolve::{closure#0} at constraints.rs:1044:27
+   1041	                    continue;
+   1042	                }
+   1043	                if let Some(earlier) = elaborated {
+-> 1044	                    match agreement(arena, definitions, earlier, candidate) {
+    	                          ^
+   1045	                        Ok(MachineVerdict::Convertible) => continue,
+   1046	                        Ok(_) => {},
+   1047	                        // Undecided is no second elaboration: at the
+(lldb) frame variable --depth 3
+(gandr_core_checker::elaboration::constraints::Signing) part = Signature
+(gandr_core_checker::code::CodeDefinitions) definitions = {bodies:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, lowered:{chain:{entries:size=0}, bodies:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, presentations:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, constructors:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, identities:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, fills:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, environment:{frames:size=1}}
+(gandr_core_term::arena::CoreArena) arena = {values:{frozen:None, own:size=8}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=0}, words:{words:{0:size=0}}, region_binders_from:None, qubits_from:None}
+(alloc::collections::btree::map::BTreeMap<gandr_core_term::hole::HoleId, gandr_core_term::arena::ValueId, alloc::alloc::Global>) self__answered = {root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}
+(alloc::vec::Vec<gandr_core_term::arena::ValueId, alloc::alloc::Global>) self__nominated = size=2 {
+  [0] = {0:0}
+  [1] = {0:1}
+}
+(gandr_core_unify::meta::Metas) self__metas = {entries:size=2, by_hole:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:2, alloc:{value:{0:{}}}, _marker:{}}, postponed:size=0, journal:None}
+(&[gandr_core_term::model::ModelSlot]) models = size=1 {
+  [0] = {holes:size=2, fixed:size=0, candidates:size=2}
+}
+(alloc::collections::btree::map::BTreeMap<gandr_core_term::hole::HoleId, gandr_core_term::arena::ValueId, alloc::alloc::Global>) met = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:2, keys:(…), vals:(…)}}, _marker:{}}), length:2, alloc:{value:{0:{}}}, _marker:{}}
+(alloc::vec::Vec<(gandr_core_checker::elaboration::constraints::Component, gandr_core_term::arena::ValueId, gandr_core_unify::meta::MetaId), alloc::alloc::Global>) holes = size=2 {
+  [0] = ({0:0}, {0:0}, {0:0})
+  [1] = ({0:1}, {0:1}, {0:1})
+}
+(alloc::vec::Vec<gandr_core_unify::solve::Equation, alloc::alloc::Global>) equations = size=2 {
+  [0] = {scope:{0:0}, left:Value({0:0}), right:Value({0:3})}
+  [1] = {scope:{0:0}, left:Value({0:1}), right:Value({0:6})}
+}
+(alloc::vec::Vec<core::option::Option<gandr_core_term::arena::ValueId>, alloc::alloc::Global>) closed = size=0
+(core::slice::iter::Iter<gandr_core_term::model::ModelSlot>) iter = {ptr:{pointer:{holes:size=2, fixed:size=0, candidates:size=2}}, end_or_len:{holes:size=2, fixed:size=0, candidates:size=2}, _marker:{}}
+(gandr_core_term::model::ModelSlot *) slot = 0x00007ffff7bfe000 {holes:size=2, fixed:size=0, candidates:size=2}
+(gandr_core_term::arena::ValueId) first = {0:0}
+(unsigned long) components = 2
+(unsigned long) sorts = 0
+(gandr_core_term::model::Survivors) survivors = {named:1, beyond:{0:0}}
+(unsigned long) count = 1
+(core::option::Option<&gandr_core_term::model::Candidate>) elaborated = Some({components:size=2, fixed:size=0}) {
+  0 = 0x00007ffff00014e0 {components:size=2, fixed:size=0}
+}
+(core::iter::adapters::enumerate::Enumerate<core::slice::iter::Iter<gandr_core_term::model::Candidate> >) iter = {iter:{ptr:{pointer:{components:<len 0x7ff80fff1011 past mapped memory>, fixed:<len 0x100000001 past mapped memory>}}, end_or_len:{components:<len 0x7ff80fff1011 past mapped memory>, fixed:<len 0x100000001 past mapped memory>}, _marker:{}}, count:2}
+(unsigned long) place = 1
+(gandr_core_term::model::Candidate *) candidate = 0x00007ffff0001510 {components:size=2, fixed:size=0}
+(gandr_core_term::model::Candidate *) earlier = 0x00007ffff00014e0 {components:size=2, fixed:size=0}

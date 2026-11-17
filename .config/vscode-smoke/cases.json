@@ -1,0 +1,26 @@
+[
+  {
+    "name": "#3696: a Linux runner in GitHub Actions starts the editor headless",
+    "kernel": "Linux",
+    "env": { "GITHUB_ACTIONS": "true", "CI": "true" },
+    "admitted": true
+  },
+  {
+    "name": "#3696: a Linux seat whose shell sets CI=true starts no editor",
+    "kernel": "Linux",
+    "env": { "CI": "true" },
+    "admitted": false
+  },
+  {
+    "name": "#3696: a macOS host starts no editor, even in GitHub Actions",
+    "kernel": "Darwin",
+    "env": { "GITHUB_ACTIONS": "true", "CI": "true" },
+    "admitted": false
+  },
+  {
+    "name": "#3696: a Linux host with neither variable starts no editor",
+    "kernel": "Linux",
+    "env": {},
+    "admitted": false
+  }
+]

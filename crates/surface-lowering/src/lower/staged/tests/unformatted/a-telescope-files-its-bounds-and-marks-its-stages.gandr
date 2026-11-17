@@ -1,0 +1,3 @@
+{NAT}{APPLIED}def bounded[n : Size, i : Size, i < n](x : Nat[i], y : Nat[< n]) -> -F Nat {{
+  return x
+}}
