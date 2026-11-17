@@ -3,8 +3,8 @@ error[RulesOverlapCondition]: this rule and an earlier one rewrite overlapping t
    │
 13 │   rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where {| a # q};
    │   ────────────────────────────────────────────────────────────────────────────── the rule it overlaps
-14 │   rule vacant : nu (bind a. (nil ())) <=> nil ();
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
+14 │   rule vacant : nu (bind a. nil) <=> nil;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts under the condition its overlap composes
    │
    ├ note: `VacantOverlap` is refused with RulesOverlapCondition, as its expectation states
    ╰ help: add a rule that joins the overlap under its condition

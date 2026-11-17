@@ -1,8 +1,7 @@
 {COUNTER}def observe(m : Model(Counter)) -> -F Integer {{
   match m {{
     | *{{.start = s, .step = f, .read = r}} => {{
-      let z = s ();
-      let once = f z;
+      let once = f s;
       become r once
     }}
   }}

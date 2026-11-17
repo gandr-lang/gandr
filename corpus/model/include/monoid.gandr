@@ -53,7 +53,7 @@ pub module Endo : Model(Monoid) where
   ) -> Integer -> Integer =
     thunk { andThen f g }
 
-  def one : Integer -> Integer = ident;
+  def one = ident;
 
   /// `assoc` verifies the included associativity law.
   def assoc(

@@ -13,8 +13,8 @@ error[RulesUncompleted]: this rule and an earlier one rewrite `mul(mul(one, pair
 17 │   include Monoid;
    │   ────────────── the rule it overlaps
 18 │   oper pair : (x : M, y : M) --> M;
-19 │   rule swap : mul (one ()) (pair x y) ==> pair y x;
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
+19 │   rule swap : mul one (pair x y) ==> pair y x;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ rewrites a term two ways no rule joins
    │
    ├ note: `Swapping` is refused with RulesUncompleted, as its expectation states
    ╰ help: add a rule that joins the two normal forms, or remove one of the two rules

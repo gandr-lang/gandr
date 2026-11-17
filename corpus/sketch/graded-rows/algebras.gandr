@@ -18,7 +18,7 @@ import std.grade (Grade, Count, Usage);
 @[graded(Count)]
 theory Choice where
   /// The run fails with no result.
-  oper fail : () --> Unit;
+  oper fail : Unit;
   /// The run splits into two.
   oper or : (x : Unit, y : Unit) --> Unit;
 
@@ -26,10 +26,10 @@ theory Choice where
 @[graded(Count)]
 theory Alloc where
   /// One fresh cell.
-  oper alloc : () --> Cell;
+  oper alloc : Cell;
 
 /// Partiality names no algebra, so a row states only that it may run
 /// forever.
 theory Partial where
   /// A run that does not return.
-  oper diverge : () --> Unit;
+  oper diverge : Unit;

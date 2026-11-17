@@ -20,10 +20,10 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 15 │ module Sealed :> Model(Counter) where
    │                        ─────── the type it synthesises
    ┆
-28 │ def leaked() -> Integer { Sealed.start () }
-   │ ┬───────────────┬─────────┯━━━━━━━━━━━━━━──
+28 │ def leaked() -> Integer { Sealed.start }
+   │ ┬───────────────┬─────────┯━━━━━━━━━━━──
    │ │               │         │
-   │ │               │         its type does not convert: expected `-F Integer`, found `-F Sealed.C`
+   │ │               │         its type does not convert: expected `Integer`, found `Sealed.C`
    │ │               the type it is checked against
    │ checked against `() -> Integer`; while checking the body of this thunk
    │

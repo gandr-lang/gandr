@@ -1791,12 +1791,12 @@ impl Reader<'_, '_>
         }
         // An operation of no input and one unnamed result is a constant,
         // `oper c : T`: the reader refuses the empty input list `() -->` by its
-        // name. An unnamed port carries an empty or `_`-led minted name.
+        // name. An unnamed port carries the name `fresh_port` mints.
         if kind == OperationKind::Operation
             && thunked.is_none()
             && boundary.inputs.is_empty()
             && matches!(boundary.outputs.as_slice(), [only]
-                if only.name.as_ref().is_empty() || only.name.as_ref().starts_with('_'))
+                if only.name.as_ref().starts_with(FRESH_PORT))
         {
             return Err(run.signature_fault(SignatureFault::Retired(
                 gandr_surface_grammar::RetiredForm::EmptyOperationInputs,

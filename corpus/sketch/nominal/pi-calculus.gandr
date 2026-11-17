@@ -18,7 +18,7 @@ pub theory Pi where
   /// The processes.
   sort Proc : Type;
   /// The process that does nothing.
-  oper nil : () --> Proc;
+  oper nil : Proc;
   /// A process under a private name.
   oper nu : (p : (a : Name) ->[#] Proc) --> Proc;
   /// Two processes side by side.

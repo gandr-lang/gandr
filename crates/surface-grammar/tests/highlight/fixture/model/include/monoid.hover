@@ -100,7 +100,7 @@
 36:5-36:10 module ⇒ module Endo : Model(Monoid)⏎⏎`Endo` models `Monoid` with integer endofunctions. @36:5-36:33
 36:12-36:15 Endo ⇒ module Endo : Model(Monoid)⏎⏎`Endo` models `Monoid` with integer endofunctions. @36:12-36:16
 36:17-36:24 : Model( ⇒ module Endo : Model(Monoid)⏎⏎`Endo` models `Monoid` with integer endofunctions. @36:5-36:33
-36:25-36:30 Monoid ⇒ Monoid : Integer -> Integer @36:25-36:31
+36:25-36:30 Monoid ⇒ theory Monoid where {⏎  include Semigroup;⏎  oper one : M;⏎  rule unitL : mul one x ==> x;⏎  rule unitR : mul x one ==> x;⏎}⏎⏎`Monoid` adds a two-sided unit to `Semigroup`. @36:25-36:31
 36:31-36:31 ) ⇒ module Endo : Model(Monoid)⏎⏎`Endo` models `Monoid` with integer endofunctions. @36:5-36:33
 36:33-36:37 where ⇒ module Endo : Model(Monoid)⏎⏎`Endo` models `Monoid` with integer endofunctions. @36:33-36:38
 37:3-37:6 type ⇒ type M = Integer -> Integer @37:3-37:31
@@ -168,15 +168,11 @@
 54:21-54:21 f ⇒ f : Integer -> Integer @54:21-54:22
 54:23-54:23 g ⇒ g : Integer -> Integer @54:23-54:24
 54:25-54:25 } ⇒ Integer -> Integer @54:5-54:26
-56:3-56:5 def ⇒ one : Integer -> Integer @56:3-56:40
+56:3-56:5 def ⇒ one : Integer -> Integer @56:3-56:19
 56:7-56:9 one ⇒ one : Integer -> Integer @56:7-56:10
-56:11-56:11 : ⇒ one : Integer -> Integer @56:3-56:40
-56:13-56:19 Integer ⇒ Integer : Type @56:13-56:20
-56:21-56:22 -> ⇒ Integer -> Integer : Type[-] @56:13-56:31
-56:24-56:30 Integer ⇒ Integer : Type @56:24-56:31
-56:32-56:32 = ⇒ one : Integer -> Integer @56:3-56:40
-56:34-56:38 ident ⇒ ident : Integer -> Integer @56:34-56:39
-56:39-56:39 ; ⇒ one : Integer -> Integer @56:3-56:40
+56:11-56:11 = ⇒ one : Integer -> Integer @56:3-56:19
+56:13-56:17 ident ⇒ ident : Integer -> Integer @56:13-56:18
+56:18-56:18 ; ⇒ one : Integer -> Integer @56:3-56:19
 59:3-59:5 def ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:47
 59:7-59:12 assoc( ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:7-59:12
 60:5-60:5 f ⇒ f : Integer -> Integer @60:5-60:6

@@ -1,8 +1,8 @@
 error[IllFormedDescription]: a rule applies `succ`, which the signature does not declare
    ╭▸ corpus/ledger/diagnostics/UnstatedComponent.UnknownHead.gandr:10:3
    │
-10 │   rule stray : succ (zero ()) ==> zero ();
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
+10 │   rule stray : succ zero ==> zero;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ what the description check refuses
    │
    ├ note: `T` is refused with IllFormedDescription, as its expectation states
    ╰ help: declare the operation in the signature, or write the rule over operations it declares

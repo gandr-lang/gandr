@@ -33,7 +33,7 @@ pub def onlyMatch(xs : NonEmpty Item, wanted : Item -> Bool) -> [Choice >= 1, Ch
 /// A builder's allocations are at most two cells per element, an expression
 /// of the algebra.
 pub def pairs(n : Nat) -> [Alloc <= 2 * n] List (Cell * Cell) =
-  List.tabulate n (fun (_) { *{alloc (), alloc ()} })
+  List.tabulate n (fun (_) { *{alloc, alloc} })
 
 /// A function with an ungraded cost entry: it charges, and its signature
 /// states no bound.

@@ -14,7 +14,7 @@ theory Counter where
   /// The carrier.
   sort C : Type;
   /// The start.
-  oper start : () --> C;
+  oper start : C;
   /// One step.
   oper tick : (c : C) --> C;
 
@@ -25,7 +25,7 @@ module Clock :> Model(Counter) where
   type C = Nat;
 
   /// The start.
-  def start() -> Nat { 0 }
+  def start : Nat = 0;
 
   /// One step, which unfolds to a successor inside the seal.
   def tick(c : Nat) -> Nat { c + 1 }
