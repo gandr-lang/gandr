@@ -1,0 +1,87 @@
+//! `cancelled-receiver` models a peer that waits after a handler abandons its
+//! continuation.
+//!
+//! The abandoned rest holds an end whose protocol is still open.
+//! So the rest owes its peer a cancellation.
+//! It proves that a waiting peer observes cancellation at its next action.
+//! The peer then abandons its own continuation.
+//! An abandoned end also cancels each queued end.
+//!
+//! Each program exits from its root continuation.
+//! The handler abandons that continuation.
+//! It returns `7`.
+//!
+//! - see: #3305 — the cancellation hop
+//! - cites: [Fowler-2019-exceptional_asynchronous_session_types] — cancellation
+//!   reaching the peer and every end left in a cancelled end's buffer
+//!
+//! [Fowler-2019-exceptional_asynchronous_session_types]: https://doi.org/10.1145/3290341 "Fowler, Lindley, Morris and Decova, Exceptional Asynchronous Session Types"
+
+// The import provides the early-exit host interface.
+import std.process;
+
+/// The peer waits for a payload after it sends its first payload.
+@[runs("7")]
+def parked() -> Integer =
+  handle c : std.process.Exit.Eff {
+    let found = fork (peer : !Integer. ?Integer. end) {
+      send peer 1;
+      let x = recv peer;
+      close peer
+    };
+    let first = recv found;
+    c.exit 1;
+    send found 2;
+    close found;
+    pure first
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
+  }
+
+/// The root abandons its continuation before the peer receives a payload.
+@[runs("7")]
+def late() -> Integer =
+  handle c : std.process.Exit.Eff {
+    let found = fork (peer : ?Integer. end) {
+      let x = recv peer;
+      close peer
+    };
+    c.exit 1;
+    send found 2;
+    close found;
+    pure 1
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
+  }
+
+/// The root abandons its continuation before it receives the
+/// worker's queued end.
+@[runs("7")]
+def forwarded() -> Integer =
+  handle c : std.process.Exit.Eff {
+    let r = fork (relay : !(!Integer. end). end) {
+      let w = fork (worker : ?Integer. end) {
+        let n = recv worker;
+        close worker
+      };
+      send relay w;
+      close relay
+    };
+    let t = fork (tick : !Integer. end) {
+      send tick 1;
+      close tick
+    };
+    let one = recv t;
+    close t;
+    c.exit 1;
+    let held = recv r;
+    send held 3;
+    close held;
+    close r;
+    pure one
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => { abandon k; pure 7 }
+  }

@@ -1,0 +1,25 @@
+/// The first circle.
+pub data C1 : Type where
+  | B1 : C1
+  | l1 : B1 <-> B1
+
+/// The second circle.
+pub data C2 : Type where
+  | B2 : C2
+  | l2 : B2 <-> B2
+
+/// The integers, each successor cancelled by a predecessor.
+pub data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S (P x) <=> x;
+  rule : P (S x) <=> x;
+}
+
+/// A case over the second circle's words with the first circle's letters.
+def rec crossed(p : Path[.A = C2](B2, B2)) -> Int =
+  match p where
+    | here => Z
+    | l1 ∷ q => S (crossed[<] q)
+    | back(l1) ∷ q => P (crossed[<] q)
