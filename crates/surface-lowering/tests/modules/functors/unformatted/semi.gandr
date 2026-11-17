@@ -1,0 +1,5 @@
+theory Semi where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule assoc : mul (mul x y) z ==> mul x (mul y z);
+}

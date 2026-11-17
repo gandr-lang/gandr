@@ -1,0 +1,2 @@
+{NAT}def rec noPath(p : Nat, v : Nat, v1 : Nat) -> Type {{ match p {{ | Zero => return Unit | Succ(rest) => return type(*{{ inner : noPath[<](rest, v, v1) }}) }} }}
+def rec twoParams(p : Nat, v1 : Nat) -> Type {{ match p {{ | Zero => return type(Path[.A = Nat](v1, v1)) | Succ(rest) => return type(*{{ inner : twoParams[<](rest, v1) }}) }} }}

@@ -1,0 +1,25 @@
+# A query with no fix: the name of each struct, enum, union or type alias that
+# declares the brand `'r`. The codemod reads these names and writes the rule
+# for their uses.
+id: holder-name
+language: Rust
+severity: info
+message: a holder of the region's brand
+rule:
+  pattern: $NAME
+  kind: type_identifier
+  inside:
+    field: name
+    all:
+      - any:
+          - kind: struct_item
+          - kind: enum_item
+          - kind: union_item
+          - kind: type_item
+      - has:
+          field: type_parameters
+          kind: type_parameters
+          has:
+            kind: lifetime
+            regex: ^'r$
+            stopBy: end

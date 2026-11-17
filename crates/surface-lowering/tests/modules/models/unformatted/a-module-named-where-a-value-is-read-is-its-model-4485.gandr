@@ -1,0 +1,6 @@
+{}def packed : Model(Counter) ;
+def packed = pack Opened at Model(Counter) ;
+def bare : Model(Counter) ;
+def bare = Opened ;
+def started(m : Model(Counter)) -> Integer {{ 0 }}
+def passed() -> Integer {{ started(Opened) }}
