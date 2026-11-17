@@ -718,20 +718,19 @@ fn table_verdicts_equal_dry_run_verdicts_changed() -> Result<(), Failure>
 fn a_closer_that_reaches_its_partner_decides_as_its_dry_run_7032()
 {
     let pbg = built();
-    for text in ["def together = *{a = Ordered.}\n"] {
-        let mut molder = Molder::with_verdicts(pbg, MoldVerdicts::Differential);
-        let mut state = MeldState::new(pbg);
-        molder.mold_stream(
-            &mut state,
-            &label(SourceFragment::from(text)),
-            SourceText::from(text),
-        );
-        assert_eq!(
-            DisagreementCount(0),
-            molder.disagreements(),
-            "the tables decide {text:?} as the dry runs do"
-        );
-    }
+    let text = "def together = *{a = Ordered.}\n";
+    let mut molder = Molder::with_verdicts(pbg, MoldVerdicts::Differential);
+    let mut state = MeldState::new(pbg);
+    molder.mold_stream(
+        &mut state,
+        &label(SourceFragment::from(text)),
+        SourceText::from(text),
+    );
+    assert_eq!(
+        DisagreementCount(0),
+        molder.disagreements(),
+        "the tables decide {text:?} as the dry runs do"
+    );
 }
 
 /// The table sweep over the sources `sweep` visits, the strays first.

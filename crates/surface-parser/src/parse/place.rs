@@ -867,7 +867,8 @@ fn headed<'source>(
                 .map(|&(child, ..)| child)
                 .collect();
             while let Some(position) = pending.pop() {
-                if let Some(NodeLabel::Meld(mold)) = tree.node(position).map(|node| node.label())
+                if let Some(node) = tree.node(position)
+                    && let NodeLabel::Meld(mold) = node.label()
                     && bool::from(declaration_head(pbg, mold))
                     && let Some(keyword) =
                         first_tile(tree, position).and_then(|(_, first)| spelt(first))

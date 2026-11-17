@@ -398,11 +398,11 @@ fn class(
 ///   written brackets opened inside that bracket: the closer of each of those
 ///   brackets, innermost first. The scan reads the closer as the close of the
 ///   innermost bracket, as it reads every closer. In `words`, each lower-case
-/// word of two or more bytes that is no keyword, outside an interpolation, in
-/// source order. Also in `arrows`, an `=` at the end of the token before a
-/// written `;` that ends a block member whose first token is `let`, when the
-/// member writes no `=` directly inside its block and that token ends an
-/// operand.
+///   word of two or more bytes that is no keyword, outside an interpolation, in
+///   source order. Also in `arrows`, an `=` at the end of the token before a
+///   written `;` that ends a block member whose first token is `let`, when the
+///   member writes no `=` directly inside its block and that token ends an
+///   operand.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
