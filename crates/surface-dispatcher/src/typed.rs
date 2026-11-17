@@ -9914,7 +9914,7 @@ mod tests
             ("h, .._", "Integer"),
             ("all @ #[h", "List Integer"),
             ("p, n}", "Bool"),
-            ("z) :", "Integer"),
+            ("z} :", "Integer"),
             ("m} =>", "+U (M -> M -> -F M)"),
         ] {
             assert_eq!(

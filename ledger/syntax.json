@@ -413,6 +413,7 @@
     {"label":"≅","molds":1,"opening":1,"rules":1}
   ],
   "superseded": [
+    {"exemplar":"../corpus/ledger/syntax/superseded/parenthesized-product-pattern.gandr","reason":"a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading","refused":"RetiredSpelling.parenthesized_product_pattern","replaced_by":"*{p, q}","rule":"tuple_pattern","surface":"parenthesized_product_pattern"},
     {"exemplar":"../corpus/ledger/syntax/superseded/unit-value.gandr","reason":"the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name","refused":"RetiredSpelling.unit_value","replaced_by":"*{}","rule":"telescope_expression","surface":"unit_value"},
     {"exemplar":"../corpus/ledger/syntax/superseded/fat-arrow-box.gandr","reason":"the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named","refused":"RetiredSpelling.fat_arrow_box","replaced_by":"A -> B","rule":"function_type","surface":"fat_arrow_box"},
     {"exemplar":"../corpus/ledger/syntax/superseded/positional-path-carrier.gandr","reason":"a carrier written first, by position, is refused by name: the head takes its carrier by name","refused":"RetiredSpelling.positional_path_carrier","replaced_by":"Path[.A = A](a, b)","rule":"path_type","surface":"positional_path_carrier"},

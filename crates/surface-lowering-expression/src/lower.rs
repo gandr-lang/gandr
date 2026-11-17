@@ -8173,6 +8173,24 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 None => Models::new(self.host()).called_outputs(frame, bound, run.node)?,
                 Some(_) => None,
             };
+            // A group in parentheses receives a call's outputs alone. Over a
+            // stored product the pattern is `*{p, q}`.
+            if outputs.is_none()
+                && self.cx().tree.node(binder.node).is_some_and(|node| {
+                    matches!(
+                        shape_of(self.cx().pbg, node),
+                        Ok(Shape::Form {
+                            name: FormName::TUPLE_PATTERN,
+                            ..
+                        })
+                    )
+                })
+            {
+                return Err(pattern.fault(
+                    binder.span,
+                    FormFault::Retired(RetiredForm::ParenthesizedProductPattern),
+                ));
+            }
             // A pattern of a call returning outputs binds every one of them.
             if outputs
                 .as_ref()

@@ -33,6 +33,6 @@ def bound() -> -F Integer {
   n
 }
 def split() -> -F Integer {
-  let (y, z) : Integer * Integer = (1, 2);
+  let *{y, z} : Integer * Integer = *{1, 2};
   y
 }
