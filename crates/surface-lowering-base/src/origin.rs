@@ -2825,10 +2825,6 @@ impl OriginTable
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::record_scope_law`].
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
-    #[expect(
-        allocation_free_region,
-        reason = "the lookup borrows the name, and the lint reads the returned `Maybe` as owned"
-    )]
     #[spec(ensures: |ret| match self.scope_laws.get(&(scope, rule)) {
         | Some(held) => ret == Maybe::Present(held),
         | None => ret == Maybe::Absent(origin::Absent::Unrecorded),
@@ -2840,9 +2836,10 @@ impl OriginTable
         rule: RuleIndex,
     ) -> Maybe<&gandr_theory_levitation::Name, origin::Absent>
     {
-        self.scope_laws
-            .get(&(scope, rule))
-            .map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
+        match self.scope_laws.get(&(scope, rule)) {
+            Some(name) => Maybe::Present(name),
+            None => Maybe::Absent(origin::Absent::Unrecorded),
+        }
     }
 
     /// Record that the block written at `block` lowers to `computation`.
