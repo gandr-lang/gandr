@@ -411,5 +411,6 @@
     {"label":"≅","molds":1,"opening":1,"rules":1}
   ],
   "superseded": [
+    {"issue":5330,"reason":"the glued head `T(a, b)` stays read until the sources move to `T a b`","replaced_by":"type_application.juxtaposed","rule":"type_application","surface":"glued_type_application"}
   ]
 }

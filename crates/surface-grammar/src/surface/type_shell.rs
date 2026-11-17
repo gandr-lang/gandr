@@ -53,6 +53,8 @@ use crate::PrecName;
 use crate::PrecTable;
 use crate::Provenance;
 use crate::Regex;
+use crate::RemovalIssue;
+use crate::Replacement;
 use crate::Rule;
 use crate::RuleName;
 use crate::Sort;
@@ -509,8 +511,9 @@ fn add_type_rules(
     // decoder's arm writes its own recursion in the type it returns,
     // `el[<](a)`, as its body writes it; the lowering reads it there and
     // refuses it anywhere else. A capitalised head never carries it, so a
-    // generator's result keeps the `[` its attribute slot opens.
-    rules.push(rule(
+    // generator's result keeps the `[` its attribute slot opens. The glued
+    // head is the old spelling of the juxtaposed application below.
+    let mut glued = rule(
         RuleName("type_application"),
         ty,
         type_application,
@@ -539,7 +542,17 @@ fn add_type_rules(
                 tile(TileLabel(")")),
             ])),
         ]),
+    );
+    glued.adaptations.push(Adaptation::superseded(
+        RuleName("type_application"),
+        SurfaceForm("glued_type_application"),
+        AdaptationReason("the glued head `T(a, b)` stays read until the sources move to `T a b`"),
+        (
+            Replacement("type_application.juxtaposed"),
+            RemovalIssue(5330),
+        ),
     ));
+    rules.push(glued);
     // A type application written by juxtaposition, `Maybe A`, as a value call
     // is written, `f x` (#5326). Its tile is the zero-width application tile,
     // which the melder pushes between two type operands. Its provenance is

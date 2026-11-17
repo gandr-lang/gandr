@@ -242,9 +242,13 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 0 spellings
+## Superseded — 1 spelling
 
-An old spelling that the grammar still parses, so that a stale source reaches the decline of the elaborator. Each one names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open.
+An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
+
+| Rule | Old spelling | Replaced by | Removal | Why the record stands |
+| ---- | ------------ | ----------- | ------- | --------------------- |
+| `type_application` | `glued_type_application` | `type_application.juxtaposed` | removed by #5330 | the glued head `T(a, b)` stays read until the sources move to `T a b` |
 
 ## Attributes — 20 attributes
 
