@@ -1116,6 +1116,10 @@ primitive_copy_wrapper!(
     struct FormLastMembership(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether an open `{` stands below the slope's head.
+    struct InsideOpenBrace(bool);
+);
+primitive_copy_wrapper!(
     /// Whether a required-tail frontier's tail is one form already under way.
     struct TailUnderWay(bool);
 );
@@ -2989,7 +2993,8 @@ impl<'pbg> MeldState<'pbg>
             Some(Role::FormTile {
                 mold, open: true, ..
             }) if self.frontier_hole_sort(mold).is_none()
-                && !bool::from(FormTable::is_form_last(self.pbg, mold)) =>
+                && !bool::from(FormTable::is_form_last(self.pbg, mold))
+                && bool::from(self.inside_open_brace()) =>
             {
                 Some(mold)
             },
@@ -3005,6 +3010,41 @@ impl<'pbg> MeldState<'pbg>
             .unwrap_or_default()
             .iter()
             .map(|&(_, next)| next)
+    }
+
+    /// Whether an open `{` stands below the slope's head: a brace tile whose
+    /// `}` no tile above it pushes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when, scanning the slope from the head down, a
+    ///   brace-class tile spelled `{` comes before as many `}` tiles as there
+    ///   are `{` tiles above it; leaves `self` unchanged.
+    /// - panics: none.
+    /// - bound: one pass over the slope.
+    fn inside_open_brace(&self) -> InsideOpenBrace
+    {
+        let bytes = self.source.as_bytes();
+        let mut closed = 0_usize;
+        for cell in self.stack.iter().rev() {
+            let Role::FormTile { mold, .. } = cell.role
+            else {
+                continue;
+            };
+            if self.pbg.closing_class(mold) != Some(ClosingClass::Brace) {
+                continue;
+            }
+            match usize::try_from(cell.start)
+                .ok()
+                .and_then(|start| bytes.get(start))
+            {
+                Some(b'}') => closed = closed.saturating_add(1),
+                Some(_) if closed == 0 => return InsideOpenBrace::from(true),
+                Some(_) => closed = closed.saturating_sub(1),
+                None => {},
+            }
+        }
+        InsideOpenBrace::from(false)
     }
 
     /// How many cells the slope holds.
