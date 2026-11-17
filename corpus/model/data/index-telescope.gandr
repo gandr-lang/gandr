@@ -53,8 +53,8 @@ def nextVar(g : Ctx, a : ObjTy, b : ObjTy, v : Var g a) -> Var (Extend g b) a =
 
 /// The function this definition returns moves a variable of `d` past
 /// one more entry.
-def weaken(d : Ctx, b : ObjTy, a : ObjTy) -> Var(d, a) -> Var(Extend(d, b), a) =
-  return fun (x) { There d a b x }
+def weaken(d : Ctx, b : ObjTy, a : ObjTy) -> Var d a -> Var (Extend d b) a =
+  fun (x) { There d a b x }
 
 /// Positions below a bound.
 data Fin : Nat -> Type where

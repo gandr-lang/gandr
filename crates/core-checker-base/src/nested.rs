@@ -64,6 +64,13 @@
 //! decided pure and binds before its region as any other, so the second run
 //! and the kernel read the application.
 //!
+//! **A lambda against a returner of a box stands as the box.** A lambda whose
+//! expected type is `-F (U C)`, with `C` a function, checks at `C`, and the
+//! elaboration writes it as `return (thunk λ)`: the body a written `return`
+//! gives (#6390). So `def id(g : Type) -> g -> g { fun (x) { x } }` needs no
+//! `return`. A lambda against an arrow or the unknown type keeps its own
+//! reading, and a box of any other computation keeps its written `return`.
+//!
 //! **A record update stands as a record.** The judgement synthesises an
 //! update's base and its overlay, each a record, and records the base's labels
 //! the overlay does not write; once the elaboration has bound every run, the
@@ -107,6 +114,7 @@
 //! [`CheckRefusal::UnenclosedRun`]: crate::CheckRefusal::UnenclosedRun
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -334,7 +342,8 @@ impl NestedElaboration
 }
 
 /// Rebuild `body` with every computation written where a value is read
-/// elaborated as `decisions` decided it.
+/// elaborated as `decisions` decided it, and each lambda of `boxed` as the box
+/// it returns, `return (thunk λ)`.
 ///
 /// # Specification
 /// - requires: `body` is live in `arena`, and `decisions` holds what the
@@ -366,7 +375,7 @@ impl NestedElaboration
 pub fn elaborate(
     arena: &mut CoreArena,
     body: ValueId,
-    decisions: &BTreeMap<ValueId, Nesting>,
+    (decisions, boxed): (&BTreeMap<ValueId, Nesting>, &BTreeSet<ComputationId>),
 ) -> Result<(ValueId, NestedElaboration), Unenclosed>
 {
     let nesting = decisions
@@ -382,8 +391,13 @@ pub fn elaborate(
         .collect();
     let mut carried = Vec::new();
     let mut binds = Vec::new();
-    let elaborated =
-        gandr_core_term::elaborate_nested_traced(arena, body, &nesting, &mut carried, &mut binds)?;
+    let elaborated = gandr_core_term::elaborate_nested_traced(
+        arena,
+        body,
+        (&nesting, boxed),
+        &mut carried,
+        &mut binds,
+    )?;
     Ok((elaborated, NestedElaboration {
         decisions: decisions.clone(),
         carried,

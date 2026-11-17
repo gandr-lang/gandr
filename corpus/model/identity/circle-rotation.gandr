@@ -71,4 +71,4 @@ pub def fromLoopAt(x : Int, p : Path(x, x), c : Circle) -> Int =
 
 /// The `fromLoop` function curries a point and loop into a circle map.
 def fromLoop(x : Int, p : Path(x, x)) -> Circle -> Int =
-  thunk { fun (c) { fromLoopAt x p c } }
+  fun (c) { fromLoopAt x p c }

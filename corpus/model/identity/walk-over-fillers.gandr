@@ -19,7 +19,7 @@ def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A](x, y)) -> Path[.A = Pa
   f,
   f
 ) =
-  thunk { fun (f) { Path.here f } }
+  fun (f) { Path.here f }
 
 /// The generator's filler over a `Path.here` cell is `Path.here` of its
 /// side, where a

@@ -10,7 +10,7 @@
 
 /// The `reflFamily` function gives reflexivity for each path in a family.
 def reflFamily(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](q, q) =
-  thunk { fun (q : Path[.A = A](x, y)) { Path.here q } }
+  fun (q : Path[.A = A](x, y)) { Path.here q }
 
 /// The `reflFamilyApart` function uses a parameter name apart from
 /// the type binder.
@@ -18,4 +18,4 @@ def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Pat
   q,
   q
 ) =
-  thunk { fun (r : Path[.A = A](x, y)) { Path.here r } }
+  fun (r : Path[.A = A](x, y)) { Path.here r }

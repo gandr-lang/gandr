@@ -125,6 +125,64 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
     );
 }
 
+/// #6390: a lambda in tail position against a returner of a box was refused
+/// as a computation that is no arrow. It now stands as the box returned, so
+/// its verdict carries the body a written `return` gives, and the kernel
+/// admits it. A lambda against an arrow keeps its own reading.
+#[test]
+fn a_tail_lambda_against_a_returner_of_a_box_returns_the_box_6390()
+{
+    let mut arena = CoreArena::new();
+    let (function, identity) = integer_function(&mut arena);
+    // U (F (U (Integer -> F Integer))): a definition that returns the box.
+    let returns_box = arena.comp_type_returner(function);
+    let suspended = arena.value_type_thunk(returns_box);
+    let lambda = |arena: &mut CoreArena| {
+        let argument = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let returned = arena.computation_return(argument);
+        arena.computation_lambda(returned)
+    };
+    let bare = lambda(&mut arena);
+    let bare = arena.value_thunk(bare);
+    let written = {
+        let inner = lambda(&mut arena);
+        let boxed = arena.value_thunk(inner);
+        let returned = arena.computation_return(boxed);
+        arena.value_thunk(returned)
+    };
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+            declaration(At(1), Maybe::Present(suspended), Maybe::Present(bare)),
+        ])
+    };
+    let Verdict::Checked { body, .. } = report.judged()[1].verdict()
+    else {
+        panic!("the bare lambda checks: {:?}", report.judged()[1].verdict());
+    };
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, body, written),
+        gandr_core_term::CertificateEquality::Equal,
+        "the bare lambda stands as the box a written `return` returns"
+    );
+    assert!(
+        matches!(report.judged()[0].verdict(), Verdict::Checked { body, .. } if body == identity),
+        "a lambda against an arrow keeps its reading, unelaborated"
+    );
+    let readmission = gandr_core_checker_bridge::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            gandr_core_checker_bridge::bridge::Outcome::Defined { .. }
+        )),
+        "the kernel admits the returned box"
+    );
+}
+
 /// A checked record update elaborates to the record of the fields its overlay
 /// writes beside each kept field of its base, read off the base by a
 /// projection; a base written as a call runs once, bound before the record,

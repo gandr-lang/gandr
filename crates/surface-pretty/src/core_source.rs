@@ -4277,10 +4277,13 @@ mod tests
         let elaborated = gandr_core_term::elaborate_nested_traced(
             &mut arena,
             subject,
-            &BTreeMap::from([(
-                nested,
-                gandr_core_term::Nesting::Run(gandr_core_term::effect::Purity::Pure),
-            )]),
+            (
+                &BTreeMap::from([(
+                    nested,
+                    gandr_core_term::Nesting::Run(gandr_core_term::effect::Purity::Pure),
+                )]),
+                &alloc::collections::BTreeSet::new(),
+            ),
             &mut carried,
             &mut binds,
         )

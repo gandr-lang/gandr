@@ -430,6 +430,9 @@ pub struct CheckingContext<'arena>
     /// How the judgement decided each computation written where a value is
     /// read, by node, since the declaration under way began.
     nesting: BTreeMap<ValueId, crate::nested::Nesting>,
+    /// Each lambda the judgement read against a returner of a box, since the
+    /// declaration under way began.
+    boxed: BTreeSet<ComputationId>,
     /// The crossing each value the value bridge carried from a model of a
     /// theory to a model of one it includes, or from a model with manifest
     /// sorts to its theory's models, crossed by, by node, since the
@@ -709,6 +712,8 @@ pub struct Checkpoint
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
     /// [`CheckingContext::nesting`].
     nesting: BTreeMap<ValueId, crate::nested::Nesting>,
+    /// [`CheckingContext::record_boxed`].
+    boxed: BTreeSet<ComputationId>,
     /// [`CheckingContext::crossings`].
     crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
     /// [`CheckingContext::updates`].
@@ -885,6 +890,7 @@ impl<'arena> CheckingContext<'arena>
             reflexivities: BTreeMap::new(),
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
+            boxed: BTreeSet::new(),
             crossings: BTreeMap::new(),
             updates: BTreeMap::new(),
             relating: BTreeMap::new(),
@@ -979,6 +985,7 @@ impl<'arena> CheckingContext<'arena>
             tabling: _,
             ref reflexivities,
             ref nesting,
+            ref boxed,
             ref crossings,
             ref updates,
             ref relating,
@@ -1047,6 +1054,7 @@ impl<'arena> CheckingContext<'arena>
             rows: rows.clone(),
             reflexivities: reflexivities.clone(),
             nesting: nesting.clone(),
+            boxed: boxed.clone(),
             crossings: crossings.clone(),
             updates: updates.clone(),
             relating: relating.clone(),
@@ -1130,6 +1138,7 @@ impl<'arena> CheckingContext<'arena>
             rows,
             reflexivities,
             nesting,
+            boxed,
             crossings,
             updates,
             relating,
@@ -1192,6 +1201,7 @@ impl<'arena> CheckingContext<'arena>
             tabling: None,
             reflexivities,
             nesting,
+            boxed,
             crossings,
             updates,
             relating,
@@ -4972,6 +4982,38 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     pub(crate) fn take_nesting(&mut self) -> BTreeMap<ValueId, crate::nested::Nesting>
     {
         core::mem::take(&mut self.nesting)
+    }
+
+    /// Record that the judgement read the lambda `at` against a returner of a
+    /// box, so the elaboration writes it as the box it returns,
+    /// `return (thunk λ)` (#6390).
+    ///
+    /// # Specification
+    /// - ensures: `at` is among the boxed lambdas.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail lambda against `-F (A -> B)` settles with the
+    ///   core of a written `return`, and a lambda against an arrow keeps its
+    ///   own reading.
+    /// - witness: `tests::module::a_tail_lambda_against_a_returner_of_a_box_returns_the_box_6390`
+    #[spec(ensures: self.boxed.contains(&at))]
+    pub(crate) fn record_boxed(
+        &mut self,
+        at: ComputationId,
+    )
+    {
+        let _first = self.boxed.insert(at);
+    }
+
+    /// Take every boxed lambda recorded since the last take, leaving none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[spec(ensures: self.boxed.is_empty())]
+    pub(crate) fn take_boxed(&mut self) -> BTreeSet<ComputationId>
+    {
+        core::mem::take(&mut self.boxed)
     }
 
     /// Record that the value bridge carried the value `at` by `crossing`, at

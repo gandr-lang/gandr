@@ -1002,6 +1002,7 @@ fn decide(
     let (verdict, failure) = match body {
         Maybe::Present(body) => {
             let _stale = context.take_nesting();
+            let _stale_boxed = context.take_boxed();
             let _stale_updates = context.take_updates();
             context.open_rows();
             context.own_body(body);
@@ -1020,6 +1021,7 @@ fn decide(
             );
             entered = filled;
             let decisions = context.take_nesting();
+            let boxed = context.take_boxed();
             let crossings = context.take_crossings();
             let updates = context.take_updates();
             // A value the bridge carried by a reduct runs the reduct at it, a
@@ -1036,8 +1038,17 @@ fn decide(
                 (solved, Vec::new(), decisions)
             };
             let judged = match first {
-                Ok(_) if !decisions.is_empty() || !updates.is_empty() || stood => {
-                    match crate::nested::elaborate(context.arena_mut(), solved, &decisions) {
+                Ok(_)
+                    if !decisions.is_empty()
+                        || !boxed.is_empty()
+                        || !updates.is_empty()
+                        || stood =>
+                {
+                    match crate::nested::elaborate(
+                        context.arena_mut(),
+                        solved,
+                        (&decisions, &boxed),
+                    ) {
                         Ok((elaborated, done)) => {
                             // An update stands as its record once every run
                             // its base or its fields hold is bound.
@@ -1062,7 +1073,7 @@ fn decide(
                     }
                 },
                 Ok(_) | Err(_) => {
-                    if !decisions.is_empty() || !updates.is_empty() {
+                    if !decisions.is_empty() || !boxed.is_empty() || !updates.is_empty() {
                         elaboration = Maybe::Absent(elaborated::Absent::Unaccepted);
                     }
                     first
@@ -1112,6 +1123,7 @@ fn decide(
                         .retyped(|ty, depth| solved_type(context.arena_mut(), (ty, depth), &read)),
                 );
                 let _typed = context.take_nesting();
+                let _typed_boxed = context.take_boxed();
                 let _updated = context.take_updates();
                 context.restore_support(held);
             }
@@ -1404,6 +1416,7 @@ fn follows(
     let read = context.result_stage();
     context.read_result(crate::recursion::ResultStage::Declared);
     let _nesting = context.take_nesting();
+    let _boxed = context.take_boxed();
     let _updates = context.take_updates();
     let _relating = context.take_relating();
     let _restating = context.take_restating();
@@ -1619,6 +1632,7 @@ fn implicits(
     let _first = context.take_relating();
     let _first_restated = context.take_restating();
     let _stale = context.take_nesting();
+    let _stale_boxed = context.take_boxed();
     let _stale_updates = context.take_updates();
     let _crossed = context.take_crossings();
     context.forget_stages();

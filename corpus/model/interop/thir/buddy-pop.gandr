@@ -357,7 +357,7 @@ pub def popAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs, o : Out) -> T
 
 /// `pop`'s postcondition as a predicate on where it ends.
 pub def popPost(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Out -> Type =
-  return fun (o) { popAt blocks heads order ixs o }
+  fun (o) { popAt blocks heads order ixs o }
 
 /// The locals `pop` runs at: `self`, a pointer to the root zero, then `order`.
 pub def popEnv(order : Nat) -> Vals =
@@ -385,18 +385,18 @@ pub def noneHeld(y : Val, h : Path((Some y : Maybe Val), (None : Maybe Val))) ->
     (*{})
 
 /// `nth` at `i` answers the element `setN` writes there, when `i` holds one.
-pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> (Path[.A = Maybe(Val)](
-  (Some y : Maybe(Val)),
+pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> Path[.A = Maybe Val](
+  (Some y : Maybe Val),
   nth
     vs
     i
-)) -> Path[.A = Maybe(Val)]((Some x : Maybe(Val)), nth (setN vs i x) i) =
+) -> Path[.A = Maybe Val]((Some x : Maybe Val), nth (setN vs i x) i) =
   match vs where
     | VNil => match i where
-      | Zero => return fun (h) { match (noneHeld y h : Void) {} }
-      | Succ(_j) => return fun (h) { match (noneHeld y h : Void) {} }
+      | Zero => fun (h) { match (noneHeld y h : Void) {} }
+      | Succ(_j) => fun (h) { match (noneHeld y h : Void) {} }
     | VCons(_v, rest) => match i where
-      | Zero => return fun (_h) { Path.here (Some x : Maybe(Val)) }
+      | Zero => fun (_h) { Path.here (Some x : Maybe Val) }
       | Succ(j) => nthSet[<] rest j x y
 
 /// The heads the write to `heads[order]` makes, given what they held there.
@@ -605,17 +605,17 @@ pub def popFromEmpty(
 /// list's head and leaves the rest free.
 /// Its predicate and specification take 61 lines and its proof 204, against
 /// about 2800 lines of Rocq for Corten's whole allocator.
-pub def popMeets(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt(
+pub def popMeets(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> freeAt(
   blocks,
   heads,
   order,
   ixs
-)) -> wpMemFn(
+) -> wpMemFn(
   popBody,
   popEnv(order),
   popPost(blocks, heads, order, ixs),
-  Own(Zero, Whole, buddy(blocks, heads))
+  Own Zero Whole buddy(blocks, heads)
 ) =
   match ixs where
-    | INil => return fun (fl) { popFromEmpty blocks heads order fl }
-    | ICons(b, rest) => return fun (fl) { popFrom blocks heads order b rest fl }
+    | INil => fun (fl) { popFromEmpty blocks heads order fl }
+    | ICons(b, rest) => fun (fl) { popFrom blocks heads order b rest fl }

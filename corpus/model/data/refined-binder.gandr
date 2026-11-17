@@ -29,10 +29,10 @@ pub def natOr(n : Nat) -> Type =
     | Succ(_m) => return Unit
 
 /// The predecessor under the arm `Zero`, where the binder is a natural.
-pub def refinedPred(n : Nat) -> (natOr(n)) -> Nat =
+pub def refinedPred(n : Nat) -> natOr(n) -> Nat =
   match n where
-    | Zero => return fun (v) { match v -> -F Nat { | Zero => return Zero | Succ(m) => return m } }
-    | Succ(_m) => return fun (_u) { return Zero }
+    | Zero => fun (v) { match v -> -F Nat { | Zero => Zero | Succ(m) => m } }
+    | Succ(_m) => fun (_u) { Zero }
 
 /// Two's predecessor at zero's family runs to one.
 @[runs("Succ Zero")]
@@ -45,13 +45,13 @@ def predTwo() -> Nat =
 /// Under the arm `ListL(a)`, the binder is a list of the decodes of `a`.
 pub def occupied(c : UL) -> elL(c) -> Nat =
   match c where
-    | NatL => thunk { fun (v) { v } }
-    | ListL(_a) => thunk { fun (v) {
+    | NatL => fun (v) { v }
+    | ListL(_a) => fun (v) {
       match v -> -F Nat where
         | Nil => Zero
         | Cons(_h, _t) => Succ Zero
-    } }
-    | PiL(_a, _b) => thunk { fun (_f) { Zero } }
+    }
+    | PiL(_a, _b) => fun (_f) { Zero }
 
 /// The list that holds two.
 def twoAlone : List Nat = Cons two Nil;
