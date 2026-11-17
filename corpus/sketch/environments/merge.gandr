@@ -5,10 +5,10 @@
 /// after. Each layer is a set of named bindings, and later layers may depend on
 /// earlier ones.
 ///
-/// An environment's type is `Model(#{ x : A; y : B(x) })`, dependent left to
-/// right. `#{ ..e₁, ..e₂ }` extends `e₁` by `e₂`, and the checker refuses it
-/// unless their labels are apart. `#{ ..e₁ \ e₂, ..e₂ }` shadows, and
-/// `#{ .x = 1, ..r }` updates one binding.
+/// An environment's type is `Model *{ x : A; y : B x }`, dependent left to
+/// right. `*{ ..e₁, ..e₂ }` extends `e₁` by `e₂`, and the checker refuses it
+/// unless their labels are apart. `*{ ..e₁ \ e₂, ..e₂ }` shadows, and
+/// `*{ .x = 1, ..r }` updates one binding.
 ///
 /// - see: #4567 — the first-class environments sketch, its rulings in the issue body
 /// - see: crates/surface-engine/src/namespace.rs — the modifier language the query reuses

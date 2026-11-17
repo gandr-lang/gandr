@@ -1,10 +1,10 @@
 // A quoted product whose components are values: a variable, a call or a
 // recursive call.
 //
-// An expression reads `#{a, b}` as the tuple of the values `a` and `b`, not
+// An expression reads `*{a, b}` as the tuple of the values `a` and `b`, not
 // as the product's code.
 //
-// Each printing of these definitions keeps the quote, `type(#{a, b})` in the
+// Each printing of these definitions keeps the quote, `type(*{a, b})` in the
 // explicit form. So each printing reads back to the same core.
 //
 // - see: #5060
