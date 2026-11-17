@@ -1,0 +1,36 @@
+//! `buffer-moved` transfers an owned buffer to a mock ring submission.
+//!
+//! The submission takes the buffer by move, not by borrow. The kernel owns the
+//! buffer until the operation completes [boats-2020-notes_on_io_uring]. The
+//! pathological twin refuses the old owner when it closes the buffer as
+//! `UsedAfterClose`.
+//!
+//! The checker consumes the owner's endpoint at `send`. The mock kernel closes
+//! the buffer before it posts the completion. The buffer is a linear resident,
+//! the end of a forked owner. Its move into a submission is delegation
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming].
+//!
+//! - see: corpus/pathological/completion/buffer-touched.gandr
+//! - cites: [boats-2020-notes_on_io_uring]
+//! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+//!
+//! [boats-2020-notes_on_io_uring]: https://without.boats/blog/io-uring/ "boats, Notes on io-uring"
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
+
+// The ring's protocol and its entries.
+import "./ring-base.gandr";
+
+/// A buffer moved into the mock kernel's submission and finished there before
+/// the completion is posted: the send consumes the submitter's end, and the
+/// kernel's receive binds it until the kernel closes it.
+def bufferMoved() -> Unit =
+  let buffer = fork (owner : Ring.Buffer) { close owner };
+  let ring = fork (kernel : Ring.Moving) {
+    let held = recv kernel;
+    close held;
+    send kernel Ring.done;
+    close kernel
+  };
+  send ring buffer
+  let cqe = recv ring
+  close ring

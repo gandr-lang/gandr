@@ -1,0 +1,17 @@
+theory Faulty where {
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  sort Tm : Type+;
+  sort Name : Atom;
+  oper id : (a : Ob) --> Hom(a, a);
+  oper split : (a : Ob) --> (l : Ob, r : Ob);
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
+  oper nu : (p : bind (c : Name). Ob) --> Ob;
+  rule twice : id (id a) ==> id a;
+  rule same : lam (bind x. (t x)) ==> lam (bind y. (t y));
+  rule loose : x ==> x;
+  rule halves : split a ==> split a;
+  rule wired : (data x : Ob) ==> (o : Hom(x, x)) {
+    node w : id(x) --> (o);
+  };
+}

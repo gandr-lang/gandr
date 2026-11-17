@@ -1,0 +1,16 @@
+//! Law 2 preserves the newest variable under a lifted substitution.
+//!
+//! `sub(q, lift(s))` equals `q`.
+//!
+//! A lifted lookup at index zero is index zero. The law holds by computation
+//! under no binder.
+//!
+//! - see: #640
+
+// This source imports naturals and substitution syntax.
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+
+/// A lifted substitution at the newest variable is that variable.
+pub def subQLift(s : Env) -> Path(subst (Ix Z) (Lift s), Ix Z) =
+  Path.here (Ix Z)
