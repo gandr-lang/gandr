@@ -1497,27 +1497,30 @@ pub(super) fn gapped<'source>(
 /// is a stray, and the lowering refuses it. Its `;` ends no declaration, so
 /// the melder reads the `;` as the separator of a block that it opens and
 /// closes again, or the run before it as the head of a declaration that it
-/// mints. A writer meets the refusal of the stray and the `;` alone.
+/// mints. A `;` that begins a form, as the second `;` of `def x = 1;;`, ends
+/// an empty stray. A writer meets the refusal of the stray and the `;` alone.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`, and `headed` is the parse that
 ///   the head search gives for it, if it gives one.
 /// - ensures: `None` when `parsed` owes nothing, when no `;` at the top level
-///   follows an operand in a form that no keyword begins and at whose start
-///   `headed` owes no [`Oblig::MissingTile`], or when the copy with each such
-///   `;` replaced by a byte that no lexeme takes owes an obligation besides one
-///   [`Oblig::UnmoldedTok`] over each such `;`; otherwise that copy's parse
-///   read back over the source, each such `;` a convex grout over its byte. A
-///   form at the top level starts at the first significant token, after a `;`
-///   at the top level and at a line at column zero.
+///   begins a form or follows an operand in a form that no keyword begins and
+///   at whose start `headed` owes no [`Oblig::MissingTile`], or when the copy
+///   with each such `;` replaced by a byte that no lexeme takes owes an
+///   obligation besides one [`Oblig::UnmoldedTok`] over each such `;`;
+///   otherwise that copy's parse read back over the source, each such `;` a
+///   convex grout over its byte. A form at the top level starts at the first
+///   significant token, after a `;` at the top level and at a line at column
+///   zero.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a number and a call before a `;` at the top level each
-///   owe the `;` alone, and the declaration after it owes nothing; a string
-///   whose `import` is left out keeps the keyword minted at its start.
+///   owe the `;` alone, and the declaration after it owes nothing; a second `;`
+///   after a declaration owes itself alone; a string whose `import` is left out
+///   keeps the keyword minted at its start.
 /// - witness: `parse::gap::tests::a_separator_after_a_root_stray_owes_itself_alone_1057`
 /// - witness: `sweeps::dropped_tokens_recover_no_worse_than_the_record`
 pub(super) fn strayed<'source>(
@@ -1597,7 +1600,7 @@ pub(super) fn strayed<'source>(
             }
             if token.lexeme == Lexeme::Punct && spelled == ";" {
                 if let Some((false, form)) = keyword
-                    && operand
+                    && (operand || form == start)
                     && !declared(form)
                 {
                     strays.push(start);
@@ -2282,6 +2285,11 @@ mod tests
             owed(SourceText::from("1 ;\ndef a = 2;\n"))?,
             [(Oblig::UnmoldedTok, Line(1))],
             "a number before a `;` at the top level owes the `;` alone"
+        );
+        assert_eq!(
+            owed(SourceText::from("def x = 1;;\ndef y = 2;\n;\n"))?,
+            [(Oblig::UnmoldedTok, Line(1)), (Oblig::UnmoldedTok, Line(3))],
+            "a `;` that begins a form at the top level owes itself alone"
         );
         Ok(())
     }
