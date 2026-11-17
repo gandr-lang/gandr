@@ -4761,10 +4761,11 @@ impl<'pbg> MeldState<'pbg>
     ///   `spaced` tells whether a space stands before that token.
     /// - ensures: reduces to a clean operand meld every topmost completable
     ///   frontier none of whose successors carries a label in `labels`, or
-    ///   whose only such successors are labelled `(` when `spaced` holds, and
-    ///   every required tail so left whole that the token does not extend, in
-    ///   turn until neither closes a frontier; stops at the first
-    ///   non-completable or token-continuable frontier; introduces no
+    ///   whose only such successors are labelled `(` when `spaced` holds, the
+    ///   frontier's tile is the top of the slope and its sort has an
+    ///   application tile, and every required tail so left whole that the token
+    ///   does not extend, in turn until neither closes a frontier; stops at the
+    ///   first non-completable or token-continuable frontier; introduces no
     ///   obligation.
     /// - provides: the molder's pre-gather hole-settling pass.
     /// - fails: never.
@@ -4810,7 +4811,15 @@ impl<'pbg> MeldState<'pbg>
                 }
                 // Keep the frontier open when the upcoming token could be its
                 // `≐`-successor (a `?` before a `hole_name` word), so the name
-                // still attaches to the hole. A spaced `(` continues no list.
+                // still attaches to the hole. A spaced `(` continues no list
+                // of the form whose tile it follows, where the form's sort
+                // applies by juxtaposition: the group is then an argument.
+                let follows = usize::from(frontier).saturating_add(1) == self.stack.len()
+                    && self
+                        .pbg
+                        .mold(head_mold)
+                        .is_ok_and(|own| self.pbg.application_in(own.sort).is_some());
+                let spaced = SpacedBefore::from(bool::from(spaced) && follows);
                 if bool::from(self.successor_label_in(head_mold, labels, spaced)) {
                     break;
                 }
