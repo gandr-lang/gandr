@@ -1,0 +1,78 @@
+// A body whose result is a function value may end in a bare lambda. The
+// result type is a box, and the checker reads the lambda as that box, which
+// the body returns. The core is the one a written `return` gives. The lambda
+// stands at the end of a body, after a `let`, at the end of a block, and in
+// each arm of a match.
+//
+// Two cases keep their `return`. A box whose computation is no function has
+// no lambda to read. A lambda whose expected type is unknown has no box to
+// read against, so it stays a computation.
+//
+// - see: #6390
+
+/// Two values.
+data Two : Type where
+  /// The left value.
+  | Left : Two
+  /// The right value.
+  | Right : Two
+
+/// The natural numbers.
+data Nat : Type where
+  /// Zero.
+  | Zero : Nat
+  /// The successor of `n`.
+  | Succ : (n : Nat) --> Nat
+
+/// The type `Two` at each natural.
+def natOr(n : Nat) -> Type =
+  match n where
+    | Zero => return Two
+    | Succ(_m) => return Two
+
+/// The identity at `g`, its lambda returned as written.
+def idA(g : Type) -> g -> g =
+  return fun (x) {
+    x
+  }
+
+/// The identity at `g`, its lambda bare: the same core as `idA`.
+def idB(g : Type) -> g -> g =
+  fun (x) {
+    x
+  }
+
+/// The lambda comes after a `let`.
+def after_let() -> Two -> Two =
+  let _kept = pure Left
+  fun (u) {
+    u
+  }
+
+/// The lambda ends a block.
+def block_tail() -> Two -> Two =
+  {
+    fun (u) {
+      u
+    }
+  }
+
+/// Each arm ends in a lambda, one bare and one returned.
+def arms(choice : Two) -> +U ((u : Two) -> -F Two) =
+  match choice where
+    | Left => fun (u) {
+      return u
+    }
+    | Right => return fun (u) {
+      return u
+    }
+
+/// The arm at `Zero` ends in a bare lambda under a refined parameter.
+def refined_arm(n : Nat, _x : natOr(n)) -> +U ((u : Nat) -> -F Nat) =
+  match n where
+    | Zero => fun (u) {
+      return u
+    }
+    | Succ(_n) => return fun (u) {
+      return u
+    }

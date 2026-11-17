@@ -263,7 +263,9 @@
 //! computation of a block, every arm of a match, a grouping's operand, the
 //! computation of a `let` and `become`'s operand. Every path through a body
 //! ends in one, written or inferred. A lambda ending a body answers it through
-//! its own body's exits, and a hole passes it on. Any other form where a path
+//! its own body's exits, and a hole passes it on. Where the body returns a box
+//! of a function, the checker reads that lambda as the box returned, so it
+//! needs no `return` (#6390). Any other form where a path
 //! ends takes the exit its polarity names, read off the form: a value — a
 //! variable, a constructor application, a literal, a thunk, a tuple, an
 //! annotation — is returned, so `n` there exits as `return n`; a computation —
