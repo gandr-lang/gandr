@@ -738,7 +738,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
         format!(
             "theory Let where {{
     sort Tm : Type+;
-    oper zero : () --> Tm;
+    oper zero : Tm;
     oper f : (a : Tm) --> Tm;
     oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
     rule zeta : let u t <=> t u;
@@ -850,7 +850,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
             "theory Pi where {{
     sort Name : Atom;
     sort Proc : Type;
-    oper nil : () --> Proc;
+    oper nil : Proc;
     oper par : (p : Proc, q : Proc) --> Proc;
     oper out : (c : {channel}, p : Proc) --> Proc;
     oper nu : (p : bind (a : Name) . Proc) --> Proc;

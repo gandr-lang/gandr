@@ -2288,7 +2288,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
     );
     assert_eq!(
         faces(&format!(
-            "theory Call where {{ {state} oper f : (a : S) --> C; oper g : () --> C; rule r : get (bind s . (f s)) <=> g (); }}"
+            "theory Call where {{ {state} oper f : (a : S) --> C; oper g : C; rule r : get (bind s . (f s)) <=> g; }}"
         )),
         [(
             get(bind("s", FreeTerm::op("f", [bound("s")]))),
@@ -2301,7 +2301,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
 #[test]
 fn a_rule_term_names_an_atom_inside_its_abstraction()
 {
-    let restriction = "sort Name : Atom; sort Proc : Type; oper nil : () --> Proc; oper par : (p : Proc, q : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
+    let restriction = "sort Name : Atom; sort Proc : Type; oper nil : Proc; oper par : (p : Proc, q : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
     let signature = format!("{restriction} oper out : (c : Name, p : Proc) --> Proc;");
     let report = described(
         format!(

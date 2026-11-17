@@ -3,11 +3,11 @@ theory Base where {
 }
 theory Left where {
   include Base;
-  oper l : () --> M;
+  oper l : M;
 }
 theory Right where {
   include Base;
-  oper r : () --> M;
+  oper r : M;
 }
 theory Both where {
   include Left;

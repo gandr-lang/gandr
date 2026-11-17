@@ -325,9 +325,8 @@ fn a_stated_law_binds_its_written_variables_2356()
 }
 
 /// A constant, `oper zero : T`, derives a value of its type alone, a sort of
-/// the theory or a builtin type; `oper one : () --> T`, an operation of no
-/// inputs, derives a function of none; and a constant whose type leaves a
-/// variable free binds it as an operation does.
+/// the theory or a builtin type; and a constant whose type leaves a variable
+/// free binds it as an operation does.
 #[test]
 fn a_constant_derives_its_type_alone()
 {
@@ -338,13 +337,11 @@ fn a_constant_derives_its_type_alone()
     assert_eq!(
         [
             spelled(&model, "zero"),
-            spelled(&model, "one"),
             spelled(&model, "base"),
             spelled(&model, "loop"),
         ],
         [
             "zero : Ob",
-            "one : () => Ob",
             "base : Integer",
             "loop : (a : Ob) => Hom(a, a)",
         ],

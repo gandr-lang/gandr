@@ -1,6 +1,6 @@
 theory Pointed where {
   sort M : Type;
-  oper point : () --> M;
+  oper point : M;
 }
 theory Magma where {
   sort M : Type;

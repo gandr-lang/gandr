@@ -172,7 +172,7 @@ fn an_ill_formed_rule_is_refused_once_and_left_unexamined_2375()
 #[test]
 fn a_rule_over_a_declined_operation_owes_no_refusal_of_its_own_2666()
 {
-    let source = "theory Spill where { sort M : Type; oper unit : () --> M; oper drain : (m : M) --> (); rule gone : drain unit ==> unit; rule spill : (rule p : M ==> M, data x : M) ==> (z : M) { node : p(x) ==> (xp); node : drain(xp) --> (z); }; }";
+    let source = "theory Spill where { sort M : Type; oper unit : M; oper drain : (m : M) --> (); rule gone : drain unit ==> unit; rule spill : (rule p : M ==> M, data x : M) ==> (z : M) { node : p(x) ==> (xp); node : drain(xp) --> (z); }; }";
     let report = descriptions(source);
     assert_eq!(
         report.diagnostics,

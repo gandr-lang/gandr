@@ -5,12 +5,12 @@ theory Mag where {
 }
 theory Pointed where {
   include Mag;
-  oper one : () --> M;
-  rule unitL : mul (one ()) x ==> x;
+  oper one : M;
+  rule unitL : mul one x ==> x;
 }
 theory Comm where {
   include Mag;
-  oper zero : () --> M;
+  oper zero : M;
 }
 theory Both where {
   include Pointed;

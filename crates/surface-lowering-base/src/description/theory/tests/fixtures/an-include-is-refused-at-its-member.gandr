@@ -4,7 +4,7 @@ theory Pointed where {
 }
 theory Mag where {
   sort M : Type;
-  oper e : () --> M;
+  oper e : M;
 }
 theory Unary where {
   sort M : Type;
