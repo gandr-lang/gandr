@@ -1,0 +1,10 @@
+{NAT}@[ explicit_exits ]
+module Asked where {{
+def kept(n : Nat) -> -F Nat {{ n }}
+def called(n : Nat) -> -F Nat {{ kept n }}
+}}
+@[ explicit_exits ]
+def marked(n : Nat) -> -F Nat {{ Succ n }}
+def unmarked(n : Nat) -> -F Nat {{ Zero }}
+@[ explicit_exits, explicit_exits ]
+def twice(n : Nat) -> -F Nat {{ pure n }}

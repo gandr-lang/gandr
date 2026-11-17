@@ -1,0 +1,2 @@
+pub def uno : Integer ;
+def uno = 1 ;

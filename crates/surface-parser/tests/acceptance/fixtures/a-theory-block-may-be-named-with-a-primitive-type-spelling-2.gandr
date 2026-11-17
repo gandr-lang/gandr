@@ -1,0 +1,3 @@
+theory Any where {
+  sort Nat : Type;
+}

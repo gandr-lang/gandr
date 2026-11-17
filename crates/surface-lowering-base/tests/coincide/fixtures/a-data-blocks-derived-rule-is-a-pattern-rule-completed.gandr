@@ -1,0 +1,10 @@
+data NatSwap : Type where {
+  | Zero : NatSwap
+  | Succ : (n : NatSwap) --> NatSwap
+  oper add : (m : NatSwap, n : NatSwap) --> NatSwap;
+  oper swap : (m : NatSwap, n : NatSwap) --> NatSwap;
+  rule : add Zero n ==> n;
+  rule : add (Succ m) n ==> Succ (add m n);
+  rule : swap m n ==> add m n;
+  rule : swap Zero n ==> add n Zero;
+}

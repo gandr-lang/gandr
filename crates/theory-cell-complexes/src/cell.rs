@@ -1,0 +1,406 @@
+//! The cell store: structurally deduplicated, insertion-addressed oriented
+//! 2-cells over a [`CellAlphabet`], each with its derived metadata.
+//!
+//! A [`Cell`] is an oriented rewrite `lhs ~> rhs` between two command
+//! patterns of the alphabet `A`, with an orientation tag (`A::Orientation`:
+//! how the direction was fixed), a provenance tag (`A::Provenance`: where the
+//! cell came from), and metadata (`A::Meta`) derived from the two faces at
+//! construction by [`CellAlphabet::derive_meta`], never declared.
+//!
+//! The store ([`CellStore`]) deduplicates on structural identity — [`Eq`] over
+//! the whole cell — and hands out dense [`CellId`]s in insertion order, so
+//! iteration is deterministic. A [`CellId`] is an indexed-store identity:
+//! cloning a store or appending to it preserves every id, while rebuilding
+//! the same cells in another order does not. Deduplication reads no address,
+//! generation or session state, and that still does not make a [`CellId`] a
+//! portable content address: a persistence or transport format must never
+//! serialize one, and carries the cell's content instead, resolved back to a
+//! local id by content lookup.
+//!
+//! # Cells and the store
+//!
+//! A cell's metadata is derived from its two faces when it is built and never
+//! declared: its fields are private, so the metadata always equals what
+//! derivation gives. `CellStore` deduplicates on structural equality of the
+//! whole cell and hands out `CellId`s in insertion order, so iteration is
+//! deterministic and cloning or appending preserves every id. A `CellId` is
+//! still a store-local index, not a content address: rebuilding the same cells
+//! in another order renumbers them, so a persistence or transport format never
+//! serializes one and carries the cell's content instead.
+
+use alloc::boxed::Box;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use quenchant_shape::shape::Maybe;
+
+use crate::alphabet::CellAlphabet;
+use crate::boundary::CellCount;
+use crate::boundary::CellStoreEmptyStatus;
+use crate::sequent::SequentAlphabet;
+
+/// An oriented 2-cell over the alphabet `A`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Cell<A: CellAlphabet = SequentAlphabet>
+{
+    /// The left-hand side, the redex pattern.
+    lhs: A::Cmd,
+    /// The right-hand side, the contractum pattern.
+    rhs: A::Cmd,
+    /// How the orientation was fixed.
+    orient: A::Orientation,
+    /// Where the cell came from.
+    provenance: A::Provenance,
+    /// The metadata derived from the two faces.
+    meta: A::Meta,
+    /// The metavariables that the right-hand side holds and the left-hand
+    /// side does not bind, in first-occurrence order: the wires that each
+    /// firing writes.
+    wires: Box<[A::Var]>,
+}
+
+impl<A: CellAlphabet> core::hash::Hash for Cell<A>
+{
+    /// The cell's content: its faces, its two tags and its metadata, in that
+    /// order. The wires are a function of the faces, so the digest leaves them
+    /// out, and a content address of the cell does not move with them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<H>(
+        &self,
+        state: &mut H,
+    ) where
+        H: core::hash::Hasher,
+    {
+        let Self {
+            ref lhs,
+            ref rhs,
+            ref orient,
+            ref provenance,
+            ref meta,
+            wires: _,
+        } = *self;
+        lhs.hash(state);
+        rhs.hash(state);
+        orient.hash(state);
+        provenance.hash(state);
+        meta.hash(state);
+    }
+}
+
+impl<A: CellAlphabet> Cell<A>
+{
+    /// A cell from its two faces, orientation and provenance; the metadata is
+    /// derived from both faces, its invertibility read from the provenance.
+    ///
+    /// # Specification
+    /// - ensures: the cell's metadata is `A::derive_meta(&lhs, &rhs,
+    ///   A::completion_certificate(&provenance))`, and no accessor can change
+    ///   it afterwards.
+    /// - ensures: the cell's wires are the metavariables of `rhs` that `lhs`
+    ///   does not hold, each once, in their order in `rhs`.
+    /// - panics: none.
+    /// - intension: the faces are read for their wires once, here, so a firing
+    ///   of a cell with no wire reads nothing more.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sequent cells at every provenance retain both faces
+    ///   and tags. Exact metadata observations separate certificate provenance
+    ///   from ordinary cells and distinguish lost faces or incorrect counts.
+    /// - witness: `sequent::tests::completion_cells_are_invertible_certificates`
+    /// - witness: `sequent::tests::a_cell_s_wires_are_the_metavariables_only_its_right_side_holds`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |output| output.meta == A::derive_meta(
+        &output.lhs, &output.rhs, A::completion_certificate(&output.provenance)
+    ) && {
+        let bound = A::metavariables(&output.lhs);
+        let written = A::metavariables(&output.rhs);
+        output.wires.iter().all(|wire| written.contains(wire) && !bound.contains(wire))
+            && written.iter().all(|var| bound.contains(var) || output.wires.contains(var))
+            && output.wires.iter().enumerate().all(|(at, wire)| output.wires.get(.. at).is_some_and(|before| !before.contains(wire)))
+    })]
+    pub fn new(
+        lhs: A::Cmd,
+        rhs: A::Cmd,
+        orient: A::Orientation,
+        provenance: A::Provenance,
+    ) -> Self
+    {
+        let invertible = A::completion_certificate(&provenance);
+        let meta = A::derive_meta(&lhs, &rhs, invertible);
+        let mut bound = A::metavariables(&lhs);
+        bound.sort_unstable();
+        let written = A::metavariables(&rhs);
+        let mut seen: BTreeSet<&A::Var> = BTreeSet::new();
+        let mut wires: Vec<A::Var> = Vec::new();
+        for var in &written {
+            if bound.binary_search(var).is_err() && seen.insert(var) {
+                wires.push(var.clone());
+            }
+        }
+        Self {
+            lhs,
+            rhs,
+            orient,
+            provenance,
+            meta,
+            wires: wires.into_boxed_slice(),
+        }
+    }
+
+    /// The left-hand side, the redex pattern.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn lhs(&self) -> &A::Cmd
+    {
+        &self.lhs
+    }
+
+    /// The right-hand side, the contractum pattern.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rhs(&self) -> &A::Cmd
+    {
+        &self.rhs
+    }
+
+    /// How the orientation was fixed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn orient(&self) -> A::Orientation
+    {
+        self.orient
+    }
+
+    /// Where the cell came from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn provenance(&self) -> A::Provenance
+    {
+        self.provenance
+    }
+
+    /// The metadata derived from the two faces.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn meta(&self) -> &A::Meta
+    {
+        &self.meta
+    }
+
+    /// The metavariables that the right-hand side holds and the left-hand
+    /// side does not bind, in first-occurrence order: the wires that each
+    /// firing writes under names apart from the term that it fires in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn wires(&self) -> &[A::Var]
+    {
+        &self.wires
+    }
+}
+
+/// A dense cell identifier: an insertion-order index into one [`CellStore`].
+///
+/// An identifier is tied to the store that issued it: clones and append-only
+/// extensions keep the assignment, a permutation may bind it to a different
+/// cell, and no format carries one across a process boundary.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CellId(usize);
+
+impl From<usize> for CellId
+{
+    /// Wraps the primitive.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: usize) -> Self
+    {
+        Self(value)
+    }
+}
+
+impl From<CellId> for usize
+{
+    /// Unwraps the primitive.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: CellId) -> Self
+    {
+        value.0
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a store holds no cell under an identifier.
+    pub mod cell_lookup {
+        /// The reason the lookup finds nothing.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// This store never issued the identifier.
+            Unissued,
+        }
+    }
+}
+
+/// A structurally deduplicated, insertion-ordered collection of cells.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CellStore<A: CellAlphabet = SequentAlphabet>
+{
+    /// The cells in insertion order; the index is the [`CellId`].
+    cells: Vec<Cell<A>>,
+}
+
+impl<A: CellAlphabet> CellStore<A>
+{
+    /// An empty store.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self { cells: Vec::new() }
+    }
+
+    /// Inserts a cell, deduplicating on structural identity, and returns its
+    /// identifier.
+    ///
+    /// # Specification
+    /// - ensures: a cell structurally equal to one already present — same
+    ///   faces, orientation, provenance and metadata — returns that cell's
+    ///   identifier and leaves the store as it was; any other cell is appended
+    ///   under the next identifier.
+    /// - panics: none.
+    /// - intension: `economy:` a linear scan per insertion; a content index
+    ///   replaces it once a store's size is measured to matter.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty store, a duplicate and cells differing in
+    ///   each identity component separate reuse from append. Exact identifiers,
+    ///   contents and counts reject false equality, overwriting and
+    ///   duplication.
+    /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
+    #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every cell with the same `position` search"
+        )
+    )]
+    #[spec(
+        captures: [
+            entry_count = self.cells.len(),
+            entry_id = self.cells.iter().position(|held| *held == cell),
+        ],
+        ensures: |output| output.0 == entry_id.unwrap_or(entry_count)
+            && self.cells.len() == entry_count.saturating_add(usize::from(entry_id.is_none())),
+    )]
+    pub fn insert(
+        &mut self,
+        cell: Cell<A>,
+    ) -> CellId
+    {
+        if let Some(index) = self.cells.iter().position(|existing| *existing == cell) {
+            return CellId(index);
+        }
+        let id = CellId(self.cells.len());
+        self.cells.push(cell);
+        id
+    }
+
+    /// The cell under `id`.
+    ///
+    /// # Specification
+    /// - ensures: the cell [`CellStore::insert`] returned `id` for.
+    /// - provides: [`cell_lookup::Absent::Unissued`] for an identifier this
+    ///   store never issued.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and populated stores are observed at issued
+    ///   identifiers, the next identifier and `usize::MAX`. Exact cell values
+    ///   and absence reasons reject shifted lookup and a weakened bound.
+    /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
+    #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(cell) => self.cells.get(id.0).is_some_and(|held| held == cell),
+        Maybe::Absent(_) => id.0 >= self.cells.len(),
+    })]
+    pub fn get(
+        &self,
+        id: CellId,
+    ) -> Maybe<&Cell<A>, cell_lookup::Absent>
+    {
+        self.cells
+            .get(id.0)
+            .map_or(Maybe::Absent(cell_lookup::Absent::Unissued), Maybe::Present)
+    }
+
+    /// The number of cells.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> CellCount
+    {
+        CellCount::from(self.cells.len())
+    }
+
+    /// Whether the store holds no cell.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a new store and one holding a cell answer apart.
+    /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> CellStoreEmptyStatus
+    {
+        CellStoreEmptyStatus::from(self.cells.is_empty())
+    }
+
+    /// The cells with their identifiers, in insertion order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = (CellId, &Cell<A>)>
+    {
+        self.cells
+            .iter()
+            .enumerate()
+            .map(|(index, cell)| (CellId(index), cell))
+    }
+}

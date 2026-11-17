@@ -1,0 +1,4 @@
+data Vec(n : Integer) : Type where { | Nil : Vec(0) }
+data Bad(a : Type) : Type where { | Mk : Bad(Integer) }
+data Two(a : Type, b : Type) : Type where { | Mk2 : Two(b, a) }
+data Ext(a : Type) : Type where { | Mk3 : Ext(a, a) }
