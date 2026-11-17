@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# A scoped command runs whatever the length of its words (#7942). The case
-# passes `scope` 2,000 words of 100 bytes each, 200 KiB in all, as `xargs`
-# passes a large batch. Linux refuses one argument longer than 128 KiB, so a
+# A scoped command runs whatever the length of its words. The case passes
+# `scope` 2,000 words of 100 bytes each, 200 KiB in all, as `xargs` passes a
+# large batch. Linux refuses one argument longer than 128 KiB, so a
 # description that copies the whole command fails before the command runs.
 # The case reads that the command runs and sees each word.
+# - see: #7942
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 failed=0

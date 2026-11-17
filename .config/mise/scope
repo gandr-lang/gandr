@@ -18,9 +18,10 @@
 # without `XDG_RUNTIME_DIR`), the command runs as it is, without properties.
 #
 # The scope's description names the command by the first 200 bytes of its
-# words. Linux refuses one argument longer than 128 KiB, and `xargs` fills a
-# batch to the limit of the whole vector, so the whole command as one
-# description argument fails a large batch (#7942).
+# words. Linux refuses one argument longer than 128 KiB. `xargs` fills a batch
+# to the limit of the whole vector. A description of the whole command thus
+# fails a large batch.
+# - see: #7942
 set -euo pipefail
 
 properties=()
