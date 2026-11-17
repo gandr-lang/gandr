@@ -1274,7 +1274,7 @@ mod tests
         .with_circuits(circuits);
         assert_eq!(
             serialize_desc(&desc).as_ref(),
-            "theory Ordered where { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
+            "theory Ordered where { sort A : Type; sort B : Type; oper first : A; oper second : A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
         );
     }
 

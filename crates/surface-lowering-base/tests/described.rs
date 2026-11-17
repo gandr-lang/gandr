@@ -473,13 +473,9 @@ fn a_nullary_operation_in_a_law_answers_at_its_sort_668()
         Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
         _ => None,
     };
-    let applied = entry(
-        &types,
-        span("flip (pt ())", "flip (pt ())"),
-        DescribedRole::Term,
-    );
-    let inner = entry(&types, span("flip (pt ())", "pt ()"), DescribedRole::Term);
-    let right = entry(&types, span("<=> pt ()", "pt ()"), DescribedRole::Term);
+    let applied = entry(&types, span("flip pt", "flip pt"), DescribedRole::Term);
+    let inner = entry(&types, span("flip pt", "pt"), DescribedRole::Term);
+    let right = entry(&types, span("<=> pt", "pt"), DescribedRole::Term);
     assert!(code(applied).is_some(), "an application at its sort");
     assert_eq!(code(inner), code(applied), "the argument at the same sort");
     assert_eq!(

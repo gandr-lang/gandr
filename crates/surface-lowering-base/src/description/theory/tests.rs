@@ -2351,7 +2351,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     assert_eq!(
         faces(
             format!(
-                "theory Occurs where {{ {signature} rule use : nu (bind a . (out a (nil ()))) ==> nil (); }}"
+                "theory Occurs where {{ {signature} rule use : nu (bind a . (out a nil)) ==> nil; }}"
             )
             .as_str()
         ),
@@ -2364,7 +2364,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     assert_eq!(
         faces(
             format!(
-                "theory Beside where {{ {signature} rule use : par (nu (bind a . p)) a ==> nil (); }}"
+                "theory Beside where {{ {signature} rule use : par (nu (bind a . p)) a ==> nil; }}"
             )
             .as_str()
         ),

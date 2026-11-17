@@ -1,2 +1,2 @@
 {gc}
-    rule quiet : nu (bind a . (out a (nil ()))) <=> nil ();
+    rule quiet : nu (bind a . (out a nil)) <=> nil;

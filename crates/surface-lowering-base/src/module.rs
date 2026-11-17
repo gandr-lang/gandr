@@ -15348,7 +15348,7 @@ mod tests
                 .collect::<Vec<_>>(),
             Err(refusal) => alloc::vec![refusal],
         };
-        let rule = text.find("rule gc").unwrap() .. text.find("();\n}").unwrap().saturating_add(3);
+        let rule = text.find("rule gc").unwrap() .. text.find("nil;\n}").unwrap().saturating_add(4);
         assert!(
             matches!(
                 refused.as_slice(),
