@@ -3922,6 +3922,29 @@ fn one_content_under_two_contexts_spells_each_context_s_name_7403()
     );
 }
 
+/// Two codata types that one mismatch compares spell apart (#7403). A codata
+/// application has no content form, so its key is the key of its sort alone.
+/// The two sides stand at one place, and each keeps its own name.
+#[test]
+fn two_codata_types_of_one_mismatch_spell_apart_7403()
+{
+    let text = SourceText::from(include_str!(
+        "diagnostics/fixtures/two-codata-types-spell-apart-7403.gandr"
+    ));
+    let diagnostic = only(Path::new("codata.gandr"), text);
+    assert_eq!(
+        (
+            diagnostic.detail.compared.expected,
+            diagnostic.detail.compared.found
+        ),
+        (
+            Maybe::Present(String::from("Spot")),
+            Maybe::Present(String::from("Stream"))
+        ),
+        "each side names its own codata type"
+    );
+}
+
 /// A declaration whose keyword is misspelt strays from the root, and the type
 /// it would have declared goes unresolved where it is used: the stray, written
 /// first, is reported first, and an applied former left without its argument

@@ -404,7 +404,12 @@ where
     Children: Iterator<Item = NodeIndex>,
     Lookup: Fn(NodeIndex) -> Option<&'table SupportedNode>,
 {
-    let mut opacity = if matches!(*former, ContentNode::Unresolved(_)) {
+    // A codata application has content for its key, but a codata declaration
+    // has none, so an item that reads one stays opaque to reuse.
+    let mut opacity = if matches!(
+        *former,
+        ContentNode::Unresolved(_) | ContentNode::Codata { .. }
+    ) {
         Opacity::Opaque
     }
     else {

@@ -67,6 +67,10 @@ const RECORDS: &str = include_str!(
 const SPELLED: &str =
     include_str!("taking/fixtures/a-taken-refusal-spells-each-context-s-name-7403.gandr");
 
+/// The codata fixture: a mismatch between two codata types.
+const CODATA: &str =
+    include_str!("taking/fixtures/a-taken-codata-refusal-spells-each-type-7403.gandr");
+
 /// A fresh session over memory stores, for a fixture source.
 ///
 /// # Specification
@@ -542,6 +546,20 @@ fn a_taken_refusal_spells_each_place_as_a_fresh_session_7403()
         ItemCount::from(5_usize),
         "the five data declarations are taken; the refused function and the definition put \
          first are decided"
+    );
+}
+
+/// A refusal between two codata types composes as a fresh session's past a
+/// prepended definition (#7403). A codata application keys by its
+/// declaration's item reference and its arguments, so `Spot` and `Stream`
+/// key apart, and the reference names one item in both sessions.
+#[test]
+fn a_taken_codata_refusal_spells_each_type_as_a_fresh_session_7403()
+{
+    assert_eq!(
+        taken_past_a_prepending(SourceText::from(CODATA)),
+        ItemCount::from(0_usize),
+        "an item that reads a codata type is opaque, so nothing is taken"
     );
 }
 

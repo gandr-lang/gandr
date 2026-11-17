@@ -2965,6 +2965,7 @@ enum Agreement
             && children(old).count() == children(new).count()
             && match *old {
                 ContentNode::Data {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Data {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
+                ContentNode::Codata {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Codata {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
                 ContentNode::Constructor {family:ref left,tag,ref fields,..} => matches!(*new,ContentNode::Constructor {family:ref right,tag:other,fields:ref theirs,..} if left == right && tag == other && fields.len() == theirs.len()),
                 ContentNode::Record(ref fields) => matches!(*new,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
                 ContentNode::RecordType(ref fields) => matches!(*new,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
@@ -3208,6 +3209,16 @@ fn agreement(
                 arguments: ref a,
             },
             &ContentNode::Data {
+                declaration: ref right,
+                arguments: ref b,
+            },
+        ) => left == right && a.len() == b.len(),
+        (
+            &ContentNode::Codata {
+                declaration: ref left,
+                arguments: ref a,
+            },
+            &ContentNode::Codata {
                 declaration: ref right,
                 arguments: ref b,
             },
@@ -4606,7 +4617,7 @@ where
                     )
                 }
                 CompType::Unknown => ret == ContentNode::UnknownComputationType,
-                CompType::Codata { .. } => ret == ContentNode::Unresolved(Sort::CompType),
+                CompType::Codata { declaration, ref arguments } => matches!(ret, ContentNode::Codata { declaration: ref found, arguments: ref other } if *found == program.resolve(declaration) && arguments.len() == other.len()),
             },
         )
 },
@@ -4681,8 +4692,17 @@ where
             target: target.clone(),
         },
         Some(&CompType::Unknown) => ContentNode::UnknownComputationType,
-        // A codata application has no content form, and stays opaque.
-        Some(&CompType::Codata { .. }) | None => ContentNode::Unresolved(Sort::CompType),
+        Some(&CompType::Codata {
+            declaration,
+            ref arguments,
+        }) => ContentNode::Codata {
+            declaration: program.resolve(declaration),
+            arguments: arguments
+                .iter()
+                .map(|&argument| child(Root::Value(argument)))
+                .collect(),
+        },
+        None => ContentNode::Unresolved(Sort::CompType),
     }
 }
 

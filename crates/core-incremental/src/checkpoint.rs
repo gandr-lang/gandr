@@ -2498,11 +2498,11 @@ pub fn node_key(
     node: ArenaNode,
 ) -> Maybe<NodeKey, recall::Absent>
 {
-    let mut hasher = blake3::Hasher::new();
+    let mut hasher = crate::codec::ContentKeyHasher::default();
     if write_node_content(&mut hasher, &TypeContent::unstaged(arena, layout, node)).is_err() {
         return Maybe::Absent(recall::Absent::Opaque);
     }
-    Maybe::Present(NodeKey::from(digest_of(&hasher)))
+    Maybe::Present(NodeKey::from(digest_of(&hasher.0)))
 }
 
 /// The key of a node whose content holds an unresolved node: the digest of a

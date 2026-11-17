@@ -1147,6 +1147,16 @@ pub enum ContentNode
     },
     /// The unknown computation type.
     UnknownComputationType,
+    /// A nominal codata instance, preserving its declaration identity. A
+    /// codata declaration has no content form, so an item that reads one is
+    /// opaque to reuse; the application keys its node by content alone.
+    Codata
+    {
+        /// The declaration's stable item reference.
+        declaration: Reference,
+        /// Value arguments in telescope order.
+        arguments: Vec<NodeIndex>,
+    },
     /// An id of this sort the arena resolves to nothing.
     Unresolved(Sort),
 }
@@ -1627,7 +1637,8 @@ impl ContentNode
         | Self::Pi { .. }
         | Self::LinearArrow { .. }
         | Self::ComputationElement { .. }
-        | Self::UnknownComputationType => matches!(ret, Sort::CompType),
+        | Self::UnknownComputationType
+        | Self::Codata { .. } => matches!(ret, Sort::CompType),
         | Self::Unresolved(sort) => matches!(
             (sort, ret),
             (Sort::Value, Sort::Value)
@@ -1764,7 +1775,8 @@ impl ContentNode
             | Self::Pi { .. }
             | Self::LinearArrow { .. }
             | Self::ComputationElement { .. }
-            | Self::UnknownComputationType => Sort::CompType,
+            | Self::UnknownComputationType
+            | Self::Codata { .. } => Sort::CompType,
             Self::Unresolved(sort) => sort,
         }
     }
@@ -1791,7 +1803,7 @@ impl ContentNode
         use Sort::ValueType as A;
         let actual = ret.slots.get(.. ret.count);
         (matches!(*self, Self::Returner { .. } | Self::Returns { .. } | Self::Capability { .. } | Self::RowValue(_)) || ret.effects.is_none()) && match *self {
-            Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
+            Self::Data { ref arguments,.. } | Self::Codata { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
             Self::Patched { base, ref fixed, ref meets } => ret.iter().eq(core::iter::once((base,A)).chain(fixed.values().map(|&value| (value,V))).chain(meets.iter().map(|met| (met.1,V)))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
@@ -1933,7 +1945,9 @@ impl ContentNode
             Crossing::of(Zone::Intuitionistic, BinderDepth::from(usize::from(arity)))
         };
         match *self {
-            Self::Data { ref arguments, .. } => Children::default().followed_by(arguments, V),
+            Self::Data { ref arguments, .. } | Self::Codata { ref arguments, .. } => {
+                Children::default().followed_by(arguments, V)
+            },
             Self::RecordType(ref fields) => Children::fields(fields, A),
             Self::Patched {
                 base,
@@ -2318,7 +2332,7 @@ impl ContentNode
     ///   borrowed payload identity in a const expression.
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
-        Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
+        Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } | Self::Codata { .. } => matches!(ret, Maybe::Present(_)),
         Self::Leta { ref world, .. } | Self::Migrate { ref world, .. } | Self::HeldType { ref world, .. } | Self::CapabilityType(ref world) => matches!(ret, Maybe::Present(_)) == matches!(*world, WorldContent::Declared(_)),
         Self::Hold(_) => matches!(ret, Maybe::Absent(_)),
         Self::Compose { .. } | Self::Fill { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
@@ -2332,6 +2346,10 @@ impl ContentNode
             Self::Constant(ref reference)
             | Self::Abstract(ref reference)
             | Self::Data {
+                declaration: ref reference,
+                ..
+            }
+            | Self::Codata {
                 declaration: ref reference,
                 ..
             } => Maybe::Present(reference),
@@ -5428,8 +5446,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - requires: nothing.
     /// - ensures: the corresponding former over its children's discovery
     ///   indices, the children discovered as [`gandr_core_term::children`]
-    ///   lists them; a codata application discovers no child and is the
-    ///   unresolved node. The predicate bounds the sort and child indices.
+    ///   lists them; a codata application is its declaration's reference over
+    ///   its arguments. The predicate bounds the sort and child indices.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5437,21 +5455,18 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   formers and sharing. [`comp_type_content`] checks every child's place.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(ensures: |ret| ret.sort() == Sort::CompType
-        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*comp_type, CompType::Codata { .. }))
+        && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_comp_type(
         &mut self,
         comp_type: &CompType,
     ) -> ContentNode
     {
+        let layout = self.layout;
         self.read_former(
             Sort::CompType,
-            |walk| {
-                if !matches!(*comp_type, CompType::Codata { .. }) {
-                    gandr_core_term::children::of_comp_type(comp_type, walk);
-                }
-            },
-            |found| comp_type_content(comp_type, found),
+            |walk| gandr_core_term::children::of_comp_type(comp_type, walk),
+            |found| comp_type_content(layout, comp_type, found),
         )
     }
 }
@@ -6346,8 +6361,8 @@ fn value_type_content(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a computation-type former whose children of each sort are exactly
-///   that family's numbers, in order; a codata application is the unresolved
-///   node.
+///   that family's numbers, in order; a codata application is its declaration's
+///   reference over its arguments.
 /// - fails: [`Short`] when a family runs out before the former's last slot.
 /// - panics: none.
 ///
@@ -6363,6 +6378,7 @@ fn value_type_content(
     ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::CompType && found.placed(node).0),
 )]
 fn comp_type_content(
+    layout: &Layout,
     comp_type: &CompType,
     found: &Discovered,
 ) -> Result<ContentNode, Short>
@@ -6401,8 +6417,13 @@ fn comp_type_content(
             target: target.clone(),
         },
         CompType::Unknown => ContentNode::UnknownComputationType,
-        // A codata application has no content form, and stays opaque.
-        CompType::Codata { .. } => ContentNode::Unresolved(Sort::CompType),
+        CompType::Codata {
+            declaration,
+            ref arguments,
+        } => ContentNode::Codata {
+            declaration: layout.resolve(declaration),
+            arguments: found.take(Sort::Value, arguments)?,
+        },
     })
 }
 
@@ -6445,6 +6466,13 @@ where
             ref declaration,
             ref arguments,
         } => ContentNode::Data {
+            declaration: declaration.clone(),
+            arguments: arguments.iter().map(|&argument| image(argument)).collect(),
+        },
+        ContentNode::Codata {
+            ref declaration,
+            ref arguments,
+        } => ContentNode::Codata {
             declaration: declaration.clone(),
             arguments: arguments.iter().map(|&argument| image(argument)).collect(),
         },
@@ -7646,6 +7674,12 @@ fn mint_node(
             ref arguments,
         } => ArenaNode::ValueType(
             arena.value_type_data(placed(declaration)?, seats(states, arguments)?),
+        ),
+        ContentNode::Codata {
+            ref declaration,
+            ref arguments,
+        } => ArenaNode::CompType(
+            arena.comp_type_codata(placed(declaration)?, seats(states, arguments)?),
         ),
         ContentNode::RecordType(ref fields) => {
             ArenaNode::ValueType(arena.value_type_record(seat_fields(states, fields)?))
