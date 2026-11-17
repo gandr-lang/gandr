@@ -356,6 +356,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   as a continuation, each asserted as the exact protocol or refusal.
     /// - witness: `gandr-surface-lowering::lower::session::tests::a_session_type_lowers_to_its_protocol`
     /// - witness: `gandr-surface-lowering::lower::session::tests::a_malformed_protocol_is_refused_where_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the draft's syntax, sites and work, the binders and the
+    ///   pieces of each form, growth within the session type's states
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Session(..))))]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -457,6 +461,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ExtensionType
                 | Former::ModedType
                 | Former::Scope
                 | Former::Declaration
@@ -575,6 +580,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                         | Former::CapabilityType
                         | Former::AtType
                         | Former::StagedType
+                        | Former::ExtensionType
                         | Former::ModedType
                         | Former::Scope
                         | Former::Declaration
@@ -650,6 +656,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ExtensionType
                 | Former::ModedType
                 | Former::Scope
                 | Former::Declaration

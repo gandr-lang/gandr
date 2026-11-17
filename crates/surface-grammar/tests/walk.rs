@@ -83,14 +83,15 @@ use crate::failure::Failure;
 /// (#6072), then by a translation's renaming after an import's signature
 /// and an offer's module, and by a flow applied to a module (#3461), then by
 /// a path between two signatures, `path p : A ≃ B` with its `into` and
-/// `from` bodies (#3487).
-const BUILT_IN_FINGERPRINT: u64 = 0x30a5_c3df_f456_eafa;
+/// `from` bodies (#3487), then by the reader `.#{` that fixes a record type's
+/// fields, `T.#{.l = v}` and `T.#{f ↦ v}` (#6498).
+const BUILT_IN_FINGERPRINT: u64 = 0x8090_945a_1b2b_dbd5;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3132);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3147);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 99;
@@ -120,14 +121,15 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+=", 16),
     ("+U", 1),
     ("+{", 3),
-    (",", 279),
+    (",", 282),
     ("-", 6),
     ("-->", 31),
     ("-=", 16),
     ("->", 13),
     ("-F", 3),
-    (".", 95),
+    (".", 97),
     (".#[", 2),
+    (".#{", 1),
     (".*{", 1),
     ("..", 3),
     (".@", 1),
@@ -140,7 +142,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("<=", 1),
     ("<=>", 27),
     ("<>", 1),
-    ("=", 147),
+    ("=", 149),
     ("==", 1),
     ("==>", 27),
     ("=>", 36),
@@ -220,7 +222,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 429),
+    ("identifier", 433),
     ("if", 16),
     ("import", 17),
     ("in", 1),
@@ -293,11 +295,11 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("|&", 1),
     ("|>", 1),
     ("||", 1),
-    ("}", 83),
+    ("}", 84),
     ("~", 1),
     ("~>", 3),
     ("ω", 17),
-    ("↦", 2),
+    ("↦", 4),
     ("⇝", 2),
     ("∷", 2),
     ("≃", 2),

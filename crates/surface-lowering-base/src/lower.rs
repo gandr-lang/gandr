@@ -172,6 +172,10 @@ quenchant_shape::reason_enum! {
 /// - witness: `gandr-surface-lowering::lower::tests::an_integer_literal_is_its_canonical_magnitude`
 /// - witness: `gandr-surface-lowering::lower::tests::a_text_literal_is_the_bytes_between_its_quotes`
 /// - witness: `gandr-surface-lowering::lower::tests::a_lexeme_of_the_wrong_shape_parses_to_nothing`
+///
+/// # Cost
+/// - allocation: the digits of a number and the decoded text of a string or a
+///   character, durable by the literal
 #[spec(
     ensures: |ret| {
         let spelled: &str = text.as_ref();
@@ -325,6 +329,7 @@ pub fn parse_literal(
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
+        | Former::ExtensionType
         | Former::ModedType
         | Former::Scope
         | Former::Declaration
@@ -1782,9 +1787,9 @@ pub enum Plan
     /// A data type at a stage its function's telescope binds: the type and
     /// the stage.
     Staged(NodeIndex, gandr_kernel_term::Stage),
-    /// A record type patched by a static bracket, `T[.l = v]` or a system of
-    /// faces `T[f ↦ v, g ↦ w]`: each field of the base `T` at the type `T`
-    /// writes for it, each fixed label at the value the bracket first writes
+    /// A record type patched by the reader `.#{`, `T.#{.l = v}` or a system of
+    /// faces `T.#{f ↦ v, g ↦ w}`: each field of the base `T` at the type `T`
+    /// writes for it, each fixed label at the value the reader first writes
     /// for it, and each later face's value on a meet.
     Patched
     {

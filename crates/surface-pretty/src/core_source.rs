@@ -4130,7 +4130,7 @@ mod tests
         .map(|printed| String::from(printed.as_ref()));
         assert_eq!(
             printed.ok().as_deref(),
-            Some("Config[.port = *{}, .tls = *{*{}}]"),
+            Some("Config.#{.port = *{}, .tls = *{*{}}}"),
             "the base is written by the member's name"
         );
     }

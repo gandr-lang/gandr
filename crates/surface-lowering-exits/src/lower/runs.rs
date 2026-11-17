@@ -733,6 +733,7 @@ fn operand_of(
         | Former::CapabilityType
         | Former::AtType
         | Former::StagedType
+        | Former::ExtensionType
         | Former::ModedType
         | Former::LabelledSumType
         | Former::LazyRecordType

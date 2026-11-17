@@ -85,7 +85,7 @@ use crate::model::Sym;
 /// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 56 && rules.iter().take(42).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(42).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow", "expression.atom", "expression.postfix"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 57 && rules.iter().take(43).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(43).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "function_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -118,7 +118,7 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// # Cost
 /// - allocation: the rules of the type grammar and their adaptation records,
 ///   setup
-#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 42 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 43 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.path", "type.juxtaposition", "type.application", "type.product", "type.sum", "type.union", "type.lazy_product", "type.equivalence", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "function_type") && added.last().is_some_and(|rule| rule.name().0 == "string.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -672,25 +672,22 @@ fn add_type_rules(
     // bracket names a method's deduced mode where a view's type reads its
     // element after it, `View[m](a)`.
     //
-    // The bracket also writes an extension type over a record's fields. The
-    // field form `Config[.port = 443, .tls = true]` fixes the fields it names.
-    // The face form `Config[secure ↦ *{.port = 443, .tls = true}]` fixes the
-    // fields of one face the record's type member names. The field form opens
-    // with `.`, where a stage opens with `<` or a name. The face form and a
-    // stage share their name, and the token after it, `↦` or `]`, decides
-    // between them. The forms are alternatives of one rule, so the `[` after
-    // a type keeps one mold. A second rule over the same `[` would tie with
-    // this one at every staged type.
+    // The bracket also reads the retired forms that fixed a record's fields,
+    // `Config[.port = 443]` and `Config[secure ↦ *{.port = 443}]`. The
+    // lowering refuses each one by name, and the reader `.#{` of
+    // `extension_type` replaces both. The field form opens with `.`, where a
+    // stage opens with `<` or a name. The face form and a stage share their
+    // name, and the token after it, `↦` or `]`, decides between them. The
+    // forms are alternatives of one rule, so the `[` after a type keeps one
+    // mold. A second rule over the same `[` would tie with this one at every
+    // staged type.
     //
     // A field's value is a type hole, as a value a type takes as a call's
     // argument is: a number, a boolean, a string, a name or a call. After `=`
     // in a type, an expression hole lets a declaration's own `= e`, cut off by
     // a bracket the source leaves open, read as a fixed value. The recovery
     // then marks the open bracket at the declaration's end and not where it
-    // was left open. A face's value follows `↦`, which no declaration writes,
-    // so it is an expression: the record of the face's fields. A system
-    // writes more faces after the first, each after a `,`: `Config[secure ↦
-    // a, addr ↦ b]`. The `,` after a face's expression hole lets the recovery
+    // was left open. The `,` after a face's expression hole lets the recovery
     // of a dropped token read a system in sources that write no face (#5106).
     rules.push(rule(
         RuleName("staged_type"),
@@ -737,6 +734,54 @@ fn add_type_rules(
             ]),
         ]),
     ));
+    // A record type with fixed fields, `Config.#{.port = 443, .tls = true}`,
+    // or with the fields of a face fixed, `Config.#{secure ↦ *{.port = 443}}`:
+    // the postfix reader `.#{` on a type, beside `.*{` and `.#[` on a value.
+    // A system writes more faces after the first, each after a `,`:
+    // `Config.#{secure ↦ a, addr ↦ b}`. A field's value is a type hole, as a
+    // value a type takes as a call's argument is. A face's value follows `↦`,
+    // which no declaration writes, so it is an expression: the record of the
+    // face's fields.
+    let mut extension = rule(
+        RuleName("extension_type"),
+        ty,
+        type_path,
+        Regex::seq([
+            Regex::sort(ty),
+            tile(TileLabel(".#{")),
+            Regex::alt([
+                Regex::seq([
+                    tile(TileLabel("identifier")),
+                    tile(TileLabel("↦")),
+                    Regex::sort(Sort::Expression),
+                    Regex::repeat(Regex::seq([
+                        tile(TileLabel(",")),
+                        tile(TileLabel("identifier")),
+                        tile(TileLabel("↦")),
+                        Regex::sort(Sort::Expression),
+                    ])),
+                ]),
+                comma1(Regex::seq([
+                    tile(TileLabel(".")),
+                    tile(TileLabel("identifier")),
+                    tile(TileLabel("=")),
+                    Regex::sort(ty),
+                ])),
+            ]),
+            tile(TileLabel("}")),
+        ]),
+    );
+    extension.adaptations.push(Adaptation::refused(
+        RuleName("extension_type"),
+        RetiredForm::BracketFields,
+        AdaptationReason("the static bracket that fixes a record type's fields by label, `T[.l = v]`, is refused by name; a stage `T[i]` and a supply by name `f[.a = A]` keep the bracket"),
+    ));
+    extension.adaptations.push(Adaptation::refused(
+        RuleName("extension_type"),
+        RetiredForm::BracketFaces,
+        AdaptationReason("the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name"),
+    ));
+    rules.push(extension);
     // A parenthesized type holds one type or, as the domain of the n-ary box
     // `(A, B) -> C`, a list of them, each entry a bare type or a binder
     // `x : A` — the telescope `(x : A, y : B(x)) -> C`. One rule, so `(` keeps
@@ -1017,8 +1062,8 @@ fn add_type_rules(
     ));
     // A string literal is a Type-sort atom on the same terms, so a bracket
     // that fixes a field of type `String` molds with its value,
-    // `Config[.host = "localhost"]`. The printer writes the fields a system of
-    // faces fixes in that form (#5106). A type string takes no `${ E }`
+    // `Config.#{.host = "localhost"}`. The printer writes the fields a system
+    // of faces fixes in that form (#5106). A type string takes no `${ E }`
     // segment, as the pattern-position string does not. The Expression-sort
     // `string.expression` and the string of `literal_pattern` stay the other
     // realisations of the same provenance.

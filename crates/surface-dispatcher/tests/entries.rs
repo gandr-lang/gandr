@@ -214,6 +214,7 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type ->", Standing::Owed(0)),
     ("Type -F", Standing::Owed(0)),
     ("Type .", Standing::Owed(0)),
+    ("Type .#{", Standing::Owed(0)),
     ("Type ?", Standing::Owed(0)),
     ("Type Bridge", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),
@@ -590,9 +591,9 @@ enum Placed
     /// b)` reads `A` as the carrier, which answers.
     Implicit,
     /// A face form's face and the record it fixes the face at, `secure` and
-    /// `*{.port = 443}` in `Config[secure ↦ *{.port = 443}]`: the patched type
-    /// holds each of the record's values by its label, and no core node holds
-    /// the face or the record, so the type answers.
+    /// `*{.port = 443}` in `Config.#{secure ↦ *{.port = 443}}`: the patched
+    /// type holds each of the record's values by its label, and no core
+    /// node holds the face or the record, so the type answers.
     Faced,
 }
 
@@ -1027,10 +1028,10 @@ fn gated(
         // declaration after its first `where`. The pass over the children
         // below opens the bodies at that tile.
         let flow = melded && matches!(def.label, "flow" | "path") && def.sort == Sort::Item;
-        // A face form's face and record: every child of a bracket after a
-        // type, but its base, when a `↦` stands among its tiles.
+        // A face form's face and record: every child of an extension type, but
+        // its base, when a `↦` stands among its tiles.
         let faced = melded
-            && def.label == "["
+            && def.label == ".#{"
             && def.sort == Sort::Type
             && children
                 .iter()
@@ -1051,6 +1052,7 @@ fn gated(
                     let headed = melded
                         && opener == Some(child)
                         && (def.label == "["
+                            || def.label == ".#{"
                             || def.label == ".#["
                             || (matches!(def.label, "(" | JUXTAPOSED)
                                 && def.sort == Sort::Expression)
@@ -1133,6 +1135,7 @@ fn gated(
                 }
                 else {
                     label == "["
+                        || label == ".#{"
                         || def.label == "constructor"
                         || FORMERS.contains(&text)
                         || (label == JUXTAPOSED && def.label == "type_identifier")

@@ -857,12 +857,18 @@ pub enum RetiredForm
     /// A function type written `A => B` in a type position, which `A -> B`
     /// replaces.
     FatArrowBox,
+    /// A record type's fixed fields in a static bracket, `T[.l = v]`, which
+    /// `T.#{.l = v}` replaces.
+    BracketFields,
+    /// A record type's faces in a static bracket, `T[f ↦ v]`, which
+    /// `T.#{f ↦ v}` replaces.
+    BracketFaces,
 }
 
 impl RetiredForm
 {
     /// Every retired spelling, in the order of the enum.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::ShapeMember,
         Self::UnitValue,
         Self::PositionalPathCarrier,
@@ -870,6 +876,8 @@ impl RetiredForm
         Self::PositionalFlowCarrier,
         Self::ViewTelescope,
         Self::FatArrowBox,
+        Self::BracketFields,
+        Self::BracketFaces,
     ];
 
     /// The surface name of the spelling: the row's surface and the tag of its
@@ -889,6 +897,8 @@ impl RetiredForm
             Self::PositionalFlowCarrier => "positional_flow_carrier",
             Self::ViewTelescope => "view_telescope",
             Self::FatArrowBox => "fat_arrow_box",
+            Self::BracketFields => "bracket_fields",
+            Self::BracketFaces => "bracket_faces",
         })
     }
 
@@ -909,6 +919,8 @@ impl RetiredForm
             Self::PositionalFlowCarrier => "Flow[.A = A](a, b)",
             Self::ViewTelescope => "*{ … }",
             Self::FatArrowBox => "A -> B",
+            Self::BracketFields => "T.#{.l = v}",
+            Self::BracketFaces => "T.#{f ↦ v}",
         })
     }
 
@@ -929,6 +941,8 @@ impl RetiredForm
             Self::PositionalFlowCarrier => "Flow",
             Self::ViewTelescope => "#{",
             Self::FatArrowBox => "=>",
+            Self::BracketFields => "[.",
+            Self::BracketFaces => "↦",
         })
     }
 }

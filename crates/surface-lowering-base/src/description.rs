@@ -1082,6 +1082,10 @@ impl<'held> Visible<'held>
 /// - hypothesis: L3 — as [`elaborate_descriptions`]; a document resumed after
 ///   its closure numbers its declarations as the whole unit's reading does.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
+///
+/// # Cost
+/// - allocation: the import table, the pieces of each form and the declarations
+///   read, durable by `report`
 #[spec(
     captures: before = report.declarations.len(),
     ensures: |result| result.is_err() || report.declarations.len() >= before,
@@ -2773,6 +2777,9 @@ enum MemberEnd
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
 /// - witness: `description::tests::a_block_left_open_keeps_the_member_before_its_missing_close`
 /// - witness: `description::theory::tests::a_where_clause_states_each_condition_on_its_rule`
+///
+/// # Cost
+/// - allocation: the list of member runs, setup
 #[spec(ensures: |result| result.iter().all(|member| !member.is_empty()))]
 fn split_members(
     pieces: &[Piece],
@@ -2825,7 +2832,7 @@ fn split_members(
                 }
                 start = index;
             },
-            "(" | "[" | "#[" | ".#[" | "{" | "*{" | "+{" | "&{" | ".*{" => {
+            "(" | "[" | "#[" | ".#[" | "{" | "*{" | "+{" | "&{" | ".*{" | ".#{" => {
                 depth = depth.saturating_add(1);
             },
             ")" | "]" | "}" => depth = depth.saturating_sub(1),

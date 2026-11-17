@@ -1091,15 +1091,16 @@ pub enum ValueType
     },
     /// A structural record classifier, in exact UTF-8 label order.
     Record(BTreeMap<FieldLabel, ValueTypeId>),
-    /// The patched type `T[.l = v, …]`: the record type `base` with the fields
-    /// `fixed` names fixed at their values. Its elements are the records of
-    /// the fields of `base` that `fixed` leaves free, so a fixed field takes
-    /// no storage. Formation admits a base whose head is a record type, a
-    /// label of `fixed` only where the base holds that field, and each value
-    /// only at the type of its field. A system of faces, `T[f ↦ v, g ↦ w]`,
-    /// fixes each label at the value of the first face that holds it, and
-    /// keeps each later face's value on a meet in `meets`: formation admits a
-    /// meet value only where it converts with the fixed value at its label.
+    /// The patched type `T.#{.l = v, …}`: the record type `base` with the
+    /// fields `fixed` names fixed at their values. Its elements are the
+    /// records of the fields of `base` that `fixed` leaves free, so a fixed
+    /// field takes no storage. Formation admits a base whose head is a
+    /// record type, a label of `fixed` only where the base holds that
+    /// field, and each value only at the type of its field. A system of
+    /// faces, `T.#{f ↦ v, g ↦ w}`, fixes each label at the value of the
+    /// first face that holds it, and keeps each later face's value on a
+    /// meet in `meets`: formation admits a meet value only where it
+    /// converts with the fixed value at its label.
     Patched
     {
         /// The record type the patch fixes fields of.

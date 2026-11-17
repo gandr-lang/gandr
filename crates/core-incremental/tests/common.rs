@@ -99,7 +99,7 @@ pub enum Ascription
     ReturnsInteger,
     /// `El 0 name`: a type position reading a definition.
     CodeOf(String),
-    /// `*{host : String, port : Integer}[.port = 443]`: a record type patched
+    /// `*{host : String, port : Integer}.#{.port = 443}`: a record type patched
     /// at one field.
     Patched,
 }

@@ -14,8 +14,8 @@
 // that count is refused by its name.
 //
 // - see: #5668 — the face poset past 64 cells
-// - see: `model/desc/record-faces.gandr` — a record type's faces, a static
-//   bracket by label or by face, and a system of two faces
+// - see: `model/desc/record-faces.gandr` — a record type's faces, the reader
+//   `.#{` by label or by face, and a system of two faces
 // - see: `pathological/desc/record-faces.gandr` — the faces a record type
 //   refuses
 
@@ -61,7 +61,7 @@ def wide_deployment : Deploy = *{
 
 /// The replicas of a deployment fixed on two faces in one system. The faces
 /// meet at four labels and agree there.
-def placed_replicas(d : Deploy[
+def placed_replicas(d : Deploy.#{
   placed ↦ *{
     .host = "localhost",
     .port = 443,
@@ -71,7 +71,7 @@ def placed_replicas(d : Deploy[
     .replicas = 3
   },
   served ↦ *{.port = 443, .tls = true, .region = "eu", .zone = "a", .tier = 1, .replicas = 3}
-]) -> Integer { d.replicas }
+}) -> Integer { d.replicas }
 
 /// `wide_deployment` stands at the system by the coercion in: each
 /// of its fields

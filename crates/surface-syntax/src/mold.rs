@@ -289,13 +289,13 @@ impl ClosingClass
     /// - witness: `mold::tests::openers_and_closers_pair_by_family`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == match spelling.0 { "(" | "type(" => Some(Self::Paren), "[" | "#[" | ".#[" => Some(Self::Bracket), "{" | "*{" | "+{" | "&{" | ".*{" => Some(Self::Brace), _ => None })]
+    #[spec(ensures: |ret| ret == match spelling.0 { "(" | "type(" => Some(Self::Paren), "[" | "#[" | ".#[" => Some(Self::Bracket), "{" | "*{" | "+{" | "&{" | ".*{" | ".#{" => Some(Self::Brace), _ => None })]
     pub fn opening(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
             "(" | "type(" => Some(Self::Paren),
             "[" | "#[" | ".#[" => Some(Self::Bracket),
-            "{" | "*{" | "+{" | "&{" | ".*{" => Some(Self::Brace),
+            "{" | "*{" | "+{" | "&{" | ".*{" | ".#{" => Some(Self::Brace),
             _ => None,
         }
     }
@@ -349,6 +349,7 @@ mod tests
             ("+{", Some(ClosingClass::Brace), None),
             ("&{", Some(ClosingClass::Brace), None),
             (".*{", Some(ClosingClass::Brace), None),
+            (".#{", Some(ClosingClass::Brace), None),
             ("*", None, None),
             (")", None, Some(ClosingClass::Paren)),
             ("]", None, Some(ClosingClass::Bracket)),

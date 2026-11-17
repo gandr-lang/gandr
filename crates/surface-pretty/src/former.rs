@@ -544,7 +544,7 @@ pub enum Former<'source, Node>
     RecordType(Arity),
     /// A record type patched at this many fields: its base, then each fixed
     /// value, which the source answers in label order by
-    /// [`Source::component`] and [`Source::label`]: `B[.l = v, …]`.
+    /// [`Source::component`] and [`Source::label`]: `B.#{.l = v, …}`.
     Patched(Node, Arity),
     /// The suspension `+U C` of a computation type.
     ThunkType(Node),
@@ -562,7 +562,7 @@ pub enum Former<'source, Node>
     Abstract(Name<'source>),
     /// The value type a type member names, by the member's name: the type a
     /// top-level member's own definition mints, and the base `Config` of
-    /// `Config[.port = 443]`.
+    /// `Config.#{.port = 443}`.
     Member(Name<'source>),
     /// The static Pi `A -> B` classifying a type operator, whose codomain
     /// binds nothing.

@@ -144,6 +144,7 @@ const OPENERS: &[&str] = &[
     "*{",
     "+{",
     ".#[",
+    ".#{",
     ".*{",
     "@![",
     "@[",
@@ -884,7 +885,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
     "projection_expression" => HlRole::Member,
     "at_type" | "world_declaration" => HlRole::Label,
     "attribute_block" => HlRole::Other,
-    "instantiation_expression" | "staged_type" => HlRole::VariableParam,
+    "instantiation_expression" | "staged_type" | "extension_type" => HlRole::VariableParam,
     "as_pattern" => HlRole::VariableDef,
     "import_declaration" | "offers_declaration" if matches!(facts.opener, Opener::Bracket { label: TileLabel("{"), .. }) => HlRole::Member,
     "offers_declaration" if facts.left.crosses(TileLabel("via")).0 => HlRole::Variable,
@@ -916,7 +917,9 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
         "projection_expression" => return HlRole::Member,
         "at_type" | "world_declaration" => return HlRole::Label,
         "attribute_block" => return HlRole::Other,
-        "instantiation_expression" | "staged_type" => return HlRole::VariableParam,
+        "instantiation_expression" | "staged_type" | "extension_type" => {
+            return HlRole::VariableParam;
+        },
         "as_pattern" => return HlRole::VariableDef,
         _ => {},
     }
@@ -1085,6 +1088,7 @@ mod tests
                 "&{",
                 "*{",
                 "+{",
+                ".#{",
                 ".*{",
                 "command_substitution_start",
                 "{",

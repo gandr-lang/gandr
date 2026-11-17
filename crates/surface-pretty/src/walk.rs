@@ -3408,7 +3408,7 @@ enum Join
     /// `*{b | l = a, …}`.
     Update(Arity),
     /// A patched type over its base and this many labelled values,
-    /// `B[.l = v, …]`.
+    /// `B.#{.l = v, …}`.
     Patch(Arity),
     /// An infix chain over this many operands, two or more.
     Infix
@@ -10406,7 +10406,7 @@ impl Walk<'_, '_>
                 entries: Entries::Labelled(Label::Field),
             })),
             Former::Patched(_, arity) => Some(writes(
-                Production("staged_type"),
+                Production("extension_type"),
                 Join::Patch(Arity(usize::from(arity))),
             )),
             Former::List(_) => Some(writes(
@@ -13979,7 +13979,7 @@ impl Walk<'_, '_>
                 }
                 let base = self.pop()?;
                 let base = self.bare_up_to(base, Binding::Atom)?;
-                let opener = self.leaf(Glyphs("["))?;
+                let opener = self.leaf(Glyphs(".#{"))?;
                 let mut items = Vec::from([base, opener]);
                 for (position, entry) in popped.rchunks(2_usize).enumerate() {
                     if position > 0_usize {
@@ -13991,7 +13991,7 @@ impl Walk<'_, '_>
                     }
                 }
                 let inner = self.builder.concat_all(&items)?;
-                let close = self.leaf(Glyphs("]"))?;
+                let close = self.leaf(Glyphs("}"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
             Join::Infix { infix, arity } => {

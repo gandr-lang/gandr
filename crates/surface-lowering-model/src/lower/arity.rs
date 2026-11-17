@@ -415,6 +415,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     ///   before the explicit group of a box.
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_telescope_type_lowers_by_its_arity`
     /// - witness: `gandr-surface-lowering::lower::arity::tests::an_implicit_group_is_its_explicit_twin_4853`
+    ///
+    /// # Cost
+    /// - allocation: the entries of the list, durable by the type they describe
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
     fn listed_entries(
         &self,
@@ -930,6 +933,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::zoned`].
     /// - witness: `gandr-surface-lowering::lower::arity::tests::a_session_entry_reads_the_select_and_the_offer`
+    ///
+    /// # Cost
+    /// - allocation: the worklist of forms and their pieces, setup
     #[spec(captures: before = self.cx().fuel.remaining(), ensures: |_| self.cx().fuel.remaining() <= before)]
     fn type_zone(
         &mut self,
@@ -1003,6 +1009,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Models<'host
                 | Former::CapabilityType
                 | Former::AtType
                 | Former::StagedType
+                | Former::ExtensionType
                 | Former::ModedType
                 | Former::Scope
                 | Former::Declaration
