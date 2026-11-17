@@ -1,0 +1,7 @@
+data Bit : Type where { | Zero : Bit | One : Bit }
+def a : Integer;
+def a = 1;
+def owed : Integer;
+def w : Integer;
+def w = "text";
+def r = w;

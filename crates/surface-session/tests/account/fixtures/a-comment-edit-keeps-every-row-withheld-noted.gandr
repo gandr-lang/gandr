@@ -1,0 +1,4 @@
+// A comment changes no declaration.
+def w : Integer;
+def w = "text";
+def r = w;

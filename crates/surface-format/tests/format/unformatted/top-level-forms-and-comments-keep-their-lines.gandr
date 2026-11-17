@@ -1,0 +1,11 @@
+#!/usr/bin/env gandr
+
+
+// head
+def a = 1 ; def b = 2 ; // trailing
+
+
+
+/* own */
+(f a)   ;
+(g b);

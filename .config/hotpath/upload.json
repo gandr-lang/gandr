@@ -1,0 +1,29 @@
+[
+  {
+    "name": "a push to landing: hotpath Cloud took the report",
+    "program": "upload.jq",
+    "input": {
+      "act": false,
+      "sent": true
+    },
+    "output": "sent"
+  },
+  {
+    "name": "a push to landing: the upload failed (an OIDC timeout), so the report is kept and the job passes (#2641)",
+    "program": "upload.jq",
+    "input": {
+      "act": false,
+      "sent": false
+    },
+    "output": "unsent"
+  },
+  {
+    "name": "act holds no OIDC token and uploads nothing",
+    "program": "upload.jq",
+    "input": {
+      "act": true,
+      "sent": false
+    },
+    "output": "skipped"
+  }
+]
