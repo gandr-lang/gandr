@@ -7141,52 +7141,6 @@ impl Walk<'_, '_>
         ))
     }
 
-    /// How a path, a bridge or a homed type former applied to its operands
-    /// binds on the walk's surface, as [`type_applied`] states, noting the
-    /// juxtaposed form such a type inside an expression takes.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`type_applied`]'s binding for the walk's surface and `rule`;
-    ///   on the expression surface where `admits` reads a type,
-    ///   `Notation::TypeApplication` is among the notes, since no spelling of
-    ///   the type reads back there until #5750 and #5753. A value the
-    ///   expression grammar reads, `pure (Vec MkIx)`, takes no note.
-    /// - provides: the one way these formers choose their applied binding.
-    /// - panics: none.
-    /// - executable: none — the binding is `type_applied`'s, and the note is
-    ///   one call.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `endForced`'s ascription to `Path(3, _)` inside an
-    ///   expression is held by the body parity sweep, and `pure (Vec MkIx)`
-    ///   stays faithful.
-    /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            answer_totality,
-            reason = "a path, a bridge or a homed type former inside an expression reads back \
-                      in no spelling until #5750 and #5753: written in the printer's notation"
-        )
-    )]
-    fn applied_type(
-        &mut self,
-        rule: Production,
-        admits: Admits,
-    ) -> Binding
-    {
-        if self.surface == Surface::Expression
-            && matches!(
-                admits,
-                Admits::Type | Admits::ValueType | Admits::CompType | Admits::Thunked
-            )
-        {
-            self.note(Unspelled::Notation(Notation::TypeApplication));
-        }
-        type_applied(self.surface, rule)
-    }
-
     /// Pushes a finished atom holding `glyphs`.
     ///
     /// # Specification
