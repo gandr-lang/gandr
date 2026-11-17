@@ -610,6 +610,9 @@ struct Engine<'arena>
     /// computation rather than a node rebuilt from it, and each force of a
     /// suspended head answered by its call (#3935).
     returned: alloc::collections::BTreeSet<ComputationId>,
+    /// Each lambda the checker read against a returner of a box: it stands
+    /// as that box returned, `return (thunk λ)` (#6390).
+    boxed: alloc::collections::BTreeSet<ComputationId>,
     /// The constants and atoms a renaming replaces; nothing outside one.
     renaming: &'arena Renaming,
     /// The nodes, each at its depth, an instantiation found reading the
@@ -652,6 +655,7 @@ impl<'arena> Engine<'arena>
             binds: Vec::new(),
             closings: Vec::new(),
             returned: alloc::collections::BTreeSet::new(),
+            boxed: alloc::collections::BTreeSet::new(),
             renaming: &NOTHING_RENAMED,
             reads: alloc::collections::BTreeSet::new(),
             reading: Vec::new(),
@@ -1522,6 +1526,15 @@ impl<'arena> Engine<'arena>
                 },
                 _ => {},
             }
+        }
+        // A lambda the checker read against a returner of a box stands as
+        // the box it returns, `return (thunk λ)` (#6390).
+        if rewrite == Rewrite::Elaborate
+            && let (Node::Computation(held), Node::Computation(id)) = (node, rewritten)
+            && self.boxed.contains(&held)
+        {
+            let thunk = self.arena.value_thunk(id);
+            return Node::Computation(self.arena.computation_return(thunk));
         }
         // A force of a nested call the checker suspended is the call itself,
         // as a call written at an application's head reads (#3935). The call
@@ -7490,7 +7503,10 @@ fn survey_computation(
 pub fn elaborate_nested_traced(
     arena: &mut CoreArena,
     subject: ValueId,
-    nesting: &BTreeMap<ValueId, Nesting>,
+    (nesting, boxed): (
+        &BTreeMap<ValueId, Nesting>,
+        &alloc::collections::BTreeSet<ComputationId>,
+    ),
     carried: &mut Vec<Carried>,
     binds: &mut Vec<(ValueId, ComputationId)>,
 ) -> Result<ValueId, Unenclosed>
@@ -7519,6 +7535,7 @@ pub fn elaborate_nested_traced(
         })
         .collect();
     engine.nesting = nesting.clone();
+    engine.boxed.clone_from(boxed);
     engine
         .nesting
         .extend(returned.into_iter().map(|run| (run, Nesting::Returned)));

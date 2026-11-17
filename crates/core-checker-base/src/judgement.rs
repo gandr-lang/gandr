@@ -6863,6 +6863,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::Checked))
             },
             Computation::Lambda(body) => {
+                // A lambda against a returner of a box stands as that box
+                // returned, so it checks at the box's function type.
+                let expected = match self.boxed_expected(expected)? {
+                    Maybe::Present(function) => {
+                        self.context.record_boxed(term);
+                        function
+                    },
+                    Maybe::Absent(()) => expected,
+                };
                 let (domain, codomain) = self.arrow_expected(term, expected)?;
                 self.context.open_intuitionistic(
                     CoreNode::Term(TermNode::Computation(term)),
@@ -8092,6 +8101,44 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
             )),
         }
+    }
+
+    /// The function type a lambda checks at when `expected` returns a box of
+    /// it: `C` when `expected` is `-F (U C)` at its weak head and `C` is a
+    /// function at its own. The lambda then stands as that box returned
+    /// (#6390).
+    ///
+    /// # Specification
+    /// - requires: `expected` is formed.
+    /// - ensures: the box's function type when `expected` returns a box of a
+    ///   function; absent for any other former, the unknown type among them.
+    /// - fails: the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail lambda against a returner of a box settles,
+    ///   and a lambda against an arrow or the unknown type keeps its reading.
+    /// - witness: `tests::module::a_tail_lambda_against_a_returner_of_a_box_returns_the_box_6390`
+    fn boxed_expected(
+        &mut self,
+        expected: CompTypeId,
+    ) -> Result<Maybe<CompTypeId, ()>, CheckRefusal>
+    {
+        let head = crate::codata::read(self.context, expected)?;
+        let Ok(CompTypeView::Returner { result, .. }) = comp_type_view(self.context.arena(), head)
+        else {
+            return Ok(Maybe::Absent(()));
+        };
+        let value = self.context.whnf_value_type(result)?;
+        let Ok(ValueTypeView::Thunk(body)) = value_type_view(self.context.arena(), value)
+        else {
+            return Ok(Maybe::Absent(()));
+        };
+        let function = crate::codata::read(self.context, body)?;
+        Ok(match matched_function(self.context.arena_mut(), function) {
+            Maybe::Present(_) => Maybe::Present(body),
+            Maybe::Absent(_) => Maybe::Absent(()),
+        })
     }
 
     /// The domain and the codomain a linear lambda checks against: those of

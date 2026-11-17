@@ -107,6 +107,7 @@
 //! [`CheckRefusal::UnenclosedRun`]: crate::CheckRefusal::UnenclosedRun
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -334,7 +335,8 @@ impl NestedElaboration
 }
 
 /// Rebuild `body` with every computation written where a value is read
-/// elaborated as `decisions` decided it.
+/// elaborated as `decisions` decided it, and each lambda of `boxed` as the box
+/// it returns, `return (thunk λ)`.
 ///
 /// # Specification
 /// - requires: `body` is live in `arena`, and `decisions` holds what the
@@ -366,7 +368,7 @@ impl NestedElaboration
 pub fn elaborate(
     arena: &mut CoreArena,
     body: ValueId,
-    decisions: &BTreeMap<ValueId, Nesting>,
+    (decisions, boxed): (&BTreeMap<ValueId, Nesting>, &BTreeSet<ComputationId>),
 ) -> Result<(ValueId, NestedElaboration), Unenclosed>
 {
     let nesting = decisions
@@ -382,8 +384,13 @@ pub fn elaborate(
         .collect();
     let mut carried = Vec::new();
     let mut binds = Vec::new();
-    let elaborated =
-        gandr_core_term::elaborate_nested_traced(arena, body, &nesting, &mut carried, &mut binds)?;
+    let elaborated = gandr_core_term::elaborate_nested_traced(
+        arena,
+        body,
+        (&nesting, boxed),
+        &mut carried,
+        &mut binds,
+    )?;
     Ok((elaborated, NestedElaboration {
         decisions: decisions.clone(),
         carried,

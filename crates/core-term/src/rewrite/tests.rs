@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 #[test]
 fn annotation_substitution_protects_local_binders()
 {
@@ -3561,8 +3562,13 @@ fn an_elaboration_runs_in_written_order_before_its_region()
     ]);
     let mut carried = Vec::new();
     let mut binds = Vec::new();
-    let Ok(elaborated) =
-        elaborate_nested_traced(&mut arena, subject, &nesting, &mut carried, &mut binds)
+    let Ok(elaborated) = elaborate_nested_traced(
+        &mut arena,
+        subject,
+        (&nesting, &BTreeSet::new()),
+        &mut carried,
+        &mut binds,
+    )
     else {
         panic!("every run stands in a computation");
     };
@@ -3607,8 +3613,13 @@ fn an_elaboration_suspends_and_runs_as_decided()
     let mut carried = Vec::new();
     let mut binds = Vec::new();
     let minted = arena.watermark();
-    let Ok(elaborated) =
-        elaborate_nested_traced(&mut arena, subject, &nesting, &mut carried, &mut binds)
+    let Ok(elaborated) = elaborate_nested_traced(
+        &mut arena,
+        subject,
+        (&nesting, &BTreeSet::new()),
+        &mut carried,
+        &mut binds,
+    )
     else {
         panic!("every run stands in a computation");
     };
@@ -3644,7 +3655,7 @@ fn an_elaboration_suspends_and_runs_as_decided()
     let Ok(unchanged) = elaborate_nested_traced(
         &mut arena,
         pair,
-        &BTreeMap::new(),
+        (&BTreeMap::new(), &BTreeSet::new()),
         &mut Vec::new(),
         &mut binds,
     )
@@ -3687,7 +3698,7 @@ fn a_forced_suspension_elaborates_as_its_call_3935()
         let Ok(elaborated) = elaborate_nested_traced(
             &mut arena,
             subject,
-            &BTreeMap::from([(nested, decided)]),
+            (&BTreeMap::from([(nested, decided)]), &BTreeSet::new()),
             &mut carried,
             &mut Vec::new(),
         )
@@ -3726,7 +3737,7 @@ fn an_elaboration_never_hoists_out_of_a_thunk_or_an_arm()
     let Ok(elaborated) = elaborate_nested_traced(
         &mut arena,
         subject,
-        &nesting,
+        (&nesting, &BTreeSet::new()),
         &mut Vec::new(),
         &mut Vec::new(),
     )
@@ -3752,7 +3763,10 @@ fn an_effectful_run_in_no_computation_is_unenclosed()
     let refused = elaborate_nested_traced(
         &mut arena,
         definition,
-        &BTreeMap::from([(nested, Nesting::Run(Purity::Effectful))]),
+        (
+            &BTreeMap::from([(nested, Nesting::Run(Purity::Effectful))]),
+            &BTreeSet::new(),
+        ),
         &mut Vec::new(),
         &mut Vec::new(),
     );
@@ -3764,7 +3778,10 @@ fn an_effectful_run_in_no_computation_is_unenclosed()
     let Ok(suspended) = elaborate_nested_traced(
         &mut arena,
         definition,
-        &BTreeMap::from([(nested, Nesting::Thunk)]),
+        (
+            &BTreeMap::from([(nested, Nesting::Thunk)]),
+            &BTreeSet::new(),
+        ),
         &mut Vec::new(),
         &mut Vec::new(),
     )
@@ -3783,7 +3800,7 @@ fn an_effectful_run_in_no_computation_is_unenclosed()
     let refused = elaborate_nested_traced(
         &mut arena,
         subject,
-        &BTreeMap::new(),
+        (&BTreeMap::new(), &BTreeSet::new()),
         &mut Vec::new(),
         &mut Vec::new(),
     );
@@ -3808,10 +3825,13 @@ fn a_pure_run_in_no_computation_stands_as_what_it_returns_4812()
     let Ok(elaborated) = elaborate_nested_traced(
         &mut arena,
         definition,
-        &BTreeMap::from([
-            (nested, Nesting::Run(Purity::Pure)),
-            (inner, Nesting::Run(Purity::Effectful)),
-        ]),
+        (
+            &BTreeMap::from([
+                (nested, Nesting::Run(Purity::Pure)),
+                (inner, Nesting::Run(Purity::Effectful)),
+            ]),
+            &BTreeSet::new(),
+        ),
         &mut Vec::new(),
         &mut binds,
     )
@@ -3833,10 +3853,13 @@ fn a_pure_run_in_no_computation_stands_as_what_it_returns_4812()
     let Ok(alone) = elaborate_nested_traced(
         &mut arena,
         nested,
-        &BTreeMap::from([
-            (nested, Nesting::Run(Purity::Pure)),
-            (inner, Nesting::Run(Purity::Effectful)),
-        ]),
+        (
+            &BTreeMap::from([
+                (nested, Nesting::Run(Purity::Pure)),
+                (inner, Nesting::Run(Purity::Effectful)),
+            ]),
+            &BTreeSet::new(),
+        ),
         &mut Vec::new(),
         &mut binds,
     )
@@ -3862,10 +3885,13 @@ fn a_pure_run_in_no_computation_stands_as_what_it_returns_4812()
     let Ok(elaborated) = elaborate_nested_traced(
         &mut arena,
         subject,
-        &BTreeMap::from([
-            (run, Nesting::Run(Purity::Pure)),
-            (inner, Nesting::Run(Purity::Pure)),
-        ]),
+        (
+            &BTreeMap::from([
+                (run, Nesting::Run(Purity::Pure)),
+                (inner, Nesting::Run(Purity::Pure)),
+            ]),
+            &BTreeSet::new(),
+        ),
         &mut Vec::new(),
         &mut Vec::new(),
     )
@@ -3900,7 +3926,7 @@ fn a_decision_no_term_reaches_is_unenclosed()
             elaborate_nested_traced(
                 &mut arena,
                 subject,
-                &BTreeMap::from([(nested, decided)]),
+                (&BTreeMap::from([(nested, decided)]), &BTreeSet::new()),
                 &mut Vec::new(),
                 &mut Vec::new(),
             )
@@ -5451,14 +5477,24 @@ fn an_undecided_elaboration_keeps_every_former_but_the_run()
     for Witnessed { what, former } in formers() {
         let subject = former(&mut arena, child);
         let (mut carried, mut binds) = (Vec::new(), Vec::new());
-        let elaborated =
-            elaborate_nested_traced(&mut arena, subject, &undecided, &mut carried, &mut binds);
+        let elaborated = elaborate_nested_traced(
+            &mut arena,
+            subject,
+            (&undecided, &BTreeSet::new()),
+            &mut carried,
+            &mut binds,
+        );
         if what == "run" {
             assert_eq!(elaborated, Err(Unenclosed { run: subject }), "{what}");
             let returned = arena.computation_return(subject);
             let held = arena.value_thunk(returned);
-            let ran =
-                elaborate_nested_traced(&mut arena, held, &undecided, &mut carried, &mut binds);
+            let ran = elaborate_nested_traced(
+                &mut arena,
+                held,
+                (&undecided, &BTreeSet::new()),
+                &mut carried,
+                &mut binds,
+            );
             assert!(
                 matches!(ran, Ok(rebuilt) if rebuilt != held) && binds.is_empty(),
                 "{what}: a returned run is the computation it runs"
