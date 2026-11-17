@@ -279,10 +279,14 @@ struct Group<'source>
 ///   that ends its run stands on one line when that fits. Otherwise its head
 ///   stands first and each operand on a line of its own, two columns deeper. A
 ///   spine the source broke before an operand stays so (#5202). A type's spine
-///   never breaks between its operands (#5326). Two elements on one line are as
-///   far apart as [`space::join`] decides, except inside a string the grammar
-///   reads as tiles and beside a token a rewrite wrote, where the source's
-///   spacing stands as one space or none.
+///   never breaks between its operands (#5326). In a declaration's header, a
+///   bracket that holds a spine and no separator keeps the spine on its line.
+///   It stands on one line, or it breaks as one item when that fits better: its
+///   content on the next line two columns deeper, its closer on a line of its
+///   own (#7923). Two elements on one line are as far apart as [`space::join`]
+///   decides, except inside a string the grammar reads as tiles and beside a
+///   token a rewrite wrote, where the source's spacing stands as one space or
+///   none.
 /// - provides: the layout of each top-level form [`crate::format`] joins.
 /// - fails: [`FormatError::Unbalanced`] when a bracket or a layout close ends a
 ///   group it does not open or a group is left open; a layout ceiling as
@@ -301,6 +305,7 @@ struct Group<'source>
 /// - witness: `tests::format::the_printer_decides_every_inner_space`
 /// - witness: `tests::format::a_juxtaposed_spine_breaks_one_operand_a_line_5202`
 /// - witness: `tests::format::a_type_s_spine_keeps_its_line_in_a_signature_5326`
+/// - witness: `tests::format::a_header_s_spine_breaks_its_bracket_above_the_body_7923`
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 #[spec(ensures: |ret| ret.as_ref().is_err() || !leaves.is_empty())]
 pub fn lay_out(
@@ -310,6 +315,7 @@ pub fn lay_out(
 ) -> Result<String, FormatError>
 {
     let groups = nest(leaves)?;
+    let headers = headers(&groups);
     let mut meter = BuildMeter::new(BuildLimits::default());
     let mut builder = DocBuilder::try_new(&mut meter)?;
     let blank = builder.verbatim(VerbatimSource::from(<&str>::from(ending)))?;
@@ -322,7 +328,8 @@ pub fn lay_out(
         ends: Ends::Closer,
     });
     for (index, group) in groups.iter().enumerate().rev() {
-        let built = group_doc(&mut builder, group, &docs, blank)?;
+        let header = headers.get(index).copied().unwrap_or(Header::No);
+        let built = group_doc(&mut builder, (group, header), &docs, blank)?;
         if let Some(slot) = docs.get_mut(index) {
             *slot = built;
         }
@@ -332,6 +339,86 @@ pub fn lay_out(
     let mut render_meter = RenderMeter::new(RenderLimits::default());
     let rendered = render(&arena, root, options, &mut render_meter)?;
     Ok(String::from(&*rendered.text))
+}
+
+/// Whether a group stands in a declaration's header.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Header
+{
+    /// It stands inside a bracket that the form writes before the layout
+    /// block of its body, as the parameters of `def f(x : T) -> U =`.
+    Yes,
+    /// It stands anywhere else.
+    No,
+}
+
+/// The header standing of each group of `groups`, in order: a bracket that
+/// the top-level form holds before its first layout block stands in the
+/// header, and so does each group inside such a bracket that no list holds.
+/// A broken list's closer returns to its opener's column, so a spine inside
+/// one breaks as anywhere else. A form with no layout block has no header.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: one standing per group
+fn headers(groups: &[Group<'_>]) -> Vec<Header>
+{
+    let mut headers = Vec::with_capacity(groups.len());
+    headers.resize(groups.len(), Header::No);
+    let layout = |id: usize| {
+        matches!(
+            groups.get(id).map(|group| group.frame),
+            Some(Frame::Layout { .. })
+        )
+    };
+    let Some(form) = groups.first()
+    else {
+        return headers;
+    };
+    let Some(body) = form
+        .placed
+        .iter()
+        .position(|placed| matches!(placed.element, Element::Group(GroupId(id)) if layout(id)))
+    else {
+        return headers;
+    };
+    // A group comes after the group that holds it, so one pass in order
+    // marks every group inside a marked one.
+    for (index, group) in groups.iter().enumerate() {
+        let held = if index == 0 {
+            form.placed.get(.. body).unwrap_or_default()
+        }
+        else if headers.get(index) == Some(&Header::Yes) && !listed(group) {
+            group.placed.as_slice()
+        }
+        else {
+            continue;
+        };
+        for placed in held {
+            if let Element::Group(GroupId(inner)) = placed.element
+                && let Some(slot) = headers.get_mut(inner)
+            {
+                *slot = Header::Yes;
+            }
+        }
+    }
+    headers
+}
+
+/// Whether `group` breaks one item per line: a block, or a bracket that
+/// holds a separator.
+///
+/// # Specification
+/// trivial.
+fn listed(group: &Group<'_>) -> bool
+{
+    matches!(group.frame, Frame::Bracketed { open, .. } if <&str>::from(open) == "{")
+        || group.placed.iter().any(|placed| {
+            matches!(placed.element, Element::Text(text)
+                if SEPARATORS.contains(&<&str>::from(text)))
+        })
 }
 
 /// The groups of one form, the form itself first and each group before the
@@ -779,12 +866,15 @@ enum Mode
 }
 
 /// The documents of `group`, its nested groups' documents read from `docs`.
+/// A bracket of a declaration's `header` that holds a juxtaposed spine and
+/// no separator keeps the spine on its line, and chooses between itself on
+/// its line and itself broken as one item.
 ///
 /// # Specification
 /// trivial.
 fn group_doc(
     builder: &mut DocBuilder<'_>,
-    group: &Group<'_>,
+    (group, header): (&Group<'_>, Header),
     docs: &[Built],
     blank: DocId,
 ) -> Result<Built, FormatError>
@@ -807,7 +897,7 @@ fn group_doc(
             ..
         } => (open, close, closing),
         Frame::Form => {
-            let best = run(builder, &group.placed, docs, Mode::Best)?;
+            let best = run(builder, &group.placed, docs, (Mode::Best, Held::Free))?;
             return Ok(Built {
                 flat: Flat::Breaks,
                 best,
@@ -848,11 +938,7 @@ fn group_doc(
             .placed
             .iter()
             .any(|placed| placed.element.kind() == Kind::LineComment);
-    let listed = <&str>::from(open_text) == "{"
-        || group.placed.iter().any(|placed| {
-            matches!(placed.element, Element::Text(text)
-                if SEPARATORS.contains(&<&str>::from(text)))
-        });
+    let listed = listed(group);
     let columns = if <&str>::from(open_text) == "{" {
         Columns::Read
     }
@@ -872,7 +958,7 @@ fn group_doc(
     }
     let opening = join_doc(builder, first.join)?;
     let closing = join_doc(builder, closing)?;
-    let content = run(builder, &group.placed, docs, Mode::Flat)?;
+    let content = run(builder, &group.placed, docs, (Mode::Flat, Held::Free))?;
     let inline = builder.concat_all([open, opening, content, closing, close])?;
     let hugs = group.placed.iter().any(|placed| match placed.element {
         Element::Group(GroupId(inner)) => docs
@@ -891,8 +977,21 @@ fn group_doc(
         Flat::Fits(inline)
     };
     if !listed {
-        let content = run(builder, &group.placed, docs, Mode::Best)?;
+        // A spine in a header's bracket keeps its line, and the bracket
+        // breaks as one item instead, so its closer and the rest of the
+        // header stand at the header's column, above the body (#7923).
+        let held = if header == Header::Yes && juxtaposed(&group.placed) {
+            Held::Kept
+        }
+        else {
+            Held::Free
+        };
+        let content = run(builder, &group.placed, docs, (Mode::Best, held))?;
         let best = builder.concat_all([open, opening, content, closing, close])?;
+        let best = match held {
+            Held::Kept => builder.choice(best, broken)?,
+            Held::Free => best,
+        };
         return Ok(Built {
             flat,
             best,
@@ -932,7 +1031,7 @@ fn item_lines(
             lines.push(blank);
         }
         let line = builder.hard_line();
-        let content = run(builder, item.placed, docs, Mode::Best)?;
+        let content = run(builder, item.placed, docs, (Mode::Best, Held::Free))?;
         let both = builder.concat(line, content)?;
         lines.push(match item.continuation {
             Continuation::Statement => both,
@@ -1138,12 +1237,35 @@ fn items<'group, 'source>(
     items
 }
 
+/// Whether a run's spines may break.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Held
+{
+    /// Each spine is a choice, on its line or broken.
+    Free,
+    /// Each spine keeps its line, as a header's bracket keeps it.
+    Kept,
+}
+
+/// Whether `placed` holds a juxtaposed spine of an expression or of a type:
+/// an empty tile that no call in call form writes.
+///
+/// # Specification
+/// trivial.
+fn juxtaposed(placed: &[Placed<'_>]) -> bool
+{
+    placed.iter().any(|placed| {
+        matches!(placed.element, Element::Text(text) if <&str>::from(text).is_empty())
+            && placed.context != space::Context::CallGlue
+    })
+}
+
 /// The elements of `placed` on as few lines as their comments allow: two
 /// elements on one line are as far apart as the spacing table decides, and a
 /// line break follows a line comment and surrounds a comment the source wrote
 /// on its own line. In [`Mode::Best`] each juxtaposed spine is a choice
 /// (#5202): on its line as written, or broken before each operand
-/// ([`spine_doc`]).
+/// ([`spine_doc`]). Under [`Held::Kept`] each spine keeps its line.
 ///
 /// # Specification
 /// trivial.
@@ -1151,12 +1273,12 @@ fn run(
     builder: &mut DocBuilder<'_>,
     placed: &[Placed<'_>],
     docs: &[Built],
-    mode: Mode,
+    (mode, held): (Mode, Held),
 ) -> Result<DocId, FormatError>
 {
-    let spines = match mode {
-        Mode::Best => spines(placed, docs),
-        Mode::Flat => Vec::new(),
+    let spines = match (mode, held) {
+        (Mode::Best, Held::Free) => spines(placed, docs),
+        (Mode::Flat, _) | (Mode::Best, Held::Kept) => Vec::new(),
     };
     let mut spines = spines.iter().peekable();
     let mut parts: Vec<DocId> = Vec::with_capacity(placed.len().saturating_mul(2));

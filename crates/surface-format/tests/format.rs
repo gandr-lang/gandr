@@ -587,6 +587,30 @@ fn a_type_s_spine_keeps_its_line_in_a_signature_5326()
     );
 }
 
+/// #7923: a spine in a bracket of a declaration's header kept its line past
+/// the page. A broken spine there puts the header's last line deeper than the
+/// body, which then ends the declaration. Now the bracket breaks as one item:
+/// its content on the next line, its closer back at the header's column, so
+/// the body stays deeper than each line of the header.
+#[test]
+fn a_header_s_spine_breaks_its_bracket_above_the_body_7923()
+{
+    let grammar = grammar();
+    let source =
+        "def first(p : Pair (Pair Integer Integer) (Pair Integer Integer)) -> Integer =\n  0\n";
+    let expected = "def first(\n  p : Pair (Pair Integer Integer) (Pair Integer Integer)\n) -> Integer =\n  0\n";
+    let laid = text(&grammar, source, 60);
+    assert_eq!(
+        laid, expected,
+        "the parameter's spine breaks under the header"
+    );
+    assert_eq!(
+        text(&grammar, laid.as_str(), 60),
+        laid,
+        "and the layout formats once"
+    );
+}
+
 /// #5665: a postfix form after a call in call form takes the whole call, so
 /// the formatter keeps the call's group against its head there. A space
 /// would give the postfix form the group alone. A call that no postfix form
