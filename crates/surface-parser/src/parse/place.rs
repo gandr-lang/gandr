@@ -1759,11 +1759,11 @@ fn holding(
 ///   its member parses, and the copy holds the theory's `}`.
 /// - witness: `parse::place::tests::a_name_left_out_of_a_member_is_minted_in_its_theory_7884`
 fn bracketed(
-    text: &str,
+    text: SourceText<'_>,
     top: ByteSpan,
 ) -> ByteSpan
 {
-    let Some(rest) = text.get(usize::from(top.start()) ..)
+    let Some(rest) = <&str>::from(text).get(usize::from(top.start()) ..)
     else {
         return top;
     };
@@ -1855,7 +1855,7 @@ fn settled<'source>(
         Reach::Widest => keyword(pbg, tree, form)
             .map_or(Some(held), |start| ByteSpan::new(start, held.end()).ok())?,
     };
-    let top = bracketed(<&str>::from(tree.source()), top);
+    let top = bracketed(tree.source(), top);
     let lead = usize::from(top.start());
     let shifted = |offset: ByteOffset| usize::from(offset).checked_sub(lead).map(ByteOffset::from);
     let (repair_start, repair_end) = (
