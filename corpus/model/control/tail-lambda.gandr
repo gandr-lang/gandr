@@ -18,15 +18,15 @@ data Two : Type where
   /// The right value.
   | Right : Two
 
-/// The natural numbers.
-data Nat : Type where
+/// The natural numbers in unary.
+data Peano : Type where
   /// Zero.
-  | Zero : Nat
+  | Zero : Peano
   /// The successor of `n`.
-  | Succ : (n : Nat) --> Nat
+  | Succ : (n : Peano) --> Peano
 
 /// The type `Two` at each natural.
-def natOr(n : Nat) -> Type =
+def natOr(n : Peano) -> Type =
   match n where
     | Zero => return Two
     | Succ(_m) => return Two
@@ -83,7 +83,7 @@ def right_arm(choice : Two) -> Two -> Two =
 
 /// The arm at `Zero` ends in a bare lambda under a refined parameter.
 @[explicit_exits]
-def refined_arm(n : Nat, _x : natOr(n)) -> Nat -> Nat =
+def refined_arm(n : Peano, _x : natOr(n)) -> Peano -> Peano =
   match n where
     | Zero => fun (u) {
       return u
