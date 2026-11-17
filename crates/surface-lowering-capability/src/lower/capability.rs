@@ -1469,6 +1469,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::exercise`].
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Interface::Theory(_))) || matches!(*performer, Performer::Capability(_, Some(_))))]
     fn offering(
         &self,
         site: Site,
