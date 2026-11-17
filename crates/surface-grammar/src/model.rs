@@ -823,6 +823,12 @@ pub struct RemovalIssue(pub u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Replacement(pub &'static str);
 
+/// The text that a source writes for an old spelling: the word or the tile a
+/// reader meets.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OldSpelling(pub &'static str);
+
 /// An old spelling that a source meets as a refusal.
 ///
 /// Each arm is one row of the syntax ledger. The row's surface is the tag of
@@ -901,15 +907,15 @@ impl RetiredForm
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn written(self) -> &'static str
+    pub const fn written(self) -> OldSpelling
     {
-        match self {
+        OldSpelling(match self {
             Self::ShapeMember => "shape",
             Self::UnitValue => "unit",
             Self::PositionalPathCarrier => "Path",
             Self::PositionalBridgeCarrier => "Bridge",
             Self::PositionalFlowCarrier => "Flow",
-        }
+        })
     }
 }
 

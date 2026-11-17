@@ -5254,7 +5254,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         name,
                     })
                 }
-                else if name.as_ref() == RetiredForm::UnitValue.written() {
+                else if name.as_ref() == RetiredForm::UnitValue.written().0 {
                     Err(LoweringRefusal::RetiredName {
                         span: site.at.span,
                         form: RetiredForm::UnitValue,
@@ -11896,8 +11896,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let start = written.start;
         let count = written.end.saturating_sub(start);
         let first = self.cx().operands.entries().get(start).copied();
-        let written_first = count == 3_usize
-            || (count == 1_usize && first.is_some_and(|argument| self.three_members(argument)));
+        // A path-shaped head written where a value is read takes its three
+        // members as one parenthesized argument: `Path(A, a, b)`.
+        let tripled = |argument: NodeIndex| {
+            let cx = self.cx();
+            let parenthesized = cx.tree.node(argument).is_some_and(|node| {
+                matches!(shape_of(cx.pbg, node), Ok(Shape::Form { name, former }) if name == FormName::TUPLE || former == Former::Parenthesized)
+            });
+            let mut commas = cx.tree.children(argument).filter(|&child| {
+                cx.tree
+                    .fragment(child)
+                    .is_some_and(|text| <&str>::from(text) == ",")
+            });
+            parenthesized && commas.nth(1).is_some() && commas.next().is_none()
+        };
+        let written_first = count == 3_usize || (count == 1_usize && first.is_some_and(tripled));
         let pair = self
             .cx()
             .operands
@@ -11967,45 +11980,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         };
 
         self.apply_former(site, former, argument)
-    }
-
-    /// Whether the operand at `argument` is a tuple of three members, the
-    /// carrier and two endpoints that a path-shaped head takes as one
-    /// argument where a value is read: `Path(A, a, b)`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: true exactly when the node is a tuple or a parenthesized form
-    ///   whose children hold two `,` tiles.
-    /// - panics: none.
-    ///
-    /// # Cost
-    /// - allocation: none
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `Path(Integer, 4, 4)` where a value is read is
-    ///   refused at its head with the carrier written first.
-    /// - witness: `gandr-surface-lowering::lower::identity::tests::a_carrier_written_first_is_refused_5024`
-    fn three_members(
-        &self,
-        argument: NodeIndex,
-    ) -> bool
-    {
-        let cx = self.cx();
-        let tupled = cx.tree.node(argument).is_some_and(|node| {
-            matches!(shape_of(cx.pbg, node), Ok(Shape::Form { name, former }) if name == FormName::TUPLE || former == Former::Parenthesized)
-        });
-        tupled
-            && cx
-                .tree
-                .children(argument)
-                .filter(|&child| {
-                    cx.tree
-                        .fragment(child)
-                        .is_some_and(|text| <&str>::from(text) == ",")
-                })
-                .count()
-                == 2_usize
     }
 }
 

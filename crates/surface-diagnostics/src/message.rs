@@ -275,7 +275,7 @@ fn lowered(
         LoweringRefusal::RetiredName { form, .. } => write!(
             f,
             "`{}` is a retired spelling, and `{}` replaces it",
-            form.written(),
+            form.written().0,
             form.replaced_by().0
         ),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {

@@ -2988,6 +2988,7 @@ INSERT INTO purpose VALUES('surface-grammar','model::AdaptationReason','struct',
 INSERT INTO purpose VALUES('surface-grammar','model::CandidateCount','struct','Names how many molds one tile label can take, so a parser''s candidate menu is sized.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::LabelText','struct','Names a label as a token spells it, declared or not, so a parser resolves it to the declared tile label.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::MoldCount','struct','Names how many molds a grammar declares, so a build reports the table''s size.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','model::OldSpelling','struct','Names the text that a source writes for an old spelling, so the refusal''s message and the resolver read one string.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::Pbg','struct','Holds the checked precedence-bounded grammar, which exists only once its three build-time gates have passed, so a parser and a highlighter read the molds and the relations it holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::PbgError','enum','Names every refusal of grammar construction and lookup, so a build or a lookup reports the fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::PrecName','struct','Names one precedence group, so a rule and a precedence DAG are keyed by it.',NULL,'fits','sound',NULL);

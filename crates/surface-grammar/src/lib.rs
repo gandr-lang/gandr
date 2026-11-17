@@ -147,6 +147,7 @@ pub use crate::model::AdaptationReason;
 pub use crate::model::CandidateCount;
 pub use crate::model::LabelText;
 pub use crate::model::MoldCount;
+pub use crate::model::OldSpelling;
 pub use crate::model::Pbg;
 pub use crate::model::PbgError;
 pub use crate::model::PrecName;
