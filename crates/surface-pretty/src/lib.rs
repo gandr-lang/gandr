@@ -337,6 +337,7 @@ pub use crate::core_source::Forgetting;
 pub use crate::core_source::Modelled;
 pub use crate::core_source::Restoration;
 pub use crate::core_source::WrittenForms;
+pub use crate::core_source::WrittenStage;
 pub use crate::error::PresentationError;
 pub use crate::former::Answered;
 pub use crate::former::Arity;
@@ -1406,8 +1407,12 @@ pub fn present_whole(
                 }),
         )
         .collect();
+    // A stage binder has no arrow, and the header writes it first, `[i :
+    // Size]`: no parameter takes its name.
+    let stages = source.stages(constant);
     let taken: Vec<Name<'_>> = core::iter::once(name)
         .chain(slots.iter().map(|slot| slot.name))
+        .chain(stages.iter().map(|stage| stage.name))
         .collect();
     let Some(mut binders) = walk::parameters(source, &roots, &taken, &preferred)
     else {
@@ -1599,10 +1604,26 @@ pub fn present_whole(
         .iter()
         .filter(|entry| !matches!(entry, Entry::Explicit(_)))
         .peekable();
-    if telescope.peek().is_some() {
+    if !stages.is_empty() || telescope.peek().is_some() {
         text.push('[');
-        for (place, &entry) in telescope.enumerate() {
+        // Each stage, in stage order, then the bound of a stage below an
+        // earlier one, `[n : Size, i : Size, i < n]`.
+        for (place, stage) in stages.iter().enumerate() {
             if place > 0_usize {
+                text.push_str(", ");
+            }
+            text.push_str(stage.name.as_ref());
+            text.push_str(" : Size");
+            if let gandr_kernel_term::StageBound::Below(over) = stage.bound
+                && let Some(over) = stages.get(usize::from(over))
+            {
+                for part in [", ", stage.name.as_ref(), " < ", over.name.as_ref()] {
+                    text.push_str(part);
+                }
+            }
+        }
+        for (place, &entry) in telescope.enumerate() {
+            if place > 0_usize || !stages.is_empty() {
                 text.push_str(", ");
             }
             let at = match entry {

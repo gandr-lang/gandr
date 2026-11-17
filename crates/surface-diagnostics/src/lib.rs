@@ -224,4 +224,5 @@ pub use crate::spelled::read_by;
 pub use crate::spelled::spelling;
 pub use crate::spelled::telescopes;
 pub use crate::spelled::written_blocks;
+pub use crate::spelled::written_stages;
 pub use crate::verbosity::Verbosity;
