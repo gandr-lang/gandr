@@ -362,7 +362,7 @@ enum Header
 /// trivial.
 ///
 /// # Cost
-/// - allocation: one standing per group
+/// - allocation: one standing per group, growth within the count of `groups`
 fn headers(groups: &[Group<'_>]) -> Vec<Header>
 {
     let mut headers = Vec::with_capacity(groups.len());
@@ -390,7 +390,7 @@ fn headers(groups: &[Group<'_>]) -> Vec<Header>
         let held = if index == 0 {
             form.placed.get(.. body).unwrap_or_default()
         }
-        else if headers.get(index) == Some(&Header::Yes) && !listed(group) {
+        else if headers.get(index) == Some(&Header::Yes) && listed(group) == Listed::No {
             group.placed.as_slice()
         }
         else {
@@ -407,18 +407,34 @@ fn headers(groups: &[Group<'_>]) -> Vec<Header>
     headers
 }
 
+/// Whether `group` breaks one item per line.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Listed
+{
+    /// A block, or a bracket that holds a separator.
+    Yes,
+    /// Any other group.
+    No,
+}
+
 /// Whether `group` breaks one item per line: a block, or a bracket that
 /// holds a separator.
 ///
 /// # Specification
 /// trivial.
-fn listed(group: &Group<'_>) -> bool
+fn listed(group: &Group<'_>) -> Listed
 {
-    matches!(group.frame, Frame::Bracketed { open, .. } if <&str>::from(open) == "{")
-        || group.placed.iter().any(|placed| {
-            matches!(placed.element, Element::Text(text)
-                if SEPARATORS.contains(&<&str>::from(text)))
-        })
+    let block = matches!(group.frame, Frame::Bracketed { open, .. } if <&str>::from(open) == "{");
+    let separated = group.placed.iter().any(|placed| {
+        matches!(placed.element, Element::Text(text)
+            if SEPARATORS.contains(&<&str>::from(text)))
+    });
+    if block || separated {
+        Listed::Yes
+    }
+    else {
+        Listed::No
+    }
 }
 
 /// The groups of one form, the form itself first and each group before the
@@ -976,16 +992,11 @@ fn group_doc(
     else {
         Flat::Fits(inline)
     };
-    if !listed {
+    if listed == Listed::No {
         // A spine in a header's bracket keeps its line, and the bracket
         // breaks as one item instead, so its closer and the rest of the
         // header stand at the header's column, above the body (#7923).
-        let held = if header == Header::Yes && juxtaposed(&group.placed) {
-            Held::Kept
-        }
-        else {
-            Held::Free
-        };
+        let held = held(header, &group.placed);
         let content = run(builder, &group.placed, docs, (Mode::Best, held))?;
         let best = builder.concat_all([open, opening, content, closing, close])?;
         let best = match held {
@@ -1247,17 +1258,26 @@ enum Held
     Kept,
 }
 
-/// Whether `placed` holds a juxtaposed spine of an expression or of a type:
-/// an empty tile that no call in call form writes.
+/// Whether the spines of a bracket's `placed` elements may break: a bracket
+/// of a declaration's `header` that holds a juxtaposed spine, of an expression
+/// or of a type, keeps them. A spine is an empty tile that no call in call
+/// form writes.
 ///
 /// # Specification
 /// trivial.
-fn juxtaposed(placed: &[Placed<'_>]) -> bool
+fn held(
+    header: Header,
+    placed: &[Placed<'_>],
+) -> Held
 {
-    placed.iter().any(|placed| {
+    let spine = placed.iter().any(|placed| {
         matches!(placed.element, Element::Text(text) if <&str>::from(text).is_empty())
             && placed.context != space::Context::CallGlue
-    })
+    });
+    match (header, spine) {
+        (Header::Yes, true) => Held::Kept,
+        (Header::Yes, false) | (Header::No, _) => Held::Free,
+    }
 }
 
 /// The elements of `placed` on as few lines as their comments allow: two
