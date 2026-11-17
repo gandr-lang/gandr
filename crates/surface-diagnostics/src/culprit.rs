@@ -258,7 +258,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             FormFault::MissingOpen(ClosingClass::Brace) => "missing `{`",
             FormFault::Misspelt(_) => "a keyword misspelt",
             FormFault::MisspeltOperator(_) => "an operator misspelt",
-            FormFault::Retired(_) => "a retired spelling",
+            FormFault::Retired(_) | FormFault::Repaired(Repair::Retired(_)) => "a retired spelling",
             FormFault::NotAName => "a pattern where a name goes",
             FormFault::BareIndex => "a bare index",
             FormFault::PositionalAfterNamed => "a positional implicit after a named one",
@@ -837,7 +837,9 @@ mod tests
                 FormFault::MissingOpen(ClosingClass::Brace) => "missing `{`",
                 FormFault::Misspelt(_) => "a keyword misspelt",
                 FormFault::MisspeltOperator(_) => "an operator misspelt",
-                FormFault::Retired(_) => "a retired spelling",
+                FormFault::Retired(_) | FormFault::Repaired(Repair::Retired(_)) => {
+                    "a retired spelling"
+                },
                 FormFault::NotAName => "a pattern where a name goes",
                 FormFault::BareIndex => "a bare index",
                 FormFault::PositionalAfterNamed => "a positional implicit after a named one",

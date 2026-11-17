@@ -3320,6 +3320,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::own_children','functio
 INSERT INTO purpose VALUES('surface-lowering-base','form::read_as_type','function','Names whether a form stands as a type, so a form of the wrong sort is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::read_pieces','function','Reads a node''s children against its own rule, so each form reads its tiles and operands in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::repair_at','function','Reads the repair the parser inserted at a child, so the refusal names the repair.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','form::retired_within','function','Reads the first retired token a form holds at any depth, so a refused declaration names the old spelling and no other fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::run_reading','function','Reads how a run of glyphs reads, so an operator written wrong is refused at the run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::shape_of','function','Reads the shape of a node, so each node is dispatched by its shape.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::stop_of','function','Finds where a form itself stopped, so a torn form is refused where it left its shape.',NULL,'fits','sound',NULL);

@@ -547,7 +547,7 @@ fn lowered(
                      operator `{}`",
                     operator.as_ref()
                 ),
-                FormFault::Retired(retired) => write!(
+                FormFault::Retired(retired) | FormFault::Repaired(Repair::Retired(retired)) => write!(
                     f,
                     "this spelling is retired, and `{}` replaces it",
                     retired.replaced_by().0

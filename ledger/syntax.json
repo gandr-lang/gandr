@@ -416,6 +416,7 @@
     {"exemplar":"../corpus/ledger/syntax/superseded/positional-bridge-carrier.gandr","reason":"a carrier written first, by position, is refused by name: the head takes its carrier by name","refused":"RetiredSpelling.positional_bridge_carrier","replaced_by":"Bridge[.A = A](a, b)","rule":"bridge_type","surface":"positional_bridge_carrier"},
     {"exemplar":"../corpus/ledger/syntax/superseded/positional-flow-carrier.gandr","reason":"a carrier written first, by position, is refused by name: the head takes its carrier by name","refused":"RetiredSpelling.positional_flow_carrier","replaced_by":"Flow[.A = A](a, b)","rule":"flow_type","surface":"positional_flow_carrier"},
     {"issue":5330,"reason":"the glued head `T(a, b)` stays read until the sources move to `T a b`","replaced_by":"type_application.juxtaposed","rule":"type_application","surface":"glued_type_application"},
+    {"exemplar":"../corpus/ledger/syntax/superseded/view-telescope.gandr","reason":"the glued token `#{` is refused by name: `*{` opens the telescope and the record","refused":"RetiredSpelling.view_telescope","replaced_by":"*{ … }","rule":"telescope_type","surface":"view_telescope"},
     {"exemplar":"../corpus/ledger/syntax/superseded/shape-member.gandr","reason":"the member `shape` is refused by name: `boundary` states the carrier of the signature's cells","refused":"RetiredSpelling.shape_member","replaced_by":"boundary","rule":"theory_declaration","surface":"shape_member"}
   ]
 }

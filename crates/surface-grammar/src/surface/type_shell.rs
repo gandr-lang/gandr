@@ -767,12 +767,19 @@ fn add_type_rules(
     telescope_type.adaptations.push(Adaptation::new(
         RuleName("telescope_type"),
         SurfaceForm("record_type"),
-        AdaptationReason("renamed into telescope_type: the record type is the telescope `#{ … }` with labelled entries, the same former as the tuple and Σ"),
+        AdaptationReason("renamed into telescope_type: the record type is the telescope `*{ … }` with labelled entries, the same former as the tuple and Σ"),
     ));
     telescope_type.adaptations.push(Adaptation::new(
         RuleName("telescope_type"),
         SurfaceForm("record_type_field"),
         AdaptationReason("folded into telescope_type: the `k : T` field is inlined with its key a type hole, not a placeholder tile nor a form tile that would outrank every type variable at the same token"),
+    ));
+    telescope_type.adaptations.push(Adaptation::refused(
+        RuleName("telescope_type"),
+        RetiredForm::ViewTelescope,
+        AdaptationReason(
+            "the glued token `#{` is refused by name: `*{` opens the telescope and the record",
+        ),
     ));
     rules.push(telescope_type);
     // A protocol step and the rest: `! T >> S` and `? T >> S`. The dotted

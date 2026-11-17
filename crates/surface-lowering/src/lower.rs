@@ -7266,6 +7266,71 @@ mod tests
         }
     }
 
+    /// #7879: the glued `#{` is the retired opener of a telescope and a
+    /// record. A declaration that holds it reports that refusal at the
+    /// token's bytes and no other fault; another declaration keeps its own
+    /// reading, and `# {` with a space is no retired token.
+    #[test]
+    fn the_glued_view_telescope_is_refused_by_name_7879()
+    {
+        let pbg = grammar();
+        let lowered = |source: &'static str| {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("parses")
+                .into_tree();
+            let mut arena = CoreArena::new();
+            let module = lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .expect("lowers");
+            outcomes(&module)
+        };
+        let retired = |start: usize| {
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                span: span(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start.saturating_add(2)),
+                ),
+                form: FormName::DECLARATION,
+                fault: FormFault::Repaired(Repair::Retired(
+                    gandr_surface_grammar::RetiredForm::ViewTelescope,
+                )),
+            })
+        };
+        for source in [
+            "def a = #{ x : Integer };\n",
+            "def a : #{ x : Integer };\n",
+            "def a = #{ .x = 1 };\n",
+            "def a = #{};\n",
+        ] {
+            assert_eq!(lowered(source), [retired(8)], "{source}");
+        }
+        let several = lowered("def a : *{};\ndef b = #{};\ndef c = 1;\n");
+        assert!(
+            matches!(several.as_slice(), [
+                DeclarationOutcome::Uncompleted { .. },
+                refused,
+                DeclarationOutcome::Bodied { .. },
+            ] if *refused == retired(21)),
+            "the faults of each other declaration stay: {several:?}"
+        );
+        let spaced = lowered("def a = # { x : Integer };\n");
+        assert!(
+            !spaced.iter().any(|outcome| matches!(
+                outcome,
+                DeclarationOutcome::Refused(LoweringRefusal::MalformedForm {
+                    fault: FormFault::Repaired(Repair::Retired(_)),
+                    ..
+                })
+            )),
+            "`# {{` with a space is the freshness relation and a brace: {spaced:?}"
+        );
+    }
+
     /// #7877: `unit`, where no declaration binds it, is the retired spelling
     /// of the unit value, refused at the name; a source that binds `unit`
     /// reads its own name.

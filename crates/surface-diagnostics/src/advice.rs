@@ -681,7 +681,7 @@ fn malformed(
                 operator.as_ref()
             )
         },
-        FormFault::Retired(retired) => {
+        FormFault::Retired(retired) | FormFault::Repaired(Repair::Retired(retired)) => {
             format!(
                 "write `{}` in place of the retired spelling",
                 retired.replaced_by().0

@@ -67,6 +67,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RESERVED_WORDS;
 use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::RegexView;
+use gandr_surface_grammar::RetiredForm;
 use gandr_surface_grammar::SPELLED;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::Sym;
@@ -1542,6 +1543,9 @@ pub enum Repair
     /// tile no hole follows, or a second operand in a hole that holds one. The
     /// ending names the tile the rule writes there.
     Diverged(Ending),
+    /// Grout over a retired token whole, which the labeler reads as one
+    /// token that no tile molds: the source wrote an old spelling.
+    Retired(RetiredForm),
 }
 
 /// A reserved word standing where its form takes a term, and the tile the
@@ -1641,6 +1645,9 @@ impl fmt::Display for Repair
                 write!(f, "an operand where its `{}` belongs", tile.0)
             },
             Self::Diverged(Ending::Unnamed) => f.write_str("an operand its rule places nowhere"),
+            Self::Retired(form) => {
+                write!(f, "the retired token `{}`", form.written().0)
+            },
         }
     }
 }
@@ -2991,9 +2998,11 @@ pub fn stop_of(
         Repair::GhostClose(_) | Repair::Unended(_) => {
             Maybe::Present(earliest(pbg, tree, position, found))
         },
-        Repair::Grout(_) | Repair::Keyword(_) | Repair::ReservedName(_) | Repair::Diverged(_) => {
-            absent
-        },
+        Repair::Grout(_)
+        | Repair::Keyword(_)
+        | Repair::ReservedName(_)
+        | Repair::Diverged(_)
+        | Repair::Retired(_) => absent,
     }
 }
 
@@ -4138,8 +4147,9 @@ pub fn bare_bracket(
 }
 
 /// The repair a grout child `grout` of shape `shape` reads as: a
-/// [`Repair::Keyword`] when it is convex and stands over a lowercase word the
-/// grammar spells as a tile of its own, plain grout otherwise.
+/// [`Repair::Retired`] when it is convex and its bytes are a retired token
+/// whole, a [`Repair::Keyword`] when it is convex and stands over a lowercase
+/// word the grammar spells as a tile of its own, plain grout otherwise.
 ///
 /// The parser grouts a reserved word where it cannot mold it, as it grouts a
 /// byte no label molds; a word that is a tile of the grammar is one of its
@@ -4150,11 +4160,12 @@ pub fn bare_bracket(
 ///
 /// # Specification
 /// - requires: `grout` is a grout node of `tree` of shape `shape`.
-/// - ensures: [`Repair::Keyword`] exactly when `shape` is convex and the
-///   grout's bytes are a nonempty run of lowercase ASCII letters and
-///   underscores that `pbg` declares as a tile label, its offer the capitalised
-///   spelling when `pbg` declares that label too; [`Repair::Grout`] of `shape`
-///   otherwise.
+/// - ensures: [`Repair::Retired`] exactly when `shape` is convex and the
+///   grout's bytes are equal to the text of the retired token `#{`;
+///   [`Repair::Keyword`] exactly when `shape` is convex and the grout's bytes
+///   are a nonempty run of lowercase ASCII letters and underscores that `pbg`
+///   declares as a tile label, its offer the capitalised spelling when `pbg`
+///   declares that label too; [`Repair::Grout`] of `shape` otherwise.
 /// - provides: the one reading of grout every repair reader takes.
 /// - fails: never.
 /// - panics: none.
@@ -4164,6 +4175,7 @@ pub fn bare_bracket(
 ///   with `Type` offered, at the keyword's own bytes; reading it as a missing
 ///   term, or offering nothing, changes the observation.
 /// - witness: `gandr-surface-lowering::lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
+/// - witness: `gandr-surface-lowering::lower::tests::the_glued_view_telescope_is_refused_by_name_7879`
 #[spec(ensures: |ret| shape == GroutShape::Convex || matches!(ret, Repair::Grout(_)))]
 fn grouted(
     pbg: &Pbg,
@@ -4176,6 +4188,9 @@ fn grouted(
         return Repair::Grout(shape);
     }
     let written: &str = tree.fragment(grout).map_or("", <&str>::from);
+    if written == RetiredForm::ViewTelescope.written().0 {
+        return Repair::Retired(RetiredForm::ViewTelescope);
+    }
     let worded = !written.is_empty()
         && written
             .bytes()
@@ -4407,6 +4422,63 @@ pub fn repair_at(
         repair,
         nested: Maybe::Absent(nested::Absent::Own),
     })
+}
+
+/// The first retired token that the form at `form` holds at any depth, as the
+/// repair it reads as.
+///
+/// A declaration that holds a retired token reports that refusal and no other
+/// fault: the old spelling is the cause, and the faults around it follow from
+/// it. The walk runs only on a refused declaration, so a source with no fault
+/// pays nothing.
+///
+/// # Specification
+/// - requires: `form` names a node of `tree`, molded under `pbg`.
+/// - ensures: the repair of the grout under `form` that starts first among
+///   those [`grouted`] reads as [`Repair::Retired`], at the grout's span and in
+///   no nested form; absent when `form` holds none.
+/// - fails: never; a node the tree does not hold is absent.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the worklist of the walk, error path
+///
+/// # Adequacy
+/// - hypothesis: L3 — `#{` under a projection, where the declaration reads an
+///   extra operand first, reads as the retired token at its own bytes.
+/// - witness: `gandr-surface-lowering::lower::tests::the_glued_view_telescope_is_refused_by_name_7879`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(found) => matches!(found.repair, Repair::Retired(_))
+        && found.nested == Maybe::Absent(nested::Absent::Own),
+    | Maybe::Absent(_) => true,
+})]
+#[must_use]
+pub fn retired_within(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+) -> Maybe<Repaired, repair::Absent>
+{
+    let mut found = Maybe::Absent(repair::Absent::Unrepaired);
+    let mut pending = alloc::vec![form];
+    while let Some(position) = pending.pop() {
+        let Some(node) = tree.node(position)
+        else {
+            continue;
+        };
+        if let NodeLabel::Grout { shape, .. } = node.label()
+            && let repair @ Repair::Retired(_) = grouted(pbg, tree, position, shape)
+            && !matches!(found, Maybe::Present(Repaired { span, .. }) if span.start() <= node.span().start())
+        {
+            found = Maybe::Present(Repaired {
+                span: node.span(),
+                repair,
+                nested: Maybe::Absent(nested::Absent::Own),
+            });
+        }
+        pending.extend(tree.children(position));
+    }
+    found
 }
 
 quenchant_shape::reason_enum! {
