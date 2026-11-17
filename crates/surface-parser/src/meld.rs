@@ -2507,15 +2507,15 @@ impl<'pbg> MeldState<'pbg>
         }
         // An endpoint that a pending type application holds on its right, as
         // `a` in `Path a`, reads the spine on the application's left.
-        let spine = match rest {
+        let spine = match *rest {
             [
                 ..,
-                left,
+                ref left,
                 Cell {
                     role: Role::Operator { mold, .. },
                     ..
                 },
-            ] if *mold == application => left,
+            ] if mold == application => left,
             _ if top.sort == Sort::Type => top,
             _ => return None,
         };
@@ -2547,14 +2547,14 @@ impl<'pbg> MeldState<'pbg>
         let application = self.pbg.application_in(Sort::Type)?;
         let mut at = spine.emit;
         let mold = loop {
-            match self.emit.get(usize::try_from(at.0).ok()?)? {
+            match *self.emit.get(usize::try_from(at.0).ok()?)? {
                 EmitOp::Interior {
                     label: NodeLabel::Meld(mold),
-                    children,
+                    ref children,
                     ..
                 } => {
-                    if *mold != application {
-                        break *mold;
+                    if mold != application {
+                        break mold;
                     }
                     at = *children.iter().find(|&&child| {
                         !matches!(
@@ -2570,7 +2570,7 @@ impl<'pbg> MeldState<'pbg>
                 EmitOp::Token {
                     label: NodeLabel::Tile(mold),
                     ..
-                } => break *mold,
+                } => break mold,
                 EmitOp::Interior { .. } | EmitOp::Token { .. } => return None,
             }
         };
