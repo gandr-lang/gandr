@@ -525,6 +525,7 @@ fn every_footprint_stance_and_answer_round_trips()
 /// # Specification
 /// trivial.
 #[derive(Default)]
+#[repr(transparent)]
 struct KeyedBytes(CheckpointBytes);
 
 impl Sink for KeyedBytes

@@ -431,6 +431,7 @@ pub enum CodataWrite
 ///
 /// # Specification
 /// trivial.
+#[repr(transparent)]
 #[derive(Debug, Default)]
 pub(crate) struct ContentKeyHasher(pub(crate) blake3::Hasher);
 
