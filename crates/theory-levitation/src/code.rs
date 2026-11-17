@@ -73,6 +73,9 @@ impl From<&str> for Name
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name's text, durable by the name.
     #[inline]
     fn from(value: &str) -> Self
     {
@@ -86,6 +89,9 @@ impl From<NameRef<'_>> for Name
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name's text, durable by the name.
     #[inline]
     fn from(value: NameRef<'_>) -> Self
     {
@@ -112,6 +118,9 @@ impl From<String> for Name
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name's text, durable by the name.
     #[inline]
     fn from(value: String) -> Self
     {
@@ -125,6 +134,9 @@ impl From<Box<str>> for Name
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the name's text, durable by the name.
     #[inline]
     fn from(value: Box<str>) -> Self
     {
@@ -138,6 +150,9 @@ impl From<Name> for Box<str>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the boxed spelling, durable by the returned box.
     #[inline]
     fn from(value: Name) -> Self
     {

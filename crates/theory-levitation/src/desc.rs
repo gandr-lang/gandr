@@ -617,6 +617,10 @@ impl<G> CtorDesc<G>
     ///   stack's top two monomial sets — cross-concatenation for a product,
     ///   union for an inline sum.
     ///
+    /// # Cost
+    /// - allocation: the arity worklists and tables, durable by the returned
+    ///   arity.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — unit, product, sum, abstraction and function payloads
     ///   are observed through exact ports and maps, including a product of

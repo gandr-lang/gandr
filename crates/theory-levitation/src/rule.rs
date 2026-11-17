@@ -143,6 +143,9 @@ impl FreeTerm
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term.
     #[inline]
     #[must_use]
     pub fn var<N>(name: N) -> Self
@@ -264,6 +267,9 @@ impl FreeTerm
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term.
     #[inline]
     #[must_use]
     pub fn atom<N>(name: N) -> Self
@@ -303,6 +309,9 @@ impl FreeTerm
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term.
     #[inline]
     #[must_use]
     pub fn bound<N>(name: N) -> Self
@@ -639,6 +648,9 @@ impl<N> FreeTerm<N>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term.
     #[inline]
     #[must_use]
     pub(crate) fn leaf_of(head: TermHead<N>) -> Self
@@ -905,6 +917,9 @@ impl FreeTerm
     /// - panics: none.
     /// - intension: one pass over the table, appending each image whole.
     ///
+    /// # Cost
+    /// - allocation: the rewritten term's table, durable by the term.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — root and nested variables with present/absent images,
     ///   mixed application kinds and nullary applications are observed as exact
@@ -1103,6 +1118,9 @@ impl<'term, N> TermNode<'term, N>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copied term's table, durable by the copied term.
     #[inline]
     #[must_use]
     pub fn to_term(self) -> FreeTerm<N>
