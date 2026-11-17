@@ -6209,6 +6209,8 @@ INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::SyntaxLedger','struc
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarFault','enum','Why one exemplar does not show what its name says.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarFinding','struct','One exemplar that does not hold, by its path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::exemplars::ExemplarReport','struct','What a verification of the exemplar directory found.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::fences::FenceFinding','struct','One fenced `gandr` block that writes a retired spelling, by its path and line.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::fences::FenceReport','struct','What a read of the fenced `gandr` blocks of the prose found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryFinding','struct','A mutant whose first error does not mark its mutation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryReport','struct','What a sweep of the syntax exemplars found.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-ledger-tasks','ledger::recovery::RecoveryTally','struct','What became of a sweep''s mutants, each counted once.',NULL,'fits','sound',NULL);

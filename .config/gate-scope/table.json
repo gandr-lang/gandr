@@ -24,12 +24,13 @@
       "check:corpus-goldens",
       "check:differential",
       "check:exemplars",
+      "check:fences",
       "check:gandr-doc",
       "check:syntax-exemplars"
     ],
     "corpus-tests": ["check:tests-enforcing"],
     "extension": ["check:extension", "check:input-table", "check:vscode-smoke"],
-    "prose": ["check:prose"],
+    "prose": ["check:fences", "check:prose"],
     "riscv64": ["check:riscv64-ring"]
   },
   "readers": ["gandr-surface-dispatcher", "gandr-surface-evaluate"],
@@ -40,6 +41,7 @@
     "check:corpus-format",
     "check:corpus-goldens",
     "check:doc",
+    "check:fences",
     "check:landing",
     "check:prose",
     "check:syntax-exemplars",
