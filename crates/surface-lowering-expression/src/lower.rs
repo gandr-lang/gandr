@@ -6965,9 +6965,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// arrow a box `(A1, …, An) -> B` stands for. A binder
     /// the arrow or the space names, `(x : A)`, answers its type `A`. A lambda
     /// a signed definition writes bare, `def f = fun (x) { … }`, answers what
-    /// the thunk the checker inserts around it would hand its body, and so does
+    /// the thunk the checker inserts around it would hand its body, and so do
     /// a lambda a `return` or a tail's `pure` returns where the body answers a
-    /// written value function space. The binder's type takes the declaration
+    /// written value function space, and a bare lambda answered by a written
+    /// box, which the checker reads as the box returned (#6390). The binder's
+    /// type takes the declaration
     /// its answer belongs to before the walk reaches it
     /// ([`Self::own_written`]), so a name in it resolves where the body reads
     /// it.
@@ -6981,14 +6983,19 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   its domain `t + 1` — the type a telescope's entry `t + 1` declares —
     ///   and, under the same frame, the arrows past `t + 1` domains, or `B`
     ///   returning past the last; for a lambda returned where a written value
-    ///   function space is answered, as for that space's arrows past no domain;
-    ///   nothing for an unanswered position, an answer over a loop or a
-    ///   returner, an alias with no domain left and any other type.
+    ///   function space is answered, and for a lambda whose written answer is a
+    ///   box, as for that space's arrows past no domain; nothing for an
+    ///   unanswered position, an answer over a loop or a returner, an alias
+    ///   with no domain left and any other type.
     /// - fails: as `Native::unwrapped` and `Models::alias_domains`.
     /// - panics: none.
     ///
     /// # Errors
     /// The walk's refusal.
+    ///
+    /// # Cost
+    /// - allocation: the operands of the unwrapped answer, growth within the
+    ///   written type's operands
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda signed `+U (Empty -> -F Integer)` matches no
@@ -7001,6 +7008,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_takes_a_typed_let_s_type_and_a_lambda_s_codomain_5035`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_tail_lambda_against_a_box_answers_its_match_the_box_s_codomain_6390`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
     fn answered_arrow(
         &mut self,
@@ -7033,7 +7041,41 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
             (None, _) => return Ok(None),
         };
-        self.arrow_of(answer)
+        // A lambda that ends a body whose written answer is a box stands as
+        // that box, as the checker reads it (#6390). Its arrow is the box's.
+        // A box written `+U C` answers by `C`, and a sugared box `A -> B` by
+        // its arrows, so the codomain answers as returned. An arrow written
+        // as a computation type, `A -> -F B`, is no box.
+        if !matches!(answer.over, native::Over::Written) {
+            return self.arrow_of(answer);
+        }
+        match Native::new(self.host()).unwrapped(answer.node)? {
+            Maybe::Present(native::Unwrapped {
+                former: Former::ThunkType,
+                ref operands,
+                ..
+            }) if let Some(&inner) = operands.last() => self.arrow_of(native::Answer {
+                node: inner,
+                ..answer
+            }),
+            Maybe::Present(native::Unwrapped {
+                node: written,
+                former: Former::ArrowType,
+                ..
+            }) if !self
+                .writes_computation(Placed {
+                    node: written,
+                    span: site.at.span,
+                })?
+                .0 =>
+            {
+                self.arrow_of(native::Answer {
+                    over: native::Over::Valued { taken: 0_usize },
+                    ..answer
+                })
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => self.arrow_of(answer),
+        }
     }
 
     /// The domain and the answered codomain of the arrow `answer` answers, as

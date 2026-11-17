@@ -4554,6 +4554,27 @@ fn a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A bare lambda that ends a body whose written answer is a box answers its
+/// body the box's codomain, as the checker reads the lambda as the box
+/// returned: a match with no stated motive in it lowers at the end of the
+/// body, after a `let`, in an arm and under a box written `+U`, and the
+/// module checks (#6390).
+#[test]
+fn a_tail_lambda_against_a_box_answers_its_match_the_box_s_codomain_6390()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/fixtures/a-tail-lambda-against-a-box-answers-its-match-the-box-s-codomain-6390-module.gandr"
+        )),
+        &mut arena,
+    );
+    for name in ["tail", "afterLet", "inArm", "explicitTail"] {
+        let _body = body_named(&module, SurfaceName::from(name));
+    }
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// A lambda passed as an argument types its binder by the type its callee
 /// writes for the parameter, as a signed definition's lambda does: a match of
 /// no arms on it switches on the empty data, the lambda in a thunk and bare,
