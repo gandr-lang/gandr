@@ -297,6 +297,7 @@ use crate::meld::Mark;
 use crate::meld::MoldAdmissibility;
 use crate::meld::SlopeHeight;
 use crate::meld::SpaceText;
+use crate::meld::SpacedBefore;
 use crate::meld::TileText;
 use crate::meld::UnitSeam;
 use crate::meld::declaration_head;
@@ -1663,6 +1664,33 @@ fn spacing(
     }
 }
 
+/// Whether a space stands between the token at `index` and the significant
+/// token before it, read by [`spacing`] at that token.
+///
+/// # Specification
+/// - requires: `index` indexes `tokens`.
+/// - ensures: true exactly when a significant token stands before `index` and
+///   [`spacing`] at the last such token is [`Spacing::Spaced`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Path[.A = T](a, b)` and `Path[.A = T] (a) (b)` tell the
+///   glued list from the spaced group at the carrier's `]`.
+/// - witness: `tests::grammar::a_spaced_group_after_a_path_carrier_is_an_endpoint_5750`
+#[spec(ensures: |ret| bool::from(ret) == tokens.get(.. usize::from(index)).and_then(|run| run.iter().rposition(|token| token.lexeme != Lexeme::Space)).is_some_and(|before| spacing(tokens, TokenIndex::from(before)) == Spacing::Spaced))]
+fn spaced_before(
+    tokens: &[Token],
+    index: TokenIndex,
+) -> SpacedBefore
+{
+    let before = tokens
+        .get(.. usize::from(index))
+        .and_then(|run| run.iter().rposition(|token| token.lexeme != Lexeme::Space));
+    SpacedBefore::from(
+        before.is_some_and(|before| spacing(tokens, TokenIndex::from(before)) == Spacing::Spaced),
+    )
+}
+
 /// The position after the last token a run ending before `end` reads past
 /// its end: the [`LOOKAHEAD`]-th significant token from `end` on, the spaces
 /// before it included, or the stream's end when fewer remain.
@@ -2280,7 +2308,10 @@ impl<'pbg> Molder<'pbg>
         let slice = token.text(&source);
         let text = TokenText::from(AsRef::<str>::as_ref(&slice));
         let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
-        state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
+        state.settle_shadowing_frontiers(
+            CandidateLabels::from(labels.as_slice()),
+            SpacedBefore::from(false),
+        );
         self.gather(state, token.lexeme, text, &labels, Ahead::Nothing);
         self.settle_statement(state, token.lexeme, text, &labels, Ahead::Nothing);
         self.settle_layout_close(state, token.lexeme, text, &labels, Ahead::Nothing);
@@ -2496,7 +2527,10 @@ impl<'pbg> Molder<'pbg>
             else {
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
                 let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
-                state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
+                state.settle_shadowing_frontiers(
+                    CandidateLabels::from(labels.as_slice()),
+                    spaced_before(tokens, TokenIndex::from(index)),
+                );
                 let ahead = Ahead::Stream {
                     tokens,
                     index: TokenIndex::from(index),
@@ -5069,7 +5103,10 @@ impl<'pbg> Molder<'pbg>
                 }
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
                 let labels = LabelIds::resolve(self.pbg, &candidate_labels(token.lexeme, text));
-                state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
+                state.settle_shadowing_frontiers(
+                    CandidateLabels::from(labels.as_slice()),
+                    spaced_before(tokens, TokenIndex::from(index)),
+                );
                 let ahead = Ahead::Stream {
                     tokens,
                     index: TokenIndex::from(index),

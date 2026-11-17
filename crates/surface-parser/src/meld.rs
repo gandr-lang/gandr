@@ -1173,6 +1173,10 @@ primitive_copy_wrapper!(
     pub struct HeadOperandPresence(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether a space stands before the upcoming token.
+    pub struct SpacedBefore(bool);
+);
+primitive_copy_wrapper!(
     /// Whether the stack head is the nearest open form's frontier tile, so the
     /// slot that tile opens holds nothing yet.
     pub struct HeadFrontier(bool);
@@ -4747,12 +4751,17 @@ impl<'pbg> MeldState<'pbg>
     /// `≐`-successor shares a label with the upcoming token (a `?` before a
     /// `hole_name` word) stays open so the name still attaches. A required
     /// tail a closed hole leaves whole (`x @ ?` before an arm's `=>`) settles
-    /// too, so the enclosing form, not the tail, meets the token.
+    /// too, so the enclosing form, not the tail, meets the token. A list
+    /// continues a completable form only at a glued `(`: after a space the
+    /// `(` opens a group that the closed form applies, so
+    /// `Path[.A = T] (e) (e)` reads two juxtaposed endpoints (#5750).
     ///
     /// # Specification
-    /// - requires: `labels` are the upcoming token's candidate labels.
+    /// - requires: `labels` are the upcoming token's candidate labels, and
+    ///   `spaced` tells whether a space stands before that token.
     /// - ensures: reduces to a clean operand meld every topmost completable
-    ///   frontier none of whose successors carries a label in `labels`, and
+    ///   frontier none of whose successors carries a label in `labels`, or
+    ///   whose only such successors are labelled `(` when `spaced` holds, and
     ///   every required tail so left whole that the token does not extend, in
     ///   turn until neither closes a frontier; stops at the first
     ///   non-completable or token-continuable frontier; introduces no
@@ -4764,16 +4773,19 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a bare hole before its enclosing closer versus a hole
-    ///   with its own name exposes clean sibling structure. Premature closure,
-    ///   absorbing the outer delimiter or adding source/repair material changes
-    ///   it.
+    ///   with its own name exposes clean sibling structure, and a glued list
+    ///   versus a spaced group after a path carrier exposes the close.
+    ///   Premature closure, absorbing the outer delimiter or adding
+    ///   source/repair material changes it.
     /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `tests::grammar::a_spaced_group_after_a_path_carrier_is_an_endpoint_5750`
     #[inline]
     #[spec(captures: before = (self.source.len(), self.obligations.len(), self.frontiers.len()), ensures: |_| self.source.len() == before.0 && self.obligations.len() == before.1 && self.frontiers.len() <= before.2)]
     pub fn settle_shadowing_frontiers(
         &mut self,
         labels: CandidateLabels<'_>,
+        spaced: SpacedBefore,
     )
     {
         // Closing a completable hole can leave a required tail whole beneath
@@ -4798,8 +4810,8 @@ impl<'pbg> MeldState<'pbg>
                 }
                 // Keep the frontier open when the upcoming token could be its
                 // `≐`-successor (a `?` before a `hole_name` word), so the name
-                // still attaches to the hole.
-                if bool::from(self.successor_label_in(head_mold, labels)) {
+                // still attaches to the hole. A spaced `(` continues no list.
+                if bool::from(self.successor_label_in(head_mold, labels, spaced)) {
                     break;
                 }
                 self.close_form(StackIndex::from(frontier));
@@ -4810,11 +4822,13 @@ impl<'pbg> MeldState<'pbg>
         }
     }
 
-    /// Return whether any `≐`-successor of `mold` carries a label in `labels`.
+    /// Return whether any `≐`-successor of `mold` carries a label in `labels`,
+    /// leaving out a `(` successor when `spaced` holds.
     ///
     /// # Specification
     /// - ensures: recognizes a same-form successor whose grammar label is in
-    ///   the supplied set; empty and absent sets are false.
+    ///   the supplied set and is no `(` after a space; empty and absent sets
+    ///   are false.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -4836,18 +4850,23 @@ impl<'pbg> MeldState<'pbg>
             reason = "bounded: `labels` holds one token's candidate labels, which the labeler caps"
         )
     )]
-    #[spec(ensures: |ret| bool::from(ret) == <&[LabelId]>::from(labels).iter().any(|&label| self.pbg.label_candidates(label).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
+    #[spec(ensures: |ret| bool::from(ret) == <&[LabelId]>::from(labels).iter().any(|&label| (!bool::from(spaced) || self.pbg.label_id(LabelText("(")) != Some(label)) && self.pbg.label_candidates(label).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
     fn successor_label_in(
         &self,
         mold: MoldId,
         labels: CandidateLabels<'_>,
+        spaced: SpacedBefore,
     ) -> SuccessorLabelPresence
     {
         let labels = <&[LabelId]>::from(labels);
+        let opener = self
+            .pbg
+            .label_id(LabelText("("))
+            .filter(|_| bool::from(spaced));
         SuccessorLabelPresence::from(self.pbg.mold_successors(mold).iter().any(|&(_, right)| {
             self.pbg
                 .mold_label(right)
-                .is_some_and(|label| labels.contains(&label))
+                .is_some_and(|label| labels.contains(&label) && Some(label) != opener)
         }))
     }
 
@@ -12101,14 +12120,17 @@ mod tests
         // the opener carries.
         let absent_labels: [&[LabelId]; 2] = [&[], &[label("(")?]];
         for labels in absent_labels {
-            assert!(!bool::from(
-                state.successor_label_in(open, super::CandidateLabels::from(labels))
-            ));
+            assert!(!bool::from(state.successor_label_in(
+                open,
+                super::CandidateLabels::from(labels),
+                super::SpacedBefore::from(false)
+            )));
         }
         let closing = [label(")")?];
         assert!(bool::from(state.successor_label_in(
             open,
-            super::CandidateLabels::from(closing.as_slice())
+            super::CandidateLabels::from(closing.as_slice()),
+            super::SpacedBefore::from(false)
         )));
         for _ in 0_u8 .. 2_u8 {
             state.push(&MoldedTile::new(open, TileText::from("(")));
