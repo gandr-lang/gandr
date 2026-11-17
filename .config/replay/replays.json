@@ -1,0 +1,28 @@
+[
+  {
+    "name": "#6159: a signed restack whose base moved the inputs of the file its own commit writes holds the branch on the runner, naming the row",
+    "artifacts": [
+      {
+        "name": "the case artifact",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "false",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "status 1; the replay of b makes due: the case artifact; a runner builds none of their checks, so the branch is held for a seat's `mise run pr:land`, which runs them; b holds b's own"
+  },
+  {
+    "name": "#6159: a signed restack whose base moved no input of the file its own commit writes moves the branch, and runs no check",
+    "artifacts": [
+      {
+        "name": "the case artifact",
+        "paths": ["u.txt"],
+        "inputs": ["other.txt"],
+        "check": "false",
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "status 0; ; b holds b's own"
+  }
+]

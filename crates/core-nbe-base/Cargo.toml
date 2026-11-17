@@ -1,0 +1,31 @@
+[package]
+name = "gandr-core-nbe-base"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The base of the glued value domain: its per-run arena, closures, values and neutrals, free indices, content guards, element identity, the stage terms, and the sharing overlay with its erasure and its measure"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "glued-evaluation", "normalization-by-evaluation", "sharing"]
+categories = ["data-structures"]
+publish.workspace = true
+
+# The domain is built over the core language's syntax and context, and reads
+# levels and the leaf vocabularies through them. The pinned anodized facade
+# supplies core-only specification helpers; logic/BigInt stays disabled in
+# this no_std library. The specification combinators bound what a clause
+# reads of the overlay's task stacks.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-spec-combinators.workspace = true
+
+# A test of element identity reads a body through the kernel's own reading.
+[dev-dependencies]
+gandr-kernel-core.workspace = true
+
+[lints]
+workspace = true

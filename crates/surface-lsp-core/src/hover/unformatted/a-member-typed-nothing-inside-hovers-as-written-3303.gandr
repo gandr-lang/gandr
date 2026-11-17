@@ -1,0 +1,3 @@
+theory T where {
+  oper size : $0Integer;
+}
