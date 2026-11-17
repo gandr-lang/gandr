@@ -5,12 +5,12 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │   │               ┬                ┬──────────────  ───────── an endpoint the point does not convert to
    │   │               │                │
    │   │               │                an endpoint the point does not convert to
-   │ ┌─┘               checked against `(a : Nat) -> -F Path[.A = Nat](double (Succ a), plusTwo a)`; while checking the body of this function; binds n : Nat
+   │ ┌─┘               checked against `(a : Nat) -> -F (Path[.A = Nat] (double (Succ a)) (plusTwo a))`; while checking the body of this function; binds n : Nat
    │ │
 17 │ │   Path.here (plusTwo n)
    │ │   ┯━━━━━━━━━━━━━━━━━━━│
    │ └───│───────────────────┤
-   │     │                   checked against `(a : Nat) -> Path[.A = Nat](double (Succ a), plusTwo a)`; while checking the body of this thunk
+   │     │                   checked against `(a : Nat) -> Path[.A = Nat] (double (Succ a)) (plusTwo a)`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `callDropped` is refused with EndpointMismatch, as its expectation states
@@ -23,12 +23,12 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │   │            ┬                ┬──────────────  ───────────────────────── an endpoint the point does not convert to
    │   │            │                │
    │   │            │                an endpoint the point does not convert to
-   │ ┌─┘            checked against `(a : Nat) -> -F Path[.A = Nat](double (Succ a), Succ (plusTwo (double a)))`; while checking the body of this function; binds n : Nat
+   │ ┌─┘            checked against `(a : Nat) -> -F (Path[.A = Nat] (double (Succ a)) (Succ (plusTwo (double a))))`; while checking the body of this function; binds n : Nat
    │ │
 22 │ │   Path.here (Succ (plusTwo (double n)))
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│───────────────────────────────────┤
-   │     │                                   checked against `(a : Nat) -> Path[.A = Nat](double (Succ a), Succ (plusTwo (double a)))`; while checking the body of this thunk
+   │     │                                   checked against `(a : Nat) -> Path[.A = Nat] (double (Succ a)) (Succ (plusTwo (double a)))`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `overshot` is refused with EndpointMismatch, as its expectation states

@@ -4,7 +4,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 18 │ def wrongEndpoint : Path[.A = Circle](Base, Base) ≅ Int = *{wind, *{spin, *{retr, retr}}};
    │                                                                           ┬─┯━━━───────
    │                                                                           │ │
-   │                                                                           │ its type does not convert: expected `(a : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](spin (wind a), a)`, found `(n : Int) -> Path[.A = Int](wind (spin n), n)`
+   │                                                                           │ its type does not convert: expected `(a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (spin (wind a)) a`, found `(n : Int) -> Path[.A = Int] (wind (spin n)) n`
    │                                                                           checked; while checking the next premise of this
    │
    ├ note: `wrongEndpoint` is refused with TypeMismatch, as its expectation states

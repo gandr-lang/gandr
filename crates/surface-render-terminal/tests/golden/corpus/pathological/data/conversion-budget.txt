@@ -9,7 +9,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 37 │ │   Path.here (fib (nineteen ()))
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│───────────────────────────┤
-   │     │                           checked against `() -> Path[.A = Nat](fib (force nineteen), fibFrom (force nineteen) Zero (Succ Zero))`; while checking the body of this thunk
+   │     │                           checked against `() -> Path[.A = Nat] (fib (force nineteen)) (fibFrom (force nineteen) Zero (Succ Zero))`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `agree` is refused with EndpointMismatch, as its expectation states

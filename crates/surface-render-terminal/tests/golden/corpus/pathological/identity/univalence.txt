@@ -8,11 +8,11 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    │ │   ┬─────────┬───────┬─────────┯━━━━━━━━━━───────────────────────
    │ │   │         │       │         │
    │ │   │         │       │         not both endpoints of the path
-   │ │   │         │       checked against `(a : Two) -> -F Path[.A = Two](pick (collapse a), a)`; while checking the body of this function; binds x : Two
-   │ │   │         checked against `(a : Two) -> Path[.A = Two](pick (collapse a), a)`; while checking the body of this thunk
+   │ │   │         │       checked against `(a : Two) -> -F (Path[.A = Two] (pick (collapse a)) a)`; while checking the body of this function; binds x : Two
+   │ │   │         checked against `(a : Two) -> Path[.A = Two] (pick (collapse a)) a`; while checking the body of this thunk
    │ │   checked; while checking the next premise of this
 28 │ │ });
-   │ └──┘ checked against `Path[.A = Type](Two, One)`; while checking the record of this univalence and the codes it relates
+   │ └──┘ checked against `Path[.A = Type] Two One`; while checking the record of this univalence and the codes it relates
    │
    ├ note: `collapsedPath` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
@@ -49,11 +49,11 @@ error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
 46 │ │   g : b -> a,
    │ │   ─ checked; while checking the body of this function; binds g : b -> a
 47 │ │   s : (x : a) -> Path[.A = a](g (t x), x),
-   │ │   ─ checked; while checking the body of this function; binds s : (x : a) -> Path[.A = a](g (t x), x)
+   │ │   ─ checked; while checking the body of this function; binds s : (x : a) -> Path[.A = a] (g (t x)) x
 48 │ │   h : b -> a,
-   │ │   ─ checked against `(c : b -> a) -> ((d : b) -> Path[.A = b](t (c d), d)) -> a -> -F b`; while checking the body of this function; binds h : b -> a
+   │ │   ─ checked against `(c : b -> a) -> ((d : b) -> Path[.A = b] (t (c d)) d) -> a -> -F b`; while checking the body of this function; binds h : b -> a
 49 │ │   r : (y : b) -> Path[.A = b](t (h y), y),
-   │ │   ─ checked against `((c : b) -> Path[.A = b](t (h c), c)) -> a -> -F b`; while checking the body of this function; binds r : (c : b) -> Path[.A = b](t (h c), c)
+   │ │   ─ checked against `((c : b) -> Path[.A = b] (t (h c)) c) -> a -> -F b`; while checking the body of this function; binds r : (c : b) -> Path[.A = b] (t (h c)) c
 50 │ │   x : a
    │ │   ─ checked against `a -> -F b`; while checking the body of this function; binds x : a
 51 │ │ ) -> b =
@@ -71,7 +71,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╭▸ corpus/pathological/identity/univalence.gandr:62:3
    │
 58 │   def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)](
-   │   │                     ─ checked against `(a : Type) -> -F Path[.A = Path[.A = Type](a, a)](ua (idtoequiv a a (Path.here a)), Path.here a)`; while checking the body of this function; binds a : Type
+   │   │                     ─ checked against `(a : Type) -> -F (Path[.A = Path[.A = Type] a a] (ua (idtoequiv a a (Path.here a))) (Path.here a))`; while checking the body of this function; binds a : Type
    │ ┌─┘
    │ │
 59 │ │   ua (idtoequiv a a (Path.here a)),
@@ -82,7 +82,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 62 │ │   Path.here (Path.here a)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━│
    │ └───│─────────────────────┤
-   │     │                     checked against `(a : Type) -> Path[.A = Path[.A = Type](a, a)](ua (idtoequiv a a (Path.here a)), Path.here a)`; while checking the body of this thunk
+   │     │                     checked against `(a : Type) -> Path[.A = Path[.A = Type] a a] (ua (idtoequiv a a (Path.here a))) (Path.here a)`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `uaEtaByConversion` is refused with EndpointMismatch, as its expectation states
@@ -103,7 +103,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 72 │  ┃│   Path[.A = Circle](Base, Base),
 73 │  ┃│   _
 74 │  ┃│ ));
-   │  ┗│━│┛ its type does not convert: expected `Path[.A = Type](Path[.A = Circle](Base, Base), Unit)`, found `Path[.A = Type](Path[.A = Circle](Base, Base), Int)`
+   │  ┗│━│┛ its type does not convert: expected `Path[.A = Type] (Path[.A = Circle] Base Base) Unit`, found `Path[.A = Type] (Path[.A = Circle] Base Base) Int`
    │   └─┤
    │     the type it synthesises
    │

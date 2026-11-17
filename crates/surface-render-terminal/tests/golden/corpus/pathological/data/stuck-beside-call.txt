@@ -2,7 +2,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╭▸ corpus/pathological/data/stuck-beside-call.gandr:18:3
    │
 14 │   def walkTwiceOvershot(b : Nat, c1 : Nat, c2 : Nat) -> Path(
-   │   │                     ┬        ┬─        ── checked against `(a : Nat) -> -F Path[.A = Nat](walk (Succ (walk b c1)) a, Succ (walk (walk b c1) (succ (succ a))))`; while checking the body of this function; binds c2 : Nat
+   │   │                     ┬        ┬─        ── checked; while checking the body of this function; binds c2 : Nat
    │   │                     │        │
    │   │                     │        checked; while checking the body of this function; binds c1 : Nat
    │ ┌─┘                     checked; while checking the body of this function; binds b : Nat
@@ -25,7 +25,7 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╭▸ corpus/pathological/data/stuck-beside-call.gandr:26:3
    │
 22 │   def walkTwiceInner(b : Nat, c1 : Nat, c2 : Nat) -> Path(
-   │   │                  ┬        ┬─        ── checked against `(a : Nat) -> -F Path[.A = Nat](walk (Succ (walk b c1)) a, Succ (walk (walk b (succ c1)) (succ a)))`; while checking the body of this function; binds c2 : Nat
+   │   │                  ┬        ┬─        ── checked; while checking the body of this function; binds c2 : Nat
    │   │                  │        │
    │   │                  │        checked; while checking the body of this function; binds c1 : Nat
    │ ┌─┘                  checked; while checking the body of this function; binds b : Nat
