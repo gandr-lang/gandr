@@ -1591,6 +1591,10 @@ impl<'source> Respelling<'_, 'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the written leaves, growth within the form's parts
+    /// - allocation: a lone operand's spelling, growth within its leaves
     fn kept(
         &mut self,
         rule: MoldName,
