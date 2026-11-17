@@ -371,7 +371,7 @@ model/desc/graded-cut.gandr:NestedCut.orBot:7c72cee5fdd4fe09 uncommented
 model/desc/graded-cut.gandr:NestedCut.top:d389825afc53a152 uncommented
 model/desc/imported-theory-model.gandr:Counting.Nat:4f6b701630cb51c7 uncommented
 model/desc/imported-theory-model.gandr:Counting.succ:d9fd613daef93549 uncommented
-model/desc/imported-theory-model.gandr:Counting.zero:6a5e51bf2122f661 uncommented
+model/desc/imported-theory-model.gandr:Counting.zero:c42a3f653ad8be4a uncommented
 model/desc/lc/syntax-model.gandr:LCSyntax.Con:8527471b880b9df9 uncommented
 model/desc/lc/syntax-model.gandr:LCSyntax.Sub:443620243c9b910f uncommented
 model/desc/lc/syntax-model.gandr:LCSyntax.Tm:0a70e94eb4b5fee4 uncommented
@@ -414,7 +414,7 @@ model/desc/model-in-source.gandr:N.S:ee67ebb581277fb5 uncommented
 model/desc/model-in-source.gandr:N.Z:ad9355867f5197ce uncommented
 model/desc/model-in-source.gandr:SyntaxNat.Nat:65bde51ae86098c5 uncommented
 model/desc/model-in-source.gandr:SyntaxNat.succ:f40cfad81895f20a uncommented
-model/desc/model-in-source.gandr:SyntaxNat.zero:609de29a0dade9f1 uncommented
+model/desc/model-in-source.gandr:SyntaxNat.zero:fe12a4493d5fcfca uncommented
 model/desc/occurrence-count.gandr:Shrub.Leaf:5b6ebbf363ea0dcd uncommented
 model/desc/occurrence-count.gandr:Shrub.Node:eb8c65018c9a5d19 uncommented
 model/desc/occurrence-count.gandr:Shrub.left:3e467c51280e22e5 uncommented
