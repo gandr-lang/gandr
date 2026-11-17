@@ -1197,15 +1197,7 @@ fn typed(tile: TileLabel) -> Spelled
         | Lexeme::Character
         | Lexeme::Quote
         | Lexeme::StringFragment
-        | Lexeme::ShellStringFragment
         | Lexeme::EscapeSequence
-        | Lexeme::ShellWord
-        | Lexeme::EnvAssign
-        | Lexeme::SingleQuotedContent
-        | Lexeme::VariableName
-        | Lexeme::SubshellOpen
-        | Lexeme::SubshellClose
-        | Lexeme::FileDescriptor
         | Lexeme::ArmBar
         | Lexeme::LayoutOpen
         | Lexeme::LayoutSemi

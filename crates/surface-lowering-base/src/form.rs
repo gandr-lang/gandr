@@ -1235,7 +1235,7 @@ impl Former
 ///   grammar gains breaks the table rather than silently declining the form.
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 137_usize] = [
+pub const FORMERS: [(&str, Former); 123_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1342,10 +1342,6 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
     ("bind_expression", Former::Unadmitted(Unbuilt::Bind)),
     ("circuit_declaration", Former::Unadmitted(Unbuilt::Circuit)),
     ("codata_declaration", Former::Unadmitted(Unbuilt::Codata)),
-    (
-        "command_substitution",
-        Former::Unadmitted(Unbuilt::CommandSubstitution),
-    ),
     ("cons_pattern", Former::Unadmitted(Unbuilt::ConsPattern)),
     (
         "constructor_pattern",
@@ -1355,21 +1351,8 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
         "derived_rule_declaration",
         Former::Unadmitted(Unbuilt::DerivedRule),
     ),
-    (
-        "double_quoted_string",
-        Former::Unadmitted(Unbuilt::DoubleQuotedString),
-    ),
-    (
-        "environment_assignment",
-        Former::Unadmitted(Unbuilt::EnvironmentAssignment),
-    ),
     ("extern_block", Former::Unadmitted(Unbuilt::ExternBlock)),
-    (
-        "file_descriptor",
-        Former::Unadmitted(Unbuilt::FileDescriptor),
-    ),
     ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
-    ("host_escape", Former::Unadmitted(Unbuilt::HostEscape)),
     ("if_expression", Former::If),
     (
         "inner_attribute_block",
@@ -1379,7 +1362,6 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
         "labelled_sum_pattern",
         Former::Unadmitted(Unbuilt::LabelledSumPattern),
     ),
-    ("list_operator", Former::Unadmitted(Unbuilt::ListOperator)),
     ("list_pattern", Former::Unadmitted(Unbuilt::ListPattern)),
     (
         "literal_pattern",
@@ -1387,20 +1369,8 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
     ),
     ("manifest_sort", Former::Unadmitted(Unbuilt::ManifestSort)),
     ("or_pattern", Former::Unadmitted(Unbuilt::OrPattern)),
-    ("pipeline", Former::Unadmitted(Unbuilt::Pipeline)),
-    (
-        "redirection_operator",
-        Former::Unadmitted(Unbuilt::RedirectionOperator),
-    ),
     ("representable_universe_type", Former::Misplaced),
     ("rest_pattern", Former::Unadmitted(Unbuilt::RestPattern)),
-    ("shell_block", Former::Unadmitted(Unbuilt::ShellBlock)),
-    ("shell_word", Former::Unadmitted(Unbuilt::ShellWord)),
-    (
-        "single_quoted_string",
-        Former::Unadmitted(Unbuilt::SingleQuotedString),
-    ),
-    ("subshell", Former::Unadmitted(Unbuilt::Subshell)),
     (
         "telescope_pattern",
         Former::Unadmitted(Unbuilt::TelescopePattern),
@@ -1410,11 +1380,6 @@ pub const FORMERS: [(&str, Former); 137_usize] = [
     ("typed_number", Former::Number),
     ("union_type", Former::Unadmitted(Unbuilt::Union)),
     ("unknown_type", Former::Unadmitted(Unbuilt::UnknownType)),
-    (
-        "variable_expansion",
-        Former::Unadmitted(Unbuilt::VariableExpansion),
-    ),
-    ("variable_name", Former::Unadmitted(Unbuilt::VariableName)),
 ];
 
 /// The former a form of named kind `kind` is read as.
@@ -6420,7 +6385,6 @@ mod tests
     {
         for (kind, feature) in [
             ("glob_expression", Unbuilt::Glob),
-            ("shell_block", Unbuilt::ShellBlock),
             ("union_type", Unbuilt::Union),
         ] {
             assert_eq!(

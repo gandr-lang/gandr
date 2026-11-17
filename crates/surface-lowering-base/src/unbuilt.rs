@@ -141,8 +141,6 @@ unbuilt! {
     /// A number literal written with the `f32` suffix, which has no atom yet:
     /// the integer widths and `f64` are built.
     TypedNumber => "typed_number",
-    /// The shell block, `#!{ … }`.
-    ShellBlock => "shell_block",
     /// A constructor field at a finite grade other than `1`.
     FieldGrade => "grade.declaration",
     /// The as-pattern `p as x`.
@@ -192,8 +190,6 @@ unbuilt! {
     DerivedRule => "derived_rule_declaration",
     /// An extern block.
     ExternBlock => "extern_block",
-    /// A host escape.
-    HostEscape => "host_escape",
     /// An injection pattern where a term is read.
     LabelledSumPattern => "labelled_sum_pattern",
     /// A literal pattern other than a number or a boolean, or one where a term
@@ -210,32 +206,8 @@ unbuilt! {
     Theory => "theory_declaration",
     /// A tuple pattern where a term is read.
     TuplePattern => "tuple_pattern",
-    /// A shell block's command substitution.
-    CommandSubstitution => "command_substitution",
-    /// A shell block's double-quoted string.
-    DoubleQuotedString => "double_quoted_string",
-    /// A shell block's environment assignment.
-    EnvironmentAssignment => "environment_assignment",
-    /// A shell block's file descriptor.
-    FileDescriptor => "file_descriptor",
-    /// A shell block's glob.
+    /// The `glob` copattern block of a globular codata value.
     Glob => "glob_expression",
-    /// A shell block's list operator.
-    ListOperator => "list_operator",
-    /// A shell block's pipeline.
-    Pipeline => "pipeline",
-    /// A shell block's redirection operator.
-    RedirectionOperator => "redirection_operator",
-    /// A shell block's word.
-    ShellWord => "shell_word",
-    /// A shell block's single-quoted string.
-    SingleQuotedString => "single_quoted_string",
-    /// A shell block's subshell.
-    Subshell => "subshell",
-    /// A shell block's variable expansion.
-    VariableExpansion => "variable_expansion",
-    /// A shell block's variable name.
-    VariableName => "variable_name",
     /// A thunk's grade, `thunk[r] { … }`.
     ThunkGrade => "grade.value",
     /// A grade on a list, run or prefix type.
@@ -360,21 +332,8 @@ impl Unbuilt
             Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
             Self::InfixForm => TrackingIssue::INFIX_FORM,
             Self::EmptyMatch => TrackingIssue::EMPTY_CASE_ANSWER,
-            Self::ExternBlock | Self::HostEscape => TrackingIssue::EXTERN_BLOCK,
-            Self::ShellBlock
-            | Self::CommandSubstitution
-            | Self::DoubleQuotedString
-            | Self::EnvironmentAssignment
-            | Self::FileDescriptor
-            | Self::Glob
-            | Self::ListOperator
-            | Self::Pipeline
-            | Self::RedirectionOperator
-            | Self::ShellWord
-            | Self::SingleQuotedString
-            | Self::Subshell
-            | Self::VariableExpansion
-            | Self::VariableName => TrackingIssue::SHELL_BLOCK,
+            Self::ExternBlock => TrackingIssue::EXTERN_BLOCK,
+            Self::Glob => TrackingIssue::GLOB,
             Self::Bind
             | Self::Circuit
             | Self::Codata

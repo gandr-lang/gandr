@@ -380,19 +380,6 @@ fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Failure>
 }
 
 #[test]
-fn command_substitution_molds_with_zero_obligations() -> Result<(), Failure>
-{
-    let source = "#!{ echo $!{ printf nested; }; }";
-    let result = parse(built(), SourceText::from(source))?;
-    assert!(
-        bool::from(result.is_clean()),
-        "the command-substitution form must reach lowering without parser repair: {:?}",
-        result.obligations()
-    );
-    Ok(())
-}
-
-#[test]
 fn value_statement_uses_let_keyword() -> Result<(), Failure>
 {
     let pbg = built();

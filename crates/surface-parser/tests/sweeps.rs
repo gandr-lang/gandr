@@ -710,18 +710,15 @@ fn table_verdicts_equal_dry_run_verdicts_changed() -> Result<(), Failure>
     tables_agree(&Sweep::asked()?.changed())
 }
 
-/// #7032: the two keystrokes of the language server's sweep where a closer
+/// #7032: the keystroke of the language server's sweep where a closer
 /// reaches its partner below a free form. The tables key that closer's push
-/// by itself, so they decide as the dry runs do. Before the change, each
-/// text counts one disagreement.
+/// by itself, so they decide as the dry runs do. Before the change, the text
+/// counts one disagreement.
 #[test]
 fn a_closer_that_reaches_its_partner_decides_as_its_dry_run_7032()
 {
     let pbg = built();
-    for text in [
-        "def together = *{a = Ordered.}\n",
-        include_str!("sweeps/unformatted/a-closer-that-reaches-in-a-shell-block-7032.gandr"),
-    ] {
+    for text in ["def together = *{a = Ordered.}\n"] {
         let mut molder = Molder::with_verdicts(pbg, MoldVerdicts::Differential);
         let mut state = MeldState::new(pbg);
         molder.mold_stream(

@@ -58,8 +58,8 @@ impl TrackingIssue
     pub const LIST_TAIL: Self = Self(524);
     /// The apart union `A | B`, under the row kinds.
     pub const UNION: Self = Self(2273);
-    /// The shell block, `#!{ … }`.
-    pub const SHELL_BLOCK: Self = Self(1057);
+    /// The `glob` copattern block of a globular codata value.
+    pub const GLOB: Self = Self(3568);
     /// A projection, `e.1` or `e.field`, where the fragment reads none.
     pub const PROJECTION: Self = Self(1106);
     /// Packages: `pack`, `unpack` and the package type.
@@ -78,7 +78,7 @@ impl TrackingIssue
     /// An import whose address has a scheme, which nothing resolves.
     pub const SCHEME: Self = Self(1233);
     /// An extern block, binding a library's functions: native interop's
-    /// first rung; and a host escape across the same boundary.
+    /// first rung.
     pub const EXTERN_BLOCK: Self = Self(327);
     /// A case or a form over an indexed family.
     pub const INDEXED: Self = Self(1314);
