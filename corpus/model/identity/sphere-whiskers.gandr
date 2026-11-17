@@ -1,0 +1,72 @@
+/// This source states dependent cases over the 2-sphere into a path family.
+/// The family stands in a sort with a loop and a 2-cell at one point.
+///
+/// A case with no arm at the sphere's cell owes the transport of its answer
+/// along the cell. The family carries the answer along the bound path. Its
+/// image of the cell conjugates the answer by the images of the family's two
+/// endpoints. Where both images are empty, the answer moves to itself, also
+/// when it holds a loop. Where the images are one cell, reflexivity moves to
+/// the cell's inverse, then the cell, which cancel.
+///
+/// A loop past an image that holds a cell whiskers the cell. The loops act
+/// freely on the cells, so no rule identifies the whiskered cell with the
+/// cell, and the case is refused.
+///
+/// Limits: a nested carried transport carries reflexivity alone. A loop
+/// moves only past images that are empty by their syntax. Such an endpoint
+/// never reads the binder or is one call whose case writes no arm at the cell.
+///
+/// - see: #6458 — the reading of a family at the cell
+/// - see: corpus/model/identity/sphere.gandr
+/// - see: corpus/model/identity/sphere-maps.gandr
+
+// The 2-sphere.
+import "./sphere.gandr";
+
+/// One point, one loop and one 2-cell at the point's reflexivity.
+pub data LoopCell : Type where
+  /// The point.
+  | Pt : LoopCell
+  /// The loop.
+  | lp : Pt <-> Pt
+  /// The 2-cell.
+  | cell : Path.here Pt <-> Path.here Pt
+
+/// The map that sends the sphere's cell to the 2-cell.
+pub def toCell(x : S2) -> LoopCell =
+  match x where
+    | Base2 => Pt
+    | surf => cell
+
+/// The map with no arm at the sphere's cell, which it sends to the empty word.
+pub def toPt(x : S2) -> LoopCell =
+  match x where
+    | Base2 => Pt
+
+/// Both images of the cell are empty, so the loop moves to itself.
+def flatLoop(x : S2) -> Path[.A = LoopCell](toPt x, toPt x) =
+  match x where
+    | Base2 => lp
+
+/// Reflexivity moves to the 2-cell's inverse, then the 2-cell, which cancel.
+def whiskRefl(x : S2) -> Path[.A = LoopCell](toCell x, toCell x) =
+  match x where
+    | Base2 => Path.here Pt
+
+/// The loop whiskers the 2-cell at both ends, and the loops act freely.
+@[refuses("LoopNotRespected")]
+def whiskLoop(x : S2) -> Path[.A = LoopCell](toCell x, toCell x) =
+  match x where
+    | Base2 => lp
+
+/// The loop whiskers the 2-cell at the left end alone.
+@[refuses("LoopNotRespected")]
+def halfLoop(x : S2) -> Path[.A = LoopCell](toCell x, toPt x) =
+  match x where
+    | Base2 => lp
+
+/// Reflexivity moves to the 2-cell's inverse. The case owes an arm there.
+@[refuses("LoopNotRespected")]
+def halfRefl(x : S2) -> Path[.A = LoopCell](toCell x, toPt x) =
+  match x where
+    | Base2 => Path.here Pt
