@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# A lane's gate runs the suites of the packages a change touches and of the
-# corpus's readers (#6812): `gandr-surface-dispatcher`,
-# `gandr-surface-evaluate`, `gandr-surface-grammar`, whose highlight goldens
-# follow the corpus, and `gandr-surface-parser`, whose recovery records follow
-# it (#7949). The head watcher's gate runs the whole workspace (#6750), run
-# by `check:gate-scope`. Pull request 6563 changed the checker and broke two
-# of its tests, and its gate passed, since the gate ran no test (#6595).
-# #6709 and #6712 each turned a test of the dispatcher red on `landing`, a
-# package they did not touch (#6738). Each case builds a scratch workspace of
-# six packages, `red`, `green` and the four readers, whose tests pass at its
-# fork from `origin/$trunk`. The case changes one package, reads the suite's
-# scope as `check` reads it (`test-scope.bash`) and runs the suite over that
-# scope as `check:tests-enforcing` runs it.
+# A lane's gate runs the suites of the packages that a change touches. It
+# also runs the suites of the corpus's readers. The readers are
+# `gandr-surface-dispatcher`, `gandr-surface-evaluate`,
+# `gandr-surface-grammar` and `gandr-surface-parser`. The grammar holds the
+# highlight goldens, and the parser holds the recovery records.
+# - see: #6812, #7949
+#
+# The head watcher's gate runs the whole workspace, and `check:gate-scope`
+# runs these cases. A gate that runs no test passes a change that breaks a
+# test. A change to one package can turn a test of another package red.
+# - see: #6750, #6595, #6738
+#
+# Each case builds a scratch workspace of six packages: `red`, `green` and
+# the four readers. Their tests pass at the fork from `origin/$trunk`. The
+# case changes one package and reads the suite's scope as `check` reads it.
+# Then it runs the suite over that scope as `check:tests-enforcing` runs it.
+# - see: `test-scope.bash`
 set -euo pipefail
 # Each case reads a lane's scope, and the watcher's case sets the watcher's
 # setting on its own call alone (#6739). The scope reads the change against

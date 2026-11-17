@@ -2,16 +2,21 @@
 # Prints the package arguments of the enforcing suite that `mise run check`
 # and the head watcher run, on one line.
 #
-# A lane's gate runs the suites of the packages its change touches and of
-# the readers of `table.json`, whose tests take the corpus as their input
-# (`scope.bash --touched --readers`, #6812). `gandr-surface-dispatcher` and
-# the run stage `gandr-surface-evaluate` run the whole pipeline. The two
-# reds of untouched packages that #6709 (#6722) and #6712 (#6736) brought to
+# A lane's gate runs the suites of the packages that its change touches. It
+# also runs the suites of the readers that `table.json` names. The tests of
+# each reader take the corpus as their input.
+# - see: #6812, `scope.bash --touched --readers`
+#
+# `gandr-surface-dispatcher` and the run stage `gandr-surface-evaluate` run
+# the whole pipeline over the corpus. Two reds of untouched packages on
 # `landing` are tests of the dispatcher. `gandr-surface-grammar` holds the
-# highlight goldens and `gandr-surface-parser` holds the recovery sweep
-# (#7949). A corpus source moves both, and only the integration cycle ran
-# them. The whole suite (#6738) raised the median gate from 210 s to
-# 456.5 s, past the two minutes that its rule allows.
+# highlight goldens, and `gandr-surface-parser` holds the recovery sweep. A
+# corpus source moves both goldens.
+# - see: #6709, #6722, #6712, #6736, #7949
+#
+# The whole suite raises the median gate from 210 s to 456.5 s. The rule of
+# the gate allows two minutes.
+# - see: #6738
 #
 # The head watcher sets `GATE_TEST_EVERY_RED` (#6750): its suite runs the
 # whole workspace, every test past a red one (`--no-fail-fast`), so a red of
