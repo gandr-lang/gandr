@@ -141,7 +141,7 @@ impl From<Name> for Box<str>
     #[inline]
     fn from(value: Name) -> Self
     {
-        Box::from(value.0.as_ref())
+        Self::from(value.0.as_ref())
     }
 }
 
