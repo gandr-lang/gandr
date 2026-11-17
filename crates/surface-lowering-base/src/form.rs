@@ -2671,6 +2671,9 @@ pub fn read_pieces<'source>(
 /// - economy: one walk down the spine, written into `read`'s buffer, with no
 ///   allocation beyond the buffer's growth (#6968).
 ///
+/// # Cost
+/// - allocation: the pieces of the spine, growth within `read`'s buffer.
+///
 /// # Adequacy
 /// - hypothesis: L3 — `f x y` lowers as `f(x, y)`, and a call inside an
 ///   argument as its own call. While the call form stands, a `(` after an
@@ -2835,6 +2838,9 @@ fn application_spine(
 ///   with no allocation beyond the buffer's growth (#6968).
 /// - executable: none — the pieces are the path's children in the tree, which a
 ///   predicate could check only by repeating the walk.
+///
+/// # Cost
+/// - allocation: the pieces of the link, growth within `read`'s buffer.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Shapes.Box Integer` lowers as `Shapes.Box(Integer)`, and
