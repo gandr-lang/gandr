@@ -1131,6 +1131,8 @@ pub enum RefusalName
     GenericMisplaced,
     /// A splice whose operand writes no tactic.
     UnknownTactic,
+    /// A call that returns several outputs, where one value is read.
+    OutputsAsOneValue,
     /// A data type `Eq.generic` derives no equality or law for: the
     /// declaration's gap, bare; a law's dependent case, qualified `Dependent`.
     GenericUncovered(GenericCoverage),
@@ -1343,7 +1345,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 250_usize] = [
+    pub const VOCABULARY: [Self; 251_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1507,6 +1509,7 @@ impl RefusalName
         Self::DerivedComponent,
         Self::GenericMisplaced,
         Self::UnknownTactic,
+        Self::OutputsAsOneValue,
         Self::GenericUncovered(GenericCoverage::Declaration),
         Self::BudgetExceeded,
         Self::GrammarMismatch,
@@ -1739,6 +1742,7 @@ impl RefusalName
         (Self::DerivedComponent, b"DerivedComponent") |
         (Self::GenericMisplaced, b"GenericMisplaced") |
         (Self::UnknownTactic, b"UnknownTactic") |
+        (Self::OutputsAsOneValue, b"OutputsAsOneValue") |
         (Self::GenericUncovered(_), b"GenericUncovered") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::HostConflict, b"HostConflict") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
@@ -2141,6 +2145,7 @@ impl RefusalName
             Self::DerivedComponent => "DerivedComponent",
             Self::GenericMisplaced => "GenericMisplaced",
             Self::UnknownTactic => "UnknownTactic",
+            Self::OutputsAsOneValue => "OutputsAsOneValue",
             Self::GenericUncovered(_) => "GenericUncovered",
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
@@ -2956,7 +2961,8 @@ impl<'source> RefusalOf<'source, Arena>
         RefusalName::UnderivedRule) | (LoweringRefusal::DerivedComponent { .. },
         RefusalName::DerivedComponent) | (LoweringRefusal::GenericMisplaced { .. },
         RefusalName::GenericMisplaced) | (LoweringRefusal::UnknownTactic { .. },
-        RefusalName::UnknownTactic) | (LoweringRefusal::GenericUncovered { .. },
+        RefusalName::UnknownTactic) | (LoweringRefusal::OutputsAsOneValue { .. },
+        RefusalName::OutputsAsOneValue) | (LoweringRefusal::GenericUncovered { .. },
         RefusalName::GenericUncovered(_)) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
@@ -3095,6 +3101,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::DerivedComponent { .. } => RefusalName::DerivedComponent,
         LoweringRefusal::GenericMisplaced { .. } => RefusalName::GenericMisplaced,
         LoweringRefusal::UnknownTactic { .. } => RefusalName::UnknownTactic,
+        LoweringRefusal::OutputsAsOneValue { .. } => RefusalName::OutputsAsOneValue,
         LoweringRefusal::GenericUncovered { fault, .. } => {
             RefusalName::GenericUncovered(GenericCoverage::of(fault))
         },

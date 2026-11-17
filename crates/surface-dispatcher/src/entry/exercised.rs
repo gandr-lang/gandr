@@ -650,6 +650,7 @@ fn is_whole_unsigned_body(
             LoweringRefusal::DerivedComponent { .. } |
             LoweringRefusal::GenericMisplaced { .. } |
             LoweringRefusal::UnknownTactic { .. } |
+            LoweringRefusal::OutputsAsOneValue { .. } |
             LoweringRefusal::GenericUncovered { .. } |
             LoweringRefusal::MismatchedPattern { .. } |
             LoweringRefusal::PartialField { .. } |
@@ -786,6 +787,7 @@ fn lowering_row(
         | LoweringRefusal::DerivedComponent { .. }
         | LoweringRefusal::GenericMisplaced { .. }
         | LoweringRefusal::UnknownTactic { .. }
+        | LoweringRefusal::OutputsAsOneValue { .. }
         | LoweringRefusal::GenericUncovered { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }

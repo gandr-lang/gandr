@@ -60,7 +60,6 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::FractionDigits;
@@ -9101,22 +9100,23 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             };
             return Native::new(self.host()).ports(site, ported, fields);
         }
-        // A call of a function returning a group of outputs, standing as one
-        // value, is the record of its outputs.
+        // A call of a function returning a group of outputs stands as one
+        // value only under `~ports e`, which fills `packed` first and stands
+        // as the record of its outputs. Anywhere else it is refused.
         if let Reading::Value(frame) = site.reading
-            && let Some(outputs) =
-                Models::new(self.host()).called_outputs(frame, site.at, site.at.node)?
+            && !self.cx().packed.contains_key(&site.at.node)
+            && Models::new(self.host())
+                .called_outputs(frame, site.at, site.at.node)?
+                .is_some()
         {
-            let labels = outputs
-                .iter()
-                .map(|output| match output.key {
-                    arity::Key::Label(name, _) => {
-                        Some(FieldLabel::from(String::from(name.as_ref())))
-                    },
-                    arity::Key::Positional | arity::Key::Index(..) => None,
-                })
-                .collect();
-            let _first = self.cx_mut().packed.insert(site.at.node, labels);
+            let callee = match cursor.clone().operands() {
+                Run::One(head) => self.cx().name_at(head),
+                Run::Empty(_) | Run::Several { .. } => SurfaceName::from(""),
+            };
+            return Err(LoweringRefusal::OutputsAsOneValue {
+                span: site.at.span,
+                callee,
+            });
         }
         if let Run::One(head) = cursor.clone().operands()
             && let Maybe::Present(operation) =

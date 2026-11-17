@@ -2217,9 +2217,9 @@ fn a_tuple_pattern_binds_each_output_of_an_operation_4855()
 }
 
 /// An operation's outputs carry the labels its ports are written with, so a
-/// selection, a labelled pattern and a call that stands as one value read an
-/// operation's outputs as they do a function's, and a label the operation
-/// lacks is refused at its tile.
+/// selection, a labelled pattern and `~ports` read an operation's outputs as
+/// they do a function's, and a label the operation lacks is refused at its
+/// tile.
 #[test]
 fn an_operation_s_outputs_are_selected_and_bound_by_label_5147()
 {
@@ -2269,8 +2269,9 @@ fn an_operation_s_outputs_are_selected_and_bound_by_label_5147()
         }),
         "a label names an output of the operation"
     );
-    let kept =
-        format!("{operation}def kept(a : Flag, b : Flag) -> Flag {{ let r = swap a b; r.x }}\n");
+    let kept = format!(
+        "{operation}def kept(a : Flag, b : Flag) -> Flag {{ let r = ~ports (swap a b); r.x }}\n"
+    );
     let mut arena = CoreArena::new();
     let module = lowered(kept.as_str(), &mut arena);
     let kept = body(&arena, &module, "kept");
@@ -2355,28 +2356,59 @@ fn a_plugging_passes_every_output_in_order()
     );
 }
 
+/// `~ports e` stands as the record of the outputs of the call `e`, labelled
+/// when the callee names every output. The same call bound to one name with
+/// no `~ports` is refused at the call, and `~ports` of a call of one value is
+/// refused at its operand.
 #[test]
-fn a_call_of_outputs_standing_as_one_value_is_their_record()
+fn ports_collects_the_outputs_of_a_call_5767()
 {
+    let module_text =
+        include_str!("tests/fixtures/ports-collects-the-outputs-of-a-call-5767-module.gandr");
     let mut arena = CoreArena::new();
-    let module = lowered(
-        include_str!(
-            "tests/fixtures/a-call-of-outputs-standing-as-one-value-is-their-record-module.gandr"
-        ),
-        &mut arena,
-    );
+    let module = lowered(module_text, &mut arena);
 
     let named = body(&arena, &module, "named");
     assert!(
         named.iter().any(|token| token == "bindall2")
             && named.iter().any(|token| token == "record{q,r}"),
-        "a call of named outputs bound to one name binds the record of them, {named:?}"
+        "`~ports` of a call of named outputs binds the record of them, {named:?}"
     );
     let whole = body(&arena, &module, "whole");
     assert!(
         whole.iter().any(|token| token == "bindall2")
             && whole.iter().any(|token| token == "tuple2"),
-        "a call of unnamed outputs bound to one name binds the tuple of them, {whole:?}"
+        "`~ports` of a call of unnamed outputs binds the tuple of them, {whole:?}"
+    );
+
+    let bare = include_str!("tests/fixtures/a-bare-call-of-outputs-is-refused-5767.gandr");
+    let call = bare.find("divmod a a").expect("the call is written");
+    let LoweringRefusal::OutputsAsOneValue { span, callee } = refused(bare)
+    else {
+        panic!("a call of several outputs bound to one name is refused by name");
+    };
+    assert_eq!(
+        (
+            usize::from(span.start()),
+            usize::from(span.end()),
+            callee.as_ref()
+        ),
+        (call, call + "divmod a a".len(), "divmod"),
+        "the refusal stands at the call and names its callee"
+    );
+
+    let single = include_str!("tests/fixtures/ports-of-one-value-is-refused-5767.gandr");
+    let operand = single
+        .find("ports (one a)")
+        .expect("the operand is written");
+    let LoweringRefusal::UnknownTactic { span } = refused(single)
+    else {
+        panic!("`~ports` of a call of one value is refused at its operand");
+    };
+    assert_eq!(
+        (usize::from(span.start()), usize::from(span.end())),
+        (operand, operand + "ports (one a)".len()),
+        "the refusal stands at the splice's operand"
     );
 }
 

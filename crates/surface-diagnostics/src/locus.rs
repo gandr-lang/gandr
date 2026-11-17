@@ -615,6 +615,7 @@ impl Annotations
                 LoweringRefusal::UnderivedRule { .. } |
                 LoweringRefusal::GenericMisplaced { .. } |
                 LoweringRefusal::UnknownTactic { .. } |
+                LoweringRefusal::OutputsAsOneValue { .. } |
                 LoweringRefusal::GenericUncovered { .. } |
                 LoweringRefusal::IllFormedDescription { .. } |
                 LoweringRefusal::PartialField { .. } |
@@ -761,6 +762,7 @@ impl Annotations
             | LoweringRefusal::UnderivedRule { .. }
             | LoweringRefusal::GenericMisplaced { .. }
             | LoweringRefusal::UnknownTactic { .. }
+            | LoweringRefusal::OutputsAsOneValue { .. }
             | LoweringRefusal::GenericUncovered { .. }
             | LoweringRefusal::BudgetExceeded { .. }
             | LoweringRefusal::GrammarMismatch { .. }

@@ -335,6 +335,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::DerivedComponent { .. } => "a component its theory's derivation fills",
         LoweringRefusal::GenericMisplaced { .. } => "a generic program read off its place",
         LoweringRefusal::UnknownTactic { .. } => "a splice of no tactic",
+        LoweringRefusal::OutputsAsOneValue { .. } => "a call of several outputs read as one value",
         LoweringRefusal::GenericUncovered { .. } => "a type with no derived equality",
         LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
@@ -916,6 +917,9 @@ mod tests
             LoweringRefusal::DerivedComponent { .. } => "a component its theory's derivation fills",
             LoweringRefusal::GenericMisplaced { .. } => "a generic program read off its place",
             LoweringRefusal::UnknownTactic { .. } => "a splice of no tactic",
+            LoweringRefusal::OutputsAsOneValue { .. } => {
+                "a call of several outputs read as one value"
+            },
             LoweringRefusal::GenericUncovered { .. } => "a type with no derived equality",
             LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
             LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",

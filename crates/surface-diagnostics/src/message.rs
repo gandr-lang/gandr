@@ -903,7 +903,8 @@ fn lowered(
         ),
         LoweringRefusal::GenericMisplaced { .. }
         | LoweringRefusal::GenericUncovered { .. }
-        | LoweringRefusal::UnknownTactic { .. } => {
+        | LoweringRefusal::UnknownTactic { .. }
+        | LoweringRefusal::OutputsAsOneValue { .. } => {
             fmt::Display::fmt(&refusal, f)
         },
         LoweringRefusal::BudgetExceeded { budget } => write!(
@@ -2278,6 +2279,7 @@ pub mod tests
             },
             LoweringRefusal::GenericMisplaced { span },
             LoweringRefusal::UnknownTactic { span },
+            LoweringRefusal::OutputsAsOneValue { span, callee: name },
             LoweringRefusal::GenericUncovered {
                 span,
                 data: name,
