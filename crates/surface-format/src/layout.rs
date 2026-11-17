@@ -468,6 +468,10 @@ fn listed(group: &Group<'_>) -> Listed
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the groups and the stack of open groups, growth within the
+///   source's brackets
 fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, FormatError>
 {
     let mut groups: Vec<Group<'source>> = Vec::from([Group {

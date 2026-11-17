@@ -296,6 +296,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
     ///   type is a type variable alone, `x : t`.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_deduced_mode_is_erased_from_the_telescope`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_mode_word_off_a_receiver_is_refused`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the moded type, setup
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     #[inline]
     pub fn moded(
@@ -1172,6 +1175,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answering_no_place_is_refused`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_bare_index_is_refused_naming_the_selector_4944`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the body's last form and the place it
+    ///   records, durable by the view's function
     #[spec(ensures: |ret| ret.is_err() || self.cx().view_places.get(&block.last) == Some(&ViewPlace { element }))]
     #[inline]
     pub fn view_body(

@@ -1490,6 +1490,10 @@ impl LabelMode
     /// - witness: `label::tests::shell_braced_parameter_lexes_distinctly_from_interpolation`
     /// - witness: `label::tests::shell_single_and_double_quotes_do_not_cross`
     /// - witness: `label::tests::shell_braced_parameters_nest_and_juxtapose`
+    ///
+    /// # Cost
+    /// - allocation: a frame of the interpolation stack at each `${` that opens
+    ///   a string interpolation, growth within the stack's capacity
     #[spec(requires: start < next && next <= source_bytes.len())]
     fn track_punct(
         &mut self,

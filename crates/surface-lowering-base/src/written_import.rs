@@ -610,6 +610,10 @@ fn module_file(path: SourceFragment<'_>) -> ImportUri
 /// - hypothesis: L3 — a source with an unqualified and an aliased import
 ///   between two declarations lists exactly the two imports.
 /// - witness: `gandr-surface-lowering::tests::namespace::an_unqualified_import_binds_no_alias`
+///
+/// # Cost
+/// - allocation: the pieces of the root and of each import, and the imports
+///   read, setup
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.windows(2).all(|pair| match *pair {
     [ref first, ref second] => first.span.start() < second.span.start(),
     _ => false,
@@ -668,6 +672,10 @@ pub fn written_imports<'source>(
 ///   prelude's theories.
 /// - witness: `gandr-surface-lowering::tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
 /// - witness: `gandr-surface-lowering::tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
+///
+/// # Cost
+/// - allocation: the pieces of the root and the table of imported sources,
+///   setup
 #[spec(ensures: |ret| ret.values().all(|targets| !targets.is_empty()))]
 #[inline]
 #[must_use]

@@ -4782,6 +4782,10 @@ impl<'source> Collector<'_, 'source>
     ///   two consecutive slots, and a declaration after it takes none of the
     ///   block's.
     /// - witness: `module::tests::a_mutual_block_collects_its_members_as_one_run`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the block, its slots and its entry, durable
+    ///   by the collected source
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.blocks.len()),
         ensures: |ret| ret.is_err()
@@ -8556,6 +8560,10 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `gandr-surface-lowering::tests::modules::module_members_admit_in_source_order`
     /// - witness: `gandr-surface-lowering::tests::modules::a_readable_module_keeps_its_members_and_its_successor`
     /// - witness: `gandr-surface-lowering::tests::modules::opaque_ascription_seals`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of the member, its slots and its structures,
+    ///   durable by the collected source
     #[spec(
         captures: before = (
             self.collected.slots.len(),

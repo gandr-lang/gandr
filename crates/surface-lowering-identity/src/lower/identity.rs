@@ -4500,6 +4500,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     /// - witness: `gandr-surface-lowering::lower::identity::tests::back_then_and_cong_unfold_to_transports`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::a_derived_operation_needs_a_written_path_answer`
     /// - witness: `gandr-surface-lowering::lower::identity::tests::session_statements_lower_to_their_formers`
+    ///
+    /// # Cost
+    /// - allocation: the pieces of each form it reads through, setup
     #[spec(captures: before = self.cx().fuel.remaining(), ensures: self.cx().fuel.remaining() <= before)]
     fn answers_path(
         &mut self,

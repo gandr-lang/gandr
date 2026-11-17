@@ -1464,10 +1464,12 @@ pub const FORMERS: [(&str, Former); 138_usize] = [
 #[inline]
 pub fn former_of(kind: NamedKind<'_>) -> Maybe<Former, former::Absent>
 {
-    FORMERS
-        .into_iter()
-        .find_map(|(entry, former)| (entry == kind.0).then_some(former))
-        .map_or(Maybe::Absent(former::Absent::Unrealised), Maybe::Present)
+    for (entry, former) in FORMERS {
+        if entry == kind.0 {
+            return Maybe::Present(former);
+        }
+    }
+    Maybe::Absent(former::Absent::Unrealised)
 }
 
 /// The feature the dispatch table declines a form named `name` by.

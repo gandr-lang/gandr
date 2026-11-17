@@ -826,6 +826,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_positional_supply_follows_the_written_block_4945`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_wildcard_skips_a_position_and_names_follow_positions_4945`
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_misplaced_positional_supply_is_refused_at_its_entry_4945`
+    ///
+    /// # Cost
+    /// - allocation: the copy of the head's pieces and the supply's plan,
+    ///   durable by the call's plan
     #[spec(
         captures: start = self.cx().operands.mark(),
         ensures: |ret| match ret {

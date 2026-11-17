@@ -1612,6 +1612,9 @@ impl<'source> Collector<'_, 'source>
 ///   (#611).
 /// - witness: `gandr-surface-lowering::tests::modules::a_kinded_type_component_spine_declares_its_arity`
 /// - witness: `gandr-surface-lowering::tests::modules::a_kind_reads_through_its_grouping_parentheses`
+///
+/// # Cost
+/// - allocation: the domains and the pieces of each arrow, setup
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |domains| domains.iter().all(|domain| domain.span.start() >= kind.span.start())))]
 #[inline]
 pub fn spine_domains<'source>(

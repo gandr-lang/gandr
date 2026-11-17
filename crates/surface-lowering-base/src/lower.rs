@@ -172,6 +172,10 @@ quenchant_shape::reason_enum! {
 /// - witness: `gandr-surface-lowering::lower::tests::an_integer_literal_is_its_canonical_magnitude`
 /// - witness: `gandr-surface-lowering::lower::tests::a_text_literal_is_the_bytes_between_its_quotes`
 /// - witness: `gandr-surface-lowering::lower::tests::a_lexeme_of_the_wrong_shape_parses_to_nothing`
+///
+/// # Cost
+/// - allocation: the digits of a number and the decoded text of a string or a
+///   character, durable by the literal
 #[spec(
     ensures: |ret| {
         let spelled: &str = text.as_ref();

@@ -950,6 +950,9 @@ impl Separator
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the pieces the split cuts, growth within the tokens
 fn split<'tokens, 'text>(
     tokens: &'tokens [Token<'text>],
     separator: Separator,
@@ -1182,6 +1185,9 @@ fn rowless<'tokens, 'text>(tokens: &'tokens [Token<'text>]) -> &'tokens [Token<'
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the chunks of text, growth within the tokens
 fn atomic(tokens: &[Token<'_>]) -> Atomic
 {
     let mut chunks: Vec<&str> = Vec::new();

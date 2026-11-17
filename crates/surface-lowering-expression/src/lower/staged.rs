@@ -572,6 +572,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::staged::tests::a_stage_outside_a_signature_leaves_the_fragment`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_method_answering_no_place_is_refused`
+    ///
+    /// # Cost
+    /// - allocation: the bracket's entries, the stage marks and the plan,
+    ///   durable by the staged type's plan
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Staged(..) | Plan::Patched { .. } | Plan::Atom(TypeAtom::Integer)))))]
     #[inline]
     pub fn staged_type(
@@ -647,6 +651,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - hypothesis: L3 — the field form and the face form plan the patched
     ///   type, and the static bracket's forms are refused by name.
     /// - witness: `gandr-surface-lowering::lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
+    ///
+    /// # Cost
+    /// - allocation: the fixed entries or the faces and the plan, durable by
+    ///   the patched type's plan
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Patched { .. })))]
     #[inline]
     pub fn extension_type(

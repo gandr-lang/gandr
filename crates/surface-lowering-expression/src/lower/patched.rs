@@ -232,6 +232,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   second label.
     /// - witness: `gandr-surface-lowering::lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
     /// - witness: `gandr-surface-lowering::lower::patched::tests::a_bracket_naming_what_its_base_lacks_is_refused_by_the_name`
+    ///
+    /// # Cost
+    /// - allocation: the fixed entries or the faces read, durable by the
+    ///   patched type's plan
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |bracket| match *bracket {
         | Bracket::Fields(ref fixed) => !fixed.is_empty() && fixed.iter().all(|entry| matches!(entry.key, Key::Label(..))),
         | Bracket::Faces(ref faces) => !faces.is_empty(),
