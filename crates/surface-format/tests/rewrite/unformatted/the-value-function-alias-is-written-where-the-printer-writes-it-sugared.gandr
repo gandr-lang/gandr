@@ -1,0 +1,2 @@
+def motive : Type -> Type = fun (X) { X -> X };
+def suspended : Type -> Type = fun (X) { +U (-F X) };

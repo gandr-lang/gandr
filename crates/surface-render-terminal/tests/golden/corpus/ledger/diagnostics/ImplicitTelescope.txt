@@ -1,0 +1,8 @@
+error[ImplicitTelescope]: this implicit telescope `[…]` is out of shape: an entry is not `a : Type`, `i : Size` or `i < n`, or the declaration is no function
+  ╭▸ corpus/ledger/diagnostics/ImplicitTelescope.gandr:4:1
+  │
+4 │ def f[a : Type] = 1;
+  │ ━━━━━━━━━━━━━━━━━━━━ an implicit out of shape
+  │
+  ├ note: `f` is refused with ImplicitTelescope, as its expectation states
+  ╰ help: write the telescope before a function's parameters, as in `def f[a : Type]() -> Integer { 1 }`

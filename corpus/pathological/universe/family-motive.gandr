@@ -1,0 +1,41 @@
+// What a motive refuses when its body writes a type with no `return`.
+//
+// A type family's application in a computation's place must refuse by its
+// sort, as a type atom does. A refusal by name or by a constructor's arity
+// sends the reader to the wrong fix.
+//
+// Each definition below writes a family's application as its body with no
+// `return`. Each refuses as `OutOfFragment.WrongSort`, and the refusal
+// advises `return`.
+//
+// - see: #6491
+
+// The native finite lists.
+import std.list (List);
+
+/// Sequences over a type.
+data Seq(a : Type) : Type where
+  /// The empty sequence.
+  | Nil : Seq a
+  /// A head before the rest.
+  | Cons : (h : a, t : Seq a) --> Seq a
+
+/// A path type with no `return`.
+@[refuses("OutOfFragment.WrongSort")]
+def pathsTo(a : Integer, d : Integer) -> Type { Path d a }
+
+/// A bridge type with no `return`.
+@[refuses("OutOfFragment.WrongSort")]
+def bridgesTo(a : Integer, d : Integer) -> Type { Bridge d a }
+
+/// A flow type with no `return`.
+@[refuses("OutOfFragment.WrongSort")]
+def flowsTo(a : Integer, d : Integer) -> Type { Flow d a }
+
+/// A list type with no `return`.
+@[refuses("OutOfFragment.WrongSort")]
+def listsOf(a : Type) -> Type { List a }
+
+/// A declared family with no `return`. It is no constructor.
+@[refuses("OutOfFragment.WrongSort")]
+def sequencesOf(a : Type) -> Type { Seq a }
