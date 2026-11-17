@@ -229,6 +229,31 @@ proptest! {
     }
 }
 
+/// #5469: a deletion retires a theory's sort, and the session re-keys the
+/// twin sort that an including theory holds above it. So the session's
+/// kernel names each constant as the walk names it.
+#[test]
+fn a_deletion_re_keys_the_twin_above_a_retired_sort_5469()
+{
+    let source = include_str!("forms/twin-sort-deleted.gandr");
+    let starts = form_starts(Text::from(source));
+    let second = starts.get(1).map_or(source.len(), |&Byte(at)| at);
+    let deleted = source.get(second ..).unwrap_or_default();
+    let mut incremental = session(SourceRoot::Fixture);
+    let _source = agree(
+        &mut incremental,
+        SourceRoot::Fixture,
+        Text::from(source),
+        &"the source",
+    );
+    let _deletion = agree(
+        &mut incremental,
+        SourceRoot::Fixture,
+        Text::from(deleted),
+        &"the source with its first theory deleted",
+    );
+}
+
 #[test]
 fn a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root()
 {
