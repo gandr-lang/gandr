@@ -4441,10 +4441,12 @@ impl<'pbg> Molder<'pbg>
     /// call, and `f (x)` applies `f` to a group. So a head before a spaced
     /// `(` is refused. In `Vec a plus(m, k)` a name follows `a`, and the `(`
     /// of `plus` stands in the window of `a`. So `a` is refused too, reads as
-    /// an atom, and the melder pushes the application tile after it. A head
-    /// before any other token keeps its admission: a glued `(` or `[`, a
-    /// spaced `[`, a symbol, or a name with no `(` after it on its line in
-    /// the window. There the molder repairs a missing opener, and the repair
+    /// an atom, and the melder pushes the application tile after it. A line
+    /// break between `a` and the name keeps that reading, since the printer
+    /// breaks a long application between its operands. A head before any
+    /// other token keeps its admission: a glued `(` or `[`, a spaced `[`, a
+    /// symbol, or a name with no `(` after it on the name's line in the
+    /// window. There the molder repairs a missing opener, and the repair
     /// keeps its one obligation at the gap.
     ///
     /// # Specification
@@ -4452,8 +4454,8 @@ impl<'pbg> Molder<'pbg>
     ///   head.
     /// - ensures: refuses an admitted `type_application` head exactly when the
     ///   next significant token is a spaced `(`, or a name with a `(` among the
-    ///   next [`LOOKAHEAD`] significant tokens before a line break. It keeps
-    ///   every other admission.
+    ///   next [`LOOKAHEAD`] significant tokens before a line break after the
+    ///   name. It keeps every other admission.
     /// - provides: the admission of a type-call head.
     /// - fails: never.
     /// - panics: none.
@@ -4493,7 +4495,7 @@ impl<'pbg> Molder<'pbg>
             let mut opened = false;
             for &token in tokens.iter().skip(usize::from(index).saturating_add(1)) {
                 if token.lexeme == Lexeme::Space {
-                    if <&str>::from(token.text(source)).contains('\n') {
+                    if seen > 0 && <&str>::from(token.text(source)).contains('\n') {
                         break;
                     }
                     continue;
