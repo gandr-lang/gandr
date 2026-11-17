@@ -1484,6 +1484,10 @@ fn tile(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the spines and the tiles of each, growth within the run's
+///   elements
 fn spines(
     placed: &[Placed<'_>],
     docs: &[Built],
