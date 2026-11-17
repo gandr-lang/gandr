@@ -1,0 +1,11 @@
+command: mise run check:doctests, with GATE_SCOPE=-p gandr-surface-corpus
+issue: #5469
+before: 7858e71bd6
+exit: 101
+test crates/surface-corpus/src/lib.rs - (line 45) ... FAILED
+error[E0277]: the trait bound `{closure@crates/surface-corpus/src/lib.rs:150:18: 150:44}: Keying` is not satisfied
+error[E0061]: this function takes 6 arguments but 5 arguments were supplied
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+error: doctest failed, to rerun pass `-p gandr-surface-corpus --doc`
+after: 8254dfe6e4
+exit: 0

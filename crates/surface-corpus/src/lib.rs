@@ -54,6 +54,7 @@
 //! use gandr_core_checker::body;
 //! use gandr_core_checker::check_module;
 //! use gandr_core_checker::signature;
+//! use gandr_core_incremental::NodeKeys;
 //! use gandr_core_term::CoreArena;
 //! use gandr_kernel_term::ConstantIndex;
 //! use gandr_surface_corpus::CorpusRoot;
@@ -62,6 +63,7 @@
 //! use gandr_surface_corpus::Settlement;
 //! use gandr_surface_corpus::settle;
 //! use gandr_surface_grammar::built_in;
+//! use gandr_surface_dispatcher::item_layout;
 //! use gandr_surface_lowering::DeclarationOutcome;
 //! use gandr_surface_lowering::LoweringBudget;
 //! use gandr_surface_lowering::lower_module;
@@ -75,6 +77,7 @@
 //! #     Meld(gandr_surface_parser::MeldError),
 //! #     Lowering(gandr_surface_lowering::LoweringRefusal<'static>),
 //! #     Settle(gandr_surface_corpus::SettleFault),
+//! #     Layout(gandr_core_incremental::ProgramError),
 //! # }
 //! # impl From<gandr_surface_grammar::PbgError> for Failure {
 //! #     fn from(error: gandr_surface_grammar::PbgError) -> Self { Self::Grammar(error) }
@@ -87,6 +90,9 @@
 //! # }
 //! # impl From<gandr_surface_corpus::SettleFault> for Failure {
 //! #     fn from(error: gandr_surface_corpus::SettleFault) -> Self { Self::Settle(error) }
+//! # }
+//! # impl From<gandr_core_incremental::ProgramError> for Failure {
+//! #     fn from(error: gandr_core_incremental::ProgramError) -> Self { Self::Layout(error) }
 //! # }
 //!
 //! let source = SourceText::from(
@@ -189,7 +195,10 @@
 //!
 //! // No declaration states a run outcome, so the runner is never asked.
 //! let mut runner = |_constant: ConstantIndex| RunSpelling::from(String::new());
-//! let report = settle(CorpusRoot::Fixture, &arena, &module, &verdicts, &mut runner)?;
+//! // The report names each node by its content key in the items' layout.
+//! let layout = item_layout(&module, &arena)?;
+//! let keys = NodeKeys::new(&arena, &layout);
+//! let report = settle(CorpusRoot::Fixture, &arena, &module, &verdicts, &keys, &mut runner)?;
 //! let tally = report.tally();
 //! assert_eq!(
 //!     tally.settlement(),
