@@ -1,0 +1,7 @@
+theory Copy where {
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+  rule copy2 : (data x : Nat, data y : Nat) ==> (z : Nat) {
+    node : add(x, y) --> (z);
+  };
+}

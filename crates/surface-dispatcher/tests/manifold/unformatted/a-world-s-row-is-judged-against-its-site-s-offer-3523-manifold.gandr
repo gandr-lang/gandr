@@ -1,0 +1,20 @@
+import std.list (List);
+import "./answered.gandr" as answered;
+import "./typed.gandr" as typed;
+import "./bare.gandr" as bare;
+pub module Manifold : Model(Manifold) where {{
+  def artifact = "p.gandr";
+}}
+pub module Local : Model(Site) where {{
+  def key = "{local}";
+  def sockets = "";
+  def secret = "local";
+}}
+pub def placements : List(Placement) = #[
+  At "far" answered.site,
+  At "far" typed.site,
+  At "far" bare.site,
+  At "netted" answered.site,
+  At "far" (pack Local at Model(Site)),
+  At "lost" typed.site,
+];

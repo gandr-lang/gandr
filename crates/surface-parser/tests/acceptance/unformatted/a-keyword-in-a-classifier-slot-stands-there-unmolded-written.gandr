@@ -1,0 +1,3 @@
+theory Magma where {
+    sort M : type;
+}

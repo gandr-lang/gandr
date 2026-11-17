@@ -1,0 +1,3 @@
+def idAt(a : Type, y : a) -> -F a {{ return y }}
+def loose : +U (Integer -> -F Integer) ;
+def loose = thunk {{ {written} }} ;

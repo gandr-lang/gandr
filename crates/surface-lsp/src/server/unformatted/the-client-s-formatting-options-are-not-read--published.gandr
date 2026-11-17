@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/untidy.gandr","languageId":"gandr","version":1,
+                     "text":"def plus(n : Nat) -> -F Nat {   \nmatch n {\n| Zero => n\n}\n}\n\n\n"}}}
