@@ -1163,6 +1163,9 @@ where
 /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
 /// - witness: `tests::goldens::a_recorded_run_without_payloads_spells_its_moves_1871`
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
+///
+/// # Cost
+/// - allocation: the child slots, growth within the former's arity
 #[spec(ensures: |ref ret| match *former {
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
@@ -4446,6 +4449,9 @@ enum Breaks<Node>
 ///   following it, a `while` breaking in its true branch, and a `loop` whose
 ///   two breaks go on with different nodes.
 /// - witness: `tests::goldens::a_loop_a_rest_follows_writes_its_breaks_bare_3231`
+///
+/// # Cost
+/// - allocation: the pending nodes, growth within `VISIT_BUDGET`
 #[spec(ensures: |ret| !matches!(broken(source, pass), Some(Break::Rest(_))) || matches!(ret, Breaks::One(_, under) if under.0 == 0_usize))]
 fn breaks<S>(
     source: &S,
@@ -8373,6 +8379,10 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
     /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+    ///
+    /// # Cost
+    /// - allocation: the chain's links, growth within the walk's remaining
+    ///   visits
     #[spec(
         captures: [entry = self.remaining],
         ensures: |ret| self.remaining <= entry
@@ -9533,6 +9543,10 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_positional_projection_the_surface_does_not_read_is_notation`
     /// - witness: `tests::goldens::a_family_argument_leaves_its_function_s_thunk_out_5408`
     /// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+    ///
+    /// # Cost
+    /// - allocation: the node's pieces and tasks, growth within the walk's
+    ///   remaining visits
     #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
         ensures: |ref ret| self.opened.len() == opened

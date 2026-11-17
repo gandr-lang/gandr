@@ -3673,6 +3673,10 @@ impl Source for CoreSource<'_>
     /// # Termination
     /// Every turn reads one application nearer the spine's head, a finite
     /// term.
+    ///
+    /// # Cost
+    /// - allocation: the spine's arguments and the map's sorts, growth within
+    ///   the call's spine
     #[inline]
     fn forget_call(
         &self,
