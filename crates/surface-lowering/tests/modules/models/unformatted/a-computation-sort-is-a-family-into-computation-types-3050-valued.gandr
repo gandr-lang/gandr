@@ -1,0 +1,4 @@
+{MAYBE}{carrier}module Valued : Model(Carrier) where {{
+  type Lift(a : Type) = Maybe(a);
+  type Cell = Integer;
+}}

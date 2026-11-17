@@ -1,0 +1,34 @@
+// A cost bound below a run's count, which is refused `EndpointMismatch`.
+//
+// A bound is a program, so a bound that does not hold is refused by the
+// conversion that settles one that does.
+//
+// The checker runs the steps under `Counting`, counts three and reaches
+// `false` from `Count.le` at two. No conversion takes `false` to `true`.
+//
+// - see: `ledger/features/cost-effect.gandr` — the bound that holds
+// - see: `../../../library/std/src/cost.gandr` — `Cost.Eff` and `Counting`
+// - see: #2288 — decalf's cost effect as a lawful theory
+
+// The cost effect and its counting model.
+import std.cost (Cost, Counting, costs, counted, countOf);
+// The counting grades.
+import std.grade (Count);
+
+/// Three steps: a charge of one, a charge of two, then seven.
+def threeSteps() -> [cost : Cost.Eff with sort N = (Nat -> Nat)] Integer =
+  let _a = cost.charge (costs (1 : Nat))
+  let _b = cost.charge (costs (2 : Nat))
+  pure 7
+
+/// The steps under the counting model.
+def countedSteps() -> (Nat -> Nat) -> Nat =
+  handle cost : Cost.Eff with sort N = Nat -> Nat {
+    let _answer = threeSteps ();
+    pure counted
+  } with Counting
+
+/// The bound two is one step too small: the count of the steps is three, so
+/// `Count.le` answers `false`.
+@[refuses("EndpointMismatch")]
+def boundTwo : Path(Count.le (countOf (countedSteps ())) (2 : Nat), true) = Path.here true;

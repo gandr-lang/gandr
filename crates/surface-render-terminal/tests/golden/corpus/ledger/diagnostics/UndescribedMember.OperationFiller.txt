@@ -1,0 +1,11 @@
+error[UndescribedMember.OperationFiller]: this member is an operation with a circuit body, which the description route does not read yet
+  ╭▸ corpus/ledger/diagnostics/UndescribedMember.OperationFiller.gandr:4:1
+  │
+4 │ ┏ oper accumulate : (stream : Stream Nat) --> (out2 : Stream Nat) {
+5 │ ┃   node : zip(stream, state) --> (next, out2);
+6 │ ┃   feed : (next) --> (state);
+7 │ ┃ }
+  │ ┗━┛ a member the description does not read
+  │
+  ├ note: `accumulate` is refused with UndescribedMember.OperationFiller, as its expectation states
+  ╰ note: tracked by #1507 <https://github.com/gandr-lang/gandr/issues/1507>

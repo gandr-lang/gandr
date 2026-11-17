@@ -1,0 +1,103 @@
+#:tombi toml-version = "v1.0.0"
+
+# Debugger tasks: lldb sessions on gandr binaries.
+
+# `debug:lldb <program> [args]...` runs lldb on a program with the checkout's
+# Rust formatters (#3760). `.config/debug/lldbinit` loads rustc's formatters
+# from the pinned toolchain and corrects them, so a sum-type enum such as
+# `Computation` prints its true variant, by value or behind a reference
+# (`.config/debug/rust_formatters.py`). Every lldb session on a gandr binary
+# sources that file. A DAP client such as `lldb-dap` sources it by its launch
+# argument `initCommands: ["command source .config/debug/lldbinit"]`, the
+# adapter started in the checkout. An open session sources it by
+# `command source .config/debug/lldbinit`. The debugger runs through
+# `.config/debug/lldb.bash lldb`, and a DAP client's adapter command is
+# `.config/debug/lldb.bash lldb-dap`: on macOS LLVM's, since Xcode's
+# misnames enum variants (#3778), and bounded in memory, so a session never
+# takes the host's (#3823).
+["debug:lldb"]
+description = "Run lldb on a program with the checkout's Rust formatters"
+usage = '''
+arg "<program>" help="the program to debug"
+arg "[args]..." help="the program's arguments, split at spaces" var=#true
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+read -ra arguments <<< "${usage_args:-}"
+root=$(git rev-parse --show-toplevel)
+exec "$root/.config/debug/lldb.bash" lldb --source "$root/.config/debug/lldbinit" -- "$usage_program" "${arguments[@]}"
+'''
+
+# Every defect starts in the debugger (#3758): the observation a defect fix
+# carries is a transcript of the failing test under lldb, never a reading of
+# the code. `claim:next` names the command on a defect's claim, and
+# `evidence:obligations` owes the `observed` box until the change commits the
+# transcript (`.config/bodies/observed.jq`).
+#
+# `debug:test` runs one test of a package under lldb, stopped at a panic and
+# where a function `--break` names by regular expression is entered, and
+# prints the backtrace and the frame's locals, the checkout's formatters
+# loaded. `--features` builds the package under the features it lists, so a
+# test that a feature gates runs too. The transcript is written to the
+# package's `tests/debug-traces/<test>.txt`, `::` written as `.`
+# (`.config/debug/trace.bash`).
+["debug:test"]
+description = "Run one test under lldb and write its transcript beside the regression"
+tools.jq = "1.8.1"
+usage = '''
+arg "<package>" help="the package holding the test, as cargo names it"
+arg "<test>" help="the test's full path in its binary, as nextest lists it"
+flag "--break <function>" help="stop where a function whose name matches this regular expression is entered"
+flag "--features <features>" help="build the package under these features, for a test that a feature gates"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+command="mise run debug:test $usage_package $usage_test"
+options=()
+if [[ -n ${usage_break:-} ]]; then
+  options+=(--break "$usage_break")
+  command+=" --break $usage_break"
+fi
+if [[ -n ${usage_features:-} ]]; then
+  options+=(--features "$usage_features")
+  command+=" --features $usage_features"
+fi
+exec .config/debug/trace.bash "$usage_package" "$usage_test" "${options[@]}" --command "$command"
+'''
+
+# `debug:refusal` is `debug:test` stopped where the refusal is made: each line
+# of each site `.config/debug/refusals.toml` lists for it, read from the
+# source now. At the stop the frame's locals and its caller's are the terms
+# the site compares. A refusal the table lacks is refused, naming the table.
+["debug:refusal"]
+description = "Run one test under lldb, stopped where a refusal is made, and write its transcript"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+usage = '''
+arg "<refusal>" help="the refusal's name, a table of .config/debug/refusals.toml"
+arg "<package>" help="the package holding the test, as cargo names it"
+arg "<test>" help="the test's full path in its binary, as nextest lists it"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+sites=$(yq -o=json ".refusal.\"$usage_refusal\".sites // []" .config/debug/refusals.toml)
+if [[ $(jq length <<< "$sites") == 0 ]]; then
+  echo "debug: .config/debug/refusals.toml names no site of \`$usage_refusal\`; add a [refusal.$usage_refusal] table" >&2
+  exit 2
+fi
+ats=()
+while IFS=$'\t' read -r file pattern; do
+  while IFS=: read -r line _; do
+    ats+=(--at "$file:$line")
+  done < <(grep -n -E -e "$pattern" "$file" || true)
+done < <(jq -r '.[] | "\(.file)\t\(.pattern)"' <<< "$sites")
+if [[ -z ${ats[*]:-} ]]; then
+  echo "debug: no line of the sites .config/debug/refusals.toml lists for \`$usage_refusal\` matches its pattern; the site moved, so correct the table" >&2
+  exit 2
+fi
+exec .config/debug/trace.bash "$usage_package" "$usage_test" "${ats[@]}" \
+  --command "mise run debug:refusal $usage_refusal $usage_package $usage_test"
+'''

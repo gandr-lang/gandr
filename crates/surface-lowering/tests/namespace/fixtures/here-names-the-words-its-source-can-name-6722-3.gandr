@@ -1,0 +1,5 @@
+import "./circle.gandr";
+def counted(p : Path[.A = Circle](Base, Base)) -> Integer =
+  match p where
+    | here => 0
+    | loop ∷ q => 1
