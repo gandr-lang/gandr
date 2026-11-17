@@ -1,0 +1,20 @@
+[
+  {
+    "name": "#4803: a read of the issue that fails is a failed read, and the wait runs on to its deadline",
+    "issue": "fail",
+    "output": "await-timeout #7",
+    "status": 2
+  },
+  {
+    "name": "#4803: a read of a signed issue that succeeds ends the wait on its event",
+    "issue": "{\"number\": 7, \"state\": \"open\", \"labels\": [{\"name\": \"shape:signed\"}]}",
+    "output": "signed #7",
+    "status": 0
+  },
+  {
+    "name": "#4803: a read of an unsigned issue that succeeds waits on to the deadline",
+    "issue": "{\"number\": 7, \"state\": \"open\", \"labels\": []}",
+    "output": "await-timeout #7",
+    "status": 2
+  }
+]

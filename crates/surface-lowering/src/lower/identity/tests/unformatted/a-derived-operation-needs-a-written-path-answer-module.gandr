@@ -1,0 +1,9 @@
+def g(p : Path[.A = Integer](1, 1)) -> -F Integer {
+  become Path.back p
+}
+data Triple(a : Type, b : Type, c : Type) : Type where {
+  | Mk : Triple(a, b, c)
+}
+def three(p : Path[.A = Integer](1, 1)) -> -F Triple(Integer, Integer, Integer) {
+  become Path.back p
+}

@@ -1,0 +1,4 @@
+{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}
+def armed(a : Nat) -> -F Nat {{ match a {{ | Zero => Zero | Succ(b) => {{ let d = twice b ; Succ d }} }} }}
+def chained(a : Nat) -> -F Nat {{ match a {{ | Zero => Zero | Succ(b) => {{ let e = twice b ; let f = twice e ; Succ f }} }} }}
+def reread(a : Nat) -> -F Nat {{ match a {{ | Zero => Zero | Succ(b) => {{ let g = twice b ; second g g }} }} }}

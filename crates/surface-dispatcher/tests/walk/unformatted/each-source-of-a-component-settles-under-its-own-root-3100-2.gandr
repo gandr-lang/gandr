@@ -1,0 +1,4 @@
+import "{}" ;
+
+@[ refuses("UnresolvedName") ]
+def missing = nowhere ;

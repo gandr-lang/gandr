@@ -1,0 +1,2 @@
+import "./base.gandr" ;
+@[ refuses("UnresolvedName") ] def bad = missing ;

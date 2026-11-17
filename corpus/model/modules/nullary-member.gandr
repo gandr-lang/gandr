@@ -1,0 +1,24 @@
+//! This source shows calls with no arguments.
+//!
+//! A module member and a suspension can receive an empty call. The call forces
+//! a thunk, after the call-by-push-value of Levy.
+//!
+//! The checker treats each empty call as a force of its head. The call answers
+//! at the call, as a call that applies arguments does.
+//!
+//! - cites: [Levy-2003-callbypushvalue_functional_imperative_synthesis]
+//!
+//! [Levy-2003-callbypushvalue_functional_imperative_synthesis]: https://doi.org/10.1007/978-94-007-0954-6 "Levy, Call-By-Push-Value"
+
+/// `Origin` has an empty-argument member.
+module Origin where
+  /// `zero` gives the starting point.
+  def zero() -> Integer { 0 }
+
+/// `started` calls `Origin.zero`.
+@[runs("0")]
+def started() -> Integer { Origin.zero () }
+
+/// `restarted` calls `started`.
+@[runs("0")]
+def restarted() -> Integer { started () }
