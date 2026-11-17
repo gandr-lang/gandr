@@ -5553,7 +5553,8 @@ fn read_spending(
 /// # Specification
 /// - ensures: the first unresolved node is sought in content, then support,
 ///   then verdict field order. A codata declaration, or a codata application in
-///   any plane, is refused as codata: [`write_node`] states the second.
+///   any plane, is refused as codata:
+///   [`write_node`](gandr_core_content::codec::write_node) states the second.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — separate malformed content, support, synthesised and

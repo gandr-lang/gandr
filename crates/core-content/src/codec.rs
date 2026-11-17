@@ -278,6 +278,7 @@ where
     ///   endianness and prefix preservation. The hash sink is checked against
     ///   the digest of those fixed bytes.
     /// - witness: `gandr-core-incremental::codec::tests::primitive_frames_have_known_bytes_and_digest`
+    #[inline]
     pub fn tag(
         &mut self,
         tag: Tag,
@@ -297,6 +298,7 @@ where
     ///   endianness and prefix preservation. The hash sink is checked against
     ///   the digest of those fixed bytes.
     /// - witness: `gandr-core-incremental::codec::tests::primitive_frames_have_known_bytes_and_digest`
+    #[inline]
     pub fn word(
         &mut self,
         word: Word,
@@ -316,6 +318,10 @@ where
     ///   prefix. The predicate states the width refusal exactly; a count wider
     ///   than 64 bits is unwitnessed.
     /// - witness: `gandr-core-incremental::codec::tests::primitive_frames_have_known_bytes_and_digest`
+    ///
+    /// # Errors
+    /// A [`CodecError`] for a value that has no byte form, or a sink that
+    /// refuses.
     #[spec(
         ensures: |ret| {
             ret == u64::try_from(count.0)
@@ -323,6 +329,7 @@ where
                 .map_err(|_overflow| CodecError::Unrepresentable)
         },
     )]
+    #[inline]
     pub fn count(
         &mut self,
         count: Count,
@@ -344,6 +351,10 @@ where
     ///   follows its exact length prefix. Output bytes are witnessed because
     ///   the generic sink has no observer.
     /// - witness: `gandr-core-incremental::codec::tests::primitive_frames_have_known_bytes_and_digest`
+    ///
+    /// # Errors
+    /// A [`CodecError`] for a value that has no byte form, or a sink that
+    /// refuses.
     #[spec(
         ensures: |ret| {
             ret == u64::try_from(bytes.0.len())
@@ -351,6 +362,7 @@ where
                 .map_err(|_overflow| CodecError::Unrepresentable)
         },
     )]
+    #[inline]
     pub fn bytes(
         &mut self,
         bytes: Bytes<'_>,
@@ -405,6 +417,9 @@ impl<'data> Reader<'data>
             | None => self.cursor == before && ret == Err(CodecError::Corrupt),
         },
     )]
+    /// # Errors
+    /// A [`CodecError`] for bytes that the writer does not give.
+    #[inline]
     pub fn take(
         &mut self,
         count: Count,
@@ -432,6 +447,9 @@ impl<'data> Reader<'data>
     /// - hypothesis: L3 — the byte following a known word is read exactly; a
     ///   read past the end is refused.
     /// - witness: `gandr-core-incremental::codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
+    ///
+    /// # Errors
+    /// A [`CodecError`] for bytes that the writer does not give.
     #[spec(
         captures: [before = self.cursor],
         ensures: |ret| match self.bytes.get(before) {
@@ -439,6 +457,7 @@ impl<'data> Reader<'data>
             | None => self.cursor == before && ret == Err(CodecError::Corrupt),
         },
     )]
+    #[inline]
     pub fn tag(&mut self) -> Result<Tag, CodecError>
     {
         let taken = self.take(Count(1))?;
@@ -475,6 +494,9 @@ impl<'data> Reader<'data>
             | _ => self.cursor == before && ret == Err(CodecError::Corrupt),
         },
     )]
+    /// # Errors
+    /// A [`CodecError`] for bytes that the writer does not give.
+    #[inline]
     pub fn word(&mut self) -> Result<Word, CodecError>
     {
         let taken = self.take(Count(8))?;
@@ -511,6 +533,9 @@ impl<'data> Reader<'data>
             | _ => self.cursor == before && ret == Err(CodecError::Corrupt),
         },
     )]
+    /// # Errors
+    /// A [`CodecError`] for bytes that the writer does not give.
+    #[inline]
     pub fn count(&mut self) -> Result<Count, CodecError>
     {
         let word = self.word()?;
@@ -550,6 +575,9 @@ impl<'data> Reader<'data>
             | _ => self.cursor == before && ret == Err(CodecError::Corrupt),
         },
     )]
+    /// # Errors
+    /// A [`CodecError`] for bytes that the writer does not give.
+    #[inline]
     pub fn bytes(&mut self) -> Result<Bytes<'data>, CodecError>
     {
         let count = self.count()?;
@@ -593,6 +621,9 @@ impl<'data> Reader<'data>
             | _ => self.cursor == before && ret == Err(CodecError::Corrupt),
         },
     )]
+    /// # Errors
+    /// A [`CodecError`] for bytes that the writer does not give.
+    #[inline]
     pub fn text(&mut self) -> Result<String, CodecError>
     {
         let bytes = self.bytes()?;
@@ -620,6 +651,9 @@ impl<'data> Reader<'data>
             }
         },
     )]
+    /// # Errors
+    /// A [`CodecError`] for bytes that the writer does not give.
+    #[inline]
     pub fn finish(&self) -> Result<(), CodecError>
     {
         if self.cursor == self.bytes.len() {
@@ -661,6 +695,9 @@ impl<'data> Reader<'data>
         }
     },
 )]
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
+#[inline]
 pub fn write_reference<Out>(
     writer: &mut Writer<'_, Out>,
     reference: &Reference,
@@ -696,6 +733,9 @@ where
 ///
 /// # Cost
 /// - allocation: the key of the reference, growth within the bytes
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -724,6 +764,7 @@ where
         | Err(error) => error == CodecError::Corrupt && reader.cursor >= before,
     },
 )]
+#[inline]
 pub fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
 {
     let tag = reader.tag()?;
@@ -754,6 +795,10 @@ pub fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
 /// - hypothesis: L3 — a migration to a declared world and a handle at one round
 ///   trip, and the host's world reads back as itself.
 /// - witness: `gandr-core-incremental::codec::tests::world_formers_round_trip_under_their_own_tags_3381`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
+#[inline]
 pub fn write_world<Out>(
     writer: &mut Writer<'_, Out>,
     world: &crate::WorldContent,
@@ -788,6 +833,7 @@ where
 /// # Cost
 /// - allocation: the reference of a declared world, growth within the bytes
 #[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
+#[inline]
 pub fn read_world(reader: &mut Reader<'_>) -> Result<crate::WorldContent, CodecError>
 {
     match reader.tag()?.0 {
@@ -809,6 +855,9 @@ pub fn read_world(reader: &mut Reader<'_>) -> Result<crate::WorldContent, CodecE
 ///   offset for decoder fixtures; validated checkpoint encoding refuses it.
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
 #[spec(
     ensures: |ret| {
         ret == u64::try_from(level.atoms().count())
@@ -816,6 +865,7 @@ pub fn read_world(reader: &mut Reader<'_>) -> Result<crate::WorldContent, CodecE
             .map_err(|_overflow| CodecError::Unrepresentable)
     },
 )]
+#[inline]
 pub fn write_level<Out>(
     writer: &mut Writer<'_, Out>,
     level: &Level,
@@ -851,6 +901,9 @@ where
 ///   independently prove normalization of every atom sequence.
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref level) => level
@@ -867,6 +920,7 @@ where
         | Err(error) => error == CodecError::Corrupt,
     },
 )]
+#[inline]
 pub fn read_level(reader: &mut Reader<'_>) -> Result<Level, CodecError>
 {
     let constant = reader.word()?;
@@ -917,6 +971,9 @@ pub fn read_level(reader: &mut Reader<'_>) -> Result<Level, CodecError>
         | None => reader.cursor == before && ret == Err(CodecError::Corrupt),
     },
 )]
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
+#[inline]
 pub fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
 {
     let tag = reader.tag()?;
@@ -1017,6 +1074,9 @@ where
 ///   consuming available payload bytes.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `gandr-core-incremental::codec::tests::decoders_reject_unknown_tags_before_payloads`
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -1040,6 +1100,7 @@ where
         | Err(error) => error == CodecError::Corrupt && reader.cursor >= before,
     },
 )]
+#[inline]
 pub fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
 {
     let tag = reader.tag()?;
@@ -1117,6 +1178,10 @@ fn read_fixed(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
+#[inline]
 pub fn write_index<Out>(
     writer: &mut Writer<'_, Out>,
     index: NodeIndex,
@@ -1131,6 +1196,10 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
+#[inline]
 pub fn read_index(reader: &mut Reader<'_>) -> Result<NodeIndex, CodecError>
 {
     let count = reader.count()?;
@@ -1274,6 +1343,7 @@ fn read_piece(reader: &mut Reader<'_>) -> Result<WebPiece, CodecError>
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn write_region<Out>(
     writer: &mut Writer<'_, Out>,
     region: gandr_core_term::effect::capability::Region,
@@ -1335,6 +1405,9 @@ fn read_region(
 ///   fields.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
 #[spec(
     ensures: |ret| match *node {
         | ContentNode::Unresolved(sort) => {
@@ -1348,6 +1421,7 @@ fn read_region(
         | _ => matches!(ret, Ok(()) | Err(CodecError::Unrepresentable)),
     },
 )]
+#[inline]
 pub fn write_node<Out>(
     writer: &mut Writer<'_, Out>,
     node: &ContentNode,
@@ -2267,6 +2341,10 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — native round trips distinguish argument and branch order.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
+#[inline]
 pub fn write_indices<Out>(
     writer: &mut Writer<'_, Out>,
     indices: &[NodeIndex],
@@ -2295,7 +2373,11 @@ where
 ///
 /// # Cost
 /// - allocation: the list of child indices, growth within the bytes
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.as_ref().map_or(true,|indices| reader.cursor == before.saturating_add(8).saturating_add(indices.len().saturating_mul(8))))]
+#[inline]
 pub fn read_indices(reader: &mut Reader<'_>) -> Result<Vec<NodeIndex>, CodecError>
 {
     let count = reader.count()?;
@@ -2829,6 +2911,10 @@ fn read_description(reader: &mut Reader<'_>)
 /// - hypothesis: L3 — a composite and its refusal survive persistence with
 ///   their pasting, a chain's, a level-two shape's and a level-three tree's.
 /// - witness: `gandr-core-incremental::codec::tests::every_refusal_round_trips_under_its_own_encoding`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
+#[inline]
 pub fn write_pasting<Out>(
     writer: &mut Writer<'_, Out>,
     pasting: gandr_core_term::compose::Pasting,
@@ -2876,7 +2962,11 @@ where
 /// - hypothesis: L3 — a composite and its refusal survive persistence with
 ///   their pasting, a chain's, a level-two shape's and a level-three tree's.
 /// - witness: `gandr-core-incremental::codec::tests::every_refusal_round_trips_under_its_own_encoding`
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
+#[inline]
 pub fn read_pasting(
     reader: &mut Reader<'_>
 ) -> Result<gandr_core_term::compose::Pasting, CodecError>
@@ -3009,7 +3099,11 @@ fn read_effect_signature(
 /// - hypothesis: L3 — relocation and persistence distinguish operation names
 ///   and types.
 /// - witness: `gandr-core-incremental::codec::tests::effect_rows_persist_operation_types_and_canonical_identity`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
 #[spec(ensures: |ret| matches!(ret, Ok(()) | Err(CodecError::Unrepresentable)))]
+#[inline]
 pub fn write_effect_row<Out>(
     writer: &mut Writer<'_, Out>,
     row: &gandr_core_term::effect::EffectRow<NodeIndex>,
@@ -3041,7 +3135,11 @@ where
 ///
 /// # Cost
 /// - allocation: the instance map of the row, growth within the bytes
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(captures: [before = reader.cursor], ensures: |ret| match ret { Ok(_) => reader.cursor > before && reader.cursor <= reader.bytes.len(), Err(error) => error == CodecError::Corrupt })]
+#[inline]
 pub fn read_effect_row(
     reader: &mut Reader<'_>
 ) -> Result<gandr_core_term::effect::EffectRow<NodeIndex>, CodecError>
@@ -3079,7 +3177,11 @@ pub fn read_effect_row(
 ///
 /// # Cost
 /// - allocation: the tail of the row literal, growth within the bytes
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(captures: [before = reader.cursor], ensures: |ret| ret.is_err() || reader.cursor > before)]
+#[inline]
 pub fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, CodecError>
 {
     match reader.tag()?.0 {
@@ -3113,6 +3215,9 @@ pub fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, Codec
 /// # Cost
 /// - allocation: the node's own lists of children and fields, growth within the
 ///   stored table
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -3267,6 +3372,7 @@ pub fn read_row_tail(reader: &mut Reader<'_>) -> Result<Option<NodeIndex>, Codec
         | Err(error) => matches!(error,CodecError::Corrupt | CodecError::NonCanonical),
     },
 )]
+#[inline]
 pub fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
 {
     let tag = reader.tag()?;
@@ -4081,10 +4187,12 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
         .map_err(|_overflow| CodecError::Corrupt)
 }
 
-/// Write a supported table: its count, each node's former and scope, then
-/// every node's edges in node and child order. A cover holds one edge per
-/// child of its former and an edge is as wide as its child's scope, so
-/// neither a cover's arity nor an edge's widths is written.
+/// Write a supported table.
+///
+/// The table is its count, each node's former and scope, then every node's
+/// edges in node and child order. A cover holds one edge per child of its
+/// former, and an edge is as wide as its child's scope. So neither a cover's
+/// arity nor an edge's widths is written.
 ///
 /// # Specification
 /// - ensures: successful tables contain no unresolved node; an unsupported
@@ -4099,6 +4207,9 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 /// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
 /// - witness: `gandr-core-incremental::codec::tests::a_stored_form_refuses_a_codata_application_7403`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
 #[spec(
     ensures: |ret| match ret {
         | Ok(()) => nodes
@@ -4118,6 +4229,7 @@ fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
         | _ => false,
     },
 )]
+#[inline]
 pub fn write_nodes<Out>(
     writer: &mut Writer<'_, Out>,
     nodes: &[SupportedNode],
@@ -4148,6 +4260,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a table with covers in both zones round-trips.
 /// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[inline]
 pub fn write_selection<Out>(
     writer: &mut Writer<'_, Out>,
     thinning: &Thinning,
@@ -4172,10 +4285,14 @@ pub fn write_selection<Out>(
 /// # Adequacy
 /// - hypothesis: L3 — a descending forged root support is refused.
 /// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(ensures: |ret| match ret {
     Ok(ref selected) => selected.scope() == scope,
     Err(error) => error == CodecError::Corrupt,
 })]
+#[inline]
 pub fn read_selection(
     reader: &mut Reader<'_>,
     scope: Scope,
@@ -4207,8 +4324,12 @@ pub fn read_selection(
 /// # Adequacy
 /// - hypothesis: L3 — a table with scopes in both zones round-trips.
 /// - witness: `gandr-core-incremental::codec::tests::supported_tables_round_trip_and_reject_forged_support`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
 #[spec(ensures: |ret| ret.is_ok() == [Zone::Intuitionistic, Zone::Linear].into_iter()
     .all(|zone| u32::try_from(usize::from(scope.width(zone))).is_ok()))]
+#[inline]
 pub fn write_scope<Out>(
     writer: &mut Writer<'_, Out>,
     scope: Scope,
@@ -4253,10 +4374,12 @@ fn read_scope(reader: &mut Reader<'_>) -> Result<Scope, CodecError>
     ))
 }
 
-/// Read a supported table and rebuild it: every node's former and scope,
-/// then each edge as wide as its child's scope; every child in range and of
-/// its required sort, the table acyclic, every cover the exact minimal cover
-/// of its node, no node twice, and every node's references recomputed.
+/// Read a supported table and rebuild it.
+///
+/// The reader takes every node's former and scope, then each edge as wide as
+/// its child's scope. It checks every child in range and of its required
+/// sort, the table acyclic, every cover the exact minimal cover of its node,
+/// and no node twice. It recomputes every node's references.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -4280,6 +4403,9 @@ fn read_scope(reader: &mut Reader<'_>) -> Result<Scope, CodecError>
 /// # Cost
 /// - allocation: the nodes and their lists of children, growth within the
 ///   stored table
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref nodes) => {
@@ -4298,6 +4424,7 @@ fn read_scope(reader: &mut Reader<'_>) -> Result<Scope, CodecError>
         | Err(error) => matches!(error,CodecError::Corrupt | CodecError::NonCanonical),
     },
 )]
+#[inline]
 pub fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<SupportedNode>, CodecError>
 {
     let count = reader.count()?;
@@ -4395,6 +4522,9 @@ pub fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<SupportedNode>, CodecEr
         }
     },
 )]
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
+#[inline]
 pub fn check_discovery<Roots>(
     nodes: &[SupportedNode],
     roots: Roots,
@@ -4442,6 +4572,10 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
+#[inline]
 pub fn write_node_content<Out>(
     sink: &mut Out,
     content: &TypeContent,
@@ -4457,6 +4591,10 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
+#[inline]
 pub fn write_type<Out>(
     writer: &mut Writer<'_, Out>,
     content: &TypeContent,
@@ -4537,6 +4675,9 @@ where
         | Err(_) => false,
     },
 )]
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
+#[inline]
 pub fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 {
     let nodes = read_nodes(reader)?;
@@ -4573,6 +4714,7 @@ pub fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 ///   position and the joint one with its positions in order.
 /// - witness: `gandr-core-incremental::codec::tests::fixpoint_evidence_round_trips_with_its_staged_position`
 #[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+#[inline]
 pub fn write_evidence<Out>(
     writer: &mut Writer<'_, Out>,
     evidence: FixpointEvidence,
@@ -4624,6 +4766,7 @@ where
 /// - hypothesis: L3 — as [`write_evidence`], and a tag past 4 is corrupt.
 /// - witness: `gandr-core-incremental::codec::tests::fixpoint_evidence_round_trips_with_its_staged_position`
 #[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+#[inline]
 pub fn read_evidence(reader: &mut Reader<'_>) -> Result<FixpointEvidence, CodecError>
 {
     let tag = reader.tag()?;

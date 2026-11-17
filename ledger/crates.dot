@@ -159,6 +159,8 @@ digraph crates {
   "core-content" -> "core-term";
   "core-content" -> "kernel-strata";
   "core-content" -> "kernel-term";
+  "core-content" -> "theory-levitation";
+  "core-content" -> "theory-sites";
   "core-fork" -> "kernel-core";
   "core-incremental" -> "core-checker";
   "core-incremental" -> "core-content";
