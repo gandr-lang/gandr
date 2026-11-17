@@ -251,7 +251,6 @@ done < <(jq -r '.superseded[] | select(has("issue")) | [.rule, .surface, (.issue
 # exemplar under `corpus/ledger/syntax/superseded/` states the refusal, so a
 # change that reads the spelling again fails `check:exemplars`. Each file
 # there is the exemplar of one such row.
-superseded=corpus/ledger/syntax/superseded
 while IFS=$'\t' read -r rule surface refusal exemplar; do
   path=ledger/$exemplar
   path=${path#ledger/../}
@@ -268,7 +267,7 @@ while IFS= read -r path; do
     echo "$path: no refused spelling of ledger/syntax.json names this exemplar; name it in a row, or take it out" >&2
     failed=1
   fi
-done < <(git ls-files -- "$superseded/*.gandr")
+done < <(git ls-files -- 'corpus/ledger/syntax/superseded/*.gandr')
 if (( failed )); then
   echo 'ledger check FAILED' >&2
   exit 1
