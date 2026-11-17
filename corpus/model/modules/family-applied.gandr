@@ -3,8 +3,8 @@
 // `Shapes` declares option, pair and box families. A model of a theory with an
 // indexed sort supplies the sort as such a family.
 //
-// The checker resolves family arguments through qualified names, each family
-// applied by juxtaposition.
+// The checker resolves family arguments through qualified names. Each family
+// applies to its arguments by juxtaposition.
 //
 // - see: #3051
 // - see: #5753
