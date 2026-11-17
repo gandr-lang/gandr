@@ -1970,9 +1970,9 @@ fn split_step(
 /// # Specification
 /// - requires: `field` and `stated` are read at depth `equation`, and the
 ///   constructors take `arities`' count of fields each.
-/// - ensures: `Path(A, a, case p { tag(…) => the field at position, _ => a })`,
-///   with `A` the field type and `a` the stated side. At the constructor's own
-///   application, the case answers that application's field, so the family
+/// - ensures: `Path[.A = A](a, case p { tag(…) => the field at position, _ => a
+///   })`, with `A` the field type and `a` the stated side. At the constructor's
+///   own application, the case answers that application's field, so the family
 ///   holds the reflexivity at the stated side. Each node of the case joins
 ///   `minted`.
 /// - fails: as [`refined_arm`].

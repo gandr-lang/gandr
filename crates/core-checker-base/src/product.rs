@@ -13,7 +13,7 @@
 //! quoted closed first-order code, as [`crate::formation::path_code`] reads
 //! one. From `p` relating `⌜A⌝` to `⌜A′⌝` and `q` relating `⌜B⌝` to `⌜B′⌝` the
 //! product relates the eager pairs `⌜A × B⌝` and `⌜A′ × B′⌝`: at
-//! `Path(Type, …)` when either component reads as an element identity, at
+//! `Path[.A = Type](…)` when either component reads as an element identity, at
 //! `Path_U(…)` when both are native. The product is binary, as the kernel's
 //! is, so a telescope nests to the right: `pathProduct(p₀, pathProduct(p₁,
 //! p₂))` relates `⌜A₀ × (A₁ × A₂)⌝`.
@@ -72,10 +72,11 @@
 //!   where it now compares one. Reversal: a core whose universe certificates
 //!   are one former on both sides of the bridge.
 //! - **Both readings of a component.** The surface writes universe paths at
-//!   `Path(Type, …)` and the checker's own forms stand at `Path_U`, so a rule
-//!   that read one would refuse the other's products. A product over native
-//!   components alone keeps the native classifier, so a native module's product
-//!   types as it always has. Reversal: one universe path type in the core.
+//!   `Path[.A = Type](…)` and the checker's own forms stand at `Path_U`, so a
+//!   rule that read one would refuse the other's products. A product over
+//!   native components alone keeps the native classifier, so a native module's
+//!   product types as it always has. Reversal: one universe path type in the
+//!   core.
 //! - **Open components refused.** The kernel's product rule reads each
 //!   component's native classifier, and a path a parameter binds has none, so
 //!   accepting it would leave the kernel to refuse what the checker admitted.

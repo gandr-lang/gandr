@@ -3988,8 +3988,8 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
     let declared = arena.value_type_thunk(arrow);
     let staged = staging.def(LevelSignature::monomorphic(), declared, body);
     let _spin = environment.add_decl(staged).expect("spin checks");
-    // `stated : (n : N) → F Path(Path(S, Base, Base), loop ∷ ⟨y ← spin(n)⟩,
-    // loop ∷ ⟨y ← spin(n)⟩)`, and its call where `⟨y ← spin(Sc(n))⟩`
+    // `stated : (n : N) → F Path[.A = Path[.A = S](Base, Base)](loop ∷ ⟨y ←
+    // spin(n)⟩, loop ∷ ⟨y ← spin(n)⟩)`, and its call where `⟨y ← spin(Sc(n))⟩`
     // stands at both ends, each reading the first result past a bind of
     // both.
     let path_at = |arena: &mut TermArena, successor: bool| {

@@ -1796,7 +1796,7 @@ fn corruption_selects_every_matching_name()
 /// The code picker `pick : U ((a : Type) -> El a -> F Type)`, its call
 /// `chosen : U (F Type) = thunk ((force pick) ?a) 0`, which omits the code its
 /// argument fixes, and under the item key `last` the path
-/// `Path(U (F Type), chosen, thunk (return Integer))` by `here`.
+/// `Path[.A = U (F Type)](chosen, thunk (return Integer))` by `here`.
 ///
 /// # Specification
 /// - ensures: three signed declarations; the path converts only once the call's

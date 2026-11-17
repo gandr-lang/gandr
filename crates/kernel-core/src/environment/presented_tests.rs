@@ -578,7 +578,7 @@ fn a_check_waits_on_the_words_over_each_sort_it_names_3476()
 #[test]
 fn a_path_that_computes_its_point_is_set_aside_against_its_words_5099()
 {
-    // `Path(S, x, x)` against the words at `base`: neither endpoint spells
+    // `Path[.A = S](x, x)` against the words at `base`: neither endpoint spells
     // the point, so the walk sets the pair aside for its reader, in either
     // order. A path over a type the words do not loop in stays apart.
     let mut environment = point();
@@ -623,7 +623,7 @@ fn a_path_that_computes_its_point_is_set_aside_against_its_words_5099()
         "no cell loops in the words themselves"
     );
 
-    // `c = λy. return here(y)` at `(y : S) → F Path(S, y, y)`, then
+    // `c = λy. return here(y)` at `(y : S) → F Path[.A = S](y, y)`, then
     // `λx. return ⟨force c x⟩` at `S → F words`: the path at an open `x`
     // reads as the words only if `x` reads as `base`, and it does not.
     let mut staging = environment.stage();
