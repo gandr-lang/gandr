@@ -38,7 +38,7 @@ error[TacticRefused]: the splice running `assumption` stands where no type is kn
    ├ note: `loose` is refused with TacticRefused, as its expectation states
    ╰ help: replace the tactic with a proof term
 
-error[UnknownTactic]: a splice runs a tactic: `assumption`, or `intro(t)` of a tactic `t`, under fewer than 32 introductions
+error[UnknownTactic]: a splice runs a tactic: `assumption`, or `intro(t)` of a tactic `t`, under fewer than 32 introductions, or `ports e` of a call that returns several outputs
    ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:23:38
    │
 23 │ def named(x : Integer) -> Integer { ~x }

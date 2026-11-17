@@ -21,6 +21,12 @@ def labelled() -> -F Integer =
   let (.s, .d) = diffSum 7 2
   return s - d
 
+/// A caller collects the outputs into the record of its outputs.
+@[runs("14")]
+def collected() -> -F Integer =
+  let both = ~ports (sumDiff 7 2)
+  return both.s + both.d
+
 /// A caller selects one output.
 @[checks]
 def total(m : Integer) -> Integer =

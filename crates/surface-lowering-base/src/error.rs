@@ -1868,11 +1868,23 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A splice `~t` whose operand writes no tactic: `assumption`, or
-    /// `intro(t)` of a tactic, under fewer than 32 introductions.
+    /// `intro(t)` of a tactic, under fewer than 32 introductions, or `ports e`
+    /// of a call that returns several outputs.
     UnknownTactic
     {
         /// The bytes of the operand.
         span: ByteSpan,
+    },
+
+    /// A call that returns several outputs, where one value is read. An
+    /// output group binds the outputs, and `~ports e` collects them into the
+    /// record of its outputs.
+    OutputsAsOneValue
+    {
+        /// The bytes of the call.
+        span: ByteSpan,
+        /// The callee, as written.
+        callee: SurfaceName<'source>,
     },
 
     /// The lowering's work allowance ran out.
@@ -2547,7 +2559,14 @@ impl fmt::Display for LoweringRefusal<'_>
             ),
             Self::UnknownTactic { .. } => f.write_str(
                 "a splice runs a tactic: `assumption`, or `intro(t)` of a tactic `t`, under \
-                 fewer than 32 introductions",
+                 fewer than 32 introductions, or `ports e` of a call that returns several \
+                 outputs",
+            ),
+            Self::OutputsAsOneValue { callee, .. } => write!(
+                f,
+                "`{callee}` returns several outputs, and one value stands here: bind them with \
+                 an output group, `(s, d)` or `(.s, .d)`, or collect them into a record with \
+                 `~ports e`"
             ),
             Self::GenericMisplaced { .. } => f.write_str(
                 "`Eq.generic` stands only as a definition's whole body, applied to one data \
@@ -2802,6 +2821,7 @@ impl LoweringRefusal<'_>
             | Self::DerivedComponent { span, .. }
             | Self::GenericMisplaced { span }
             | Self::UnknownTactic { span }
+            | Self::OutputsAsOneValue { span, .. }
             | Self::GenericUncovered { span, .. }
             | Self::UnknownMold { span, .. }
             | Self::HostConflict { span }
@@ -2874,7 +2894,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 80_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 81_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3240,6 +3260,10 @@ mod tests
                 second: SurfaceName::from("Light"),
                 more: CandidateCount::from(0_usize),
             },
+            LoweringRefusal::OutputsAsOneValue {
+                span: s(151_usize, 152_usize),
+                callee: SurfaceName::from("sumDiff"),
+            },
         ]
     }
 
@@ -3331,6 +3355,7 @@ mod tests
             s(145_usize, 146_usize),
             s(147_usize, 148_usize),
             s(149_usize, 150_usize),
+            s(151_usize, 152_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

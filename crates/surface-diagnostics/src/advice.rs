@@ -516,6 +516,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::UnknownTactic { .. } => {
             String::from("replace the tactic with a supported tactic")
         },
+        LoweringRefusal::OutputsAsOneValue { .. } => String::from(
+            "bind the outputs with an output group, `let (s, d) = …`, or write `~ports e`",
+        ),
         LoweringRefusal::ViewOfNoPlace { .. } => {
             String::from("call a method that returns a place before the view block")
         },
@@ -1423,7 +1426,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 246] = [
+    const WORDED: [&str; 247] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1590,6 +1593,7 @@ mod tests
         "UnderivedRule",
         "UnknownAttribute",
         "UnknownTactic",
+        "OutputsAsOneValue",
         "Unlocated",
         "UnofferedLabel",
         "UnrestrictedEndpoint",
