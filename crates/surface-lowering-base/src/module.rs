@@ -11771,6 +11771,8 @@ pub struct KeyedTables<'source>
     stage_bounds: Arc<BTreeMap<UnitKey, Vec<gandr_kernel_term::StageBound>>>,
     /// As [`LoweredModule::region_names`] reads them.
     region_names: Arc<BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>>,
+    /// As [`LoweredModule::stage_names`] reads them.
+    stage_names: Arc<BTreeMap<ConstantIndex, Vec<SurfaceName<'source>>>>,
     /// As [`LoweredModule::implicits`] reads them.
     implicits: Arc<BTreeMap<ConstantIndex, ImplicitTelescope<'source>>>,
     /// As [`LoweredModule::model_slots`] reads them.
@@ -11886,6 +11888,9 @@ pub struct LoweredModule<'source>
     /// The name of each region binder of each definition over regions, by
     /// ordinal, by the definition's position.
     region_names: Layered<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+    /// The name of each stage binder of each function quantified over
+    /// stages, in stage order, by the function's position.
+    stage_names: Layered<ConstantIndex, Vec<SurfaceName<'source>>>,
     /// Each function written with an implicit telescope, the parameters of
     /// its merged telescope in order, an implicit's name and none for an
     /// explicit parameter, beside the names its written block holds, by the
@@ -11981,6 +11986,7 @@ impl<'source> LoweredModule<'source>
             operation_rules: Layered::whole(BTreeMap::new()),
             stage_bounds: Layered::whole(BTreeMap::new()),
             region_names: Layered::whole(BTreeMap::new()),
+            stage_names: Layered::whole(BTreeMap::new()),
             implicits: Layered::whole(BTreeMap::new()),
             model_slots: Layered::whole(BTreeMap::new()),
             supplies: Layered::whole(BTreeMap::new()),
@@ -12244,6 +12250,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.region_names = Layered::whole(region_names);
+        self
+    }
+
+    /// This module, carrying `stage_names`, each function's stage binder
+    /// names in stage order, by its position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_stage_names(
+        mut self,
+        stage_names: BTreeMap<ConstantIndex, Vec<SurfaceName<'source>>>,
+    ) -> Self
+    {
+        self.stage_names = Layered::whole(stage_names);
         self
     }
 
@@ -12567,6 +12589,8 @@ impl<'source> LoweredModule<'source>
                 Layered::whole(BTreeMap::new()),
             )
             .shared(),
+            stage_names: core::mem::replace(&mut self.stage_names, Layered::whole(BTreeMap::new()))
+                .shared(),
             implicits: core::mem::replace(&mut self.implicits, Layered::whole(BTreeMap::new()))
                 .shared(),
             model_slots: core::mem::replace(&mut self.model_slots, Layered::whole(BTreeMap::new()))
@@ -12637,6 +12661,7 @@ impl<'source> LoweredModule<'source>
         self.operation_rules = self.operation_rules.after(&closure.operation_rules);
         self.stage_bounds = self.stage_bounds.after(&closure.stage_bounds);
         self.region_names = self.region_names.after(&closure.region_names);
+        self.stage_names = self.stage_names.after(&closure.stage_names);
         self.implicits = self.implicits.after(&closure.implicits);
         self.model_slots = self.model_slots.after(&closure.model_slots);
         self.supplies = self.supplies.after(&closure.supplies);
@@ -13786,6 +13811,36 @@ impl<'source> LoweredModule<'source>
     {
         match self.implicits.get(&constant) {
             Maybe::Present(telescope) => telescope.written.as_slice(),
+            Maybe::Absent(_) => &[],
+        }
+    }
+
+    /// The names of the stage binders the written block of the function at
+    /// `constant` holds, in stage order: what a printed definition writes as
+    /// `[i : Size]`, beside the bound [`Self::stages`] holds at the same
+    /// position.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name of each entry `i : Size` of the block, in written
+    ///   order; the empty slice for a position whose function writes no stage.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block with a stage before a type implicit and a
+    ///   block with a stage below another separate the order and the count.
+    /// - witness: `gandr-surface-dispatcher::parity::a_definition_s_stage_binders_are_printed_in_its_block_7856`
+    #[spec(ensures: |ret| ret.is_empty() != matches!(self.stage_names.get(&constant), Maybe::Present(_)))]
+    #[inline]
+    #[must_use]
+    pub fn stage_names(
+        &self,
+        constant: ConstantIndex,
+    ) -> &[SurfaceName<'source>]
+    {
+        match self.stage_names.get(&constant) {
+            Maybe::Present(names) => names.as_slice(),
             Maybe::Absent(_) => &[],
         }
     }

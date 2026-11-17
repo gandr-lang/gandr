@@ -1361,6 +1361,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Some((constant, names))
                 })
                 .collect();
+        // Each function quantified over stages names its binders in stage
+        // order, so a printed definition writes them first in its block.
+        let stage_names: BTreeMap<ConstantIndex, Vec<SurfaceName<'source>>> = collected
+            .stage_binders
+            .range(own ..)
+            .filter_map(|(&slot, names)| {
+                let constant = collected.slots.get(usize::from(slot))?.constant;
+                Some((constant, names.clone()))
+            })
+            .collect();
         // Each function whose merged telescope binds an implicit or an
         // instance names it, so a printed call supplies it by name, and keeps
         // its written block, so a printed call supplies it by position. A
@@ -1500,6 +1510,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_operation_rules(operation_rules)
         .with_stage_bounds(stage_bounds)
         .with_region_names(region_names)
+        .with_stage_names(stage_names)
         .with_implicits(implicits)
         .with_model_slots(model_slots)
         .with_supplies(supplies)
