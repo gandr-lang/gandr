@@ -1,0 +1,12 @@
+command: mise run check:host-lock
+issue: #7688
+before: 1c2bdaddfd
+exit: 1
+[check:host-lock] $ .config/mise/host-lock-cases.bash
+host-lock: #7688: the gate draws on the porter's FIFO: -j2 --jobserver-auth=fifo:$scratch/porter-7688.fifo
+the host's counter's
+host-lock: #7688: the gate makes no FIFO of its share of 2: -j2 --jobserver-auth=fifo:$scratch/porter-7688.fifo
+the host's counter's
+[check:host-lock] ERROR task failed
+after: 56840e4020
+exit: 0

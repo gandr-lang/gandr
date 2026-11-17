@@ -1,0 +1,3 @@
+def direct : Integer;
+def direct = (MkCounter Seed).seed;
+def typed : MkCounter(Seed).T;

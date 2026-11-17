@@ -1,0 +1,6 @@
+{MAYBE}def ran() -> -F Integer {{
+  let n = pure (3 : Integer);
+  return (n : Integer)
+}}
+def tailed() -> -F Integer {{ (3 : Integer) }}
+def tailed_by_hand() -> -F Integer {{ return (3 : Integer) }}

@@ -1,0 +1,64 @@
+//! A case on a vector checks each arm at the fields of its own constructor.
+//!
+//! A case on an indexed family checks each constructor arm at its own fields.
+//! `oneLength` writes an arm that no index can select.
+//! `vector-head.gandr` omits that arm.
+//!
+//! An arm may return a constructor at a length that a call computes. The
+//! `VCons` arm of `vappend` returns `VCons` at `plus(m, Succ(k))`, which
+//! computes the length that `VCons` states.
+//!
+//! - cites: [Dybjer-1994-inductive_families] — a case that checks each arm at
+//!   its own constructor's fields
+//! - see: #3627 — a constructor at a length written as a call that computes
+//!   the length it states
+//!
+//! [Dybjer-1994-inductive_families]: https://doi.org/10.1007/BF01211308 "Dybjer, Inductive families"
+
+// The naturals the lengths count in.
+import "./data-base.gandr";
+
+// The vectors and the vector two long.
+import "./vectors.gandr";
+
+/// `vlength` returns a vector length from its `VCons` index.
+def vlength(n : Nat, v : Vec Integer n) -> Nat =
+  match v where
+    | VNil => Zero
+    | VCons(m, h, t) => Succ m
+
+/// `oneLength` reads a vector at length one.
+/// It writes a `VNil` arm although only zero selects it.
+def oneLength(v : Vec Integer (Succ Zero)) -> Nat =
+  match v where
+    | VNil => Zero
+    | VCons(m, h, t) => Succ m
+
+/// The length counted by structural recursion on the tail, which stands at
+/// the length its `VCons` states, one below the vector's.
+def rec vcount(n : Nat, v : Vec Integer n) -> Nat =
+  match v where
+    | VNil => Zero
+    | VCons(m, h, t) => Succ (vcount[<] m t)
+
+/// `pairRead` returns the length from the vector index.
+@[runs("Succ (Succ Zero)")]
+def pairRead() -> Nat { vlength (Succ (Succ Zero)) (pair ()) }
+
+/// `pairCount` calculates the length by recursion.
+@[runs("Succ (Succ Zero)")]
+def pairCount() -> Nat { vcount (Succ (Succ Zero)) (pair ()) }
+
+/// One vector after another, at the length `plus(m, n)`. Each `VCons` arm
+/// stands at `plus(m, Succ(k))`, the length its tail computes plus one.
+def rec vappend(a : Type, n : Nat, m : Nat, xs : Vec a n, ys : Vec a m) -> Vec a plus(m, n) =
+  match xs where
+    | VNil => ys
+    | VCons(k, x, xt) => VCons (plus m k) x (vappend[<] a k m xt ys)
+
+/// `pairsRead` returns the length of a vector appended to itself.
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
+def pairsRead() -> Nat =
+  vlength
+    (plus (Succ (Succ Zero)) (Succ (Succ Zero)))
+    (vappend Integer (Succ (Succ Zero)) (Succ (Succ Zero)) (pair ()) (pair ()))
