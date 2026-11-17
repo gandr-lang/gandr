@@ -1098,6 +1098,10 @@ pub struct Rule
     pub provenance: &'static str,
     /// Adaptation records, audit data only.
     pub adaptations: Vec<Adaptation>,
+    /// The sort of the operands that the rule's form takes by juxtaposition,
+    /// `Path a b`, where the form states it and the head's sort does not
+    /// decide it.
+    pub operands: Option<Sort>,
 }
 
 impl Rule
@@ -1132,6 +1136,7 @@ impl Rule
             prec,
             regex,
             adaptations: Vec::new(),
+            operands: None,
         }
     }
 
@@ -1156,6 +1161,7 @@ impl Rule
             regex,
             provenance: provenance.0,
             adaptations: Vec::new(),
+            operands: None,
         }
     }
 
@@ -1176,6 +1182,22 @@ impl Rule
         let mut rule = Self::new(name, sort, prec, regex);
         rule.adaptations.push(adaptation);
         rule
+    }
+
+    /// Declares the sort of the operands that the rule's form takes by
+    /// juxtaposition.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_operands(
+        mut self,
+        sort: Sort,
+    ) -> Self
+    {
+        self.operands = Some(sort);
+        self
     }
 
     /// The rule's identity.
@@ -1242,6 +1264,18 @@ impl Rule
     pub fn adaptations(&self) -> &[Adaptation]
     {
         &self.adaptations
+    }
+
+    /// The sort of the operands that the rule's form takes by juxtaposition,
+    /// where the form states it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operands(&self) -> Option<Sort>
+    {
+        self.operands
     }
 }
 

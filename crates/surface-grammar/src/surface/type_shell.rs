@@ -483,9 +483,14 @@ fn add_type_rules(
             ]),
         ])
     };
-    // A three-operand list writes the carrier first, `Path(A, a, b)`: the
+    // A path or a bridge states the sort of its endpoints one time: the list
+    // reads it while the list stands, and the juxtaposed endpoints read it,
+    // `Path a b`, so the head decides the sort and no window weighs a type
+    // group against a term group (#5750). `Path` alone is a whole form. A
+    // three-operand list writes the carrier first, `Path(A, a, b)`: the
     // grammar reads it, and the lowering refuses it by name, so the head
     // takes its carrier by name, `Path[.A = A](a, b)`.
+    let endpoint = Sort::Expression;
     for (name, head, retired) in [
         ("path_type", "Path", RetiredForm::PositionalPathCarrier),
         (
@@ -500,22 +505,23 @@ fn add_type_rules(
             type_application,
             Regex::seq([
                 tile(TileLabel(head)),
-                Regex::alt([
+                Regex::optional(Regex::alt([
                     Regex::seq([
                         tile(TileLabel("(")),
-                        Regex::sort(Sort::Expression),
+                        Regex::sort(endpoint),
                         tile(TileLabel(",")),
-                        Regex::sort(Sort::Expression),
+                        Regex::sort(endpoint),
                         Regex::optional(Regex::seq([
                             tile(TileLabel(",")),
-                            Regex::sort(Sort::Expression),
+                            Regex::sort(endpoint),
                         ])),
                         tile(TileLabel(")")),
                     ]),
                     supplied(Listed::Optionally),
-                ]),
+                ])),
             ]),
-        );
+        )
+        .with_operands(endpoint);
         carried.adaptations.push(Adaptation::refused(
             RuleName(name),
             retired,
