@@ -127,7 +127,11 @@ hold_gate_slot() {
   [[ $gate_slots =~ ^[1-9][0-9]*$ ]] || { echo "check: GANDR_GATE_SLOTS is \`$gate_slots\`, not a count of slots" >&2; exit 2; }
   if [[ ${GATE_NO_WAIT:-} == 1 ]]; then wait=(--no-wait); fi
   gate_lane=$(gate_lane)
-  host_lock ${wait[@]+"${wait[@]}"} --fd 8 "gate-lane-$gate_lane" 1 "$@"
+  if [[ ${GANDR_GATE_LANE_LOCKED:-} == "$gate_lane" ]]; then
+    gate_lane_preheld=1
+  else
+    host_lock ${wait[@]+"${wait[@]}"} --fd 8 "gate-lane-$gate_lane" 1 "$@"
+  fi
   gate_clock
   gate_seconds "$start" "$gate_clock"
   gate_wait_lane=$gate_seconds
@@ -253,7 +257,7 @@ gate_row() {
 
 # The one trap that ends a gate. It writes the row of an open gate before the
 # release, so the row's count of the gates beside still holds. Then it
-# releases the lane's lock, the slot and the jobserver's FIFO. Each step
+# releases the locks it owns, the slot and the jobserver's FIFO. Each step
 # guards its own failure, so the trap keeps the status of the gate.
 # - see: #7021 — the row of each gate
 gate_exit() {
@@ -264,7 +268,7 @@ gate_exit() {
   fi
   if [[ -n ${gate_locked:-} ]]; then
     host_unlock 9 || :
-    host_unlock 8 || :
+    if [[ -z ${gate_lane_preheld:-} ]]; then host_unlock 8 || :; fi
   fi
   if [[ -n ${gate_jobs_fifo:-} ]]; then rm -f "$gate_jobs_fifo" || :; fi
 }

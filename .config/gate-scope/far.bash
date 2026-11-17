@@ -81,6 +81,10 @@ case ${1:-} in
     lane=$7
     reader=${8:-}
     cd "$HOME" && cd "$2"
+    source .config/mise/gate.bash
+    host_lock --fd 8 "gate-lane-$lane" 1 "gate:remote of $commit"
+    export GANDR_GATE_LANE_LOCKED=$lane
+    trap 'host_unlock 8 || :' EXIT
     clone=${XDG_STATE_HOME:-$HOME/.local/state}/gandr/gate-remote/$lane
     if [[ ! -d $clone/.git ]]; then
       mkdir -p "${clone%/*}"
