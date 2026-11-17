@@ -2380,6 +2380,25 @@ fn ports_collects_the_outputs_of_a_call_5767()
             && whole.iter().any(|token| token == "tuple2"),
         "`~ports` of a call of unnamed outputs binds the tuple of them, {whole:?}"
     );
+    // The record of `~ports` and the record a source builds by hand from
+    // the bound outputs lower to the same 16 nodes, one record among them.
+    // Only the order of the binds differs: `~ports` binds the outputs inside
+    // the bind of the record.
+    let hand = body(&arena, &module, "hand");
+    let sorted = |tokens: &[String]| {
+        let mut tokens = tokens.to_vec();
+        tokens.sort();
+        tokens
+    };
+    assert_eq!(
+        (
+            named.len(),
+            named.iter().filter(|token| *token == "record{q,r}").count(),
+            sorted(&named)
+        ),
+        (16_usize, 1_usize, sorted(&hand)),
+        "`~ports` builds the one record that a source builds by hand, {named:?} {hand:?}"
+    );
 
     let bare = include_str!("tests/fixtures/a-bare-call-of-outputs-is-refused-5767.gandr");
     let call = bare.find("divmod a a").expect("the call is written");
