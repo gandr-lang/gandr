@@ -1,0 +1,7 @@
+theory Plain where {
+  sort N : Type;
+  oper first : () --> N;
+  oper second : () --> N;
+  oper choose : (x : N, y : N) --> N;
+  rule left : choose x y ==> x;
+}

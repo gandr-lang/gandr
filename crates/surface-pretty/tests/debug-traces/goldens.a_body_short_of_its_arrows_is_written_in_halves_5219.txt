@@ -1,0 +1,85 @@
+test: goldens::a_body_short_of_its_arrows_is_written_in_halves_5219
+package: gandr-surface-pretty
+command: mise run debug:test gandr-surface-pretty goldens::a_body_short_of_its_arrows_is_written_in_halves_5219 --break present_whole
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-pretty/4e1bbf1034afd120/out/tests-4e1bbf1034afd120"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-pretty/4e1bbf1034afd120/out/tests-4e1bbf1034afd120' (x86_64).
+(lldb) settings set -- target.run-args  "goldens::a_body_short_of_its_arrows_is_written_in_halves_5219" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex present_whole
+Breakpoint 1: 338 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-4e1bbf1034afd120`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000014d9368
+(lldb) run
+
+running 1 test
+test goldens::a_body_short_of_its_arrows_is_written_in_halves_5219 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1410766 launched: 'target/debug-trace/debug/build/gandr-surface-pretty/4e1bbf1034afd120/out/tests-4e1bbf1034afd120' (x86_64)
+Process 1410766 stopped
+* thread #2, name = 'goldens::a_body', stop reason = breakpoint 1.87
+       frame #0: 0x0000555555c2cf4b tests-4e1bbf1034afd120`gandr_surface_pretty::present_whole(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=3}, words:{words:{0:size=0}}, region_binders_from:None}, names:size=3, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=0, context_types:size=0, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0, homes:size=0}, (null)=({0:"down"}, {0:1}), (null)=({0:1}, {0:1}), page={0:100}, style={form:Explicit, spelling:Unicode}) at lib.rs:1144:1
+   1141	/// - witness: `tests::goldens::a_definition_writes_its_implicits_in_its_telescope_2267`
+   1142	/// - witness: `tests::goldens::a_labelled_theory_entry_spells_its_label_3230`
+   1143	/// - witness: `tests::goldens::a_body_short_of_its_arrows_is_written_in_halves_5219`
+-> 1144	#[spec(ensures: |ref ret| match *ret {
+    	^
+   1145	    Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
+   1146	        && presentation.as_ref().ends_with('}')
+   1147	        && !presentation.as_ref().contains(['\r', '\t']),
+(lldb) bt 24
+* thread #2, name = 'goldens::a_body', stop reason = breakpoint 1.87
+   * frame #0: 0x0000555555c2cf4b tests-4e1bbf1034afd120`gandr_surface_pretty::present_whole(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=3}, words:{words:{0:size=0}}, region_binders_from:None}, names:size=3, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=0, context_types:size=0, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0, homes:size=0}, (null)=({0:"down"}, {0:1}), (null)=({0:1}, {0:1}), page={0:100}, style={form:Explicit, spelling:Unicode}) at lib.rs:1144:1
+     frame #1: 0x0000555555ad661f tests-4e1bbf1034afd120`tests::goldens::declared_whole(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=3}, words:{words:{0:size=0}}, region_binders_from:None}, names:size=3, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=0, context_types:size=0, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0, homes:size=0}, defined=({0:1}, {0:1}), page={0:100}) at goldens.rs:5297:11
+     frame #2: 0x0000555555b0dcd2 tests-4e1bbf1034afd120`tests::goldens::a_body_short_of_its_arrows_is_written_in_halves_5219 at goldens.rs:5830:9
+     frame #3: 0x0000555555ad0057 tests-4e1bbf1034afd120`tests::goldens::a_body_short_of_its_arrows_is_written_in_halves_5219::{closure#0}((null)={}) at goldens.rs:5815:58
+     frame #4: 0x0000555555b61fc6 tests-4e1bbf1034afd120`<tests::goldens::a_body_short_of_its_arrows_is_written_in_halves_5219::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x0000555555c5d01b tests-4e1bbf1034afd120`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #6: 0x0000555555c5d019 tests-4e1bbf1034afd120`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #7: 0x0000555555c6a565 tests-4e1bbf1034afd120`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #8: 0x0000555555c6a560 tests-4e1bbf1034afd120`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #9: 0x0000555555c6a560 tests-4e1bbf1034afd120`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #10: 0x0000555555c6a54b tests-4e1bbf1034afd120`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #11: 0x0000555555c6a54b tests-4e1bbf1034afd120`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #12: 0x0000555555c6a54b tests-4e1bbf1034afd120`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #13: 0x0000555555c6a536 tests-4e1bbf1034afd120`test::run_test::{closure#0} at lib.rs:677:43
+     frame #14: 0x0000555555c64f24 tests-4e1bbf1034afd120`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #15: 0x0000555555c64ea9 tests-4e1bbf1034afd120`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #16: 0x0000555555c6d6c2 tests-4e1bbf1034afd120`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #17: 0x0000555555c6d6b3 tests-4e1bbf1034afd120`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #18: 0x0000555555c6d6b3 tests-4e1bbf1034afd120`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #19: 0x0000555555c6d6a3 tests-4e1bbf1034afd120`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #20: 0x0000555555c6d6a3 tests-4e1bbf1034afd120`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #21: 0x0000555555c6d6a3 tests-4e1bbf1034afd120`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #22: 0x0000555555c6d694 tests-4e1bbf1034afd120`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #23: 0x0000555556a507af tests-4e1bbf1034afd120`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [inlined]
+(lldb) frame variable --depth 3
+(gandr_surface_pretty::core_source::CoreSource *) source = 0x00007ffff7bfe2b0 {arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=3}, words:{words:{0:size=0}}, region_binders_from:None}, names:size=3, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=0, context_types:size=0, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0, homes:size=0}
+((gandr_surface_pretty::former::Name, gandr_kernel_term::term::ConstantIndex))  = ({0:"down"}, {0:1})
+((gandr_core_term::arena::ValueTypeId, gandr_core_term::arena::ValueId))  = ({0:1}, {0:1})
+(gandr_surface_layout::units::PageWidth) page = {0:100}
+(gandr_surface_pretty::Style) style = {form:Explicit, spelling:Unicode}
+(gandr_surface_pretty::former::Name) name = {0:<error: length 0x7ffff7bfe1b0 past mapped memory>}
+(gandr_kernel_term::term::ConstantIndex) constant = {0:140737349935272}
+(gandr_core_term::arena::ValueTypeId) ty = {0:4156547504}
+(gandr_core_term::arena::ValueId) body = {0:32767}
+(bool) __anodized_pre = false
+(lldb) up
+frame #1: 0x0000555555ad661f tests-4e1bbf1034afd120`tests::goldens::declared_whole(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=3}, words:{words:{0:size=0}}, region_binders_from:None}, names:size=3, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=0, context_types:size=0, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0, homes:size=0}, defined=({0:1}, {0:1}), page={0:100}) at goldens.rs:5297:11
+   5294	    page: PageWidth,
+   5295	) -> Maybe<(String, Fidelity), whole::Absent>
+   5296	{
+-> 5297	    match present_whole(
+    	          ^
+   5298	        source,
+   5299	        (Name::from("down"), ConstantIndex::from(1_usize)),
+   5300	        defined,
+(lldb) frame variable --depth 3
+(gandr_surface_pretty::core_source::CoreSource *) source = 0x00007ffff7bfe2b0 {arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=2}, value_types:{frozen:None, own:size=2}, comp_types:{frozen:None, own:size=3}, words:{words:{0:size=0}}, region_binders_from:None}, names:size=3, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=0, context_types:size=0, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0, homes:size=0}
+((gandr_core_term::arena::ValueTypeId, gandr_core_term::arena::ValueId)) defined = ({0:1}, {0:1})
+(gandr_surface_layout::units::PageWidth) page = {0:100}

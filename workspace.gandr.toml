@@ -1,0 +1,13 @@
+# Written by `gandr check` from the workspace's `Workspace` model: edit the model, not this file.
+# blake3: add216044029584bcdb913125bbb29bb200015d2771340030f2e2498e925b435
+
+[workspace]
+version = "0.1.0"
+members = [
+  "library/std",
+]
+
+[toolchain]
+gandr = ">= 0.0"
+features = []
+systems = []
