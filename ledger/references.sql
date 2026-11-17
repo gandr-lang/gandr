@@ -775,6 +775,7 @@ INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','stora
 INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','storage-store','plane::index','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d90b-b64a-7248-8f6e-e792b6e8cb9f','storage-store','plane','background','484c1e84c9b09f8a7b9c2b5df2bdccffcd8234f4','2026-11-14','050e6297abe82c557307369b30f3a9e4023f2fdb');
 INSERT INTO reference VALUES('vault:01a1dbb1-8f03-73b2-bbab-a82afed5f02f','workflow-prose','','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1e7b4-8c77-7a81-9165-ff37ea870424','runtime-emitter','block','lineage',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or

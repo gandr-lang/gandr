@@ -19,7 +19,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 
 **Why.** Emitted code runs the L machine's transitions with the registers pinned and no dispatch loop, and the emission cost is a copy and a few patches per stencil; the executor built from the same stencils runs them anywhere and is the reference native code answers to. It replaces the MLIR compile host and the hand-written machine: `src/lib.rs` states both decisions and what would reverse them.
 
-**How.** The build script compiles `gandr-runtime-stencils` under `--cfg gandr_stencil_object` with the toolchain's own `rustc`, reads the object with `object`, refuses any section, symbol or relocation the patcher cannot take, and writes the stencil table. Emission copies each instruction's stencil into a region of executable memory and patches its holes: operands, the next copy, a label, the shared exits. arm64 patches `BRANCH26` (ELF `JUMP26`) and relaxes `GOT_LOAD` pairs (ELF `ADR_GOT_PAGE`/`LD64_GOT_LO12_NC`) on macOS and Linux alike; Linux x86-64 patches `PLT32`/`PC32` displacements and `32`/`32S` absolute fields under the static relocation model. Emitted functions live in a process-wide cache keyed by the function's content. A lowering keeps the code it found. The executor tier builds an instruction array from the same `Function` and runs the same stencil functions through their dispatch table.
+**How.** The build script compiles `gandr-runtime-stencils` under `--cfg gandr_stencil_object` with the toolchain's own `rustc`, reads the object with `object`, refuses any section, symbol or relocation the patcher cannot take, and writes the stencil table. Emission copies each instruction's stencil into a region of executable memory and patches its holes: operands, the next copy, a label, the shared exits. The crate documentation names the relocation kinds that each host patches. Emitted functions live in a process-wide cache keyed by the function's content. A lowering keeps the code it found. The executor tier builds an instruction array from the same `Function` and runs the same stencil functions through their dispatch table.
 
 ## References
 
@@ -36,6 +36,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - `vault:01a178aa-a1a9-7643-b2d9-98059c9273fb` — background: the effects page (§ One-shot linearity) — a clause's stack resumed or abandoned once; the frames left standing are the case a clause's body shows to resume at most once.
 - `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: Courant's `ACCU` — an open run's free variables as accumulators.
 - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single writer plan — a crossing's own chunk store, with no lock.
+- `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — lineage: the IO direction (§ io-direction-block), the block compiler's design.
 
 ## Provided features
 
@@ -50,6 +51,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - Sessions run: `fork`, `send`, `recv`, `select`, `offer` and `close` are host calls on one cooperative, deterministic scheduler the run's host state holds, on the run's thread. `HostHandler::task_order` and `TaskOrder` give the order of its ready queue: the oldest task first, or the newest. A channel keeps one queue per direction; a receive or an offer with nothing sent parks its task's frames until its peer sends, and a run whose tasks all wait is `Stuck::Deadlock`, naming each waiting action. An end abandoned before its protocol ended is cancelled, and a root that meets a cancelled peer is `Stuck::Cancelled` at that action.
 - `RunInputs::traced`, `Trace`, `Play`, `Played`, `Carried`, `TaskNumber`, `ChannelNumber`: a run that records each channel it forks as a play, every move with the task and side that made it and its payload's place in the store, and reads a play's causal web, `Play::web`, by the facing rule a dialogue's is read by. A run over inputs not traced records nothing.
 - `Policy` and `POLICY_VARIABLE`: `GANDR_NATIVE=always` (the default) emits on first run, `never` takes the executor, `cached` serves only what the cache holds.
+- `block`: machine blocks compiled from their description by the pinned `llc`.
 - `PATCHER`: whether this host emits native code.
 - `Fuel` and `Status`, re-exported: the code-word jumps a run may take, and why it returned.
 

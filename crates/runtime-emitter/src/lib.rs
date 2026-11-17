@@ -178,6 +178,7 @@
 
 extern crate alloc;
 
+pub mod block;
 pub mod budget;
 pub mod crossing;
 mod cut;

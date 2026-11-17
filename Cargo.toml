@@ -290,14 +290,17 @@ default-features = false
 version = "0.72.1"
 default-features = false
 
-# BLAKE3 hashing for content and node identities, the kernel's verdict keys
-# and build identity, the site's build identity a stored stratum's key binds,
-# the engine hub's socket names, the rank a sweep's sample orders sources by,
-# the digest a prose finding's sentence is keyed by, and the key of a plan's
-# minimal form.
+# BLAKE3 gives the digest of a content or of a node identity. The kernel keys
+# its verdicts and names its build by it. A stored stratum's key binds the
+# site's build identity by it.
+#
+# The engine hub names its sockets by it, and a sweep's sample orders its
+# sources by it. A finding of the prose gate keys its sentence by it. A plan
+# keys its minimal form by it, and the emitter keys each machine block by it.
 # consumers:
 # - core-incremental
 # - kernel-core (and its build script)
+# - runtime-emitter
 # - storage-artifact
 # - storage-records
 # - storage-schema
@@ -1743,33 +1746,40 @@ features = ["std"]
 version = "1.17.0"
 default-features = false
 
-# Object-file reading for the emitter's build script: the stencil object's
-# sections, symbols and relocations, Mach-O and ELF. Chosen over goblin for
-# its unified relocation view across both formats and its use by the Rust
-# toolchain's own backtrace and linker tools; the choice reverses if a third
-# object format needs a reader object lacks. The record is in the emitter's
-# crate docs.
+# The emitter's build script reads the stencil object with it: the sections,
+# the symbols and the relocations, in Mach-O and in ELF. The emitter's block
+# compiler reads the text of each block's object with it.
+#
+# goblin is the alternative. object gives one view of relocations for both
+# formats, and the Rust toolchain's backtrace and linker tools use it too. The
+# choice reverses if a third object format needs a reader that object lacks,
+# and the emitter's crate documentation keeps the record.
 # features:
 # - read_core: the format-independent reading interface
-# - elf: the Linux x86-64 stencil object
-# - macho: the macOS arm64 stencil object
+# - elf: the Linux objects
+# - macho: the macOS arm64 objects
 # consumers:
-# - runtime-emitter (build)
+# - runtime-emitter (and its build script)
 [workspace.dependencies.object]
 version = "0.40.0"
 default-features = false
 features = ["elf", "macho", "read_core"]
 
-# The index of a host's chunk holder and of a store plane, from a digest to its
-# slot in the arena, read and written with no lock. A read happens after the
-# write that it reads, so a reader that finds a slot reads the whole image.
-# iroh holds it already, with the same features. The choice, its alternatives
-# and its reversal are in the pull request of #6899 that adds it.
+# A host's chunk holder and a store plane each keep an index from a digest to
+# its slot in the arena. A reader and a writer use the index with no lock. A
+# read happens after the write that it reads, so a reader that finds a slot
+# reads the whole image. iroh holds it already, with the same features. The
+# pull request that adds it states the choice, its alternatives and its
+# reversal.
+# - see: #6899
+#
+# The emitter's block compiler keeps its blocks in such an index.
 # features:
 # - none: `fast-barrier` stays off, as iroh has it. It trades a fence on each
 #   read for a system call on each reclamation, and no measurement asks for it
 #   yet. `serde` stays off: nothing serialises the index.
 # consumers:
+# - runtime-emitter
 # - runtime-net
 # - storage-store
 [workspace.dependencies.papaya]

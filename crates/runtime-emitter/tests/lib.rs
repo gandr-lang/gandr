@@ -14,6 +14,8 @@ mod accumulate;
 #[cfg(test)]
 mod agreement;
 #[cfg(test)]
+mod block;
+#[cfg(test)]
 #[path = "../../runtime-stencils/tests/count.rs"]
 mod count;
 #[cfg(test)]
