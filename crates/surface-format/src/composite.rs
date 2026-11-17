@@ -44,40 +44,10 @@ pub struct Composites
     returned: Vec<ByteSpan>,
     /// The spans of the flow composites, which the core holds as written.
     flows: Vec<ByteSpan>,
-    /// Which composites the table answers for.
-    reach: Reach,
-}
-
-/// Which forms a table the lowering derived answers for: [`Composites`]'
-/// composites, `crate::tail::Tails`' exits.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Reach
-{
-    /// Those the lowering derived: a transport it returns, an exit the
-    /// lowering would infer.
-    #[default]
-    Derived,
-    /// Every one: the writing that asks which forms a rewrite would enter,
-    /// never laid out.
-    Any,
 }
 
 impl Composites
 {
-    /// Every composite returned: for the writing that asks which forms a
-    /// rewrite would enter.
-    ///
-    /// # Specification
-    /// trivial.
-    pub const fn any() -> Self
-    {
-        Self {
-            returned: Vec::new(),
-            flows: Vec::new(),
-            reach: Reach::Any,
-        }
-    }
-
     /// How `module`, lowered into `arena`, holds the path composites of the
     /// formatted source that starts at `base` in the unit's text: the span
     /// of each transport it returns as a value, and of each composite of
@@ -111,11 +81,7 @@ impl Composites
                 Some(_) | None => {},
             }
         }
-        Self {
-            returned,
-            flows,
-            reach: Reach::Derived,
-        }
+        Self { returned, flows }
     }
 
     /// How the lowering holds the composite spanning exactly `span`.
@@ -130,10 +96,7 @@ impl Composites
         if self.flows.contains(&span) {
             return Standing::Flows;
         }
-        let returned = match self.reach {
-            Reach::Derived => self.returned.contains(&span),
-            Reach::Any => true,
-        };
+        let returned = self.returned.contains(&span);
         if returned {
             Standing::Returned
         }

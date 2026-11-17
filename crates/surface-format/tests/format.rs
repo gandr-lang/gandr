@@ -759,22 +759,24 @@ const EXPLICIT: &str = include_str!("format/unformatted/explicit.gandr");
 /// #492: the gate's invariant made visible. The formatter keeps every
 /// token, so a source spelled in the explicit form comes back in the
 /// explicit form, laid out, under every option: its declaration wins over
-/// an option asking for the sugared form. A source that opens with a `rec`
-/// group declares it on the group's first declaration, where a block before
-/// `rec` would refuse the module.
+/// an option asking for the sugared form. The explicit form writes a
+/// signature and the thunk that defines it as one function form, and the
+/// source's refusal stands at the same leaf in both spellings. A source that
+/// opens with a `rec` group declares it on the group's first declaration,
+/// where a block before `rec` would refuse the module.
 #[test]
 fn an_explicit_source_keeps_its_explicit_spelling()
 {
     let grammar = grammar();
-    let kept = "@[form(explicit)]\ndef shown : +U (-F Integer);\ndef shown = thunk { let n = \
-                force one; become read n };\n";
+    let kept = "@[form(explicit)]\ndef shown() -> -F Integer { let n = force one; become read n \
+                }\n";
     let imported = "import \"./base.gandr\" ;\n";
     let imported_kept = "import \"./base.gandr\";\n";
     let grouped = include_str!(
         "format/unformatted/an-explicit-source-keeps-its-explicit-spelling-grouped.gandr"
     );
-    let grouped_kept = "rec {\n  @[form(explicit)]\n  def shown : +U (-F Integer);\n  def \
-                        shown = thunk { let n = force one; become read n };\n}\n";
+    let grouped_kept = "rec {\n  @[form(explicit)]\n  def shown() -> -F Integer { let n = force \
+                        one; become read n }\n}\n";
     for (written, expected) in [
         (String::from(EXPLICIT), String::from(kept)),
         (

@@ -25,7 +25,6 @@ use gandr_surface_lowering::Returned;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 
-use crate::composite::Reach;
 use crate::composite::within;
 
 /// The spans of the `return` forms the sugared form writes as their value.
@@ -34,8 +33,6 @@ pub struct Tails
 {
     /// The `return` forms' spans, in the source's own offsets.
     elidable: Vec<ByteSpan>,
-    /// Which `return` forms are elidable.
-    reach: Reach,
 }
 
 /// How the sugared form writes a `return` form.
@@ -50,19 +47,6 @@ pub enum Exit
 
 impl Tails
 {
-    /// Every `return` elidable: for the writing that asks which forms a
-    /// rewrite would enter.
-    ///
-    /// # Specification
-    /// trivial.
-    pub const fn any() -> Self
-    {
-        Self {
-            elidable: Vec::new(),
-            reach: Reach::Any,
-        }
-    }
-
     /// The elidable exits `module` lists, of which the formatted source starts
     /// at `base` in the unit's text: each over a value, and each over a run
     /// when `unchecked` is given — the spans, in the source's own offsets, of
@@ -97,10 +81,7 @@ impl Tails
             .filter_map(|exit| within(exit.span, base))
             .collect();
         elidable.sort_unstable();
-        Self {
-            elidable,
-            reach: Reach::Derived,
-        }
+        Self { elidable }
     }
 
     /// How the sugared form writes the `return` form spanning exactly `span`.
@@ -112,9 +93,11 @@ impl Tails
         span: ByteSpan,
     ) -> Exit
     {
-        match (self.reach, self.elidable.binary_search(&span)) {
-            (Reach::Any, _) | (Reach::Derived, Ok(_)) => Exit::Inferred,
-            (Reach::Derived, Err(_)) => Exit::Kept,
+        if self.elidable.binary_search(&span).is_ok() {
+            Exit::Inferred
+        }
+        else {
+            Exit::Kept
         }
     }
 }
