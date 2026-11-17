@@ -19,7 +19,10 @@
 //! checkpoint is adopted only when its support — the signature answers its
 //! judgement consulted — holds pointwise in the edited program and no type
 //! position of it reads a definition whose value changed. [`check_program`]
-//! is the same pass with a memo that recalls nothing.
+//! is the same pass with a memo that recalls nothing. A resume restored from
+//! a store whose first checkpoints are the state that [`lead`] keeps recalls
+//! its own items after them, as one held after that state does (witness:
+//! `tests::incremental::a_restored_set_resumes_after_the_leading_items_it_holds_1816`).
 //!
 //! **Content-addressed checkpoints.** [`Checkpoints`] persist under their
 //! program's BLAKE3 address in a [`MemoryCheckpointStore`] or an atomic

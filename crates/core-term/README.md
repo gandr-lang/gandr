@@ -28,7 +28,6 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, the canonical node of a type (`canonical_value_type`), and `ArenaWatermark` with `CoreArena::truncate_to` and the per-family suffixes minted since a mark (`values_since`, `computations_since`, `value_types_since`, `comp_types_since`).
 - Native `List` types, `ListNil` and `ListCons` values, and an annotated, pure `ListFold`, whose binders [`syntax`](src/syntax.rs) states: the [kernel's List former](../kernel-core/src/check.rs), not a sum encoding or a nominal declaration.
 - Closed effect rows on returners carry named interfaces with typed payloads and replies; `EffectRow::EMPTY` is the pure returner. [`effect`](src/effect.rs) states the union and the inclusion, and `effect::host` the host interfaces.
-- `TypeImporter` copies the graph reachable from type roots into another arena, preserving shared children across imports. `instantiate_value_type_under` closes ambient variables while preserving a chosen number of local binders.
 - `Context`: `open`, `close`, `occurrence`, `declared`, `linear_use` and `depth` over `Zone::Intuitionistic` and `Zone::Linear`, refusing with `ContextError`.
 - `DefinitionChain`, `DefinitionEntry` and `DefinitionHeight`: `define`, `entry` and `entries`, refusing with `DefinitionError`.
 - `DefinitionalEnvironment`, `ScopeId` and `Transparency`: `root`, `open_scope`, `state` and `transparency`.
@@ -110,6 +109,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments` — newest: Liesnikov, Binder and Süberkrüb, "Filling the Gaps of Polarity", Programming 10(3) 19, 2025, `doi:10.22152/programming-journal.org/2025/10/19` — § 9.3's rule Env-∆.
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell (`identity::cong_above`).
 - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: identity never decides validity.
+- `vault:01a178aa-7772-7e72-a3d0-5855883d3db1` — anchor: the crate's page (§ Decisions, item 2) — term ids are not canonical, so `key::NodeKey` names a node by its content and never by an arena id.
 
 ## License
 
