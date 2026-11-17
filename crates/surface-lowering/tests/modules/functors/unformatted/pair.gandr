@@ -1,0 +1,6 @@
+module A = MkCounter(Seed) ;
+module B = MkCounter(Seed) ;
+def a : A.T ;
+def a = A.seed ;
+def b : B.T ;
+def b = B.seed ;

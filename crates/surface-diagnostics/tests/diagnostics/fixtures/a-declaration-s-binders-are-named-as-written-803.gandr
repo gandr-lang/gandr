@@ -1,0 +1,10 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (p : Nat) --> Nat
+}
+def rec down(n : Nat) -> Nat {
+  match n {
+    | Zero => n
+    | Succ(m) => become down[<] m
+  }
+}

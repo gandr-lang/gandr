@@ -1,0 +1,2 @@
+(a : Type) -> (b : Type) -> +U (a ->
+  -F b) -> a -> -F b

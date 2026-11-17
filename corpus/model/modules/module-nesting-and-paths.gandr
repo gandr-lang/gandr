@@ -1,0 +1,41 @@
+// This source shows nested modules and their paths.
+//
+// `Config` contains limits at several nested depths.
+//
+// The checker resolves each member through its complete path.
+//
+// - see: #2925
+
+/// `Config` nests modules at three depths.
+module Config where
+  /// `name` gives the configuration name.
+  def name = "gandr";
+  /// `limits` holds the limit modules.
+  module limits where
+    /// `soft` gives the soft limit.
+    def soft = 10;
+    /// `hard` holds the hard limit.
+    module hard where
+      /// `value` gives the hard limit.
+      def value = 100;
+      /// `detail` holds the note.
+      module detail where
+        /// `note` gives the innermost note.
+        def note = "the innermost component";
+    /// `hard_inside` reads `hard.value`.
+    def hard_inside = hard.value;
+  /// `note_inside` reads the nested note.
+  def note_inside = limits.hard.detail.note;
+
+/// `hard_limit` reads the three-part path.
+def hard_limit = Config.limits.hard.value;
+
+/// `note` reads the four-part path.
+def note = Config.limits.hard.detail.note;
+
+/// `soft_limit` reads the two-part path.
+def soft_limit = Config.limits.soft;
+
+/// `limits` gathers every limit value.
+@[runs("*{.hard = 100, .note = \"the innermost component\", .soft = 10}")]
+def limits = *{hard = hard_limit, soft = soft_limit, note = note};
