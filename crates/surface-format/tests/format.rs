@@ -568,7 +568,8 @@ fn a_juxtaposed_spine_breaks_one_operand_a_line_5202()
 /// #5326: a type's juxtaposition broke as an expression's spine does, so a
 /// signature's type stood broken at the column of the body after it, and the
 /// formatter refused the source as changed in meaning. Now a type's spine
-/// keeps its line, as the brackets around its operands do.
+/// keeps its line. On a narrow page the header's bracket around `Maybe
+/// Integer` breaks as one item instead (#7923), and the body keeps its line.
 #[test]
 fn a_type_s_spine_keeps_its_line_in_a_signature_5326()
 {
@@ -577,11 +578,37 @@ fn a_type_s_spine_keeps_its_line_in_a_signature_5326()
         include_str!("format/unformatted/a-type-s-spine-keeps-its-line-in-a-signature-5326.gandr");
     let laid = text(&grammar, source, NARROW);
     assert_eq!(
-        laid, source,
+        laid,
+        "def coupled() -> Couple Integer (\n  Maybe Integer\n) =\n  Couple 1 (Some 2 : Maybe Integer)\n",
         "the type's spine and the body keep their lines"
     );
     assert_eq!(
         text(&grammar, laid.as_str(), NARROW),
+        laid,
+        "and the layout formats once"
+    );
+}
+
+/// #7923: a spine in a bracket of a declaration's header kept its line past
+/// the page. A broken spine there puts the header's last line deeper than the
+/// body, which then ends the declaration. Now the bracket breaks as one item:
+/// its content on the next line, its closer back at the header's column, so
+/// the body stays deeper than each line of the header.
+#[test]
+fn a_header_s_spine_breaks_its_bracket_above_the_body_7923()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "format/unformatted/a-header-s-spine-breaks-its-bracket-above-the-body-7923.gandr"
+    );
+    let expected = "def first(\n  p : Pair (Pair Integer Integer) (Pair Integer Integer)\n) -> Integer =\n  0\n";
+    let laid = text(&grammar, source, 60);
+    assert_eq!(
+        laid, expected,
+        "the parameter's spine breaks under the header"
+    );
+    assert_eq!(
+        text(&grammar, laid.as_str(), 60),
         laid,
         "and the layout formats once"
     );

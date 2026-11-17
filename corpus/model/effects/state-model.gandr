@@ -82,7 +82,9 @@ def negated : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (
   passing;
 
 /// `putGet` runs a model that stores and reads a count.
-def putGet(m : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer)) -> Integer =
+def putGet(
+  m : Model State.Eff with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) -> Integer)
+) -> Integer =
   match m where
     | *{.get = g, .put = p} => {
       let read = g (fun (s) {
