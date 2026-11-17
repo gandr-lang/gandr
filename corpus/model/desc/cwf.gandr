@@ -45,17 +45,17 @@ pub theory CwF where
   /// Composition: `s` after `t`.
   oper comp : (s : Sub d g, t : Sub e d) --> Sub e g;
   /// The substitution into the empty context.
-  oper eps : (g : Con) --> Sub(g, empty());
+  oper eps : (g : Con) --> Sub g empty();
   /// Substitution in a type: it moves the type along `s`.
   oper subTy : (a : Ty g, s : Sub d g) --> Ty d;
   /// Substitution in a term: it moves the term along `s`, to its moved type.
-  oper subTm : (t : Tm g a, s : Sub d g) --> Tm(d, subTy(a, s));
+  oper subTm : (t : Tm g a, s : Sub d g) --> Tm d subTy(a, s);
   /// The projection that forgets the newest type.
   oper p : (a : Ty g) --> Sub ext(g, a) g;
   /// The newest variable.
   oper q : (a : Ty g) --> Tm ext(g, a) subTy(a, p(a));
   /// A substitution extended by a term.
-  oper pair : (s : Sub d g, t : Tm(d, subTy(a, s))) --> Sub(d, ext(g, a));
+  oper pair : (s : Sub d g, t : Tm d subTy(a, s)) --> Sub d ext(g, a);
 
   /// The identity on the left.
   rule idl : comp (id g) s ==> s;

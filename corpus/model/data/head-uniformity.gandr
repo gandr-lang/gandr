@@ -18,7 +18,7 @@ data Fixed : (a : Type, n : Nat) --> Type[+, 1] where
   /// The empty list of integers.
   | FNil : Fixed Integer Zero
   /// The list `t` with the value `x` before it.
-  | FCons : (a : Type, n : Nat, x : a, t : Fixed a n) --> Fixed(a, Succ n)
+  | FCons : (a : Type, n : Nat, x : a, t : Fixed a n) --> Fixed a (Succ n)
 
 /// The list that holds `7` only.
 def seven() -> Fixed Integer (Succ Zero) =

@@ -1985,17 +1985,17 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
     .assert_eq(&laid(Form::Sugared, None));
 }
 
-/// The formatter writes a type application juxtaposed in either form, as the
-/// printer does: `Parcel(Integer)` is `Parcel Integer`. A product argument
-/// keeps its parentheses under the sugar, `Parcel (Integer * Integer)`, and
-/// its stars under the explicit form, `Parcel *{Integer, Integer}`. A call
-/// whose argument in parentheses follows a type variable keeps its call form,
-/// `Pair(a, Parcel Integer)`, since the type grammar reads `a (Parcel
-/// Integer)` as the call `a(Parcel Integer)`; after a type's name the
-/// argument is juxtaposed, `Pair Integer (Parcel Integer)`. A returner
-/// encloses a juxtaposition whose first argument takes parentheses, `-F (Pair
-/// (Parcel Integer) Integer)`, since the type grammar reads `-F Pair (Parcel
-/// Integer) Integer` as the call `Pair(Parcel Integer)` applied on (#5708).
+/// The formatter writes a type application juxtaposed in either form.
+/// `Parcel(Integer)` writes `Parcel Integer`.
+/// A product argument keeps its parentheses under the sugar.
+/// The explicit form writes its stars.
+/// A variable can precede a parenthesized argument.
+/// `Pair(a, Parcel(Integer))` writes `Pair a (Parcel Integer)`.
+/// A variable can precede a call.
+/// `Pair(a, plus(Integer))` writes `Pair a plus(Integer)`.
+/// A returner encloses a juxtaposition whose first argument takes parentheses.
+/// The type grammar reads `-F Pair (Parcel Integer) Integer` as the call
+/// `Pair(Parcel Integer)` applied to `Integer` (#5708).
 #[test]
 fn a_type_application_is_written_juxtaposed_5708()
 {
@@ -2031,7 +2031,12 @@ fn a_type_application_is_written_juxtaposed_5708()
         (
             "Pair(a, Parcel(Integer))",
             Form::Sugared,
-            "Pair(a, Parcel Integer)",
+            "Pair a (Parcel Integer)",
+        ),
+        (
+            "Pair(a, plus(Integer))",
+            Form::Sugared,
+            "Pair a plus(Integer)",
         ),
         (
             "Pair(Parcel(Integer), Integer)",
