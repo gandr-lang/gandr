@@ -2958,6 +2958,10 @@ enum Agreement
 /// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
 /// - witness: `edit::tests::a_memory_form_agrees_on_its_kind_grade_mode_place_and_slot`
 /// - witness: `edit::tests::every_node_family_agrees_exactly_on_its_payload`
+///
+/// # Cost
+/// - allocation: the copies of the field labels that the predicate compares,
+///   diagnostic
 #[spec(
     ensures: |ret| {
     (ret == Agreement::Same)
@@ -3542,6 +3546,10 @@ fn read(
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children and labels, growth
+///   within the arena's node
 #[spec(
     ensures: |ret| {
     program
@@ -3900,6 +3908,10 @@ where
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children and labels, growth
+///   within the arena's node
 #[spec(
     ensures: |ret| {
     program
@@ -4328,6 +4340,10 @@ fn world_content(
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children, growth within the
+///   arena's node
 #[spec(
     ensures: |ret| {
     program
@@ -4596,6 +4612,10 @@ where
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+///
+/// # Cost
+/// - allocation: the node's former and its lists of children, growth within the
+///   arena's node
 #[spec(
     ensures: |ret| {
     program
