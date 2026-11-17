@@ -1,5 +1,6 @@
 use alloc::collections::BTreeSet;
 use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use gandr_core_term::Computation;
@@ -15,8 +16,10 @@ use crate::lower::native::tests::assert_accepted;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
 use crate::lower::native::tests::lowered;
+use crate::lower::native::tests::outcome_of;
 use crate::lower::native::tests::refusal_of;
 use crate::lower::native::tests::tail_of;
+use crate::module::DeclarationOutcome;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
 
@@ -161,6 +164,82 @@ fn a_bracket_naming_what_its_base_lacks_is_refused_by_the_name()
         ),
         "a face's value states every field of the face"
     );
+}
+
+/// A fix on an alias of a record type member, `type R = Q`, and on an alias of
+/// that alias, `type S = R`, reads the labels and the faces of `Q`: each fix,
+/// by face and by label, settles and patches the record of `Q` at the value
+/// the same fix on `Q` gives (#6499).
+#[test]
+fn an_alias_of_a_record_alias_fixes_by_face_and_by_label_6499()
+{
+    let source = include_str!(
+        "tests/unformatted/an-alias-of-a-record-alias-fixes-by-face-and-by-label-6499.gandr"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    // The labels of the patched base, and each fixed label with its value.
+    let patched = |arena: &CoreArena, name: &str| {
+        let DeclarationOutcome::Completed { declared_type, .. } =
+            outcome_of(&module, SurfaceName::from(name))
+        else {
+            panic!(
+                "`{name}` settles: {:?}",
+                outcome_of(&module, SurfaceName::from(name))
+            );
+        };
+        let Some(&ValueType::Patched {
+            base, ref fixed, ..
+        }) = arena.value_type(declared_type)
+        else {
+            panic!(
+                "`{name}` declares a patched type: {:?}",
+                arena.value_type(declared_type)
+            );
+        };
+        let Some(&ValueType::Record(ref fields)) = arena.value_type(base)
+        else {
+            panic!("`{name}` patches a record: {:?}", arena.value_type(base));
+        };
+        let labels: Vec<String> = fields
+            .keys()
+            .map(|label| String::from(label.as_ref()))
+            .collect();
+        let values: Vec<(String, Option<Value>)> = fixed
+            .iter()
+            .map(|(label, &value)| (String::from(label.as_ref()), arena.value(value).cloned()))
+            .collect();
+        (labels, values)
+    };
+    for (direct, aliased) in [
+        ("direct", "through"),
+        ("direct", "twice"),
+        ("direct_by_label", "by_label"),
+        ("direct_by_label", "twice_by_label"),
+    ] {
+        let expected = patched(&arena, direct);
+        assert_eq!(
+            expected.0,
+            ["x", "y"],
+            "`{direct}` patches the record of `Q`"
+        );
+        assert_eq!(
+            expected
+                .1
+                .iter()
+                .map(|&(ref label, _)| label.as_str())
+                .collect::<Vec<_>>(),
+            ["x"],
+            "`{direct}` fixes `x` alone"
+        );
+        assert_eq!(
+            patched(&arena, aliased),
+            expected,
+            "`{aliased}` patches as `{direct}` does"
+        );
+    }
+    let report = judged(&module, &mut arena);
+    assert_accepted(&report);
 }
 
 #[test]

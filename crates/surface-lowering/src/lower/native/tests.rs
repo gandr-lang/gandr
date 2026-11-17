@@ -299,7 +299,7 @@ pub(in crate::lower) fn refusal_of<'source>(
 /// - hypothesis: L3 — as [`refusal_of`].
 /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
 #[spec(ensures: |ret| module.declarations().iter().any(|declaration| declaration.outcome() == ret))]
-fn outcome_of<'source>(
+pub(in crate::lower) fn outcome_of<'source>(
     module: &LoweredModule<'source>,
     name: SurfaceName<'_>,
 ) -> DeclarationOutcome<'source>

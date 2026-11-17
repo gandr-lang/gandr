@@ -595,11 +595,70 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
 
     /// The definition the manifest type member named at `at` writes, with
     /// that member's held slot, when `at`, read under `frame`, is a type name
-    /// that names one.
+    /// that names one. A member whose definition names another manifest
+    /// member, `type R = Q`, answers as that member does.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the member's definition node and held slot when
+    /// - ensures: when [`Self::stated_named`] answers a manifest type member
+    ///   for the name at `at`, the definition node and held slot of the last
+    ///   member of its chain of aliases: each link's definition is a name that
+    ///   names the next member, read where the definition stands under no
+    ///   binder, and the last member's definition names no manifest member.
+    ///   Nothing for another form, an unresolved name, or a sealed,
+    ///   instantiated or family member. A chain of more links than the module
+    ///   has slots revisits a member, and it answers the member it reached.
+    /// - fails: the names' own resolution refusals;
+    ///   [`LoweringRefusal::BudgetExceeded`] when the chain outruns the
+    ///   allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// Each link spends one step of the allowance and one of the module's
+    /// slots, and the walk stops when either is spent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a patched base named by a type member, and by an
+    ///   alias of it; a selection off a name written at a type member.
+    /// - witness: `gandr-surface-lowering::lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
+    /// - witness: `gandr-surface-lowering::lower::patched::tests::an_alias_of_a_record_alias_fixes_by_face_and_by_label_6499`
+    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || matches!(self.cx().form_at(at), Ok(Some((_, Former::TypeHead | Former::Name | Former::Constructor))))))]
+    #[inline]
+    pub fn member_definition(
+        &mut self,
+        frame: Frame,
+        at: Placed,
+    ) -> Result<Option<(NodeIndex, SlotIndex)>, LoweringRefusal<'source>>
+    {
+        let Some(mut found) = self.manifest_named(frame, at)?
+        else {
+            return Ok(None);
+        };
+        let mut links = self.cx().collected.slots.len();
+        while let Some(left) = links.checked_sub(1_usize) {
+            links = left;
+            self.cx_mut().fuel.spend()?;
+            // An alias's definition is a name read where the member is
+            // declared, so no binder of the use site answers it.
+            match self.manifest_named(Frame::Outermost, found.0)? {
+                Some(next) => found = next,
+                None => break,
+            }
+        }
+
+        Ok(Some((found.0.node, found.1)))
+    }
+
+    /// The definition and held slot of the manifest type member that the
+    /// type name at `at`, read under `frame`, names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the member's definition and held slot when
     ///   [`Self::stated_named`] answers a manifest type member for the name at
     ///   `at`; nothing for another form, an unresolved name, or a sealed,
     ///   instantiated or family member.
@@ -610,17 +669,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a patched base named by a type member, and a
-    ///   selection off a name written at a type member.
-    /// - witness: `gandr-surface-lowering::lower::patched::tests::a_patched_type_is_the_record_of_its_free_fields`
-    /// - witness: `gandr-surface-lowering::lower::arity::tests::a_selection_off_a_name_written_at_a_type_member_projects_its_label_5826`
+    /// - hypothesis: L3 — as [`Self::member_definition`].
+    /// - witness: `gandr-surface-lowering::lower::patched::tests::an_alias_of_a_record_alias_fixes_by_face_and_by_label_6499`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none() || matches!(self.cx().form_at(at), Ok(Some((_, Former::TypeHead | Former::Name | Former::Constructor))))))]
-    #[inline]
-    pub fn member_definition(
+    fn manifest_named(
         &mut self,
         frame: Frame,
         at: Placed,
-    ) -> Result<Option<(NodeIndex, SlotIndex)>, LoweringRefusal<'source>>
+    ) -> Result<Option<(Placed, SlotIndex)>, LoweringRefusal<'source>>
     {
         let Some((name, Former::TypeHead | Former::Name | Former::Constructor)) =
             self.cx().form_at(at)?
@@ -634,7 +690,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         };
         Ok(match self.stated_named(named, self.cx().name_at(at))? {
             Maybe::Present(stated) => match stated.meaning {
-                TypeMeaning::Manifest(defined) => Some((defined.node, stated.held)),
+                TypeMeaning::Manifest(defined) => Some((defined, stated.held)),
                 TypeMeaning::Sealed | TypeMeaning::Family(_) | TypeMeaning::Instantiated { .. } => {
                     None
                 },
