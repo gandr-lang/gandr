@@ -1,0 +1,5 @@
+theory Monoid where {
+  include Semigroup;
+  oper one : () --> M;
+  rule unitL : mul (one ()) x ==> x;
+}

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="713" height="340" viewBox="0 0 713 340" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" xml:space="preserve">
+<style>
+svg { color: #1f2328; --gandr-warrant-pending: #6e7781; --gandr-warrant-checked: #1f2328; --gandr-warrant-replayed: #1a7f37; --gandr-warrant-refused: #cf222e; --gandr-warrant-withheld: #9a6700; }
+@media (prefers-color-scheme: dark) { svg { color: #e6edf3; --gandr-warrant-pending: #8b949e; --gandr-warrant-checked: #e6edf3; --gandr-warrant-replayed: #3fb950; --gandr-warrant-refused: #f85149; --gandr-warrant-withheld: #d29922; } }
+text { fill: currentColor; }
+.gandr-warrant-pending { fill: #6e7781; }
+.gandr-warrant-checked { fill: #1f2328; }
+.gandr-warrant-replayed { fill: #1a7f37; }
+.gandr-warrant-refused { fill: #cf222e; }
+.gandr-warrant-withheld { fill: #9a6700; }
+@supports (fill: var(--gandr-warrant-checked)) {
+.gandr-warrant-pending { fill: var(--gandr-warrant-pending); }
+.gandr-warrant-checked { fill: var(--gandr-warrant-checked); }
+.gandr-warrant-replayed { fill: var(--gandr-warrant-replayed); }
+.gandr-warrant-refused { fill: var(--gandr-warrant-refused); }
+.gandr-warrant-withheld { fill: var(--gandr-warrant-withheld); }
+}
+</style>
+<text y="25"><tspan x="10">world</tspan><tspan x="64">core</tspan><tspan x="334">occupancy ms</tspan><tspan x="451">now</tspan><tspan x="496">busy ms</tspan><tspan x="568">lengths ms</tspan></text>
+<text y="45"><tspan x="46">0</tspan><tspan x="91">0</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">610</tspan><tspan x="622">13.7</tspan><tspan x="676">205</tspan></text>
+<text y="65"><tspan x="46">0</tspan><tspan x="91">1</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan></text>
+<text y="85"><tspan x="46">0</tspan><tspan x="91">2</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan></text>
+<text y="105"><tspan x="46">0</tspan><tspan x="91">3</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">6.21</tspan><tspan x="676">140</tspan></text>
+<text y="125"><tspan x="46">0</tspan><tspan x="91">4</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">1.77</tspan><tspan x="676">592</tspan></text>
+<text y="145"><tspan x="46">0</tspan><tspan x="91">5</tspan><tspan x="109">███████████████████████████████▇ 14.9</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">23.1</tspan><tspan x="667">69.8</tspan></text>
+<text y="165"><tspan x="46">0</tspan><tspan x="91">6</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">2.78</tspan><tspan x="676">243</tspan></text>
+<text y="185"><tspan x="46">0</tspan><tspan x="91">7</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">10.4</tspan><tspan x="676">158</tspan></text>
+<text y="205"><tspan x="46">0</tspan><tspan x="91">8</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">33.2</tspan><tspan x="667">73.1</tspan></text>
+<text y="225"><tspan x="46">0</tspan><tspan x="91">9</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">18.8</tspan><tspan x="676">196</tspan></text>
+<text y="245"><tspan x="46">0</tspan><tspan x="82">10</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">4.47</tspan><tspan x="676">221</tspan></text>
+<text y="265"><tspan x="46">0</tspan><tspan x="82">11</tspan><tspan x="109">███████████████████████████████▇ 15.0</tspan><tspan x="451">fork</tspan><tspan x="532">611</tspan><tspan x="622">9.87</tspan><tspan x="676">148</tspan></text>
+<text y="285"><tspan x="82">12</tspan><tspan x="136">▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ 0</tspan><tspan x="550">0</tspan></text>
+<text y="305"><tspan x="10">cores</tspan><tspan x="280">occupancy ms</tspan><tspan x="397">busy ms</tspan><tspan x="469">lengths ms</tspan></text>
+<text y="325"><tspan x="37">13</tspan><tspan x="64">▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇▇ 180</tspan><tspan x="424">7330</tspan><tspan x="523">7.68</tspan><tspan x="568">243</tspan></text>
+</svg>

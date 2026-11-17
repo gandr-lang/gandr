@@ -1,0 +1,11 @@
+command: mise run check:dylint, with GATE_BASE=01c2f5b13c and GATE_SCOPE=--package gandr-kernel-core
+issue: #7629
+before: 28ab51dbde
+exit: 1
+error: this call reaches a call into the allocator, in `alloc::alloc::Global::alloc_impl_runtime`, and its function's `# Cost` declares no allocation
+    --> crates/kernel-core/src/check.rs:2101:1
+error: this call reaches a call into the allocator, in `alloc::alloc::Global::alloc_impl_runtime`, and its function's `# Cost` declares no allocation
+    --> crates/kernel-core/src/check.rs:4231:1
+error: could not compile `gandr-kernel-core` (lib) due to 2 previous errors
+after: 6e9450ebc0
+exit: 0

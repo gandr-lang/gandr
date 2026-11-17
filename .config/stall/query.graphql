@@ -1,0 +1,51 @@
+query($owner: String!, $name: String!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 100, orderBy: {field: CREATED_AT, direction: ASC}) {
+      nodes {
+        number
+        body
+        isDraft
+        author { __typename login }
+        headRefName
+        baseRefName
+        headRefOid
+        createdAt
+        mergeable
+        isInMergeQueue
+        mergeQueueEntry { mergeQueue { resourcePath } }
+        closingIssuesReferences(first: 10) { nodes { body } }
+        comments(last: 20) { nodes { body } }
+        timelineItems(last: 30, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+          nodes {
+            ... on RemovedFromMergeQueueEvent { createdAt reason }
+          }
+        }
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun { name status conclusion startedAt completedAt }
+                    ... on StatusContext { context state createdAt }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    merged: pullRequests(states: MERGED, last: 30, orderBy: {field: UPDATED_AT, direction: ASC}) {
+      nodes { number headRefName mergedAt body }
+    }
+    refactors: issues(labels: ["kind:refactor"], first: 100, after: $endCursor, orderBy: {field: CREATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes { body }
+    }
+    claimed: issues(states: OPEN, labels: ["status:claimed"], first: 100) {
+      nodes { number body labels(first: 30) { nodes { name } } }
+    }
+  }
+}

@@ -1,0 +1,2 @@
+@[checks]
+def current() -> Integer { 0 }

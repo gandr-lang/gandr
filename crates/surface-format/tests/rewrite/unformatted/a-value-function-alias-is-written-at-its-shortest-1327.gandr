@@ -1,0 +1,8 @@
+def step : (Integer) -> Integer ;
+def named : (x : Integer) -> Integer ;
+def nested : ((Integer)) -> Integer ;
+def twice : (Integer) -> ((Integer) -> Integer) ;
+def unread : (a : Type, b : Integer) -> a ;
+def pair : (Integer, String) -> Unit ;
+def dependent : (a : Type, a) -> a ;
+def noted : (/* the count */ Integer) -> Integer ;

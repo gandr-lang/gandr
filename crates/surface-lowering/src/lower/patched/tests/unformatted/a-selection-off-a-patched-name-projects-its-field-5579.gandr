@@ -1,0 +1,5 @@
+{CONFIG}def standard : Integer = 443;
+def port(c : Config[.port = 443, .tls = true]) -> Integer {{ c.port }}
+def tls(c : Config[secure ↦ *{{.port = 443, .tls = true}}]) -> Bool {{ c.tls }}
+def host(c : Config[.port = 443, .tls = true]) -> String {{ c.host }}
+def named(c : Config[.port = standard, .tls = true]) -> Integer {{ c.port }}

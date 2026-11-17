@@ -1,0 +1,6 @@
+def main() -> -F [std.io.Console.Eff, std.io.Stderr.Eff, std.io.Stdin.Eff] Unit {
+  let first = std.io.Stdin.read_line *{};
+  let second = std.io.Stdin.read_line *{};
+  std.io.Console.print first;
+  std.io.Stderr.eprint second
+}
