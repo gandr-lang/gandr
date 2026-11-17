@@ -7,16 +7,18 @@
 //! | `ledger recovery <directory>` | the near-miss table, each mutant whose first error marks other bytes than its mutation, then the count swept | a mutant is marked elsewhere |
 //! | `ledger list [--area <area>] [--status <status>] [--root <directory>]` | one line for each feature, `<id> [<status>] <name>: <line>` | never |
 //! | `ledger show <id> [--root <directory>]` | the feature's row, each of its exemplars' sources whole, then its corpus paths | never |
+//! | `ledger fences <path>…` | each fenced `gandr` block that writes a retired spelling, `<path>:<line>: …`, then the count of blocks and findings | a block writes a retired spelling |
 //!
 //! The binary exits with one of three codes:
 //!
 //! - `0`: the ledger was written, every exemplar held, the sweep marked every
-//!   mutant at its mutation, or the features were read; also `--help` and
-//!   `--version`.
-//! - `1`: an exemplar does not hold, or a mutant's first error marks other
-//!   bytes than its mutation.
-//! - `2`: a ledger that cannot be generated, written, listed, read or answer,
-//!   output that cannot be written, or a malformed invocation.
+//!   mutant at its mutation, the features were read, or no fenced block writes
+//!   a retired spelling; also `--help` and `--version`.
+//! - `1`: an exemplar does not hold, a mutant's first error marks other bytes
+//!   than its mutation, or a fenced block writes a retired spelling.
+//! - `2`: a ledger that cannot be generated, written, listed, read or answer, a
+//!   file of the prose that cannot be read, output that cannot be written, or a
+//!   malformed invocation.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -29,8 +31,8 @@ use gandr_surface_features::Status;
 use gandr_workflow_ledger_tasks::LedgerRun;
 use gandr_workflow_ledger_tasks::LedgerTask;
 
-/// The exit code of an exemplar that does not hold, or of a mutant marked
-/// elsewhere.
+/// The exit code of an exemplar that does not hold, of a mutant marked
+/// elsewhere, or of a fenced block that writes a retired spelling.
 const FOUND: u8 = 1;
 
 /// The exit code of a fault or a malformed invocation.
@@ -95,6 +97,15 @@ enum Cli
         /// The tree holding `ledger/features.sql` and the paths it names.
         #[arg(long, value_name = "DIRECTORY", default_value = ".")]
         root: PathBuf,
+    },
+    /// The fence check: each fenced `gandr` block of each file's prose, a
+    /// Markdown file's lines or the comments of a `.rs` or a `.gandr` file,
+    /// read for a spelling that the reader refuses as retired.
+    Fences
+    {
+        /// The files to read; a file of another extension is not read.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
     },
 }
 
@@ -171,6 +182,7 @@ fn task(cli: Cli) -> LedgerTask
             root,
             id: FeatureId(id),
         },
+        Cli::Fences { paths } => LedgerTask::Fences { paths },
     }
 }
 
@@ -187,12 +199,14 @@ fn task(cli: Cli) -> LedgerTask
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a written ledger, a stray exemplar, a sweep, a list, a
-///   show and an unknown area exit `0`, `1` and `2` as their cases state; a
-///   swapped stream or exit code changes the observed process result.
+///   show, an unknown area and a fenced retired spelling exit `0`, `1` and `2`
+///   as their cases state; a swapped stream or exit code changes the observed
+///   process result.
 /// - witness: `tests::cli::the_syntax_ledger_is_written_and_reproduced`
 /// - witness: `tests::cli::the_exemplars_verify_and_a_stray_one_is_named`
 /// - witness: `tests::cli::the_recovery_sweep_reports_its_table_and_count`
 /// - witness: `tests::cli::the_features_ledger_lists_and_shows_1827`
+/// - witness: `tests::cli::the_fences_name_a_retired_spelling_and_exit_one_5190`
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FOUND) || ret == ExitCode::from(FAULTED))]
 fn main() -> ExitCode
 {
@@ -214,8 +228,8 @@ fn main() -> ExitCode
     .unwrap_or_else(|_| ExitCode::from(FAULTED))
 }
 
-/// Run `task`, printing what it wrote, verified, swept or read, and choose
-/// the exit code.
+/// Run `task`, printing what it wrote, verified, swept, read or found in the
+/// fenced blocks, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -223,15 +237,17 @@ fn main() -> ExitCode
 ///   exits zero. A verification prints each exemplar that does not hold as
 ///   `<path>: <fault>`, then the count verified and found, on standard output;
 ///   a recovery sweep prints its near-miss table, each mutant marked elsewhere,
-///   then the count swept. Each exits zero when nothing was found and one
-///   otherwise. A list prints each feature it matched as `<id> [<status>]
-///   <name>: <line>`, a show prints the feature's row, its exemplars' sources
-///   and its corpus paths, and both exit zero. A ledger that cannot be
-///   generated, written, listed, read or answer is `ledger: <fault>` on
-///   standard error and exits two.
+///   then the count swept; a fence check prints each fenced block that writes a
+///   retired spelling, then the count of blocks and findings. Each exits zero
+///   when nothing was found and one otherwise. A list prints each feature it
+///   matched as `<id> [<status>] <name>: <line>`, a show prints the feature's
+///   row, its exemplars' sources and its corpus paths, and both exit zero. A
+///   ledger that cannot be generated, written, listed, read or answer, and a
+///   file of the prose that cannot be read, is `ledger: <fault>` on standard
+///   error and exits two.
 /// - provides: `ledger syntax --write <directory>`, `ledger exemplars
-///   <directory>`, `ledger recovery <directory>`, `ledger list` and `ledger
-///   show <id>`.
+///   <directory>`, `ledger recovery <directory>`, `ledger list`, `ledger show
+///   <id>` and `ledger fences <path>…`.
 /// - fails: the first write error on either stream.
 /// - panics: none.
 ///
@@ -245,11 +261,13 @@ fn main() -> ExitCode
 ///   and exit zero, and a stray exemplar exits one naming it; a sweep prints
 ///   its near-miss table and its count; a list and a show of a scratch ledger
 ///   print their golden and exit zero, and an unknown area and id exit two
-///   naming them.
+///   naming them; a fenced block that writes a retired spelling prints its file
+///   and line and exits one.
 /// - witness: `tests::cli::the_syntax_ledger_is_written_and_reproduced`
 /// - witness: `tests::cli::the_exemplars_verify_and_a_stray_one_is_named`
 /// - witness: `tests::cli::the_recovery_sweep_reports_its_table_and_count`
 /// - witness: `tests::cli::the_features_ledger_lists_and_shows_1827`
+/// - witness: `tests::cli::the_fences_name_a_retired_spelling_and_exit_one_5190`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FOUND) || *exit == ExitCode::from(FAULTED)))]
 fn ran(
@@ -278,6 +296,15 @@ fn ran(
             })
         },
         Ok(LedgerRun::Swept(report)) => {
+            writeln!(stdout, "{report}")?;
+            Ok(if report.findings().is_empty() {
+                ExitCode::SUCCESS
+            }
+            else {
+                ExitCode::from(FOUND)
+            })
+        },
+        Ok(LedgerRun::Fenced(report)) => {
             writeln!(stdout, "{report}")?;
             Ok(if report.findings().is_empty() {
                 ExitCode::SUCCESS

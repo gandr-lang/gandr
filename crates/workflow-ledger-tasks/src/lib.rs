@@ -1,12 +1,13 @@
 //! The ledger tasks of gandr's surface: the syntax ledger read off the
 //! grammar, the exemplars that show each of its rows, the recovery sweep over
-//! those exemplars, and the list and the show of the features ledger.
+//! those exemplars, the list and the show of the features ledger, and the
+//! check of the fenced `gandr` blocks of the prose.
 //!
 //! The crate stands above `gandr-surface-dispatcher`. It reads the
 //! dispatcher's composition, walk and pool, and no crate of the shipped
 //! toolchain reads it. So an edit of a ledger task rebuilds this crate and its
 //! binary alone. The binary `ledger` runs a [`LedgerTask`] for each of
-//! its five verbs, and the task files run the binary. The `ledger` module
+//! its six verbs, and the task files run the binary. The `ledger` module
 //! states how each ledger is built and checked.
 
 // Module documentation that predates the shape lint, moved with the `ledger`
@@ -31,6 +32,8 @@ mod ledger;
 pub use crate::ledger::ExemplarFault;
 pub use crate::ledger::ExemplarFinding;
 pub use crate::ledger::ExemplarReport;
+pub use crate::ledger::FenceFinding;
+pub use crate::ledger::FenceReport;
 pub use crate::ledger::LedgerFault;
 pub use crate::ledger::LedgerRun;
 pub use crate::ledger::LedgerTask;

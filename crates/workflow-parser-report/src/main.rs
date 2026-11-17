@@ -527,7 +527,8 @@ fn recovery() -> Result<RecoveryTally, Failure>
         LedgerRun::Written(_)
         | LedgerRun::Verified(_)
         | LedgerRun::Listed(_)
-        | LedgerRun::Shown(_) => Err(Failure::Recovery(String::from(
+        | LedgerRun::Shown(_)
+        | LedgerRun::Fenced(_) => Err(Failure::Recovery(String::from(
             "the task answered no sweep",
         ))),
     }

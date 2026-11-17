@@ -1,6 +1,6 @@
 # gandr-workflow-ledger-tasks
 
-This crate runs the ledger tasks of gandr's surface. It writes the syntax ledger from the grammar. It verifies the exemplars and sweeps them for recovery. It reads the features ledger as a guide.
+This crate runs the ledger tasks of gandr's surface. It writes the syntax ledger from the grammar. It verifies the exemplars and sweeps them for recovery. It reads the features ledger as a guide. It reads each fenced `gandr` block of the prose for a retired spelling.
 
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
@@ -11,7 +11,7 @@ This crate runs the ledger tasks of gandr's surface. It writes the syntax ledger
 
 ## Synopsis
 
-**What.** `gandr-workflow-ledger-tasks` installs the `ledger` binary. `ledger syntax --write <directory>` writes the syntax ledger as `syntax.md` and `syntax.json`. The ledger holds every rule of the built-in grammar and every attribute of the lowering's registry under the grammar's fingerprint. `ledger exemplars <directory>` verifies one exemplar for each committed rule and attribute ([`ledger/README.md`](../../ledger/README.md)). `ledger recovery <directory>` writes each literal tile of each syntax exemplar wrong and reads the first error. `ledger list [--area <area>] [--status <status>]` prints one line for each feature of `ledger/features.sql`. `ledger show <id>` prints a feature's row, its exemplars' sources whole and its corpus paths. Before you write a form, list its area and show each feature it uses.
+**What.** `gandr-workflow-ledger-tasks` installs the `ledger` binary. `ledger syntax --write <directory>` writes the syntax ledger as `syntax.md` and `syntax.json`. The ledger holds every rule of the built-in grammar and every attribute of the lowering's registry under the grammar's fingerprint. `ledger exemplars <directory>` verifies one exemplar for each committed rule and attribute ([`ledger/README.md`](../../ledger/README.md)). `ledger recovery <directory>` writes each literal tile of each syntax exemplar wrong and reads the first error. `ledger list [--area <area>] [--status <status>]` prints one line for each feature of `ledger/features.sql`. `ledger show <id>` prints a feature's row, its exemplars' sources whole and its corpus paths. Before you write a form, list its area and show each feature it uses. `ledger fences <path>…` gives each fenced `gandr` block of a Markdown file, and of the comments of a `.rs` or a `.gandr` file, to the reader, and names each block that the reader refuses as a retired spelling.
 
 **Why.** The ledger tasks are repository tooling, and no check of a source reads them. In the dispatcher, each build of the `gandr` binary compiled them. In this crate, the dispatcher and the `gandr` binary build without them, and an edit of a task builds this crate alone.
 
@@ -23,6 +23,7 @@ This crate runs the ledger tasks of gandr's surface. It writes the syntax ledger
 - `ledger exemplars <directory>` prints each exemplar that does not hold, `<path>: <fault>`, then the count. It exits `1` when it finds one.
 - `ledger recovery <directory>` prints the near-miss table, each mutant whose first error marks other bytes than its mutation, then the count. It exits `1` when it finds one.
 - `ledger list` and `ledger show <id>` read `ledger/features.sql` under `--root`, the current directory by default.
+- `ledger fences <path>…` prints each fenced `gandr` block that writes a retired spelling, `<path>:<line>: …` with the spelling that replaces it, then the count. It exits `1` when it finds one. A fragment and each other refusal pass.
 - A fault prints `ledger: <fault>` on standard error and exits `2`.
 
 ## Expected features
@@ -34,6 +35,7 @@ The tasks need a checkout of the repository. They read `corpus/ledger` and `ledg
 ```sh
 mise run ledger:syntax
 mise run check:syntax-exemplars
+mise run check:fences
 mise run ledger:recovery
 cargo run --package gandr-workflow-ledger-tasks -- list --area syntax
 cargo nextest run -p gandr-workflow-ledger-tasks
