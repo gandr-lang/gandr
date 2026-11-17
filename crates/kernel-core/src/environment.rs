@@ -3756,17 +3756,20 @@ impl Environment
     /// covers. Each entry ranked at or below the watermark reads what it read
     /// when the kernel last checked its key, so the held key answers by
     /// lookup. Each commit, retire, rank rewrite, move and change of the
-    /// manifest lowers the watermark. A check of the next key above it raises
-    /// it, after the kernel checks each unit in the gap that the walk does not
-    /// keep, as a seed.
+    /// manifest lowers the watermark. Before the unit's own check, the kernel
+    /// checks each unit in the gap below it that the walk does not keep, as
+    /// a seed ([`Self::seed_below`]). A seed whose count of twins changed
+    /// takes there the key that a fresh admission gives, so the unit reads
+    /// that key. A check of the next key above the watermark raises it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success, the unit stays live at its ranks with its keys,
     ///   and a plain definition kept alone holds the name a fresh admission at
-    ///   its rank gives; on refusal, the environment is unchanged, and the
-    ///   caller retires the unit and offers its declaration. Either way the
-    ///   entries keep their number, and the arena mints nothing.
+    ///   its rank gives; on refusal, the unit's entries are unchanged, and the
+    ///   caller retires the unit and offers its declaration. Either way a seed
+    ///   below the unit may take a fresh key, the entries keep their number,
+    ///   and the arena mints nothing.
     /// - provides: the key check in place of a readmission that keeps each
     ///   entry outside the reach of an edit live, and a lookup in place of the
     ///   check while nothing the check reads changed.
@@ -3787,12 +3790,14 @@ impl Environment
     /// - hypothesis: L3 — as [`Self::rerank`]; an entry that reads a retired
     ///   one is refused in place, and so is one whose precedence changed; a
     ///   twin kept after an appended one reads as after it; a lookup after a
-    ///   second rank rewrite answers as the check does.
+    ///   second rank rewrite answers as the check does; a seed whose twin below
+    ///   it retires takes a fresh key before its reader's check.
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
     /// - witness: `environment::tests::an_entry_that_reads_a_retired_one_is_refused_in_place_6846`
     /// - witness: `environment::tests::an_entry_kept_in_place_after_an_appended_twin_reads_as_after_it_6846`
     /// - witness: `environment::tests::a_held_key_answers_until_an_admission_below_it_7197`
+    /// - witness: `environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469`
     /// - witness: `ruled::tests::a_keep_whose_precedence_changed_is_refused_6621`
     /// - witness: `ruled::tests::an_appended_reach_orients_a_law_as_a_fresh_admission_does_6621`
     #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
@@ -3833,6 +3838,9 @@ impl Environment
             return Ok(CheckedId::new(first));
         }
         let ranks = beside.unwrap_or_else(|| self.unit_ranks(unit));
+        if let Some(&below) = ranks.first() {
+            self.seed_below(below);
+        }
         self.check_in_place(first, &ranks)?;
         self.key_through(unit, &ranks);
         Ok(CheckedId::new(first))
@@ -3977,6 +3985,132 @@ impl Environment
                 commits.keyed(member);
             }
         }
+    }
+
+    /// Check in place each unit in the gap below `below`, as
+    /// [`Self::key_through`] checks it, before the unit at `below` reads the
+    /// keys of the gap. A walk passes such a unit and does not keep it, as a
+    /// seed. So when only its count of twins below it changed, it takes here
+    /// the key that a fresh admission at its rank gives.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each stale unit below `below`, in rank order up to the first
+    ///   whose check fails for another cause, is marked keyed. A generative
+    ///   unit whose check finds another key, and whose held key is its content
+    ///   key now at another count of twins, takes its key now: each member's
+    ///   content key and entry key.
+    /// - provides: a seed whose twin below it retires or crosses keyed as a
+    ///   fresh admission keys it, so each unit that reads it reads that key.
+    /// - fails: never; a unit whose check fails for another cause stops the
+    ///   walk, as in [`Self::key_through`].
+    /// - panics: none.
+    /// - executable: none — the clauses state the keys before and after the
+    ///   change, which a predicate may not capture whole.
+    ///
+    /// # Cost
+    /// - time: one key of each stale unit below `below`, and one count of its
+    ///   twins for a generative unit whose key changed.
+    /// - allocation: a shared commit table's copy, growth within the commits
+    /// - allocation: a frozen chunk's copy, growth within the family
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a seed whose twin below it retires takes the key of a
+    ///   fresh admission, and the unit that reads it is refused in place.
+    /// - witness: `environment::tests::a_seed_whose_twin_below_retires_takes_a_fresh_key_5469`
+    fn seed_below(
+        &mut self,
+        below: SourceRank,
+    )
+    {
+        use crate::error::KeepRefusal;
+        while let Some((rank, position)) = self.commits.next_stale()
+            && rank < below
+        {
+            let Some(gap) = self.entries.live(position).map(AdmittedDeclaration::unit)
+            else {
+                return;
+            };
+            let gap_ranks = self.unit_ranks(gap);
+            if gap.first != position
+                || gap_ranks.last().is_none_or(|&last| last >= below)
+                || self.keeps_beside((position, &gap_ranks)).is_err()
+            {
+                return;
+            }
+            match self.check_in_place(position, &gap_ranks) {
+                Ok(()) => {},
+                Err(KernelError::Unkept {
+                    refusal: KeepRefusal::KeyChanged,
+                    ..
+                }) => {
+                    if self.recount(position, &gap_ranks) == Recount::Held {
+                        return;
+                    }
+                },
+                Err(_) => return,
+            }
+            let commits = alloc::sync::Arc::make_mut(&mut self.commits);
+            for &member in &gap_ranks {
+                commits.keyed(member);
+            }
+        }
+    }
+
+    /// Key the generative unit whose first member stands at `first` at its
+    /// `ranks` again, when its held key is its content key now at another
+    /// count of twins below it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a frozen chunk's copy, growth within the family
+    fn recount(
+        &mut self,
+        first: ConstantIndex,
+        ranks: &[SourceRank],
+    ) -> Recount
+    {
+        let Some(entry) = self.entries.live(first)
+        else {
+            return Recount::Held;
+        };
+        let Maybe::Present(key) = self.unit_key(entry, (first, ranks))
+        else {
+            return Recount::Held;
+        };
+        let (Some(content), Maybe::Present(held)) = (key.generative, entry.content_key())
+        else {
+            return Recount::Held;
+        };
+        // Each twin that the held key counted is live in the generative index
+        // or retired since, so the two bound the count it was taken at.
+        let twins = self
+            .commits
+            .generative
+            .get(&content)
+            .map_or(0, Vec::len)
+            .saturating_add(usize::from(self.entries.retired()));
+        let counted = (0 ..= twins).any(|earlier| {
+            UnitKey {
+                key: content.generative(crate::verdict::KeyedCount::from(earlier)),
+                ..key
+            }
+            .member(crate::verdict::KeyedCount::from(0_usize))
+                == held
+        });
+        if !counted {
+            return Recount::Held;
+        }
+        let unit = entry.unit();
+        for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
+            let content = key.member(crate::verdict::KeyedCount::from(offset));
+            let entry = self.entry_key(Maybe::Present(content));
+            self.entries
+                .rekey(ConstantIndex::from(member), (content, entry));
+        }
+        Recount::Rekeyed
     }
 
     /// Close the admission that minted `atom`: from the next admission on, the
@@ -4985,6 +5119,17 @@ enum Lookup
     Answers,
     /// The kernel computes each key again.
     Checks,
+}
+
+/// How a seed whose check found another key answers for it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Recount
+{
+    /// Only its count of twins below it changed, so it took the key of a
+    /// fresh admission.
+    Rekeyed,
+    /// Its held key is no count of its content now, so it keeps that key.
+    Held,
 }
 
 /// What the committer alone reads and writes beside the entries: the
@@ -8292,6 +8437,40 @@ mod tests
                 Err(KernelError::Unkept { position, .. }) if position == b
             ),
             "`b` counts `c` now, so its held key is refused"
+        );
+    }
+
+    /// #5469: a seed whose twin below it retires takes the key of a fresh
+    /// admission. `a` and `s` are equal data declarations, and `r` names
+    /// `s`. The edit deletes `a`, and a walk keeps `r` and passes `s` as a
+    /// seed. The keep of `r` gives `s` the key that a fresh `s` alone takes.
+    /// `r` read the key that counted `a`, so its keep is refused.
+    #[test]
+    fn a_seed_whose_twin_below_retires_takes_a_fresh_key_5469()
+    {
+        let data = Generated::Lone(Member::Data(LevelConstant::from(0_u64), vec![]));
+        let reader = Generated::Lone(Member::Axiom(Field::Earlier(0)));
+        let mut fresh = keyed();
+        let fresh_s = admit_generated(&mut fresh, &data, &[], None).expect("`s` admits");
+        let mut kept = keyed();
+        let a = admit_generated(&mut kept, &data, &[], None).expect("`a` admits");
+        let s = admit_generated(&mut kept, &data, &[], None).expect("`s` admits");
+        let r = admit_generated(&mut kept, &reader, &s, None).expect("`r` admits");
+        assert_eq!(kept.retire(&a), Ok(()), "`a` retires");
+        let (s, r) = (s[0], r[0]);
+        assert_eq!(
+            (
+                kept.keep_in_place(r).map(CheckedId::position),
+                kept.entries().content(s)
+            ),
+            (
+                Err(KernelError::Unkept {
+                    position: r,
+                    refusal: crate::error::KeepRefusal::KeyChanged,
+                }),
+                fresh.entries().content(fresh_s[0])
+            ),
+            "`s` takes the key of a fresh `s`, and `r` read the key before it"
         );
     }
 
