@@ -1684,6 +1684,7 @@ impl TheoryValue
         mint: &mut F,
     ) -> Result<TheoryParts<N>, TheoryFault>
     where
+        N: Clone,
         F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
     {
         let root = Node {
@@ -2380,6 +2381,7 @@ fn read_rules<N, F>(
     mint: &mut F,
 ) -> Result<(Vec<TheoryRule<N>>, RuleCertificate<N>), TheoryFault>
 where
+    N: Clone,
     F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let numeral = |field: PayloadNode<'_>| -> Result<usize, TheoryFault> {
@@ -2504,6 +2506,7 @@ fn read_ports<N, F>(
     mint: &mut F,
 ) -> Result<Vec<TheoryPort<N>>, TheoryFault>
 where
+    N: Clone,
     F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let mut ports = Vec::new();
@@ -2583,6 +2586,7 @@ fn read_plain<N, F, Read>(
     read: fn(TheoryBinder<N>) -> Read,
 ) -> Result<Vec<Read>, TheoryFault>
 where
+    N: Clone,
     F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let mut members = Vec::new();
@@ -2641,6 +2645,7 @@ fn plain_at<N, F>(
     mint: &mut F,
 ) -> Result<TheoryBinder<N>, TheoryFault>
 where
+    N: Clone,
     F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let name = named(name, mint)?;
@@ -2676,6 +2681,7 @@ fn read_arguments<N, F>(
     mint: &mut F,
 ) -> Result<Vec<FreeTerm<N>>, TheoryFault>
 where
+    N: Clone,
     F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let arguments = argument_nodes(node)?;
@@ -2777,6 +2783,7 @@ fn read_term<N, F>(
     mint: &mut F,
 ) -> Result<FreeTerm<N>, TheoryFault>
 where
+    N: Clone,
     F: FnMut(NameRef<'_>) -> Result<N, TheoryFault>,
 {
     let mut pending = vec![Read::Visit(root)];

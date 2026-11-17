@@ -38,6 +38,7 @@
 
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
@@ -59,11 +60,12 @@ use crate::tree::TreeRef;
 /// A description-level name: a constructor, field, parameter, sort, port or
 /// type head.
 ///
-/// A boxed string, so [`Code`] stays a plain value with derived structural
-/// equality.
+/// An immutable reference-counted string.
+///
+/// Copies share its text.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Name(Box<str>);
+pub struct Name(Arc<str>);
 
 impl From<&str> for Name
 {
@@ -113,7 +115,7 @@ impl From<String> for Name
     #[inline]
     fn from(value: String) -> Self
     {
-        Self(value.into_boxed_str())
+        Self(Arc::from(value))
     }
 }
 
@@ -126,7 +128,7 @@ impl From<Box<str>> for Name
     #[inline]
     fn from(value: Box<str>) -> Self
     {
-        Self(value)
+        Self(Arc::from(value))
     }
 }
 
@@ -139,7 +141,7 @@ impl From<Name> for Box<str>
     #[inline]
     fn from(value: Name) -> Self
     {
-        value.0
+        Box::from(value.0.as_ref())
     }
 }
 
@@ -152,7 +154,7 @@ impl AsRef<str> for Name
     #[inline]
     fn as_ref(&self) -> &str
     {
-        &self.0
+        self.0.as_ref()
     }
 }
 
@@ -182,7 +184,7 @@ impl Name
     #[must_use]
     pub fn as_name_ref(&self) -> NameRef<'_>
     {
-        NameRef::from(&*self.0)
+        NameRef::from(self.0.as_ref())
     }
 }
 
