@@ -309,6 +309,9 @@ impl Sink for CheckpointBytes
     ///   length-framed payload appends. The predicate observes length and
     ///   suffix; the byte golden also checks prefix preservation.
     /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
+    ///
+    /// # Cost
+    /// - allocation: the appended bytes, growth within the checkpoint
     #[spec(
         captures: [before = self.0.len()],
         ensures: self.0.len().checked_sub(before) == Some(bytes.0.len())
@@ -443,6 +446,9 @@ where
 ///   binder and a mark below its binder, and parts that keep none, each read
 ///   back as written, and each reason that keeps no parts reads back.
 /// - witness: `codec::tests::an_elaborated_entry_round_trips`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 fn write_elaborated<Out>(
     writer: &mut Writer<'_, Out>,
     entry: Maybe<&EntryContent, elaborated::Absent>,
@@ -595,6 +601,9 @@ fn read_elaborated(
 /// - hypothesis: L3 — the reports of an elaborated item and of a suspended item
 ///   read back as written.
 /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 fn write_report<Out>(
     writer: &mut Writer<'_, Out>,
     report: Maybe<&ReportContent, reported::Absent>,
@@ -873,6 +882,9 @@ const TABLEDS: [tabled::Absent; 4] = [
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 fn write_tables<Out>(
     writer: &mut Writer<'_, Out>,
     tables: Maybe<&TableContent, tabled::Absent>,
@@ -1180,6 +1192,9 @@ where
 /// - hypothesis: L3 — as [`write_tables`].
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+///
+/// # Cost
+/// - allocation: the decoded dialogue, growth within the bytes
 fn read_dialogue<Node, ReadNode>(
     reader: &mut Reader<'_>,
     read_node: ReadNode,
@@ -1264,6 +1279,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_tables`].
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+///
+/// # Cost
+/// - allocation: the decoded trace, growth within the bytes
 fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
 {
     match reader.tag()?.0 {
@@ -1637,6 +1655,9 @@ impl Places<'_>
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_report`].
 /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the decoded table place, growth within the bytes
 fn read_table_place(
     reader: &mut Reader<'_>,
     nodes: &[SupportedNode],
@@ -1959,6 +1980,9 @@ fn read_endpoint(reader: &mut Reader<'_>) -> Result<EndpointSite, CodecError>
 /// # Adequacy
 /// - hypothesis: L3 — every defect kind round-trips with its payload.
 /// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 fn write_linearity<Out>(
     writer: &mut Writer<'_, Out>,
     defect: &Linearity,
@@ -2069,6 +2093,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — every defect kind round-trips with its payload.
 /// - witness: `codec::tests::session_refusals_round_trip_with_their_endpoints`
+///
+/// # Cost
+/// - allocation: the decoded linearity, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_linearity(reader: &mut Reader<'_>) -> Result<Linearity, CodecError>
 {
@@ -2170,6 +2197,9 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the decoded place, growth within the bytes
 fn read_place(reader: &mut Reader<'_>) -> Result<Place, CodecError>
 {
     Ok(match reader.tag()?.0 {
@@ -2204,6 +2234,9 @@ const CROSSINGS: [gandr_core_checker::worlds::Crossed; 4] = [
 /// # Adequacy
 /// - hypothesis: L3 — every defect kind round-trips with its payload.
 /// - witness: `codec::tests::located_refusals_round_trip_with_their_worlds`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 fn write_located<Out>(
     writer: &mut Writer<'_, Out>,
     defect: &Located,
@@ -2291,6 +2324,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — every defect kind round-trips with its payload.
 /// - witness: `codec::tests::located_refusals_round_trip_with_their_worlds`
+///
+/// # Cost
+/// - allocation: the decoded located, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
 fn read_located(reader: &mut Reader<'_>) -> Result<Located, CodecError>
 {
@@ -2547,6 +2583,9 @@ fn read_data_roots(reader: &mut Reader<'_>) -> Result<gandr_core_content::DataRo
 /// # Adequacy
 /// - hypothesis: L3 — as [`read_data_roots`].
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Cost
+/// - allocation: the decoded rule side, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
 fn read_rule_side(
     reader: &mut Reader<'_>
@@ -2582,6 +2621,9 @@ fn read_rule_side(
 /// - hypothesis: L3 — persisted support distinguishes equal-kind constructor
 ///   edits.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 fn write_data_content<Out>(
     writer: &mut Writer<'_, Out>,
     content: &crate::content::DataContent,
@@ -2611,6 +2653,9 @@ where
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 ///
 /// [`DataRoots::sorted`]: gandr_core_content::DataRoots::sorted
+///
+/// # Cost
+/// - allocation: the decoded data content, growth within the bytes
 #[spec(ensures: |ret| ret.as_ref().map_or(true,|content| content.roots().sorted().all(|(root, sort)| content.nodes().get(usize::from(root)).is_some_and(|node| node.sort() == sort))))]
 fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataContent, CodecError>
 {
@@ -2704,6 +2749,9 @@ where
 ///   table failures without duplicating serialization.
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 #[spec(
     ensures: |ret| match ret {
         | Ok(()) => content
@@ -4224,6 +4272,9 @@ macro_rules! delegated {
                 ///
                 /// # Specification
                 /// trivial.
+                ///
+                /// # Cost
+                /// - allocation: the decoded field, growth within the bytes
                 #[inline]
                 fn read(reader: &mut Reader<'_>) -> Result<Self, CodecError>
                 {
@@ -4556,6 +4607,9 @@ const fn role_count(role: gandr_kernel_term::Builtin) -> Count
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 const fn counted_role(count: Count) -> Result<gandr_kernel_term::Builtin, CodecError>
 {
     match count.0 {
@@ -5250,6 +5304,8 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
     },
 )]
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 fn write_typing<Out>(
     writer: &mut Writer<'_, Out>,
     typing: &Typing,
@@ -5296,6 +5352,9 @@ where
 /// - witness: `persistence::tests::a_suspended_typing_round_trips`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+///
+/// # Cost
+/// - allocation: the decoded typing, growth within the bytes
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -5358,6 +5417,9 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 /// - witness: `codec::tests::a_stored_form_refuses_a_codata_application_7403`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 #[spec(
     ensures: |ret| match ret {
         Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_)) && (Out::CODATA == CodataWrite::Keyed || !matches!(*node.former(), ContentNode::Codata { .. }))),
@@ -5434,6 +5496,9 @@ where
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
 /// - witness: `codec::tests::every_footprint_stance_and_answer_round_trips`
 /// - witness: `codec::tests::located_answers_round_trip_and_refuse_the_host_s_3381`
+///
+/// # Cost
+/// - allocation: the decoded answer, growth within the bytes
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -5834,6 +5899,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_failed`].
 /// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the decoded rooted, growth within the bytes
 fn read_rooted(
     reader: &mut Reader<'_>
 ) -> Result<Maybe<Rooted, crate::failure::rooted::Absent>, CodecError>
@@ -5971,6 +6039,9 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the decoded places, growth within the bytes
 fn read_places(reader: &mut Reader<'_>) -> Result<Vec<Placed>, CodecError>
 {
     let count = reader.count()?;
@@ -6118,6 +6189,9 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the decoded parts, growth within the bytes
 fn read_parts(reader: &mut Reader<'_>) -> Result<FailureParts, CodecError>
 {
     let count = reader.count()?;
@@ -6181,6 +6255,9 @@ fn read_parts(reader: &mut Reader<'_>) -> Result<FailureParts, CodecError>
 /// # Adequacy
 /// - hypothesis: L3 — a refused item's failure content reads back as written.
 /// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the bytes that the sink takes, growth within the checkpoint
 fn write_failed<Out>(
     writer: &mut Writer<'_, Out>,
     failure: Maybe<&FailureContent, failed::Absent>,
@@ -6293,6 +6370,9 @@ fn read_failed(reader: &mut Reader<'_>)
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_failed`].
 /// - witness: `codec::tests::a_failure_content_round_trips`
+///
+/// # Cost
+/// - allocation: the decoded outside, growth within the bytes
 fn read_outside(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 {
     let nodes = read_nodes(reader)?;
@@ -6382,6 +6462,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_stage_signature`].
 /// - witness: `codec::tests::an_elaborated_entry_round_trips`
+///
+/// # Cost
+/// - allocation: the decoded stage signature, growth within the bytes
 fn read_stage_signature(reader: &mut Reader<'_>) -> Result<StageSignature, CodecError>
 {
     let ordinal = |reader: &mut Reader<'_>| -> Result<usize, CodecError> {
@@ -6627,6 +6710,9 @@ pub fn checkpoint_frame(checkpoints: &Checkpoints) -> Result<CheckpointBytes, Co
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+///
+/// # Cost
+/// - allocation: the decoded checkpoint set, growth within the bytes
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref checkpoints) => {

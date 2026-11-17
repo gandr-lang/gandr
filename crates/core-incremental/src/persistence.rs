@@ -682,6 +682,9 @@ impl CheckpointStore for MemoryCheckpointStore
     /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
     /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
     /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+    ///
+    /// # Cost
+    /// - allocation: the encoded checkpoint set, durable by its address
     #[spec(
         captures: [
             before = self.records.len(),
@@ -853,6 +856,9 @@ impl FileCheckpointStore
     /// - hypothesis: L3 — a directory holding a record of the kept backend, one
     ///   of another and a file that is no record keeps the first and the last.
     /// - witness: `persistence::tests::pruning_keeps_only_the_kept_backend_s_records_1816`
+    ///
+    /// # Cost
+    /// - allocation: the head of each record, setup
     #[spec(ensures: |ret| matches!(ret, Ok(_) | Err(CheckpointStoreError::Io)))]
     #[inline]
     pub fn prune(
@@ -926,6 +932,9 @@ impl CheckpointStore for FileCheckpointStore
     /// - witness: `persistence::tests::file_load_distinguishes_not_found_from_other_read_errors`
     /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
     /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+    ///
+    /// # Cost
+    /// - allocation: the record and its decoded set, growth within the record
     #[spec(
         ensures: |ret| {
             matches!(
