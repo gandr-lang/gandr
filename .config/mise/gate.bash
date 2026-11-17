@@ -286,8 +286,8 @@ gate_exit() {
 #
 # Before it makes its own FIFO, the gate draws on the host's counter
 # (`gate_hosted`), so the gates of the host share one bound. Each cargo
-# command of the gate then holds the counter by a FIFO of its own, and its
-# end gives back each token that its tools kept.
+# command of the gate then holds the counter by a FIFO of its own. At the
+# command's end, the counter takes each token that its tools kept.
 # - see: #7688 — the gate's cargo on the host's counter
 #
 # A driver that a test starts takes the host's width unless `GANDR_JOBS` caps
