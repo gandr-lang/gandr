@@ -2833,6 +2833,8 @@ fn application_spine(
 /// - panics: none.
 /// - economy: one walk over the path's children, written into `read`'s buffer,
 ///   with no allocation beyond the buffer's growth.
+/// - executable: none — the pieces are the path's children in the tree, which a
+///   predicate could check only by repeating the walk.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Shapes.Box Integer` lowers as `Shapes.Box(Integer)`, and
