@@ -1,0 +1,43 @@
+//! `long-attribute-blocks` decorates declarations with outer and inner blocks.
+//!
+//! An unknown `note` refuses every declaration it decorates. An inner `checks`
+//! block decorates its enclosing module or theory.
+//!
+//! The checker reads each outer block as a whole. It assigns an inner block to
+//! its module or theory body.
+//!
+//! - see: corpus/pathological/attributes/unknown-attribute.gandr
+
+// A colour, its block's second entry unknown.
+@[refuses("UnknownAttribute"), note("a colour, named by its constructors")]
+data Color : Type where
+  | Red : Color
+  | Green : Color
+
+// An answer stated before its definition, its block's second entry unknown.
+@[refuses("UnknownAttribute"), note("the answer, stated before its definition")]
+def answer : Integer = 42;
+
+// The first of two integers, its block's second entry unknown.
+@[refuses("UnknownAttribute"), note("the first of two integers")]
+def first(x : Integer, y : Integer) -> Integer =
+  return x
+
+// A module whose body opens with an inner block: the block decorates the
+// module, so its member states the check the block asks for.
+module Counter where {
+  // The inner block, which asks each member for its check.
+  @![checks]
+  // Zero, whose check the inner block asks for.
+  def zero = 0;
+}
+
+// A theory whose body opens with an inner block: the block decorates the
+// theory, so the theory states the check the block asks for.
+theory Marks where {
+  // The inner block, which asks the theory for its check.
+  @![checks]
+  sort C : Type;
+  // A mark that takes a `C` to a `C`.
+  oper mark : (k : C) --> C;
+}

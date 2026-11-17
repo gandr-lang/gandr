@@ -1,0 +1,27 @@
+/// This source prints a transport whose motive starts away from its moved path.
+///
+/// A matching motive start lets the printer show a transport as a composite.
+/// A different motive start requires the full transport syntax.
+///
+/// The printer reads the moved path start before it chooses a spelling.
+/// The path does not determine the spelling for every motive.
+///
+/// - see: #4218 — transport printer
+/// - see: #754 — returned composite
+
+/// The `unitVariable` proof uses motives with different fixed starts.
+def unitVariable(
+  A : Type,
+  x : A,
+  z : A,
+  f : Path[.A = A](x, z),
+  m : Path[.A = A](x, z),
+  r : Path[.A = Path[.A = A](x, z)](f, m)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](f, m)](
+  Path.walk
+    (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step f (Path.here z), c)) })
+    r
+    (Path.here f),
+  Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](f, c)) }) r (Path.here f)
+) =
+  Path.here (Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](f, c)) }) r (Path.here f))

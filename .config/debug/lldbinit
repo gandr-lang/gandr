@@ -1,0 +1,4 @@
+# Rust formatters for this checkout (#3760): rustc's, from the pinned
+# toolchain, corrected so a sum-type enum prints its true variant
+# (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+command script import -c rust_formatters.py

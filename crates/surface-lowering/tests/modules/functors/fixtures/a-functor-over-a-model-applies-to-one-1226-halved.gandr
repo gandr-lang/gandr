@@ -1,0 +1,5 @@
+module Halves where {
+  type M = Integer;
+  def mul(a : Integer) -> Integer { a }
+}
+module Squared = Square(Halves);

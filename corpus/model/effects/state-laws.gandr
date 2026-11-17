@@ -1,0 +1,56 @@
+// This source tests handlers against state laws.
+//
+// State passing satisfies global-state laws. Constant handlers satisfy only
+// repeated reads or stores.
+//
+// The checker compares each law through the handler clauses.
+//
+// - see: `../../pathological/effects/state-laws.gandr` — unlawful handlers
+
+// The theories `StatePutLaws`, `StateGetGet` and `StatePutPut`.
+import "./state.gandr";
+
+/// `counter` passes state through reads and stores.
+def counter() -> (Integer -> Integer) =
+  handle st : StatePutLaws with sort S = Integer {
+    st.put 1;
+    let a = st.get ();
+    st.put (a + 1);
+    let b = st.get ();
+    pure fun (s : Integer) { pure b }
+  } with {
+    | pure(x) => pure x
+    | oper get(k) => pure fun (s : Integer) { let g = k s; g s }
+    | oper put(s, k) => pure fun (t : Integer) { let g = k *{}; g s }
+  }
+
+/// `counted` runs `counter` from zero.
+@[runs("2")]
+def counted() -> Integer =
+  let f = counter ()
+  f 0
+
+/// `readTwice` handles two reads as one read.
+@[runs("8")]
+def readTwice() -> Integer =
+  handle st : StateGetGet with sort S = Integer {
+    let a = st.get ();
+    let b = st.get ();
+    pure a + b
+  } with {
+    | pure(x) => pure x
+    | oper get(k) => k 4
+  }
+
+/// `storeTwice` keeps the second stored value.
+@[runs("3")]
+def storeTwice() -> Integer =
+  handle st : StatePutPut with sort S = Integer {
+    st.put 1;
+    st.put 2;
+    pure 3
+  } with {
+    | pure(x) => pure x
+    | oper get(k) => k 4
+    | oper put(s, k) => k *{}
+  }

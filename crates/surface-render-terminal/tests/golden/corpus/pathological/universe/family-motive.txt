@@ -1,0 +1,44 @@
+error[OutOfFragment.WrongSort]: a type application cannot stand where a computation is expected
+   ╭▸ corpus/pathological/universe/family-motive.gandr:25:49
+   │
+25 │ def pathsTo(a : Integer, d : Integer) -> Type { Path d a }
+   │                                                 ━━━━━━━━ a form of another sort than this position takes
+   │
+   ├ note: `pathsTo` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write `return` before the type to return it as a value: `return T`
+
+error[OutOfFragment.WrongSort]: a type application cannot stand where a computation is expected
+   ╭▸ corpus/pathological/universe/family-motive.gandr:29:51
+   │
+29 │ def bridgesTo(a : Integer, d : Integer) -> Type { Bridge d a }
+   │                                                   ━━━━━━━━━━ a form of another sort than this position takes
+   │
+   ├ note: `bridgesTo` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write `return` before the type to return it as a value: `return T`
+
+error[OutOfFragment.WrongSort]: a type application cannot stand where a computation is expected
+   ╭▸ corpus/pathological/universe/family-motive.gandr:33:49
+   │
+33 │ def flowsTo(a : Integer, d : Integer) -> Type { Flow d a }
+   │                                                 ━━━━━━━━ a form of another sort than this position takes
+   │
+   ├ note: `flowsTo` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write `return` before the type to return it as a value: `return T`
+
+error[OutOfFragment.WrongSort]: a type application cannot stand where a computation is expected
+   ╭▸ corpus/pathological/universe/family-motive.gandr:37:33
+   │
+37 │ def listsOf(a : Type) -> Type { List a }
+   │                                 ━━━━━━ a form of another sort than this position takes
+   │
+   ├ note: `listsOf` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write `return` before the type to return it as a value: `return T`
+
+error[OutOfFragment.WrongSort]: a type application cannot stand where a computation is expected
+   ╭▸ corpus/pathological/universe/family-motive.gandr:41:37
+   │
+41 │ def sequencesOf(a : Type) -> Type { Seq a }
+   │                                     ━━━━━ a form of another sort than this position takes
+   │
+   ├ note: `sequencesOf` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write `return` before the type to return it as a value: `return T`
