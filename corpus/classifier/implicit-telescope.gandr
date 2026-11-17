@@ -1,7 +1,9 @@
-// Implicit parameters: the telescope `[a : Type]` after a function's name
-// binds parameters a use supplies in the instantiation slot, by position in
-// the written order, `same[Integer] 3`, or by name in any order,
-// `same[.a = Integer] 3`. The implicit and the explicit
+// Implicit parameters: the telescope `[a : Type]` binds parameters of the
+// function. A use supplies them in the instantiation slot. It supplies them by
+// position in the written order, `same[Integer] 3`. Or it supplies them by
+// name in any order, `same[.a = Integer] 3`.
+//
+// The implicit and the explicit
 // parameters merge into one telescope, each after every parameter its type
 // names, ties kept in the written order; which ones are implicit is the
 // declaration's metadata, so the declared type is the one the function written
@@ -20,7 +22,7 @@
 /// The identity at a type supplied by name.
 pub def same[a : Type](y : a) -> a { y }
 
-/// `same` at the integers, supplied by position.
+/// `same` at the integers, which a call supplies by position.
 @[runs("3")]
 def sameRun() -> Integer { same[Integer] 3 }
 
@@ -115,8 +117,8 @@ module Adding where {
 /// A value combined with itself, the combination and its carrier implicit.
 pub def twice[m : Type, combine : (m, m) -> m](x : m) -> m { combine x x }
 
-/// `twice` with its carrier by position and its combination by a module
-/// path, by name: a resident's value runs to the slot's next `,` or its `]`.
+/// `twice` with its carrier by position and its combination, a module path, by
+/// name. A resident's value runs to the slot's next `,` or its `]`.
 @[runs("6")]
 def twiceRun() -> Integer { twice[Integer, .combine = Adding.plus] 3 }
 

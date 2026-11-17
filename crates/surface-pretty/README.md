@@ -108,6 +108,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 ## References
 
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is written as the fold it realises until the printer writes the former.
+- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design, § implicits-rule-supply-by-name-or-position. A call supplies its implicits by name or by position in the written block, and the printer writes each atom at the head of that block by position.
 
 ## License
 

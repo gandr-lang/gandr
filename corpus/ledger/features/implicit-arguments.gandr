@@ -159,8 +159,8 @@ module Adding where {
 @[checks]
 def twice[m : Type, combine : (m, m) -> m](x : m) -> m { combine x x }
 
-/// `twice` with its carrier by position and its combination by a module
-/// path, by name: a resident's value runs to the slot's next `,` or its `]`.
+/// `twice` with its carrier by position and its combination, a module path, by
+/// name. A resident's value runs to the slot's next `,` or its `]`.
 @[runs("6")]
 def twiceRun() -> Integer { twice[Integer, .combine = Adding.plus] 3 }
 
