@@ -1,4 +1,5 @@
-/// `type_application.juxtaposed`: a type family applied by juxtaposition.
+/// `type_application.juxtaposed`: a type family applied by juxtaposition,
+/// through its bare name or through its module's name.
 
 // The native finite lists.
 import std.list (List);
@@ -7,3 +8,11 @@ import std.list (List);
 @[checks]
 def numbers : List Integer;
 def numbers = cons 1 nil;
+
+module Shapes where
+  type Pair(a : Type) = *{a, a};
+
+/// Two integers through the module's family.
+@[checks]
+def twins : Shapes.Pair Integer;
+def twins = *{1, 2};
