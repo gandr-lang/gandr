@@ -1789,9 +1789,14 @@ impl Reader<'_, '_>
         if run.at(Spelling("{")).0 {
             return Err(run.signature_fault(SignatureFault::OperationFiller));
         }
-        // An operation of no input is a constant, `oper c : T`: the reader
-        // refuses the empty input list `() -->` by its name.
-        if kind == OperationKind::Operation && thunked.is_none() && boundary.inputs.is_empty() {
+        // An operation of no input and one unnamed result is a constant,
+        // `oper c : T`: the reader refuses the empty input list `() -->` by its
+        // name.
+        if kind == OperationKind::Operation
+            && thunked.is_none()
+            && boundary.inputs.is_empty()
+            && matches!(boundary.outputs.as_slice(), [only] if only.name.as_ref().is_empty())
+        {
             return Err(run.signature_fault(SignatureFault::Retired(
                 gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
             )));

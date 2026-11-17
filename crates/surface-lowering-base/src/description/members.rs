@@ -70,26 +70,19 @@ impl Reader<'_, '_>
         if !run.eat(Spelling(":")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let (inputs, written_inputs) = if run.eat(Spelling("(")).0 {
+        let listed = run.eat(Spelling("(")).0;
+        let (inputs, written_inputs) = if listed {
             let read = self.ports(run)?;
             if !run.eat(Spelling("-->")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
-            }
-            // An operation of no input is written `oper f : R`: the reader
-            // refuses the empty input list `() -->` by its name.
-            if read.0.is_empty() {
-                return Err(
-                    run.fault(DescriptionFault::Signature(SignatureFault::Retired(
-                        gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
-                    ))),
-                );
             }
             read
         }
         else {
             (Vec::new(), Vec::new())
         };
-        let (outputs, written_outputs) = if run.eat(Spelling("(")).0 {
+        let tupled = run.eat(Spelling("(")).0;
+        let (outputs, written_outputs) = if tupled {
             self.ports(run)?
         }
         else {
@@ -101,6 +94,15 @@ impl Reader<'_, '_>
                 sort,
             }])
         };
+        // An operation of no input and one result is written `oper f : R`:
+        // the reader refuses the empty input list `() -->` by its name.
+        if listed && inputs.is_empty() && !tupled {
+            return Err(
+                run.fault(DescriptionFault::Signature(SignatureFault::Retired(
+                    gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
+                ))),
+            );
+        }
         let input_count =
             u32::try_from(inputs.len()).map_err(|_error| run.fault(DescriptionFault::Malformed))?;
         let output_count = u32::try_from(outputs.len())
