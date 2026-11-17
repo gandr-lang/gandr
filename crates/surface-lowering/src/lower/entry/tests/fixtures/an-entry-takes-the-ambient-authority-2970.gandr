@@ -1,0 +1,3 @@
+def main(authority : Cap { print }) -> [std.io.Console.Eff] Unit {
+  authority.print "hello, world!"
+}

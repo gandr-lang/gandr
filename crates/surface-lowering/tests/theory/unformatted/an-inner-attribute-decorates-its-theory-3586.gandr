@@ -1,0 +1,19 @@
+theory Wheel where {
+  @![ refuses("BareFeedback") ]
+  sort Nat : Type;
+  oper zip : (s : Nat, t : Nat) --> (u : Nat);
+  rule spin : (data stream : Nat) ==> (out : Nat) {
+    node : zip(stream, state) --> (out);
+    feed : (out) --> (state);
+  };
+}
+theory Late where {
+  sort C : Type;
+  @![ explicit_exits ]
+  oper mark : (k : C) --> C;
+}
+@[ explicit_exits ]
+theory Doubled where {
+  @![ explicit_exits ]
+  sort D : Type;
+}

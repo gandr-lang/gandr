@@ -1,0 +1,15 @@
+/// The identity on the booleans, by cases. The fixture states function
+/// extensionality at the booleans. The judgement decides the path by the
+/// steps of both functions at each input. A checkpoint keeps the steps by
+/// place. No body calls another declaration.
+def by_cases(b : Bool) -> Bool =
+  match b where
+    | true => +{.0 = *{}}
+    | false => +{.1 = *{}}
+
+/// The identity on the booleans.
+def same(b : Bool) -> Bool =
+  b
+
+/// The two functions agree at both booleans.
+def agreement : Path[.A = Bool -> Bool](by_cases, same) = Path.funext by_cases same;

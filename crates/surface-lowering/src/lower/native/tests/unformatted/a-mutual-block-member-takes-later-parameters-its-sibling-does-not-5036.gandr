@@ -1,0 +1,5 @@
+{NAT}def weight(n : Nat) -> -F Type {{ return Integer }}
+rec {{
+  def rec count(n : Nat, k : weight(n)) -> -F Integer {{ match n {{ | Zero => return 0 | Succ(p) => tally[<] p }} }}
+  def rec tally(n : Nat) -> -F Integer {{ match n {{ | Zero => return 1 | Succ(p) => count[<] p 2 }} }}
+}}

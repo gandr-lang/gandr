@@ -1,0 +1,43 @@
+[package]
+name = "gandr-runtime-stencils"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The L machine's transitions, written once: the stencils copy-and-patch emits and the portable executor dispatches"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["copy-and-patch", "gandr", "no-std", "sequent-calculus"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# No dependencies: the emitter's build script compiles `src/lib.rs` alone,
+# with bare rustc, into the object its stencil table is read from.
+
+# The agreement suites run the stencils through the emitter on both tiers
+# and hold native code's answers to the executor's and every named program
+# to the answer it states: the store and the IL from the sequent crate,
+# programs built over the core and kernel vocabularies and hand-built IL cut
+# at a polarity, and the corpus's `runs` items through the dispatcher's
+# composition and the run stage's engine.
+[dev-dependencies]
+gandr-core-sequent.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-runtime-emitter.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-evaluate.workspace = true
+gandr-theory-cell-complexes.workspace = true
+gandr-workflow-sweep.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

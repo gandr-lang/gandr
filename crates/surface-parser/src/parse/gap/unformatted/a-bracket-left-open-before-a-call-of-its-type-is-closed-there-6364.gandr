@@ -1,0 +1,9 @@
+def carriedAlong : Path(
+  Path.walk
+    ((y : Point.T, Path[.A = Point.T(Point.origin, y)) -> Unit)
+    originOther
+    (Path.here Point.origin)
+    (Path.here originOther)
+    (*{}),
+  *{}
+) = Path.here (*{});

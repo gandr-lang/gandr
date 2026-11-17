@@ -1,0 +1,15 @@
+data Ty : Type where
+  | Base : Ty
+  | Arr : (a : Ty, b : Ty) --> Ty
+
+rec {
+  data Ne : (a : Ty) --> Type where {
+    | NVar : (a : Ty) --> Ne a
+    | NApp : (a : Ty, b : Ty, t : Ne(Arr a b), u : Nf a) --> Ne b
+  }
+  data Nf : (a : Ty) --> Type where
+    | NNe : (t : Ne Base) --> Nf Base
+    | NLam : (a : Ty, b : Ty, t : Nf b) --> Nf(Arr a b)
+}
+
+def var : Nf Base = NNe (NVar Base);
