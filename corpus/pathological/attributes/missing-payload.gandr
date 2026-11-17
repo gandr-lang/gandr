@@ -1,0 +1,3 @@
+@[refuses("MissingPayload")]
+@[doc]
+def f = 42;

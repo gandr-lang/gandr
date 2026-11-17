@@ -1,0 +1,2 @@
+def coupled() -> Couple Integer (Maybe Integer) =
+  Couple 1 (Some 2 : Maybe Integer)

@@ -1,0 +1,2 @@
+/// Returns `answer`, not `../x.gandr`.
+def $0answer = 42 ;
