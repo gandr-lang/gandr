@@ -104,8 +104,9 @@ fn a_forward_reference_from_the_prefix_binds_after_its_target()
 #[test]
 fn a_telescope_names_its_implicits_in_the_merged_order_2267()
 {
-    // `x : t` binds after `t`, so the merged telescope is `t` then `x`; `twin`
-    // writes no telescope and answers nothing.
+    // `x : t` binds after `t`, so the merged telescope is `t` then `x`, and the
+    // written block holds `x` alone; `twin` writes no telescope and answers
+    // nothing.
     let source = include_str!(
         "tests/fixtures/a-forward-reference-from-the-prefix-binds-after-its-target.gandr"
     );
@@ -125,7 +126,11 @@ fn a_telescope_names_its_implicits_in_the_merged_order_2267()
         None,
         Some(SurfaceName::from("x"))
     ]);
+    assert_eq!(module.written_implicits(constant("chosen")), [
+        SurfaceName::from("x")
+    ]);
     assert_eq!(module.implicits(constant("twin")), []);
+    assert_eq!(module.written_implicits(constant("twin")), []);
 }
 
 #[test]

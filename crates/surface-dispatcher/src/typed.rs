@@ -1086,6 +1086,9 @@ pub struct TypeTable
     /// declaration: one entry per parameter in the order the core applies
     /// them, an implicit's name and none for an explicit one.
     telescopes: BTreeMap<ConstantIndex, Vec<Option<String>>>,
+    /// The written block of each declaration that writes an implicit, by the
+    /// declaration: the name of each entry, in written order.
+    blocks: BTreeMap<ConstantIndex, Vec<String>>,
     /// The prelude's declarations that a comparison calls, each with the
     /// infix operator that calls it, ascending by the constant: a printed
     /// call of one is written as the comparison.
@@ -1980,6 +1983,9 @@ impl TypeTable
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the refusal's message, diagnostic.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the table of a source refused whole equals the one
     ///   its typing answers.
@@ -2020,6 +2026,10 @@ impl TypeTable
     /// - panics: none.
     /// - executable: none — as [`of_unit`](Self::of_unit), which types through
     ///   this.
+    ///
+    /// # Cost
+    /// - allocation: the table's entries and the printer's tables, growth
+    ///   within the module's declarations.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a table assembled from a judgement's typed run is the
@@ -3423,6 +3433,19 @@ impl TypeTable
                 (!held.is_empty()).then_some((constant, held))
             })
             .collect();
+        let blocks = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                let constant = declaration.constant();
+                let held: Vec<String> = module
+                    .written_implicits(constant)
+                    .iter()
+                    .map(|name| String::from(name.as_ref()))
+                    .collect();
+                (!held.is_empty()).then_some((constant, held))
+            })
+            .collect();
         let operators = module.operators().to_vec();
         // A variable's type is its slot's read past the binders between
         // them, copied to fresh nodes: each copy is named as its source.
@@ -3485,6 +3508,7 @@ impl TypeTable
             crossings,
             slots,
             telescopes,
+            blocks,
             operators,
             shifts,
         }
@@ -4942,7 +4966,8 @@ impl TypeTable
         for &(case, family) in cases {
             constructors.case(case, FamilyKey::Declared(family));
         }
-        // A call supplies its callee's implicits by name, `f[.x = a](b)`, and a
+        // A call supplies its callee's implicits by position where its written
+        // block serves, `f[T](b)`, by name elsewhere, `f[.x = a](b)`, and a
         // model implicit by the path its components read under, `f[.s = M]`:
         // the core applies every argument in place.
         let implicits: Vec<(ConstantIndex, Vec<Option<Name<'_>>>)> = self
@@ -4955,6 +4980,16 @@ impl TypeTable
                         .iter()
                         .map(|name| name.as_deref().map(Name::from))
                         .collect(),
+                )
+            })
+            .collect();
+        let blocks: Vec<(ConstantIndex, Vec<Name<'_>>)> = self
+            .blocks
+            .iter()
+            .map(|(&constant, block)| {
+                (
+                    constant,
+                    block.iter().map(|name| Name::from(name.as_str())).collect(),
                 )
             })
             .collect();
@@ -4993,6 +5028,7 @@ impl TypeTable
             .naming(&constructors)
             .writing(&forms)
             .naming_implicits(&implicits)
+            .ordering_implicits(&blocks)
             .flattening(&flattened)
             .operating(&self.operators)
             .within(&binders)

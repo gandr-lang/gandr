@@ -2761,6 +2761,61 @@ where
     matches!(past_return(source, node), Former::TupleProjection(..)).then_some(Notation::Positional)
 }
 
+/// A resident a call writes as one atom of the instantiation slot, which the
+/// slot reads by position: a numeral or a capitalised name applied to nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Atom;
+
+/// Whether `node`, a resident of a call, is written as an atom the slot reads
+/// by position: a non-negative integer, or the code of `Integer`, `String`,
+/// `Char`, `Unit`, `Void`, or of a type a bare capitalised name spells applied
+/// to nothing.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Atom`] exactly when `node` reads as a non-negative integer
+///   literal, or as the quote of the base type `Integer`, `String` or `Char`,
+///   of the empty product or the empty sum, or of a data family, a member type
+///   or an abstract type of no arguments whose name opens with an uppercase
+///   letter and holds letters, digits and `_` alone; none otherwise.
+/// - provides: the residents a printed call supplies by position.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `7`, `Integer` and `Unit` are atoms; `- 3`, a lowercase
+///   variable and a qualified name are not.
+/// - witness: `tests::goldens::a_call_supplies_its_callee_s_implicits_by_position_6320`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Literal(_) | Former::Quote(_)))]
+fn atom<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Atom>
+where
+    S: Source + ?Sized,
+{
+    let bare = |name: Name<'_>| {
+        let text: &str = name.as_ref();
+        text.chars().next().is_some_and(char::is_uppercase)
+            && text
+                .chars()
+                .all(|letter| letter.is_alphanumeric() || letter == '_')
+    };
+    let code = |quoted: S::Node| {
+        let former = source.read(quoted);
+        matches!(
+            former,
+            Former::BaseType(BaseType::Integer | BaseType::String | BaseType::Character)
+        ) || matches!(former, Former::Product(arity) | Former::Sum(arity) if usize::from(arity) == 0_usize)
+            || matches!(former, Former::Data { name: Some(name), arity } if usize::from(arity) == 0_usize && bare(name))
+            || matches!(former, Former::Member(name) | Former::Abstract(name) if bare(name))
+    };
+    let former = source.read(node);
+    let atomic = matches!(former, Former::Literal(&Literal::Integer(ref integer)) if integer.sign() == Sign::NonNegative)
+        || matches!(former, Former::Quote(quoted) if code(quoted));
+    atomic.then_some(Atom)
+}
+
 /// The labels the source writes for `node`, a link of a dependent record:
 /// its first field's and, at the innermost link, its last field's.
 ///
@@ -11376,6 +11431,10 @@ impl Walk<'_, '_>
     /// Every turn adds one argument, and the loop stops at [`DEPTH_LIMIT`]
     /// arguments.
     ///
+    /// # Cost
+    /// - allocation: the arguments, the residents and the written block's
+    ///   index, growth within the call's spine.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a call of a forced constant on two arguments and a
     ///   call whose head is a returner observe argument order, the elided force
@@ -11556,17 +11615,22 @@ impl Walk<'_, '_>
         // takes that argument by name, `f[.x = a](b)`, where the spine is read
         // whole: the core applies every argument in place, and the
         // parentheses admit only the explicit ones. A model implicit's
-        // components are supplied by the one path each reads under, `f[s =
-        // M]`.
+        // components are supplied by the one path each reads under, `f[.s =
+        // M]`. The atoms that fill the first entries of the callee's written
+        // block are supplied by position, `f[T](b)`.
         let whole = !matches!(source.read(head), Former::Application(..));
-        let (telescope, slots) = if uniform == 0_usize
+        let (telescope, slots, block) = if uniform == 0_usize
             && whole
             && let Former::Force(thunk) = source.read(head)
         {
-            (source.implicits(thunk), source.model_slots(thunk))
+            (
+                source.implicits(thunk),
+                source.model_slots(thunk),
+                source.written_implicits(thunk),
+            )
         }
         else {
-            (&[][..], &[][..])
+            (&[][..], &[][..], &[][..])
         };
         // A hole the call nominated for an implicit it omits is what the
         // source left out: the call writes nothing there. A wildcard is what
@@ -11621,6 +11685,41 @@ impl Walk<'_, '_>
             Resident::Node(node) => !omitted(node),
             Resident::Path(_) => true,
         });
+        // The positional run: each entry of the written block in turn, while
+        // the call supplies it by an atom, moved ahead of the named ones. An
+        // entry the call omits, supplies by any other value or by a path ends
+        // the run, so no `_` is written.
+        let positional = if block.is_empty() || residents.is_empty() {
+            0_usize
+        }
+        else {
+            let entries: BTreeMap<&str, usize> = block
+                .iter()
+                .enumerate()
+                .map(|(index, written)| (written.as_ref(), index))
+                .collect();
+            let mut atomic = alloc::vec![false; block.len()];
+            for &(name, ref resident) in &residents {
+                if let (Some(&index), &Resident::Node(node)) =
+                    (entries.get(name.as_ref()), resident)
+                    && atom(source, node).is_some()
+                    && let Some(slot) = atomic.get_mut(index)
+                {
+                    *slot = true;
+                }
+            }
+            let run = atomic.iter().take_while(|&&held| held).count();
+            // A stable sort: the run's entries lead in block order, and the
+            // rest keep their order behind them.
+            residents.sort_by_key(|&(name, _)| {
+                entries
+                    .get(name.as_ref())
+                    .copied()
+                    .filter(|&index| index < run)
+                    .unwrap_or(run)
+            });
+            run
+        };
         // A call reads its head and its arguments as expressions wherever it
         // stands: where a type is read, the walk reads them as expressions the
         // type encloses and returns to the type past the call's join.
@@ -11641,6 +11740,9 @@ impl Walk<'_, '_>
                     let _ = parts.text(",").part(Part::Space);
                 }
                 match *resident {
+                    Resident::Node(_) if index < positional => {
+                        let _ = parts.piece(Binding::ARGUMENT);
+                    },
                     Resident::Node(_) => {
                         let _ = parts
                             .text(format!(".{} = ", name.as_ref()))

@@ -29,6 +29,7 @@ use gandr_surface_diagnostics::model_slots;
 use gandr_surface_diagnostics::modelled;
 use gandr_surface_diagnostics::named_forms;
 use gandr_surface_diagnostics::telescopes;
+use gandr_surface_diagnostics::written_blocks;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::classify;
@@ -641,6 +642,10 @@ enum Held
     /// A `let` of a call that the formatter keeps and the printer folds into
     /// its one read (#6423).
     LetFolded,
+    /// A call printed against a callee whose printed definition drops a
+    /// stage binder of its written block, so the block that a positional
+    /// supply follows moves under the reprint (#7856).
+    StageDropped,
 }
 
 impl fmt::Display for Held
@@ -662,6 +667,7 @@ impl fmt::Display for Held
             Self::SeveralResults => "#5173, a bind of a call's outputs",
             Self::BareName => "#5779, a constructor written bare where its name is ambiguous",
             Self::LetFolded => "#6423, a let of a call the printer folds into its read",
+            Self::StageDropped => "#7856, a callee's printed definition drops a stage binder",
         })
     }
 }
@@ -1022,6 +1028,7 @@ fn read(
         .collect();
     maps.sort_by_key(|&(map, _)| map);
     let implicits = telescopes(&module);
+    let blocks = written_blocks(&module);
     let slots = model_slots(&module);
     // Each dependent pair's binder and second label as the source writes
     // them, as the language server's spellings name them (#3278), each
@@ -1048,6 +1055,7 @@ fn read(
         .answering(&answers)
         .manifesting(&rows)
         .naming_implicits(&implicits)
+        .ordering_implicits(&blocks)
         .flattening(&slots)
         .operating(module.operators());
     // A body leaves each written reduct's or forgetting map's call to the
@@ -1548,6 +1556,18 @@ fn bodies(
         });
     }
     let back = back.unwrap_or_default();
+    // A definition whose source writes a stage binder, `[i : Size]`, that its
+    // printing leaves out (#7856): a call against it reads a shorter written
+    // block in the variant, so its positional run moves under the reprint.
+    let source: &str = <&str>::from(written.text);
+    let stage_dropped = all.iter().any(|declaration| {
+        let writes = declaration.forms.iter().any(|&span| {
+            source
+                .get(usize::from(span.start()) .. usize::from(span.end()))
+                .is_some_and(|text| text.contains(": Size"))
+        });
+        writes && !declaration.written(Form::Sugared).contains(": Size")
+    });
     let (read_back, unread): (Vec<&Printed>, Vec<&Printed>) = all
         .into_iter()
         .partition(|declaration| back.contains(&declaration.name));
@@ -1556,6 +1576,7 @@ fn bodies(
     for declaration in unread {
         match held_again.get(&declaration.name) {
             Some(&why) => holding.push((why, declaration.name.as_str())),
+            None if stage_dropped => holding.push((Held::StageDropped, declaration.name.as_str())),
             None => found.misses.push(format!(
                 "{name}: `{}` does not lower back to itself",
                 declaration.name

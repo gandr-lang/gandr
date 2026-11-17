@@ -262,6 +262,9 @@
 //!   (editors), _The Fun of Programming_, Palgrave Macmillan, 2003.
 //!   [prettier.pdf](https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf)
 //!   — the document algebra the documents are written in.
+//! - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: a call supplies its
+//!   implicits by name or by position in the written block, and the printer
+//!   writes each atom at the head of that block by position.
 
 // Module documentation that predates the shape lint: 17 headings outside the
 // vocabulary, 16 decision records, 8 issue references and 3 budgets exceeded.

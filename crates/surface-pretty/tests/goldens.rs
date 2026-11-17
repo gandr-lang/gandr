@@ -3119,6 +3119,81 @@ fn a_call_supplies_its_callee_s_implicits_by_name_2267()
     );
 }
 
+/// A call supplies by position each implicit an atom supplies at the head of
+/// its callee's written block, in the block's order, and the rest by name: a
+/// numeral or a capitalised type stands in the run, and an omitted entry or
+/// a variable ends it, so no `_` is written. `chosen`'s block writes `x`
+/// first, which the merged telescope applies after `t`.
+#[test]
+fn a_call_supplies_its_callee_s_implicits_by_position_6320()
+{
+    let names = [Name::from("first"), Name::from("chosen")];
+    let mut core = CoreArena::new();
+    let omitted =
+        core.value_hole(HoleId::nominated(NominationIndex::from(0_u32)).expect("a nominated name"));
+    let [three, seven] =
+        [Written("3"), Written("7")].map(|written| integer(&mut core, Sign::NonNegative, written));
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let integer_code = core.value_quote(integer_type);
+    let unit = core.value_type_product(&[]);
+    let unit_code = core.value_quote(unit);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let call = |core: &mut CoreArena, constant: usize, arguments: &[ValueId]| {
+        let head = core.value_constant(ConstantIndex::from(constant));
+        let mut applied = core.computation_force(head);
+        for &argument in arguments {
+            applied = core.computation_application(applied, argument);
+        }
+        core.computation_lambda(applied)
+    };
+    let both = call(&mut core, 0, &[integer_code, unit_code, three, seven]);
+    let gap = call(&mut core, 0, &[omitted, unit_code, three, seven]);
+    let variable = call(&mut core, 0, &[bound, unit_code, three, seven]);
+    let reordered = call(&mut core, 1, &[integer_code, seven]);
+    let telescopes = [
+        (ConstantIndex::from(0_usize), vec![
+            Some(Name::from("a")),
+            Some(Name::from("b")),
+            None,
+            None,
+        ]),
+        (ConstantIndex::from(1_usize), vec![
+            None,
+            Some(Name::from("x")),
+        ]),
+    ];
+    let blocks = [
+        (ConstantIndex::from(0_usize), vec![
+            Name::from("a"),
+            Name::from("b"),
+        ]),
+        (ConstantIndex::from(1_usize), vec![Name::from("x")]),
+    ];
+    let source = CoreSource::new(&core, &names)
+        .naming_implicits(&telescopes)
+        .ordering_implicits(&blocks);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(both)),
+        faithful(Written("fun (a) { first[Integer, Unit] 3 7 }"))
+    );
+    assert_eq!(
+        spelled(&source, body(gap)),
+        faithful(Written("fun (a) { first[.b = Unit] 3 7 }")),
+        "an omitted entry ends the run"
+    );
+    assert_eq!(
+        spelled(&source, body(variable)),
+        faithful(Written("fun (a) { first[.a = a, .b = Unit] 3 7 }")),
+        "a variable ends the run"
+    );
+    assert_eq!(
+        spelled(&source, body(reordered)),
+        faithful(Written("fun (a) { chosen[7] Integer }")),
+        "the run follows the written block, not the merged telescope"
+    );
+}
+
 /// A call supplies a callee's model implicit by the module its components
 /// are members of, `f[.s = M]`, writes nothing for a slot it omits, and
 /// writes components no one path names in place, in the printer's own
