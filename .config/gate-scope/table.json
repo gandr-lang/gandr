@@ -33,7 +33,12 @@
     "prose": ["check:fences", "check:prose"],
     "riscv64": ["check:riscv64-ring"]
   },
-  "readers": ["gandr-surface-dispatcher", "gandr-surface-evaluate"],
+  "readers": [
+    "gandr-surface-dispatcher",
+    "gandr-surface-evaluate",
+    "gandr-surface-grammar",
+    "gandr-surface-parser"
+  ],
   "light": ["check:cases", "check:deny", "check:spec-cost-landed"],
   "landing": [
     "check:corpus",
