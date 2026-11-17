@@ -2464,7 +2464,6 @@ fn caused(
 ///   cause, and a declaration refused at formed data keeps its own.
 /// - witness: `settle::tests::a_declaration_refused_at_refused_terms_states_their_cause_4143`
 #[inline]
-#[must_use]
 pub fn checker_refusal(
     module: &LoweredModule<'_>,
     verdicts: &ModuleReport,

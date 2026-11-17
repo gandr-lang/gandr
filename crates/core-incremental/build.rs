@@ -474,8 +474,8 @@ fn field_of(
             }
         })
         .collect::<Result<_, _>>()?;
-    let ty = match ty.as_slice() {
-        [naming, node] if naming == "N" => {
+    let ty = match *ty.as_slice() {
+        [ref naming, ref node] if naming == "N" => {
             let id = match node.as_str() {
                 "Value" => "ValueId",
                 "Computation" => "ComputationId",

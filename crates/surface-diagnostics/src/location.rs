@@ -135,6 +135,7 @@ impl Located
     /// - witness: `tests::diagnostics::a_mismatch_under_a_binder_names_it`
     #[spec(ensures: |ret| ret.frames.len()
         == failure.as_ref().map_or(0_usize, |failure| failure.obligations().len()))]
+    #[inline]
     #[must_use]
     pub fn of(
         refusal: CheckRefusal,
@@ -143,21 +144,26 @@ impl Located
         (origins, text): (&OriginTable, SourceText<'_>),
     ) -> Self
     {
-        let omitted = match refusal {
-            CheckRefusal::ImplicitUnsolved { at, .. }
-            | CheckRefusal::ModelUnanswered { at, .. }
-            | CheckRefusal::ModelAmbiguous { at, .. } => match origins.omitted(at) {
+        let omitted = if let CheckRefusal::ImplicitUnsolved { at, .. }
+        | CheckRefusal::ModelUnanswered { at, .. }
+        | CheckRefusal::ModelAmbiguous { at, .. } = refusal
+        {
+            match origins.omitted(at) {
                 Maybe::Present(omitted) => Maybe::Present(omitted.clone()),
                 Maybe::Absent(_) => Maybe::Absent(locating::Absent::Unrecorded),
-            },
-            _ => Maybe::Absent(locating::Absent::Unrecorded),
+            }
+        }
+        else {
+            Maybe::Absent(locating::Absent::Unrecorded)
         };
-        let law = match refusal {
-            CheckRefusal::HandlerUnlawful { at, rule, .. } => match origins.scope_law(at, rule) {
+        let law = if let CheckRefusal::HandlerUnlawful { at, rule, .. } = refusal {
+            match origins.scope_law(at, rule) {
                 Maybe::Present(law) => Maybe::Present(law.clone()),
                 Maybe::Absent(_) => Maybe::Absent(locating::Absent::Unrecorded),
-            },
-            _ => Maybe::Absent(locating::Absent::Unrecorded),
+            }
+        }
+        else {
+            Maybe::Absent(locating::Absent::Unrecorded)
         };
         let (named, frames) = failure.map_or_else(
             || (Vec::new(), Vec::new()),
@@ -258,6 +264,7 @@ impl Locations
     #[spec(ensures: |ret| ret.0.keys().all(|constant| report.declarations().iter().any(|declaration|
         declaration.constant() == *constant
             && matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(_))))))]
+    #[inline]
     #[must_use]
     pub fn of(
         module: &gandr_surface_lowering::LoweredModule<'_>,
@@ -295,6 +302,7 @@ impl Locations
     ///   as on a fresh judgement of the closure.
     /// - witness: `tests::diagnostics::a_document_judged_after_its_closure_spells_as_the_whole_unit_776`
     #[spec(ensures: |ret| earlier.0.range(.. boundary).all(|(constant, record)| ret.0.get(constant) == Some(record)))]
+    #[inline]
     #[must_use]
     pub fn after(
         earlier: &Self,

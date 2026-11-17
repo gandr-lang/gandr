@@ -778,16 +778,17 @@ where
                         // A declaration's compared types stand where its
                         // failure stands, so a refused body's compared
                         // types read its failure's names.
-                        Maybe::Present(refusal) => Some((
-                            refusal.compared(),
-                            (
-                                failed
-                                    .get(&declaration.constant())
-                                    .copied()
-                                    .unwrap_or(SpellingPlace::closed(declaration.constant())),
-                                reader_of(declaration.constant()),
-                            ),
-                        )),
+                        Maybe::Present(refusal) => {
+                            Some((
+                                refusal.compared(),
+                                (
+                                    failed.get(&declaration.constant()).copied().unwrap_or_else(
+                                        || SpellingPlace::closed(declaration.constant()),
+                                    ),
+                                    reader_of(declaration.constant()),
+                                ),
+                            ))
+                        },
                         Maybe::Absent(_) => None,
                     }
                 },
@@ -818,7 +819,7 @@ where
                     failed
                         .get(&declaration.constant())
                         .copied()
-                        .unwrap_or(SpellingPlace::closed(declaration.constant())),
+                        .unwrap_or_else(|| SpellingPlace::closed(declaration.constant())),
                     reader_of(declaration.constant()),
                 )),
                 Maybe::Present(_) | Maybe::Absent(_) => None,
@@ -1051,7 +1052,7 @@ impl Spellings
         self.places
             .get(&constant)
             .copied()
-            .unwrap_or(SpellingPlace::closed(constant))
+            .unwrap_or_else(|| SpellingPlace::closed(constant))
     }
 
     /// The printed side `side` of a loop refusal: on one line where it fits a

@@ -667,19 +667,20 @@ impl Report<'_>
                 refusal: Refusal::Checking(CheckRefusalOf::LoopNotRespected { left, right, .. }),
                 spellings,
                 ..
-            } => match {
+            } => {
                 let place = spellings.place_of(declaration.constant());
                 let side = |node| SpelledLoop { node, place };
-                (
+                let sides = (
                     spellings.loop_side(side(left)),
                     spellings.loop_side(side(right)),
-                )
-            } {
-                (Maybe::Present(left), Maybe::Present(right)) => Vec::from([
-                    LoopSide::Carried.noted(left),
-                    LoopSide::AtPoint.noted(right),
-                ]),
-                _ => Vec::new(),
+                );
+                match sides {
+                    (Maybe::Present(left), Maybe::Present(right)) => Vec::from([
+                        LoopSide::Carried.noted(left),
+                        LoopSide::AtPoint.noted(right),
+                    ]),
+                    _ => Vec::new(),
+                }
             },
             Subject::Refused { .. }
             | Subject::Unsettled { .. }

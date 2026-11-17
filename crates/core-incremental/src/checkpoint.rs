@@ -2502,7 +2502,7 @@ pub fn node_key(
     if write_node_content(&mut hasher, &TypeContent::unstaged(arena, layout, node)).is_err() {
         return Maybe::Absent(recall::Absent::Opaque);
     }
-    Maybe::Present(NodeKey::from(digest_of(&hasher.0)))
+    Maybe::Present(NodeKey::from(digest_of(hasher.hasher())))
 }
 
 /// The key of a node whose content holds an unresolved node: the digest of a

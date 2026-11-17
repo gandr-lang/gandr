@@ -433,7 +433,21 @@ pub enum CodataWrite
 /// trivial.
 #[repr(transparent)]
 #[derive(Debug, Default)]
-pub(crate) struct ContentKeyHasher(pub(crate) blake3::Hasher);
+pub struct ContentKeyHasher(blake3::Hasher);
+
+impl ContentKeyHasher
+{
+    /// The hasher, fed with each byte of the content written so far.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn hasher(&self) -> &blake3::Hasher
+    {
+        &self.0
+    }
+}
 
 impl Sink for ContentKeyHasher
 {
@@ -7038,7 +7052,7 @@ where
 ///
 /// # Specification
 /// trivial.
-pub(crate) fn write_node_content<Out>(
+pub fn write_node_content<Out>(
     sink: &mut Out,
     content: &TypeContent,
 ) -> Result<(), CodecError>
@@ -9917,8 +9931,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => answer.nodes().iter().any(|node| matches!(*node.former(), ContentNode::Codata { .. })),
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
-ContentNode::Codata { .. } => None,
-ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
+ContentNode::Codata { .. } | ContentNode::Compose { .. } | ContentNode::Fill { .. } | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::RowValue(_) | ContentNode::RowKind | ContentNode::RowTail(_) | ContentNode::BridgeType { .. } |
 ContentNode::ReturnAll(_) | ContentNode::BindAll(..) | ContentNode::Returns { .. } | ContentNode::Patched { .. } |
 ContentNode::LinearLambda(_) | ContentNode::LinearArrow { .. } |
 ContentNode::Hold(_) | ContentNode::Leta { .. } | ContentNode::Migrate { .. } | ContentNode::HeldType { .. } | ContentNode::CapabilityType(_) |
@@ -10129,9 +10142,8 @@ fn read_spending(
             });
         match ret {
             | Ok(()) => first.is_ok(),
-            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata)) => true,
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Codata) | CodecError::Unrepresentable) => true,
             | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => first == Err(sort),
-            | Err(CodecError::Unrepresentable) => true,
             | _ => false,
         }
     },
