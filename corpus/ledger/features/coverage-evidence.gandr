@@ -44,7 +44,7 @@ type Config = *{host : String, port : Integer, tls : Bool} where
 
 /// A face cover of `Config`: both faces, which agree on their meet.
 @[checks]
-def both_port(c : Config[
+def both_port(c : Config.#{
   secure ↦ *{.port = 443, .tls = true},
   addr ↦ *{.host = "localhost", .port = 443}
-]) -> Integer { c.port }
+}) -> Integer { c.port }
