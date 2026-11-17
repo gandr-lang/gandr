@@ -1,0 +1,10 @@
+error[MismatchedPattern]: this pattern matches another type than the first arm's pattern at its place
+   ╭▸ corpus/ledger/diagnostics/MismatchedPattern.gandr:16:7
+   │
+15 │     | Zero => return 0
+   │       ──── the arm it disagrees with
+16 │     | Boxed(n) => return n
+   │       ━━━━━━━━ a pattern of another type
+   │
+   ├ note: `mixed` is refused with MismatchedPattern, as its expectation states
+   ╰ help: match constructors of the same datatype in every arm

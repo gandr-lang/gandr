@@ -1,0 +1,2 @@
+{PRELUDE}def down(n : Integer) -> -F [Partial] Integer {{ while n > 0 {{ return n }} ; return 0 }}
+def held(b : Bool, n : Nat) -> -F [Partial] Nat {{ while b {{ tick n }} ; return n }}

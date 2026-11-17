@@ -1,0 +1,201 @@
+//! The engine's own boundary wrappers: every budget, index and verdict a
+//! signature of this crate crosses, so no signature passes a bare primitive.
+//!
+//! Each wrapper is transparent and converts with the standard `From` traits
+//! both ways, so a primitive is unpacked only where a comparison, an index or
+//! a count needs it. The vocabulary is this crate's alone; the substrate keeps
+//! its own counts and decisions, which this crate reads rather than restates.
+//!
+//! # Boundary wrappers
+//!
+//! The crate owns the nominal wrappers its own signatures cross: budgets,
+//! indices and verdicts. The substrate keeps its own counts and decisions,
+//! which this crate reads; a budget in the substrate would make every engine's
+//! budget a substrate change. A wrapper two crates must exchange by value moves
+//! to the lower one.
+
+/// Defines a transparent newtype over one primitive with `From` conversions
+/// both ways.
+macro_rules! wrapper {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident($raw:ty);) => {
+        $(#[$meta])*
+        #[repr(transparent)]
+        $vis struct $name($raw);
+
+        impl From<$raw> for $name
+        {
+            /// Wraps the primitive.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(value: $raw) -> Self
+            {
+                Self(value)
+            }
+        }
+
+        impl From<$name> for $raw
+        {
+            /// Unwraps the primitive.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn from(value: $name) -> Self
+            {
+                value.0
+            }
+        }
+    };
+}
+
+wrapper! {
+    /// The number of rewrite steps one normalization may take.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct NormalizationBudget(usize);
+}
+
+wrapper! {
+    /// The number of critical pairs one completion run may process.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct CompletionStepBudget(usize);
+}
+
+wrapper! {
+    /// The number of cells a store may hold before completion declines to
+    /// insert another.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct CompletionCellBudget(usize);
+}
+
+wrapper! {
+    /// The place of a certificate in the list that holds it, in insertion
+    /// order: the key of an overlap support, or of a reduction.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct CertificateIndex(usize);
+}
+
+wrapper! {
+    /// The zero-based place of one critical triple in the list that a
+    /// reduction reads.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct TripleIndex(usize);
+}
+
+wrapper! {
+    /// The zero-based place of one step in a rewriting path.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct StepPlace(usize);
+}
+
+wrapper! {
+    /// The zero-based place of one move in a homotopy.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct MovePlace(usize);
+}
+
+wrapper! {
+    /// The zero-based position of one batch in an overlap worklist.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct BatchIndex(usize);
+}
+
+wrapper! {
+    /// The zero-based position of one overlap within its batch.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct OverlapIndex(usize);
+}
+
+wrapper! {
+    /// How many critical pairs a joining has decided, a pair decided again
+    /// after its store grew counted again.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct PairDecisions(usize);
+}
+
+wrapper! {
+    /// Whether a normalization stopped at its budget with a redex still
+    /// pending, rather than at a normal form.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+    pub struct BudgetExhaustion(bool);
+}
+
+wrapper! {
+    /// Whether a certificate replays: both recorded paths re-execute from the
+    /// peak and reach the recorded join.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+    pub struct TraceletReplay(bool);
+}
+
+wrapper! {
+    /// Whether two certificates denote one transformation: one boundary, and
+    /// each replays.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+    pub struct TraceletEquivalence(bool);
+}
+
+wrapper! {
+    /// Whether two cells, two certificates or two overlaps are independent
+    /// under an overlap support: no overlap relates them.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+    pub struct StepIndependence(bool);
+}
+
+wrapper! {
+    /// Whether a completion run processed its whole worklist rather than
+    /// declining.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+    pub struct CompletionStatus(bool);
+}
+
+wrapper! {
+    /// The place of an operation in the signature of a Lawvere theory.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Operation(usize);
+}
+
+wrapper! {
+    /// The place of a variable in a context of a Lawvere theory.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Variable(usize);
+}
+
+wrapper! {
+    /// The place of a term in its table. Equal places in one table are equal
+    /// terms.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct TermPlace(usize);
+}
+
+wrapper! {
+    /// The place of a rule in the rules of a Lawvere theory.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct RulePlace(usize);
+}
+
+wrapper! {
+    /// A number of variables: the arity of an operation, or the variables of
+    /// a context.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Arity(usize);
+}
+
+wrapper! {
+    /// A number of nodes: of a term, or of the terms of a cell.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct TermSize(usize);
+}
+
+wrapper! {
+    /// The occurrences of one variable in a term, each path from the root
+    /// counted once.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Occurrences(usize);
+}
+
+wrapper! {
+    /// The degree of a cell of a bar complex: the number of its arrows.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct BarDegree(usize);
+}

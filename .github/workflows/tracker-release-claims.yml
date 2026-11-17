@@ -1,0 +1,85 @@
+# <critical>
+# MUST preserve anchor-first CI: maximal sharing, no copied orchestration.
+# New functionality MUST reuse template anchors or add anchors for likely reuse.
+# MUST parameterize differences; performance exceptions require measured evidence.
+# Share exceptional logic through actions; preserve parallelism, caches, and gates.
+# </critical>
+# Lists we produce are displayed collapsed: in `<details>` under a one-line
+# summary of what, how many and the verdict.
+name: tracker-release-claims
+
+# `status:claimed` means a seat is on the issue now (#1270). The claim comes
+# off when a merged pull request's body closes the issue, when the issue is
+# closed, when its label is 4 hours old with no open pull request naming the
+# issue (#2534, #3915), and always on a `kind:epic` issue. An issue a merge
+# advances (`Advances #n`) keeps its claim while it stays open (#6954). The
+# age is the label's, or a later release of the claim's own lane: a comment
+# on the issue leaves it alone.
+# `pr:open` refuses a body that names no such line for the branch's
+# issue (#2462), so every landing names what it worked.
+# `.config/claims/claims.sh` reads, decides (`decide.jq`) and removes;
+# the removals are printed in the run log and nothing is posted for them.
+# A merge also writes a release marker on each open issue it advances, so the
+# branch's lane claims the continuation first and the claim's age counts from
+# the merge (#3915, #6954), and it ticks the
+# `## Rows` of each `collector` it advances and closes one it leaves with no
+# open row, its comment naming the landing (#3732). Every run reads silence,
+# a merge's too: GitHub runs the schedule far less often than it states, so
+# the sweep is the backstop for a quiet day, not the clock a claim lapses by.
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Each merge runs in its own group, and the sweeps share one. A group holds
+# one pending run and a newer one cancels it, so with one group for every
+# merge a merge queue landing three at once lost the middle one's unclaim
+# (#2470). A merge and a sweep may now remove the same label at once;
+# `claims.sh` reads a removal whose label is already gone as done. Two merges
+# that advance one collector may now write its body at once. Each ticks the
+# rows of every merged landing on the collector's timeline, so the later
+# write keeps the earlier's ticks (#5583).
+concurrency:
+  group: claims-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: false
+
+jobs:
+  claims:
+    name: take stale claims off
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.merged }}
+    # landing-checks.yml's runner: arm64 wherever the architecture does not matter.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      # The script runs from the default branch, never from the pull request
+      # that triggered the run.
+      - name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          ref: ${{ github.event.repository.default_branch }}
+      - name: unclaim what a merge advanced
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLAIMS_MERGED_BODY: ${{ github.event.pull_request.body }}
+          CLAIMS_MERGED_NUMBER: ${{ github.event.pull_request.number }}
+          CLAIMS_MERGED_HEAD: ${{ github.event.pull_request.head.ref }}
+          CLAIMS_MERGED_BASE: ${{ github.event.pull_request.base.ref }}
+          CLAIMS_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: .config/claims/claims.sh merged
+      - name: sweep tracking, epic and silent claims
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .config/claims/claims.sh sweep

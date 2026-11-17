@@ -1,0 +1,3 @@
+def pick(b : Bool) -> -F Integer {
+  if b { return 1 }  { return 2 }
+}

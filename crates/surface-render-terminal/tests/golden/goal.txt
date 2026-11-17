@@ -1,0 +1,5 @@
+goal: `hole` states checks owing 0; produced checks owing 1
+  ╭▸ hole.gandr:1:1
+  │
+1 │ def hole : Integer ;
+  ╰╴━━━━━━━━━━━━━━━━━━━━ surviving obligations: 1 undeclared, 0 unproduced

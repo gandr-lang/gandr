@@ -1,0 +1,43 @@
+// The refusals beside `../../model/modules/model-laws.gandr`: a model that
+// leaves out a law whose sides do not convert is refused `NoFiller.Omitted` by
+// the law's name, at the module, whose attributes state the expectation; an
+// admission at a carrier the host does not provide is refused
+// `UnprovenLaw.Admitted` at the admission, the law the author's to prove.
+// Float equality is symmetric and transitive but not reflexive, NaN equal to
+// nothing: a model of `Eq` at `f64` admits `sym`, and its `refl` is refused
+// whether admitted or left out, so floats are a model of `PartialEq` alone.
+
+/// Reflexivity and symmetry of a decision.
+theory Decided where
+  sort Carrier : Type;
+  oper alike : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);
+  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](alike a b, alike b a);
+
+/// One value.
+data Lone : Type where
+  | Alone : Lone
+
+/// `Lone` is no carrier the host provides, so its laws are the author's to
+/// prove.
+module Overadmitted : Model(Decided) with sort Carrier = Lone where {
+  def alike(a : Lone, b : Lone) -> Bool { true }
+  @[refuses("UnprovenLaw.Admitted")]
+  law refl = ~admitted;
+  def sym(a : Lone, b : Lone) -> Path(alike a b, alike b a) { Path.here true }
+}
+
+/// Float equality as an `Eq`: its symmetry is the host's, its reflexivity no
+/// law the host asserts.
+module FloatEqAdmitted : Model(Eq) with sort Carrier = f64 where {
+  def eq(a : f64, b : f64) -> Bool { float64.eq a b }
+  @[refuses("UnprovenLaw.Admitted")]
+  law refl = ~admitted;
+  law sym = ~admitted;
+}
+
+/// Float equality as an `Eq` stating no reflexivity at all.
+@[refuses("NoFiller.Omitted")]
+module FloatEqMissing : Model(Eq) with sort Carrier = f64 where
+  def eq(a : f64, b : f64) -> Bool { float64.eq a b }
+  law sym = ~admitted;

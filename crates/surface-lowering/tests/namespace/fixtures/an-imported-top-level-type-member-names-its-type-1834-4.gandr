@@ -1,0 +1,3 @@
+import "./other.gandr";
+def narrow : Band;
+def narrow = 3;
