@@ -398,8 +398,11 @@ fn class(
 ///   written brackets opened inside that bracket: the closer of each of those
 ///   brackets, innermost first. The scan reads the closer as the close of the
 ///   innermost bracket, as it reads every closer. In `words`, each lower-case
-///   word of two or more bytes that is no keyword, outside an interpolation, in
-///   source order.
+/// word of two or more bytes that is no keyword, outside an interpolation, in
+/// source order. Also in `arrows`, an `=` at the end of the token before a
+/// written `;` that ends a block member whose first token is `let`, when the
+/// member writes no `=` directly inside its block and that token ends an
+/// operand.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
@@ -462,6 +465,9 @@ fn gaps<'text>(
     let mut keyword_head = false;
     let mut closed_head: Option<u32> = None;
     let mut sort_named = 0_u8;
+    // A `let` member of a block: the depth of the block it stands in, and
+    // whether the member writes its `=` directly inside that block.
+    let mut statement: Option<(usize, bool)> = None;
     let opener = |start: u32| Gap {
         at: ByteOffset::from(usize::try_from(start).unwrap_or(usize::MAX)),
         act: Act::Writes {
@@ -783,6 +789,39 @@ fn gaps<'text>(
                 },
                 cleared: true,
             });
+        }
+        // A `let` statement ends at its `;`, after its `=` and its value.
+        // Without the `=`, the `;` stands after the type and closes nothing.
+        // An `=` before the `;` reads the statement whole again, and the
+        // value it leaves out owes nothing more.
+        if opaque == 0 {
+            let spelled = <&str>::from(spelling(text, token));
+            if statement.is_some_and(|(depth, _)| stack.len() < depth) {
+                statement = None;
+            }
+            if spelled == "let" && head.is_some_and(|(start, _)| start == token.start) {
+                statement = Some((stack.len(), false));
+            }
+            else if let Some((depth, written)) = statement
+                && depth == stack.len()
+            {
+                if spelled == "=" {
+                    statement = Some((depth, true));
+                }
+                else if spelled == ";" {
+                    statement = None;
+                    if !written && let Some((end, false, false, true)) = previous {
+                        places.arrows.push(Gap {
+                            at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
+                            act: Act::Writes {
+                                tiles: alloc::vec!["="],
+                                over: 0,
+                            },
+                            cleared: true,
+                        });
+                    }
+                }
+            }
         }
         if class.word && opaque == 0 {
             places.words.push((
