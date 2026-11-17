@@ -1,0 +1,2 @@
+def later : () -> Integer;
+def main() -> Integer { become force later }

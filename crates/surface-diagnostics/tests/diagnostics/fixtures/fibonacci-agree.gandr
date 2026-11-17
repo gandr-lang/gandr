@@ -1,0 +1,3 @@
+def agree() -> Path[.A = Nat](fib (nineteen ()), fibFrom (nineteen ()) Zero (Succ Zero)) {
+  Path.here (fib (nineteen ()))
+}
