@@ -623,6 +623,9 @@ impl<'data> Reader<'data>
     )]
     /// # Errors
     /// A [`CodecError`] for bytes that the writer does not give.
+    ///
+    /// # Cost
+    /// - allocation: the decoded text, growth within the bytes
     #[inline]
     pub fn text(&mut self) -> Result<String, CodecError>
     {
@@ -904,6 +907,9 @@ where
 ///
 /// # Errors
 /// A [`CodecError`] for bytes that the writer does not give.
+///
+/// # Cost
+/// - allocation: the atoms of the level, growth within the bytes
 #[spec(
     ensures: |ret| match ret {
         | Ok(ref level) => level
@@ -1017,6 +1023,8 @@ pub fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
         }
     },
 )]
+/// # Cost
+/// - allocation: the text of a character literal, growth within the literal
 fn write_literal<Out>(
     writer: &mut Writer<'_, Out>,
     literal: &Literal,
@@ -1077,6 +1085,9 @@ where
 ///
 /// # Errors
 /// A [`CodecError`] for bytes that the writer does not give.
+///
+/// # Cost
+/// - allocation: the digits or the text of the literal, growth within the bytes
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
@@ -1162,6 +1173,9 @@ pub fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
 /// - hypothesis: L3 — the finite semantic corpus carries a width literal
 ///   through persistence.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the decoded literal, growth within the bytes
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|literal| literal.base_type() == BaseType::Fixed(width)))]
 fn read_fixed(
     reader: &mut Reader<'_>,
@@ -2398,6 +2412,9 @@ pub fn read_indices(reader: &mut Reader<'_>) -> Result<Vec<NodeIndex>, CodecErro
 /// # Adequacy
 /// - hypothesis: L3 — native records preserve exact labels across persistence.
 /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+///
+/// # Cost
+/// - allocation: the text of the label, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.as_ref().map_or(true,|label| reader.cursor == before.saturating_add(8).saturating_add(label.as_ref().len())))]
 fn read_field_label(reader: &mut Reader<'_>) -> Result<gandr_core_term::FieldLabel, CodecError>
 {
@@ -2558,6 +2575,9 @@ where
 /// - hypothesis: L3 — a selection and an offer survive persistence with their
 ///   labels and continuations.
 /// - witness: `gandr-core-incremental::codec::tests::session_nodes_persist_their_protocol_and_children`
+///
+/// # Cost
+/// - allocation: the list of branches, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
 fn read_branches(
     reader: &mut Reader<'_>
@@ -2868,6 +2888,9 @@ where
 /// - hypothesis: L3 — a statement's descriptions survive persistence with their
 ///   generators' order and profiles.
 /// - witness: `tests::native_formers::a_univalence_statement_round_trips_with_its_descriptions`
+///
+/// # Cost
+/// - allocation: the decoded description, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(16))]
 fn read_description(reader: &mut Reader<'_>)
 -> Result<gandr_core_term::ua::Description, CodecError>
@@ -2965,6 +2988,9 @@ where
 ///
 /// # Errors
 /// A [`CodecError`] for bytes that the writer does not give.
+///
+/// # Cost
+/// - allocation: the pieces of the pasting, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
 #[inline]
 pub fn read_pasting(
@@ -4288,6 +4314,9 @@ pub fn write_selection<Out>(
 ///
 /// # Errors
 /// A [`CodecError`] for bytes that the writer does not give.
+///
+/// # Cost
+/// - allocation: the selected indices, growth within the bytes
 #[spec(ensures: |ret| match ret {
     Ok(ref selected) => selected.scope() == scope,
     Err(error) => error == CodecError::Corrupt,
