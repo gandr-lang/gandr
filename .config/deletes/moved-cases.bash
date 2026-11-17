@@ -39,6 +39,10 @@ printf "INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES ('Gone', 2);
 printf 'pub enum E {\n    Kept,\n    Gone,\n}\n' > "$repo/src/error.rs"
 fork=$(commit fork)
 
+# A positional field uses its owner's name. Its position has no name.
+got=$(item_segment 'Part::Argument::0')
+[[ $got == Argument ]] || fail "#7867: a positional field names its owner, not its numeric position" "$got"
+
 # The change: it drops a variant, and the shared file's row that names it
 # names the kept variant.
 git -C "$repo" checkout --quiet -b change
