@@ -1,7 +1,5 @@
-def m() -> -F Unit {
-  (f a)
+def c = (f a)
   ;
-  (g b)
+def d = (g b)
 
   ;
-}

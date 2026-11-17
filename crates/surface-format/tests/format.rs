@@ -459,8 +459,8 @@ fn a_separator_written_on_the_next_line_joins_its_statement()
             ),
             WIDE
         ),
-        "(f a);\n(g b);\n",
-        "a separator after a break or a blank line ends the statement on its line"
+        "def c = (f a);\ndef d = (g b);\n",
+        "a terminator after a break or a blank line ends the declaration on its line"
     );
 }
 
