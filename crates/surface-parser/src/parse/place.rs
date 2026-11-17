@@ -1758,6 +1758,9 @@ fn holding(
 /// - hypothesis: L3 — a member's name left out inside a theory is minted where
 ///   its member parses, and the copy holds the theory's `}`.
 /// - witness: `parse::place::tests::a_name_left_out_of_a_member_is_minted_in_its_theory_7884`
+///
+/// # Cost
+/// - allocation: the tokens from the form's start, growth within the source
 fn bracketed(
     text: SourceText<'_>,
     top: ByteSpan,
@@ -1841,6 +1844,13 @@ fn tiles_ending_at<'tree>(
 /// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
 /// - witness: `parse::place::tests::a_closer_left_out_after_its_opener_is_minted_there_6323`
+///
+/// # Cost
+/// - allocation: the form's tiles past the target, growth within the form's
+///   tiles
+/// - allocation: the places tried, growth within the form's tiles
+/// - allocation: the tokens from the form's start in [`bracketed`], growth
+///   within the source
 fn settled<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
