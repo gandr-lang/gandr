@@ -1,0 +1,49 @@
+name: "find the CI image"
+description: >
+  The pin-file tag of this checkout and whether the registry publishes it, as
+  every workflow that runs jobs in the CI image looks it up. Workflow anchors
+  cannot cross files, so the lookup lives here. A tag is published only when
+  the registry serves its index and every manifest the index lists
+  (`lookup.sh`); `manifest unknown` or `not found` on any of them reads as
+  missing, and any other lookup error fails the step, so a broken registry
+  fails the image reference rather than silently selecting the bare runner or
+  rebuilding.
+inputs:
+  enabled:
+    description: "Whether the image is on (`vars.GANDR_CI_IMAGE` is set)"
+    required: true
+  token:
+    description: "A token that reads the registry's packages"
+    required: true
+outputs:
+  tag:
+    description: "The pin-file tag, empty when the image is off"
+    value: ${{ steps.pin-tag.outputs.tag }}
+  found:
+    description: "`true` when the tag is published, `false` when it is missing, empty when the image is off"
+    value: ${{ steps.lookup.outputs.found }}
+  ref:
+    description: "The published image reference, empty unless found"
+    value: ${{ steps.lookup.outputs.found == 'true' && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.pin-tag.outputs.tag) || '' }}
+runs:
+  using: composite
+  steps:
+    - id: pin-tag
+      name: "compute the pin-file image tag"
+      if: ${{ inputs.enabled == 'true' }}
+      shell: bash
+      run: .github/docker/image-tag.sh >> "$GITHUB_OUTPUT"
+    - name: "log in to GHCR"
+      if: ${{ steps.pin-tag.outputs.tag != '' }}
+      uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+    - id: lookup
+      name: "look up the published image"
+      if: ${{ steps.pin-tag.outputs.tag != '' }}
+      shell: bash
+      env:
+        IMAGE_TAG: ${{ steps.pin-tag.outputs.tag }}
+      run: .github/actions/find-image/lookup.sh "ghcr.io/gandr-lang/gandr-ci:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"

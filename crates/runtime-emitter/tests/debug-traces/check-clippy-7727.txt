@@ -1,0 +1,10 @@
+command: mise run check:clippy-enforcing, on macOS arm64, the whole workspace
+issue: #7727
+before: fd15411795
+exit: 101
+error: this unsafe block contains 2 unsafe operations, expected only one
+    --> crates/runtime-emitter/src/regions.rs:1657:16
+    (the calls at 1658:9, proc_pid_rusage, and 1659:13, getpid; -D clippy::multiple-unsafe-ops-per-block)
+error: could not compile `gandr-runtime-emitter` (lib) due to 1 previous error
+after: 41ab4d8b78
+exit: 0
