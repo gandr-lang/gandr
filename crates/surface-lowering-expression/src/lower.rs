@@ -4992,7 +4992,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   importer's own; the unresolved absence for a slot the collection does
     ///   not hold.
     /// - fails: [`LoweringRefusal::UnexportedName`] for a declaration its
-    ///   source keeps private, and for one with a signature and no definition.
+    ///   source keeps private, and for one with a signature and no definition
+    ///   that declares no native row.
     /// - panics: none.
     ///
     /// # Errors
@@ -5034,7 +5035,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         if self.cx().collected.slot_visibility(target) == Visibility::Private {
             return Err(self.private(site, name, target));
         }
-        if let Maybe::Absent(_) = entry.definition {
+        if let Maybe::Absent(_) = entry.definition
+            && !self.cx().natives.contains_key(&target)
+        {
             return Err(LoweringRefusal::UnexportedName {
                 span: site.at.span,
                 name,
