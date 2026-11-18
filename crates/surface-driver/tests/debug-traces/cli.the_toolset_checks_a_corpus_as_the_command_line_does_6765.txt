@@ -1,0 +1,57 @@
+test: cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765
+package: gandr-lang
+command: mise run debug:test gandr-lang cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765
+
+(lldb) target create "target/debug-trace/debug/build/gandr-lang/0e6c9e69862936c1/out/tests-0e6c9e69862936c1"
+Current executable set to 'target/debug-trace/debug/build/gandr-lang/0e6c9e69862936c1/out/tests-0e6c9e69862936c1' (arm64).
+(lldb) settings set -- target.run-args  "cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-0e6c9e69862936c1`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x00000001009e3c28
+(lldb) run
+
+running 1 test
+test cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765 ... 
+thread 'cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765' (34217192) panicked at crates/surface-driver/tests/cli.rs:3699:5:
+the call is acknowledged before the toolset calls back: the acknowledgement at 7, the callback's requests at [0, 1, 2, 3, 4, 5, 6]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: tests-0e6c9e69862936c1 was compiled with optimization - stepping may behave oddly; variables may not be available
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 75652 launched: 'target/debug-trace/debug/build/gandr-lang/0e6c9e69862936c1/out/tests-0e6c9e69862936c1' (arm64)
+Process 75652 stopped
+* thread #2, name = 'cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765', stop reason = breakpoint 1.1
+       frame #0: 0x00000001009e3c28 tests-0e6c9e69862936c1`__rustc::rust_panic at panicking.rs:887:25 [opt]
+(lldb) bt 24
+* thread #2, name = 'cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001009e3c28 tests-0e6c9e69862936c1`__rustc::rust_panic at panicking.rs:887:25 [opt]
+     frame #1: 0x00000001009b3de4 tests-0e6c9e69862936c1`std::panicking::panic_with_hook at panicking.rs:840:5 [opt]
+     frame #2: 0x000000010099b8d8 tests-0e6c9e69862936c1`std::panicking::panic_handler::{closure#0} at panicking.rs:688:13 [opt]
+     frame #3: 0x000000010099368c tests-0e6c9e69862936c1`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18 [opt]
+     frame #4: 0x000000010099c3fc tests-0e6c9e69862936c1`__rustc::rust_begin_unwind at panicking.rs:679:5 [opt]
+     frame #5: 0x00000001009e56f8 tests-0e6c9e69862936c1`core::panicking::panic_fmt at panicking.rs:80:14 [opt]
+     frame #6: 0x00000001000403d0 tests-0e6c9e69862936c1`tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765 at cli.rs:3699:5
+     frame #7: 0x0000000100006cd8 tests-0e6c9e69862936c1`tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765::{closure#0}((null)={}) at cli.rs:3577:63
+     frame #8: 0x0000000100154e7c tests-0e6c9e69862936c1`<tests::cli::the_toolset_checks_a_corpus_as_the_command_line_does_6765::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x000000010019fa58 tests-0e6c9e69862936c1`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #10: 0x000000010019fa50 tests-0e6c9e69862936c1`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18 [opt]
+     frame #11: 0x00000001001aaf74 tests-0e6c9e69862936c1`test::run_test_in_process::{closure#0} at lib.rs:756:74 [opt] [inlined]
+     frame #12: 0x00000001001aaf68 tests-0e6c9e69862936c1`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #13: 0x00000001001aaf68 tests-0e6c9e69862936c1`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [opt] [inlined]
+     frame #14: 0x00000001001aaf64 tests-0e6c9e69862936c1`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+     frame #15: 0x00000001001aaf64 tests-0e6c9e69862936c1`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #16: 0x00000001001aaf64 tests-0e6c9e69862936c1`test::run_test_in_process at lib.rs:756:27 [opt] [inlined]
+     frame #17: 0x00000001001aaf58 tests-0e6c9e69862936c1`test::run_test::{closure#0} at lib.rs:677:43 [opt]
+     frame #18: 0x00000001001a5968 tests-0e6c9e69862936c1`test::run_test::{closure#1} at lib.rs:707:41 [opt] [inlined]
+     frame #19: 0x00000001001a5904 tests-0e6c9e69862936c1`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #20: 0x00000001001ad438 tests-0e6c9e69862936c1`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #21: 0x00000001001ad428 tests-0e6c9e69862936c1`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #22: 0x00000001001ad428 tests-0e6c9e69862936c1`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [opt] [inlined]
+     frame #23: 0x00000001001ad424 tests-0e6c9e69862936c1`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [opt] [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

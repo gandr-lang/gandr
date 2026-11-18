@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# The compiler wrapper of each build in the tree. The Cargo configuration
+# names it. It runs the compiler through kache, which caches each compile by
+# its content and shares it between the worktrees of a host.
+#
+# kache comes from the pin of the tree. The wrapper uses the kache on the
+# path. A shell that mise did not prepare has none there, so the wrapper then
+# uses the shim of mise. A host with neither runs the compiler itself, so a
+# build never fails for the lack of a cache.
+#
+# A CI job sets `RUSTC_WRAPPER` to the wrapper of `setup-rust`, and Cargo
+# reads the variable before this file. A build that must compile each unit
+# sets `RUSTC_WRAPPER` to the empty string, which gives Cargo no wrapper.
+# - see: #7789, `.cargo/config.toml`, `mise.toml`, `.github/actions/setup-rust/kache-wrapper.bash`
+# macOS removes the library path that Dylint needs.
+# kache's daemon owns the compile environment.
+# - see: #7861
+driver=${1-}
+case ${OSTYPE:-} in
+  darwin*)
+    if [[ -z ${DYLD_FALLBACK_LIBRARY_PATH:-} && -n ${RUSTUP_TOOLCHAIN:-} ]]; then
+      rustup_home=${RUSTUP_HOME:-$HOME/.rustup}
+      export DYLD_FALLBACK_LIBRARY_PATH=$rustup_home/toolchains/$RUSTUP_TOOLCHAIN/lib
+    fi
+    if [[ ${driver##*/} == dylint-driver ]]; then exec "$@"; fi
+    ;;
+esac
+if command -v kache > /dev/null 2>&1; then exec kache "$@"; fi
+shim=${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims/kache
+if [[ -x $shim ]]; then exec "$shim" "$@"; fi
+exec "$@"

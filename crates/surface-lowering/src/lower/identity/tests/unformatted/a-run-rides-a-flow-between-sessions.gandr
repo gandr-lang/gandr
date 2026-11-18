@@ -1,0 +1,8 @@
+{PROTOCOLS}  def sub : Flow[.A = Type](Old, New);
+  def sub = Flow.sim Old New;
+}}
+def served : Run(Evolution.Old);
+def served = recorded (selected report) (sent "progress") closed;
+def forward(receipt : Run(Evolution.Old)) -> -F Run(Evolution.New) {{
+  become Flow.ride (fun (X) {{ Run X }}) Evolution.sub receipt
+}}

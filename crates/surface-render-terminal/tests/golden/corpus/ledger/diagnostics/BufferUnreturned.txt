@@ -1,0 +1,19 @@
+error[BufferUnreturned]: the buffer placed live here is not handed back before its body ends
+   ╭▸ corpus/ledger/diagnostics/BufferUnreturned.gandr:11:5
+   │
+ 9 │ ┌  def neverFreed() -> -F Unit =
+10 │ │┌   handle r : std.io.Ring.Eff {
+11 │ ││     let b = r.alloc 4096;
+   │ ││     ━━━ a buffer never handed back
+12 │ ││     pure *{}
+13 │ ││   } with {
+   ┆ ┆┆
+16 │ ││     | oper free(b, k) => k *{}
+17 │ ││   }
+   │ ││   │
+   │ └│───│
+   │  └───checked against `() -> Unit`; while checking the body of this thunk
+   │      checked against `-F Unit`; while checking the subject of this scope under its capability; binds r : Cap {alloc, free}
+   │
+   ├ note: `neverFreed` is refused with BufferUnreturned, as its expectation states
+   ╰ help: hand the buffer back with a `send`, an operation or a resumption before the body ends

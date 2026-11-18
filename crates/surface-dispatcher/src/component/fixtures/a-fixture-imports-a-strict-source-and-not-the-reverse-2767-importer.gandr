@@ -1,0 +1,3 @@
+import "../library/three.gandr";
+def one : Integer;
+def one = 1;

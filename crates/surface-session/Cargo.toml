@@ -1,0 +1,94 @@
+[package]
+name = "gandr-surface-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The interactive session above the dispatcher: the item source, incremental submission and checkpoint persistence"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "incremental", "language-server", "repl"]
+categories = ["compilers", "development-tools"]
+publish.workspace = true
+autotests = false
+
+# The edit-loop measurement prints its matrix; `test = true` builds it with
+# the test targets so its witnesses run.
+[[example]]
+name = "edit_loop"
+test = true
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The session runs the dispatcher's two composition halves over the built-in
+# grammar, carries the parser's completion obligations, reads the lowered
+# module's declarations, origins and import scope, hands the same
+# declarations to the incremental checker with its checkpoint stores, names
+# the kernel's literals and indices in its edit actions, reads a
+# declaration's produced verdict to decide what it evaluates, and commits the
+# kernel artifact as records into a block store, reading it back through the
+# kernel's decoder; the printer spells a checkpoint's type for every face.
+# The trace layer names a revision's constants as the diagnostics spell them,
+# so a face prints a traced goal on demand.
+# The session molds forms and judges candidates through the fork crate's
+# trait, on the pool the driver hands it.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+gandr-core-checker.workspace = true
+gandr-core-content.workspace = true
+gandr-core-fork.workspace = true
+gandr-core-incremental.workspace = true
+gandr-core-nbe.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-storage-artifact.workspace = true
+gandr-storage-records.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-diagnostics = { workspace = true, optional = true }
+gandr-surface-dispatcher.workspace = true
+gandr-surface-evaluate.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+# The tests read the activity layer's rings, so the crate's own targets turn
+# its `instrument` feature on.
+[dev-dependencies]
+allocation-counter.workspace = true
+gandr-kernel-core.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-render-terminal.workspace = true
+gandr-surface-session = { workspace = true, features = ["instrument"] }
+gandr-workflow-sweep.workspace = true
+proptest.workspace = true
+
+[features]
+default = []
+# The instrument's recording sinks, which the hub's build compiles and every
+# other build leaves out. Each layer compiles its sink under this feature.
+# The silent sink, which records nothing, is in every build. The activity
+# layer's rings and the pool's recording fork come with the feature. The
+# counts layer reads the checker's memo tally and the incremental pass's
+# report of each item, which come with it too. The timings layer reads the
+# dispatcher's allocation meter, which comes with it too.
+instrument = [
+  "dep:gandr-surface-diagnostics",
+  "gandr-core-checker/instrument",
+  "gandr-core-fork/instrument",
+  "gandr-core-incremental/instrument",
+  "gandr-surface-dispatcher/instrument",
+]
+
+[lints]
+workspace = true

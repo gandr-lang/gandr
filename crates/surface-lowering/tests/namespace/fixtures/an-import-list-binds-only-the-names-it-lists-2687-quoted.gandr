@@ -1,0 +1,5 @@
+import "./greet.gandr" (one, Point);
+def again : Point;
+def again = one;
+def unlisted : Point;
+def unlisted = two;

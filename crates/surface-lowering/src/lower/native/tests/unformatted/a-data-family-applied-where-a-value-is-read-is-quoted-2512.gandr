@@ -1,0 +1,5 @@
+{NAT}{MAYBE}def row : Type ;
+def row = Maybe Nat ;
+def same(a : Type, x : a) -> a {{ x }}
+def nothing() -> Maybe(Nat) {{ same (Maybe Nat) None }}
+def held() -> Maybe(Nat) {{ same (Maybe Nat) (Some Zero) }}

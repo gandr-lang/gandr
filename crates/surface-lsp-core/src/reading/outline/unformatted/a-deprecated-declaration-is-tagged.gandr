@@ -1,0 +1,8 @@
+@[ deprecated ] def bare = 1 ;
+@[ checks ]
+@[ doc("x"), deprecated(*{ since = "0.2" }) ] def recorded = 2 ;
+@[ respects(deprecated) ] def named = 3 ;
+module Holder where {
+  @[ deprecated ] def member = 4 ;
+}
+def plain = 5 ;

@@ -1,0 +1,35 @@
+theory Same where {
+  sort Carrier : Type;
+  oper same : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) -> Path[.A = Bool](same a a, true);
+  law trans : (
+    a : Carrier,
+    b : Carrier,
+    c : Carrier,
+    p : Path[.A = Bool](same a b, true),
+    q : Path[.A = Bool](same b c, true)
+  ) -> Path[.A = Bool](same a c, true);
+}
+data One : Type where {
+  | Only : One
+}
+module Proved : Model(Same) with sort Carrier = One where {
+  def same(a : One, b : One) -> Bool { true }
+  def refl(a : One) -> Path[.A = Bool](same a a, true) { Path.here true }
+  def trans(
+    a : One,
+    b : One,
+    c : One,
+    p : Path[.A = Bool](same a b, true),
+    q : Path[.A = Bool](same b c, true)
+  ) -> Path[.A = Bool](same a c, true) { Path.here true }
+}
+module Admitted : Model(Same) with sort Carrier = Integer where {
+  def same(a : Integer, b : Integer) -> Bool { int.eq a b }
+  law refl = ~admitted;
+  law trans = ~admitted;
+}
+module Short : Model(Same) with sort Carrier = One where {
+  def same(a : One, b : One) -> Bool { true }
+  law refl = ~admitted;
+}
