@@ -35,7 +35,7 @@ pub module AtStratum where
     idtoequiv Tel Tel opposite
 
   /// `repackaged` equates transport of the package with transport of its path.
-  def repackaged : Path[.A = Tel -> Tel](
-    fun (x) { fwdAlong Tel Tel (ua (idtoequiv Tel Tel opposite)) x },
-    fun (x) { fwdAlong Tel Tel opposite x }
-  ) = Path.here (fun (x) { fwdAlong Tel Tel opposite x });
+  def repackaged : Path[.A = Tel -> Tel] (fun (x) {
+    fwdAlong Tel Tel (ua (idtoequiv Tel Tel opposite)) x
+  }) (fun (x) { fwdAlong Tel Tel opposite x }) = Path.here
+    (fun (x) { fwdAlong Tel Tel opposite x });

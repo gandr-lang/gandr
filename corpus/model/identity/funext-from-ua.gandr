@@ -160,19 +160,16 @@ def endsAgree(b : Type) -> Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> 
 def whisker(
   a : Type,
   b : Type,
-  k : a -> *{x : b, y : b, p : Path[.A = b](x, y)},
-  s : *{x : b, y : b, p : Path[.A = b](x, y)} -> b,
-  t : *{x : b, y : b, p : Path[.A = b](x, y)} -> b,
-  e : Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> b](s, t)
-) -> Path[.A = a -> b](fun (x) { s (k x) }, fun (x) { t (k x) }) =
+  k : a -> *{x : b, y : b, p : Path[.A = b] x y},
+  s : *{x : b, y : b, p : Path[.A = b] x y} -> b,
+  t : *{x : b, y : b, p : Path[.A = b] x y} -> b,
+  e : Path[.A = *{x : b, y : b, p : Path[.A = b] x y} -> b] s t
+) -> Path[.A = a -> b] (fun (x) { s (k x) }) (fun (x) { t (k x) }) =
   Path.walk
     ((
-      w : *{x : b, y : b, p : Path[.A = b](x, y)} -> b,
-      Path[.A = *{x : b, y : b, p : Path[.A = b](x, y)} -> b](
-        s,
-        w
-      )
-    ) -> Path[.A = a -> b](fun (x) { s (k x) }, fun (x) { w (k x) }))
+      w : *{x : b, y : b, p : Path[.A = b] x y} -> b,
+      Path[.A = *{x : b, y : b, p : Path[.A = b] x y} -> b] s w
+    ) -> Path[.A = a -> b] (fun (x) { s (k x) }) (fun (x) { w (k x) }))
     e
     (Path.here s)
     (Path.here e)
@@ -182,11 +179,8 @@ def whisker(
 def funextOfSpace(
   a : Type,
   b : Type,
-  k : a -> *{x : b, y : b, p : Path[.A = b](x, y)}
-) -> Path[.A = a -> b](
-  fun (x) { source b (k x) },
-  fun (x) { target b (k x) }
-) =
+  k : a -> *{x : b, y : b, p : Path[.A = b] x y}
+) -> Path[.A = a -> b] (fun (x) { source b (k x) }) (fun (x) { target b (k x) }) =
   whisker
     a
     b

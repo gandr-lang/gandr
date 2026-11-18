@@ -29,7 +29,7 @@ def walkSecond(
   o : i -> Type,
   j : i,
   k : i,
-  m : Picked(Unit, fun (u) { return (type(Path[.A = i](j, k))) }),
+  m : Picked Unit (fun (u) { return (type(Path[.A = i] j k)) }),
   v : o(j)
 ) -> o(k) =
   match m where
