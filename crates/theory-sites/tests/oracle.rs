@@ -113,7 +113,7 @@ struct Cover
 struct ThetaMap
 {
     /// The outer map of points.
-    outer: Points,
+    outer: alloc::sync::Arc<Points>,
     /// Each cover with its inner map of points, in interval order.
     inner: Vec<(Cover, Points)>,
 }
@@ -165,11 +165,8 @@ fn monotone(
             .into_iter()
             .flat_map(|prefix| {
                 let low = prefix.last().copied().unwrap_or(0);
-                (low ..= into).map(move |next| {
-                    let mut longer = prefix.clone();
-                    longer.push(next);
-                    longer
-                })
+                (low ..= into)
+                    .map(move |next| prefix.iter().copied().chain([next]).collect::<Vec<_>>())
             })
             .collect();
     }
@@ -216,9 +213,10 @@ where
         .into_iter()
         .flat_map(|done| {
             choices.iter().map(move |choice| {
-                let mut more = done.clone();
-                more.push((cover, choice.clone()));
-                more
+                done.iter()
+                    .cloned()
+                    .chain([(cover, choice.clone())])
+                    .collect::<Vec<_>>()
             })
         })
         .collect()
@@ -235,6 +233,7 @@ fn theta_maps(
 {
     let mut maps = Vec::new();
     for outer in monotone(Length(source.0.len()), Length(target.0.len())) {
+        let outer = alloc::sync::Arc::new(outer);
         let mut partial: Vec<Vec<(Cover, Points)>> = vec![Vec::new()];
         for cover in covered(&outer, Length(target.0.len())) {
             let choices = monotone(
@@ -244,7 +243,7 @@ fn theta_maps(
             partial = widen(partial, cover, &choices);
         }
         maps.extend(partial.into_iter().map(|inner| ThetaMap {
-            outer: outer.clone(),
+            outer: alloc::sync::Arc::clone(&outer),
             inner,
         }));
     }
@@ -353,10 +352,11 @@ fn named(
             ),
         };
     }
+    let outer = alloc::sync::Arc::new(reading.outer.clone());
     partial
         .into_iter()
         .map(|inner| ThetaMap {
-            outer: reading.outer.clone(),
+            outer: alloc::sync::Arc::clone(&outer),
             inner,
         })
         .collect()
@@ -528,7 +528,7 @@ impl fmt::Display for ThetaThree
 struct ThetaThreeMap
 {
     /// The outer map of points.
-    outer: Points,
+    outer: alloc::sync::Arc<Points>,
     /// Each cover with its Θ₂ map, in interval order.
     inner: Vec<(Cover, ThetaMap)>,
 }
@@ -575,13 +575,14 @@ fn theta_three_maps(
 {
     let mut maps = Vec::new();
     for outer in monotone(Length(source.0.len()), Length(target.0.len())) {
+        let outer = alloc::sync::Arc::new(outer);
         let mut partial: Vec<Vec<(Cover, ThetaMap)>> = vec![Vec::new()];
         for cover in covered(&outer, Length(target.0.len())) {
             let choices = theta_maps(&source.0[cover.source], &target.0[cover.interval]);
             partial = widen(partial, cover, &choices);
         }
         maps.extend(partial.into_iter().map(|inner| ThetaThreeMap {
-            outer: outer.clone(),
+            outer: alloc::sync::Arc::clone(&outer),
             inner,
         }));
     }
@@ -677,10 +678,11 @@ fn named_three(
         );
         partial = widen(partial, cover, &choices);
     }
+    let outer = alloc::sync::Arc::new(reading.outer.clone());
     partial
         .into_iter()
         .map(|inner| ThetaThreeMap {
-            outer: reading.outer.clone(),
+            outer: alloc::sync::Arc::clone(&outer),
             inner,
         })
         .collect()
@@ -1091,7 +1093,7 @@ fn wedge(
 ) -> Membership
 {
     let mut restricted: BTreeSet<(TwoMap, TwoMap)> = BTreeSet::new();
-    let mut pairs: BTreeSet<(TwoMap, TwoMap)> = BTreeSet::new();
+    let mut pairs: BTreeSet<(&TwoMap, &TwoMap)> = BTreeSet::new();
     for test in (0 .. wreath.objects().len()).map(ShapeIndex::from) {
         let out = wreath.hom(object, test);
         restricted.clear();
@@ -1105,11 +1107,15 @@ fn wedge(
         for one in wreath.hom(first, test) {
             for other in wreath.hom(second, test) {
                 if compatible(one, other) == Membership::Inside {
-                    pairs.insert((one.clone(), other.clone()));
+                    pairs.insert((one, other));
                 }
             }
         }
-        if restricted.len() != out.len() || restricted != pairs {
+        let same = restricted
+            .iter()
+            .map(|(one, other)| (one, other))
+            .eq(pairs.iter().copied());
+        if restricted.len() != out.len() || !same {
             return Membership::Outside;
         }
     }

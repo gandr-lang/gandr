@@ -81,9 +81,12 @@ fn brute_force(
                     )))
                 })
         }));
+        let shared: alloc::sync::Arc<[VertexSet]> = images.as_slice().into();
         for wires in readings(&wire_digits) {
-            let candidate =
-                SiteMap::new(images.clone(), wires.into_iter().map(Wire::from).collect());
+            let candidate = SiteMap::new(
+                alloc::sync::Arc::clone(&shared),
+                wires.into_iter().map(Wire::from).collect(),
+            );
             if candidate.validate(source, target).is_ok() {
                 found.push(candidate);
             }

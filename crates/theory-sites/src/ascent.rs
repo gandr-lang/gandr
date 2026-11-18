@@ -521,7 +521,7 @@ impl<Below: Certificate> Certificate for WreathStratum<Below>
         ) {
             (Some(mine), Some(theirs)) => pair(
                 &self.wreath,
-                (cocone, &self.below),
+                (cocone, &*self.below),
                 (mine, map),
                 (theirs, other),
             ),
@@ -854,7 +854,7 @@ pub struct WreathStratum<Below: Certificate = SegalStratum>
     /// The wreath.
     wreath: Arc<Above<Below>>,
     /// The certificate of the level below.
-    below: Below,
+    below: Arc<Below>,
     /// The degree.
     degree: Degree,
     /// The cocone of each object of degree two to the degree, in wreath
@@ -903,12 +903,15 @@ impl<Below: Certificate> WreathStratum<Below>
         },
         Err(_) => true,
     })]
-    pub fn certify(
+    pub fn certify<B>(
         wreath: Arc<Above<Below>>,
         degree: Degree,
-        below: Below,
+        below: B,
     ) -> Result<Self, LevelUncertified<ObjectOf<Below>, MapOf<Below>>>
+    where
+        B: Into<Arc<Below>>,
     {
+        let below = below.into();
         if degree < Degree::from(1_usize)
             || wreath
                 .objects()
@@ -922,7 +925,7 @@ impl<Below: Certificate> WreathStratum<Below>
                 case: Box::new(witness),
             });
         }
-        let (outcome, cocones) = walk(&wreath, &below, degree);
+        let (outcome, cocones) = walk(&wreath, &*below, degree);
         if let Outcome::Fails { witness, .. } = outcome {
             return Err(LevelUncertified::Condition {
                 failure: Box::new(witness),
@@ -964,7 +967,7 @@ impl<Below: Certificate> WreathStratum<Below>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn below(&self) -> &Below
+    pub fn below(&self) -> &Below
     {
         &self.below
     }

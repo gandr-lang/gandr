@@ -421,8 +421,8 @@ fn level_two_over_the_faces_agrees_with_the_whole_7453()
     let level: &Catalogue = &chains;
     let whole = Arc::new(Wreath::build(&chains, &chains, bound));
     let top = Wreath::top_degree(level, level, bound);
-    let below = level_one(&chains);
-    let certified = WreathStratum::certify(Arc::clone(&whole), top, below.clone())
+    let below = Arc::new(level_one(&chains));
+    let certified = WreathStratum::certify(Arc::clone(&whole), top, Arc::clone(&below))
         .expect("level two over the whole wreath is certified");
     let mut agreed = 0_usize;
     for (at, object) in whole.objects().iter().enumerate() {
@@ -435,7 +435,7 @@ fn level_two_over_the_faces_agrees_with_the_whole_7453()
             panic!("{object} is held at the bound");
         };
         let faces = Arc::new(faces);
-        let over_faces = WreathStratum::certify(Arc::clone(&faces), degree, below.clone())
+        let over_faces = WreathStratum::certify(Arc::clone(&faces), degree, Arc::clone(&below))
             .unwrap_or_else(|refused| panic!("level two over the faces of {object}: {refused:?}"));
         let cocone_in = |stratum: &WreathStratum, at: ShapeIndex| {
             stratum

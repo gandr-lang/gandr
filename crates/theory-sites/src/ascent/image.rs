@@ -268,7 +268,7 @@ impl<Below: Certificate> WreathStratum<Below>
         }
         Ok(Self {
             wreath,
-            below,
+            below: alloc::sync::Arc::new(below),
             degree,
             cocones,
         })
