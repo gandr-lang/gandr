@@ -1,0 +1,84 @@
+// This source encodes strings as UTF-8.
+//
+// UTF-8 uses one to four bytes for each code point. The leading byte states
+// how many bytes follow. Each following byte carries six bits. Unicode
+// Standard 15.0 specifies these byte sequences.
+//
+// `encode` selects bytes by range. `encodeAll` encodes each code point.
+//
+// - cites: [Unicode-15]
+//
+// [Unicode-15]: https://www.unicode.org/versions/Unicode15.0.0/ "The Unicode Consortium, The Unicode Standard, Version 15.0.0"
+
+// This source imports declarations for lists and bytes.
+import "../data/data-base.gandr";
+import "./string-base.gandr";
+
+/// This function encodes one code point as UTF-8 bytes.
+
+// The function uses one byte below 128.
+
+// It uses two bytes below 2048.
+
+// It uses three bytes below 65536.
+
+// It uses four bytes for each later code point.
+def encode(c : Integer) -> List Integer =
+  let one = c < 128
+  match one where
+    | true => Cons c Nil
+    | false => {
+      let two = c < 2048;
+      match two where
+        | true => {
+          let lead = int.div c 64;
+          let low = int.mod c 64;
+          Cons (192 + lead) (Cons (128 + low) Nil)
+        }
+        | false => {
+          let three = c < 65536;
+          match three where
+            | true => {
+              let lead = int.div c 4096;
+              let rest = int.mod c 4096;
+              let mid = int.div rest 64;
+              let low = int.mod c 64;
+              Cons (224 + lead) (Cons (128 + mid) (Cons (128 + low) Nil))
+            }
+            | false => {
+              let lead = int.div c 262144;
+              let rest = int.mod c 262144;
+              let high = int.div rest 4096;
+              let tail = int.mod c 4096;
+              let mid = int.div tail 64;
+              let low = int.mod c 64;
+              Cons (240 + lead) (Cons (128 + high) (Cons (128 + mid) (Cons (128 + low) Nil)))
+            }
+        }
+    }
+
+/// `encodeAll` encodes each code point in order.
+pub def rec encodeAll(cs : List Integer) -> List Integer =
+  match cs where
+    | Nil => Nil
+    | Cons(c, rest) => concat (encode c) (encodeAll[<] rest)
+
+/// This test encodes `$` as one byte.
+@[runs("Cons 36 Nil")]
+def dollar() -> List Integer = encode 36;
+
+/// This test encodes `é` as two bytes.
+@[runs("Cons 195 (Cons 169 Nil)")]
+def eAcute() -> List Integer = encode 233;
+
+/// This test encodes `€` as three bytes.
+@[runs("Cons 226 (Cons 130 (Cons 172 Nil))")]
+def euro() -> List Integer = encode 8364;
+
+/// This test encodes `😀` as four bytes.
+@[runs("Cons 240 (Cons 159 (Cons 152 (Cons 128 Nil)))")]
+def grin() -> List Integer = encode 128512;
+
+/// This test encodes `hé` as one byte and two bytes.
+@[runs("Cons 104 (Cons 195 (Cons 169 Nil))")]
+def he() -> List Integer = encodeAll (Cons 104 (Cons 233 Nil) : List Integer);

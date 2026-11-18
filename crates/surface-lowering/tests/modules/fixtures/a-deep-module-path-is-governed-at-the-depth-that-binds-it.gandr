@@ -1,0 +1,4 @@
+module Facts where { module inner where { module core where { def answer = 3; } } }
+def answer_used = Facts.inner.core.answer;
+def missing_used = Facts.inner.core.missing;
+def nowhere_used = Facts.nowhere.core.answer;

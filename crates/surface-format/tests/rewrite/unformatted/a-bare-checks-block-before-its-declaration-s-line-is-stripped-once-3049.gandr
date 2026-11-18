@@ -1,0 +1,6 @@
+/// One.
+@[ checks ] def one(x : Unit) -> -F Unit { return x }
+
+/// Two.
+@[ checks ]
+def two(x : Unit) -> -F Unit { return x }

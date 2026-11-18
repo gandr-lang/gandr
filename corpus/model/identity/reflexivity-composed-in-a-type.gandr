@@ -1,0 +1,38 @@
+//! This source types composites that start or end with reflexivity.
+//!
+//! Each composite reads its endpoint type from the reflexivity binder.
+//! The pathological twin refuses a composite that lacks this type.
+//!
+//! The checker reads the composite type from both operands.
+//! The kernel replays each composite at that type.
+//!
+//! - see: #3834 — a reflexivity first in a composite
+
+/// A reflexivity begins the composite in its type.
+/// Its left unit needs a path on both composite sides.
+def hereFirst(A : Type, x : A, y : A, f : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
+  Path.step (Path.here x) f,
+  Path.step (Path.here x) f
+) =
+  Path.here (Path.step (Path.here x) f)
+
+/// A composite ending in a reflexivity, first in another.
+def endsInHere(
+  A : Type,
+  x : A,
+  y : A,
+  c : A,
+  f : Path[.A = A](x, y),
+  q : Path(y, c)
+) -> Path[.A = Path[.A = A](x, c)](
+  Path.step (Path.step f (Path.here y)) q,
+  Path.step f q
+) =
+  Path.here (Path.step f q)
+
+/// Two reflexivities compose to the reflexivity.
+def hereTwice(
+  A : Type,
+  x : A
+) -> Path[.A = Path[.A = A](x, x)](Path.step (Path.here x) (Path.here x), Path.here x) =
+  Path.here (Path.here x)

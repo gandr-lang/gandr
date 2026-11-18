@@ -1,0 +1,11 @@
+theory Kept where {
+  sort V : Type+;
+  sort C : Type;
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  oper put : (key : V, value : V, k : C) --> C;
+}
+module Echo : Model(Kept) with sort V = String where {
+  type C = String;
+  def get(key : String, k : String -> String) -> String { k key }
+  def put(key : String, value : String, k : String) -> String { k }
+}

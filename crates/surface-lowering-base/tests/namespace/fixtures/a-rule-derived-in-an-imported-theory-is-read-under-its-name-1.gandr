@@ -1,0 +1,5 @@
+pub theory Inv where {
+  sort G : Type;
+  oper inv : (x : G) --> G;
+  rule invInv : inv (inv (x)) <=> x;
+}

@@ -1,0 +1,8 @@
+data Empty : Type where {{}}
+data Nada(a : Type) : Type where {{}}
+{COLOR}def absurd(v : Empty) -> -F Integer {{ match v {{}} }}
+def stated(v : Empty) -> -F Integer {{ match v -> -F Integer {{}} }}
+def apart(e : Path[.A = Color](Red, Blue)) -> -F Empty {{ match e {{}} }}
+def paren(v : (Empty)) -> -F Integer {{ match v {{}} }}
+def wrapped(e : (Path[.A = Color](Red, Blue))) -> -F Empty {{ match e {{}} }}
+def applied(v : Nada(Integer)) -> -F Integer {{ match v {{}} }}
