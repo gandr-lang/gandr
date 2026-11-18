@@ -778,6 +778,10 @@ impl LawvereTheory
     /// - hypothesis: L3 — the truncation of a theory with a rule holds no term
     ///   that the rule rewrites.
     /// - witness: `tests::lawvere::the_boundary_of_each_boundary_in_a_truncation_is_zero`
+    ///
+    /// # Cost
+    /// - allocation: the forms of each size and their tuples, growth within the
+    ///   weight bound
     fn normal_forms(
         &mut self,
         context: Arity,
@@ -853,6 +857,10 @@ impl LawvereTheory
     /// - hypothesis: L3 — a theory whose rules keep their variables has a
     ///   boundary of each boundary that is zero, which a missing face breaks.
     /// - witness: `tests::lawvere::the_boundary_of_each_boundary_in_a_truncation_is_zero`
+    ///
+    /// # Cost
+    /// - allocation: the cells of each degree and their arrows, growth within
+    ///   the weight bound
     #[inline]
     pub fn truncation(
         &mut self,
@@ -941,6 +949,10 @@ enum Task
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the pending prefixes and the size splits, growth within the
+///   weight bound
 fn compositions(
     total: TermSize,
     parts: Arity,
@@ -974,6 +986,9 @@ fn compositions(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the tuples of each length, growth within the weight bound
 fn tuples(
     (sized, table): (&[Vec<TermPlace>], &TermTable),
     length: Arity,

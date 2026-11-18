@@ -891,6 +891,10 @@ impl<Below: Certificate> WreathStratum<Below>
     /// - witness: `tests::stratum::the_whisker_and_both_composites_are_certified_at_level_two`
     /// - witness: `tests::stratum::two_cells_each_the_others_source_are_refused_at_level_two`
     /// - witness: `tests::stratum::the_chains_at_level_three_are_certified_from_level_two`
+    ///
+    /// # Cost
+    /// - allocation: the shared level below and the cocones, growth within the
+    ///   wreath's objects
     #[inline]
     #[spec(ensures: |ref result| match *result {
         Ok(ref stratum) => stratum.cocones.iter().all(|cocone| {
@@ -1175,6 +1179,10 @@ fn level_one(
 ///   the cells of the vertical composite's suspension.
 /// - witness: `tests::stratum::the_whisker_and_both_composites_are_certified_at_level_two`
 /// - witness: `tests::stratum::the_chains_at_level_three_are_certified_from_level_two`
+///
+/// # Cost
+/// - allocation: the shared outer corolla, the cells and the glue, growth
+///   within the object's columns
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |cocone| {
     cocone.object == index && cocone.cells.iter().all(|cell| usize::from(cell.column) < object.columns().len())
 }))]

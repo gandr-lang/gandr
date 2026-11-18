@@ -437,6 +437,9 @@ impl SiteMap
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared vertex images and the wire images, setup
     #[inline]
     #[must_use]
     pub fn new<I>(
@@ -465,6 +468,9 @@ impl SiteMap
     ///   bijection onto its singletons.
     /// - witness: `tests::maps::the_class_is_a_category_at_the_bound`
     /// - witness: `tests::maps::map_forms_read_back`
+    ///
+    /// # Cost
+    /// - allocation: the shared vertex images and the wire images, setup
     #[inline]
     #[must_use]
     #[spec(ensures: |ref identity| [
@@ -989,6 +995,9 @@ impl SiteMap
     /// - witness: `tests::maps::the_class_is_a_category_at_the_bound`
     /// - witness: `tests::maps::a_contraction_composes_with_a_deletion`
     /// - witness: `map::tests::composition_refuses_a_missing_image`
+    ///
+    /// # Cost
+    /// - allocation: the composite's images, setup
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -1175,6 +1184,9 @@ impl SiteMap
     ///   beside a point, each read back to its hand-written form; together they
     ///   reach every arm of all three readings.
     /// - witness: `tests::maps::map_forms_read_back`
+    ///
+    /// # Cost
+    /// - allocation: the map read back from its form, setup
     #[inline]
     #[must_use]
     #[cfg_attr(
@@ -1469,6 +1481,10 @@ impl Odometer
 ///   of shapes at the bound.
 /// - witness: `tests::maps::hom_counts_match_hand_counts`
 /// - witness: `tests::maps::the_enumerator_agrees_with_brute_force`
+///
+/// # Cost
+/// - allocation: the maps, one shared copy of each assignment's images and the
+///   buffers, growth within the hom-set
 #[inline]
 #[must_use]
 #[spec(ensures: |ref maps| [

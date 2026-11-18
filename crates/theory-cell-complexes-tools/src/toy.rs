@@ -103,6 +103,9 @@ impl ToyVar
     ///   a collision chain. Missing or repeated suffixes change exact renamed
     ///   terms.
     /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
+    ///
+    /// # Cost
+    /// - allocation: the primed name, setup
     #[spec(ensures: |output| output.0.strip_suffix("'") == Some(self.0.as_ref()))]
     fn primed(&self) -> Self
     {
@@ -119,6 +122,9 @@ impl From<&str> for ToyVar
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared name, setup
     #[inline]
     fn from(value: &str) -> Self
     {
@@ -785,6 +791,10 @@ fn dominates(
 /// - witness: `tests::inhabitant::a_repeated_disagreement_stands_one_point`
 /// - witness: `tests::inhabitant::a_point_takes_a_name_no_member_wears`
 /// - witness: `tests::inhabitant::a_family_without_a_generalization_is_refused_by_name`
+///
+/// # Cost
+/// - allocation: the patterns, the points and their arms, growth within the
+///   family's members
 #[inline]
 #[spec(ensures: |output| match output {
     Maybe::Absent(anti_unification::Absent::EmptyFamily) => family.is_empty(),
@@ -1216,6 +1226,10 @@ impl CellAlphabet for ToyAlphabet
     ///   breadth-first position list. Duplicates, omitted nodes and a child
     ///   before its parent change the list.
     /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    ///
+    /// # Cost
+    /// - allocation: the queue and the list of positions, growth within the
+    ///   term's nodes
     #[inline]
     #[spec(ensures: |output| output.len() == cmd.0.len() && output.first().is_some_and(|pos| pos.0.is_empty())
         && output.iter().enumerate().all(|(index, pos)| !output.iter().take(index).any(|earlier| earlier == pos)

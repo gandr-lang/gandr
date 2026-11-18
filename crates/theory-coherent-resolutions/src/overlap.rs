@@ -591,6 +591,9 @@ impl<A: CellAlphabet> Overlap<A>
     ///   rather than silently admitting a malformed pair.
     /// - witness: `tests::completion::supplied_overlap_validation_returns_typed_declines`
     /// - witness: `tests::completion::supplied_non_unifying_decline_is_typed`
+    ///
+    /// # Cost
+    /// - allocation: the shared renamed cell, setup
     #[inline]
     #[must_use]
     #[spec(captures: supplied = (unifier.clone(), seam.clone()), ensures: |output| output.left == left.0 && output.right == right.0
@@ -933,6 +936,10 @@ where
 /// - witness: `tests::overlap::every_confluence_entry_carries_the_root_seam`
 /// - witness: `tests::second_inhabitant::every_toy_confluence_entry_carries_the_root_seam`
 /// - witness: `overlap::tests::overlap_reducts_preserve_refusal_precedence`
+///
+/// # Cost
+/// - allocation: the shared renamed cell and the overlaps, growth within the
+///   pair's seams
 #[inline]
 #[must_use]
 #[spec(ensures: |output| output.iter().all(|overlap| overlap.left == left.0 && overlap.right == right.0
@@ -994,6 +1001,9 @@ where
 ///   entry changes them.
 /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
 /// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
+///
+/// # Cost
+/// - allocation: the shared renamed cell and at most one overlap, setup
 #[inline]
 #[must_use]
 #[spec(ensures: |output| *output == overlaps_between(left, right).into_iter().filter(|overlap| overlap.kind == OverlapKind::Confluence).collect::<Vec<_>>())]
@@ -1033,6 +1043,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`overlaps_between`]'s confluence entry.
 /// - witness: `tests::overlap::the_pair_query_agrees_with_the_store_wide_family`
+///
+/// # Cost
+/// - allocation: at most one overlap, setup
 #[spec(ensures: |output| output.len() <= usize::from(left.0 != right.0)
     && output.iter().all(|overlap| overlap.left == left.0 && overlap.right == right.0
         && overlap.kind == OverlapKind::Confluence && overlap.seam == A::root_position()
@@ -1093,6 +1106,10 @@ where
 ///   A root entry, a skipped diagonal, a variable seam or a wrong peak changes
 ///   those families.
 /// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
+///
+/// # Cost
+/// - allocation: the seams, the shared renamed cell and the overlaps, growth
+///   within the pair's seams
 #[inline]
 #[must_use]
 #[spec(ensures: |output| output.iter().all(|overlap| overlap.left == left.0 && overlap.right == right.0

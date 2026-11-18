@@ -387,6 +387,9 @@ impl Element
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared port lists, setup
     #[inline]
     #[must_use]
     pub fn new(
@@ -446,6 +449,9 @@ impl Element
     /// - hypothesis: L3 — the input swap exchanges the attachments of a binary
     ///   operation's element and fixes a constant's.
     /// - witness: `tests::stratum::an_equivalence_commutes_with_the_corolla_automorphisms`
+    ///
+    /// # Cost
+    /// - allocation: the read port lists, setup
     #[spec(ensures: |ref read| read.generator == self.generator
         && read.inputs.iter().zip(&relabelling.inputs).all(|(port, &position)| self.inputs.get(position) == Some(port)))]
     fn restricted(
@@ -497,6 +503,10 @@ impl Labelling
 /// - hypothesis: L3 — the binary corolla holds two elements per generator, the
 ///   identity attachment first.
 /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
+///
+/// # Cost
+/// - allocation: the permutations and their prefixes, growth within the port
+///   count
 #[spec(ensures: |ref all| all.iter().zip(all.iter().skip(1)).all(|(first, second)| first < second)
     && all.iter().all(|permutation| permutation.len() == usize::from(count)))]
 fn permutations(count: PortCount) -> Vec<alloc::sync::Arc<[Port]>>
@@ -591,6 +601,9 @@ impl Species
     ///   corolla and a constant one; two binary generators hold four.
     /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
     /// - witness: `tests::stratum::an_equivalence_commutes_with_the_corolla_automorphisms`
+    ///
+    /// # Cost
+    /// - allocation: the elements, growth within the profile's permutations
     #[inline]
     #[must_use]
     #[spec(ensures: |ref elements| elements.iter().zip(elements.iter().skip(1)).all(|(first, second)| first < second)
@@ -632,6 +645,10 @@ impl Species
     ///   one labelling per element of the operation, and a shape with a vertex
     ///   of an uninhabited profile has none.
     /// - witness: `tests::stratum::restriction_reflects_a_natural_isomorphism_to_its_species`
+    ///
+    /// # Cost
+    /// - allocation: the labellings and their prefixes, growth within the
+    ///   shape's vertices
     #[inline]
     #[must_use]
     #[spec(ensures: |ref labellings| labellings.iter().zip(labellings.iter().skip(1)).all(|(first, second)| first < second)

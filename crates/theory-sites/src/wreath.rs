@@ -159,6 +159,9 @@ impl<Object> WreathShape<Object>
     ///   and a column short is refused with both counts.
     /// - witness: `tests::theta::the_chain_restriction_holds_theta_two_at_the_bound`
     /// - witness: `tests::theta::a_cycle_at_the_outer_level_is_refused_by_name`
+    ///
+    /// # Cost
+    /// - allocation: the shared outer shape and the columns, setup
     #[inline]
     #[spec(ensures: |ref result| match *result {
         Ok(ref object) => object.columns.len() == usize::from(object.outer.vertex_count()),
@@ -494,6 +497,10 @@ impl<Inner: Level> Wreath<Inner>
     ///   it, in its order, with its hom sets; an object past the bound and one
     ///   outside the chains are named as [`Level::find`] names them.
     /// - witness: `tests::theta::the_faces_are_the_full_sub_wreath_on_the_objects_with_a_map_in_7453`
+    ///
+    /// # Cost
+    /// - allocation: the faces' objects and maps, growth within the object's
+    ///   faces
     #[inline]
     #[spec(ensures: |ref faces| match *faces {
         Maybe::Present(ref faces) => faces.homs.len() == faces.objects.len().saturating_mul(faces.objects.len())
@@ -660,6 +667,9 @@ impl<Inner: Level> Wreath<Inner>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the object's shared outer shape and its columns, setup
     fn object_of(
         outer: &Catalogue,
         inner: &Inner,
@@ -698,6 +708,10 @@ impl<Inner: Level> Wreath<Inner>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the tuples, the two scratch tuples of each tuple and the
+    ///   classes, growth within the wreath's classes
     fn classes(
         outer: &Catalogue,
         inner: &Inner,
@@ -1378,6 +1392,9 @@ impl<Inner: Level> Level for Wreath<Inner>
     ///   that missed an order would split a class or merge two.
     /// - witness: `tests::wreath::the_wreath_holds_one_object_per_class`
     /// - witness: `tests::theta::the_chain_restriction_is_the_full_sub_site_of_the_wreath`
+    ///
+    /// # Cost
+    /// - allocation: the key's columns, setup
     #[inline]
     #[spec(ensures: |ref key| key.vertices == object.outer.vertex_count() && key.columns.len() == object.columns.len())]
     fn key(object: &Self::Object) -> Self::Key

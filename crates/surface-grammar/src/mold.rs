@@ -2652,6 +2652,10 @@ enum WalkFrame<'regex>
 ///   facet provenance without copying the existing output prefix.
 /// - witness: `mold::tests::occurrence_order_and_nullable_seams_are_exact`
 /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
+///
+/// # Cost
+/// - allocation: the frame stack and the shared faces of each frame, growth
+///   within the regex's nodes
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
