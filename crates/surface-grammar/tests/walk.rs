@@ -86,14 +86,15 @@ use crate::failure::Failure;
 /// `from` bodies (#3487), then by the reader `.#{` that fixes a record type's
 /// fields, `T.#{.l = v}` and `T.#{f ↦ v}` (#6498), then by a definition's
 /// body after `=` (#6318), then by the six machine width atoms, `u8` to
-/// `isize` (#7960).
-const BUILT_IN_FINGERPRINT: u64 = 0x4b36_7932_c2f2_c6e8;
+/// `isize` (#7960), then by the shell block leaving the grammar with its
+/// words, quotes, expansions and operators (#1057).
+const BUILT_IN_FINGERPRINT: u64 = 0x7f9d_cf5b_8863_fee4;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3161);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3118);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 94;
@@ -134,13 +135,11 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (".@", 1),
     (":", 251),
     (":>", 2),
-    (";", 136),
-    ("<", 18),
-    ("<&", 1),
+    (";", 135),
+    ("<", 17),
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
-    ("<>", 1),
     ("=", 152),
     ("==", 1),
     ("==>", 27),
@@ -288,7 +287,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("|", 8),
     ("|>", 1),
     ("||", 1),
-    ("}", 84),
+    ("}", 80),
     ("~", 1),
     ("~>", 3),
     ("ω", 17),
