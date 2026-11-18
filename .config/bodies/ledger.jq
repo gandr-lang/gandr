@@ -32,7 +32,7 @@ include "sections";
     | ([$touched[] | select(.id == $id)] | first) as $row
     | if ($rows | index($id)) == null and $row == null then "`## Ledger` names `\($id)`, no row of `ledger/features.sql`: name a row by its id, then run the task again"
       elif $row == null then "`## Ledger` names `\($id)`, and the change does not touch its row: patch the row (its `since` with this pull request's number), or drop the item, then run the task again"
-      elif $pr != null and ($row.status | IN("implemented", "partial")) and (($row.since // "") | test("#\($pr)\\b") | not) then "`## Ledger` names `\($id)`, and its `since` (`\($row.since // "NULL")`) lacks #\($pr): add it, then run the task again"
+      elif $pr != null and ($row.status | IN("implemented", "partial")) and (($row.since // "") | test("#\($pr)\\b") | not) then "`## Ledger` names `\($id)`, and its `since` (`\($row.since // "NULL")`) lacks #\($pr): run `mise run ledger:stamp \($pr)` and push, then run the task again"
       else empty
       end),
   ($touched[]

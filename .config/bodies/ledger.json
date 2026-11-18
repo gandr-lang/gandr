@@ -28,7 +28,7 @@
         }
       ]
     },
-    "output": "`## Ledger` names `check-memo`, and its `since` (`b87a65d #866`) lacks #2600: add it, then run the task again"
+    "output": "`## Ledger` names `check-memo`, and its `since` (`b87a65d #866`) lacks #2600: run `mise run ledger:stamp 2600` and push, then run the task again"
   },
   {
     "name": "#2525: the number is read whole",
@@ -44,7 +44,7 @@
         }
       ]
     },
-    "output": "`## Ledger` names `check-memo`, and its `since` (`#26001`) lacks #2600: add it, then run the task again"
+    "output": "`## Ledger` names `check-memo`, and its `since` (`#26001`) lacks #2600: run `mise run ledger:stamp 2600` and push, then run the task again"
   },
   {
     "name": "#2525: a touched row the body does not name is refused, and an item naming no row",
