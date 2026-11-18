@@ -260,7 +260,7 @@ An old spelling and the spelling that replaces it. A spelling the grammar still 
 | `extension_type` | `bracket_faces` | `T.#{f ↦ v}` | refused as [`RetiredSpelling.bracket_faces`](../corpus/ledger/syntax/superseded/bracket-faces.gandr) | the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name |
 | `parenthesized_type` | `parenthesized_product` | `*{A, B}` | refused as [`RetiredSpelling.parenthesized_product`](../corpus/ledger/syntax/superseded/parenthesized-product.gandr) | a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product |
 | `telescope_type` | `view_telescope` | `*{ … }` | refused as [`RetiredSpelling.view_telescope`](../corpus/ledger/syntax/superseded/view-telescope.gandr) | the glued token `#{` is refused by name: `*{` opens the telescope and the record |
-| `theory_declaration` | `shape_member` | `boundary` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells |
+| `theory_declaration` | `shape_member` | `boundary B {…}; face f = {…}` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it |
 
 ## Attributes — 20 attributes
 
