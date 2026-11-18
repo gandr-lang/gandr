@@ -4092,7 +4092,7 @@ impl Environment
             .commits
             .generative
             .get(&content)
-            .map_or(0, Vec::len)
+            .map_or(0, |twins| twins.len())
             .saturating_add(usize::from(self.entries.retired()));
         let counted = (0 ..= twins).any(|earlier| {
             UnitKey {
