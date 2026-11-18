@@ -101,9 +101,15 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::RegisteredAttribute;
+use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::UnitSource;
+use gandr_surface_lowering::coincide::Decisions;
 use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
@@ -980,7 +986,8 @@ struct Header
 ///   one of them: in the attribute table, or, for `doc`, as documentation
 ///   holding more lines than `header`. The source lowers alone, so its imports
 ///   resolve to nothing here, and `check:exemplars` settles what they bind
-///   under the fixture root.
+///   under the fixture root. A `native` exemplar lowers as a module of `std`,
+///   the one place its mark stands.
 /// - fails: the lowering refuses, or the attribute is filed nowhere.
 /// - panics: none.
 ///
@@ -1006,14 +1013,34 @@ fn filed(
 ) -> Result<(), ExemplarFault>
 {
     let mut arena = CoreArena::new();
-    let module = lower_module(
-        pbg,
-        tree,
-        &mut arena,
-        LoweringBudget::DEFAULT,
-        Recognition::default(),
-    )
-    .map_err(|refusal| ExemplarFault::Refused {
+    let lowered = if attribute == RegisteredAttribute::NATIVE {
+        let unit = Unit::new(vec![
+            UnitSource::new(ByteOffset::from(0_usize), Vec::new())
+                .homed(SurfaceName::from("std.exemplar")),
+        ])
+        .map_err(|fault| ExemplarFault::Refused {
+            refusal: format!("{fault:?}"),
+        })?;
+        lower_unit(
+            pbg,
+            tree,
+            &unit,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+            &mut Decisions::none(),
+        )
+    }
+    else {
+        lower_module(
+            pbg,
+            tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+    };
+    let module = lowered.map_err(|refusal| ExemplarFault::Refused {
         refusal: refusal.to_string(),
     })?;
     let mut filed = false;

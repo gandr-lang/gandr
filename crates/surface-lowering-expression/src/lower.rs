@@ -24,6 +24,7 @@ pub mod patched;
 pub mod path;
 pub mod phase;
 pub mod reader;
+mod row;
 pub mod sealing;
 mod session;
 pub mod splice;
@@ -1070,6 +1071,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - hypothesis: L3 — as `lower_unit`.
     /// - witness: `gandr-surface-lowering::tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    ///
+    /// # Cost
+    /// - allocation: the lowered source and its tables, durable by the source
     #[spec(ensures: |result| result.is_err() || self.cx().current.source == source)]
     #[inline]
     pub fn lower_source(
@@ -1084,6 +1088,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         self.refuse_imports();
         self.declare();
         self.mark_generic();
+        self.read_natives();
         self.seed()?;
         Exits::new(self.host()).survey()?;
         self.classify()?;
@@ -1096,6 +1101,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         Native::new(self.host()).unjoin_refused();
         CapabilityRef::new(self.host_ref()).mint_foreign(sink);
         self.mint(sink)?;
+        self.mint_natives(sink);
         Native::new(self.host()).mint_joints(sink);
         self.mint_abstracts(sink);
         Models::new(self.host()).mint_models(sink);
@@ -4989,7 +4995,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     ///   importer's own; the unresolved absence for a slot the collection does
     ///   not hold.
     /// - fails: [`LoweringRefusal::UnexportedName`] for a declaration its
-    ///   source keeps private, and for one with a signature and no definition.
+    ///   source keeps private, and for one with a signature and no definition
+    ///   that declares no native row.
     /// - panics: none.
     ///
     /// # Errors
@@ -5031,7 +5038,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         if self.cx().collected.slot_visibility(target) == Visibility::Private {
             return Err(self.private(site, name, target));
         }
-        if let Maybe::Absent(_) = entry.definition {
+        if let Maybe::Absent(_) = entry.definition
+            && !self.cx().natives.contains_key(&target)
+        {
             return Err(LoweringRefusal::UnexportedName {
                 span: site.at.span,
                 name,
@@ -5556,8 +5565,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - requires: `resolved` is what the name at `site` resolves to.
     /// - ensures: a binder named inside a type is mentioned, so the arrow that
     ///   binds it is dependent, and planned as the bare code it names, minted
-    ///   at its telescope index; any other resolution is the variable or the
-    ///   constant it names.
+    ///   at its telescope index; a declaration of a native row is the row, as
+    ///   its own name is; any other resolution is the variable or the constant
+    ///   it names.
     /// - provides: the one place a term name inside a type reads the type's
     ///   telescope rather than the term context.
     /// - fails: [`LoweringRefusal::PhaseDependence`] and
@@ -5592,6 +5602,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     matches!(*plan, Plan::StaticApplication(Code::Bound { binder, .. }, arguments) if binder == bound.binder && arguments == FormStretch::default())
                         && (bool::from(self.cx().scope.mentioned(bound.binder)) || self.cx().in_quote.contains(&site.at.node))
                 },
+                | (Resolved::Declaration { constant, .. }, _) => match self.cx().natives.get(&SlotIndex::from(usize::from(constant))) {
+                    | Some(&primitive) => *plan == Plan::Primitive(primitive),
+                    | None => *plan == resolved.term(),
+                },
                 | _ => *plan == resolved.term(),
             },
         },
@@ -5623,7 +5637,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 self.method_as_value(site, slot)?;
                 self.shared().admit_read(site, slot)?;
                 self.shared().supplied_or_refused(site, constant)?;
-                Ok(resolved.term())
+                // A declaration of a native row lowers as the row's own name.
+                Ok(self
+                    .cx()
+                    .natives
+                    .get(&SlotIndex::from(usize::from(constant)))
+                    .map_or_else(|| resolved.term(), |&primitive| Plan::Primitive(primitive)))
             },
         }
     }
@@ -20807,8 +20826,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
     /// - ensures: a stored refusal takes precedence, then a refusal a check
     ///   after minting filed, each read as [`Self::retired_first`] reads it; a
     ///   definition written `Eq.generic(T)` is the equality derived for `T`,
-    ///   and the prelude's `Eq.generic` itself is unminted; a world declaration
-    ///   is the world it names; a data declaration, or a described family the
+    ///   and the prelude's `Eq.generic` itself is unminted; a signature that
+    ///   `native` marks is the row's value at its type; a world declaration is
+    ///   the world it names; a data declaration, or a described family the
     ///   decoder admitted, `Theory` among them, is the index of its minted
     ///   signature; an operation, a derived rule and a `theory` block's
     ///   definition are each the type and body minted for it; an abstract slot
@@ -20852,6 +20872,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
                 ret == Maybe::Present(DeclarationOutcome::Refused(self.retired_first(slot, slot.introduced_by.node, refusal)))
             }
             else if let Some(&(declared_type, body)) = self.cx().generics.get(&position) {
+                ret == Maybe::Present(DeclarationOutcome::Completed { declared_type, body })
+            }
+            else if let Some(&(declared_type, body)) = self.cx().natived.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Completed { declared_type, body })
             }
             else if slot.role == Role::Generic {
@@ -20968,6 +20991,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             ));
         }
         if let Some(&(declared_type, body)) = self.cx().generics.get(&position) {
+            return Maybe::Present(DeclarationOutcome::Completed {
+                declared_type,
+                body,
+            });
+        }
+        if let Some(&(declared_type, body)) = self.cx().natived.get(&position) {
             return Maybe::Present(DeclarationOutcome::Completed {
                 declared_type,
                 body,

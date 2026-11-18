@@ -5,7 +5,7 @@ Generated from the built-in grammar by `mise run ledger:syntax`; never edited by
 - Grammar fingerprint: `0x6dc7d66dff5b0884`
 - Rules: 176 — 175 committed, 1 internal
 - Molds: 3153
-- Attributes: 20
+- Attributes: 21
 
 ## Reading a form
 
@@ -264,7 +264,7 @@ An old spelling and the spelling that replaces it. A spelling the grammar still 
 | `theory_declaration` | `empty_operation_inputs` | `oper c : T` | refused as [`RetiredSpelling.empty_operation_inputs`](../corpus/ledger/syntax/superseded/empty-operation-inputs.gandr) | an operation of no input is a constant: `oper c : T` states it, and the reader refuses `() -->` by name |
 | `theory_declaration` | `empty_operation_call` | `c` | refused as [`RetiredSpelling.empty_operation_call`](../corpus/ledger/syntax/superseded/empty-operation-call.gandr) | a constant is its bare name in a term: the reader refuses `c ()` by name |
 
-## Attributes — 20 attributes
+## Attributes — 21 attributes
 
 Every attribute the lowering's registry admits in an `@[ … ]` block, with the payload its schema takes, linking its exemplar, which the exemplar gate lowers and checks the attribute is filed.
 
@@ -290,6 +290,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`boundary`](../corpus/ledger/attributes/boundary.gandr) | a declared name or a tuple of declared names |
 | [`builtin`](../corpus/ledger/attributes/builtin.gandr) | one of the words `irSignature`, `irPair`, `irArgs`, `irDecode` |
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload |
+| [`native`](../corpus/ledger/attributes/native.gandr) | a text payload |
 
 ## Decisions — 118 of 176 rules decided at every token
 

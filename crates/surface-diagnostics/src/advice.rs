@@ -61,6 +61,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentSort;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
+use gandr_surface_lowering::NativeFault;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::WfKind;
@@ -176,6 +177,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
                 form.replaced_by().0
             )
         },
+        LoweringRefusal::NativeMark { fault, .. } => String::from(match fault {
+            NativeFault::NoRow => "name a row of the native table, as `string.append`",
+            NativeFault::Bodied => "delete the body, and the row gives the value",
+            NativeFault::OutsideStd => "delete the mark. Call the declaration of `std`",
+            NativeFault::TypeDiffers => "write the type of the row, its arguments then its result",
+            NativeFault::SecondDeclaration => "delete this declaration. Call the earlier one",
+        }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             format!("declare `{name}`, or link to a name this source declares")
         },

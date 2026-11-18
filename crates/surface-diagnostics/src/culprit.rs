@@ -81,6 +81,7 @@ use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
+use gandr_surface_lowering::NativeFault;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::TelescopeFault;
 use gandr_surface_lowering::Unexported;
@@ -159,6 +160,13 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
     Culprit(match refusal {
         LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
         LoweringRefusal::RetiredName { .. } => "a retired spelling",
+        LoweringRefusal::NativeMark { fault, .. } => match fault {
+            NativeFault::NoRow => "names no row of the native table",
+            NativeFault::Bodied => "a native declaration with a body",
+            NativeFault::OutsideStd => "a native mark outside std",
+            NativeFault::TypeDiffers => "a type that is not the row's",
+            NativeFault::SecondDeclaration => "a row declared again",
+        },
         LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
         LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
         LoweringRefusal::DuplicateSignature { .. }
@@ -658,6 +666,7 @@ mod tests
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::MatchFault;
+    use gandr_surface_lowering::NativeFault;
     use gandr_surface_lowering::Offer;
     use gandr_surface_lowering::OperandCount;
     use gandr_surface_lowering::PayloadForm;
@@ -732,6 +741,13 @@ mod tests
         Culprit(match refusal {
             LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
             LoweringRefusal::RetiredName { .. } => "a retired spelling",
+            LoweringRefusal::NativeMark { fault, .. } => match fault {
+                NativeFault::NoRow => "names no row of the native table",
+                NativeFault::Bodied => "a native declaration with a body",
+                NativeFault::OutsideStd => "a native mark outside std",
+                NativeFault::TypeDiffers => "a type that is not the row's",
+                NativeFault::SecondDeclaration => "a row declared again",
+            },
             LoweringRefusal::UnresolvedDocLink { .. } => "links to no declared name",
             LoweringRefusal::UnresolvedTypeHead { .. } => "no type head of this name and arity",
             LoweringRefusal::DuplicateSignature { .. }

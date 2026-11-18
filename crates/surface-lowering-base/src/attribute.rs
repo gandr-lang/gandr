@@ -544,6 +544,10 @@ impl RegisteredAttribute
     /// word names, which a core former reads by role
     /// ([`gandr_kernel_term::Builtin`]).
     pub const BUILTIN: Self = Self("builtin");
+    /// `native`: the signature it decorates is a declaration of the row of
+    /// the native table that its text names. The row gives the value, and
+    /// the declared type states the row's type.
+    pub const NATIVE: Self = Self("native");
     /// `traces`: the run of the declaration it decorates is recorded, and the
     /// payload states the web one channel's play decomposes to. It is the one
     /// attribute written more than once on a name, once per channel.
@@ -766,7 +770,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 20_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 21_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -802,6 +806,7 @@ const REGISTRY: [(&str, AttributeSchema); 20_usize] = [
         AttributeSchema::Word(gandr_kernel_term::Builtin::WORDS),
     ),
     (RegisteredAttribute::INERT.0, AttributeSchema::Marker),
+    (RegisteredAttribute::NATIVE.0, AttributeSchema::Text),
 ];
 
 impl AttributeRegistry
@@ -818,6 +823,9 @@ impl AttributeRegistry
     ///   near miss for every named schema.
     /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
     /// - witness: `attribute::tests::a_near_misspelling_suggests_its_attribute`
+    ///
+    /// # Cost
+    /// - allocation: the list of names, setup
     #[spec(
         ensures: |ret| {
             ret.len() == REGISTRY.len()
@@ -877,14 +885,12 @@ impl AttributeRegistry
     ) -> Maybe<(RegisteredAttribute, AttributeSchema), registry::Absent>
     {
         let spelled: &str = name.as_ref();
-        let found = REGISTRY.into_iter().find_map(|(entry, schema)| {
-            (entry == spelled).then_some((RegisteredAttribute(entry), schema))
-        });
-
-        found.map_or(
-            Maybe::Absent(registry::Absent::Unregistered),
-            Maybe::Present,
-        )
+        for (entry, schema) in REGISTRY {
+            if entry == spelled {
+                return Maybe::Present((RegisteredAttribute(entry), schema));
+            }
+        }
+        Maybe::Absent(registry::Absent::Unregistered)
     }
 
     /// The registered name nearest `name`, when one sits within the bound.
@@ -911,6 +917,9 @@ impl AttributeRegistry
     /// - witness: `attribute::tests::a_near_misspelling_suggests_its_attribute`
     /// - witness: `attribute::tests::a_distant_spelling_suggests_nothing`
     /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
+    ///
+    /// # Cost
+    /// - allocation: the rows of each edit distance, diagnostic
     #[spec(
         ensures: |ret| {
             let spelled: &str = name.as_ref();
@@ -1972,6 +1981,7 @@ mod tests
                 AttributeSchema::Word(&["irSignature", "irPair", "irArgs", "irDecode"]),
             ),
             ("inert", AttributeSchema::Marker),
+            ("native", AttributeSchema::Text),
         ];
 
         for (spelling, schema) in expected {
@@ -2034,6 +2044,7 @@ mod tests
             ("boundary", "boundary"),
             ("builtins", "builtin"),
             ("inrt", "inert"),
+            ("natives", "native"),
         ];
 
         for (written, nearest) in expected {

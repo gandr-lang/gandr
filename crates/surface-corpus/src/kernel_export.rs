@@ -2177,6 +2177,57 @@ mod kernel_here_congruence_readmission
     }
 }
 
+/// The audit of a definition that calls `std.string`'s `concat` names the
+/// native row that `std.string` declares: the row crosses as an assumption.
+mod kernel_native_audit
+{
+    use std::path::PathBuf;
+
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    /// #7961: `named` calls `concat`, whose body calls the declaration of
+    /// `string.append`. The artifact holds the row as an assumption under its
+    /// own name.
+    #[test]
+    fn a_call_of_concat_audits_the_native_row_7961()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/ledger/features/std-string.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("std-string lowers");
+        };
+        let decoded = exported.decoded().expect("std-string's export decodes");
+        let row = StructuredName::from(
+            ["string", "append"]
+                .into_iter()
+                .filter_map(|segment| NameSegment::from_text(segment.into()))
+                .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
+        );
+        let assumed: alloc::vec::Vec<&StructuredName> = decoded
+            .declarations()
+            .iter()
+            .map(gandr_kernel_term::MarkedDeclaration::declaration)
+            .filter(|declaration| matches!(declaration.content(), DeclarationContent::Axiom { .. }))
+            .map(gandr_kernel_term::Declaration::name)
+            .collect();
+        assert!(
+            assumed.contains(&&row),
+            "the audit names the row `string.append`: {assumed:?}"
+        );
+    }
+}
+
 /// An unread call readmits by the dialogue that discards it and then unfolds
 /// a definition, which the kernel's own reading does not do under a binder; a
 /// twin whose dialogue discards on the side that holds no call is refused by

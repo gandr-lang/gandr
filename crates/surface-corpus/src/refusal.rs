@@ -125,6 +125,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
+use gandr_surface_lowering::NativeFault;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Unbuilt;
@@ -944,6 +945,9 @@ pub enum RefusalName
     /// A declaration of a source whose import is written at a signature its
     /// source's `pub` interface does not hold, qualified by how.
     SignatureMismatch(Tag),
+    /// A `native` mark that declares no row of the native table, qualified by
+    /// why.
+    NativeMark(Tag),
     /// A name an import binds and another binding of the source binds too.
     ImportShadows,
     /// A name an import answers with a declaration its source does not export.
@@ -1638,6 +1642,7 @@ impl RefusalName
             .chain(MEMBER_FAULTS.map(|fault| Self::UndescribedMember(member_tag(fault))))
             .chain(BOUNDARY_CLAUSES.map(|clause| Self::BoundaryUnrealised(clause.tag())))
             .chain(SIGNATURE_FAULTS.map(|fault| Self::SignatureMismatch(signature_tag(fault))))
+            .chain(NATIVE_FAULTS.map(|fault| Self::NativeMark(native_tag(fault))))
             .chain([
                 Self::UnprovenLaw,
                 Self::NoFiller(FillerAsk::Omitted),
@@ -1677,7 +1682,7 @@ impl RefusalName
         b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
         (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ImportUnresolved,
         b"ImportUnresolved") | (Self::ImportCycle, b"ImportCycle") | (Self::UnlockedDependency,
-        b"UnlockedDependency") | (Self::SignatureMismatch(_), b"SignatureMismatch") | (Self::ImportShadows,
+        b"UnlockedDependency") | (Self::SignatureMismatch(_), b"SignatureMismatch") | (Self::NativeMark(_), b"NativeMark") | (Self::ImportShadows,
         b"ImportShadows") | (Self::UnexportedName, b"UnexportedName") | (Self::ShadowedBuiltin,
         b"ShadowedBuiltin") | (Self::OutOfFragment(_), b"OutOfFragment") |
         (Self::BareFeedback, b"BareFeedback") |
@@ -1907,7 +1912,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::RetiredSpelling(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::SignatureMismatch(_) | Self::NativeMark(_) | Self::RetiredSpelling(_) | Self::UnprovenLaw | Self::NoFiller(FillerAsk::Omitted) | Self::GenericUncovered(GenericCoverage::Dependent) | Self::Immobile(CrossingRead::Capture | CrossingRead::Homed) | Self::NotOpen(CrossingRead::Capture | CrossingRead::Homed))
         == ret.qualifier.is_some()
 },
     )]
@@ -1967,6 +1972,7 @@ impl RefusalName
             Self::ImportCycle => "ImportCycle",
             Self::UnlockedDependency => "UnlockedDependency",
             Self::SignatureMismatch(_) => "SignatureMismatch",
+            Self::NativeMark(_) => "NativeMark",
             Self::RetiredSpelling(_) => "RetiredSpelling",
             Self::ImportShadows => "ImportShadows",
             Self::UnexportedName => "UnexportedName",
@@ -2182,7 +2188,8 @@ impl RefusalName
         else if let Self::UnstatedComponent(fault)
         | Self::UndescribedMember(fault)
         | Self::BoundaryUnrealised(fault)
-        | Self::SignatureMismatch(fault) = self
+        | Self::SignatureMismatch(fault)
+        | Self::NativeMark(fault) = self
         {
             Some(Qualifier::Named(fault))
         }
@@ -2283,6 +2290,7 @@ impl RefusalName
                 "SignatureMismatch" => {
                     tagged(&SIGNATURE_FAULTS.map(signature_tag)).map(Self::SignatureMismatch)
                 },
+                "NativeMark" => tagged(&NATIVE_FAULTS.map(native_tag)).map(Self::NativeMark),
                 "RetiredSpelling" => RetiredForm::ALL
                     .into_iter()
                     .find(|form| form.surface().0 == rest)
@@ -2383,6 +2391,15 @@ const MODEL_FAULTS: [ModelFault; 13_usize] = [
 /// Every fault an import's signature match carries.
 const SIGNATURE_FAULTS: [MatchFault; 3_usize] =
     [MatchFault::Missing, MatchFault::Sort, MatchFault::Unstated];
+
+/// Every fault a `native` mark carries.
+const NATIVE_FAULTS: [NativeFault; 5_usize] = [
+    NativeFault::NoRow,
+    NativeFault::Bodied,
+    NativeFault::OutsideStd,
+    NativeFault::TypeDiffers,
+    NativeFault::SecondDeclaration,
+];
 
 /// Every fault a member the description does not read carries.
 const MEMBER_FAULTS: [MemberFault; 23_usize] = [
@@ -2640,6 +2657,29 @@ const fn signature_tag(fault: MatchFault) -> Tag
         MatchFault::Missing => "Missing",
         MatchFault::Sort => "Sort",
         MatchFault::Unstated => "Unstated",
+    })
+}
+
+/// The tag a `native` mark's fault is named by: its variant.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the fault's variant name.
+/// - panics: none.
+/// - executable: none — the tag is the variant's spelling, which a predicate
+///   would restate. The witness reads each minted name back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `NativeMark.NoRow` is minted by its fault's tag.
+/// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
+const fn native_tag(fault: NativeFault) -> Tag
+{
+    Tag(match fault {
+        NativeFault::NoRow => "NoRow",
+        NativeFault::Bodied => "Bodied",
+        NativeFault::OutsideStd => "OutsideStd",
+        NativeFault::TypeDiffers => "TypeDiffers",
+        NativeFault::SecondDeclaration => "SecondDeclaration",
     })
 }
 
@@ -2923,7 +2963,8 @@ impl<'source> RefusalOf<'source, Arena>
         RefusalName::UnreadAscription) | (LoweringRefusal::UnreadCells { .. },
         RefusalName::UnreadCells) | (LoweringRefusal::UnstatedComponent { .. },
         RefusalName::UnstatedComponent(_)) | (LoweringRefusal::SignatureMismatch { .. },
-        RefusalName::SignatureMismatch(_)) | (LoweringRefusal::UndescribedMember { .. },
+        RefusalName::SignatureMismatch(_)) | (LoweringRefusal::NativeMark { .. },
+        RefusalName::NativeMark(_)) | (LoweringRefusal::UndescribedMember { .. },
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
         RefusalName::FamilyTelescope) | (LoweringRefusal::NonUniformResult { .. },
         RefusalName::NonUniformResult) | (LoweringRefusal::UninterfacedMember { .. },
@@ -2983,6 +3024,8 @@ impl<'source> RefusalOf<'source, Arena>
         ret == RefusalName::UndescribedMember(member_tag(fault))
     } else if let LoweringRefusal::SignatureMismatch { fault, .. } = refusal {
         ret == RefusalName::SignatureMismatch(signature_tag(fault))
+    } else if let LoweringRefusal::NativeMark { fault, .. } = refusal {
+        ret == RefusalName::NativeMark(native_tag(fault))
     } else if let LoweringRefusal::MalformedForm {
         fault: FormFault::Retired(form) | FormFault::Repaired(Repair::Retired(form)),
         ..
@@ -3060,6 +3103,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::SignatureMismatch { fault, .. } => {
             RefusalName::SignatureMismatch(signature_tag(fault))
         },
+        LoweringRefusal::NativeMark { fault, .. } => RefusalName::NativeMark(native_tag(fault)),
         LoweringRefusal::UndescribedMember { fault, .. } => {
             RefusalName::UndescribedMember(member_tag(fault))
         },
@@ -3707,6 +3751,7 @@ mod tests
         use super::FORMERS;
         use super::MEMBER_FAULTS;
         use super::MODEL_FAULTS;
+        use super::NATIVE_FAULTS;
         use super::Qualifier;
         use super::Refusal;
         use super::SIGNATURE_FAULTS;
@@ -3716,6 +3761,7 @@ mod tests
         use super::former_tag;
         use super::member_tag;
         use super::model_tag;
+        use super::native_tag;
         use super::signature_tag;
 
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
@@ -3769,6 +3815,7 @@ mod tests
             .chain(
                 SIGNATURE_FAULTS.map(|fault| RefusalName::SignatureMismatch(signature_tag(fault))),
             )
+            .chain(NATIVE_FAULTS.map(|fault| RefusalName::NativeMark(native_tag(fault))))
             .chain(
                 crossed()
                     .into_iter()

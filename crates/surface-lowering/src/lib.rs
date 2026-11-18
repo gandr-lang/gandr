@@ -478,6 +478,7 @@ pub use crate::error::FragmentSort;
 pub use crate::error::LoopExit;
 pub use crate::error::LoweringRefusal;
 pub use crate::error::MatchFault;
+pub use crate::error::NativeFault;
 pub use crate::error::TelescopeFault;
 pub use crate::error::Unexported;
 pub use crate::error::description_subject;
