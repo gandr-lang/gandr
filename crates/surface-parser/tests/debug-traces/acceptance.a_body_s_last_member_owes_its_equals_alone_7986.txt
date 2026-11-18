@@ -20,8 +20,8 @@ Breakpoint 2: where = tests-e5e9e97c73c2471a`__rustc::rust_panic + 12 at panicki
 
 running 1 test
 test acceptance::a_body_s_last_member_owes_its_equals_alone_7986 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
-Process 64661 launched: 'target/debug-trace/debug/build/gandr-surface-parser/e5e9e97c73c2471a/out/tests-e5e9e97c73c2471a' (arm64)
-Process 64661 stopped
+Process 26237 launched: 'target/debug-trace/debug/build/gandr-surface-parser/e5e9e97c73c2471a/out/tests-e5e9e97c73c2471a' (arm64)
+Process 26237 stopped
 * thread #2, name = 'acceptance::a_body_s_last_member_owes_its_equals_alone_7986', stop reason = breakpoint 1.11
       frame #0: 0x00000001000bb1cc tests-e5e9e97c73c2471a`<tests::acceptance::a_body_s_last_member_owes_its_equals_alone_7986::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
 (lldb) bt 24
@@ -52,7 +52,7 @@ Process 64661 stopped
 (tests::acceptance::a_body_s_last_member_owes_its_equals_alone_7986::{closure_env#0})  = {}
 (void)  = <could not get size of type void>
 (lldb) up
+warning: tests-e5e9e97c73c2471a was compiled with optimization - stepping may behave oddly; variables may not be available
 frame #1: 0x00000001000ef518 tests-e5e9e97c73c2471a`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
 (lldb) frame variable --depth 3
-warning: tests-e5e9e97c73c2471a was compiled with optimization - stepping may behave oddly; variables may not be available
 error: no variable information is available in debug info for this compile unit

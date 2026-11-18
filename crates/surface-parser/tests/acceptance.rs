@@ -1594,19 +1594,27 @@ fn a_body_s_last_member_owes_its_equals_alone_7986() -> Result<(), Failure>
 {
     for (source, arrow) in [
         (
-            "theory S where {\n  def rec f(x : Nat) -> d\n    match x where\n      | Zero => Zero\n}\n",
+            include_str!(
+                "acceptance/unformatted/a-body-s-last-member-owes-its-equals-alone-theory-7986.gandr"
+            ),
             38,
         ),
         (
-            "rec {\n  def rec f(x : Nat) -> d\n    match x where\n      | Zero => Zero\n}\n",
+            include_str!(
+                "acceptance/unformatted/a-body-s-last-member-owes-its-equals-alone-rec-7986.gandr"
+            ),
             27,
         ),
         (
-            "theory S where {\n  def rec f(x : Nat) -> d\n    x\n}\n",
+            include_str!(
+                "acceptance/unformatted/a-body-s-last-member-owes-its-equals-alone-operand-7986.gandr"
+            ),
             38,
         ),
         (
-            "def rec f(x : Nat) -> d\n  match x where\n    | Zero => Zero\n",
+            include_str!(
+                "acceptance/unformatted/a-body-s-last-member-owes-its-equals-alone-top-7986.gandr"
+            ),
             19,
         ),
     ] {
@@ -1622,7 +1630,8 @@ fn a_body_s_last_member_owes_its_equals_alone_7986() -> Result<(), Failure>
             "{source:?} owes only the `=` after its result"
         );
     }
-    let whole = "theory S where {\n  def rec f(x : Nat) -> d =\n    match x where\n      | Zero => Zero\n}\n";
+    let whole =
+        include_str!("acceptance/unformatted/a-body-s-last-member-with-its-equals-7986.gandr");
     assert!(
         bool::from(parse(built(), SourceText::from(whole))?.is_clean()),
         "the member with its `=` owes nothing"
