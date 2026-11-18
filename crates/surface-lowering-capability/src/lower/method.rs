@@ -652,15 +652,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   held, an ambiguous method, a forward one and one with an implicit
     ///   telescope; a call of a method answering a place with a block and
     ///   without one; a qualified call at each mode, on a held receiver and on
-    ///   one no hold holds, with a block and without one; the printing of a dot
-    ///   call, whose access applies the method's function to the lent view.
+    ///   one no hold holds, with a block and without one; the elaboration of a
+    ///   dot call, whose access applies the method's function to the lent view.
     /// - witness: `gandr-surface-lowering::lower::method::tests::each_mode_lowers_to_its_access`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_receiver_not_held_is_passed_or_refused`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_receiver_is_a_typed_first_self`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
-    /// - witness: `gandr-surface-dispatcher::parity::sweeps::the_formatter_spells_each_declaration_as_the_printer_does_755`
     ///
     /// # Cost
     /// - allocation: the head's path and the candidates of its name, growth

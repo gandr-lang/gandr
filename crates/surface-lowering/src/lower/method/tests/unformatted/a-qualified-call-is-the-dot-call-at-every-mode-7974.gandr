@@ -20,3 +20,4 @@ def head() -> -F Integer {{ var xs = pair; let h = Places.first xs; pure h }}
 def nested() -> -F Integer {{ var xs = pair; let h = Outer.Inner.first xs; pure h }}
 def raised() -> -F Integer {{ var xs = pair; (Places.nth xs 1) as w {{ resume w (w + 3) }}; pure 0 }}
 def unheld(ys : List(Integer)) -> -F Integer {{ let h = Places.first ys; pure h }}
+def elaborated() -> -F Integer {{ var xs = pair; access shared xs as b {{ Places.first b }} }}

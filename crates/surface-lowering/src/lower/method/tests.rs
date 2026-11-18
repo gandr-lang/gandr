@@ -515,6 +515,15 @@ fn a_qualified_call_is_the_dot_call_at_every_mode_7974()
             "`{name}` lends its receiver as the dot call of the same method does"
         );
     }
+    // The elaboration of `xs.first ()` writes the method's function at the
+    // view the access lends: that call is the function's application, with no
+    // access of its own.
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("elaborated")));
+    assert_eq!(
+        forms(&arena, tail),
+        Vec::from(["hold", "access shared @0"]),
+        "`Places.first b` on the view an access lends applies the method's function"
+    );
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("unheld")),
