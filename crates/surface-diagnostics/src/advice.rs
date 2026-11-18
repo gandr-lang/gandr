@@ -487,6 +487,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::RegionAsValue { .. } => {
             String::from("name the region only in a type such as `A at r`")
         },
+        LoweringRefusal::MethodAsValue { .. } => {
+            String::from("call the method on a held receiver, `s.f(…)`, where a value is wanted")
+        },
         LoweringRefusal::UnknownAttribute { .. } => {
             String::from("replace the attribute with a registered attribute")
         },
@@ -1426,7 +1429,7 @@ mod tests
 
     /// The names the procedural rewrite has worded: the most-seen first,
     /// then the names worded as their goldens regenerated.
-    const WORDED: [&str; 247] = [
+    const WORDED: [&str; 248] = [
         "TypeMismatch",
         "MalformedForm",
         "EndpointMismatch",
@@ -1583,6 +1586,7 @@ mod tests
         "PlaceUnindexed",
         "PointwiseDistinct",
         "ProjectionFromApplication",
+        "MethodAsValue",
         "RegionAsValue",
         "RoundTripDistinct",
         "SessionNotSubtype",

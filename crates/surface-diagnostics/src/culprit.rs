@@ -304,6 +304,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::InstanceAmbiguous { .. } => "an instance with several in scope",
         LoweringRefusal::ModelImplicitValue { .. } => "a model implicit as a value",
         LoweringRefusal::RegionAsValue { .. } => "a region named as a value",
+        LoweringRefusal::MethodAsValue { .. } => "a method named as a value",
         LoweringRefusal::EntryType { .. } => "an entry of another type",
         LoweringRefusal::StrayReceiverMode { .. } => "a mode off a receiver",
         LoweringRefusal::AmbiguousMethod { .. } => "a method of several modules",
@@ -886,6 +887,7 @@ mod tests
             LoweringRefusal::InstanceAmbiguous { .. } => "an instance with several in scope",
             LoweringRefusal::ModelImplicitValue { .. } => "a model implicit as a value",
             LoweringRefusal::RegionAsValue { .. } => "a region named as a value",
+            LoweringRefusal::MethodAsValue { .. } => "a method named as a value",
             LoweringRefusal::EntryType { .. } => "an entry of another type",
             LoweringRefusal::StrayReceiverMode { .. } => "a mode off a receiver",
             LoweringRefusal::AmbiguousMethod { .. } => "a method of several modules",
@@ -1225,6 +1227,11 @@ mod tests
                 implicit: name,
             },
             LoweringRefusal::RegionAsValue { span: at, name },
+            LoweringRefusal::MethodAsValue {
+                span: at,
+                method: name,
+                mode: gandr_surface_lowering::ReceiverMode::Deduced,
+            },
             LoweringRefusal::EntryType { span: at },
             LoweringRefusal::StrayReceiverMode {
                 span: at,

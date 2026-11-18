@@ -55,6 +55,9 @@
 //!   crate boundary encloses a strongly connected component of the module graph
 //!   and never cuts through one, so the base takes the lowering's tables,
 //!   refusals, descriptions and module pass whole.
+//! - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: a method whose
+//!   receiver is exclusive or deduced has no value form, so its refusal names
+//!   the method and the mode.
 
 // Module documentation that predates the shape lint: 114 headings outside the
 // vocabulary, 44 decision records, 68 issue references and 26 budgets exceeded.

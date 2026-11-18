@@ -5566,7 +5566,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   the read; [`LoweringRefusal::ImplicitUnsupplied`] for a declaration
     ///   with implicits named anywhere but a call supplying them; the
     ///   wrong-sort refusal for a flattened model implicit, which is its
-    ///   components and no value (`ModelsRef::unflattened`).
+    ///   components and no value (`ModelsRef::unflattened`);
+    ///   [`LoweringRefusal::MethodAsValue`] for a method read as a value, not
+    ///   as a call's head, whose receiver mode is exclusive or deduced.
     /// - panics: none.
     ///
     /// # Errors
@@ -5582,7 +5584,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     #[spec(
         ensures: |ret| match ret {
             | Err(ref refusal) => match resolved {
-                | Resolved::Declaration { .. } => matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. } | LoweringRefusal::ImplicitUnsupplied { .. }),
+                | Resolved::Declaration { .. } => matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. } | LoweringRefusal::ImplicitUnsupplied { .. } | LoweringRefusal::MethodAsValue { .. }),
                 | Resolved::Binder(bound) => self.cx().flattened.contains_key(&bound.binder),
             },
             | Ok(ref plan) => match (resolved, self.cx().in_type.contains(&site.at.node)) {
@@ -5617,12 +5619,53 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
             Resolved::Binder(_) => Ok(resolved.term()),
             Resolved::Declaration { constant, .. } => {
-                self.shared()
-                    .admit_read(site, SlotIndex::from(usize::from(constant)))?;
+                let slot = SlotIndex::from(usize::from(constant));
+                self.method_as_value(site, slot)?;
+                self.shared().admit_read(site, slot)?;
                 self.shared().supplied_or_refused(site, constant)?;
                 Ok(resolved.term())
             },
         }
+    }
+
+    /// Refuse the method at `slot` read as a value at `site` when its receiver
+    /// needs the caller's hold.
+    ///
+    /// # Specification
+    /// - requires: `slot` is the declaration the name at `site` reads.
+    /// - ensures: nothing for a read as a call's head, for a slot that is no
+    ///   method, and for a method whose receiver is shared or consumed.
+    /// - fails: [`LoweringRefusal::MethodAsValue`] for a method read as a value
+    ///   whose receiver mode is exclusive or deduced: no function value carries
+    ///   the held receiver that such a method writes or lends.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a method at each receiver mode, bound as a value and
+    ///   called through its path.
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_needing_its_hold_is_no_value_7980`
+    #[spec(ensures: |ret| ret.is_ok() || !matches!(self.cx().collected.receivers.get(&slot), None | Some(&(ReceiverMode::Shared | ReceiverMode::Consumed))))]
+    fn method_as_value(
+        &self,
+        site: Site,
+        slot: SlotIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        if let Reading::Value(_) = site.reading
+            && let Some(&mode @ (ReceiverMode::Exclusive | ReceiverMode::Deduced)) =
+                self.cx().collected.receivers.get(&slot)
+            && let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
+        {
+            return Err(LoweringRefusal::MethodAsValue {
+                span: site.at.span,
+                method: entry.name,
+                mode,
+            });
+        }
+        Ok(())
     }
 
     /// Keep that the name written at `span` resolved to `resolved`: a binder
@@ -10349,12 +10392,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   declared at or after it; [`LoweringRefusal::PhaseDependence`] and
     ///   [`LoweringRefusal::InertRead`] where
     ///   [`Self::admit_read`](crate::lower::ExpressionsRef::admit_read) refuses
-    ///   the read.
+    ///   the read; [`LoweringRefusal::MethodAsValue`] for a method read as a
+    ///   value whose receiver needs the caller's hold.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::ForwardMemberReference`] and
-    /// [`LoweringRefusal::PhaseDependence`] and [`LoweringRefusal::InertRead`].
+    /// [`LoweringRefusal::PhaseDependence`] and [`LoweringRefusal::InertRead`]
+    /// and [`LoweringRefusal::MethodAsValue`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a backward member becomes its declared constant while
@@ -10376,7 +10421,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     })
                 }
                 else {
-                    matches!(ret, Err(LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. }))
+                    matches!(ret, Err(LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. } | LoweringRefusal::MethodAsValue { .. }))
                         || ret.is_ok()
                             && matches!(self.cx().plans.get(site.at.node), Some(&Plan::Constant(constant)) if constant == entry.constant)
                 }
@@ -10403,6 +10448,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 declared,
             });
         }
+        self.method_as_value(site, target)?;
         self.shared().admit_read(site, target)?;
         self.plan(site, Plan::Constant(constant));
 

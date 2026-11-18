@@ -18,6 +18,9 @@
 //!   expression lowering reads the lowering only through `Families`, a trait of
 //!   the base, and calls each family below it, so no cycle crosses a crate
 //!   boundary.
+//! - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: `select` and
+//!   `resolved_term` ask the receiver mode before a method becomes a value, so
+//!   no function value carries a receiver's hold.
 
 // Module documentation that predates the shape lint, moved whole from the
 // lowering's `lower` module. Each allow leaves with the rewrite that clears

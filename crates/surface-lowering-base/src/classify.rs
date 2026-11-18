@@ -283,6 +283,7 @@ impl LoweringRefusal<'_>
             | Self::InstanceAmbiguous { .. }
             | Self::ModelImplicitValue { .. }
             | Self::RegionAsValue { .. }
+            | Self::MethodAsValue { .. }
             | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
@@ -365,6 +366,7 @@ impl LoweringRefusal<'_>
             | Self::InstanceAmbiguous { .. }
             | Self::ModelImplicitValue { .. }
             | Self::RegionAsValue { .. }
+            | Self::MethodAsValue { .. }
             | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
@@ -830,7 +832,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 83_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 84_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1175,6 +1177,11 @@ mod tests
                 more: crate::resolve::CandidateCount::from(0_usize),
             },
             LoweringRefusal::NonUniformResult { span: empty },
+            LoweringRefusal::MethodAsValue {
+                span: empty,
+                method: SurfaceName::from("first"),
+                mode: crate::module::ReceiverMode::Deduced,
+            },
         ]
     }
 
@@ -1262,6 +1269,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::PASTING_READING),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

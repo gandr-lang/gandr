@@ -1564,6 +1564,20 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A method named as a value, not called, where its receiver needs the
+    /// caller's hold: one that writes through its receiver, or one that
+    /// answers a place at the mode each call asks. A function value carries no
+    /// held place, so only a call of the method lends one.
+    MethodAsValue
+    {
+        /// The bytes of the method's path.
+        span: ByteSpan,
+        /// The method's name.
+        method: SurfaceName<'source>,
+        /// The method's receiver mode: exclusive or deduced.
+        mode: crate::module::ReceiverMode,
+    },
+
     /// A source's top-level `main`, its program's entry, declared at a type no
     /// entry has: an entry is a computation returning the exit code, `-F
     /// Integer`, or the unit, `-F Unit`, taking the arguments as one
@@ -2419,6 +2433,20 @@ impl fmt::Display for LoweringRefusal<'_>
                 "`{name}` binds a region, which is no value: it is read only where a type keeps a \
                  value in it, `A at {name}`"
             ),
+            Self::MethodAsValue {
+                method,
+                mode: crate::module::ReceiverMode::Exclusive,
+                ..
+            } => write!(
+                f,
+                "`{method}` writes through its receiver, so only a call lends it the held \
+                 receiver: call it, `s.{method}(…)`, not name it as a value"
+            ),
+            Self::MethodAsValue { method, .. } => write!(
+                f,
+                "`{method}` answers a place at the mode each call asks, so only a call lends it \
+                 the held receiver: call it, `s.{method}(…)`, not name it as a value"
+            ),
             Self::StrayReceiverMode { mode, .. } => write!(
                 f,
                 "`{mode}` is a receiver's mode: only a module member's first parameter, `self`, \
@@ -2812,6 +2840,7 @@ impl LoweringRefusal<'_>
             | Self::InstanceAmbiguous { span, .. }
             | Self::ModelImplicitValue { span, .. }
             | Self::RegionAsValue { span, .. }
+            | Self::MethodAsValue { span, .. }
             | Self::EntryType { span }
             | Self::StrayReceiverMode { span, .. }
             | Self::AmbiguousMethod { span, .. }
@@ -2914,7 +2943,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 81_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 82_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3284,6 +3313,11 @@ mod tests
                 span: s(151_usize, 152_usize),
                 callee: SurfaceName::from("sumDiff"),
             },
+            LoweringRefusal::MethodAsValue {
+                span: s(153_usize, 154_usize),
+                method: SurfaceName::from("first"),
+                mode: crate::module::ReceiverMode::Deduced,
+            },
         ]
     }
 
@@ -3376,6 +3410,7 @@ mod tests
             s(147_usize, 148_usize),
             s(149_usize, 150_usize),
             s(151_usize, 152_usize),
+            s(153_usize, 154_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

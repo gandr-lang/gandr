@@ -57,3 +57,12 @@ def readAfterTakenInOneArm(t : Repr) -> Integer =
 @[refuses("StrayReceiverMode")]
 def lent(t : shared Repr) -> Integer =
   pure 0
+
+/// A push named as a value: no function value carries the hold that the
+/// push writes back to.
+@[refuses("MethodAsValue")]
+def pushBound() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List(Integer))
+  let f = Str.push
+  f s 33
+  s.len ()

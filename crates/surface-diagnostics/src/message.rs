@@ -746,6 +746,11 @@ fn lowered(
             "`{name}` is a region, never a value; name it only where a type keeps a value in it, \
              `A at {name}`"
         ),
+        LoweringRefusal::MethodAsValue { method, .. } => write!(
+            f,
+            "`{method}` needs its caller's hold on the receiver, which no value carries; call it, \
+             `s.{method}(…)`, never name it as a value"
+        ),
         LoweringRefusal::StrayReceiverMode { mode, .. } => write!(
             f,
             "`{mode}` is a receiver's mode: only a module member's first parameter is written \
@@ -2182,6 +2187,11 @@ pub mod tests
                 implicit: name,
             },
             LoweringRefusal::RegionAsValue { span, name },
+            LoweringRefusal::MethodAsValue {
+                span,
+                method: name,
+                mode: gandr_surface_lowering::ReceiverMode::Deduced,
+            },
             LoweringRefusal::EntryType { span },
             LoweringRefusal::StrayReceiverMode { span, mode: name },
             LoweringRefusal::AmbiguousMethod {

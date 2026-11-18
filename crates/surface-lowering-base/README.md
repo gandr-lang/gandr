@@ -77,6 +77,7 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.
 - `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the face cover reads the meet of two faces from a graded poset of the faces of a record type.
+- `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: the methods design (§ methods-desugaring) — no view leaves its access, so `MethodAsValue` names a method that needs its caller's hold, read as a value.
 
 ## License
 

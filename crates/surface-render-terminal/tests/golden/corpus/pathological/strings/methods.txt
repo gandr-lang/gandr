@@ -103,3 +103,12 @@ error[StrayReceiverMode]: `shared` is a receiver's mode: only a module member's 
    │
    ├ note: `lent` is refused with StrayReceiverMode, as its expectation states
    ╰ help: write the receiver mode only on a module member's first `self` parameter
+
+error[MethodAsValue]: `push` needs its caller's hold on the receiver, which no value carries; call it, `s.push(…)`, never name it as a value
+   ╭▸ corpus/pathological/strings/methods.gandr:66:11
+   │
+66 │   let f = Str.push
+   │           ━━━━━━━━ a method named as a value
+   │
+   ├ note: `pushBound` is refused with MethodAsValue, as its expectation states
+   ╰ help: call the method on a held receiver, `s.f(…)`, where a value is wanted

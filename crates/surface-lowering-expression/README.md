@@ -53,6 +53,7 @@ The expression part of gandr's lowering. It plans and mints each expression and 
 - `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The part reads the lowering only through `Families`, a trait of the base, so it compiles over the base and the family crates alone.
 - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
+- `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: the methods design (§ methods-desugaring) — no view leaves its access, so a name read as a value is refused when its method needs the caller's hold.
 
 ## License
 
