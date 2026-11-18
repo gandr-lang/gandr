@@ -39,6 +39,22 @@ def head() -> Integer =
   let h = xs.first ()
   pure h
 
+/// The first element, read through the method's path: `Places.first xs` is
+/// the call `xs.first ()`, so it reads the element and not its index.
+@[runs("1")]
+def headByPath() -> Integer =
+  var xs = pair
+  let h = Places.first xs
+  pure h
+
+/// The element at an index, read through the method's path: the list is
+/// the call's first argument and the index its second.
+@[runs("2")]
+def nthByPath() -> Integer =
+  var xs = pair
+  let y = Places.nth xs 1
+  pure y
+
 /// `later` reads the element after the first.
 /// A sum provides its index.
 @[runs("2")]
@@ -96,6 +112,14 @@ def readTwice() -> Integer =
 def raised() -> List Integer =
   var xs = pair
   (xs.nth 1) as w { resume w (w + 3) };
+  pure xs
+
+/// The same write through the method's path: the list is the call's first
+/// argument, and the call lends the element as `xs.nth 1` does.
+@[runs("cons 1 (cons 5 nil)")]
+def raisedByPath() -> List Integer =
+  var xs = pair
+  (Places.nth xs 1) as w { resume w (w + 3) };
   pure xs
 
 /// An abort asks an exclusive lend as well and writes nothing back.

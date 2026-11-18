@@ -388,6 +388,9 @@
 //! - `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the seam test. The
 //!   module pass reads nothing of the lowering's context, so it compiles in the
 //!   base crate, and this crate reads it there.
+//! - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: the methods design.
+//!   The qualified call `M.f(s)` is the dot call `s.f`, so the method lowering
+//!   plans the two the same way.
 
 // Module documentation that predates the shape lint: 111 headings outside the
 // vocabulary, 61 decision records, 144 issue references and 27 budgets exceeded.

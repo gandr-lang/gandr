@@ -773,6 +773,9 @@ pub struct Context<'run, 'source>
     pub current: Current,
     /// The current source's own positions, in ascending order.
     pub own: Vec<NodeIndex>,
+    /// The binders of the views each `access` lends: the receiver a method's
+    /// function takes in the access a call of the method elaborates to.
+    pub lent: BTreeSet<ScopeId>,
 }
 
 impl<'run, 'source> Context<'run, 'source>
@@ -1046,6 +1049,7 @@ impl<'run, 'source> Context<'run, 'source>
             source_of,
             current: Current::default(),
             own,
+            lent: BTreeSet::new(),
         }
     }
 }
