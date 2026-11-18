@@ -1,0 +1,229 @@
+//! The diagnostics model: what one step of the dispatcher's walk reports — each
+//! refusal, unsettled declaration, goal, shadowing warning, lint finding and
+//! ledger line — as a [`Diagnostic`] every face projects, and the builders
+//! that make it.
+//!
+//! The obstruction shape follows Ghrist and Riess. A global property holds
+//! when a section glues. A refusal names the cells of the site and a witness
+//! where no section glues. A parting critical pair is completion's
+//! obstruction, after Guiraud, Malbos and Mimram. Its cells are the two rules
+//! and their peak, and its witness is the two normal forms. Hansen's sheaf
+//! Laplacian needs a field, so the shape keeps a lattice witness in its place.
+//!
+//! # The model holds the diagnostic; a face only projects it
+//!
+//! [`diagnose`] builds a [`Diagnostic`] from what the producers recorded: the
+//! refusal, the declaration's settlement, the lowering's origin table, the
+//! [`Spellings`] the composition made while the arena was at hand, and the
+//! [`Failure`] the checking machine kept when it refused a body. The
+//! diagnostic owns its message and its stable key, its typed detail, its
+//! annotations with their roles and exact byte spans, the contexts its refusal
+//! stood inside with the binders each opened, the hypotheses in scope, the
+//! note, the offending expression and the excerpt of source lines it covers.
+//! `gandr-surface-render-terminal` lays it out as a snippet;
+//! `gandr-surface-lsp` publishes it as an editor diagnostic, its primary
+//! annotation the range and every other annotation and located context related
+//! information. Neither reads a producer's type.
+//!
+//! **Choice.** This crate, renamed in place from the terminal renderer it was,
+//! is the model and its builders; the renderer moved to its own crate beside
+//! it. **Alternative.** A new `surface-report` crate holding the model beside
+//! the renderer left under this name, which keeps the old name on the
+//! terminal's projection and gives the model a name no face had depended on.
+//! It lost because every consumer of this crate already read the model's
+//! facts — class, span, label, note — through it, and the name says what it
+//! holds. **Reversal.** If a second model is ever needed beside this one, a
+//! face-neutral `surface-report` takes the shared part and this crate keeps
+//! the builders.
+//!
+//! # Every span is the producer's
+//!
+//! A lowering refusal and a corpus refusal carry their spans. A checker refusal
+//! names core nodes; the origin table maps each node the lowering minted back
+//! to the syntax it came from, and a binder's name to where it was written. A
+//! node the table records nothing for leaves its annotation out, and a
+//! diagnostic with no primary annotation claims no span. Each span is checked
+//! against the source's text before it is kept: a span outside the text, or
+//! one splitting a character, is unlocated, never clamped. Nothing searches the
+//! text for a plausible locus, and nothing widens an absent one to the whole
+//! declaration: a guessed locus misleads where an honest absence only fails to
+//! help.
+//!
+//! # The failure is the checker's own
+//!
+//! A checker refusal is built from the [`Failure`] the checking machine kept
+//! when it refused: the rules it stood inside, outermost first, each with the
+//! node whose judgement pushed it, how that node was judged and the binders it
+//! opened, and the hypotheses in scope. The machine keeps them on the one run
+//! that refused, so a diagnostic never re-runs the checker to explain a
+//! refusal. The `frame` module reads each rule as a sentence and folds the
+//! rules at one span into one context.
+//!
+//! Each decision, with the alternative it was chosen over and what would
+//! reverse it, is in the module that owns it.
+//!
+//! # Example
+//!
+//! ```
+//! use gandr_surface_diagnostics::Severity;
+//! use gandr_surface_diagnostics::Subject;
+//! use gandr_surface_diagnostics::diagnose;
+//! use gandr_surface_lowering::LoweringRefusal;
+//! use gandr_surface_syntax::ByteOffset;
+//! use gandr_surface_syntax::ByteSpan;
+//! use gandr_surface_syntax::SourceText;
+//! use quenchant_shape::shape::Maybe;
+//!
+//! let text = SourceText::from("def broken = missing ;\n");
+//! let span = ByteSpan::new(ByteOffset::from(13_usize), ByteOffset::from(20_usize))?;
+//! let diagnostic = diagnose(
+//!     std::path::Path::new("broken.gandr"),
+//!     text,
+//!     Subject::Source(LoweringRefusal::UnresolvedName {
+//!         span,
+//!         name: "missing".into(),
+//!     }),
+//! );
+//! assert_eq!(diagnostic.severity, Severity::Error);
+//! assert_eq!(diagnostic.span, Maybe::Present(span));
+//! assert_eq!(diagnostic.annotations[0].locus.line, 1_usize);
+//! # Ok::<(), gandr_surface_syntax::SyntaxError>(())
+//! ```
+//!
+//! # Specification discipline
+//!
+//! Nontrivial items carry executable predicates and bounded `# Adequacy`
+//! claims. The nontrivial `Display` methods state an exemption:
+//! `fmt::Formatter` exposes neither its output buffer nor an independent
+//! destination-failure observer. The finite witnesses include UTF-8 splits and
+//! end-of-file spans; invalid primary and context loci retain their distinct
+//! absence reasons.
+//!
+//! # References
+//!
+//! - Robert Ghrist and Hans Riess. "Cellular Sheaves of Lattices and the Tarski
+//!   Laplacian." _Homology, Homotopy and Applications_ 24(1) (2022), 325–345.
+//!   `doi:10.4310/HHA.2022.v24.n1.a16` — global sections of a lattice-valued
+//!   sheaf as fixed points, the reading of an obstruction.
+//! - Yves Guiraud, Philippe Malbos and Samuel Mimram. "A Homotopical Completion
+//!   Procedure with Applications to Coherence of Monoids." _RTA 2013_, volume
+//!   21 (2013), 223–238. `doi:10.4230/LIPIcs.RTA.2013.223` — a parting critical
+//!   pair as the obstruction to completion.
+//! - Jakob Hansen. _Laplacians of Cellular Sheaves: Theory and Applications_.
+//!   Doctoral dissertation, University of Pennsylvania (2020).
+//!   <https://repository.upenn.edu/edissertations/4156> — the sheaf Laplacian
+//!   over a field, whose kernel is the global sections. The shape reads no
+//!   Laplacian.
+//!
+//! [`Failure`]: gandr_core_checker::Failure
+
+// Module documentation that predates the shape lint: 26 headings outside the
+// vocabulary, 10 decision records and 2 budgets exceeded. Each allow leaves
+// with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
+extern crate alloc;
+
+mod advice;
+mod binders;
+mod culprit;
+mod frame;
+mod lint;
+mod location;
+mod locus;
+mod message;
+mod model;
+mod obstruction;
+mod report;
+mod spelled;
+mod verbosity;
+
+pub use crate::advice::advice;
+pub use crate::advice::help;
+pub use crate::binders::Around;
+pub use crate::binders::Naming;
+pub use crate::binders::Renaming;
+pub use crate::binders::Scoped;
+pub use crate::binders::carry_labels;
+pub use crate::binders::modelled;
+pub use crate::binders::named_forms;
+pub use crate::binders::written_spans;
+pub use crate::culprit::Culprit;
+pub use crate::frame::Sentence;
+pub use crate::frame::sentence;
+pub use crate::lint::Lint;
+pub use crate::location::Frame;
+pub use crate::location::Located;
+pub use crate::location::Locations;
+pub use crate::location::blamed;
+pub use crate::location::locating;
+pub use crate::locus::Checked;
+pub use crate::locus::Label;
+pub use crate::model::AnnotationKind;
+pub use crate::model::Binding;
+pub use crate::model::Compared;
+pub use crate::model::Detail;
+pub use crate::model::Diagnostic;
+pub use crate::model::DiagnosticAnnotation;
+pub use crate::model::DiagnosticContext;
+pub use crate::model::DiagnosticDetail;
+pub use crate::model::Elsewhere;
+pub use crate::model::Excerpt;
+pub use crate::model::Fix;
+pub use crate::model::Identifier;
+pub use crate::model::Judged;
+pub use crate::model::Locus;
+pub use crate::model::Message;
+pub use crate::model::MessageKey;
+pub use crate::model::Severity;
+pub use crate::model::SourceStart;
+pub use crate::model::binding;
+pub use crate::model::context_locus;
+pub use crate::model::expression;
+pub use crate::model::fix;
+pub use crate::model::located;
+pub use crate::model::producer;
+pub use crate::model::repair;
+pub use crate::obstruction::Obstruction;
+pub use crate::obstruction::Overlap;
+pub use crate::obstruction::Parted;
+pub use crate::obstruction::PartingPair;
+pub use crate::obstruction::obstructed;
+pub use crate::obstruction::parting;
+pub use crate::report::Class;
+pub use crate::report::PATHLESS;
+pub use crate::report::Subject;
+pub use crate::report::Unsettlement;
+pub use crate::report::diagnose;
+pub use crate::report::report_identifier;
+pub use crate::report::report_note;
+pub use crate::report::report_span;
+pub use crate::report::tracking;
+pub use crate::report::upstream;
+pub use crate::spelled::Failures;
+pub use crate::spelled::Families;
+pub use crate::spelled::HomedName;
+pub use crate::spelled::Reading;
+pub use crate::spelled::SpelledLoop;
+pub use crate::spelled::SpelledNode;
+pub use crate::spelled::SpellingPlace;
+pub use crate::spelled::Spellings;
+pub use crate::spelled::TypeSpellings;
+pub use crate::spelled::constant_names;
+pub use crate::spelled::constant_paths;
+pub use crate::spelled::homed_names;
+pub use crate::spelled::kept;
+pub use crate::spelled::model_slots;
+pub use crate::spelled::read_by;
+pub use crate::spelled::spelling;
+pub use crate::spelled::telescopes;
+pub use crate::spelled::written_blocks;
+pub use crate::spelled::written_stages;
+pub use crate::verbosity::Verbosity;

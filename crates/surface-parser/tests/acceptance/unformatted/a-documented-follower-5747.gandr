@@ -1,0 +1,3 @@
+/// `g`.
+@[ runs("Admitted") ]
+def g() -> A = b;
