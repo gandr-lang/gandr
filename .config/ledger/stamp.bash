@@ -89,9 +89,9 @@ git add -- "$file"
 # The file held no change before the stamp, so a failed commit gives it back
 # as `HEAD` holds it, and a second run starts clean.
 if ! git commit --quiet -m "chore(repo): the ledger rows of #$pr carry its number" \
-  -m "pr:land refuses a named row whose since lacks the number of the pull
-request. The stamp writes #$pr into each implemented or partial row that
-the change touches." \
+  -m "pr:land refuses a named row whose since lacks the number of the
+pull request. The stamp writes #$pr into each implemented or
+partial row that the change touches." \
   -m "Co-authored-by: silvanshade <silvanshade@users.noreply.github.com>
 Assisted-by: LLM" -- "$file"; then
   git restore --staged --worktree -- "$file"
