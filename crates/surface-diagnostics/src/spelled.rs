@@ -1162,11 +1162,44 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
             let family = paths.get(usize::from(sort)).cloned().unwrap_or_default();
             let (carrier, point) = wrapped(family, point, wraps);
             if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
-                *slot = alloc::format!("Path[.A = {carrier}]({point}, {point})");
+                *slot = path_at(&carrier, &point);
             }
         }
     }
     paths
+}
+
+/// The path type over `carrier` from `point` to itself, its endpoints
+/// juxtaposed as the printer writes them: `Path[.A = C] p p`. An endpoint that
+/// writes a space outside its own parentheses, `Path.here Base`, stands in
+/// parentheses, and a name or a call, `Base` or `Pair(Zero, Zero)`, stands
+/// bare.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the spelled type, growth within the carrier and the point
+fn path_at(
+    carrier: &str,
+    point: &str,
+) -> String
+{
+    let mut depth = 0_usize;
+    let spaced = point.chars().any(|letter| {
+        match letter {
+            '(' => depth = depth.saturating_add(1),
+            ')' => depth = depth.saturating_sub(1),
+            _ => {},
+        }
+        letter == ' ' && depth == 0
+    });
+    if spaced {
+        alloc::format!("Path[.A = {carrier}] ({point}) ({point})")
+    }
+    else {
+        alloc::format!("Path[.A = {carrier}] {point} {point}")
+    }
 }
 
 /// The carrier and the point a type of words reads its path at, spelled: the
@@ -1175,8 +1208,8 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `(family, point)` for no wrapping; otherwise `(Path[.A = c](p,
-///   p), Path.here p)` over the pair `(c, p)` for one wrapping fewer, `p` in
+/// - ensures: `(family, point)` for no wrapping; otherwise `(Path[.A = c] p p,
+///   Path.here p)` over the pair `(c, p)` for one wrapping fewer, `p` in
 ///   parentheses unless it is a bare name, as the printer writes an
 ///   application.
 /// - fails: never.
@@ -1200,7 +1233,7 @@ fn wrapped(
 {
     let (mut carrier, mut point) = (family, point);
     for _ in 0 .. usize::from(wraps) {
-        carrier = alloc::format!("Path[.A = {carrier}]({point}, {point})");
+        carrier = path_at(&carrier, &point);
         point = if point.contains([' ', '(']) {
             alloc::format!("Path.here ({point})")
         }

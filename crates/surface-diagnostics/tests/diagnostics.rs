@@ -793,7 +793,7 @@ fn a_mismatch_spells_the_constructors_its_type_mentions()
     );
     assert_eq!(
         mismatch.detail.compared.expected,
-        Maybe::Present(String::from("Path[.A = Box](Wrap 4, Wrap 5)")),
+        Maybe::Present(String::from("Path[.A = Box] (Wrap 4) (Wrap 5)")),
         "a constructor value is spelled by the name its declaration writes"
     );
 }
@@ -808,7 +808,7 @@ fn a_word_spells_by_its_letters()
     assert_eq!(
         mismatch.detail.compared.expected,
         Maybe::Present(String::from(
-            "Path[.A = Path[.A = Circle](Base, Base)](back loop ∷ Path.here Base, Path.here Base)"
+            "Path[.A = Path[.A = Circle] Base Base] (back loop ∷ Path.here Base) (Path.here Base)"
         )),
         "a word's type is its path type, a letter conses before the rest, and the empty \
              word is `here` at the point"
@@ -820,7 +820,7 @@ fn a_word_spells_by_its_letters()
     assert_eq!(
         preceded.detail.compared.expected,
         Maybe::Present(String::from(
-            "Path[.A = Path[.A = Circle](Base, Base)](back loop ∷ Path.here Base, Path.here Base)"
+            "Path[.A = Path[.A = Circle] Base Base] (back loop ∷ Path.here Base) (Path.here Base)"
         )),
         "the point is spelled by its own family's constructors, not an earlier family's"
     );
@@ -3564,8 +3564,8 @@ fn a_words_point_spells_its_constructors_arguments()
     assert_eq!(
         points,
         [
-            "Path[.A = Nat](Succ(Zero), Succ(Zero))",
-            "Path[.A = Nat](Pair(Zero, Zero), Pair(Zero, Zero))",
+            "Path[.A = Nat] Succ(Zero) Succ(Zero)",
+            "Path[.A = Nat] Pair(Zero, Zero) Pair(Zero, Zero)",
         ],
         "a point spells each constructor's arguments, comma-separated"
     );
@@ -3605,9 +3605,9 @@ fn a_higher_cell_s_words_spell_at_the_wrapped_point_6446()
     assert_eq!(
         points,
         [
-            "Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)",
-            "Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](Path.here Base3, Path.here \
-             Base3)](Path.here (Path.here Base3), Path.here (Path.here Base3))",
+            "Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here Base2)",
+            "Path[.A = Path[.A = Path[.A = S3] Base3 Base3] (Path.here Base3) (Path.here \
+             Base3)] (Path.here (Path.here Base3)) (Path.here (Path.here Base3))",
         ],
         "the words of a cell wrapped once and twice spell the path type at the wrapped point"
     );
