@@ -450,14 +450,13 @@ pub struct Read
 /// write; [`ImageRefusal::Plane`] for the plane's refusal of the emission.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — each `runs` item of the corpus whose head crosses reads
-///   back, checks, and runs to its first command's outcome on both tiers; two
-///   focus runs of one source give equal bytes. L3 — a code round-trips, and a
-///   root past its table and bytes past the table are each refused by name.
+/// - hypothesis: L2 — each named program reads back, checks, and runs to its
+///   first command's outcome on both tiers; two focus runs of one source give
+///   equal bytes. L3 — a code reads back to equal bytes, and a root past its
+///   table and bytes past the table are each refused by name.
 /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
 /// - witness: `tests::image::two_focuses_give_equal_bytes`
 /// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
-/// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
 ///
 /// # Cost
 /// - allocation: the walk's order and its slots, growth within the command
@@ -1362,9 +1361,8 @@ enum Settled
 /// [`ImageRefusal::Annotation`] and [`ImageRefusal::Table`].
 ///
 /// # Adequacy
-/// - hypothesis: L2 — each annotated form round-trips in the corpus. L3 — a
-///   root past its table is refused by name.
-/// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
+/// - hypothesis: L2 — a code reads back to a command that checks. L3 — a root
+///   past its table is refused by name.
 /// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
 ///
 /// # Cost

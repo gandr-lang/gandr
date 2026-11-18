@@ -199,9 +199,9 @@ impl Table
     ///   so the read's round trip states it.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — each annotated item of the corpus writes its table
-    ///   and reads back to equal bytes.
-    /// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - hypothesis: L2 — a code writes its table and reads back to equal
+    ///   bytes.
+    /// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
     ///
     /// # Cost
     /// - allocation: the table, the places, their index and the ordinals,
@@ -274,9 +274,8 @@ impl Table
     /// The [`CodecError`] of the first fault.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — each annotated item of the corpus reads its table
-    ///   back. L3 — bytes past the last place are refused by name.
-    /// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - hypothesis: L2 — a code reads its table back. L3 — bytes past the last
+    ///   place are refused by name.
     /// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
     ///
     /// # Cost
@@ -314,9 +313,8 @@ impl Table
     /// The reason that a root does not mint.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — each annotated item of the corpus mints its roots and
-    ///   runs alike. L3 — a root past its table is refused by name.
-    /// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - hypothesis: L2 — a code mints its root into a command that checks. L3
+    ///   — a root past its table is refused by name.
     /// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
     ///
     /// # Cost
