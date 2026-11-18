@@ -1,0 +1,1438 @@
+//! The names the source writes for the binders a declaration's nodes stand
+//! under, read off the lowering's origin table: a lambda's or a bind's
+//! binder where it is written, a split component by its pattern variable or
+//! the label of the field it leaves unwritten, a dependent record's pair by
+//! its field's label, and any other binder by a use resolving to it.
+//!
+//! Every face that spells a node inside a declaration under the binders
+//! around it reads them here: a hover's type, a diagnostic's, and the
+//! formatter's motive of a path composite written as its transport.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::BinderDepth;
+use gandr_core_term::Carried;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::memory::MemoryForm;
+use gandr_kernel_term::ConstantIndex;
+use gandr_surface_lowering::ComponentName;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Origin;
+use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::Provenance;
+use gandr_surface_lowering::SplitComponent;
+use gandr_surface_lowering::WrittenModel;
+use gandr_surface_pretty::BinderIndex;
+use gandr_surface_pretty::ChildSlot;
+use gandr_surface_pretty::CoreNode;
+use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Modelled;
+use gandr_surface_pretty::Name;
+use gandr_surface_pretty::Scopes;
+use gandr_surface_pretty::Style;
+use gandr_surface_pretty::WrittenForms;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::SourceText;
+
+/// The name a split component binds, as the record keeps it: where the
+/// pattern variable for it is written, or the label of the field a labelled
+/// pattern leaves unwritten.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Named
+{
+    /// The pattern variable, at its span.
+    Written(ByteSpan),
+    /// The field's label.
+    Labelled(String),
+}
+
+/// What a lowered module keeps to name the binders its declarations' nodes
+/// stand under.
+///
+/// It holds each declaration's roots, and where the source writes each binder
+/// and each use. The scopes are walked one declaration at a time by the reader
+/// that needs them, never while the record is built.
+///
+/// # Specification
+/// - requires: built by [`Naming::of`].
+/// - ensures: every list is ascending by its key; the text is the source the
+///   spans index.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; [`Naming::of`] and
+///   [`Naming::scoped`] carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Naming::scoped`].
+/// - witness: `tests::diagnostics::a_declaration_s_binders_are_named_as_written_803`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Naming
+{
+    /// The source text the spans index.
+    text: String,
+    /// Each declaration's declared type and body, ascending by constant.
+    roots: Vec<(ConstantIndex, [Option<CoreNode>; 2])>,
+    /// Each lambda and bind with where the binder it opens is written,
+    /// ascending by id.
+    openers: Vec<(ComputationId, ByteSpan)>,
+    /// Each split component with the name it binds, ascending by split and
+    /// component.
+    components: Vec<((ComputationId, SplitComponent), Named)>,
+    /// The forms the source writes that the core erases, each with where its
+    /// names are written, each list ascending by its node.
+    forms: WrittenForms<ByteSpan, WrittenModel>,
+    /// Each written use of a variable with where a name for its binder is
+    /// written: first where the origin table records the binder a use
+    /// resolves to, then the use itself, which a type's variables have and no
+    /// binding records.
+    uses: Vec<(ValueId, ByteSpan)>,
+    /// Each declaration whose telescope writes a model implicit, with the
+    /// path each component's parameter is read by, `s.x`, at its position,
+    /// ascending by constant.
+    qualified: Vec<(ConstantIndex, Vec<(usize, String)>)>,
+}
+
+impl Naming
+{
+    /// What `module`, lowered from `source`, keeps for naming binders.
+    ///
+    /// # Specification
+    /// - requires: `module` was lowered from `source`.
+    /// - ensures: the source text, each value declaration's roots by its
+    ///   constant, the origin table's binders, split components and written
+    ///   forms, its bindings then its written values as uses, and the path each
+    ///   model implicit's component is read by, `s.x`, at its position in its
+    ///   declaration's telescope.
+    /// - provides: the input of [`Self::scoped`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the names of the binders the module writes, diagnostic
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder or use left out spells `?` where a node
+    ///   under it is spelled, which the test fails on.
+    /// - witness: `tests::diagnostics::a_declaration_s_binders_are_named_as_written_803`
+    #[spec(ensures: |ret| ret.text == <&str>::from(source)
+        && ret.roots.is_sorted_by_key(|&(constant, _)| constant))]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        module: &LoweredModule<'_>,
+        source: SourceText<'_>,
+    ) -> Self
+    {
+        let origins = module.origins();
+        let mut roots: Vec<(ConstantIndex, [Option<CoreNode>; 2])> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                let roots = match declaration.outcome() {
+                    DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    } => [
+                        Some(CoreNode::ValueType(declared_type)),
+                        Some(CoreNode::Value(body)),
+                    ],
+                    DeclarationOutcome::Uncompleted { declared_type } => {
+                        [Some(CoreNode::ValueType(declared_type)), None]
+                    },
+                    DeclarationOutcome::Bodied { body } => [Some(CoreNode::Value(body)), None],
+                    DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Codata(_)
+                    | DeclarationOutcome::Abstract(_)
+                    | DeclarationOutcome::World
+                    | DeclarationOutcome::Refused(_) => return None,
+                };
+                Some((declaration.constant(), roots))
+            })
+            .collect();
+        roots.sort_by_key(|&(constant, _)| constant);
+        let mut openers: Vec<(ComputationId, ByteSpan)> = origins
+            .binders()
+            .iter()
+            .map(|&(opener, origin)| (opener, origin.span()))
+            .collect();
+        openers.sort_by_key(|&(opener, _)| opener);
+        let components = origins
+            .components()
+            .iter()
+            .map(|&(component, ref name)| {
+                (component, match *name {
+                    ComponentName::Written(origin) => Named::Written(origin.span()),
+                    ComponentName::Labelled(ref label) => {
+                        Named::Labelled(String::from(label.as_ref()))
+                    },
+                })
+            })
+            .collect();
+        let uses = origins
+            .bindings()
+            .iter()
+            .copied()
+            .chain(
+                origins
+                    .values()
+                    .iter()
+                    .filter(|&&(_, origin)| origin.provenance() == Provenance::Written)
+                    .map(|&(variable, origin)| (variable, origin.span())),
+            )
+            .collect();
+        let forms = written_spans(origins);
+        let qualified = roots
+            .iter()
+            .filter_map(|&(constant, _)| {
+                let paths: Vec<(usize, String)> = module
+                    .model_slots(constant)
+                    .iter()
+                    .flat_map(|slot| {
+                        slot.components.iter().enumerate().map(
+                            move |(place, &(ref component, _))| {
+                                (
+                                    slot.at.saturating_add(place),
+                                    format!("{}.{}", slot.name.as_ref(), component.as_ref()),
+                                )
+                            },
+                        )
+                    })
+                    .collect();
+                (!paths.is_empty()).then_some((constant, paths))
+            })
+            .collect();
+        Self {
+            text: String::from(<&str>::from(source)),
+            roots,
+            openers,
+            components,
+            forms,
+            uses,
+            qualified,
+        }
+    }
+
+    /// The source text the record's spans index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn text(&self) -> SourceText<'_>
+    {
+        SourceText::from(self.text.as_str())
+    }
+
+    /// The text the source writes at `span`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn written(
+        &self,
+        span: ByteSpan,
+    ) -> Option<String>
+    {
+        self.text
+            .get(usize::from(span.start()) .. usize::from(span.end()))
+            .map(String::from)
+    }
+
+    /// The declared type and body of the declaration `constant`, where it is
+    /// a value declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn roots(
+        &self,
+        constant: ConstantIndex,
+    ) -> Option<[Option<CoreNode>; 2]>
+    {
+        self.roots
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.roots.get(at))
+            .map(|&(_, roots)| roots)
+    }
+
+    /// Each value declaration's constant and roots, ascending by constant.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn declarations(&self) -> impl Iterator<Item = (ConstantIndex, [Option<CoreNode>; 2])>
+    {
+        self.roots.iter().copied()
+    }
+
+    /// The forms the source writes that the core erases, each with where its
+    /// names are written, each list ascending by its node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn forms(&self) -> &WrittenForms<ByteSpan, WrittenModel>
+    {
+        &self.forms
+    }
+
+    /// Each lambda and bind with the name the source writes for the binder
+    /// it opens, ascending by the opener, as a printer names it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn openers(&self) -> Vec<(ComputationId, Name<'_>)>
+    {
+        self.openers
+            .iter()
+            .filter_map(|&(opener, span)| {
+                self.text
+                    .get(usize::from(span.start()) .. usize::from(span.end()))
+                    .map(|name| (opener, Name::from(name)))
+            })
+            .collect()
+    }
+
+    /// This record with each node in `carried` named as the node it copies:
+    /// the copies a typed run's settling minted, which no origin records.
+    ///
+    /// # Specification
+    /// - requires: `carried` is in the order its copies were minted.
+    /// - ensures: every list stays ascending by its key; each copy whose source
+    ///   is a written form is kept as that source, as [`carry_labels`] reads
+    ///   it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`carry_labels`]: a copy, a copy of a copy and a
+    ///   copy already labelled separate the first source's label from its own.
+    /// - witness: `binders::tests::a_copy_takes_its_source_s_first_label`
+    #[spec(
+        captures: [arrows = self.forms.arrows.len(), pairs = self.forms.pairs.len(), seconds = self.forms.seconds.len()],
+        ensures: self.forms.arrows.len() >= arrows && self.forms.pairs.len() >= pairs && self.forms.seconds.len() >= seconds,
+    )]
+    #[inline]
+    pub fn carrying<Copies>(
+        &mut self,
+        carried: Copies,
+    ) where
+        Copies: IntoIterator<Item = Carried>,
+    {
+        carry_labels(carried, &mut self.forms);
+        self.forms.sort();
+    }
+
+    /// The binders of one declaration, whose declared type and body are
+    /// `roots`, each named by what the record keeps for it, under the
+    /// renaming that the elaboration of the body records.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds the declaration's nodes and `names` its
+    ///   module's constants'; `renaming` is the elaboration of this
+    ///   declaration's body, or empty.
+    /// - ensures: the scopes of every node reachable from `roots` and from each
+    ///   root of `renaming`, and for each binder, at its position, the
+    ///   intuitionistic binder around it and its name: for the lambda a model
+    ///   implicit's component opens, the path the body reads it by, `s.x`; else
+    ///   the one written for the lambda or bind that opens it, or for the split
+    ///   component it is, counted from the split's outermost binder along the
+    ///   chain each component stands under the one before in, or the label of
+    ///   the dependent record field whose pair opens it, else the one written
+    ///   at a use's binder; a split component a label pattern leaves unwritten,
+    ///   or that holds a dependent record's rest, is named by its field's
+    ///   label, primed (`′`) until no other binder of the declaration holds the
+    ///   name; a dependent split's motive binder, the scrutinee's again, keeps
+    ///   none. A binder that a copy opens is named as the binder its first
+    ///   source opens. A binder that a minted bind opens is named by the run it
+    ///   binds, printed on one line under the binders around the run, and
+    ///   parenthesized unless it is one word. A binder that a copy opens, with
+    ///   neither name, takes a letter marked `′` that no other binder of the
+    ///   declaration holds.
+    /// - provides: the context a node inside the declaration is spelled in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder left unnamed spells `?` where a node under
+    ///   it is spelled, which the test fails on.
+    /// - witness: `tests::diagnostics::a_declaration_s_binders_are_named_as_written_803`
+    /// - witness: `gandr-surface-session::tests::trace::the_second_run_prints_its_goals_in_the_source_s_names_6745`
+    #[spec(ensures: |ret| ret.bound.len() == ret.scopes.binders().len())]
+    #[inline]
+    #[must_use]
+    pub fn scoped(
+        &self,
+        arena: &CoreArena,
+        names: &[String],
+        roots: [Option<CoreNode>; 2],
+        renaming: &Renaming,
+    ) -> Scoped
+    {
+        let names: Vec<Name<'_>> = names.iter().map(|name| Name::from(name.as_str())).collect();
+        let printer = CoreSource::new(arena, &names);
+        // A later run reads the elaborated body from a root of its own.
+        let later = renaming
+            .roots
+            .iter()
+            .copied()
+            .filter(|&root| !roots.contains(&Some(root)));
+        let scopes = Scopes::of(&printer, roots.into_iter().flatten().chain(later));
+        let sources = renaming.sources();
+        let runs = renaming.runs();
+        // The binders that a minted bind opens, each beside its run, and those
+        // that a copy opens.
+        let mut minted: Vec<(usize, ValueId)> = Vec::new();
+        let mut copied: Vec<usize> = Vec::new();
+        // A model implicit's components are named by the path a body reads
+        // each by, `s.x`: the lambdas the declaration's body opens first, at
+        // the components' positions.
+        let paths = self.paths(arena, roots);
+        // A split's binders chain, its outermost component first: a binder
+        // continues the split whose last component it stands under.
+        let mut split: Option<(ComputationId, BinderIndex, usize)> = None;
+        // The binders a label names, primed apart once every binder is named.
+        let mut labelled: Vec<usize> = Vec::new();
+        let mut bound: Vec<Bound> = scopes
+            .binders()
+            .enumerate()
+            .map(|(at, (index, binder))| {
+                let (name, scope) = match binder.opener() {
+                    // The motive's binder is the scrutinee's again, which the
+                    // source writes no name for.
+                    CoreNode::Computation(_) if binder.slot() == ChildSlot::MOTIVE => {
+                        split = None;
+                        (None, false)
+                    },
+                    CoreNode::Computation(opener) => {
+                        let component = match split {
+                            Some((held, previous, count))
+                                if held == opener && binder.parent() == Some(previous) =>
+                            {
+                                count.saturating_add(1)
+                            },
+                            Some(_) | None => 0,
+                        };
+                        split = Some((opener, index, component));
+                        let source = sources.get(&opener).copied();
+                        if let Some(&run) = runs.get(&opener) {
+                            minted.push((at, run));
+                        }
+                        else if source.is_some() {
+                            copied.push(at);
+                        }
+                        // A copy keeps the names its first source keeps.
+                        let written = source.unwrap_or(opener);
+                        let key = (written, SplitComponent::from(component));
+                        let opened = paths.get(&written).cloned().or_else(|| {
+                            let &(_, span) = self
+                                .openers
+                                .binary_search_by_key(&written, |&(held, _)| held)
+                                .ok()
+                                .and_then(|at| self.openers.get(at))?;
+                            self.written(span)
+                        });
+                        let name = opened.or_else(|| {
+                            let held = self
+                                .components
+                                .binary_search_by_key(&key, |&(held, _)| held)
+                                .ok()
+                                .and_then(|at| self.components.get(at))?;
+                            match held.1 {
+                                Named::Written(span) => self.written(span),
+                                Named::Labelled(ref label) => {
+                                    labelled.push(at);
+                                    Some(label.clone())
+                                },
+                            }
+                        });
+                        (
+                            name,
+                            (binder.slot() == ChildSlot::FIRST
+                                && matches!(
+                                    arena.computation(opener),
+                                    Some(&Computation::Scope { .. })
+                                ))
+                                || (binder.slot() == ChildSlot::SECOND
+                                    && matches!(
+                                        arena.computation(opener),
+                                        Some(&Computation::Memory(MemoryForm::Hold { .. }))
+                                    )),
+                        )
+                    },
+                    CoreNode::ValueType(opener) => {
+                        split = None;
+                        let pairs = &self.forms.pairs;
+                        let labelled = pairs
+                            .binary_search_by_key(&opener, |&(held, _)| held)
+                            .ok()
+                            .and_then(|at| pairs.get(at))
+                            .and_then(|&(_, span)| self.written(span));
+                        (labelled, false)
+                    },
+                    CoreNode::Value(_) | CoreNode::CompType(_) => {
+                        split = None;
+                        (None, false)
+                    },
+                };
+                Bound {
+                    around: intuitionistic(&scopes, binder.parent()),
+                    name,
+                    region: scope,
+                    opener: binder.opener(),
+                }
+            })
+            .collect();
+        // A use names the binder it counts out to.
+        for &(variable, written_at) in &self.uses {
+            let (Some(Some(innermost)), Some(&Value::Variable { zone, index })) = (
+                scopes.innermost(CoreNode::Value(variable)),
+                arena.value(variable),
+            )
+            else {
+                continue;
+            };
+            let Some(name) = self.written(written_at).filter(|name| {
+                !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|glyph| glyph.is_alphanumeric() || glyph == '_')
+            })
+            else {
+                continue;
+            };
+            let chain = scopes.around(Some(innermost), zone);
+            if let Some(entry) = usize::try_from(u32::from(index))
+                .ok()
+                .and_then(|index| chain.get(index))
+                .and_then(|&at| bound.get_mut(usize::from(at)))
+                && entry.name.is_none()
+            {
+                entry.name = Some(name);
+            }
+        }
+        // A label is the record's own name for the field, so it stands unless
+        // a written name already holds it.
+        for at in labelled {
+            while bound
+                .get(at)
+                .and_then(|held| held.name.as_deref())
+                .is_some_and(|name| {
+                    bound
+                        .iter()
+                        .enumerate()
+                        .any(|(other, held)| other != at && held.name.as_deref() == Some(name))
+                })
+            {
+                if let Some(name) = bound.get_mut(at).and_then(|held| held.name.as_mut()) {
+                    name.push('′');
+                }
+            }
+        }
+        let mut scoped = Scoped { scopes, bound };
+        // A minted bind's binder reads as the run it binds: the renaming's
+        // own case, printed under the binders around the run.
+        let forms = named_forms(&self.forms, self.text());
+        let openers = renaming.openers(self.openers());
+        let mut printed: Vec<(usize, String)> = Vec::with_capacity(minted.len());
+        {
+            // One buffer holds the binders around each run in turn.
+            let mut context: Vec<Option<Name<'_>>> = Vec::new();
+            for &(at, run) in &minted {
+                context.clear();
+                context.extend(
+                    scoped
+                        .around(CoreNode::Value(run))
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|binder| binder.name.map(Name::from)),
+                );
+                let source = CoreSource::new(arena, &names)
+                    .writing(&forms)
+                    .opening(&openers)
+                    .within(&context);
+                if let Ok(presented) = gandr_surface_pretty::present_value_line(
+                    &source,
+                    CoreNode::Value(run),
+                    Style::from(Form::Sugared),
+                ) {
+                    printed.push((at, parenthesized(format!("{presented}"))));
+                }
+            }
+        }
+        for (at, text) in printed {
+            if let Some(held) = scoped.bound.get_mut(at)
+                && held.name.is_none()
+            {
+                held.name = Some(text);
+            }
+        }
+        // A copy's binder with neither name takes a letter marked as the
+        // elaboration's. The held names are read once, at the first such
+        // binder.
+        let mut held: Option<BTreeSet<String>> = None;
+        for at in copied {
+            if scoped
+                .bound
+                .get(at)
+                .is_some_and(|binder| binder.name.is_none())
+            {
+                let held = held.get_or_insert_with(|| {
+                    scoped
+                        .bound
+                        .iter()
+                        .filter_map(|binder| binder.name.clone())
+                        .collect()
+                });
+                let name = unheld(held);
+                held.insert(name.clone());
+                if let Some(binder) = scoped.bound.get_mut(at) {
+                    binder.name = Some(name);
+                }
+            }
+        }
+        scoped
+    }
+
+    /// The lambda each component of a model implicit opens in the body
+    /// `roots` holds, with the path the body reads the component by, `s.x`.
+    ///
+    /// # Specification
+    /// - requires: `roots` are a declaration's, as [`Self::roots`] holds them.
+    /// - ensures: for the declaration holding `roots`, each component at
+    ///   position `p` of its telescope beside the `p`-th lambda of the chain
+    ///   its body's thunk opens, where the chain reaches that far; nothing for
+    ///   a declaration writing no model implicit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's model implicit names its four parameters'
+    ///   lambdas by their paths, and an explicit parameter after them keeps its
+    ///   written name.
+    /// - witness: `tests::diagnostics::a_model_implicit_s_components_are_named_by_their_paths_2364`
+    #[spec(ensures: |ret| ret.is_empty() || matches!(roots, [_, Some(CoreNode::Value(_))]))]
+    fn paths(
+        &self,
+        arena: &CoreArena,
+        roots: [Option<CoreNode>; 2],
+    ) -> BTreeMap<ComputationId, String>
+    {
+        let Some(&(_, ref held)) = self
+            .roots
+            .iter()
+            .find(|&&(_, declared)| declared == roots)
+            .and_then(|&(constant, _)| {
+                let at = self
+                    .qualified
+                    .binary_search_by_key(&constant, |&(held, _)| held)
+                    .ok()?;
+                self.qualified.get(at)
+            })
+        else {
+            return BTreeMap::new();
+        };
+        let [_, Some(CoreNode::Value(body))] = roots
+        else {
+            return BTreeMap::new();
+        };
+        let mut lambdas = Vec::new();
+        let mut opened = if let Some(&Value::Thunk(computation)) = arena.value(body) {
+            Some(computation)
+        }
+        else {
+            None
+        };
+        while let Some(computation) = opened {
+            let Some(&Computation::Lambda(inner)) = arena.computation(computation)
+            else {
+                break;
+            };
+            lambdas.push(computation);
+            opened = Some(inner);
+        }
+        held.iter()
+            .filter_map(|&(position, ref path)| Some((*lambdas.get(position)?, path.clone())))
+            .collect()
+    }
+}
+
+/// The forms `origins` records as written, each with where its names are
+/// written, each list ascending by its node. The entries of one node keep the
+/// order the lowering recorded them in.
+///
+/// Every reader of the written forms crosses the origin table here: the
+/// [`Naming`] record, and each face that spells a node as the source writes
+/// it.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn written_spans(origins: &OriginTable) -> WrittenForms<ByteSpan, WrittenModel>
+{
+    let spans = |labels: &[Origin]| -> Vec<ByteSpan> { labels.iter().map(Origin::span).collect() };
+    let mut forms = WrittenForms {
+        arrows: origins
+            .arrows()
+            .iter()
+            .map(|&(arrow, origin)| (arrow, origin.span()))
+            .collect(),
+        pairs: origins
+            .pairs()
+            .iter()
+            .map(|&(pair, origin)| (pair, origin.span()))
+            .collect(),
+        seconds: origins
+            .seconds()
+            .iter()
+            .map(|&(pair, origin)| (pair, origin.span()))
+            .collect(),
+        sum_labels: origins
+            .sum_labels()
+            .iter()
+            .map(|&(sum, ref labels)| (sum, spans(labels)))
+            .collect(),
+        with_labels: origins
+            .with_labels()
+            .iter()
+            .map(|&(with, ref labels)| (with, spans(labels)))
+            .collect(),
+        relations: origins.relations().to_vec(),
+        models: origins.models().to_vec(),
+        members: origins
+            .members()
+            .iter()
+            .map(|&(member, origin)| (member, origin.span()))
+            .collect(),
+    };
+    forms.sort();
+    forms
+}
+
+/// The forms of `forms` as [`CoreSource`] spells them: each name as the text
+/// `text` writes at its span, and each model type as [`modelled`] reads it.
+///
+/// Each list keeps its order; a form one of whose spans `text` does not hold
+/// is left out.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn named_forms<'source>(
+    forms: &'source WrittenForms<ByteSpan, WrittenModel>,
+    text: SourceText<'source>,
+) -> WrittenForms<Name<'source>, Modelled<'source>>
+{
+    forms.map(
+        |&span| {
+            let fragment = text.fragment(span).ok()?;
+            Some(Name::from(<&str>::from(fragment)))
+        },
+        |model| Some(modelled(model)),
+    )
+}
+
+/// The model type `model` records, as [`CoreSource`] spells it: the theory,
+/// and each sort beside the type node of its carrier, in the order written.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the spelled model type, diagnostic
+#[inline]
+#[must_use]
+pub fn modelled(model: &WrittenModel) -> Modelled<'_>
+{
+    Modelled {
+        theory: Name::from(model.theory.as_ref()),
+        sorts: model
+            .sorts
+            .iter()
+            .map(|&(ref sort, carrier)| (Name::from(sort.as_ref()), CoreNode::ValueType(carrier)))
+            .collect(),
+    }
+}
+
+/// Give each node `carried` copied the name its source has in `forms`.
+///
+/// A shift or a settle copies a written type to fresh nodes, which no origin
+/// records. Each copy is appended to every list holding its source, with the
+/// source's first entry. The copies are taken in the order minted, so a copy
+/// of a copy reaches its first source's. A shift copies a model type's
+/// carriers before the type, so each carrier stands at its latest copy.
+///
+/// # Specification
+/// - requires: `carried` is in the order its copies were minted.
+/// - ensures: every list keeps its entries in order and grows only at its end,
+///   by a copy whose source it holds and which it held no entry for.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the name each carried node takes, diagnostic
+///
+/// # Adequacy
+/// - hypothesis: L3 — a copy, a copy of a copy, a copy already labelled and a
+///   copy of an unlabelled node separate the first source's first label, the
+///   copy's own, and none.
+/// - witness: `binders::tests::a_copy_takes_its_source_s_first_label`
+#[spec(
+    captures: [arrows = forms.arrows.len(), pairs = forms.pairs.len()],
+    ensures: forms.arrows.len() >= arrows && forms.pairs.len() >= pairs,
+)]
+#[inline]
+pub fn carry_labels<Copies, Label>(
+    carried: Copies,
+    forms: &mut WrittenForms<Label, WrittenModel>,
+) where
+    Copies: IntoIterator<Item = Carried>,
+    Label: Clone,
+{
+    let WrittenForms {
+        ref mut arrows,
+        ref mut pairs,
+        ref mut seconds,
+        ref mut sum_labels,
+        ref mut with_labels,
+        ref mut relations,
+        ref mut models,
+        ref mut members,
+    } = *forms;
+    let mut named = firsts(arrows);
+    let mut binders = firsts(pairs);
+    let mut labels = firsts(seconds);
+    let mut summed = firsts(sum_labels);
+    let mut entered = firsts(with_labels);
+    let mut related = firsts(relations);
+    let mut modelled = firsts(models);
+    let mut named_members = firsts(members);
+    let mut latest: BTreeMap<ValueTypeId, ValueTypeId> = BTreeMap::new();
+    for copy in carried {
+        match copy {
+            Carried::CompType(source, image) => {
+                copied(arrows, &mut named, (source, image), Clone::clone);
+                copied(with_labels, &mut entered, (source, image), Clone::clone);
+            },
+            Carried::ValueType(source, image) => {
+                copied(pairs, &mut binders, (source, image), Clone::clone);
+                copied(seconds, &mut labels, (source, image), Clone::clone);
+                copied(sum_labels, &mut summed, (source, image), Clone::clone);
+                copied(relations, &mut related, (source, image), Clone::clone);
+                copied(members, &mut named_members, (source, image), Clone::clone);
+                copied(models, &mut modelled, (source, image), |model| {
+                    WrittenModel {
+                        theory: model.theory.clone(),
+                        sorts: model
+                            .sorts
+                            .iter()
+                            .map(|&(ref sort, carrier)| {
+                                (
+                                    sort.clone(),
+                                    latest.get(&carrier).copied().unwrap_or(carrier),
+                                )
+                            })
+                            .collect(),
+                    }
+                });
+                let _previous = latest.insert(source, image);
+            },
+            Carried::Value(..) | Carried::Computation(..) => {},
+        }
+    }
+}
+
+/// Each id of `kept` with its first entry.
+///
+/// # Specification
+/// trivial.
+fn firsts<Id, Held>(kept: &[(Id, Held)]) -> BTreeMap<Id, Held>
+where
+    Id: Copy + Ord,
+    Held: Clone,
+{
+    let mut first = BTreeMap::new();
+    for &(id, ref held) in kept {
+        let _first = first.entry(id).or_insert_with(|| held.clone());
+    }
+    first
+}
+
+/// Append `image` to `kept` with what `copy` makes of its source's first
+/// entry, when `first` holds the source and no entry for `image`.
+///
+/// # Specification
+/// trivial.
+fn copied<Id, Held, Make>(
+    kept: &mut Vec<(Id, Held)>,
+    first: &mut BTreeMap<Id, Held>,
+    (source, image): (Id, Id),
+    copy: Make,
+) where
+    Id: Copy + Ord,
+    Held: Clone,
+    Make: FnOnce(&Held) -> Held,
+{
+    if first.contains_key(&image) {
+        return;
+    }
+    let Some(held) = first.get(&source).map(copy)
+    else {
+        return;
+    };
+    let _first = first.insert(image, held.clone());
+    kept.push((image, held));
+}
+
+/// The renaming that one elaboration of a body records.
+///
+/// It holds each node the elaboration copied beside its source, each bind it
+/// minted beside the run that the bind binds, and the root of each later run
+/// over the elaborated body.
+///
+/// A binder that a copy opens takes the name of the binder that its source
+/// opens, and a binder that a minted bind opens takes the run that it binds.
+/// The renaming keeps one pair for each copy and each bind. [`Naming::scoped`]
+/// builds the lookups it reads only while it names the binders.
+///
+/// # Specification
+/// - requires: built by [`Renaming::new`] from one elaboration of one arena.
+/// - ensures: the pairs in the order the elaboration minted them.
+/// - panics: none.
+/// - executable: none — a data declaration; [`Naming::scoped`] reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Naming::scoped`].
+/// - witness: `gandr-surface-session::tests::trace::the_second_run_prints_its_goals_in_the_source_s_names_6745`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Renaming
+{
+    /// Each copy beside its source, in the order minted.
+    carried: Vec<Carried>,
+    /// Each minted bind beside the run it binds, in the order minted.
+    binds: Vec<(ValueId, ComputationId)>,
+    /// The root of each run over the elaborated body.
+    roots: Vec<CoreNode>,
+}
+
+impl Renaming
+{
+    /// The renaming of the copies `carried` and the binds `binds`, which
+    /// the runs at `roots` read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        carried: Vec<Carried>,
+        binds: Vec<(ValueId, ComputationId)>,
+        roots: Vec<CoreNode>,
+    ) -> Self
+    {
+        Self {
+            carried,
+            binds,
+            roots,
+        }
+    }
+
+    /// `openers` with each copy of a lambda or a bind that it names, named as
+    /// its first source, ascending by the opener.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn openers<'name>(
+        &self,
+        openers: Vec<(ComputationId, Name<'name>)>,
+    ) -> Vec<(ComputationId, Name<'name>)>
+    {
+        let copies: Vec<(ComputationId, Name<'name>)> = self
+            .sources()
+            .into_iter()
+            .filter_map(|(copy, source)| {
+                let at = openers
+                    .binary_search_by_key(&source, |&(held, _)| held)
+                    .ok()?;
+                Some((copy, openers.get(at)?.1))
+            })
+            .collect();
+        let mut openers = openers;
+        openers.extend(copies);
+        openers.sort_unstable_by_key(|&(opener, _)| opener);
+        openers
+    }
+
+    /// Each copied computation beside its first source: a copy of a copy
+    /// reaches the source of the first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn sources(&self) -> BTreeMap<ComputationId, ComputationId>
+    {
+        let mut sources = BTreeMap::new();
+        for &pair in &self.carried {
+            if let Carried::Computation(source, copy) = pair {
+                let first = sources.get(&source).copied().unwrap_or(source);
+                let _first = sources.entry(copy).or_insert(first);
+            }
+        }
+        sources
+    }
+
+    /// Each minted bind beside the run it binds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn runs(&self) -> BTreeMap<ComputationId, ValueId>
+    {
+        self.binds.iter().map(|&(run, bind)| (bind, run)).collect()
+    }
+}
+
+/// `text` as a binder's name: as it is when it is one word, else in
+/// parentheses.
+///
+/// # Specification
+/// trivial.
+fn parenthesized(text: String) -> String
+{
+    if text
+        .chars()
+        .all(|glyph| glyph.is_alphanumeric() || glyph == '_')
+    {
+        text
+    }
+    else {
+        format!("({text})")
+    }
+}
+
+/// The first letter marked `′` that `held` does not hold: `a′` to `z′`, then
+/// each letter with one more prime for each round.
+///
+/// # Specification
+/// trivial.
+fn unheld(held: &BTreeSet<String>) -> String
+{
+    let mut name = String::new();
+    // The set holds fewer names than the letters of this many rounds, so one
+    // letter of them is unheld.
+    for primes in 1 ..= held.len().saturating_add(1) {
+        for letter in 'a' ..= 'z' {
+            name.clear();
+            name.push(letter);
+            name.extend(core::iter::repeat_n('′', primes));
+            if !held.contains(name.as_str()) {
+                return name;
+            }
+        }
+    }
+    name
+}
+
+/// One binder a node stands under: the intuitionistic binder around it, the
+/// name the source writes for it, whether it names a region a type may be
+/// kept in, and the former opening it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Bound
+{
+    /// The intuitionistic binder around this one.
+    around: Option<BinderIndex>,
+    /// The name written at the binder, or at a use resolving to it; none
+    /// where the source writes none.
+    name: Option<String>,
+    /// Whether the binder names a region: the capability a scope binds over
+    /// its subject, or the value a hold holds over its scope.
+    region: bool,
+    /// The former that opens it, whose type, or whose judgement's, states
+    /// the type it binds.
+    opener: CoreNode,
+}
+
+/// One binder a node stands under, as [`Scoped::around`] answers it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Around<'scoped>
+{
+    /// The name written at the binder, or at a use resolving to it; none
+    /// where the source writes none.
+    pub name: Option<&'scoped str>,
+    /// The former that opens it.
+    pub opener: CoreNode,
+}
+
+/// The binders of one declaration with the names the source writes for
+/// them, as [`Naming::scoped`] reads them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub struct Scoped
+{
+    /// Every binder of the declaration's nodes.
+    scopes: Scopes<CoreNode>,
+    /// Each binder's name and place, by its position in `scopes`.
+    bound: Vec<Bound>,
+}
+
+impl Scoped
+{
+    /// The intuitionistic binders `node` stands under, outermost first;
+    /// none when the declaration's roots do not reach `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` exactly when the scopes hold no position for `node`;
+    ///   otherwise each intuitionistic binder from the outermost around `node`
+    ///   to the innermost, with its name and its opener.
+    /// - provides: the context `node` is spelled in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// A binder's parent precedes it, so the chain strictly descends.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Naming::scoped`].
+    /// - witness: `tests::diagnostics::a_declaration_s_binders_are_named_as_written_803`
+    #[spec(ensures: |ret| ret.is_none() == self.scopes.innermost(node).is_none())]
+    #[inline]
+    #[must_use]
+    pub fn around(
+        &self,
+        node: CoreNode,
+    ) -> Option<Vec<Around<'_>>>
+    {
+        Some(self.around_from(self.scopes.innermost(node)?))
+    }
+
+    /// The intuitionistic binders `node` stands under at its place under
+    /// `depth` of them, outermost first, or at its first place where none is
+    /// under `depth`; none when the declaration's roots do not reach `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` exactly when the scopes hold no position for `node`;
+    ///   otherwise as [`Self::around`] answers at the place
+    ///   [`Scopes::innermost_at`] answers for `depth`, or at the first place
+    ///   where it answers none.
+    /// - provides: the context a type judged under `depth` binders at `node` is
+    ///   spelled in, where the term shares `node` between places of other
+    ///   depths.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent record's field variable, shared by the
+    ///   copies of the record a relation abbreviates, answers under the
+    ///   record's own fields at the depth it was judged.
+    /// - witness: `tests::diagnostics::a_shared_field_variable_answers_at_the_depth_it_was_judged_1515`
+    #[spec(ensures: |ret| ret.is_none() == self.scopes.innermost(node).is_none())]
+    #[inline]
+    #[must_use]
+    pub fn around_at(
+        &self,
+        node: CoreNode,
+        depth: BinderDepth,
+    ) -> Option<Vec<Around<'_>>>
+    {
+        let innermost = self
+            .scopes
+            .innermost_at(node, depth)
+            .or_else(|| self.scopes.innermost(node))?;
+        Some(self.around_from(innermost))
+    }
+
+    /// The regions `node` stands in at its place under `depth` intuitionistic
+    /// binders, or at its first place where none is under `depth`; none when
+    /// the declaration's roots do not reach `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` exactly when the scopes hold no position for `node`;
+    ///   otherwise as [`Self::regions`] answers at the place
+    ///   [`Self::around_at`] reads.
+    /// - provides: the regions beside [`Self::around_at`]'s binders.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::regions`].
+    /// - witness: `tests::diagnostics::a_node_stands_in_the_regions_of_each_scope_and_hold_around_it`
+    #[spec(ensures: |ret| ret.is_none() == self.scopes.innermost(node).is_none())]
+    #[inline]
+    #[must_use]
+    pub fn regions_at(
+        &self,
+        node: CoreNode,
+        depth: BinderDepth,
+    ) -> Option<Vec<Around<'_>>>
+    {
+        let innermost = self
+            .scopes
+            .innermost_at(node, depth)
+            .or_else(|| self.scopes.innermost(node))?;
+        Some(self.regions_from(innermost))
+    }
+
+    /// The intuitionistic binders of the scope whose innermost binder is
+    /// `innermost`, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// A binder's parent precedes it, so the chain strictly descends.
+    fn around_from(
+        &self,
+        innermost: Option<BinderIndex>,
+    ) -> Vec<Around<'_>>
+    {
+        let mut around = Vec::new();
+        let mut at = intuitionistic(&self.scopes, innermost);
+        while let Some(index) = at {
+            let Some(binder) = self.bound.get(usize::from(index))
+            else {
+                break;
+            };
+            around.push(Around {
+                name: binder.name.as_deref(),
+                opener: binder.opener,
+            });
+            at = binder.around.filter(|&around| around < index);
+        }
+        around.reverse();
+        around
+    }
+
+    /// The names of the regions `node` stands in, outermost first: one per
+    /// capability scope and per hold around it, in the order they nest, the
+    /// order a region's depth counts; none when the declaration's roots do
+    /// not reach `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` exactly when the scopes hold no position for `node`;
+    ///   otherwise, for each binder of any zone around `node` that names a
+    ///   region, from the outermost to the innermost, its name and opener.
+    /// - provides: the regions a kept type's and a capability's `at` names.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// A binder's parent precedes it, so the chain strictly descends.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a use inside a capability scope inside a hold stands
+    ///   in the hold's region, then the scope's.
+    /// - witness: `tests::diagnostics::a_node_stands_in_the_regions_of_each_scope_and_hold_around_it`
+    #[spec(ensures: |ret| ret.is_none() == self.scopes.innermost(node).is_none())]
+    #[inline]
+    #[must_use]
+    pub fn regions(
+        &self,
+        node: CoreNode,
+    ) -> Option<Vec<Around<'_>>>
+    {
+        Some(self.regions_from(self.scopes.innermost(node)?))
+    }
+
+    /// The regions of the scope whose innermost binder is `innermost`,
+    /// outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// A binder's parent precedes it, so the chain strictly descends.
+    fn regions_from(
+        &self,
+        innermost: Option<BinderIndex>,
+    ) -> Vec<Around<'_>>
+    {
+        let mut regions = Vec::new();
+        let mut at = innermost;
+        while let Some(index) = at {
+            let Some(binder) = self.scopes.binder(index)
+            else {
+                break;
+            };
+            if let Some(bound) = self.bound.get(usize::from(index))
+                && bound.region
+            {
+                regions.push(Around {
+                    name: bound.name.as_deref(),
+                    opener: bound.opener,
+                });
+            }
+            at = binder.parent().filter(|&parent| parent < index);
+        }
+        regions.reverse();
+        regions
+    }
+}
+
+/// The intuitionistic binder at or around `at`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the first intuitionistic binder of the chain from `at` outward;
+///   none when the chain holds none.
+/// - provides: a node's context, which skips a fork's linear binders.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// A binder's parent precedes it, so the chain strictly descends.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Naming::scoped`].
+/// - witness: `tests::diagnostics::a_declaration_s_binders_are_named_as_written_803`
+#[spec(ensures: |ret| ret.is_none_or(|index| scopes.binder(index).is_some_and(|binder| binder.zone() == Zone::Intuitionistic)))]
+fn intuitionistic(
+    scopes: &Scopes<CoreNode>,
+    at: Option<BinderIndex>,
+) -> Option<BinderIndex>
+{
+    let mut at = at;
+    while let Some(index) = at {
+        let binder = scopes.binder(index)?;
+        if binder.zone() == Zone::Intuitionistic {
+            return Some(index);
+        }
+        at = binder.parent().filter(|&parent| parent < index);
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use gandr_core_term::Carried;
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::ValueTypeId;
+    use gandr_kernel_term::BaseType;
+
+    use super::WrittenForms;
+    use super::carry_labels;
+
+    /// A copy takes its source's first label, and a copy of a copy its first
+    /// source's. A copy already labelled keeps its own, and a copy of a node
+    /// no list holds gains nothing.
+    #[test]
+    fn a_copy_takes_its_source_s_first_label()
+    {
+        let mut arena = CoreArena::new();
+        let mut types: Vec<ValueTypeId> = Vec::new();
+        let mut at = arena.value_type_base(BaseType::Integer);
+        for _ in 0_usize .. 6 {
+            at = arena.value_type_list(at);
+            types.push(at);
+        }
+        let &[written, copy, copy_of_copy, labelled, unwritten, image] = types.as_slice()
+        else {
+            panic!("six distinct types");
+        };
+        let arrow = arena.comp_type_returner(written);
+        let arrow_copy = arena.comp_type_returner(copy);
+        let mut forms = WrittenForms {
+            arrows: Vec::from([(arrow, "r")]),
+            pairs: Vec::from([(written, "x"), (written, "later"), (labelled, "own")]),
+            seconds: Vec::from([(written, "y")]),
+            sum_labels: Vec::from([(copy, Vec::from(["ok", "err"]))]),
+            with_labels: Vec::from([(arrow, Vec::from(["get", "put"]))]),
+            ..WrittenForms::new()
+        };
+        carry_labels(
+            [
+                Carried::ValueType(written, copy),
+                Carried::ValueType(copy, copy_of_copy),
+                Carried::ValueType(written, labelled),
+                Carried::ValueType(unwritten, image),
+                Carried::CompType(arrow, arrow_copy),
+            ],
+            &mut forms,
+        );
+        let WrittenForms {
+            arrows,
+            pairs,
+            seconds,
+            sum_labels,
+            with_labels,
+            relations,
+            models,
+            ..
+        } = forms;
+        assert_eq!(
+            pairs,
+            [
+                (written, "x"),
+                (written, "later"),
+                (labelled, "own"),
+                (copy, "x"),
+                (copy_of_copy, "x"),
+            ],
+            "each copy takes its first source's first label; a labelled one keeps its own"
+        );
+        assert_eq!(
+            seconds,
+            [
+                (written, "y"),
+                (copy, "y"),
+                (copy_of_copy, "y"),
+                (labelled, "y")
+            ],
+            "a list without the copy gives it its source's label"
+        );
+        assert_eq!(
+            arrows,
+            [(arrow, "r"), (arrow_copy, "r")],
+            "an arrow's copy binds its source's name"
+        );
+        assert_eq!(
+            sum_labels,
+            [
+                (copy, Vec::from(["ok", "err"])),
+                (copy_of_copy, Vec::from(["ok", "err"]))
+            ],
+            "a sum's copy is written over its source's labels, every one in order"
+        );
+        assert_eq!(
+            with_labels,
+            [
+                (arrow, Vec::from(["get", "put"])),
+                (arrow_copy, Vec::from(["get", "put"]))
+            ],
+            "a lazy product's copy is written over its source's labels"
+        );
+        assert!(
+            relations.is_empty() && models.is_empty(),
+            "a copy of a node no list holds gains nothing"
+        );
+    }
+}

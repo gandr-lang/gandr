@@ -1,0 +1,109 @@
+//! `streams` has observation functions and copattern blocks.
+//!
+//! A productive recursive call stands as a whole copattern arm.
+//! The refusal is unguarded corecursion.
+//! Each observation yields before the function runs again.
+//! So the fixpoint needs no termination claim.
+//!
+//! The stream functions construct copattern blocks and observe their thunks.
+//! Each test reads heads and tails from constructed streams.
+//!
+//! - see: #644
+//! - see: #1499 — `ones`
+/// A stream exposes its head and its successor stream.
+codata Stream(a : Type) : Type[-] where
+  head : a;
+  tail : Stream a;
+
+/// The function produces integers from n upward, one observation at a time.
+def rec upward(n : Integer) -> Stream Integer =
+  &{.head => n, .tail => upward[>] (n + 1)}
+
+/// The function produces n forever with its tail clause before its head clause.
+/// A copattern block answers the observations in the order of the declaration.
+def rec always(n : Integer) -> Stream Integer =
+  &{.tail => always[>] n, .head => n}
+
+/// The corecursive constant binds its own name and produces one forever.
+def rec ones() -> Stream Integer =
+  &{.head => 1, .tail => ones[>] ()}
+
+/// The function observes a stream thunk at its head.
+def first(s : +U (Stream Integer)) -> Integer =
+  s.head
+
+/// The function observes the head of a stream's tail.
+def second(s : +U (Stream Integer)) -> Integer =
+  first s.tail
+
+/// The function combines two streams pointwise with f.
+/// Every parameter varies from call to call, and the call stays productive.
+def rec zipWith(
+  f : (Integer, Integer) -> Integer,
+  s : +U (Stream Integer),
+  t : +U (Stream Integer)
+) -> Stream Integer =
+  &{
+    .head => {
+      f (first s) (first t)
+    },
+    .tail => zipWith[>] f s.tail t.tail
+  }
+
+/// The function adds two integers.
+def add(x : Integer, y : Integer) -> Integer =
+  x + y
+
+/// `three` observes the head of integers from three.
+@[runs("3")]
+def three : () -> Integer = first (upward 3);
+
+/// `four` observes the next integer after three.
+@[runs("4")]
+def four() -> Integer { second (upward 3) }
+
+/// `nine` observes the next sum of the streams from one and seven.
+@[runs("9")]
+def nine() -> Integer =
+  second (zipWith add (upward 1) (always 7))
+
+/// `unfolded` observes the next value from the corecursive ones constant.
+@[runs("1")]
+def unfolded() -> Integer { second (ones ()) }
+
+/// The function observes the tail by its zero-based declaration position.
+def onward(s : +U (Stream Integer)) -> Integer =
+  first s.1
+
+/// `fourth` observes integers from three by position.
+@[runs("4")]
+def fourth : () -> Integer = onward (upward 3);
+
+/// The function observes the head from a stream call.
+@[runs("3")]
+def headOfCall() -> Integer { (upward 3).head }
+
+/// The function observes a call's tail by position, then its head.
+@[runs("4")]
+def tailOfCall() -> Integer { first ((upward 3).1) }
+
+/// The function compares a call's head with one.
+@[runs("+{.0 = *{}}")]
+def headAbove() -> Bool { (upward 3).head >= 1 }
+
+/// The function observes the head of a stream's tail through one chain.
+def secondInline(s : +U (Stream Integer)) -> Integer =
+  s.tail.head
+
+/// The function observes two tails and then a head from a call.
+@[runs("5")]
+def chained() -> Integer { (upward 3).tail.tail.head }
+
+/// The function observes the same chain by declaration positions.
+@[runs("5")]
+def chainedByPosition() -> Integer { (upward 3).1.tail.0 }
+
+/// `eight` observes the next sum of the ones and sevens streams.
+@[runs("8")]
+def eight() -> Integer =
+  secondInline (zipWith add (ones ()) (always 7))
