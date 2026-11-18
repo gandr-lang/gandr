@@ -468,12 +468,14 @@ fn an_importer_performs_an_imported_block_s_interface_3138()
             "{name}: the perform is the block's"
         );
     }
+    let reached: alloc::collections::BTreeSet<ByteOffset> = module
+        .reached_imports()
+        .iter()
+        .map(|span| span.start())
+        .collect();
     for importer in importers {
         assert!(
-            module
-                .reached_imports()
-                .iter()
-                .any(|span| span.start() == importer),
+            reached.contains(&importer),
             "the import of the block's source reads as used"
         );
     }

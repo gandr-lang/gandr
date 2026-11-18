@@ -508,6 +508,10 @@ impl Collected<'_>
     ///   import whose block a row and a perform read is among them too.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
     /// - witness: `gandr-surface-lowering::lower::boundary::tests::an_importer_performs_an_imported_block_s_interface_3138`
+    ///
+    /// # Cost
+    /// - allocation: the bytes of each reached import, durable by the source
+    /// - allocation: the list of a host module's imports, setup
     #[inline]
     pub fn reach_interface(
         &mut self,

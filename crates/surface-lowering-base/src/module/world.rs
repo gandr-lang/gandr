@@ -428,6 +428,10 @@ impl<'source> Collector<'_, 'source>
     ///   does not resolve is refused at its name.
     /// - witness: `gandr-surface-lowering::lower::world::tests::a_site_s_offer_answers_by_label_and_by_name_3523`
     /// - witness: `gandr-surface-lowering::lower::world::tests::an_offer_names_the_translation_it_answers_a_label_through_3461`
+    ///
+    /// # Cost
+    /// - allocation: the bytes of each reached import, durable by the source
+    /// - allocation: the stray of a withdrawn offer, error path
     #[spec(
         captures: before = strays.len(),
         ensures: |ret| ret.is_err() || strays.len() <= before.saturating_add(1),

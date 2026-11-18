@@ -764,6 +764,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   instance takes the theory's capability.
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    ///
+    /// # Cost
+    /// - allocation: the parameter, its frame and the instance's record,
+    ///   durable by the source
+    /// - allocation: the refusal of a label out of shape, error path
     #[spec(
         captures: before = self.cx().parameters.mark(),
         ensures: |ret| ret.is_err() || self.cx().parameters.mark() == before.next(),
@@ -1164,6 +1169,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
+    ///
+    /// # Cost
+    /// - allocation: the plan, the fixed carriers, the resolutions and the
+    ///   reached imports, durable by the source
+    /// - allocation: the refusal of a label naming no region, error path
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument.node))]
     #[inline]
     pub fn effectful(
@@ -1326,6 +1336,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
+    ///
+    /// # Cost
+    /// - allocation: the plan and the reached imports, durable by the source
+    /// - allocation: the refusal of an operation no interface offers, error
+    ///   path
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Exercise(_))))]
     #[inline]
     pub fn exercise(
@@ -1976,6 +1991,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_model_answers_a_theory_s_value_operations_2288`
+    ///
+    /// # Cost
+    /// - allocation: the plan, the binders, the continuations and the reached
+    ///   imports, durable by the source
+    /// - allocation: the refusal of a scope out of shape, error path
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Scope(_))))]
     #[inline]
     pub fn capability_scope(
