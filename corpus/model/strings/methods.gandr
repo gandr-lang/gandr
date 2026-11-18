@@ -48,7 +48,7 @@ def lengths() -> Integer =
   pure n + m
 
 /// `lengthsByPath` calls each method through its path. `Str.push s 33` is
-/// the call `s.push 33`, so it writes the string back.
+/// the call `s.push 33`, so it updates the string that `s` holds.
 @[runs("7")]
 def lengthsByPath() -> Integer =
   var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
