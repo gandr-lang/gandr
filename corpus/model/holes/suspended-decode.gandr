@@ -1,0 +1,37 @@
+//! This source shows a judgement that waits on an owed code.
+//!
+//! A value at the decode of an owed code waits for a fill. A
+//! fill with `Integer`
+//! settles the comparison. A fill with `String` refutes it.
+//!
+//! The checker records the owed hole. A fill resumes
+//! the declaration. Suspension
+//! is not failure.
+//!
+//! - cites: [Slattery-2026-bidirectional_elaborators_carte]
+//!
+//! [Slattery-2026-bidirectional_elaborators_carte]: https://arxiv.org/abs/2607.09564 "Slattery and Sterling, Bidirectional Elaborators à la Carte"
+
+/// This declaration owes a code to name later.
+@[owes(1)]
+def code : Type;
+
+/// This declaration owes the comparison of `Integer` with `code`.
+@[owes(1)]
+def three : code = 3;
+
+/// This declaration waits on the hole that `three` owes.
+@[owes(1)]
+def again : code = three;
+
+/// This declaration checks without a hole.
+def four : Integer = 4;
+
+/// This declaration fills a code with the integer type.
+def filled : Type = Integer;
+
+/// This declaration resumes at the filled code.
+def threeFilled : filled = 3;
+
+/// This declaration reads the resumed code.
+def againFilled : filled = threeFilled;

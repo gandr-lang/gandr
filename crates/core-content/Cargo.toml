@@ -1,0 +1,35 @@
+[package]
+name = "gandr-core-content"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The content form of a core node: its canonical table, numbered by discovery, free of arena ids and admission positions, and its mint"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["content-addressing", "gandr", "hash-consing"]
+categories = ["compilers"]
+publish.workspace = true
+
+# The crate reads the core vocabulary. It also reads the leaves that the
+# core shares with the kernel. These leaves are the literals and indices of
+# the term crate and the levels of the strata crate.
+#
+# The tag of a source is a prefix of the BLAKE3 digest of its name. The
+# interner of a table indexes its nodes in a `hashbrown` table under
+# `foldhash`'s fixed seed. The pinned anodized facade supplies core-only
+# specification helpers.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+foldhash.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-levitation.workspace = true
+gandr-theory-sites.workspace = true
+hashbrown.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

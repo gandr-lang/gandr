@@ -1,0 +1,11 @@
+error[ImportShadows]: `Red` is bound by an import and again in this source
+   ╭▸ corpus/pathological/data/constructor-two-imports.gandr:21:21
+   │
+14 │ import "../../model/data/signal.gandr";
+   │ ─────────────────────────────────────── first written here
+   ┆
+21 │ def halt : Signal = Red;
+   │                     ━━━ bound here and by an import
+   │
+   ├ note: `halt` is refused with ImportShadows, as its expectation states
+   ╰ help: rename the declaration or its imported binding

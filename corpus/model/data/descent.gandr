@@ -1,0 +1,98 @@
+// A recursive definition descends through the parameter an
+// innermost match scrutinises.
+//
+// A recursive claim can use the first parameter, an accumulator or a rebuilt
+// value below that parameter.
+//
+// Parameters before a staged parameter pass unchanged.
+// Two-parameter descent uses the sized rung.
+//
+// - see: #518
+// - see: #392
+// - see: #2127 — `reverseOnto`
+// - see: #2135 — `pairwise`
+// - see: #2833 — `isZeroAtZero`
+// - see: `../../pathological/data/descent.gandr`
+
+// This source uses naturals and the numerals two and three.
+import "./data-base.gandr";
+
+/// `plusFirst` recurses on its first argument.
+/// Each call increments its accumulator.
+def rec plusFirst(m : Nat, n : Nat) -> Nat =
+  match m where
+    | Zero => n
+    | Succ(p) => plusFirst[<] p (Succ n)
+
+/// `half` computes the floor half with nested matches.
+/// Its recursive call descends on `n`.
+def rec half(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(m) => match m where
+      | Zero => Zero
+      | Succ(q) => Succ (half[<] q)
+
+/// `fib` rebuilds `Succ(q)` from an inner field.
+/// That value is below `n`.
+def rec fib(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(m) => match m where
+      | Zero => Succ Zero
+      | Succ(q) => plusFirst (fib[<] (Succ q)) (fib[<] q)
+
+/// `reverseOnto` reverses a list onto an accumulator. Each call grows the
+/// accumulator by a bare constructor, which takes its type from its parameter.
+def rec reverseOnto(a : Type, xs : List a, acc : List a) -> List a =
+  match xs where
+    | Nil => acc
+    | Cons(x, rest) => reverseOnto[<] a rest (Cons x acc)
+
+/// `pairwise` sums two lists and skips zero in its first list. A call under
+/// the match on `ys` still descends on `xs`, which a match above takes apart.
+def rec pairwise(xs : List Integer, ys : List Integer) -> List Integer =
+  match xs where
+    | Nil => Nil
+    | Cons(x, rest) => match x == 0 where
+      | true => pairwise[<] rest ys
+      | false => match ys where
+        | Nil => Nil
+        | Cons(y, more) => Cons (x + y) (pairwise[<] rest more)
+
+/// Four.
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
+def four : Nat = Succ three;
+
+/// Two and three by the accumulator: five.
+@[runs("Succ (Succ (Succ (Succ (Succ Zero))))")]
+def five_accumulated : () -> Nat = plusFirst two three;
+
+/// Half of four.
+@[runs("Succ (Succ Zero)")]
+def halved : () -> Nat = half four;
+
+/// The fourth Fibonacci number, three.
+@[runs("Succ (Succ (Succ Zero))")]
+def fibbed : () -> Nat = fib four;
+
+/// Two and three reversed: three, then two.
+@[runs("Cons (Succ (Succ (Succ Zero))) (Cons (Succ (Succ Zero)) Nil)")]
+def reversed : () -> List Nat = reverseOnto Nat (Cons two (Cons three Nil)) Nil;
+
+/// One, zero and two summed with ten and twenty: the zero is skipped.
+@[runs("Cons 11 (Cons 22 Nil)")]
+def sumsSkippingZero : () -> List Integer = pairwise
+  (Cons 1 (Cons 0 (Cons 2 Nil)))
+  (Cons 10 (Cons 20 Nil));
+
+/// `isZero` makes no recursive call.
+/// It unfolds at a constructor.
+def rec isZero(n : Nat) -> Type =
+  match n where
+    | Zero => return Unit
+    | Succ(_m) => return Void
+
+/// `isZero(Zero)` unfolds to `Unit` in the checker and the kernel alike.
+def isZeroAtZero() -> isZero(Zero) -> Unit =
+  fun (e) { e }
