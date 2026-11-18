@@ -2531,15 +2531,22 @@ impl<'pbg> MeldState<'pbg>
     /// # Specification
     /// - ensures: the [`Rule::operands`](gandr_surface_grammar::Rule::operands)
     ///   of the head of `spine`, read through each type application meld's
-    ///   first child, when `spine` is an operand. `None` otherwise.
+    ///   first child, when `spine` is an operand; [`Sort::Type`] instead when
+    ///   the head is a form whose own tiles write the universe `Type` as its
+    ///   carrier, `Path[.A = Type] A B`, as the form's endpoint list reads
+    ///   types after that carrier. `None` otherwise.
     /// - panics: none.
     /// - bound: one read of the emission log for each application of the spine;
-    ///   a path's spine holds at most two.
+    ///   a path's spine holds at most two. One read for each direct child of
+    ///   the head's form, at most eight for a carried path.
     /// - executable: none — the head's rule is a read of the grammar, and a
     ///   predicate restates the walk of the spine.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::spine_operands`].
+    /// - hypothesis: L3 — as [`Self::spine_operands`]; `Path[.A = Type] (Bool *
+    ///   List Bool) Int` reads both endpoints as types, as the list form
+    ///   `Path[.A = Type](Bool * List Bool, Int)` reads them, and a term
+    ///   endpoint after any other carrier stays a term.
     /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
     fn operands_of(
         &self,
@@ -2551,7 +2558,7 @@ impl<'pbg> MeldState<'pbg>
         }
         let application = self.pbg.application_in(Sort::Type)?;
         let mut at = spine.emit;
-        let mold = loop {
+        let (mold, universe) = loop {
             match *self.emit.get(usize::try_from(at.0).ok()?)? {
                 EmitOp::Interior {
                     label: NodeLabel::Meld(mold),
@@ -2559,18 +2566,30 @@ impl<'pbg> MeldState<'pbg>
                     ..
                 } => {
                     if mold != application {
-                        break mold;
+                        // The carrier slot holds the universe as the form's own
+                        // tile; any other carrier is a child form.
+                        let universe = children.iter().any(|child| {
+                            usize::try_from(child.0)
+                                .ok()
+                                .and_then(|index| self.emit.get(index))
+                                .is_some_and(|op| {
+                                    matches!(*op, EmitOp::Token { label: NodeLabel::Tile(tile), .. }
+                                    if self.pbg.mold(tile).is_ok_and(|def| def.label == "Type"))
+                                })
+                        });
+                        break (mold, universe);
                     }
                     at = *children.first()?;
                 },
                 EmitOp::Token {
                     label: NodeLabel::Tile(mold),
                     ..
-                } => break mold,
+                } => break (mold, false),
                 EmitOp::Interior { .. } | EmitOp::Token { .. } => return None,
             }
         };
-        self.pbg.rule_of(mold).ok()?.operands()
+        let operands = self.pbg.rule_of(mold).ok()?.operands()?;
+        Some(if universe { Sort::Type } else { operands })
     }
 
     /// The application tile an operand of `sort` opening next would take: the

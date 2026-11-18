@@ -377,8 +377,9 @@ fn a_called_former_keeps_its_own_opener_6121() -> Result<(), Failure>
 
 /// #5750: the rule of a path or bridge type states that its operands are
 /// expressions, so the juxtaposition reads each endpoint as a term: an atom,
-/// or a term in its parentheses. A type family keeps its type arguments, and
-/// `Path.here a` stays an expression.
+/// or a term in its parentheses. After the universe as carrier the endpoints
+/// are types, as the endpoint list reads them there. A type family keeps its
+/// type arguments, and `Path.here a` stays an expression.
 #[test]
 fn a_path_type_reads_its_endpoints_juxtaposed_5750() -> Result<(), Failure>
 {
@@ -392,8 +393,14 @@ fn a_path_type_reads_its_endpoints_juxtaposed_5750() -> Result<(), Failure>
             Expression, Expression,
         ]),
         ("def f(p : Path[.A = Type] a b) -> Integer { 0 }", &[
-            Expression, Expression,
+            Type, Type,
         ]),
+        // The inner path's carrier is no universe, so its own endpoints stay
+        // terms; `List Bool` applies its type argument.
+        (
+            "def x : Path[.A = Type] (Bool * List Bool) (Path[.A = Circle] Base Base);",
+            &[Type, Type, Expression, Expression, Type],
+        ),
         ("def x : Path a b -> Path (c) d;", &[
             Expression, Expression, Expression, Expression,
         ]),
