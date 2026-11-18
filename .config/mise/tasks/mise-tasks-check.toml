@@ -1011,15 +1011,16 @@ fi
 echo "adequacy witness resolution (G0): every witness resolves here, in a package that depends on its owner, or is left to the gate host whose cfg builds it"
 '''
 
-# The witness resolution's cases (#4441, #7039): each case in
-# `.config/witnesses/cases.json` holds a report, the gated tests, the host
-# atoms, the dependencies and the listed aliases `resolve.jq` reads, and the
-# lines it must resolve or refuse; one holds `rustc --print cfg`'s text and
-# the atoms `atoms.jq` keeps. `.config/witnesses/shards-cases.bash` holds
-# each enforcing shard of `landing-checks.yml` to the packages whose tests its members'
-# witnesses name (#7089).
+# The witness cases test witness resolution.
+# Each case holds the unresolved report and its gated tests.
+# Each case holds its host atoms and dependencies.
+# Each case holds the aliases that `resolve.jq` reads.
+# The cfg case holds `rustc --print cfg` output and the atoms `atoms.jq` keeps.
+#
+# The shard cases test each enforcing shard.
+# The rerun case requires the task to select a qualified witness's test holder.
 ["check:witness-cases"]
-description = "A witness this host builds no test for is left to the gate host whose cfg builds it, or refused when none does, a witness spelled with a package resolves only where that package depends on the owner, as recorded, and each shard lists the packages its witnesses name"
+description = "A witness absent here is left to the gate host that builds it, a qualified witness resolves only in its dependent package, each shard lists that package, and the rerun task runs its test there"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1336,25 +1337,36 @@ expect 'without the change nothing is obliged' 0 \
 echo "obligations check OK: the recorded change obliges bump's clause, a tick holds it, and without the change nothing is owed"
 '''
 
-# The obligated witnesses, under the enforcing gate's flags and target
-# directory so a restored enforcing build serves them. The selection names
-# each witness's package, so Cargo builds only those packages' tests, with
-# dependency features resolved as for the whole workspace: a narrower
-# selection would change the features of shared dependencies and rebuild
-# every crate above them. Only this task unifies so: elsewhere `-p` keeps
-# its own features, which `cargo tree -p` and the shipped build rely on.
-# The selection is `-p` per package, then `-E` and one filterset whose
-# alternatives join with ` | `. A change obligating thousands of witnesses
-# makes that one argument longer than the kernel accepts (Linux refuses an
-# argument over 128 KiB), so the alternatives run in batches of at most
-# 64 KiB of filterset, each under every selected package. A failing batch
-# fails the task once the rest have run; with more than one batch, each
-# batch's JUnit report is kept beside the others as `junit-<n>.xml`.
+# The task runs every witness named in an obligation.
+# The task enables specifications.
+# It writes build files in the enforcing target directory.
+#
+# It gives Cargo every specification owner from the selection.
+# A qualified witness can name a test in a dependent package.
+# The task selects that test holder.
+#
+# The task replaces the filterset package and strips the holder from the test name.
+# Cargo resolves dependency features for the whole workspace.
+# The task uses whole-workspace selection for shared dependencies.
+# This avoids a rebuild of each crate above a shared dependency.
+# This task alone unifies features.
+#
+# Other tasks keep package features.
+# `cargo tree -p` and the shipped build use these features.
+#
+# A filterset joins alternatives with ` | `.
+# Linux refuses an argument longer than 128 KiB.
+# The task restricts each filterset batch to 64 KiB.
+#
+# The task runs every batch.
+# It returns failure after a batch fails.
+# The task gives each later JUnit report a numbered name.
 ["evidence:witnesses"]
 description = "Rerun the obligated witnesses with specifications enforced"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 env.CARGO_RESOLVER_FEATURE_UNIFICATION = "workspace"
+tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
@@ -1367,6 +1379,16 @@ profile=${NEXTEST_PROFILE:-default}
 packages=("${selection[@]:0:${#selection[@]}-2}")
 filterset=${selection[-1]}
 mapfile -t alternatives <<< "${filterset// | /$'\n'}"
+workspace=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[].name')
+while IFS= read -r package; do
+  for index in "${!alternatives[@]}"; do
+    [[ ${alternatives[index]} == *"test(=$package::"* ]] || continue
+    [[ " ${packages[*]} " == *" -p $package "* ]] || packages+=(-p "$package")
+    suffix=${alternatives[index]#"(package(="*")"}
+    suffix=${suffix/"test(=$package::"/"test(="}
+    alternatives[index]="(package(=$package)$suffix"
+  done
+done <<< "$workspace"
 limit=65536
 batches=()
 batch=''
