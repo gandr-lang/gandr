@@ -348,16 +348,16 @@ impl fmt::Display for Subject
 
 /// One function's regression in one failed check: what its index row states.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Regression
+pub struct Regression<'report>
 {
     /// The function, by its profiled name.
     pub function: SiteName,
     /// The crate its source lives in.
     pub krate: Maybe<CrateDir, Unstated>,
     /// The benchmark whose check failed.
-    pub series: Benchmark,
+    pub series: &'report Benchmark,
     /// The check's page.
-    pub run: RunUrl,
+    pub run: &'report RunUrl,
     /// The metric: `allocations` or `timing`.
     pub metric: SummaryLine,
     /// The before/after numbers: `` avg `1444 → 2558` **+77%** ``.
@@ -367,7 +367,7 @@ pub struct Regression
     pub shift: Maybe<GlobalShift, Unshifted>,
     /// The growth the pull request's body accepts on this benchmark, if it
     /// accepts any.
-    pub accepted: Maybe<Acceptance, Unaccepted>,
+    pub accepted: Maybe<&'report Acceptance, Unaccepted>,
 }
 
 /// A commit's concluded hotpath checks and the pull request they name.
@@ -544,7 +544,7 @@ impl Report
     /// - witness: `tests::cli::one_function_past_a_quiet_runner_files_alone`
     #[must_use]
     #[inline]
-    pub fn regressions(&self) -> Vec<Regression>
+    pub fn regressions(&self) -> Vec<Regression<'_>>
     {
         let mut seen = BTreeSet::new();
         let mut regressions = Vec::new();
@@ -569,12 +569,12 @@ impl Report
                     regressions.push(Regression {
                         function: site.name.clone(),
                         krate: site.krate.clone(),
-                        series: failure.benchmark.clone(),
-                        run: failure.run.clone(),
+                        series: &failure.benchmark,
+                        run: &failure.run,
                         metric: section.metric.metric(),
                         delta: site.line.delta(),
                         shift,
-                        accepted: accepted.clone(),
+                        accepted,
                     });
                 }
             }
@@ -596,15 +596,13 @@ impl Report
     fn accepted(
         &self,
         benchmark: &Benchmark,
-    ) -> Maybe<Acceptance, Unaccepted>
+    ) -> Maybe<&Acceptance, Unaccepted>
     {
         match self.pull {
             Maybe::Present(ref pull) => pull
                 .accepted
                 .get(benchmark)
-                .map_or(Maybe::Absent(Unaccepted), |acceptance| {
-                    Maybe::Present(acceptance.clone())
-                }),
+                .map_or(Maybe::Absent(Unaccepted), Maybe::Present),
             Maybe::Absent(_) => Maybe::Absent(Unaccepted),
         }
     }

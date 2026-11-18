@@ -669,7 +669,7 @@ fn file_function(
     function: &SiteName,
     mut entry: Touched,
     report: &Report,
-    regressions: &[Regression],
+    regressions: &[Regression<'_>],
     at: &Run<'_>,
 ) -> Result<Filed, GuardError>
 {
@@ -683,7 +683,7 @@ fn file_function(
         entry.index.record(regression, at, &unposted);
     }
     for (series, passing) in report.passed() {
-        if !own().any(|regression| &regression.series == series) {
+        if !own().any(|regression| regression.series == series) {
             entry.index.fix(series, passing, at);
         }
     }

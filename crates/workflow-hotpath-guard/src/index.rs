@@ -327,7 +327,7 @@ impl Comment
     /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[must_use]
     #[inline]
-    pub const fn of(regression: &Regression) -> Self
+    pub const fn of(regression: &Regression<'_>) -> Self
     {
         if matches!(regression.shift, Maybe::Present(_))
             || matches!(regression.accepted, Maybe::Present(_))
@@ -546,7 +546,7 @@ impl Index
     #[inline]
     pub fn record(
         &mut self,
-        regression: &Regression,
+        regression: &Regression<'_>,
         at: &Run<'_>,
         comment: &Maybe<CommentUrl, Unposted>,
     )
@@ -560,7 +560,7 @@ impl Index
             ),
             (&Maybe::Absent(_), Maybe::Absent(_)) => "open".to_owned(),
         };
-        let key = Key::new(at.subject, &regression.series);
+        let key = Key::new(at.subject, regression.series);
         let found = self.rows.iter().position(|row| row.key() == key.borrowed());
         let earlier = found
             .and_then(|index| self.rows.get(index))
