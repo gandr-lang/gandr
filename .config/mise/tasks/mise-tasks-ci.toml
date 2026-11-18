@@ -3118,42 +3118,53 @@ fi
 exit "$status"
 {% endraw %}'''
 
-# The one way a seat or the coordinator files an issue: `issue:file <title>
-# <body> [label]...` runs `body:check` on the title and the body, and
-# `body:prose` on a body filed with no `--template` (#3591), then
-# `gh issue create` with each label, printing the issue's address. The labels
-# are the full set or the issue is refused (#2902): exactly one `kind:`,
-# `priority:` and `effort:`, one or more `area:`, a missing `priority:` or
-# `effort:` taking its kind's default from `.config/issues/defaults.toml`
-# and an epic keeping `kind:epic` alone (the rule
-# `.config/issues/labels.jq`). A unit (a body with `## Sources`) is refused
-# before it is filed when it lacks a section (`findings.jq`, as `unit:check`
-# reads it) or a design page's claim (`claim.jq`, #6569), and once filed has
-# the dependencies its `## After` names set by
-# `unit:check --fix`, so no filed unit lacks them. `--epic <n>` links the
-# issue under the epic and sets the epic `blocked by` it, and a body line
-# `Advances #n`, `Part of #n` or `from: #n` naming an open `kind:epic` sets
-# that epic `blocked by` it too (#3398): an epic is blocked by its units and
-# closes once every one is closed (`.config/issues/deps.bash`). An epic that
-# holds 100 sub-issues, GitHub's limit, takes no more, and GitHub refuses the
-# link only once the issue exists (#5149). So `--epic` counts the epic's
-# sub-issues before it creates the issue. At the limit it files the issue
-# under no epic, ends the body with `Epic: #<n> (full)`, and prints a note
-# that names the epic. A count that fails stops the task before it creates
-# the issue. A closing keyword in the body outside its head's keyword lines
-# (`targets.jq`'s `strays`, #2980) is noted on stderr:
-# it does nothing in an issue, but the same words in a pull request's body
-# close the issue they name on merge. A mechanism files a unit or marks what
-# it could not (#3112, `tracker.md` § tracker-filing): `--template <filer>`
-# appends `.config/issues/templates/<filer>.md` to the body, the filer's
-# observation, each `{{field}}` filled from `--fields` (`template.jq`), and
-# a `kind:defect` that is no `collector` and fails `unit:check` is refused
-# unless it carries `status:unsectioned`, its claiming seat's to section
-# (#3134). A unit filed whole is sectioned before its claim, so it is signed
-# by construction: once `unit:check` passes on the filed issue, `issue:file`
-# writes the frame's marker and then labels it `shape:signed`, the label
-# `pr:open` waits for (`signed.jq`). A refused check stops the task before
-# both, and the issue stays unsigned with the check's findings (#7545).
+# `issue:file` files an issue for a seat or the coordinator.
+# `body:check` checks its title and body.
+# `body:prose` checks a body without `--template`.
+# `gh issue create` creates the issue with its labels and prints its address.
+# - see: #3591
+#
+# `labels_plan` requires one `kind:`, `priority:` and `effort:` label.
+# It requires at least one `area:` label.
+# Missing priority or effort labels use their kind defaults.
+# An epic keeps only `kind:epic`.
+# - see: #2902
+#
+# A unit body has `## Sources`.
+# `issue:file` refuses a unit with a missing section or design claim.
+# `unit:check --fix` sets each dependency that `## After` names.
+# - see: #6569
+#
+# `--epic` links a new issue below its epic.
+# It sets the epic's `blocked by` link to the new issue.
+# A body can block each open epic that it names.
+# An epic closes when all of its units close.
+# - see: #3398
+#
+# GitHub allows an epic to hold 100 sub-issues.
+# `--epic` counts the sub-issues before it creates a new issue.
+# At the limit, it files the issue without an epic.
+# It adds `Epic: #<n> (full)` to the body and prints a note.
+# A failed count stops the task before it creates the issue.
+# - see: #5149
+#
+# `issue:file` notes a stray closing keyword on stderr.
+# The keyword does nothing in an issue.
+# The same keyword closes its issue from a pull request body at merge.
+# - see: #2980
+#
+# A mechanism files a unit or marks an incomplete defect.
+# `--template` adds the filer's template, observation and field values.
+# `issue:file` refuses an unsectioned defect without `status:unsectioned`.
+# - see: #3112, #3134
+#
+# The filer sections a whole unit before its claim.
+# `issue:file` signs a whole unit after `unit:check` when its kind is neither
+# `kind:feature` nor `kind:performance`.
+# It writes the frame marker before it adds `shape:signed`.
+# A feature or performance unit waits for `unit:sign`.
+# A failed check leaves the issue unsigned with its findings.
+# - see: #7545, #7598
 ["issue:file"]
 description = "File an issue with its full label set once its title and body name nothing private, linked and its dependencies set"
 usage = '''
@@ -3296,13 +3307,23 @@ for blocked in "${blocks[@]}"; do
 done
 if [[ $unit == true ]]; then
   mise run --quiet unit:check --fix "$number" >&2
-  # A unit filed whole is signed once the check passes (#7545): the marker of
-  # the frame its sections pass at, or `claim:take` refuses it (#7129), then
-  # `shape:signed`. A failed edit leaves a marker that no label reads.
-  source "$config_dir/bodies/frame.bash"
-  unit_frame_signoff "$root" "$number" "issue:file" > /dev/null
-  gh issue edit "$number" --add-label shape:signed > /dev/null \
-    || { echo "issue:file: #$number passes unit:check and carries its frame marker, and GitHub refuses the label shape:signed: add the label to #$number by hand" >&2; exit 1; }
+  signed=$(jq -n -r -L "$config_dir/bodies" --argjson labels "$(printf '%s\n' "${labels[@]}" | jq -R -s -c 'split("\n") | map(select(. != ""))')" \
+    'include "sections"; signed_by_construction($labels)') || exit 1
+  if [[ $signed == true ]]; then
+    # A mechanically checked unit carries its marker before `shape:signed`.
+    # A failed edit leaves the marker unread.
+    # - see: #7129
+    source "$config_dir/bodies/frame.bash"
+    unit_frame_signoff "$root" "$number" "issue:file" > /dev/null
+    gh issue edit "$number" --add-label shape:signed > /dev/null \
+      || { echo "issue:file: #$number passes unit:check and carries its frame marker, and GitHub refuses the label shape:signed: add the label to #$number by hand" >&2; exit 1; }
+  elif [[ $signed == false ]]; then
+    kind=$(printf '%s\n' "${labels[@]}" | jq -Rr 'select(startswith("kind:"))')
+    printf 'issue:file: #%s is a %s unit; it waits for unit:sign\n' "$number" "$kind" >&2
+  else
+    printf 'issue:file: the signing predicate returns `%s`, not a boolean\n' "$signed" >&2
+    exit 1
+  fi
 fi
 echo "$url"
 {% endraw %}'''
