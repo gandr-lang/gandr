@@ -1,0 +1,3 @@
+data Circle : Type where { | Base : Circle | loop : Base <-> Base }
+def bad : Path[.A = Circle](Base, Base);
+def bad = here loop ∷ loop;

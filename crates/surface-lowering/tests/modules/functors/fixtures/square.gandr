@@ -1,0 +1,3 @@
+module Square(S : Model(Mag)) where {
+  def square(x : S.M) -> -F S.M { become S.mul x x }
+}

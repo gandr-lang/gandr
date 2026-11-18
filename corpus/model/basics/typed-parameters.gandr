@@ -1,0 +1,22 @@
+// This source shows typed lambda parameters.
+//
+// A typed parameter binds an argument at `A`.
+// The lambda's arrow must accept `A`.
+//
+// The checker reads the parameter at its stated type.
+//
+// - see: #1310
+
+/// `double` doubles an argument at its binding type.
+def double : Integer -> Integer = fun (x : Integer) { x + x };
+
+/// `lend` accepts a lazy record and its argument.
+def lend(
+  f : +U &{get : -F Integer, put : -F String} -> Integer,
+  m : +U &{get : -F Integer, put : -F String}
+) -> Integer =
+  f m
+
+/// Lends `lend` a lambda whose parameter states the record it observes.
+def lent(m : +U &{get : -F Integer, put : -F String}) -> Integer =
+  lend (fun (n : +U &{get : -F Integer, put : -F String}) { n.get }) m

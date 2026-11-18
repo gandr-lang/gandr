@@ -1,0 +1,2 @@
+def pair(a : Integer) -> Integer * Integer { *{a, a} }
+def split(a : Integer) -> Integer { let *{.x, .y} = pair a; x }

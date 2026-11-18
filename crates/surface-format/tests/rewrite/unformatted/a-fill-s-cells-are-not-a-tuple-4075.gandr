@@ -1,0 +1,3 @@
+def lifted(a : Type, x : a, y : a, z : a, fa : Path[.A = a](x, y), g : Path[.A = a](y, z)) -> Path[.A = a](x, z) {
+  fill[5, 7] (chain 2) (selfComposite a x y z) (fa, g)
+}

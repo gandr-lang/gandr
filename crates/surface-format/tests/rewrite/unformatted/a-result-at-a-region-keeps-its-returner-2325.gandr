@@ -1,0 +1,3 @@
+def pass[r : Region](k : (+U (-F Integer)) at r) -> -F ((+U (-F Integer)) at r) {
+  pure k
+}
