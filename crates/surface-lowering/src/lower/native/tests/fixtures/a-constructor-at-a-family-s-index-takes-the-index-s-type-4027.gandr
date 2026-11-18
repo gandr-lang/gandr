@@ -1,0 +1,9 @@
+data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
+data Fin : Nat -> Type where { | FZ : (n : Nat) --> Fin(Succ(n)) }
+data Ring : Fin(Succ(Zero)) -> Type where { | D : (i : Fin(Succ(Zero))) --> Ring(i) }
+def r() -> Ring(FZ(Zero)) { D (FZ Zero) }
+data Q : Fin(Succ(Zero)) -> Type where { | C : (Fin(Succ(Zero))) --> Q(FZ(Zero)) }
+data Pt : (n : Nat, i : Fin(n)) --> Type where { | P : (n : Nat) --> Pt(Succ(n), FZ(n)) }
+data PtBad : (n : Nat, i : Fin(n)) --> Type where { | B : (n : Nat) --> PtBad(n, FZ(n)) }
+data At(m : Nat) : Fin(Succ(m)) -> Type where { | A : (k : Nat) --> At(m, FZ(m)) }
+data AtBad(m : Nat) : Fin(Succ(m)) -> Type where { | E : (k : Nat) --> AtBad(m, FZ(k)) }

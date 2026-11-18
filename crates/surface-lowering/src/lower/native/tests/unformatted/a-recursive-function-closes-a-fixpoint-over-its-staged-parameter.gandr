@@ -1,0 +1,2 @@
+{NAT}def rec plus(n : Nat, m : Nat) -> -F Nat {{ match m {{ | Zero => return n | Succ(p) => {{ let r = plus[<] n p; return Succ r }} }} }}
+def rec idle(n : Nat) -> -F Nat {{ return n }}

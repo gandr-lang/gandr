@@ -1,0 +1,5 @@
+{GROUP}rule Grp.invMul : inv (mul x y) <=> mul (inv y) (inv x);
+def uses(m : Model(Grp)) -> -F Unit {{
+  let law = Grp.invMul m;
+  return *{{}}
+}}

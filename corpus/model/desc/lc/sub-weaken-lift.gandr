@@ -1,0 +1,42 @@
+//! Law 3 moves a lifted substitution past weakening.
+//!
+//! `sub(sub(b, p), lift(s))` equals `sub(sub(b, s), p)`.
+//!
+//! The law does not hold by direct computation. The substitution stops at a
+//! variable `b`. An induction on `b` proves the law. `substSquare` takes it
+//! from the agreement of the two composites at every index.
+//!
+//! - see: #640
+
+// This source imports syntax and weakening lemmas.
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./lookup-weaken.gandr";
+import "./subst-subst.gandr";
+import "./subst-as-rename.gandr";
+
+/// A lookup under one binder is the lookup after substitution by shift one.
+def lookShiftedOnce(
+  s : Env,
+  n : N
+) -> Path(look n s (S Z), subst (look n s Z) (Shift (S Z))) =
+  Path.step (lookWeakens n s Z) (Path.back
+    (substRenames (look n s Z) (Shift (S Z)) (RShift (S Z)) (fun (i) {
+      shiftOneRenames i
+    })))
+
+/// The two composites of law 3 agree at every index.
+def weakenLiftAgree(
+  s : Env,
+  n : N
+) -> Path(subst (look n (Shift (S Z)) Z) (Lift s), subst (look n s Z) (Shift (S Z))) =
+  match n where
+    | Z => lookShiftedOnce s Z
+    | S(j) => lookShiftedOnce s (S j)
+
+/// The lift of a substitution after `wk` equals `wk` after the substitution.
+pub def subWeakenLift(
+  b : Term,
+  s : Env
+) -> Path(subst (subst b (Shift (S Z))) (Lift s), subst (subst b s) (Shift (S Z))) =
+  substSquare b (Shift (S Z)) (Lift s) s (Shift (S Z)) (fun (n) { weakenLiftAgree s n })

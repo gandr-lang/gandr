@@ -1,0 +1,7 @@
+data Color : Type where { | Red : Color | Green : Color }
+data Light : Type where { | Red : Light | Amber : Light }
+def paint : Color = Color.Red;
+def warm : Light = Light.Red;
+def lit(x : Light) -> Integer { match x { | Light.Red => 1 | Amber => 0 } }
+def stray : Light = Red;
+def guessed(x : Light) -> Integer { match x { | Red => 1 | Amber => 0 } }

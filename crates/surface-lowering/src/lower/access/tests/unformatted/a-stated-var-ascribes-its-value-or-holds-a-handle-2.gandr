@@ -1,0 +1,6 @@
+world seat;
+def located() -> -F (Integer at seat) {
+  var h : Integer at seat = 3;
+  pure h
+}
+def graded() -> -F Unit { var[1] h : Integer at seat = 3; pure *{} }

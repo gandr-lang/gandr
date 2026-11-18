@@ -1,0 +1,12 @@
+/// A record-schema flow from a translator. The judgement records the flow's
+/// images and dialogues, and a checkpoint keeps them by place.
+type Old = String * Integer;
+type New = Integer * String;
+
+/// The translator swaps the two fields.
+def toNew(old : Old) -> New =
+  match old where
+    | *{name, age} => *{age, name}
+
+/// The translator defines the schema flow.
+def upgrade : Flow[.A = Type](Old, New) = Flow.into toNew;

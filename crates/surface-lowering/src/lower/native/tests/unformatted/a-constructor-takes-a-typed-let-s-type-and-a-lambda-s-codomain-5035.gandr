@@ -1,0 +1,13 @@
+{MAYBE}data ObjTy : Type where {{ | Base : ObjTy }}
+data Ctx : Type where {{ | Empty : Ctx | Extend : (gamma : Ctx, a : ObjTy) --> Ctx }}
+data Var : (gamma : Ctx, a : ObjTy) --> Type where {{
+| Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
+| There : (gamma : Ctx, a : ObjTy, b : ObjTy, v : Var(gamma, a)) --> Var(Extend(gamma, b), a)
+}}
+def kept() -> Maybe(Integer) {{ let x : Maybe(Integer) = Some 3; x }}
+def here(g : Ctx, a : ObjTy) -> Var(Extend(g, a), a) {{ let x : Var(Extend(g, a), a) = Here g a; x }}
+def base() -> ObjTy {{ let y : ObjTy = Base; y }}
+def lifted() -> Integer -> Maybe(Integer) {{ return fun (n) {{ Some n }} }}
+def past(d : Ctx, b : ObjTy, a : ObjTy) -> Var(d, a) -> Var(Extend(d, b), a) {{
+return fun (x) {{ There d a b x }}
+}}
