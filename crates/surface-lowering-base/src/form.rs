@@ -4001,6 +4001,7 @@ pub fn misspelt_operator(
 /// # Adequacy
 /// - hypothesis: L3 — `=>>` held as an extra operand of a match arm that owes
 ///   its `=>` at the close of the block reads as `=>`, not as `>>`.
+/// - witness: `form::tests::a_form_names_the_tile_it_owes_after_a_run`
 /// - witness: `gandr-surface-lowering::lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
 ///
 /// # Cost
@@ -7207,6 +7208,32 @@ mod tests
             stray.to_string().contains("`def`")
                 && unended.to_string().contains("`end`")
                 && reserved.to_string().contains("`match`")
+        );
+    }
+
+    /// A match arm that holds `=>>` as an extra operand owes its `=>` at the
+    /// close of its block, and that owed tile is named after the run. A
+    /// form that owes nothing names no tile.
+    #[test]
+    fn a_form_names_the_tile_it_owes_after_a_run()
+    {
+        let pbg = grammar();
+        let broken =
+            include_str!("form/tests/unformatted/a-form-names-the-tile-it-owes-after-a-run.gandr");
+        let tree = repaired(&pbg, SourceText::from(broken));
+        let run = ByteOffset::from(broken.find("=>>").unwrap_or_default());
+        assert_eq!(
+            super::owed_tile(&pbg, &tree, tree.root(), run),
+            Some(TileName("=>")),
+            "the arm owes its `=>` after the run"
+        );
+        let clean = "def x = 3 ;";
+        let tree = parsed(&pbg, SourceText::from(clean));
+        let body = ByteOffset::from(clean.find('3').unwrap_or_default());
+        assert_eq!(
+            super::owed_tile(&pbg, &tree, tree.root(), body),
+            None,
+            "a clean declaration owes no tile"
         );
     }
 }
