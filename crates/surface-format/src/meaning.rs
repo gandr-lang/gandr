@@ -317,7 +317,7 @@ pub fn unelaborated(
 /// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
 /// - witness: `tests::rewrite::a_rewrite_is_checked_beside_every_kind_of_declaration`
 /// - witness: `tests::rewrite::a_rewrite_that_moves_a_refusal_keeps_its_site_6726`
-/// - witness: `gandr-surface-dispatcher::format::tests::a_tail_return_leaves_a_declaration_the_checker_refuses_6261`
+/// - witness: `tests::rewrite::a_tail_return_pairs_two_refusals_of_one_culprit_6261`
 ///
 /// # Cost
 /// - allocation: the differing declarations, growth within the module's

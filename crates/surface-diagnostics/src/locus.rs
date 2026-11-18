@@ -2575,6 +2575,11 @@ mod tests
                 })
             );
             assert_eq!(found.context, UNNAMED);
+            assert_eq!(
+                crate::location::blamed(CheckRefusal::DanglingNode { node }, declaration, &origins),
+                Maybe::Present(span),
+                "the site blamed is the primary locus"
+            );
         }
         let missing_value = arena.value_unit();
         let missing_computation = arena.computation_return(missing_value);
@@ -2596,6 +2601,11 @@ mod tests
                 Maybe::Absent(report_span::Absent::Unrecorded)
             );
             assert_eq!(found.context, UNNAMED);
+            assert_eq!(
+                crate::location::blamed(CheckRefusal::DanglingNode { node }, declaration, &origins),
+                Maybe::Absent(report_span::Absent::Unrecorded),
+                "an unrecorded node blames no site"
+            );
         }
     }
 

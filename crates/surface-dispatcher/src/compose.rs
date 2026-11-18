@@ -5202,6 +5202,7 @@ pub fn checking_context<'arena>(
 /// - witness: `format::tests::a_thunk_the_checker_inserts_is_left_to_it_1327`
 /// - witness: `format::tests::a_reduct_the_checker_applies_is_written_in_the_explicit_form_and_left_out_in_the_sugared`
 /// - witness: `format::tests::a_forgetting_map_the_checker_applies_is_written_out_only_in_the_explicit_form_2130`
+/// - witness: `format::tests::a_tail_return_leaves_a_declaration_the_checker_refuses_6261`
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Elaborating;
 

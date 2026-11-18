@@ -368,7 +368,7 @@ impl Locations
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Annotations::refusal`].
-/// - witness: `gandr-surface-dispatcher::format::tests::a_tail_return_leaves_a_declaration_the_checker_refuses_6261`
+/// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 #[inline]
 pub fn blamed(
     refusal: CheckRefusal,

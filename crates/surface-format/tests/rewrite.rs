@@ -9,12 +9,14 @@ use core::cell::Cell;
 
 use expect_test::expect;
 use gandr_core_term::CoreArena;
+use gandr_surface_diagnostics::Label;
 use gandr_surface_format::Beside;
 use gandr_surface_format::Elaborate;
 use gandr_surface_format::Elaboration;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::Formatted;
+use gandr_surface_format::Refused;
 use gandr_surface_format::RewriteName;
 use gandr_surface_format::Selection;
 use gandr_surface_format::Withdrawal;
@@ -32,6 +34,7 @@ use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 /// Every pair of the table in the explicit spelling, nested and
 /// parenthesised where the sugar needs it.
@@ -1250,6 +1253,10 @@ enum Answer
     Apart,
     /// None for the source: it refuses it as written.
     Refused,
+    /// No body for either; each declaration refused at its own span, blamed
+    /// on the first culprit in the source and the second in the rewritten
+    /// text.
+    RefusedAs(Label, Label),
 }
 
 /// A checker whose elaborations the test decides, counting the modules it is
@@ -1283,10 +1290,20 @@ impl Elaborate for Oracle
                 .iter()
                 .map(|_| match (self.answer, asked) {
                     (Answer::Alike, _) | (Answer::Apart, 0) => Some(arena.value_unit()),
-                    (Answer::Apart | Answer::Refused, _) => None,
+                    (Answer::Apart | Answer::Refused | Answer::RefusedAs(..), _) => None,
                 })
                 .collect(),
-            refusals: Vec::new(),
+            refusals: module
+                .declarations()
+                .iter()
+                .map(|declaration| match self.answer {
+                    Answer::RefusedAs(before, after) => Some(Refused {
+                        culprit: if asked == 0 { before } else { after },
+                        site: Maybe::Present(declaration.span()),
+                    }),
+                    Answer::Alike | Answer::Apart | Answer::Refused => None,
+                })
+                .collect(),
             crossings: BTreeMap::new(),
         }
     }
@@ -1371,6 +1388,69 @@ fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
         format(None),
         (String::from(source), Vec::new()),
         "with no checker, the return stays and nothing is withdrawn"
+    );
+}
+
+/// #6261: a tail's `return` before a function value, which lowers to other
+/// core without it, leaves a declaration the checker refuses alike at one
+/// site either way, and stays, reported, where the two refusals blame other
+/// culprits.
+#[test]
+fn a_tail_return_pairs_two_refusals_of_one_culprit_6261()
+{
+    let grammar = grammar();
+    let source = include_str!(
+        "rewrite/unformatted/a-tail-return-pairs-two-refusals-of-one-culprit-6261.gandr"
+    );
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        rewrites: Selection::Only(&[RewriteName::TailReturn]),
+        ..FormatOptions::default()
+    };
+    let unit = Unit::new(Vec::from([
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(ByteOffset::from(1_usize), Vec::new()),
+    ]))
+    .expect("the unit is well formed");
+    let format = |answer: Answer| {
+        let oracle = Oracle {
+            answer,
+            asked: Cell::new(0),
+        };
+        let beside = Beside::Imports {
+            before: SourceText::from("\n"),
+            unit: &unit,
+        };
+        let formatted = format_beside(&grammar, &parsed, options, (beside, Some(&oracle)))
+            .expect("the source formats");
+        let withdrawn: Vec<(String, Withdrawn)> = formatted
+            .withdrawn()
+            .iter()
+            .map(|withdrawal| (withdrawal.declaration.clone(), withdrawal.reason.clone()))
+            .collect();
+        (formatted.into_text(), withdrawn)
+    };
+    assert_eq!(
+        format(Answer::RefusedAs(Label::Expected, Label::Expected)),
+        (source.replace("return fun", "fun"), Vec::new()),
+        "one culprit at one site, the tail is the function value"
+    );
+    assert_eq!(
+        format(Answer::RefusedAs(Label::Expected, Label::Synthesised)),
+        (
+            String::from(source),
+            Vec::from([(String::from("bad"), Withdrawn::Lowered)])
+        ),
+        "another culprit, the declaration keeps its spelling, reported"
+    );
+    assert_eq!(
+        format(Answer::Refused),
+        (
+            String::from(source),
+            Vec::from([(String::from("bad"), Withdrawn::Lowered)])
+        ),
+        "no refusal answered, the declaration keeps its spelling, reported"
     );
 }
 
