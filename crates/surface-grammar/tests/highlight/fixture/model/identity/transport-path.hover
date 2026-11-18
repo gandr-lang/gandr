@@ -149,11 +149,11 @@
 46:87-46:87 2 ⇒ Integer @46:87-46:88
 46:88-46:88 ; ⇒ along_here : Path[.A = Integer](Path.walk (fun (a) { a }) (Path.here Integer) 2, 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @46:1-46:89
 49:1-49:12 @[runs("2")] ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @49:1-50:1
-50:1-50:3 def ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:33
+50:1-50:3 def ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:83
 50:5-50:19 along_here_run( ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:5-50:19
-50:20-50:23 ) -> ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:33
+50:20-50:23 ) -> ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:83
 50:25-50:31 Integer ⇒ Integer : Type @50:25-50:32
-50:33-50:33 { ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:84
+50:33-50:33 = ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:83
 50:35-50:45 Path.walk ( ⇒ Path.walk (fun (X) { X }) (Path.here Integer) 2 : -F Integer @50:35-50:82
 50:46-50:50 fun ( ⇒ fun (X) { X } : Type @50:46-50:59
 50:51-50:51 X ⇒ X : Type @50:51-50:52
@@ -165,4 +165,4 @@
 50:72-50:78 Integer ⇒ Integer : Type @50:72-50:79
 50:79-50:79 ) ⇒ Path.walk (fun (X) { X }) (Path.here Integer) 2 : -F Integer @50:35-50:82
 50:81-50:81 2 ⇒ Integer @50:81-50:82
-50:83-50:83 } ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:84
+50:82-50:82 ; ⇒ along_here_run : () -> Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @50:1-50:83
