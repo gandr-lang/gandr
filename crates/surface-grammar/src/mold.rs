@@ -2605,10 +2605,10 @@ enum WalkFrame<'regex>
     {
         /// The subtree.
         regex: RegexView<'regex>,
-        /// What can stand to its left.
-        left: FaceCtx,
-        /// What can stand to its right.
-        right: FaceCtx,
+        /// What can stand to its left, shared with its siblings' frames.
+        left: alloc::sync::Arc<FaceCtx>,
+        /// What can stand to its right, shared with its siblings' frames.
+        right: alloc::sync::Arc<FaceCtx>,
         /// Its canonical context path.
         path: String,
     },
@@ -2652,6 +2652,10 @@ enum WalkFrame<'regex>
 ///   facet provenance without copying the existing output prefix.
 /// - witness: `mold::tests::occurrence_order_and_nullable_seams_are_exact`
 /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
+///
+/// # Cost
+/// - allocation: the frame stack and the shared faces of each frame, growth
+///   within the regex's nodes
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -2673,8 +2677,8 @@ fn walk_regex(
 {
     let mut frames = vec![WalkFrame::Enter {
         regex,
-        left: left.clone(),
-        right: right.clone(),
+        left: alloc::sync::Arc::new(left.clone()),
+        right: alloc::sync::Arc::new(right.clone()),
         path: String::from(path.0),
     }];
     let mut values = Vec::new();
@@ -2768,8 +2772,8 @@ fn walk_regex(
                         }
                         frames.push(WalkFrame::Enter {
                             regex: item,
-                            left: child_left,
-                            right: child_right,
+                            left: alloc::sync::Arc::new(child_left),
+                            right: alloc::sync::Arc::new(child_right),
                             path: child_path,
                         });
                     }
@@ -2802,8 +2806,8 @@ fn walk_regex(
                         }
                         frames.push(WalkFrame::Enter {
                             regex: item,
-                            left: node_left.clone(),
-                            right: node_right.clone(),
+                            left: alloc::sync::Arc::clone(&node_left),
+                            right: alloc::sync::Arc::clone(&node_right),
                             path: child_path,
                         });
                     }

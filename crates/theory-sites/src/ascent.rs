@@ -521,7 +521,7 @@ impl<Below: Certificate> Certificate for WreathStratum<Below>
         ) {
             (Some(mine), Some(theirs)) => pair(
                 &self.wreath,
-                (cocone, &self.below),
+                (cocone, &*self.below),
                 (mine, map),
                 (theirs, other),
             ),
@@ -854,7 +854,7 @@ pub struct WreathStratum<Below: Certificate = SegalStratum>
     /// The wreath.
     wreath: Arc<Above<Below>>,
     /// The certificate of the level below.
-    below: Below,
+    below: Arc<Below>,
     /// The degree.
     degree: Degree,
     /// The cocone of each object of degree two to the degree, in wreath
@@ -891,6 +891,10 @@ impl<Below: Certificate> WreathStratum<Below>
     /// - witness: `tests::stratum::the_whisker_and_both_composites_are_certified_at_level_two`
     /// - witness: `tests::stratum::two_cells_each_the_others_source_are_refused_at_level_two`
     /// - witness: `tests::stratum::the_chains_at_level_three_are_certified_from_level_two`
+    ///
+    /// # Cost
+    /// - allocation: the shared level below and the cocones, growth within the
+    ///   wreath's objects
     #[inline]
     #[spec(ensures: |ref result| match *result {
         Ok(ref stratum) => stratum.cocones.iter().all(|cocone| {
@@ -903,12 +907,15 @@ impl<Below: Certificate> WreathStratum<Below>
         },
         Err(_) => true,
     })]
-    pub fn certify(
+    pub fn certify<B>(
         wreath: Arc<Above<Below>>,
         degree: Degree,
-        below: Below,
+        below: B,
     ) -> Result<Self, LevelUncertified<ObjectOf<Below>, MapOf<Below>>>
+    where
+        B: Into<Arc<Below>>,
     {
+        let below = below.into();
         if degree < Degree::from(1_usize)
             || wreath
                 .objects()
@@ -922,7 +929,7 @@ impl<Below: Certificate> WreathStratum<Below>
                 case: Box::new(witness),
             });
         }
-        let (outcome, cocones) = walk(&wreath, &below, degree);
+        let (outcome, cocones) = walk(&wreath, &*below, degree);
         if let Outcome::Fails { witness, .. } = outcome {
             return Err(LevelUncertified::Condition {
                 failure: Box::new(witness),
@@ -964,7 +971,7 @@ impl<Below: Certificate> WreathStratum<Below>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn below(&self) -> &Below
+    pub fn below(&self) -> &Below
     {
         &self.below
     }
@@ -1172,6 +1179,10 @@ fn level_one(
 ///   the cells of the vertical composite's suspension.
 /// - witness: `tests::stratum::the_whisker_and_both_composites_are_certified_at_level_two`
 /// - witness: `tests::stratum::the_chains_at_level_three_are_certified_from_level_two`
+///
+/// # Cost
+/// - allocation: the shared outer corolla, the cells and the glue, growth
+///   within the object's columns
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |cocone| {
     cocone.object == index && cocone.cells.iter().all(|cell| usize::from(cell.column) < object.columns().len())
 }))]
@@ -1201,7 +1212,9 @@ where
     for (position, (outer, column)) in outer_inclusions.iter().zip(object.columns()).enumerate() {
         let vertex = Edge::from(position);
         let uncovered = LevelDefect::Uncovered { column: vertex };
-        let outer_corolla = corolla(outer.corolla).ok_or_else(|| uncovered.clone())?;
+        let outer_corolla: alloc::sync::Arc<Shape> = corolla(outer.corolla)
+            .ok_or_else(|| uncovered.clone())?
+            .into();
         let places: Vec<Place<Below>> = match below.cover(column) {
             Maybe::Absent(()) => return Err(uncovered),
             Maybe::Present(Cover::Empty) => {
@@ -1225,8 +1238,9 @@ where
             },
         };
         for (spot, column_object, inner_map) in places {
-            let cell = WreathShape::new(outer_corolla.clone(), vec![column_object])
-                .map_err(|_columns| uncovered.clone())?;
+            let cell =
+                WreathShape::new(alloc::sync::Arc::clone(&outer_corolla), vec![column_object])
+                    .map_err(|_columns| uncovered.clone())?;
             let Maybe::Present(at) = wreath.find(&cell)
             else {
                 return Err(uncovered);

@@ -426,7 +426,7 @@ pub enum Invertibility
 pub struct SiteMap
 {
     /// The image `S_v` of each source vertex, in vertex order.
-    images: Box<[VertexSet]>,
+    images: alloc::sync::Arc<[VertexSet]>,
     /// The image `φ(w)` of each source wire, in wire order.
     wires: Box<[Wire]>,
 }
@@ -437,15 +437,20 @@ impl SiteMap
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared vertex images and the wire images, setup
     #[inline]
     #[must_use]
-    pub fn new(
-        images: Vec<VertexSet>,
+    pub fn new<I>(
+        images: I,
         wires: Vec<Wire>,
     ) -> Self
+    where
+        I: Into<alloc::sync::Arc<[VertexSet]>>,
     {
         Self {
-            images: images.into_boxed_slice(),
+            images: images.into(),
             wires: wires.into_boxed_slice(),
         }
     }
@@ -463,6 +468,9 @@ impl SiteMap
     ///   bijection onto its singletons.
     /// - witness: `tests::maps::the_class_is_a_category_at_the_bound`
     /// - witness: `tests::maps::map_forms_read_back`
+    ///
+    /// # Cost
+    /// - allocation: the shared vertex images and the wire images, setup
     #[inline]
     #[must_use]
     #[spec(ensures: |ref identity| [
@@ -485,7 +493,7 @@ impl SiteMap
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn images(&self) -> &[VertexSet]
+    pub fn images(&self) -> &[VertexSet]
     {
         &self.images
     }
@@ -987,6 +995,9 @@ impl SiteMap
     /// - witness: `tests::maps::the_class_is_a_category_at_the_bound`
     /// - witness: `tests::maps::a_contraction_composes_with_a_deletion`
     /// - witness: `map::tests::composition_refuses_a_missing_image`
+    ///
+    /// # Cost
+    /// - allocation: the composite's images, setup
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -1173,6 +1184,9 @@ impl SiteMap
     ///   beside a point, each read back to its hand-written form; together they
     ///   reach every arm of all three readings.
     /// - witness: `tests::maps::map_forms_read_back`
+    ///
+    /// # Cost
+    /// - allocation: the map read back from its form, setup
     #[inline]
     #[must_use]
     #[cfg_attr(
@@ -1467,6 +1481,10 @@ impl Odometer
 ///   of shapes at the bound.
 /// - witness: `tests::maps::hom_counts_match_hand_counts`
 /// - witness: `tests::maps::the_enumerator_agrees_with_brute_force`
+///
+/// # Cost
+/// - allocation: the maps, one shared copy of each assignment's images and the
+///   buffers, growth within the hom-set
 #[inline]
 #[must_use]
 #[spec(ensures: |ref maps| [
@@ -1491,6 +1509,7 @@ pub fn homs(
         }
         let candidates = wire_candidates(source, target, images);
         let choices: Vec<Choices> = candidates.iter().map(|list| Choices(list.len())).collect();
+        let shared: alloc::sync::Arc<[VertexSet]> = images.into();
         let mut picking = Odometer::new(choices);
         while picking.turn() == Progress::Running {
             let wires: Vec<Wire> = picking
@@ -1499,7 +1518,7 @@ pub fn homs(
                 .zip(candidates.iter())
                 .filter_map(|pair| pair.1.get(pair.0.0).copied())
                 .collect();
-            let map = SiteMap::new(images.to_vec(), wires);
+            let map = SiteMap::new(alloc::sync::Arc::clone(&shared), wires);
             if map
                 .check_with(source.graph(), target.graph(), &mut marks)
                 .is_ok()

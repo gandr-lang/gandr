@@ -562,7 +562,7 @@ pub struct Overlap<A: CellAlphabet = SequentAlphabet>
     pub peak: A::Cmd,
     /// The right cell renamed apart from the left, which the unifier's
     /// bindings on the right read against.
-    right_renamed: Cell<A>,
+    right_renamed: alloc::sync::Arc<Cell<A>>,
 }
 
 impl<A: CellAlphabet> Overlap<A>
@@ -591,11 +591,14 @@ impl<A: CellAlphabet> Overlap<A>
     ///   rather than silently admitting a malformed pair.
     /// - witness: `tests::completion::supplied_overlap_validation_returns_typed_declines`
     /// - witness: `tests::completion::supplied_non_unifying_decline_is_typed`
+    ///
+    /// # Cost
+    /// - allocation: the shared renamed cell, setup
     #[inline]
     #[must_use]
     #[spec(captures: supplied = (unifier.clone(), seam.clone()), ensures: |output| output.left == left.0 && output.right == right.0
         && output.kind == OverlapKind::Confluence && output.unifier == supplied.0 && output.seam == supplied.1
-        && output.peak == A::apply_subst(&output.unifier, left.1.lhs()) && output.right_renamed == renamed_apart(left.1, right.1))]
+        && output.peak == A::apply_subst(&output.unifier, left.1.lhs()) && *output.right_renamed == renamed_apart(left.1, right.1))]
     pub fn from_supplied_confluence(
         left: (CellId, &Cell<A>),
         right: (CellId, &Cell<A>),
@@ -614,7 +617,7 @@ impl<A: CellAlphabet> Overlap<A>
             unifier,
             seam,
             peak,
-            right_renamed,
+            right_renamed: alloc::sync::Arc::new(right_renamed),
         }
     }
 
@@ -701,7 +704,7 @@ impl<A: CellAlphabet> Overlap<A>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn right_renamed(&self) -> &Cell<A>
+    pub fn right_renamed(&self) -> &Cell<A>
     {
         &self.right_renamed
     }
@@ -737,7 +740,7 @@ impl<A: CellAlphabet> Overlap<A>
             unifier: self.unifier.clone(),
             seam: self.seam.clone(),
             peak,
-            right_renamed: self.right_renamed.clone(),
+            right_renamed: alloc::sync::Arc::clone(&self.right_renamed),
         }
     }
 
@@ -933,6 +936,10 @@ where
 /// - witness: `tests::overlap::every_confluence_entry_carries_the_root_seam`
 /// - witness: `tests::second_inhabitant::every_toy_confluence_entry_carries_the_root_seam`
 /// - witness: `overlap::tests::overlap_reducts_preserve_refusal_precedence`
+///
+/// # Cost
+/// - allocation: the shared renamed cell and the overlaps, growth within the
+///   pair's seams
 #[inline]
 #[must_use]
 #[spec(ensures: |output| output.iter().all(|overlap| overlap.left == left.0 && overlap.right == right.0
@@ -952,7 +959,7 @@ where
 {
     let (left_id, left_cell) = left;
     let (right_id, right_cell) = right;
-    let renamed = renamed_apart(left_cell, right_cell);
+    let renamed = alloc::sync::Arc::new(renamed_apart(left_cell, right_cell));
     let mut out = root_overlap(left, right, &renamed);
     for seam in A::command_positions(left_cell.rhs()) {
         let Maybe::Present(sub) = A::subterm_cmd_at(left_cell.rhs(), &seam)
@@ -969,7 +976,7 @@ where
                 unifier,
                 seam,
                 peak,
-                right_renamed: renamed.clone(),
+                right_renamed: alloc::sync::Arc::clone(&renamed),
             });
         }
     }
@@ -994,6 +1001,9 @@ where
 ///   entry changes them.
 /// - witness: `completion::tests::joinability_separates_joined_divergent_and_undecided_pairs`
 /// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
+///
+/// # Cost
+/// - allocation: the shared renamed cell and at most one overlap, setup
 #[inline]
 #[must_use]
 #[spec(ensures: |output| *output == overlaps_between(left, right).into_iter().filter(|overlap| overlap.kind == OverlapKind::Confluence).collect::<Vec<_>>())]
@@ -1011,7 +1021,11 @@ where
     if A::root_agreement(left.1.lhs(), right.1.lhs()) == RootAgreement::Clash {
         return Vec::new();
     }
-    root_overlap(left, right, &renamed_apart(left.1, right.1))
+    root_overlap(
+        left,
+        right,
+        &alloc::sync::Arc::new(renamed_apart(left.1, right.1)),
+    )
 }
 
 /// The root confluence entry of two cells, the right one already renamed
@@ -1029,6 +1043,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`overlaps_between`]'s confluence entry.
 /// - witness: `tests::overlap::the_pair_query_agrees_with_the_store_wide_family`
+///
+/// # Cost
+/// - allocation: at most one overlap, setup
 #[spec(ensures: |output| output.len() <= usize::from(left.0 != right.0)
     && output.iter().all(|overlap| overlap.left == left.0 && overlap.right == right.0
         && overlap.kind == OverlapKind::Confluence && overlap.seam == A::root_position()
@@ -1036,7 +1053,7 @@ where
 fn root_overlap<A>(
     left: (CellId, &Cell<A>),
     right: (CellId, &Cell<A>),
-    renamed: &Cell<A>,
+    renamed: &alloc::sync::Arc<Cell<A>>,
 ) -> Vec<Overlap<A>>
 where
     A: CellAlphabet,
@@ -1057,7 +1074,7 @@ where
         unifier,
         seam: A::root_position(),
         peak,
-        right_renamed: renamed.clone(),
+        right_renamed: alloc::sync::Arc::clone(renamed),
     }]
 }
 
@@ -1089,6 +1106,10 @@ where
 ///   A root entry, a skipped diagonal, a variable seam or a wrong peak changes
 ///   those families.
 /// - witness: `tests::second_inhabitant::interior_overlaps_reach_below_the_root_and_join_or_diverge`
+///
+/// # Cost
+/// - allocation: the seams, the shared renamed cell and the overlaps, growth
+///   within the pair's seams
 #[inline]
 #[must_use]
 #[spec(ensures: |output| output.iter().all(|overlap| overlap.left == left.0 && overlap.right == right.0
@@ -1120,7 +1141,7 @@ where
     if seams.is_empty() {
         return Vec::new();
     }
-    let renamed = renamed_apart(left_cell, right_cell);
+    let renamed = alloc::sync::Arc::new(renamed_apart(left_cell, right_cell));
     let mut out = Vec::new();
     for (seam, sub) in seams {
         let mut unifier = A::Subst::default();
@@ -1133,7 +1154,7 @@ where
                 unifier,
                 seam,
                 peak,
-                right_renamed: renamed.clone(),
+                right_renamed: alloc::sync::Arc::clone(&renamed),
             });
         }
     }

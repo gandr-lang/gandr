@@ -778,6 +778,10 @@ impl LawvereTheory
     /// - hypothesis: L3 — the truncation of a theory with a rule holds no term
     ///   that the rule rewrites.
     /// - witness: `tests::lawvere::the_boundary_of_each_boundary_in_a_truncation_is_zero`
+    ///
+    /// # Cost
+    /// - allocation: the forms of each size and their tuples, growth within the
+    ///   weight bound
     fn normal_forms(
         &mut self,
         context: Arity,
@@ -810,8 +814,8 @@ impl LawvereTheory
                             .map_or(&[][..], Vec::as_slice);
                         for tuple in &tuples {
                             for &argument in arguments {
-                                let mut next = tuple.clone();
-                                next.push(argument);
+                                let next: Vec<_> =
+                                    tuple.iter().copied().chain([argument]).collect();
                                 longer.push(next);
                             }
                         }
@@ -853,6 +857,10 @@ impl LawvereTheory
     /// - hypothesis: L3 — a theory whose rules keep their variables has a
     ///   boundary of each boundary that is zero, which a missing face breaks.
     /// - witness: `tests::lawvere::the_boundary_of_each_boundary_in_a_truncation_is_zero`
+    ///
+    /// # Cost
+    /// - allocation: the cells of each degree and their arrows, growth within
+    ///   the weight bound
     #[inline]
     pub fn truncation(
         &mut self,
@@ -883,11 +891,15 @@ impl LawvereTheory
                     .saturating_sub(usize::from(cell.weight(&self.table)?));
                 for (context, sized) in forms.iter().enumerate() {
                     for terms in tuples((sized, &self.table), target, TermSize::from(room))? {
-                        let mut arrows = cell.0.clone();
-                        arrows.push(Arrow {
-                            source: Arity::from(context),
-                            terms,
-                        });
+                        let arrows: Vec<Arrow> = cell
+                            .0
+                            .iter()
+                            .cloned()
+                            .chain([Arrow {
+                                source: Arity::from(context),
+                                terms,
+                            }])
+                            .collect();
                         let candidate = BarCell(arrows);
                         if candidate.degeneracy(&self.table)? == Degeneracy::Proper {
                             candidates.push(candidate);
@@ -937,6 +949,10 @@ enum Task
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the pending prefixes and the size splits, growth within the
+///   weight bound
 fn compositions(
     total: TermSize,
     parts: Arity,
@@ -954,8 +970,11 @@ fn compositions(
         }
         let after = parts.saturating_sub(prefix.len()).saturating_sub(1);
         for first in 1 ..= remaining.saturating_sub(after) {
-            let mut next = prefix.clone();
-            next.push(TermSize::from(first));
+            let next: Vec<TermSize> = prefix
+                .iter()
+                .copied()
+                .chain([TermSize::from(first)])
+                .collect();
             pending.push((next, remaining.saturating_sub(first)));
         }
     }
@@ -967,6 +986,9 @@ fn compositions(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the tuples of each length, growth within the weight bound
 fn tuples(
     (sized, table): (&[Vec<TermPlace>], &TermTable),
     length: Arity,
@@ -985,8 +1007,7 @@ fn tuples(
                     if total > room {
                         continue;
                     }
-                    let mut next = tuple.clone();
-                    next.push(form);
+                    let next: Vec<_> = tuple.iter().copied().chain([form]).collect();
                     longer.push((next, total));
                 }
             }

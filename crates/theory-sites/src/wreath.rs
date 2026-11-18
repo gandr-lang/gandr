@@ -134,7 +134,7 @@ use crate::shape::VertexOrders;
 pub struct WreathShape<Object>
 {
     /// The outer shape.
-    outer: Shape,
+    outer: alloc::sync::Arc<Shape>,
     /// The inner objects, one per outer vertex.
     columns: Box<[Object]>,
 }
@@ -159,16 +159,22 @@ impl<Object> WreathShape<Object>
     ///   and a column short is refused with both counts.
     /// - witness: `tests::theta::the_chain_restriction_holds_theta_two_at_the_bound`
     /// - witness: `tests::theta::a_cycle_at_the_outer_level_is_refused_by_name`
+    ///
+    /// # Cost
+    /// - allocation: the shared outer shape and the columns, setup
     #[inline]
     #[spec(ensures: |ref result| match *result {
         Ok(ref object) => object.columns.len() == usize::from(object.outer.vertex_count()),
         Err(WreathShapeObstruction::Columns { vertices, columns }) => vertices != columns,
     })]
-    pub fn new(
-        outer: Shape,
+    pub fn new<O>(
+        outer: O,
         columns: Vec<Object>,
     ) -> Result<Self, WreathShapeObstruction>
+    where
+        O: Into<alloc::sync::Arc<Shape>>,
     {
+        let outer = outer.into();
         let vertices = outer.vertex_count();
         if columns.len() != usize::from(vertices) {
             return Err(WreathShapeObstruction::Columns {
@@ -188,7 +194,7 @@ impl<Object> WreathShape<Object>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn outer(&self) -> &Shape
+    pub fn outer(&self) -> &Shape
     {
         &self.outer
     }
@@ -491,6 +497,10 @@ impl<Inner: Level> Wreath<Inner>
     ///   it, in its order, with its hom sets; an object past the bound and one
     ///   outside the chains are named as [`Level::find`] names them.
     /// - witness: `tests::theta::the_faces_are_the_full_sub_wreath_on_the_objects_with_a_map_in_7453`
+    ///
+    /// # Cost
+    /// - allocation: the faces' objects and maps, growth within the object's
+    ///   faces
     #[inline]
     #[spec(ensures: |ref faces| match *faces {
         Maybe::Present(ref faces) => faces.homs.len() == faces.objects.len().saturating_mul(faces.objects.len())
@@ -657,6 +667,9 @@ impl<Inner: Level> Wreath<Inner>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the object's shared outer shape and its columns, setup
     fn object_of(
         outer: &Catalogue,
         inner: &Inner,
@@ -670,7 +683,7 @@ impl<Inner: Level> Wreath<Inner>
             .filter_map(|column| inner.objects().get(usize::from(*column)).cloned())
             .collect();
         Some(WreathShape {
-            outer: outer_shape,
+            outer: alloc::sync::Arc::new(outer_shape),
             columns,
         })
     }
@@ -695,6 +708,10 @@ impl<Inner: Level> Wreath<Inner>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the tuples, the two scratch tuples of each tuple and the
+    ///   classes, growth within the wreath's classes
     fn classes(
         outer: &Catalogue,
         inner: &Inner,
@@ -728,19 +745,21 @@ impl<Inner: Level> Wreath<Inner>
                 &mut tuples,
             );
             for tuple in &tuples {
-                let least = automorphisms
-                    .iter()
-                    .map(|permutation| {
-                        let mut moved = tuple.clone();
-                        for (vertex, column) in permutation.iter().zip(tuple) {
-                            if let Some(slot) = moved.get_mut(usize::from(*vertex)) {
-                                *slot = *column;
-                            }
+                let mut least = tuple.clone();
+                let mut moved = tuple.clone();
+                let mut first = true;
+                for permutation in &automorphisms {
+                    moved.copy_from_slice(tuple);
+                    for (vertex, column) in permutation.iter().zip(tuple) {
+                        if let Some(slot) = moved.get_mut(usize::from(*vertex)) {
+                            *slot = *column;
                         }
-                        moved
-                    })
-                    .min()
-                    .unwrap_or_else(|| tuple.clone());
+                    }
+                    if first || moved < least {
+                        core::mem::swap(&mut least, &mut moved);
+                        first = false;
+                    }
+                }
                 let total = least
                     .iter()
                     .filter_map(|column| sizes.get(usize::from(*column)))
@@ -1373,6 +1392,9 @@ impl<Inner: Level> Level for Wreath<Inner>
     ///   that missed an order would split a class or merge two.
     /// - witness: `tests::wreath::the_wreath_holds_one_object_per_class`
     /// - witness: `tests::theta::the_chain_restriction_is_the_full_sub_site_of_the_wreath`
+    ///
+    /// # Cost
+    /// - allocation: the key's columns, setup
     #[inline]
     #[spec(ensures: |ref key| key.vertices == object.outer.vertex_count() && key.columns.len() == object.columns.len())]
     fn key(object: &Self::Object) -> Self::Key
