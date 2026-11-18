@@ -270,7 +270,7 @@ fn an_identity_row_answers_as_its_evaluation()
     let literal = |scalar: &Scalar| match *scalar {
         Scalar::Integer(ref integer) => Literal::Integer(integer.clone()),
         Scalar::Text(ref text) => Literal::Text(text.clone()),
-        Scalar::Boolean(_) | Scalar::Float64(_) | Scalar::Fixed(_) => {
+        Scalar::Boolean(_) | Scalar::Float64(_) | Scalar::Fixed(_) | Scalar::Checked(_) => {
             panic!("the fixtures are integers and texts")
         },
     };
@@ -515,6 +515,12 @@ fn a_width_converts_exactly_and_an_integer_by_its_remainder()
         FixedInteger::U64(u64::MAX),
         FixedInteger::I32(i32::MIN),
         FixedInteger::I64(i64::MIN),
+        FixedInteger::U8(u8::MAX),
+        FixedInteger::U16(u16::MAX),
+        FixedInteger::I8(i8::MIN),
+        FixedInteger::I16(i16::MIN),
+        FixedInteger::Usize(u64::MAX),
+        FixedInteger::Isize(i64::MIN),
     ] {
         let width = operand.width();
         let width: &str = width.as_ref();
@@ -548,6 +554,206 @@ fn a_width_converts_exactly_and_an_integer_by_its_remainder()
         Err(PrimitiveError::ArgumentType),
         "a width row from the integers refuses a width"
     );
+}
+
+#[test]
+fn each_width_form_answers_at_its_bounds()
+{
+    let apply = |name: &'static str, operands: &[FixedInteger]| {
+        let operands: Vec<Scalar> = operands.iter().copied().map(Scalar::Fixed).collect();
+        let borrowed: Vec<_> = operands.iter().map(Scalar::borrowed).collect();
+        named(PrimitiveName(name)).evaluate(&borrowed)
+    };
+    let present = |fixed| Ok(Scalar::Checked(CheckedFixed::Present(fixed)));
+    let absent = |width| Ok(Scalar::Checked(CheckedFixed::Absent(width)));
+    let truth = |side| Ok(Scalar::Boolean(side));
+    let (u8, i8) = (FixedInteger::U8, FixedInteger::I8);
+    let cases = [
+        (
+            "u8.wrapping_add",
+            [u8(255), u8(1)],
+            Ok(Scalar::Fixed(u8(0))),
+        ),
+        (
+            "u8.wrapping_sub",
+            [u8(0), u8(1)],
+            Ok(Scalar::Fixed(u8(255))),
+        ),
+        (
+            "i8.wrapping_mul",
+            [i8(-128), i8(-1)],
+            Ok(Scalar::Fixed(i8(-128))),
+        ),
+        (
+            "u8.saturating_add",
+            [u8(255), u8(1)],
+            Ok(Scalar::Fixed(u8(255))),
+        ),
+        (
+            "i8.saturating_sub",
+            [i8(-128), i8(1)],
+            Ok(Scalar::Fixed(i8(-128))),
+        ),
+        (
+            "i8.saturating_mul",
+            [i8(-128), i8(-1)],
+            Ok(Scalar::Fixed(i8(127))),
+        ),
+        ("u8.checked_add", [u8(255), u8(1)], absent(IntegerWidth::U8)),
+        ("u8.checked_add", [u8(254), u8(1)], present(u8(255))),
+        (
+            "i8.checked_sub",
+            [i8(-128), i8(1)],
+            absent(IntegerWidth::I8),
+        ),
+        ("i8.checked_mul", [i8(-64), i8(2)], present(i8(-128))),
+        (
+            "i8.wrapping_div",
+            [i8(-128), i8(-1)],
+            Ok(Scalar::Fixed(i8(-128))),
+        ),
+        (
+            "i8.wrapping_div",
+            [i8(-7), i8(2)],
+            Ok(Scalar::Fixed(i8(-3))),
+        ),
+        (
+            "i8.wrapping_rem",
+            [i8(-7), i8(2)],
+            Ok(Scalar::Fixed(i8(-1))),
+        ),
+        (
+            "u8.wrapping_div",
+            [u8(7), u8(0)],
+            Err(PrimitiveError::DivisionByZero),
+        ),
+        (
+            "u8.wrapping_rem",
+            [u8(7), u8(0)],
+            Err(PrimitiveError::DivisionByZero),
+        ),
+        (
+            "u8.and",
+            [u8(0b1100), u8(0b1010)],
+            Ok(Scalar::Fixed(u8(0b1000))),
+        ),
+        (
+            "u8.or",
+            [u8(0b1100), u8(0b1010)],
+            Ok(Scalar::Fixed(u8(0b1110))),
+        ),
+        (
+            "u8.xor",
+            [u8(0b1100), u8(0b1010)],
+            Ok(Scalar::Fixed(u8(0b0110))),
+        ),
+        ("i8.lt", [i8(-1), i8(0)], truth(Side::Left)),
+        ("u8.ge", [u8(0), u8(255)], truth(Side::Right)),
+        ("u8.eq", [u8(255), u8(255)], truth(Side::Left)),
+        ("u8.ne", [u8(255), u8(255)], truth(Side::Right)),
+        ("u8.le", [u8(255), u8(255)], truth(Side::Left)),
+        ("i8.gt", [i8(0), i8(-1)], truth(Side::Left)),
+        ("u8.checked_shl", [u8(1), u8(7)], present(u8(128))),
+        ("u8.checked_shl", [u8(1), u8(8)], absent(IntegerWidth::U8)),
+        ("i8.checked_shr", [i8(-128), i8(7)], present(i8(-1))),
+        ("i8.checked_shr", [i8(1), i8(-1)], absent(IntegerWidth::I8)),
+    ];
+    for (name, operands, expected) in cases {
+        assert_eq!(apply(name, &operands), expected, "{name} at {operands:?}");
+    }
+    assert_eq!(
+        apply("u8.not", &[u8(0b1010_0101)]),
+        Ok(Scalar::Fixed(u8(0b0101_1010))),
+        "`not` flips each bit"
+    );
+    for (name, operands, expected) in [
+        (
+            "u32.checked_shl",
+            [FixedInteger::U32(1), FixedInteger::U32(32)],
+            absent(IntegerWidth::U32),
+        ),
+        (
+            "u16.wrapping_add",
+            [FixedInteger::U16(u16::MAX), FixedInteger::U16(1)],
+            Ok(Scalar::Fixed(FixedInteger::U16(0))),
+        ),
+        (
+            "i16.checked_add",
+            [FixedInteger::I16(i16::MAX), FixedInteger::I16(1)],
+            absent(IntegerWidth::I16),
+        ),
+        (
+            "usize.wrapping_add",
+            [FixedInteger::Usize(u64::MAX), FixedInteger::Usize(1)],
+            Ok(Scalar::Fixed(FixedInteger::Usize(0))),
+        ),
+        (
+            "isize.saturating_sub",
+            [FixedInteger::Isize(i64::MIN), FixedInteger::Isize(1)],
+            Ok(Scalar::Fixed(FixedInteger::Isize(i64::MIN))),
+        ),
+        (
+            "u64.checked_mul",
+            [FixedInteger::U64(u64::MAX), FixedInteger::U64(2)],
+            absent(IntegerWidth::U64),
+        ),
+        (
+            "i32.wrapping_add",
+            [FixedInteger::I32(i32::MAX), FixedInteger::I32(1)],
+            Ok(Scalar::Fixed(FixedInteger::I32(i32::MIN))),
+        ),
+        (
+            "i64.checked_shr",
+            [FixedInteger::I64(-1), FixedInteger::I64(64)],
+            absent(IntegerWidth::I64),
+        ),
+    ] {
+        assert_eq!(apply(name, &operands), expected, "{name} at {operands:?}");
+    }
+    assert_eq!(
+        apply("u8.wrapping_add", &[u8(1), FixedInteger::U16(1)]),
+        Err(PrimitiveError::ArgumentType),
+        "a width row refuses an operand of another width"
+    );
+    let widths: Vec<&str> = IntegerWidth::ALL.iter().map(AsRef::as_ref).collect();
+    for form in [
+        "wrapping_add",
+        "wrapping_sub",
+        "wrapping_mul",
+        "saturating_add",
+        "saturating_sub",
+        "saturating_mul",
+        "checked_add",
+        "checked_sub",
+        "checked_mul",
+        "wrapping_div",
+        "wrapping_rem",
+        "and",
+        "or",
+        "xor",
+        "not",
+        "checked_shl",
+        "checked_shr",
+        "eq",
+        "ne",
+        "lt",
+        "le",
+        "gt",
+        "ge",
+        "to_integer",
+        "from_integer",
+    ] {
+        for &width in &widths {
+            assert_eq!(
+                PRELUDE
+                    .iter()
+                    .filter(|row| row.0.name.split_once('.') == Some((width, form)))
+                    .count(),
+                1,
+                "one `{width}.{form}` row"
+            );
+        }
+    }
 }
 
 #[test]

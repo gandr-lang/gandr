@@ -2791,6 +2791,17 @@ where
         ("i32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I32)),
         ("i64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I64)),
         ("u8", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U8)),
+        ("u16", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U16)),
+        ("i8", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I8)),
+        ("i16", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I16)),
+        (
+            "usize",
+            BaseType::Fixed(gandr_kernel_term::IntegerWidth::Usize),
+        ),
+        (
+            "isize",
+            BaseType::Fixed(gandr_kernel_term::IntegerWidth::Isize),
+        ),
     ] {
         let ty = typer.arena.value_type_base(atom);
         let _first = families.insert(Name::from(name), (ty, base));

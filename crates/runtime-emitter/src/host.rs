@@ -80,6 +80,7 @@ use gandr_core_session::Facing;
 use gandr_core_term::Zone;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::primitive::CheckedFixed;
 use gandr_core_term::primitive::Primitive;
 use gandr_core_term::primitive::PrimitiveError;
 use gandr_core_term::primitive::Scalar;
@@ -871,6 +872,31 @@ impl<'run, 'host> Calls<'run, 'host>
             Scalar::Text(text) => self.literal(runtime, Literal::Text(text)),
             Scalar::Float64(float) => self.literal(runtime, Literal::Float64(float)),
             Scalar::Fixed(fixed) => self.literal(runtime, Literal::Fixed(fixed)),
+            // A checked answer is the left injection of its value, or the
+            // right injection of the unit tuple.
+            Scalar::Checked(checked) => {
+                let (summand, held) = match checked {
+                    CheckedFixed::Present(fixed) => {
+                        (0_usize, self.literal(runtime, Literal::Fixed(fixed))?)
+                    },
+                    CheckedFixed::Absent(_) => {
+                        let unit = Header::new(
+                            Kind::Tuple,
+                            Tag::try_from(0_usize).map_err(width)?,
+                            Arity::try_from(0_usize).map_err(width)?,
+                            Family::UNNAMED,
+                        );
+                        (1_usize, allocate(runtime, &[unit.word()])?)
+                    },
+                };
+                let injection = Header::new(
+                    Kind::Injection,
+                    Tag::try_from(summand).map_err(width)?,
+                    Arity::try_from(1_usize).map_err(width)?,
+                    Family::UNNAMED,
+                );
+                allocate(runtime, &[injection.word(), held])
+            },
             Scalar::Boolean(side) => {
                 let unit = Header::new(
                     Kind::Tuple,
