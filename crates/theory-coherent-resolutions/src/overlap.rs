@@ -562,7 +562,7 @@ pub struct Overlap<A: CellAlphabet = SequentAlphabet>
     pub peak: A::Cmd,
     /// The right cell renamed apart from the left, which the unifier's
     /// bindings on the right read against.
-    right_renamed: Cell<A>,
+    right_renamed: alloc::sync::Arc<Cell<A>>,
 }
 
 impl<A: CellAlphabet> Overlap<A>
@@ -595,7 +595,7 @@ impl<A: CellAlphabet> Overlap<A>
     #[must_use]
     #[spec(captures: supplied = (unifier.clone(), seam.clone()), ensures: |output| output.left == left.0 && output.right == right.0
         && output.kind == OverlapKind::Confluence && output.unifier == supplied.0 && output.seam == supplied.1
-        && output.peak == A::apply_subst(&output.unifier, left.1.lhs()) && output.right_renamed == renamed_apart(left.1, right.1))]
+        && output.peak == A::apply_subst(&output.unifier, left.1.lhs()) && *output.right_renamed == renamed_apart(left.1, right.1))]
     pub fn from_supplied_confluence(
         left: (CellId, &Cell<A>),
         right: (CellId, &Cell<A>),
@@ -614,7 +614,7 @@ impl<A: CellAlphabet> Overlap<A>
             unifier,
             seam,
             peak,
-            right_renamed,
+            right_renamed: alloc::sync::Arc::new(right_renamed),
         }
     }
 
@@ -701,7 +701,7 @@ impl<A: CellAlphabet> Overlap<A>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn right_renamed(&self) -> &Cell<A>
+    pub fn right_renamed(&self) -> &Cell<A>
     {
         &self.right_renamed
     }
@@ -952,7 +952,7 @@ where
 {
     let (left_id, left_cell) = left;
     let (right_id, right_cell) = right;
-    let renamed = renamed_apart(left_cell, right_cell);
+    let renamed = alloc::sync::Arc::new(renamed_apart(left_cell, right_cell));
     let mut out = root_overlap(left, right, &renamed);
     for seam in A::command_positions(left_cell.rhs()) {
         let Maybe::Present(sub) = A::subterm_cmd_at(left_cell.rhs(), &seam)
@@ -969,7 +969,7 @@ where
                 unifier,
                 seam,
                 peak,
-                right_renamed: renamed.clone(),
+                right_renamed: alloc::sync::Arc::clone(&renamed),
             });
         }
     }
@@ -1011,7 +1011,11 @@ where
     if A::root_agreement(left.1.lhs(), right.1.lhs()) == RootAgreement::Clash {
         return Vec::new();
     }
-    root_overlap(left, right, &renamed_apart(left.1, right.1))
+    root_overlap(
+        left,
+        right,
+        &alloc::sync::Arc::new(renamed_apart(left.1, right.1)),
+    )
 }
 
 /// The root confluence entry of two cells, the right one already renamed
@@ -1036,7 +1040,7 @@ where
 fn root_overlap<A>(
     left: (CellId, &Cell<A>),
     right: (CellId, &Cell<A>),
-    renamed: &Cell<A>,
+    renamed: &alloc::sync::Arc<Cell<A>>,
 ) -> Vec<Overlap<A>>
 where
     A: CellAlphabet,
@@ -1057,7 +1061,7 @@ where
         unifier,
         seam: A::root_position(),
         peak,
-        right_renamed: renamed.clone(),
+        right_renamed: alloc::sync::Arc::clone(renamed),
     }]
 }
 
@@ -1120,7 +1124,7 @@ where
     if seams.is_empty() {
         return Vec::new();
     }
-    let renamed = renamed_apart(left_cell, right_cell);
+    let renamed = alloc::sync::Arc::new(renamed_apart(left_cell, right_cell));
     let mut out = Vec::new();
     for (seam, sub) in seams {
         let mut unifier = A::Subst::default();
@@ -1133,7 +1137,7 @@ where
                 unifier,
                 seam,
                 peak,
-                right_renamed: renamed.clone(),
+                right_renamed: alloc::sync::Arc::clone(&renamed),
             });
         }
     }
