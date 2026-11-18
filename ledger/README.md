@@ -86,7 +86,7 @@ The tables name only crates that this workspace holds, never a planned crate.
 | `corpus` | witnesses: a fixture path under `corpus/`, or a test file from the root, `::item` naming a test in it |
 | `exemplar` | the program showing the row: a `model/` or `strict/` fixture from the root, or `corpus/ledger/features/<id>.gandr`; never `pathological/`. `crate-tests`: a mechanism no program shows, its evidence the tests in `corpus`; refused where `corpus` names a fixture |
 | `issue` | tracker issues, `#n` separated by spaces |
-| `since` | the pull request that landed an implemented or partial row, or the commit before pull requests |
+| `since` | the pull request that landed an implemented or partial row, which `pr:open` writes with `ledger:stamp`, or the commit before pull requests |
 
 A row's status needs its evidence, and the table's constraints refuse one without it: an implemented row a `crate` or a `corpus` witness; a partial row that and an open issue or a `pathological/` witness of what it still refuses; a planned or declined row the issue that records the plan or the decision. An implemented or partial row names an exemplar unless its area's evidence is crate tests: `editor`, `workflow`, `storage`, `tooling`, `incremental`, `algorithms`, `machine`, `staging`, `kernel`, `conversion`, `runtime`, `syntax`, `printing`, `diagnostics`, `rewriting`, `corpus`.
 
@@ -104,6 +104,7 @@ To edit it: `mise run ledger:build`, change `features.db` with `sqlite3`, `mise 
 | `mise run check:exemplars` | fails while an exemplar leaves a declaration unsettled |
 | `mise run check:fences` | fails while a fenced `gandr` block of a tracked Markdown file, or of a comment of a tracked `.rs` or `.gandr` file, writes a spelling that the reader refuses as `RetiredSpelling.<surface>` |
 | `mise run ledger:build`, `mise run ledger:dump` | build `features.db` from `features.sql`, and dump it back |
+| `mise run ledger:stamp <pr> <base>` | writes `#<pr>` into the `since` of each implemented or partial row that the change from `<base>` touches, and commits `features.sql` alone; `pr:open` runs it once the pull request has its number |
 | `mise run check:ledger` | fails while `features.sql` breaks a constraint or is not its own re-dump, a `parent` names no row, a named path does not exist, a features exemplar is named by no row, or a language feature names no exemplar |
 
 `mise run check` runs every gate and CI runs them on every change. A change to the grammar or to the attribute registry regenerates the ledger and updates the exemplars in the same commit; a change that lands, changes or retires a feature edits its row of `features.sql` in the same commit.
