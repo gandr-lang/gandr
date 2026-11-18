@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x486c6254b407d8eb`
-- Rules: 175 — 174 committed, 1 internal
-- Molds: 3138
+- Grammar fingerprint: `0x6dc7d66dff5b0884`
+- Rules: 176 — 175 committed, 1 internal
+- Molds: 3153
 - Attributes: 20
 
 ## Reading a form
@@ -158,7 +158,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`redirection_operator`](../corpus/ledger/syntax/redirection-operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget-model-expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
-## `type` — 44 rules
+## `type` — 45 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -187,6 +187,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`type_application.juxtaposed`](../corpus/ledger/syntax/type-application.juxtaposed.gandr) | `TYPE   TYPE` | `type.juxtaposition` | `type_application` | admitted | Other |
 | [`type_path`](../corpus/ledger/syntax/type-path.gandr) | `TYPE . ⦅ ‹type_variable› . ⦆* ⦅ ‹type_identifier› ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ‹type_variable› ( ⦅ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ⦆? ) ⦆ ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆?` | `type.path` | `type_path` * | admitted | Other, TypeVariable, Type |
 | [`staged_type`](../corpus/ledger/syntax/staged-type.gandr) | `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ ↦ EXPRESSION ⦅ , ‹identifier› ↦ EXPRESSION ⦆* ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` or `TYPE [ ⦅ ⦅ < ⦆? ‹identifier› ⦅ ] ⦅ ( TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ) ⦆? ‖ \|-> EXPRESSION ⦅ , ‹identifier› \|-> EXPRESSION ⦆* ] ⦆ ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ] ⦆` | `type.path` | `staged_type` * | admitted | Other, Operator, VariableParam |
+| [`extension_type`](../corpus/ledger/syntax/extension-type.gandr) | `TYPE .#{ ⦅ ‹identifier› ↦ EXPRESSION ⦅ , ‹identifier› ↦ EXPRESSION ⦆* ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ⦆ }` or `TYPE .#{ ⦅ ‹identifier› \|-> EXPRESSION ⦅ , ‹identifier› \|-> EXPRESSION ⦆* ‖ . ‹identifier› = TYPE ⦅ , . ‹identifier› = TYPE ⦆* ⦅ , ⦆? ⦆ }` | `type.path` | `extension_type` * | admitted | Other, VariableParam, Operator |
 | [`parenthesized_type`](../corpus/ledger/syntax/parenthesized-type.gandr) | `( TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? )` | `type.atom` | `parenthesized_type` | admitted | Other |
 | [`telescope_type`](../corpus/ledger/syntax/telescope-type.gandr) | `*{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `telescope_type` * | admitted | Other |
 | [`send_session_type`](../corpus/ledger/syntax/send-session-type.gandr) | `! TYPE ⦅ >> ‖ . ⦆ TYPE` | `type.arrow` | `send_session_type` | admitted | Operator, Other |
@@ -242,18 +243,22 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 8 spellings
+## Superseded — 12 spellings
 
 An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
 
 | Rule | Old spelling | Replaced by | Removal | Why the record stands |
 | ---- | ------------ | ----------- | ------- | --------------------- |
+| `tuple_pattern` | `parenthesized_product_pattern` | `*{p, q}` | refused as [`RetiredSpelling.parenthesized_product_pattern`](../corpus/ledger/syntax/superseded/parenthesized-product-pattern.gandr) | a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading |
 | `telescope_expression` | `unit_value` | `*{}` | refused as [`RetiredSpelling.unit_value`](../corpus/ledger/syntax/superseded/unit-value.gandr) | the unit value is the empty telescope `*{}`: the name `unit`, where no declaration binds it, is refused by name |
 | `function_type` | `fat_arrow_box` | `A -> B` | refused as [`RetiredSpelling.fat_arrow_box`](../corpus/ledger/syntax/superseded/fat-arrow-box.gandr) | the box `A => B` in a signature, a nested box, a group in parentheses or a record field is refused by name; a parameter, a result and a constructor field keep their faults, and a box in an expression hole is not named |
 | `path_type` | `positional_path_carrier` | `Path[.A = A](a, b)` | refused as [`RetiredSpelling.positional_path_carrier`](../corpus/ledger/syntax/superseded/positional-path-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
 | `bridge_type` | `positional_bridge_carrier` | `Bridge[.A = A](a, b)` | refused as [`RetiredSpelling.positional_bridge_carrier`](../corpus/ledger/syntax/superseded/positional-bridge-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
 | `flow_type` | `positional_flow_carrier` | `Flow[.A = A](a, b)` | refused as [`RetiredSpelling.positional_flow_carrier`](../corpus/ledger/syntax/superseded/positional-flow-carrier.gandr) | a carrier written first, by position, is refused by name: the head takes its carrier by name |
 | `type_application` | `glued_type_application` | `type_application.juxtaposed` | removed by #5330 | the glued head `T(a, b)` stays read until the sources move to `T a b` |
+| `extension_type` | `bracket_fields` | `T.#{.l = v}` | refused as [`RetiredSpelling.bracket_fields`](../corpus/ledger/syntax/superseded/bracket-fields.gandr) | the static bracket that fixes a record type's fields by label, `T[.l = v]`, is refused by name; a stage `T[i]` and a supply by name `f[.a = A]` keep the bracket |
+| `extension_type` | `bracket_faces` | `T.#{f ↦ v}` | refused as [`RetiredSpelling.bracket_faces`](../corpus/ledger/syntax/superseded/bracket-faces.gandr) | the static bracket that fixes a face's fields, `T[f ↦ v]`, or the fields of each face of a system is refused by name |
+| `parenthesized_type` | `parenthesized_product` | `*{A, B}` | refused as [`RetiredSpelling.parenthesized_product`](../corpus/ledger/syntax/superseded/parenthesized-product.gandr) | a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product |
 | `telescope_type` | `view_telescope` | `*{ … }` | refused as [`RetiredSpelling.view_telescope`](../corpus/ledger/syntax/superseded/view-telescope.gandr) | the glued token `#{` is refused by name: `*{` opens the telescope and the record |
 | `theory_declaration` | `shape_member` | `boundary B {…}; face f = {…}` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it |
 
@@ -284,7 +289,7 @@ Every attribute the lowering's registry admits in an `@[ … ]` block, with the 
 | [`builtin`](../corpus/ledger/attributes/builtin.gandr) | one of the words `irSignature`, `irPair`, `irArgs`, `irDecode` |
 | [`inert`](../corpus/ledger/attributes/inert.gandr) | no payload |
 
-## Decisions — 118 of 175 rules decided at every token
+## Decisions — 118 of 176 rules decided at every token
 
 Where the molder decides a rule's own tokens as it reads them, read off the mold table. A rule opens on the labels its first tiles carry. It shares an opener with each other rule of its sort that opens on one of those labels, a hole facing both openers alike or neither: at that token the molder ranks them and may read on. A fork is a tile after which one label continues the form at two places or more, so the molder reads on to choose. A rule with no shared opener and no fork is decided at each of its own tokens; the tokens in its holes are their own rules' to decide.
 
@@ -428,6 +433,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `type_application.juxtaposed` | type | 1 | ` ` | — | 0 |
 | `type_path` | type | 17 | `.` | — | 9 |
 | `staged_type` | type | 22 | `[` | — | 4 |
+| `extension_type` | type | 15 | `.#{` | — | 2 |
 | `parenthesized_type` | type | 6 | `(` | — | 4 |
 | `telescope_type` | type | 6 | `*{` | — | 4 |
 | `send_session_type` | type | 3 | `!` | — | 0 |
@@ -466,23 +472,23 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 206 labels
+## Menus — 207 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
 | Label | Molds | Rules | Opening |
 | ----- | ----- | ----- | ------- |
-| `identifier` | 429 | 58 | 3 |
-| `,` | 279 | 46 | 0 |
+| `identifier` | 433 | 59 | 3 |
+| `,` | 282 | 47 | 0 |
 | `:` | 251 | 33 | 0 |
 | `type_identifier` | 221 | 34 | 2 |
-| `=` | 150 | 37 | 0 |
+| `=` | 152 | 38 | 0 |
 | `;` | 136 | 26 | 1 |
 | `)` | 132 | 33 | 0 |
 | `(` | 128 | 32 | 5 |
-| `.` | 95 | 46 | 3 |
+| `.` | 97 | 47 | 3 |
 | `type_variable` | 93 | 15 | 3 |
-| `}` | 83 | 43 | 0 |
+| `}` | 84 | 44 | 0 |
 | `]` | 79 | 40 | 0 |
 | `{` | 61 | 29 | 2 |
 | `[` | 60 | 33 | 4 |
@@ -533,6 +539,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `@[` | 4 | 3 | 2 |
 | `Type` | 4 | 4 | 1 |
 | `def` | 4 | 4 | 2 |
+| `↦` | 4 | 2 | 0 |
 | `⊸` | 4 | 4 | 1 |
 | `$` | 3 | 3 | 2 |
 | `${` | 3 | 3 | 1 |
@@ -567,7 +574,6 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `hole_name` | 2 | 2 | 0 |
 | `include` | 2 | 2 | 1 |
 | `typed_number` | 2 | 2 | 2 |
-| `↦` | 2 | 1 | 0 |
 | `⇝` | 2 | 2 | 1 |
 | `∷` | 2 | 2 | 1 |
 | `≃` | 2 | 2 | 1 |
@@ -577,6 +583,7 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `&&` | 1 | 1 | 1 |
 | `++` | 1 | 1 | 1 |
 | `+U` | 1 | 1 | 1 |
+| `.#{` | 1 | 1 | 1 |
 | `.*{` | 1 | 1 | 1 |
 | `.@` | 1 | 1 | 1 |
 | `<&` | 1 | 1 | 1 |
