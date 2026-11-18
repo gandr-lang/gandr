@@ -58,5 +58,10 @@
     "change": "remove",
     "workspace": "reused",
     "output": ["a"]
+  },
+  {
+    "name": "#7779: a source changed since a policy state dates now though the test state records it",
+    "change": "policy",
+    "output": ["a", "a/x"]
   }
 ]

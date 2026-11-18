@@ -637,7 +637,7 @@ run = '''
 set -euo pipefail
 source .config/build-state/sources.bash
 records=()
-for dir in target/debug target/enforcing/debug target/gate-doc/debug; do
+for dir in target/debug target/enforcing/debug target/gate-doc/debug target/evidence; do
   if [[ -e $dir/$SOURCES_RECORD ]]; then records+=("$dir/$SOURCES_RECORD"); fi
 done
 sources_restamp "${records[@]}"
