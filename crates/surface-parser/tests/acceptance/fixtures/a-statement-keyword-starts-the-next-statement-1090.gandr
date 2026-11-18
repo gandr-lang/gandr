@@ -1,4 +1,4 @@
-def swapped() -> -F Unit {
+def swapped() -> -F Unit =
   handle c : Proc {
     handle e : Proc {
       let d : Cap {exit} at e c ;
@@ -12,4 +12,3 @@ def swapped() -> -F Unit {
     | pure(x) => return x
     | oper exit(code, k) => return *{}
   }
-}

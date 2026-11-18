@@ -13737,7 +13737,7 @@ mod tests
             ("/// a".to_owned(), "def x = 1;".to_owned()),
             (
                 "//! inner".to_owned(),
-                "def f(x : Integer) -> -F Integer {\n  //! inner\n  return x\n}".to_owned()
+                "def f(x : Integer) -> -F Integer =\n  //! inner\n  return x".to_owned()
             ),
         ]);
         Ok(())

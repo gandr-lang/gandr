@@ -3,7 +3,6 @@
 /// a
 def x = 1;
 //! u
-def f(x : Integer) -> -F Integer {
+def f(x : Integer) -> -F Integer =
   //! inner
   return x
-}

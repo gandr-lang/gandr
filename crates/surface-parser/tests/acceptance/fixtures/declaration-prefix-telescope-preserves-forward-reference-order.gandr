@@ -1,3 +1,2 @@
-def nth[A : Type, i : Fin(length(xs))](xs : List(A)) -> A {
+def nth[A : Type, i : Fin(length(xs))](xs : List(A)) -> A =
   pure xs
-}
