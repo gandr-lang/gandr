@@ -2745,6 +2745,10 @@ pub enum DeclaredFamily<'module>
 /// - fails: never; a node no type is stated for records nothing.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the families, the contexts and the entries, growth within the
+///   declarations.
+///
 /// # Adequacy
 /// - hypothesis: L3 — a theory's sorts, operations, laws and circuit, a data
 ///   family's operations and rules, and the constructors of a family with a

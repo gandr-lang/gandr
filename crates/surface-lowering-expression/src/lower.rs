@@ -22089,6 +22089,10 @@ pub const fn is_value_form(former: Former) -> ValueForm
 ///   an `f64` or `f32` one included.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the decimal of the literal in the specification's check,
+///   diagnostic.
+///
 /// # Adequacy
 /// - hypothesis: L3 — each width's literal reads at its extremes and with
 ///   leading zeros; one past each extreme, a fraction and an exponent fall

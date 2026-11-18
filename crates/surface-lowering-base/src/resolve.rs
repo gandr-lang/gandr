@@ -596,14 +596,12 @@ const HOMED_ATOMS: [(&str, &str, TypeAtom); 3_usize] = [
 pub fn type_atom(name: SurfaceName<'_>) -> Maybe<TypeAtom, type_head::Absent>
 {
     let spelled: &str = name.as_ref();
-    let found = TYPE_ATOMS
-        .into_iter()
-        .find_map(|(entry, atom)| (entry == spelled).then_some(atom));
-
-    found.map_or(
-        Maybe::Absent(type_head::Absent::Unregistered),
-        Maybe::Present,
-    )
+    for (entry, atom) in TYPE_ATOMS {
+        if entry == spelled {
+            return Maybe::Present(atom);
+        }
+    }
+    Maybe::Absent(type_head::Absent::Unregistered)
 }
 
 /// The type former `name` spells, when the unary table answers it.

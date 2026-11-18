@@ -567,6 +567,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the argument list of the code's constructor, growth within
+    ///   its one argument.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_boundaries`].
     /// - witness: `gandr-surface-lowering::lower::boundary::tests::a_boundary_block_takes_the_slot_its_check_runs_in_2901`

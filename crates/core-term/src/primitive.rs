@@ -1244,6 +1244,9 @@ impl Primitive
     /// representation failures, and a floating-point number rounded to an
     /// integer that is not finite.
     ///
+    /// # Cost
+    /// - allocation: the answer's integer or text, growth within the operands.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric signed operands, zero divisors, integers
     ///   beyond machine width, every boolean pair, two strings appended in both
@@ -1690,6 +1693,10 @@ fn widened(fixed: FixedInteger) -> BigInt
 /// [`PrimitiveError::InvalidInteger`] for a remainder no width holds, which
 /// the reduction rules out.
 ///
+/// # Cost
+/// - allocation: the modulus and the remainder, growth within the width's bit
+///   count.
+///
 /// # Adequacy
 /// - hypothesis: L3 — negatives, one past each width's greatest value and
 ///   integers beyond machine width each land on their remainder.
@@ -1833,6 +1840,9 @@ fn width(
 ///
 /// # Errors
 /// [`PrimitiveError::NotFinite`] or [`PrimitiveError::ArgumentType`].
+///
+/// # Cost
+/// - allocation: the decimal of a rounded number, growth within its magnitude.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — sums, quotients by zero, a NaN compared with itself,

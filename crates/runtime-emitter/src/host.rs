@@ -814,6 +814,10 @@ impl<'run, 'host> Calls<'run, 'host>
     /// # Errors
     /// As [`Self::call`].
     ///
+    /// # Cost
+    /// - allocation: the operands, their views and the answer, growth within
+    ///   the row's arity.
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — the named primitive calls answer the sum, the product
     ///   past 64 bits and the comparison they state on both tiers, and a string
