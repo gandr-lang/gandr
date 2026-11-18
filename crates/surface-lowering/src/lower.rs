@@ -7999,10 +7999,10 @@ mod tests
         );
     }
 
-    /// #5512: the parser mints a zero-width repair just before an operator
-    /// written with one glyph too many, and the run reads as a name nothing
-    /// declares. The repair yields to the run, so the refusal is at the run,
-    /// naming the operator.
+    /// #5512: an operator written with one glyph too many reads as a name
+    /// nothing declares. The match arm holds the run as an extra operand and
+    /// owes its `=>` at the close of its block. The refusal is at the run,
+    /// naming the operator that the arm owes.
     #[test]
     fn an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512()
     {

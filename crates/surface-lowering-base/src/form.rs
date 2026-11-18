@@ -3980,6 +3980,69 @@ pub fn misspelt_operator(
         .min_by_key(|&(span, _)| span.start())
 }
 
+/// The tile that the parser owes after the tile that starts at `run`, in the
+/// form that holds that tile.
+///
+/// The parser can read an operator written wrong, such as `=>>` for a match
+/// arm's `=>`, as a name that the form holds as an extra operand. It then
+/// owes the operator later in the same form, as a tile over no text. That
+/// owed tile names the operator that the run misspells.
+///
+/// # Specification
+/// - requires: `declaration` is a node of `tree`.
+/// - ensures: the tile name of the first child with no width, after `run`, of
+///   the meld under `declaration` whose child starts at `run`; `None` when no
+///   meld there holds a child that starts at `run`, or that meld owes no tile
+///   after it.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the descent.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `=>>` held as an extra operand of a match arm that owes
+///   its `=>` at the close of the block reads as `=>`, not as `>>`.
+/// - witness: `gandr-surface-lowering::lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
+///
+/// # Cost
+/// - time: one step for each node on the way down to `run` and for each child
+///   of its meld.
+#[inline]
+#[must_use]
+pub fn owed_tile(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    declaration: NodeIndex,
+    run: ByteOffset,
+) -> Option<TileName>
+{
+    let mut at = declaration;
+    loop {
+        let (child, node) = tree.children(at).find_map(|child| {
+            tree.node(child)
+                .filter(|node| node.span().start() <= run && run < node.span().end())
+                .map(|node| (child, node))
+        })?;
+        if node.span().start() == run {
+            break;
+        }
+        if !matches!(node.label(), NodeLabel::Meld(_)) {
+            return None;
+        }
+        at = child;
+    }
+    tree.children(at).find_map(|child| {
+        let node = tree.node(child)?;
+        let span = node.span();
+        if span.start() <= run || span.start() != span.end() {
+            return None;
+        }
+        match tile_label(pbg, node) {
+            Maybe::Present(tile) => Some(tile),
+            Maybe::Absent(_) => None,
+        }
+    })
+}
+
 /// How a run of glyphs reads: as an operator written wrong, or not.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunReading

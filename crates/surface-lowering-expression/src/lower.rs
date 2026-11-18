@@ -189,6 +189,7 @@ use crate::form::family_of;
 use crate::form::misspelt_keyword;
 use crate::form::misspelt_operator;
 use crate::form::opens_expression;
+use crate::form::owed_tile;
 use crate::form::read_as_type;
 use crate::form::read_pieces;
 use crate::form::retired_within;
@@ -3592,18 +3593,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         }
     }
 
-    /// Offer the tile that starts just after each zero-width refusal of a
-    /// declaration of the current source, with only white space between, to
-    /// [`Self::record_unresolved_run`]. A repair inside a body refuses the
-    /// declaration while the body lowers, so the lowering never resolves a
-    /// name after the repair.
+    /// Offer the tile that a refusal of a declaration of the current source
+    /// points at to [`Self::record_unresolved_run`]: the tile that starts
+    /// just after a zero-width refusal, with only white space between, or the
+    /// operand that a refusal names as extra. A repair inside a body refuses
+    /// the declaration while the body lowers, so the lowering never resolves
+    /// a name after the repair, and it never resolves an operand that it
+    /// refuses as extra.
     ///
     /// # Specification
     /// - requires: every pass that refuses a declaration of the current source
     ///   has run.
     /// - ensures: for each slot of the current source whose refusal is zero
-    ///   width and inside a half, the tile inside that half that starts where
-    ///   the white space after the refusal ends is offered; each node on the
+    ///   width, or names an extra operand, inside a half, the tile inside that
+    ///   half that starts where the white space after a zero-width refusal
+    ///   ends, or where the extra operand starts, is offered; each node on the
     ///   way down to it takes the declaration as its owner where it had none;
     ///   nothing else changes.
     /// - fails: never.
@@ -3612,13 +3616,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the `=>>` of a match arm after the repair that stands
-    ///   for its `=>` is offered and recorded.
+    ///   for its `=>`, or held as an extra operand of the arm, is offered and
+    ///   recorded.
     /// - witness: `gandr-surface-lowering::lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
     fn record_runs_behind_repairs(&mut self)
     {
         let tree = self.cx().tree;
-        // Only a zero-width refusal yields an entry, so a source whose
-        // declarations all lower allocates nothing.
+        // Only a zero-width refusal or an extra operand yields an entry, so a
+        // source whose declarations all lower allocates nothing.
         let behind: Vec<(NodeIndex, ByteOffset)> = self
             .cx()
             .collected
@@ -3634,7 +3639,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 else {
                     return None;
                 };
-                if refused.start() != refused.end() {
+                let extra = matches!(*refusal, LoweringRefusal::MalformedForm {
+                    fault: FormFault::ExtraOperand,
+                    ..
+                });
+                if refused.start() != refused.end() && !extra {
                     return None;
                 }
                 [slot.signature, slot.definition]
@@ -3644,6 +3653,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                             if half.declaration.span.start() <= refused.start()
                                 && refused.end() <= half.declaration.span.end() =>
                         {
+                            if extra {
+                                return Some((half.declaration.node, refused.start()));
+                            }
                             let rest: &str = tree
                                 .spanned(
                                     ByteSpan::new(refused.end(), half.declaration.span.end())
@@ -3904,8 +3916,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   has run.
     /// - ensures: first, as [`Self::record_runs_behind_repairs`]. Then each
     ///   refused slot of the current source whose half holds such a name at or
-    ///   before the start of its refusal is refused at the name instead. A
-    ///   zero-width refusal also yields to such a name that starts after it
+    ///   before the start of its refusal is refused at the name instead. When
+    ///   the refusal names an extra operand, the tile that the form owes after
+    ///   it ([`owed_tile`]) wins among the operators the name is one edit from.
+    ///   A zero-width refusal also yields to such a name that starts after it
     ///   with only white space between, and the tile its repair names wins
     ///   among the operators the name is one edit from. The refusal keeps its
     ///   node, names the form of the half that holds the name, and names the
@@ -3916,7 +3930,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`misspelt_operator`], and a repair the parser
-    ///   mints just before the name yields to it.
+    ///   mints just before the name, or the tile a form owes after the name
+    ///   that it holds as an extra operand, yields to it.
     /// - witness: `gandr-surface-lowering::lower::tests::an_operator_written_twice_is_refused_at_the_run_5301`
     /// - witness: `gandr-surface-lowering::lower::tests::an_operator_near_miss_behind_a_zero_width_repair_is_refused_at_the_run_5512`
     ///
@@ -3943,10 +3958,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             };
             // The name stands in the half that holds the refusal, at or
             // before the refusal's start: the refused name itself, or an
-            // operand before a refusal deeper in the tree. A zero-width
-            // refusal is a repair the parser mints, and the name can stand
-            // just after it, with only white space between. The tile the
-            // repair says the form writes there names the operator.
+            // operand before a refusal deeper in the tree. A form that holds
+            // the name as an extra operand owes the operator after it. A
+            // zero-width refusal is a repair the parser mints, and the name
+            // can stand just after it, with only white space between. The
+            // tile the repair says the form writes there names the operator.
             let expected = if let LoweringRefusal::MalformedForm {
                 fault:
                     FormFault::Repaired(
@@ -3961,6 +3977,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             else {
                 None
             };
+            let extra = matches!(*refusal, LoweringRefusal::MalformedForm {
+                fault: FormFault::ExtraOperand,
+                ..
+            });
             let found = [slot.signature, slot.definition]
                 .into_iter()
                 .find_map(|half| match half {
@@ -3990,7 +4010,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                             )
                             .filter(|&(word, _)| word.start() == name)
                         };
-                        misspelt_operator(pbg, tree, reach, unresolved, None)
+                        let owed = if extra {
+                            owed_tile(pbg, tree, half.declaration.node, refused.start())
+                        }
+                        else {
+                            None
+                        };
+                        misspelt_operator(pbg, tree, reach, unresolved, owed)
                             .filter(|&(word, _)| word.start() <= refused.start())
                             .or_else(behind)
                             .map(|found| (half, found))
