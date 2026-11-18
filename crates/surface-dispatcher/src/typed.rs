@@ -11210,12 +11210,17 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
+        let stated = [":", "Path[.A", "=", "A]", "x", "y)", "{"];
         assert!(
-            reads.iter().any(|&(ref spelled, _)| spelled
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .contains(" : Path[.A = A] x y) {")),
+            reads.iter().any(|&(ref spelled, _)| {
+                (0 .. spelled.split_whitespace().count()).any(|start| {
+                    spelled
+                        .split_whitespace()
+                        .skip(start)
+                        .take(stated.len())
+                        .eq(stated)
+                })
+            }),
             "a printed type's lambda states its parameter's written type, wherever the page \
              breaks it: {reads:?}"
         );

@@ -17,6 +17,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Spelling as GrammarSpelling;
 use gandr_surface_grammar::UNRESTRICTED;
 use gandr_surface_lowering::Boxed;
@@ -813,9 +814,10 @@ impl Band
     ///
     /// # Specification
     /// trivial.
-    fn unread(name: &str) -> Self
+    fn unread(name: RuleName) -> Self
     {
-        let base = name.split('.').next().unwrap_or(name);
+        let full = name.0;
+        let base = full.split('.').next().unwrap_or(full);
         if base.ends_with("_expression") && !EXPRESSION_ATOMS.contains(&base) {
             Self::Loose
         }
@@ -1733,7 +1735,7 @@ impl<'source> Respelling<'_, 'source>
                     self.tree.node(at).map(gandr_surface_syntax::Node::label)
                 && let Ok(read) = self.grammar.rule_of(mold)
             {
-                kept.band = Band::unread(read.name().0);
+                kept.band = Band::unread(read.name());
             }
             kept
         };
