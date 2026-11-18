@@ -4,4 +4,4 @@ dat Circle : Type {
 }
 def twice : Path[.A = Circle](Base, Base) ;
 def twice = refl(Base) ;
-def none(xs : List()) -> -F Unit { pure *{} }
+def none(xs : List()) -> -F Unit = pure *{};

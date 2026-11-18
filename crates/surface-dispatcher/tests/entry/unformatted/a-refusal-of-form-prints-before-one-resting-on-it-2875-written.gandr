@@ -1,6 +1,4 @@
-def f() -> Integer {
-  return g ()
-}
+def f() -> Integer = return g ();
 
 de g() -> Integer {
   return 1

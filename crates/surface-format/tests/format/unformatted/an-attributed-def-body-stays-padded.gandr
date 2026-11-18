@@ -1,2 +1,2 @@
 @[checks]
-def current() -> Integer { 0 }
+def current() -> Integer = 0;

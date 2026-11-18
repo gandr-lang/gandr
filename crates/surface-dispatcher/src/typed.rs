@@ -8866,7 +8866,7 @@ mod tests
         let table = table(source);
         let at = |needle: &'static str| answer(&table, source, SourceText::from(needle));
         assert_eq!(
-            at("x }"),
+            at("x;"),
             agreed(Subject::Term, SourceText::from("Integer")),
             "the use is a term of its binder's type"
         );

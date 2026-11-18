@@ -20,8 +20,8 @@ theory Monoid where {
   oper one : M;
 }
 
-def counted(m : Model(Counter) with sort C = Integer) -> -F Integer { return 0 }
+def counted(m : Model(Counter) with sort C = Integer) -> -F Integer = return 0;
 
-def paired(p : Model(Pairing) with sort A = Integer with sort B = Unit) -> -F Integer { return 0 }
+def paired(p : Model(Pairing) with sort A = Integer with sort B = Unit) -> -F Integer = return 0;
 
-def monoidal(m : Model(Monoid) with sort M = Integer) -> -F Integer { return 0 }
+def monoidal(m : Model(Monoid) with sort M = Integer) -> -F Integer = return 0;

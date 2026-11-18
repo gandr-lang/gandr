@@ -12,5 +12,5 @@ theory Monoid where {
 
 module Ints : Model(Semigroup) where {
   type M = Integer;
-  def mul(x : Integer, y : Integer) -> -F Integer { return y }
+  def mul(x : Integer, y : Integer) -> -F Integer = return y;
 }

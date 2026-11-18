@@ -1,2 +1,2 @@
 def answer = 42 ;
-def main() -> -F Integer { return answer }
+def main() -> -F Integer = return answer;

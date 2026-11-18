@@ -1,2 +1,2 @@
 theory Fam where {{ sort Con : Type; oper base : Con; }}
-{}{}def after(n : Integer) -> Integer {{ return n }}
+{}{}def after(n : Integer) -> Integer = return n;

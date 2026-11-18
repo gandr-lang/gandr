@@ -1,4 +1,4 @@
-def twice(n : Integer) -> -F Integer { return (n + n) }
+def twice(n : Integer) -> -F Integer = return (n + n);
 
 /// Becomes a call.
 @[ runs("2") ]

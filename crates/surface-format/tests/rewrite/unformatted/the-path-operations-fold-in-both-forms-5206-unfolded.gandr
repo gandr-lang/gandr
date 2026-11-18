@@ -1,6 +1,4 @@
-{CIRCLE}def spin(x : Circle) -> -F Circle {{
-  x
-}}
+{CIRCLE}def spin(x : Circle) -> -F Circle = x;
 
 def thrice : Path[.A = Path[.A = Circle](Base, Base)](
   Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) (Path.walk (fun (a) {{
