@@ -1113,7 +1113,7 @@ fn wedge(
         }
         let same = restricted
             .iter()
-            .map(|(one, other)| (one, other))
+            .map(|&(ref one, ref other)| (one, other))
             .eq(pairs.iter().copied());
         if restricted.len() != out.len() || !same {
             return Membership::Outside;

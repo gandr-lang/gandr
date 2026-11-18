@@ -748,7 +748,7 @@ impl<Inner: Level> Wreath<Inner>
                 let mut least = tuple.clone();
                 let mut moved = tuple.clone();
                 let mut first = true;
-                for permutation in automorphisms.iter() {
+                for permutation in &automorphisms {
                     moved.copy_from_slice(tuple);
                     for (vertex, column) in permutation.iter().zip(tuple) {
                         if let Some(slot) = moved.get_mut(usize::from(*vertex)) {

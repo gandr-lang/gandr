@@ -740,7 +740,7 @@ impl<A: CellAlphabet> Overlap<A>
             unifier: self.unifier.clone(),
             seam: self.seam.clone(),
             peak,
-            right_renamed: self.right_renamed.clone(),
+            right_renamed: alloc::sync::Arc::clone(&self.right_renamed),
         }
     }
 
