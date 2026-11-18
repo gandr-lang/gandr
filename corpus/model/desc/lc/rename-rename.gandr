@@ -20,9 +20,9 @@ def renameRenameLift(
   a1 : Ren,
   a2 : Ren,
   a3 : Ren,
-  h : (n : N) -> Path[.A = N](rlook (rlook n a1) a2, rlook n a3),
+  h : (n : N) -> Path[.A = N] (rlook (rlook n a1) a2) (rlook n a3),
   n : N
-) -> Path[.A = N](rlook (rlook n (RLift a1)) (RLift a2), rlook n (RLift a3)) =
+) -> Path[.A = N] (rlook (rlook n (RLift a1)) (RLift a2)) (rlook n (RLift a3)) =
   match n where
     | Z => Path.here Z
     | S(m) => Path.ap succOf (h m)
@@ -33,8 +33,8 @@ pub def rec renameRename(
   a1 : Ren,
   a2 : Ren,
   a3 : Ren,
-  h : (n : N) -> Path[.A = N](rlook (rlook n a1) a2, rlook n a3)
-) -> Path[.A = Term](rename (rename t a1) a2, rename t a3) =
+  h : (n : N) -> Path[.A = N] (rlook (rlook n a1) a2) (rlook n a3)
+) -> Path[.A = Term] (rename (rename t a1) a2) (rename t a3) =
   match t where
     | Ix(n) => Path.ap ixOf (h n)
     | Lam(b) => Path.ap
@@ -43,17 +43,17 @@ pub def rec renameRename(
         renameRenameLift a1 a2 a3 h n
       }))
     | Ap(f, x) => Path.walk
-      (fun (z) { type(Path[.A = Term](
-        Ap (rename (rename f a1) a2) (rename (rename x a1) a2),
-        Ap z (rename x a3)
-      )) })
+      (fun (z) {
+        type(Path[.A = Term] (Ap (rename (rename f a1) a2) (rename (rename x a1) a2)) (Ap
+          z
+          (rename x a3)))
+      })
       (renameRename[<] f a1 a2 a3 h)
       (Path.walk
         (fun (z) {
-          type(Path[.A = Term](
-            Ap (rename (rename f a1) a2) (rename (rename x a1) a2),
-            Ap (rename (rename f a1) a2) z
-          ))
+          type(Path[.A = Term] (Ap (rename (rename f a1) a2) (rename (rename x a1) a2)) (Ap
+            (rename (rename f a1) a2)
+            z))
         })
         (renameRename[<] x a1 a2 a3 h)
         (Path.here (Ap (rename (rename f a1) a2) (rename (rename x a1) a2))))
@@ -64,9 +64,9 @@ def renameSquareLift(
   a2 : Ren,
   a3 : Ren,
   a4 : Ren,
-  h : (n : N) -> Path[.A = N](rlook (rlook n a1) a2, rlook (rlook n a3) a4),
+  h : (n : N) -> Path[.A = N] (rlook (rlook n a1) a2) (rlook (rlook n a3) a4),
   n : N
-) -> Path[.A = N](rlook (rlook n (RLift a1)) (RLift a2), rlook (rlook n (RLift a3)) (RLift a4)) =
+) -> Path[.A = N] (rlook (rlook n (RLift a1)) (RLift a2)) (rlook (rlook n (RLift a3)) (RLift a4)) =
   match n where
     | Z => Path.here Z
     | S(m) => Path.ap succOf (h m)
@@ -78,8 +78,8 @@ pub def rec renameSquare(
   a2 : Ren,
   a3 : Ren,
   a4 : Ren,
-  h : (n : N) -> Path[.A = N](rlook (rlook n a1) a2, rlook (rlook n a3) a4)
-) -> Path[.A = Term](rename (rename t a1) a2, rename (rename t a3) a4) =
+  h : (n : N) -> Path[.A = N] (rlook (rlook n a1) a2) (rlook (rlook n a3) a4)
+) -> Path[.A = Term] (rename (rename t a1) a2) (rename (rename t a3) a4) =
   match t where
     | Ix(n) => Path.ap ixOf (h n)
     | Lam(b) => Path.ap
@@ -88,17 +88,17 @@ pub def rec renameSquare(
         renameSquareLift a1 a2 a3 a4 h n
       }))
     | Ap(f, x) => Path.walk
-      (fun (z) { type(Path[.A = Term](
-        Ap (rename (rename f a1) a2) (rename (rename x a1) a2),
-        Ap z (rename (rename x a3) a4)
-      )) })
+      (fun (z) {
+        type(Path[.A = Term] (Ap (rename (rename f a1) a2) (rename (rename x a1) a2)) (Ap
+          z
+          (rename (rename x a3) a4)))
+      })
       (renameSquare[<] f a1 a2 a3 a4 h)
       (Path.walk
         (fun (z) {
-          type(Path[.A = Term](
-            Ap (rename (rename f a1) a2) (rename (rename x a1) a2),
-            Ap (rename (rename f a1) a2) z
-          ))
+          type(Path[.A = Term] (Ap (rename (rename f a1) a2) (rename (rename x a1) a2)) (Ap
+            (rename (rename f a1) a2)
+            z))
         })
         (renameSquare[<] x a1 a2 a3 a4 h)
         (Path.here (Ap (rename (rename f a1) a2) (rename (rename x a1) a2))))

@@ -21,7 +21,7 @@ pub def rec plus(a : Int, b : Int) -> Int =
 
 /// The `plusS` proof moves a left successor through the sum.
 /// It is cubical's `sucℤ+`, by induction on the right summand.
-pub def rec plusS(a : Int, b : Int) -> Path(plus (S a) b, S (plus a b)) =
+pub def rec plusS(a : Int, b : Int) -> Path (plus (S a) b) (S (plus a b)) =
   match b where
     | Z => Path.here (S a)
     | S(x) => Path.ap up (plusS[<] a x)
@@ -29,14 +29,14 @@ pub def rec plusS(a : Int, b : Int) -> Path(plus (S a) b, S (plus a b)) =
 
 /// The `plusP` proof moves a left predecessor through the sum.
 /// It is cubical's `predℤ+`, by the same induction as `plusS`.
-pub def rec plusP(a : Int, b : Int) -> Path(plus (P a) b, P (plus a b)) =
+pub def rec plusP(a : Int, b : Int) -> Path (plus (P a) b) (P (plus a b)) =
   match b where
     | Z => Path.here (P a)
     | S(x) => Path.ap up (plusP[<] a x)
     | P(x) => Path.ap down (plusP[<] a x)
 
 /// The `plusZ` proof makes zero a left sum unit.
-pub def rec plusZ(b : Int) -> Path(plus Z b, b) =
+pub def rec plusZ(b : Int) -> Path (plus Z b) b =
   match b where
     | Z => Path.here Z
     | S(x) => Path.ap up (plusZ[<] x)
@@ -45,7 +45,7 @@ pub def rec plusZ(b : Int) -> Path(plus Z b, b) =
 /// The `plusComm` proof relates the two operand orders.
 /// It is cubical's `+Comm`, and `Int` is a set, so the endpoints of its arms
 /// alone respect the rules of `Int`.
-pub def rec plusComm(a : Int, b : Int) -> Path(plus a b, plus b a) =
+pub def rec plusComm(a : Int, b : Int) -> Path (plus a b) (plus b a) =
   match b where
     | Z => Path.back (plusZ a)
     | S(x) => Path.step (Path.ap up (plusComm[<] a x)) (Path.back (plusS x a))

@@ -19,19 +19,15 @@ def composite(
   x : A,
   y : A,
   z : A,
-  p : Path[.A = A](x, y),
-  q : Path[.A = A](y, z)
-) -> Path[.A = A](
-  x,
-  z
-) =
+  p : Path[.A = A] x y,
+  q : Path[.A = A] y z
+) -> Path[.A = A] x z =
   Path.step p q
 
 /// A function's action on a path, whose type states its endpoints.
-def ap(B : Type, C : Type, F : B -> C, b1 : B, b2 : B, p : Path[.A = B](b1, b2)) -> Path[.A = C](
-  F b1,
-  F b2
-) =
+def ap(B : Type, C : Type, F : B -> C, b1 : B, b2 : B, p : Path[.A = B] b1 b2) -> Path[.A = C] (
+  F b1
+) (F b2) =
   Path.ap F p
 
 /// The associator by based path induction on `h`.

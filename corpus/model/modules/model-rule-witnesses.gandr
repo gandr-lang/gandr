@@ -46,7 +46,7 @@ def rec joinRight(m : Ticks, n : Ticks) -> Ticks =
     | Tick(k) => Tick (joinRight[<] m k)
 
 /// `noTickJoinsRight` proves a left unit for `joinRight`.
-def rec noTickJoinsRight(n : Ticks) -> Path(joinRight NoTick n, n) =
+def rec noTickJoinsRight(n : Ticks) -> Path (joinRight NoTick n) n =
   match n where
     | NoTick => Path.here NoTick
     | Tick(k) => Path.ap tick (noTickJoinsRight[<] k)

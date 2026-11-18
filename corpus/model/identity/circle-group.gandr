@@ -34,7 +34,7 @@ def spinDown(n : Int) -> Path[.A = Path[.A = Circle] Base Base] (spin (P n)) (ba
 def rec spinHom(
   a : Int,
   b : Int
-) -> Path[.A = Path[.A = Circle](Base, Base)](spin (plus a b), Path.step (spin b) (spin a)) =
+) -> Path[.A = Path[.A = Circle] Base Base] (spin (plus a b)) (Path.step (spin b) (spin a)) =
   match b where
     | Z => Path.here (spin a)
     | S(x) => Path.ap loopOn (spinHom[<] a x)
@@ -43,9 +43,9 @@ def rec spinHom(
 /// The `windHom` induction sums windings in reverse order because `wind` folds
 /// its second summand.
 def rec windHom(
-  q : Path[.A = Circle](Base, Base),
-  p : Path[.A = Circle](Base, Base)
-) -> Path[.A = Int](wind (Path.step p q), plus (wind q) (wind p)) =
+  q : Path[.A = Circle] Base Base,
+  p : Path[.A = Circle] Base Base
+) -> Path[.A = Int] (wind (Path.step p q)) (plus (wind q) (wind p)) =
   match p where
     | here => Path.here (wind q)
     | loop ∷ r => Path.ap up (windHom[<] q r)
@@ -65,9 +65,9 @@ def spunComm(
 /// The `comm` chain applies `sect`, `windHom`, and `plusComm` to
 /// commute circle loops.
 def comm(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Path[.A = Circle](Base, Base)](Path.step p q, Path.step q p) =
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (Path.step p q) (Path.step q p) =
   compose[9, 11] (chain 5) (
     Path.back (sect (Path.step p q)),
     Path.ap spin (windHom q p),

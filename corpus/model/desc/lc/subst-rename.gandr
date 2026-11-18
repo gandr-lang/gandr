@@ -39,9 +39,9 @@ def weakenedSquare(
   s : Env,
   u : Env,
   q : Ren,
-  h : (n : N) -> Path[.A = Term](look (rlook n r) s Z, rename (look n u Z) q),
+  h : (n : N) -> Path[.A = Term] (look (rlook n r) s Z) (rename (look n u Z) q),
   m : N
-) -> Path[.A = Term](wk (look (rlook m r) s Z), wk (rename (look m u Z) q)) =
+) -> Path[.A = Term] (wk (look (rlook m r) s Z)) (wk (rename (look m u Z) q)) =
   Path.ap wk (h m)
 
 /// The lifts preserve pointwise agreement between renaming and substitution.
@@ -50,9 +50,9 @@ def substRenameSquareLift(
   s : Env,
   u : Env,
   q : Ren,
-  h : (n : N) -> Path[.A = Term](look (rlook n r) s Z, rename (look n u Z) q),
+  h : (n : N) -> Path[.A = Term] (look (rlook n r) s Z) (rename (look n u Z) q),
   n : N
-) -> Path[.A = Term](look (rlook n (RLift r)) (Lift s) Z, rename (look n (Lift u) Z) (RLift q)) =
+) -> Path[.A = Term] (look (rlook n (RLift r)) (Lift s) Z) (rename (look n (Lift u) Z) (RLift q)) =
   match n where
     | Z => Path.here (Ix Z)
     | S(m) => compose[7, 9] (chain 4) (
@@ -75,8 +75,8 @@ def rec substRenameSquare(
   s : Env,
   u : Env,
   q : Ren,
-  h : (n : N) -> Path[.A = Term](look (rlook n r) s Z, rename (look n u Z) q)
-) -> Path[.A = Term](subst (rename t r) s, rename (subst t u) q) =
+  h : (n : N) -> Path[.A = Term] (look (rlook n r) s Z) (rename (look n u Z) q)
+) -> Path[.A = Term] (subst (rename t r) s) (rename (subst t u) q) =
   match t where
     | Ix(n) => h n
     | Lam(b) => Path.ap
@@ -85,17 +85,17 @@ def rec substRenameSquare(
         substRenameSquareLift r s u q h n
       }))
     | Ap(f, x) => Path.walk
-      (fun (z) { type(Path[.A = Term](
-        Ap (subst (rename f r) s) (subst (rename x r) s),
-        Ap z (rename (subst x u) q)
-      )) })
+      (fun (z) {
+        type(Path[.A = Term] (Ap (subst (rename f r) s) (subst (rename x r) s)) (Ap
+          z
+          (rename (subst x u) q)))
+      })
       (substRenameSquare[<] f r s u q h)
       (Path.walk
         (fun (z) {
-          type(Path[.A = Term](
-            Ap (subst (rename f r) s) (subst (rename x r) s),
-            Ap (subst (rename f r) s) z
-          ))
+          type(Path[.A = Term] (Ap (subst (rename f r) s) (subst (rename x r) s)) (Ap
+            (subst (rename f r) s)
+            z))
         })
         (substRenameSquare[<] x r s u q h)
         (Path.here (Ap (subst (rename f r) s) (subst (rename x r) s))))

@@ -65,11 +65,8 @@ def actThrough(
   F : A -> B,
   x : A,
   y : A,
-  p : Path[.A = A](x, y)
-) -> Path[.A = B](
-  F x,
-  F y
-) =
+  p : Path[.A = A] x y
+) -> Path[.A = B] (F x) (F y) =
   Path.ap F p
 
 /// The `actOfCompose` function applies the composite of `F` and `G` to `p`.

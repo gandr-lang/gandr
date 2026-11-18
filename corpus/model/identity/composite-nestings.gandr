@@ -63,12 +63,9 @@ def tailComposite(
   y : A,
   z : A,
   w : A,
-  g : Path[.A = A](y, z),
-  h : Path[.A = A](z, w)
-) -> Path[.A = A](
-  y,
-  w
-) =
+  g : Path[.A = A] y z,
+  h : Path[.A = A] z w
+) -> Path[.A = A] y w =
   Path.step g h
 
 /// A call that returns a composite stands as the later path.

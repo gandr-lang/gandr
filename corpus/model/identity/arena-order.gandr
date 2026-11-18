@@ -100,7 +100,7 @@ def walkedABC() -> Integer = walk builtABC;
 def walkedBAC() -> Integer = walk builtBAC;
 
 /// The arena path makes both consumer results equal.
-def walkedAlike() -> Path(walk builtABC, walk builtBAC) =
+def walkedAlike() -> Path (walk builtABC) (walk builtBAC) =
   Path.ap walk oneArena
 
 /// The checker refuses labels without their allocation relabelling.

@@ -13,7 +13,7 @@
 /// - see: #720 — a call argument's form in a type
 
 /// The action of `F` on `p`, which does not reduce while `p` is a variable.
-def onPath(A : Type, F : A -> A, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](F x, F y) =
+def onPath(A : Type, F : A -> A, x : A, y : A, p : Path[.A = A] x y) -> Path[.A = A] (F x) (F y) =
   Path.ap F p
 
 /// Reflexivity at the composite of its two parameters.
@@ -45,10 +45,9 @@ def passedOneCall(
   x : A,
   y : A,
   z : A,
-  r : Path[.A = A](x, y),
-  s : Path[.A = A](F y, z)
-) -> Path[.A = Path[.A = A](F x, z)](
-  Path.step (onPath A F x y r) s,
+  r : Path[.A = A] x y,
+  s : Path[.A = A] (F y) z
+) -> Path[.A = Path[.A = A] (F x) z] (Path.step (onPath A F x y r) s) (
   Path.step (onPath A F x y r) s
 ) =
   composedHere A (F x) (F y) z (onPath A F x y r) s
@@ -60,10 +59,9 @@ def passedTwoCalls(
   x : A,
   y : A,
   z : A,
-  r : Path[.A = A](x, y),
-  s : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](F x, F z)](
-  Path.step (onPath A F x y r) (onPath A F y z s),
+  r : Path[.A = A] x y,
+  s : Path[.A = A] y z
+) -> Path[.A = Path[.A = A] (F x) (F z)] (Path.step (onPath A F x y r) (onPath A F y z s)) (
   Path.step (onPath A F x y r) (onPath A F y z s)
 ) =
   composedHere A (F x) (F y) (F z) (onPath A F x y r) (onPath A F y z s)

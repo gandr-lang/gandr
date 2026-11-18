@@ -79,8 +79,8 @@ def mapped : Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here B
 
 /// `Path.ap` of a map acts on every 2-cell, a bound one too.
 def mapCell(
-  c : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)
-) -> Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) =
+  c : Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here Base2)
+) -> Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here Base2) =
   Path.ap sphereId c
 
 /// The identity does not send the 2-cell to reflexivity.

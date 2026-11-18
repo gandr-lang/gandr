@@ -25,11 +25,11 @@ pub def lamOf(t : Term) -> Term =
   Lam t
 
 /// Equal indices are equal variables.
-pub def ixCong(x : N, y : N, p : Path(x, y)) -> Path(Ix x, Ix y) =
+pub def ixCong(x : N, y : N, p : Path x y) -> Path (Ix x) (Ix y) =
   Path.ap ixOf p
 
 /// Equal terms weaken to equal terms.
-pub def wkCong(x : Term, y : Term, p : Path(x, y)) -> Path(wk x, wk y) =
+pub def wkCong(x : Term, y : Term, p : Path x y) -> Path (wk x) (wk y) =
   Path.ap wk p
 
 /// Equal terms under one substitution are equal.

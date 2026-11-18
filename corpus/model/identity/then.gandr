@@ -17,9 +17,9 @@ def join(
   a : Integer,
   b : Integer,
   c : Integer,
-  q : Path(a, b),
-  r : Path(b, c)
-) -> Path(a, c) =
+  q : Path a b,
+  r : Path b c
+) -> Path a c =
   Path.step q r
 
 /// Reflexivity at seven composed with itself by a run.

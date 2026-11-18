@@ -14,7 +14,7 @@
 pub def p = Path.here 7;
 
 /// The `flip` function reverses an integer path.
-def flip(a : Integer, b : Integer, q : Path(a, b)) -> Path(b, a) =
+def flip(a : Integer, b : Integer, q : Path a b) -> Path b a =
   Path.back q
 
 /// The run reverses reflexivity at seven.

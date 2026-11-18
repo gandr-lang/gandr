@@ -94,10 +94,10 @@ def chain(
   s : y -> b,
   r : y -> b,
   v : y -> b,
-  l : Path[.A = y -> b](s, u),
-  c : Path[.A = y -> b](s, r),
-  m : Path[.A = y -> b](r, v)
-) -> Path[.A = y -> b](u, v) =
+  l : Path[.A = y -> b] s u,
+  c : Path[.A = y -> b] s r,
+  m : Path[.A = y -> b] r v
+) -> Path[.A = y -> b] u v =
   Path.step (Path.step (Path.back l) c) m
 
 /// Back transport is injective for functions into `b`.

@@ -53,7 +53,7 @@ def tell_words(c : Words) -> Integer =
 /// The refused fold cannot carry the cancellation path to a path from
 /// two to one.
 @[refuses("EndpointMismatch")]
-def two_is_one() -> Path[.A = Integer](2, 1) =
+def two_is_one() -> Path[.A = Integer] 2 1 =
   Path.ap tell_words both_cancel
 
 /// The `mirror` function exchanges loop and inverse-loop letters.

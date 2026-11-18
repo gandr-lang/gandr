@@ -18,7 +18,7 @@ def wrap(x : Integer) -> Box =
   Wrap x
 
 /// The `cong_wrap` proof carries a path to the two wrapped endpoints.
-def cong_wrap(a : Integer, b : Integer, p : Path(a, b)) -> Path(Wrap a, Wrap b) =
+def cong_wrap(a : Integer, b : Integer, p : Path a b) -> Path (Wrap a) (Wrap b) =
   Path.ap wrap p
 
 /// The run carries reflexivity at four through the wrapper.

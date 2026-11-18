@@ -29,9 +29,9 @@ def stepOmittedFirst(
   y : A,
   z : A,
   w : A,
-  g : Path(y, z),
-  h : Path[.A = A](z, w)
-) -> Path[.A = A](y, w) =
+  g : Path y z,
+  h : Path[.A = A] z w
+) -> Path[.A = A] y w =
   Path.step g h
 
 /// The composite through `stepOmittedFirst`, read as the composite that

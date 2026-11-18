@@ -21,7 +21,7 @@ def atRoot(x : Int) -> Path[.A = Int] (S (P (S x))) (S x) =
   Path.here (S x)
 
 /// The inner rule gives the same certificate through `up`.
-def inside(x : Int) -> Path[.A = Int](S (P (S x)), S x) =
+def inside(x : Int) -> Path[.A = Int] (S (P (S x))) (S x) =
   Path.ap up (Path.here x)
 
 /// The rules identify both peak certificates with reflexivity at the join.

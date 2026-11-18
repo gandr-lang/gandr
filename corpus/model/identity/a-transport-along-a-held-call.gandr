@@ -25,10 +25,10 @@ def thenCall(
   w : B,
   x : B,
   y : B,
-  p : Path[.A = B](w, x),
-  f : A -> Path[.A = B](x, y),
+  p : Path[.A = B] w x,
+  f : A -> Path[.A = B] x y,
   a : A
-) -> Path[.A = B](w, y) =
+) -> Path[.A = B] w y =
   Path.step p (f a)
 
 /// The `thenCallIdq` function composes `p` with that path through `idq`.
@@ -38,10 +38,10 @@ def thenCallIdq(
   w : B,
   x : B,
   y : B,
-  p : Path[.A = B](w, x),
-  f : A -> Path[.A = B](x, y),
+  p : Path[.A = B] w x,
+  f : A -> Path[.A = B] x y,
   a : A
-) -> Path[.A = B](w, y) =
+) -> Path[.A = B] w y =
   Path.step p (idq B x y (f a))
 
 /// The `thenAlongACall` proof compares the two composites.
@@ -64,10 +64,10 @@ def thenNamed(
   w : B,
   x : B,
   y : B,
-  p : Path[.A = B](w, x),
-  f : A -> Path[.A = B](x, y),
+  p : Path[.A = B] w x,
+  f : A -> Path[.A = B] x y,
   a : A
-) -> Path[.A = B](w, y) =
+) -> Path[.A = B] w y =
   Path.step p (call A B x y f a)
 
 /// The `thenNamedIdq` function composes `p` with that named call through `idq`.
@@ -77,10 +77,10 @@ def thenNamedIdq(
   w : B,
   x : B,
   y : B,
-  p : Path[.A = B](w, x),
-  f : A -> Path[.A = B](x, y),
+  p : Path[.A = B] w x,
+  f : A -> Path[.A = B] x y,
   a : A
-) -> Path[.A = B](w, y) =
+) -> Path[.A = B] w y =
   Path.step p (idq B x y (call A B x y f a))
 
 /// The `thenAlongANamedCall` proof compares the named composites.
@@ -103,10 +103,10 @@ def acted(
   C : Type,
   x : B,
   y : B,
-  f : A -> Path[.A = B](x, y),
+  f : A -> Path[.A = B] x y,
   g : B -> C,
   a : A
-) -> Path[.A = C](g x, g y) =
+) -> Path[.A = C] (g x) (g y) =
   Path.ap g (f a)
 
 /// The `actedIdq` function applies `g` through `idq`.
@@ -116,10 +116,10 @@ def actedIdq(
   C : Type,
   x : B,
   y : B,
-  f : A -> Path[.A = B](x, y),
+  f : A -> Path[.A = B] x y,
   g : B -> C,
   a : A
-) -> Path[.A = C](g x, g y) =
+) -> Path[.A = C] (g x) (g y) =
   Path.ap g (idq B x y (f a))
 
 /// The `congAlongACall` proof compares the two actions.

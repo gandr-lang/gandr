@@ -27,7 +27,7 @@ def weakenSingleAgree(a : Term, n : N) -> Path (subst (look n (Shift (S Z)) Z) (
 pub def subWeakenSingle(
   b : Term,
   a : Term
-) -> Path(subst (subst b (Shift (S Z))) (Cons a (Shift Z)), b) =
+) -> Path (subst (subst b (Shift (S Z))) (Cons a (Shift Z))) b =
   compose[5, 7] (chain 3) (
     substSquare b (Shift (S Z)) (Cons a (Shift Z)) (Shift Z) (Shift Z) (fun (n) {
       weakenSingleAgree a n

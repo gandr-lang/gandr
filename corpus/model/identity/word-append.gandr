@@ -16,9 +16,9 @@ import "./circle-base.gandr";
 
 /// The composite of two loops at the point.
 def comp(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Circle](Base, Base) =
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Circle] Base Base =
   Path.step p q
 
 /// Reflexivity is the composite's left unit.
@@ -48,16 +48,16 @@ def letterKept(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] B
 
 /// The composite again, under another name.
 def other(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Circle](Base, Base) =
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Circle] Base Base =
   Path.step p q
 
 /// The `compSwapped` function reverses its two paths.
 def compSwapped(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Circle](Base, Base) =
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Circle] Base Base =
   Path.step q p
 
 /// Both names unfold to one transport stuck on `q`, whose motives close over

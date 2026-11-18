@@ -45,10 +45,9 @@ def unloopOn(p : Path[.A = Circle] Base Base) -> Path[.A = Circle] Base Base =
 /// a path from `loop ∷ spin(wind(q))` to `loop ∷ q`. The machine does not
 /// decide the two path types, and the arm is refused as undecided.
 @[refuses("Undecided")]
-def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  spin (wind p),
-  p
-) =
+def rec forged(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
+  spin (wind p)
+) p =
   match p where
     | here => Path.here (Path.here Base)
     | loop ∷ q => forged[<] q
@@ -61,10 +60,7 @@ def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle]
 /// not the path at `q` the cancellation's right side reads. Read as a set,
 /// the loops would identify the two; the words are not read as one.
 @[refuses("RuleNotRespected")]
-def rec rewound(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  p,
-  p
-) =
+def rec rewound(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] p p =
   match p where
     | here => Path.here (Path.here Base)
     | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }

@@ -64,17 +64,16 @@ pub def unloopOn(p : Path[.A = Circle] Base Base) -> Path[.A = Circle] Base Base
   back loop ∷ p
 
 /// The `sect` induction makes `spin(wind p)` equal `p` under word cancellation.
-pub def rec sect(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  spin (wind p),
-  p
-) =
+pub def rec sect(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
+  spin (wind p)
+) p =
   match p where
     | here => Path.here (Path.here Base)
     | loop ∷ q => Path.ap loopOn (sect[<] q)
     | back(loop) ∷ q => Path.ap unloopOn (sect[<] q)
 
 /// The `retr` induction makes `wind(spin n)` equal `n`.
-pub def rec retr(n : Int) -> Path[.A = Int](wind (spin n), n) =
+pub def rec retr(n : Int) -> Path[.A = Int] (wind (spin n)) n =
   match n where
     | Z => Path.here Z
     | S(x) => Path.ap up (retr[<] x)

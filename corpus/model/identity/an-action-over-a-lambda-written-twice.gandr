@@ -11,8 +11,7 @@
 /// - see: #3976 — capture layouts
 
 /// The `act` function maps a path through `F`.
-def act(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
-  F x,
+def act(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A] x y) -> Path[.A = B] (F x) (
   F y
 ) =
   Path.ap F p

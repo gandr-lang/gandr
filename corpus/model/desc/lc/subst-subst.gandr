@@ -35,8 +35,7 @@ def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path (subst (look m s1 (S Z))
 
 /// A lookup under one binder, under a lifted substitution, is the
 /// substituted lookup weakened.
-def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> Path(
-  subst (look m s1 (S Z)) (Lift s2),
+def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> Path (subst (look m s1 (S Z)) (Lift s2)) (
   wk (subst (look m s1 Z) s2)
 ) =
   Path.step (substLookWeakens s1 s2 m) (substWeaken (look m s1 Z) s2)
@@ -47,9 +46,9 @@ def weakenedComposites(
   s2 : Env,
   u1 : Env,
   u2 : Env,
-  h : (n : N) -> Path[.A = Term](subst (look n s1 Z) s2, subst (look n u1 Z) u2),
+  h : (n : N) -> Path[.A = Term] (subst (look n s1 Z) s2) (subst (look n u1 Z) u2),
   m : N
-) -> Path[.A = Term](wk (subst (look m s1 Z) s2), wk (subst (look m u1 Z) u2)) =
+) -> Path[.A = Term] (wk (subst (look m s1 Z) s2)) (wk (subst (look m u1 Z) u2)) =
   Path.ap wk (h m)
 
 /// A pointwise agreement of two composites holds of their lifts.
@@ -58,9 +57,9 @@ def substSquareLift(
   s2 : Env,
   u1 : Env,
   u2 : Env,
-  h : (n : N) -> Path[.A = Term](subst (look n s1 Z) s2, subst (look n u1 Z) u2),
+  h : (n : N) -> Path[.A = Term] (subst (look n s1 Z) s2) (subst (look n u1 Z) u2),
   n : N
-) -> Path[.A = Term](subst (look n (Lift s1) Z) (Lift s2), subst (look n (Lift u1) Z) (Lift u2)) =
+) -> Path[.A = Term] (subst (look n (Lift s1) Z) (Lift s2)) (subst (look n (Lift u1) Z) (Lift u2)) =
   match n where
     | Z => Path.here (Ix Z)
     | S(m) => compose[5, 7] (chain 3) (
@@ -76,8 +75,8 @@ pub def rec substSquare(
   s2 : Env,
   u1 : Env,
   u2 : Env,
-  h : (n : N) -> Path[.A = Term](subst (look n s1 Z) s2, subst (look n u1 Z) u2)
-) -> Path[.A = Term](subst (subst t s1) s2, subst (subst t u1) u2) =
+  h : (n : N) -> Path[.A = Term] (subst (look n s1 Z) s2) (subst (look n u1 Z) u2)
+) -> Path[.A = Term] (subst (subst t s1) s2) (subst (subst t u1) u2) =
   match t where
     | Ix(n) => h n
     | Lam(b) => Path.ap
@@ -86,17 +85,17 @@ pub def rec substSquare(
         substSquareLift s1 s2 u1 u2 h n
       }))
     | Ap(f, x) => Path.walk
-      (fun (z) { type(Path[.A = Term](
-        Ap (subst (subst f s1) s2) (subst (subst x s1) s2),
-        Ap z (subst (subst x u1) u2)
-      )) })
+      (fun (z) {
+        type(Path[.A = Term] (Ap (subst (subst f s1) s2) (subst (subst x s1) s2)) (Ap
+          z
+          (subst (subst x u1) u2)))
+      })
       (substSquare[<] f s1 s2 u1 u2 h)
       (Path.walk
         (fun (z) {
-          type(Path[.A = Term](
-            Ap (subst (subst f s1) s2) (subst (subst x s1) s2),
-            Ap (subst (subst f s1) s2) z
-          ))
+          type(Path[.A = Term] (Ap (subst (subst f s1) s2) (subst (subst x s1) s2)) (Ap
+            (subst (subst f s1) s2)
+            z))
         })
         (substSquare[<] x s1 s2 u1 u2 h)
         (Path.here (Ap (subst (subst f s1) s2) (subst (subst x s1) s2))))

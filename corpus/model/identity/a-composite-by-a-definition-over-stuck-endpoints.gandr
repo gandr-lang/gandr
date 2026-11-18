@@ -20,9 +20,9 @@ def concat(
   x : A,
   y : A,
   z : A,
-  p : Path[.A = A](x, y),
-  q : Path[.A = A](y, z)
-) -> Path[.A = A](x, z) =
+  p : Path[.A = A] x y,
+  q : Path[.A = A] y z
+) -> Path[.A = A] x z =
   Path.step p q
 
 /// The `concatHere` proof is reflexivity at the defined composite.

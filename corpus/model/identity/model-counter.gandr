@@ -112,5 +112,5 @@ def observedUp() -> Integer = observe upModel;
 def observedDown() -> Integer = observe downModel;
 
 /// The consumer gives equal readings for related models.
-def observedAlike() -> Path(observe upModel, observe downModel) =
+def observedAlike() -> Path (observe upModel) (observe downModel) =
   Path.ap observe oneCounter

@@ -8,10 +8,7 @@
 /// - see: #3789 — the kernel took one step of the run and left it at `zero`
 
 /// The composite of two paths, whose type states its endpoints.
-def joinedPaths(A : Type, x : A, y : A, z : A, p : Path(x, y), q : Path(y, z)) -> Path(
-  x,
-  z
-) =
+def joinedPaths(A : Type, x : A, y : A, z : A, p : Path x y, q : Path y z) -> Path x z =
   Path.step p q
 
 /// Reflexivity, by name.

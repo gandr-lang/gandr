@@ -53,8 +53,8 @@ def loopCell : Path[.A = Path[.A = Type](Circle, Circle)] (Path.here Circle) (Pa
 /// The transport of a point along a 2-cell of the universe at the circle.
 def walkCell(
   y : Circle,
-  c : Path[.A = Path[.A = Type](Circle, Circle)](Path.here Circle, Path.here Circle)
-) -> Path[.A = Circle](y, y) =
+  c : Path[.A = Path[.A = Type](Circle, Circle)] (Path.here Circle) (Path.here Circle)
+) -> Path[.A = Circle] y y =
   Path.ap (fun (r) { Path.walk (fun (X) { X }) r y }) c
 
 /// Along `loopCell`, the transport of a point is `selfloop` at the point.

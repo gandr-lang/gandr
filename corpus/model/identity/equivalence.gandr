@@ -22,9 +22,9 @@ def leftRetraction(
   g : b -> a,
   h : b -> a,
   y : b,
-  sh : Path(g (t (h y)), h y),
-  ry : Path(t (h y), y)
-) -> Path(t (g y), y) =
+  sh : Path (g (t (h y))) (h y),
+  ry : Path (t (h y)) y
+) -> Path (t (g y)) y =
   Path.step (Path.back (Path.ap t (Path.step (Path.back sh) (Path.ap g ry)))) ry
 
 /// The `equivToIso` function derives a quasi-inverse from a bi-invertible map.
