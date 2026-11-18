@@ -98,8 +98,7 @@ fn assignments(context: &[PointCount]) -> Vec<Vec<Point>>
         let mut product = Vec::new();
         for row in &rows {
             for point in points(*carrier) {
-                let mut extended = row.clone();
-                extended.push(point);
+                let extended: Vec<_> = row.iter().copied().chain([point]).collect();
                 product.push(extended);
             }
         }

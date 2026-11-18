@@ -18,6 +18,7 @@
 //!   algebra as the functions on its spectrum. The suites check that reading on
 //!   the lattices that faces generate, through this module's queries.
 
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -324,10 +325,10 @@ pub struct Problem
 {
     /// One finite carrier per variable, in variable order.
     context: Vec<PointCount>,
-    /// The assumed face.
-    premise: Formula,
-    /// The required face.
-    conclusion: Formula,
+    /// The assumed face, shared with each problem that assumes it.
+    premise: Arc<Formula>,
+    /// The required face, shared with each problem that requires it.
+    conclusion: Arc<Formula>,
     /// The premise's reachable conjuncts, in node order; empty in the
     /// monotone band.
     premise_atoms: Vec<NodeId>,
@@ -390,12 +391,17 @@ impl Problem
         },
         Err(error) => matches!(error, ShapeError::VariableOutside(_) | ShapeError::WrongCarrier(_) | ShapeError::Disjunction(_) | ShapeError::PastBudget(_)),
     })]
-    pub fn new(
+    pub fn new<P, C>(
         context: Vec<PointCount>,
-        premise: Formula,
-        conclusion: Formula,
+        premise: P,
+        conclusion: C,
     ) -> Result<Self, ShapeError>
+    where
+        P: Into<Arc<Formula>>,
+        C: Into<Arc<Formula>>,
     {
+        let premise: Arc<Formula> = premise.into();
+        let conclusion: Arc<Formula> = conclusion.into();
         let conjunctive = premise
             .conjuncts(&context, Side::Premise)
             .and_then(|premise_atoms| {
@@ -445,7 +451,7 @@ impl Problem
     #[must_use]
     pub fn parts(&self) -> (&[PointCount], &Formula, &Formula)
     {
-        (&self.context, &self.premise, &self.conclusion)
+        (&self.context, &*self.premise, &*self.conclusion)
     }
 
     /// The premise's conjuncts: the `⊥` and membership nodes its root
