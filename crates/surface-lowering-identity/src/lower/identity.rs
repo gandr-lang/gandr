@@ -4483,10 +4483,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     /// # Specification
     /// - requires: `answer` is a node read where a result is read.
     /// - ensures: the path answer exactly when the walk from `answer` through
-    ///   parenthesised types and one `-F` reaches a path type, and the flow
-    ///   answer when it reaches a flow type supplying its carrier, a type
-    ///   application headed `Flow` at two arguments, or a flow between types
-    ///   written `A ⇝ B`.
+    ///   parenthesised types and one `-F` reaches a path type, written whole or
+    ///   with its endpoints juxtaposed, `Path[.A = C] a b`, and the flow answer
+    ///   when it reaches a flow type supplying its carrier, a type application
+    ///   headed `Flow` at two arguments, or a flow between types written `A ⇝
+    ///   B`.
     /// - provides: the classification-time guarantee that a derived operation's
     ///   answer mints as `F (Path[.A = A](a, b))` or `F (Flow[.A = A](a, b))`.
     /// - fails: the unannotated refusal at `site` when the walk reaches another
@@ -4631,6 +4632,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
                 Piece::Tile { at, .. } => Some(at),
                 Piece::Operand(_) => None,
             });
+            // The head of a juxtaposed path type, `Path[.A = C] a b` (#5750).
+            let lead = scratch.pieces.first().and_then(|piece| match *piece {
+                Piece::Operand(head) => Some(head),
+                Piece::Tile { .. } => None,
+            });
             let flows = scratch.pieces.iter().any(|piece| {
                 matches!(*piece, Piece::Tile { label, .. } if label == TileName::UNIVERSE_FLOW)
             });
@@ -4645,6 +4651,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
                 };
             }
             if applied {
+                if let Some(head) = lead
+                    && let Some((_, Former::PathType)) = self.cx().form_at(head)?
+                {
+                    return Ok(Answered::Path);
+                }
                 let flow = written == 2_usize
                     && keyword.is_some_and(|at| self.cx().name_at(at).as_ref() == FLOW);
                 return if flow {

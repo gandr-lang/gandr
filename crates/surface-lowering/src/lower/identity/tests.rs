@@ -1569,6 +1569,29 @@ fn a_derived_operation_needs_a_written_path_answer()
     }
 }
 
+/// #5750: a derived action reads its motive off an answer that states its
+/// endpoints by juxtaposition, `Path[.A = N] (same n) n`, as it reads the
+/// call form. Before, the answer was refused as unannotated.
+#[test]
+fn a_derived_operation_reads_a_juxtaposed_path_answer_5750()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(include_str!(
+            "tests/fixtures/a-derived-operation-reads-a-juxtaposed-path-answer-5750-module.gandr"
+        )),
+        &mut arena,
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "kept".into()),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "`Path.ap` reads its motive off the juxtaposed answer: {:?}",
+        outcome_of(&module, "kept".into())
+    );
+}
+
 /// #985: a written transport read as a value is the value it returns, as the
 /// derived composite's fold is, so `Path.step(loop, loop)` and its explicit
 /// spelling lower to one transport; before, the written one nested a run that
