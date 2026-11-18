@@ -399,7 +399,10 @@ fn class(
 ///   brackets, innermost first. The scan reads the closer as the close of the
 ///   innermost bracket, as it reads every closer. In `words`, each lower-case
 ///   word of two or more bytes that is no keyword, outside an interpolation, in
-///   source order.
+///   source order. Also in `arrows`, an `=` at the end of the token before a
+///   written `;` that ends a block member whose first token is `let`, when the
+///   member writes no `=` directly inside its block and that token ends an
+///   operand.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
@@ -462,6 +465,9 @@ fn gaps<'text>(
     let mut keyword_head = false;
     let mut closed_head: Option<u32> = None;
     let mut sort_named = 0_u8;
+    // A `let` member of a block: the depth of the block it stands in, and
+    // whether the member writes its `=` directly inside that block.
+    let mut statement: Option<(usize, bool)> = None;
     let opener = |start: u32| Gap {
         at: ByteOffset::from(usize::try_from(start).unwrap_or(usize::MAX)),
         act: Act::Writes {
@@ -783,6 +789,39 @@ fn gaps<'text>(
                 },
                 cleared: true,
             });
+        }
+        // A `let` statement ends at its `;`, after its `=` and its value.
+        // Without the `=`, the `;` stands after the type and closes nothing.
+        // An `=` before the `;` reads the statement whole again, and the
+        // value it leaves out owes nothing more.
+        if opaque == 0 {
+            let spelled = <&str>::from(spelling(text, token));
+            if statement.is_some_and(|(depth, _)| stack.len() < depth) {
+                statement = None;
+            }
+            if spelled == "let" && head.is_some_and(|(start, _)| start == token.start) {
+                statement = Some((stack.len(), false));
+            }
+            else if let Some((depth, written)) = statement
+                && depth == stack.len()
+            {
+                if spelled == "=" {
+                    statement = Some((depth, true));
+                }
+                else if spelled == ";" {
+                    statement = None;
+                    if !written && let Some((end, false, false, true)) = previous {
+                        places.arrows.push(Gap {
+                            at: ByteOffset::from(usize::try_from(end).unwrap_or(usize::MAX)),
+                            act: Act::Writes {
+                                tiles: alloc::vec!["="],
+                                over: 0,
+                            },
+                            cleared: true,
+                        });
+                    }
+                }
+            }
         }
         if class.word && opaque == 0 {
             places.words.push((
@@ -1453,6 +1492,169 @@ pub(super) fn gapped<'source>(
     })
 }
 
+/// `parsed`, with each `;` that ends a stray form at the top level read as a
+/// token that no mold takes. A form at the top level that no keyword begins
+/// is a stray, and the lowering refuses it. Its `;` ends no declaration, so
+/// the melder reads the `;` as the separator of a block that it opens and
+/// closes again, or the run before it as the head of a declaration that it
+/// mints. A `;` that begins a form, as the second `;` of `def x = 1;;`, ends
+/// an empty stray. A writer meets the refusal of the stray and the `;` alone.
+///
+/// # Specification
+/// - requires: `parsed` is a parse under `pbg`, and `headed` is the parse that
+///   the head search gives for it, if it gives one.
+/// - ensures: `None` when `parsed` owes nothing, when no `;` at the top level
+///   begins a form or follows an operand in a form that no keyword begins and
+///   at whose start `headed` owes no [`Oblig::MissingTile`], or when the copy
+///   with each such `;` replaced by a byte that no lexeme takes owes an
+///   obligation besides one [`Oblig::UnmoldedTok`] over each such `;`;
+///   otherwise that copy's parse read back over the source, each such `;` a
+///   convex grout over its byte. A form at the top level starts at the first
+///   significant token, after a `;` at the top level and at a line at column
+///   zero.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a number and a call before a `;` at the top level each
+///   owe the `;` alone, and the declaration after it owes nothing; a second `;`
+///   after a declaration owes itself alone; a string whose `import` is left out
+///   keeps the keyword minted at its start.
+/// - witness: `parse::gap::tests::a_separator_after_a_root_stray_owes_itself_alone_1057`
+/// - witness: `sweeps::dropped_tokens_recover_no_worse_than_the_record`
+pub(super) fn strayed<'source>(
+    pbg: &Pbg,
+    parsed: &ParseResult<'source>,
+    headed: Option<&ParseResult<'source>>,
+) -> Option<ParseResult<'source>>
+{
+    if parsed.obligations.is_empty() {
+        return None;
+    }
+    let source = parsed.tree.source();
+    let text = <&str>::from(source);
+    let bytes = SourceBytes::from(text.as_bytes());
+    let mut depth = 0_usize;
+    let mut column_zero = true;
+    // Whether a keyword begins the form at the top level that the scan reads,
+    // and where the form starts.
+    let mut keyword: Option<(bool, usize)> = None;
+    // Whether the token before the current one ends an operand.
+    let mut operand = false;
+    // A keyword that the head search mints where a form starts makes the
+    // form a declaration, as a string that its `import` left out.
+    let declared = |form: usize| {
+        headed.is_some_and(|headed| {
+            headed.obligations.iter().any(|obligation| {
+                obligation.class == Oblig::MissingTile
+                    && usize::from(obligation.span.start()) == form
+            })
+        })
+    };
+    let mut strays: Vec<usize> = Vec::new();
+    for token in label(SourceFragment::from(text)) {
+        let start = usize::try_from(token.start).ok()?;
+        let spelled = <&str>::from(spelling(source, token));
+        match token.lexeme {
+            Lexeme::Space => {
+                // The layout may split a line's indent from its newline.
+                column_zero = spelled.rfind('\n').map_or_else(
+                    || column_zero && spelled.is_empty(),
+                    |last| last.saturating_add(1) == spelled.len(),
+                );
+                continue;
+            },
+            Lexeme::LayoutSemi => continue,
+            Lexeme::LayoutOpen => {
+                depth = depth.saturating_add(1);
+                continue;
+            },
+            Lexeme::LayoutClose => {
+                depth = depth.saturating_sub(1);
+                continue;
+            },
+            Lexeme::LowerWord
+            | Lexeme::UpperWord
+            | Lexeme::Number
+            | Lexeme::TypedNumber
+            | Lexeme::Character
+            | Lexeme::Quote
+            | Lexeme::StringFragment
+            | Lexeme::EscapeSequence
+            | Lexeme::Punct
+            | Lexeme::ArmBar
+            | Lexeme::Unknown => {},
+        }
+        let leads = core::mem::replace(&mut column_zero, false);
+        let bracketing = bracket(token, bytes);
+        if depth == 0 {
+            if keyword.is_none() || leads {
+                keyword = Some((false, start));
+            }
+            if token.lexeme == Lexeme::LowerWord
+                && RESERVED_WORDS.contains(&spelled)
+                && let Some((ref mut begun, _)) = keyword
+            {
+                *begun = true;
+            }
+            if token.lexeme == Lexeme::Punct && spelled == ";" {
+                if let Some((false, form)) = keyword
+                    && (operand || form == start)
+                    && !declared(form)
+                {
+                    strays.push(start);
+                }
+                keyword = None;
+            }
+        }
+        match bracketing {
+            Bracket::Open => depth = depth.saturating_add(1),
+            Bracket::Close => depth = depth.saturating_sub(1),
+            Bracket::Neither => {},
+        }
+        operand = token.lexeme != Lexeme::Punct || bracketing == Bracket::Close;
+    }
+    if strays.is_empty() {
+        return None;
+    }
+    let mut copy = String::with_capacity(text.len().saturating_add(strays.len()));
+    let mut splices = Vec::with_capacity(strays.len());
+    let mut from = 0_usize;
+    for &at in &strays {
+        copy.push_str(text.get(from .. at)?);
+        splices.push(Splice::replacing(
+            ByteOffset::from(copy.len()),
+            SourceText::from(UNTAKEN),
+            SourceText::from(";"),
+        )?);
+        copy.push_str(UNTAKEN);
+        from = at.saturating_add(1);
+    }
+    copy.push_str(text.get(from ..)?);
+    let repaired = spliced(
+        molded(pbg, SourceText::from(copy.as_str())),
+        source,
+        &splices,
+        [],
+    )?;
+    let alone = repaired.obligations.len() == strays.len()
+        && repaired.obligations.iter().all(|obligation| {
+            obligation.class == Oblig::UnmoldedTok
+                && strays
+                    .binary_search(&usize::from(obligation.span.start()))
+                    .is_ok()
+                && usize::from(obligation.span.end())
+                    == usize::from(obligation.span.start()).saturating_add(1)
+        });
+    alone.then_some(repaired)
+}
+
+/// A byte that no lexeme takes, written in place of a stray `;`. The space
+/// before it ends the run before it, so it stands as a token of its own, and
+/// the copy reads the space as layout that it wrote.
+const UNTAKEN: &str = " \u{1}";
+
 /// The top-level form `at` stands in: from the start of the last line at or
 /// before `at` that begins a form to the start of the next such line. A line
 /// begins a form when its first byte is a lower-case letter, `_`, `@` or `/`:
@@ -2035,6 +2237,65 @@ mod tests
             )))?,
             [],
             "an application across a line at its items' column owes nothing, so no place is tried"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_separator_after_a_root_stray_owes_itself_alone_1057() -> Result<(), Failure>
+    {
+        // A call at the top level ends in a `;`, as a statement does. The
+        // `;` ends no declaration, and the `def` after it is whole.
+        let source = include_str!(
+            "gap/unformatted/a-separator-after-a-root-stray-owes-itself-alone-1057.gandr"
+        );
+        let at = source.find(';').unwrap_or_default();
+        let pbg = built_in()?;
+        let parsed = parse(&pbg, SourceText::from(source))?;
+        let tree = parsed.tree();
+        assert_eq!(
+            crate::testing::reconstruct(tree),
+            source,
+            "the tree spells the source"
+        );
+        assert_eq!(
+            parsed
+                .obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<alloc::vec::Vec<_>>(),
+            [(Oblig::UnmoldedTok, at, at.saturating_add(1))],
+            "the `;` after the stray owes itself alone, and the `def` after it owes nothing"
+        );
+        assert!(
+            tree.positions()
+                .filter_map(|position| tree.node(position))
+                .any(|node| {
+                    matches!(node.label(), gandr_surface_syntax::NodeLabel::Grout {
+                        shape: gandr_surface_syntax::GroutShape::Convex,
+                        ..
+                    }) && usize::from(node.span().start()) == at
+                        && usize::from(node.span().end()) == at.saturating_add(1)
+                }),
+            "the `;` stands as a token that no mold takes"
+        );
+        assert_eq!(
+            owed(SourceText::from(include_str!(
+                "gap/unformatted/a-separator-after-a-root-stray-owes-itself-alone-1057-number.gandr"
+            )))?,
+            [(Oblig::UnmoldedTok, Line(1))],
+            "a number before a `;` at the top level owes the `;` alone"
+        );
+        assert_eq!(
+            owed(SourceText::from(include_str!(
+                "gap/unformatted/a-separator-after-a-root-stray-owes-itself-alone-1057-doubled.gandr"
+            )))?,
+            [(Oblig::UnmoldedTok, Line(1)), (Oblig::UnmoldedTok, Line(3))],
+            "a `;` that begins a form at the top level owes itself alone"
         );
         Ok(())
     }

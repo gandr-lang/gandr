@@ -416,7 +416,14 @@ pub(super) fn placed<'source>(
     parsed: ParseResult<'source>,
 ) -> ParseResult<'source>
 {
-    let parsed = headed(pbg, &parsed).unwrap_or(parsed);
+    // A `;` after a stray form at the top level owes itself alone, and no
+    // tile minted for it, unless a keyword minted at the form's start makes
+    // it a declaration.
+    let declared = headed(pbg, &parsed);
+    if let Some(strayed) = super::gap::strayed(pbg, &parsed, declared.as_ref()) {
+        return strayed;
+    }
+    let parsed = declared.unwrap_or(parsed);
     // The gap search wins over the first target where it keeps a place
     // before a line inside the target's top-level form and owes nothing but
     // the tiles it mints: the line tells where the repair stands, and the
@@ -694,8 +701,9 @@ fn earlier<'source>(
 /// holds a repair: the member is a form after the block's opener whose mold
 /// heads no declaration, as `Same(a : Type) = a;` in a module whose `type` is
 /// left out. It takes only a keyword that another member of its block starts
-/// with, and a form at the root on a line indented past the declaration's
-/// head counts as such a member. Its copy spans the member.
+/// with, a member inside it that a `;` after it leaves there included, and a
+/// form at the root on a line indented past the declaration's head counts as
+/// such a member. Its copy spans the member.
 ///
 /// # Specification
 /// - requires: `parsed` is a parse under `pbg`.
@@ -794,6 +802,11 @@ fn headed<'source>(
                 })
         })
     });
+    // The keywords of members that a `;` after a stray member leaves inside
+    // it, and the nodes the walk under the strays still reads: one buffer
+    // each for every declaration.
+    let mut nested: Vec<SourceText<'static>> = Vec::new();
+    let mut pending: Vec<NodeIndex> = Vec::new();
     for declaration in repaired {
         block.clear();
         let mut opened = false;
@@ -849,6 +862,29 @@ fn headed<'source>(
                     Some((form, node.span(), keyword, false))
                 }),
         );
+        // A `;` after a stray member closes no member, so the members after
+        // it stand inside the stray. Their keywords count as the block's.
+        nested.clear();
+        if block.iter().any(|&(_, _, _, stray)| stray) {
+            pending.clear();
+            pending.extend(
+                block
+                    .iter()
+                    .filter(|&&(_, _, _, stray)| stray)
+                    .map(|&(child, ..)| child),
+            );
+            while let Some(position) = pending.pop() {
+                if let Some(node) = tree.node(position)
+                    && let NodeLabel::Meld(mold) = node.label()
+                    && bool::from(declaration_head(pbg, mold))
+                    && let Some(keyword) =
+                        first_tile(tree, position).and_then(|(_, first)| spelt(first))
+                {
+                    nested.push(keyword);
+                }
+                pending.extend(tree.children(position));
+            }
+        }
         for &(child, span, _, stray) in &block {
             if stray {
                 // The keywords of the block, sorted and each once, so the
@@ -856,6 +892,7 @@ fn headed<'source>(
                 let mut keywords: Vec<SourceText<'static>> = block
                     .iter()
                     .filter_map(|&(_, _, keyword, _)| keyword)
+                    .chain(nested.iter().copied())
                     .collect();
                 keywords.sort_unstable_by_key(|&keyword| <&str>::from(keyword));
                 keywords.dedup();

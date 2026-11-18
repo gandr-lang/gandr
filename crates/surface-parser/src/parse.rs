@@ -1646,10 +1646,11 @@ mod tests
     fn a_source_splits_before_each_declaration_head() -> Result<(), Failure>
     {
         // Five declarations: a plain one, an attributed one, a module whose
-        // members sit inside its braces, a data declaration followed by an
-        // expression statement, and one after that statement. The split cuts
-        // before each top-level head and nowhere else; every seam holds but
-        // the last, which follows a statement rather than a declaration.
+        // members sit inside its braces, a data declaration followed by a
+        // stray expression, and one after that stray. The split cuts before
+        // each top-level head and nowhere else; every seam holds but the last,
+        // where the melder reads the stray's `;` as a separator whose block
+        // the slope leaves open. The parse owes that `;` alone.
         let pbg = built_in()?;
         let src =
             include_str!("parse/fixtures/a-source-splits-before-each-declaration-head-src.gandr");
@@ -1677,9 +1678,28 @@ mod tests
             UnitSeam::Joined,
             UnitSeam::Joined,
             UnitSeam::Joined,
-            UnitSeam::Broken(SeamBreak::SortMismatch),
+            UnitSeam::Broken(SeamBreak::OpenSlope),
         ]);
         assert_eq!(*joined.result(), parse(&pbg, source)?);
+        let semicolon = src.find("}\n1;").map_or(0, |at| at.saturating_add(3));
+        assert_eq!(
+            joined
+                .result()
+                .obligations()
+                .iter()
+                .map(|obligation| (
+                    obligation.class,
+                    usize::from(obligation.span.start()),
+                    usize::from(obligation.span.end())
+                ))
+                .collect::<Vec<_>>(),
+            [(
+                crate::oblig::Oblig::UnmoldedTok,
+                semicolon,
+                semicolon.saturating_add(1)
+            )],
+            "the stray's `;` owes itself alone, and nothing after it is owed"
+        );
         Ok(())
     }
 
