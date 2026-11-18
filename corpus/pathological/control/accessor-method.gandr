@@ -43,6 +43,12 @@ def sized() -> Integer =
 def unheld(ys : List Integer) -> Integer =
   (ys.first ()) as w { pure w }
 
+/// The same block through the method's path: the path changes no rule of
+/// the receiver.
+@[refuses("OutOfFragment.Held")]
+def unheldByPath(ys : List Integer) -> Integer =
+  (Places.first ys) as w { pure w }
+
 /// An exclusive view of a list a shared access already lends.
 @[refuses("HeldLent")]
 def raisedWhileRead() -> Integer =
