@@ -44,6 +44,6 @@ def retired : Prefix Seat.SeatEnd = recorded
 
 /// A seat that reports forever has no complete run, and every record of it
 /// is a prefix: two reports so far.
-def reportedTwice : Prefix mu more. !(Seat.Report). more = recorded
+def reportedTwice : Prefix rec more => (Seat.Report) >! more = recorded
   (sent Seat.progress)
   (sent Seat.progress);

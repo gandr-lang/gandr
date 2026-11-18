@@ -98,4 +98,4 @@ def beyond(m : +U (-F Integer & -F String)) -> String =
 def unthunked : -F Integer & -F Integer;
 
 @[refuses("OutOfFragment.WrongSort")]
-def menu : +U &{get : !Integer. end, put : ?Integer. end};
+def menu : +U &{get : Integer >! end, put : Integer >? end};

@@ -21,14 +21,14 @@ def finish(seat : end) -> Unit =
   close seat
 
 /// A parameter that receives a number, then closes, and answers the number.
-def answer(seat : ?Integer. end) -> Integer =
+def answer(seat : Integer >? end) -> Integer =
   let count = recv seat
   close seat
   count
 
 /// An intuitionistic parameter beside a parameter at a session type: the
 /// placement counts apart from the parameters before it.
-def report(note : String, seat : !String. end) -> Unit =
+def report(note : String, seat : String >! end) -> Unit =
   send seat note
   close seat
 
@@ -41,7 +41,7 @@ def handed() -> Unit =
 /// The parent hands its end to `answer`, which receives what the child sent.
 @[runs("7")]
 def asked() -> Integer =
-  let desk = fork (seat : !Integer. end) {
+  let desk = fork (seat : Integer >! end) {
     send seat 7;
     close seat
   };
@@ -50,7 +50,7 @@ def asked() -> Integer =
 /// The parent hands its end to `report` beside a note, which the child takes.
 @[runs("*{}")]
 def reported() -> Unit =
-  let desk = fork (seat : ?String. end) {
+  let desk = fork (seat : String >? end) {
     let note = recv seat;
     close seat
   };

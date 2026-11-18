@@ -611,9 +611,12 @@ impl TileName
     /// The `=>` after an arm's pattern, a clause's patterns, a handler
     /// clause's head or a copattern's label.
     pub const FAT_ARROW: Self = Self("=>");
-    /// The protocol step `>>` between a send's or a receive's payload and the
-    /// rest of the protocol.
-    pub const SEQUENCE: Self = Self(">>");
+    /// The protocol step `>!` between a send's payload and the rest of the
+    /// protocol.
+    pub const SEND_STEP: Self = Self(">!");
+    /// The protocol step `>?` between a receive's payload and the rest of the
+    /// protocol.
+    pub const RECEIVE_STEP: Self = Self(">?");
     /// An escape sequence inside a string's own tiles.
     pub const ESCAPE_SEQUENCE: Self = Self("escape_sequence");
     /// The member `face`, naming a set of a boundary's points: a theory's
@@ -825,13 +828,8 @@ impl TileName
     pub const DROP: Self = Self("drop");
     /// The closed session type `end`.
     pub const END: Self = Self("end");
-    /// The recursive session type's former keyword `mu`, read until the corpus
-    /// moves to `rec t => S`.
-    pub const MU: Self = Self("mu");
     /// The session keyword `offer`.
     pub const OFFER: Self = Self("offer");
-    /// The receive session type's lead `?`.
-    pub const QUESTION: Self = Self("?");
     /// The session keyword `select`.
     pub const SELECT: Self = Self("select");
     /// The session keyword `send`.

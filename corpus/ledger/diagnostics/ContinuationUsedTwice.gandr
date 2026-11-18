@@ -8,12 +8,12 @@ import std.process;
 module Ring :> *{
   type Sqe,
   type Cqe,
-  type Submission = ?Sqe. !Cqe. end,
+  type Submission = Sqe >? Cqe >! end,
   type Buffer = end,
-  type Pending = ?Cqe. end,
-  type Moving = ?Buffer. !Cqe. end,
-  type Reaping = ?Pending. end,
-  type Cancelling = ?Pending. !Cqe. end,
+  type Pending = Cqe >? end,
+  type Moving = Buffer >? Cqe >! end,
+  type Reaping = Pending >? end,
+  type Cancelling = Pending >? Cqe >! end,
   read : Sqe,
   done : Cqe
 } where {

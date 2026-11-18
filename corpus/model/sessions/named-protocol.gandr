@@ -14,10 +14,10 @@
 /// A module that names the desk's protocol as a manifest component.
 module Desk where
   /// The desk's side: it receives one number and closes.
-  type Ask = ?Integer. end;
+  type Ask = Integer >? end;
 
 /// The seat's side of a one-number report, named at the top level.
-type Tell = !Integer. end;
+type Tell = Integer >! end;
 /// `Report` names the seat's side as `Tell` does.
 type Report = Tell;
 

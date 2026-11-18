@@ -712,10 +712,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         Ok(())
     }
 
-    /// Read one of a session type's own forms, `!A >> S`, `?A >> S`, `end` or
-    /// `rec t => S`, at `here`, its continuations queued on the walk; the
-    /// dotted `!A. S`, `?A. S` and `mu t. S` are read alike until the corpus
-    /// moves.
+    /// Read one of a session type's own forms, `A >! S`, `A >? S`, `end` or
+    /// `rec t => S`, at `here`, its continuations queued on the walk.
     ///
     /// # Specification
     /// - requires: `cursor` reads the form's pieces from the start, and `state`
@@ -756,19 +754,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             exhausted(here, &cursor)?;
             return Ok(ProtocolSyntax::End);
         }
-        let recursive = match cursor.tile(TileName::REC) {
-            Maybe::Present(_) => Some(TileName::FAT_ARROW),
-            Maybe::Absent(_) => match cursor.tile(TileName::MU) {
-                Maybe::Present(_) => Some(TileName::DOT),
-                Maybe::Absent(_) => None,
-            },
-        };
-        if let Some(arrow) = recursive {
+        if let Maybe::Present(_) = cursor.tile(TileName::REC) {
             let Maybe::Present(variable) = cursor.tile(TileName::TYPE_VARIABLE)
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            closed(here, &mut cursor, arrow)?;
+            closed(here, &mut cursor, TileName::FAT_ARROW)?;
             let body = here.one(cursor.operands())?;
             exhausted(here, &cursor)?;
             binders.push(self.cx().name_at(variable));
@@ -781,17 +772,14 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             let inner = draft.queue(body);
             return Ok(ProtocolSyntax::Mu(inner));
         }
-        let sends = match cursor.tile(TileName::BANG) {
+        let carried = here.one(cursor.operands())?;
+        let sends = match cursor.tile(TileName::SEND_STEP) {
             Maybe::Present(_) => true,
             Maybe::Absent(_) => {
-                closed(here, &mut cursor, TileName::QUESTION)?;
+                closed(here, &mut cursor, TileName::RECEIVE_STEP)?;
                 false
             },
         };
-        let carried = here.one(cursor.operands())?;
-        if let Maybe::Absent(_) = cursor.tile(TileName::SEQUENCE) {
-            closed(here, &mut cursor, TileName::DOT)?;
-        }
         let continued = here.one(cursor.operands())?;
         exhausted(here, &cursor)?;
         let Reading::ValueType(frame) = here.reading

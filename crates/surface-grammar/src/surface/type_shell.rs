@@ -851,30 +851,20 @@ fn add_type_rules(
         ),
     ));
     rules.push(telescope_type);
-    // A protocol step and the rest: `! T >> S` and `? T >> S`. The dotted
-    // spelling `! T . S` is read beside it until the corpus moves.
-    let step = || Regex::alt([tile(TileLabel(">>")), tile(TileLabel("."))]);
-    rules.push(rule(
+    // A protocol step and the rest: `T >! S` sends `T`, and `T >? S` receives
+    // it. Each is infix in the band of the arrow and groups to the right, so
+    // `Integer >! String >? end` reads the send first.
+    rules.push(binary_infix_rule(
         RuleName("send_session_type"),
         ty,
         type_arrow,
-        Regex::seq([
-            tile(TileLabel("!")),
-            Regex::sort(ty),
-            step(),
-            Regex::sort(ty),
-        ]),
+        TileLabel(">!"),
     ));
-    rules.push(rule(
+    rules.push(binary_infix_rule(
         RuleName("receive_session_type"),
         ty,
         type_arrow,
-        Regex::seq([
-            tile(TileLabel("?")),
-            Regex::sort(ty),
-            step(),
-            Regex::sort(ty),
-        ]),
+        TileLabel(">?"),
     ));
     rules.push(rule(
         RuleName("end_session_type"),
@@ -928,25 +918,15 @@ fn add_type_rules(
         AdaptationReason("read, not repeated: the session offer is the lazy record over labels `&{ … }` whose entries are session types, one former read in the zone its type is written in"),
     ));
     rules.push(lazy_record);
-    // The recursive protocol `rec X => S`; `mu X . S` is read beside it until
-    // the corpus moves.
+    // The recursive protocol `rec X => S`.
     rules.push(rule(
         RuleName("mu_session_type"),
         ty,
         type_arrow,
         Regex::seq([
-            Regex::alt([
-                Regex::seq([
-                    tile(TileLabel("rec")),
-                    tile(TileLabel("type_variable")),
-                    tile(TileLabel("=>")),
-                ]),
-                Regex::seq([
-                    tile(TileLabel("mu")),
-                    tile(TileLabel("type_variable")),
-                    tile(TileLabel(".")),
-                ]),
-            ]),
+            tile(TileLabel("rec")),
+            tile(TileLabel("type_variable")),
+            tile(TileLabel("=>")),
             Regex::sort(ty),
         ]),
     ));

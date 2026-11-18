@@ -2244,9 +2244,9 @@ fn quoted_piece(
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
 {
-    /// A qualified name `M.T`: an atom everywhere but a session type's
-    /// payload, where the send's or receive's own `.` would end the payload at
-    /// the path's first `.`, so it is parenthesized there, `!(M.T). S`.
+    /// A qualified name `M.T`. It binds as an atom, and a slot that
+    /// parenthesizes atoms takes it bare: the target of a positional
+    /// projection, `M.p.0`.
     Qualified,
     /// A name, a literal, a universe, a bracketed or braced form, a
     /// projection.
@@ -2458,25 +2458,27 @@ fn protocol_template(
                 text.push('?');
             },
             Ok(&ProtocolNode::Send { payload, next }) => {
-                text.push('!');
-                segments.push(Segment::Text(core::mem::take(&mut text)));
+                if !text.is_empty() {
+                    segments.push(Segment::Text(core::mem::take(&mut text)));
+                }
                 segments.push(Segment::Payload(payload));
-                text.push_str(" >> ");
+                text.push_str(" >! ");
                 pending.push(Spelling::State(next));
             },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
-                    reason = "the receive session type's own `?A >> S`, which \
+                    reason = "the receive session type's own `A >? S`, which \
                               `receive_session_type` reads: an answer, not a placeholder"
                 )
             )]
             Ok(&ProtocolNode::Receive { payload, next }) => {
-                text.push('?');
-                segments.push(Segment::Text(core::mem::take(&mut text)));
+                if !text.is_empty() {
+                    segments.push(Segment::Text(core::mem::take(&mut text)));
+                }
                 segments.push(Segment::Payload(payload));
-                text.push_str(" >> ");
+                text.push_str(" >? ");
                 pending.push(Spelling::State(next));
             },
             Ok(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
@@ -13825,14 +13827,11 @@ impl Walk<'_, '_>
                 for _ in 0_usize .. count {
                     popped.push(self.pop()?);
                 }
+                // A payload stands left of `>!` or `>?`, in the band of the
+                // arrow, so a piece tighter than the arrow stands bare.
                 let mut payloads = Vec::with_capacity(count);
                 for piece in popped.into_iter().rev() {
-                    payloads.push(if piece.binding == Binding::Qualified {
-                        self.parenthesized(piece.doc)?
-                    }
-                    else {
-                        self.bare_up_to(piece, Binding::Atom)?
-                    });
+                    payloads.push(self.bare_up_to(piece, Binding::Relation)?);
                 }
                 let template = self.protocols.pop().ok_or(PresentationError::Unbalanced)?;
                 let mut items = Vec::with_capacity(template.len());

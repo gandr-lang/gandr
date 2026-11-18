@@ -1,6 +1,6 @@
 @[refuses("SessionMismatch")]
 def desk_receives_first() -> Unit =
-  let desk = fork (seat : ?String. end) { let task = recv seat; close seat };
+  let desk = fork (seat : String >? end) { let task = recv seat; close seat };
   let task = recv desk
   close desk
 
