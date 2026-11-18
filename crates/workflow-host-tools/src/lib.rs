@@ -48,6 +48,8 @@
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-host-tools/README.md).
 
+extern crate alloc;
+
 pub mod build;
 pub mod error;
 pub mod host;

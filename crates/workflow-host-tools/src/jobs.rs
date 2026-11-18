@@ -1,6 +1,6 @@
 //! The jobs of a target: one for each tool that the table builds for it.
 
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use anodized::spec;
 

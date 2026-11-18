@@ -264,16 +264,12 @@ impl fmt::Display for Lack<'_>
     ) -> fmt::Result
     {
         match *self {
-            Self::Absent {
-                ref tool,
-                ref version,
-            } => write!(f, "lacks {tool} {version}"),
-            Self::Empty {
-                ref tool,
-                ref version,
-            } => write!(f, "lacks {tool} {version}: its install holds no program"),
+            Self::Absent { tool, ref version } => write!(f, "lacks {tool} {version}"),
+            Self::Empty { tool, ref version } => {
+                write!(f, "lacks {tool} {version}: its install holds no program")
+            },
             Self::Foreign {
-                ref tool,
+                tool,
                 ref version,
                 machine,
             } => write!(f, "holds {tool} {version} for {machine}"),

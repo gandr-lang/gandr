@@ -379,7 +379,7 @@ mod tests
             install_name: key.install_name(),
             key,
             version: "1.2.3".into(),
-            target: std::sync::Arc::new("riscv64gc-unknown-linux-gnu".into()),
+            target: alloc::sync::Arc::new("riscv64gc-unknown-linux-gnu".into()),
             recipe: Recipe::Crate {
                 name: "tool".to_owned(),
                 features: Vec::new(),

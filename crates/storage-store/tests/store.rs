@@ -5,9 +5,9 @@
 extern crate alloc;
 
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use gandr_storage_records::BlockStore as _;
 use gandr_storage_records::RecordRef;

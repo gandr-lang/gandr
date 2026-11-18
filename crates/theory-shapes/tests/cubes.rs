@@ -578,8 +578,8 @@ fn entailed<P, C>(
     conclusion: C,
 ) -> Result<Membership, ShapeError>
 where
-    P: Into<std::sync::Arc<Formula>>,
-    C: Into<std::sync::Arc<Formula>>,
+    P: Into<alloc::sync::Arc<Formula>>,
+    C: Into<alloc::sync::Arc<Formula>>,
 {
     let problem = Problem::new(
         vec![PointCount::from(2_usize); usize::from(axes)],
@@ -787,7 +787,7 @@ fn the_crate_decides_every_monotone_polynomial()
             .collect();
         let top = vertices(axes).last().expect("a vertex");
         for (polynomial, &table) in polynomials.iter().zip(&tables) {
-            let whole = std::sync::Arc::new(polynomial_formula(axes, polynomial));
+            let whole = alloc::sync::Arc::new(polynomial_formula(axes, polynomial));
             for vertex in vertices(axes) {
                 assert_eq!(
                     holds_by_terms(axes, polynomial, vertex),
@@ -796,14 +796,14 @@ fn the_crate_decides_every_monotone_polynomial()
                 let corner =
                     polynomial_formula(axes, &Polynomial::term(Term::from(u64::from(vertex))));
                 assert_eq!(
-                    entailed(axes, corner, std::sync::Arc::clone(&whole)),
+                    entailed(axes, corner, alloc::sync::Arc::clone(&whole)),
                     Ok(holds(table, vertex)),
                     "{vertex:?} against {polynomial:?}"
                 );
                 let pinned = entailed(
                     axes,
                     vertex_formula(axes, vertex),
-                    std::sync::Arc::clone(&whole),
+                    alloc::sync::Arc::clone(&whole),
                 );
                 if polynomial.terms().len() > 1 && vertex != top {
                     assert!(

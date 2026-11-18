@@ -629,7 +629,7 @@ mod tests
         Job {
             key: "github:a/tool".into(),
             version: "1.2.3".into(),
-            target: std::sync::Arc::new("riscv64gc-unknown-linux-gnu".into()),
+            target: alloc::sync::Arc::new("riscv64gc-unknown-linux-gnu".into()),
             install_name: "github-a-tool".into(),
             recipe: Recipe::Crate {
                 name: "tool".to_owned(),
