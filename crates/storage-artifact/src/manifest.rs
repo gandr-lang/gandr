@@ -1884,10 +1884,12 @@ mod tests
             assert!(anodized::types::Spec::predicate(&encoded));
             assert_eq!(Ok(metadata), ArtifactManifest::decode(encoded.as_image()));
         }
-        for end in 0 .. image.as_ref().len() {
-            let prefix =
-                super::ManifestImageBuf(image.as_ref()[.. end].to_vec().into_boxed_slice());
+        let mut bytes = image.as_ref().to_vec();
+        for end in (0 .. image.as_ref().len()).rev() {
+            bytes.truncate(end);
+            let prefix = super::ManifestImageBuf(core::mem::take(&mut bytes).into_boxed_slice());
             assert!(!anodized::types::Spec::predicate(&prefix), "prefix {end}");
+            bytes = prefix.0.into_vec();
         }
         for offset in [0, MANIFEST_DOMAIN.len(), MANIFEST_DOMAIN.len() + 1] {
             let mut bytes = image.as_ref().to_vec();

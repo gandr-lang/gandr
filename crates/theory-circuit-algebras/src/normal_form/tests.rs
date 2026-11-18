@@ -1126,8 +1126,7 @@ fn cospan_verdict(
             used.clear();
             used.extend(prefix.iter().copied());
             for candidate in (0 .. count).filter(|candidate| !used.contains(candidate)) {
-                let mut extended = prefix.clone();
-                extended.push(candidate);
+                let extended: Vec<usize> = prefix.iter().copied().chain([candidate]).collect();
                 grown.push(extended);
             }
         }

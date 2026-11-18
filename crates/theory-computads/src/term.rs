@@ -1941,8 +1941,11 @@ impl CellAlphabet for TermAlphabet
             };
             let mut child = start.next();
             for index in 0 .. head.arity().0 {
-                let mut child_path = path.clone();
-                child_path.push(PositionStep::from(index));
+                let child_path: Vec<PositionStep> = path
+                    .iter()
+                    .copied()
+                    .chain([PositionStep::from(index)])
+                    .collect();
                 queue.push_back((child_path, child));
                 child = cmd.end_of(child);
             }
