@@ -35,12 +35,12 @@ def slotForced() -> Integer = same[.a = _] 3;
 
 /// This ascription forces the path's right end to `3`.
 @[runs("*{thunk { fun (a) { a } }, thunk { fun (a) { a } }}")]
-def endForced() -> Path(3, 3) = (Path.here 3 : Path(3, _));
+def endForced() -> Path 3 3 = (Path.here 3 : Path 3 _);
 
 /// This annotation forces the right end from the point. No other type meets
 /// the annotation.
-def endSigned = (Path.here 3 : Path(3, _));
+def endSigned = (Path.here 3 : Path 3 _);
 
 /// This ascription forces a path's right end from its type.
-def endMet(q : Path(3, 3)) -> Path(3, 3) =
-  (q : Path(3, _))
+def endMet(q : Path 3 3) -> Path 3 3 =
+  (q : Path 3 _)

@@ -23,4 +23,4 @@ module Sealed :> Model(Unital) where
   def mul(x : Integer, y : Integer) -> Integer = y;
 
   /// The unit law follows by computation.
-  def unitL(x : Integer) -> Path(mul e x, x) = Path.here x;
+  def unitL(x : Integer) -> Path (mul e x) x = Path.here x;

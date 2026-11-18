@@ -142,18 +142,16 @@ def packageOf(e : modelType(packagePresentation)) -> Model Gandr.Package =
 
 /// A package model comes back from its entries.
 @[inert]
-def packageBack(m : Model Gandr.Package) -> Path[.A = Model Gandr.Package](
-  packageOf (packageEntries m),
-  m
-) =
+def packageBack(m : Model Gandr.Package) -> Path[.A = Model Gandr.Package] (
+  packageOf (packageEntries m)
+) m =
   Path.here m
 
 /// Entries come back from their package model.
 @[inert]
-def packageEntriesBack(e : modelType(packagePresentation)) -> Path[.A = modelType(packagePresentation)](
-  packageEntries (packageOf e),
-  e
-) =
+def packageEntriesBack(e : modelType(packagePresentation)) -> Path[.A = modelType(packagePresentation)] (
+  packageEntries (packageOf e)
+) e =
   match e where
     | Entry(version, e1) => match e1 where
       | Entry(gandr, e2) => match e2 where
@@ -215,16 +213,13 @@ def flaggedOf(e : modelType(Flagged)) -> Model Flagged =
       | Entry(shown, t) => *{label = label, shown = shown}
 
 /// A model comes back from its entries.
-def flaggedBack(m : Model Flagged) -> Path[.A = Model Flagged](
-  flaggedOf (flaggedEntries m),
-  m
-) = Path.here m;
+def flaggedBack(m : Model Flagged) -> Path[.A = Model Flagged] (flaggedOf
+  (flaggedEntries m)) m = Path.here m;
 
 /// Entries come back from their model.
-def flaggedEntriesBack(e : modelType(Flagged)) -> Path[.A = modelType(Flagged)](
-  flaggedEntries (flaggedOf e),
-  e
-) =
+def flaggedEntriesBack(e : modelType(Flagged)) -> Path[.A = modelType(Flagged)] (
+  flaggedEntries (flaggedOf e)
+) e =
   match e where
     | Entry(label, r) => match r where
       | Entry(shown, t) => match t where

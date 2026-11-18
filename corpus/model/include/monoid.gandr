@@ -60,21 +60,15 @@ pub module Endo : Model(Monoid) where
     f : Integer -> Integer,
     g : Integer -> Integer,
     h : Integer -> Integer
-  ) -> Path(mul (mul f g) h, mul f (mul g h)) =
+  ) -> Path (mul (mul f g) h) (mul f (mul g h)) =
     Path.here (thunk { andThen f (thunk { andThen g h }) })
 
   /// `unitL` verifies the left unit law.
-  def unitL(f : Integer -> Integer) -> Path(
-    mul one f,
-    f
-  ) =
+  def unitL(f : Integer -> Integer) -> Path (mul one f) f =
     Path.here f
 
   /// `unitR` verifies the right unit law.
-  def unitR(f : Integer -> Integer) -> Path(
-    mul f one,
-    f
-  ) =
+  def unitR(f : Integer -> Integer) -> Path (mul f one) f =
     Path.here f
 
 /// `composed` adds one, then doubles `3`.

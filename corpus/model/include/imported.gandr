@@ -49,21 +49,15 @@ module Successor : Model(PointedMonoid) where
     f : Integer -> Integer,
     g : Integer -> Integer,
     h : Integer -> Integer
-  ) -> Path(mul (mul f g) h, mul f (mul g h)) =
+  ) -> Path (mul (mul f g) h) (mul f (mul g h)) =
     Path.here (thunk { andThen f (thunk { andThen g h }) })
 
   /// `unitL` verifies the included left unit law.
-  def unitL(f : Integer -> Integer) -> Path(
-    mul one f,
-    f
-  ) =
+  def unitL(f : Integer -> Integer) -> Path (mul one f) f =
     Path.here f
 
   /// `unitR` verifies the included right unit law.
-  def unitR(f : Integer -> Integer) -> Path(
-    mul f one,
-    f
-  ) =
+  def unitR(f : Integer -> Integer) -> Path (mul f one) f =
     Path.here f
 
 /// `pointed` applies the chosen element, then doubles it.

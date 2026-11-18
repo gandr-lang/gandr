@@ -22,4 +22,4 @@ def cong_wrap(a : Integer, b : Integer, p : Path a b) -> Path (Wrap a) (Wrap b) 
   Path.ap wrap p
 
 /// The run carries reflexivity at four through the wrapper.
-def wrapped() -> Path(Wrap 4, Wrap 4) = cong_wrap 4 4 (Path.here 4);
+def wrapped() -> Path (Wrap 4) (Wrap 4) = cong_wrap 4 4 (Path.here 4);

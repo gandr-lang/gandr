@@ -35,12 +35,12 @@ module EqCode : Model(Eq) with sort Carrier = Code where
   /// Any two codes compare equal.
   def eq(a : Code, b : Code) -> Bool = true;
   /// Each code equals itself.
-  def refl(a : Code) -> Path[.A = Bool](eq a a, true) = Path.here true;
+  def refl(a : Code) -> Path[.A = Bool] (eq a a) true = Path.here true;
   /// The comparison is symmetric.
-  def sym(a : Code, b : Code) -> Path[.A = Bool](eq a b, eq b a) = Path.here true;
+  def sym(a : Code, b : Code) -> Path[.A = Bool] (eq a b) (eq b a) = Path.here true;
 
 /// The comparison as a path endpoint.
-def pathed : Path[.A = Code](ofFlag (Yes == No), Yes) = Path.here Yes;
+def pathed : Path[.A = Code] (ofFlag (Yes == No)) Yes = Path.here Yes;
 
 /// The comparison in a stated type that the checker decodes.
 def written : decoded(ofFlag(Yes == No)) = "x";
