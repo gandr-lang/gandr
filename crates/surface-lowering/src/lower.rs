@@ -633,6 +633,8 @@ mod native;
 
 mod reader;
 
+mod row;
+
 mod natural;
 
 mod opening;

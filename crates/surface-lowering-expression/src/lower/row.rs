@@ -46,8 +46,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - ensures: each slot of the current source that holds no refusal and
     ///   carries a `native` mark takes the row its text names in the context's
     ///   natives. The mark is refused by name instead when its text names no
-    ///   row, when the slot has a body, when the source is no module of `std`,
-    ///   or when an earlier slot declares the row.
+    ///   row, when the slot has a body, or when the source is no module of
+    ///   `std`.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -92,18 +92,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             read.push((SlotIndex::from(index), mark.at.node, mark.span, found));
         }
         for (slot, node, span, found) in read {
-            let fault = match found {
-                Ok(primitive) if cx.natives.values().any(|&held| held == primitive) => {
-                    NativeFault::SecondDeclaration
-                },
+            match found {
                 Ok(primitive) => {
                     let _first = cx.natives.insert(slot, primitive);
-                    continue;
                 },
-                Err(fault) => fault,
-            };
-            if let Some(entry) = cx.collected.slots.get_mut(usize::from(slot)) {
-                entry.refuse(node, LoweringRefusal::NativeMark { span, fault });
+                Err(fault) => {
+                    if let Some(entry) = cx.collected.slots.get_mut(usize::from(slot)) {
+                        entry.refuse(node, LoweringRefusal::NativeMark { span, fault });
+                    }
+                },
             }
         }
     }
@@ -114,9 +111,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Specification
     /// - requires: the mint sweep has run, so each signature's type is minted.
     /// - ensures: each slot of the current source in the context's natives,
-    ///   holding no refusal, whose minted type is the row's type, takes that
-    ///   type and the row's thunk in the context's natived. A slot whose minted
-    ///   type differs takes the refusal of its mark instead.
+    ///   holding no refusal, whose minted type is the row's type, and whose row
+    ///   no earlier slot declares, takes that type and the row's thunk in the
+    ///   context's natived. Otherwise the slot takes the refusal of its mark:
+    ///   the type differs, or the row has its declaration already.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -129,6 +127,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     )
     {
         let cx = self.cx_mut();
+        let mut taken: Vec<_> = cx
+            .natived
+            .keys()
+            .filter_map(|slot| cx.natives.get(slot).copied())
+            .collect();
         let mut minted = Vec::new();
         for (&slot, &primitive) in cx.natives.range(SlotIndex::from(cx.current.slots) ..) {
             let Some(entry) = cx.collected.slots.get(usize::from(slot))
@@ -149,27 +152,37 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             else {
                 continue;
             };
-            let computation = primitive.declared_type(sink.arena);
-            let row = sink.arena.value_type_thunk(computation);
-            if equal_type_syntax(sink.arena, row, declared) == CertificateEquality::Equal {
-                let origin = Origin::new(entry.named.node, entry.named.span);
-                let body = primitive.thunk(sink.arena);
-                let _value = sink.value(body, origin);
-                minted.push((slot, Ok((declared, body))));
-            }
-            else if let Some(mark) = entry
+            let Some(mark) = entry
                 .attributes
                 .iter()
                 .find(|written| written.name.as_ref() == RegisteredAttribute::NATIVE.as_ref())
-            {
-                minted.push((
-                    slot,
-                    Err(LoweringRefusal::NativeMark {
-                        span: mark.span,
-                        fault: NativeFault::TypeDiffers,
-                    }),
-                ));
-            }
+            else {
+                continue;
+            };
+            let computation = primitive.declared_type(sink.arena);
+            let row = sink.arena.value_type_thunk(computation);
+            let fault =
+                if equal_type_syntax(sink.arena, row, declared) != CertificateEquality::Equal {
+                    NativeFault::TypeDiffers
+                }
+                else if taken.contains(&primitive) {
+                    NativeFault::SecondDeclaration
+                }
+                else {
+                    taken.push(primitive);
+                    let origin = Origin::new(entry.named.node, entry.named.span);
+                    let body = primitive.thunk(sink.arena);
+                    let _value = sink.value(body, origin);
+                    minted.push((slot, Ok((declared, body))));
+                    continue;
+                };
+            minted.push((
+                slot,
+                Err(LoweringRefusal::NativeMark {
+                    span: mark.span,
+                    fault,
+                }),
+            ));
         }
         for (slot, found) in minted {
             match found {
