@@ -1112,7 +1112,8 @@ fn members(
 
 /// The symbol of a member written as `run` after its keyword `keyword`, named
 /// by the tile at `name`, its body or definition starting at `body`, or none
-/// for an unnamed member or an `include`.
+/// for an unnamed member or an `include`. A name tile that writes no text, as
+/// the constructor name the parser owes after a bare `|`, names no member.
 ///
 /// # Specification
 /// trivial.
@@ -1130,9 +1131,13 @@ fn member(
         return None;
     }
     let named_span = tree.node(named)?.span();
+    let written = <&str>::from(tree.fragment(named)?);
+    if written.is_empty() {
+        return None;
+    }
     let end = body.unwrap_or_else(|| run.span.end());
     Some(DocumentSymbol {
-        name: String::from(<&str>::from(tree.fragment(named)?)),
+        name: String::from(written),
         kind: member_kind(role, keyword),
         range: range_of(index, run.span)?,
         selection_range: range_of(index, named_span)?,
