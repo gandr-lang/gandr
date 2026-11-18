@@ -162,6 +162,7 @@ pub use crate::lint::Lint;
 pub use crate::location::Frame;
 pub use crate::location::Located;
 pub use crate::location::Locations;
+pub use crate::location::blamed;
 pub use crate::location::locating;
 pub use crate::locus::Checked;
 pub use crate::locus::Label;

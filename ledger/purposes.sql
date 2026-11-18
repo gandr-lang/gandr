@@ -2645,6 +2645,7 @@ INSERT INTO purpose VALUES('surface-diagnostics','lint::Lint','enum','Names a li
 INSERT INTO purpose VALUES('surface-diagnostics','location::Frame','struct','The located frame of one obligation of a failure: its binder names and its locus.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-diagnostics','location::Located','struct','What a composition locates of one checker refusal, through the origin table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-diagnostics','location::Locations','struct','The located record of each refused declaration of a module.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-diagnostics','location::blamed','function','The bytes a checker refusal blames, through the origin table, so a formatter compares two refusals of one declaration at one site.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-diagnostics','locus::Annotation','struct','One marked span and what it says.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-diagnostics','locus::Annotations','struct','Every locus that one report marks: the primary one and at most two context loci.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-diagnostics','locus::Checked','struct','Titles a checker refusal with the prose its variant dictates, so a report''s title names the refusal.',NULL,'fits','sound',NULL);
@@ -3036,6 +3037,7 @@ INSERT INTO purpose VALUES('surface-format','format','function','Format the sour
 INSERT INTO purpose VALUES('surface-format','format_beside','function','Format the source `parsed` was parsed from, its rewrites checked by a lowering `beside` the sources it imports and, where two spellings lower otherwise, by the bodies `checker` elaborates.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','meaning::Elaborate','trait','The checker''s half of the meaning check: the bodies it elaborates and the maps it applies where a model crosses.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','meaning::Elaboration','struct','What a checker elaborates for one lowered module.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-format','meaning::Refused','struct','What the checker refuses one declaration with: the culprit and the site, so two refusals of one declaration pair in the meaning check.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','rewrite::Direction','enum','Which way a rewrite moves a form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','rewrite::Enabled','enum','Whether a rewrite runs under its form when the caller names none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-format','rewrite::MoldName','struct','The grammar rule a rewrite reads: the form it applies to.',NULL,'fits','sound',NULL);

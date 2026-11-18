@@ -175,6 +175,9 @@ impl Reducts
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the reducts' names and the crossings, setup
     pub fn beside(
         module: &LoweredModule<'_>,
         elaboration: &Elaboration,
