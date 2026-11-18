@@ -39,6 +39,14 @@
 #     came from. Exits 0 when the trees are one, or once it carries; exits 2,
 #     naming why, when <gated> has no record or a patch differs. Then
 #     `pr:open` runs the gate on the new head.
+#   passed.bash stamp <gated> <head> <base>
+#     Carries the gate on the tree of <gated> to the tree of <head>, when the
+#     diff between them changes the `since` of rows of `ledger/features.sql`
+#     and nothing else (`ledger:stamp`, #7978). Each such row is one that the
+#     change from <base> to <gated> touches, and each changed line is one of
+#     them. `pr:open` runs the checks that the ledger alone selects before
+#     it. Exits 0 when the trees are one, or once it carries; exits 2, naming
+#     why, for any other diff, and `pr:open` then runs the gate.
 #   passed.bash admit <host> <commit>
 #     Records here the pass of a gate that ran on <host> (`gate:remote`,
 #     #6996). Standard input holds the far records of the tree of <commit>.
@@ -114,6 +122,50 @@ case ${1:-} in
     done
     echo "pr:open: the gate on the tree $from carries to the stacked tree $tree: its $count own commits keep their patches"
     ;;
+  stamp)
+    (( $# == 4 )) || { echo 'usage: passed.bash stamp <gated> <head> <base>' >&2; exit 2; }
+    gated=$(git rev-parse "$2^{commit}")
+    head=$(git rev-parse "$3^{commit}")
+    base=$4
+    from=$(git rev-parse "$gated^{tree}")
+    tree=$(git rev-parse "$head^{tree}")
+    [[ $from != "$tree" ]] || exit 0
+    shopt -s nullglob
+    files=("$records/$from"/*.json)
+    (( ${#files[@]} > 0 )) || { echo "pr:open: no gate passed on the tree of $gated, so none carries to $head" >&2; exit 2; }
+    "$0" require pr:open "$gated" || exit 2
+    paths=$(git diff --no-renames --name-only "$gated" "$head")
+    if [[ $paths != ledger/features.sql ]]; then
+      echo "pr:open: the stamp changes $(paste -sd ' ' <<< "$paths"), not ledger/features.sql alone, so no gate carries" >&2
+      exit 2
+    fi
+    rows_at() { { git show "$1:ledger/features.sql" 2> /dev/null || true; printf '%s\n' 'SELECT * FROM feature ORDER BY id;'; } | sqlite3 -json; }
+    reading=$(jq -nr --slurpfile b <(rows_at "$base") --slurpfile g <(rows_at "$gated") --slurpfile h <(rows_at "$head") '
+      ($b | add // []) as $b | ($g | add // []) as $g | ($h | add // [])  as $h
+      | (INDEX($b[]; .id)) as $was | (INDEX($h[]; .id)) as $by
+      | if ($g | length) != ($h | length) or any($g[]; $by[.id] == null) then "a row added or removed"
+        elif any($g[]; . as $row | ($row | del(.since)) != ($by[$row.id] | del(.since))) then "a value other than since"
+        else [$g[] | select($by[.id].since != .since)] as $stamped
+          | if any($stamped[]; $was[.id] == .) then "the since of a row that the change does not touch"
+            else ($stamped | length | tostring) end
+        end')
+    if ! [[ $reading =~ ^[0-9]+$ ]]; then
+      echo "pr:open: the stamp changes $reading, so no gate carries" >&2
+      exit 2
+    fi
+    read -r added removed _ < <(git diff --no-renames --numstat "$gated" "$head" -- ledger/features.sql)
+    if [[ $added != "$reading" || $removed != "$reading" ]]; then
+      echo "pr:open: the stamp changes $added line(s) for $reading row(s), so no gate carries" >&2
+      exit 2
+    fi
+    mkdir -p "$records/$tree"
+    for f in "${files[@]}"; do
+      file=$(mktemp "$records/$tree/.record.XXXXXX")
+      jq --arg tree "$tree" --arg commit "$head" --arg from "$from" '. + {tree: $tree, commit: $commit, carried: $from}' "$f" > "$file"
+      mv "$file" "$records/$tree/${file##*/.record.}.json"
+    done
+    echo "pr:open: the gate on the tree $from carries to the stamped tree $tree: the stamp changes the since of $reading row(s)"
+    ;;
   require)
     (( $# == 3 )) || { echo 'usage: passed.bash require <command> <commit>' >&2; exit 2; }
     command=$2
@@ -156,7 +208,7 @@ case ${1:-} in
     echo "gate:remote: the gate on $host passed on the tree $tree; \`pr:open\` and \`pr:land\` accept a head with this tree"
     ;;
   *)
-    echo 'usage: passed.bash (tree | record <gate> <tree> <log> <seconds> <check>... | require <command> <commit> | carry <gated> <head> <base> | admit <host> <commit>)' >&2
+    echo 'usage: passed.bash (tree | record <gate> <tree> <log> <seconds> <check>... | require <command> <commit> | carry <gated> <head> <base> | stamp <gated> <head> <base> | admit <host> <commit>)' >&2
     exit 2
     ;;
 esac

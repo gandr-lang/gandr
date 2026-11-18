@@ -1606,10 +1606,13 @@ echo 'sites check OK: the README carries the fat-object and one-site paragraphs 
 # First the cases of `.config/ledger/cases.json` run the check over a stub
 # `gh` (#4018): a failed read stops it with the call and its error, never a
 # verdict on a row.
+#
+# `check:ledger` also runs the cases of `ledger:stamp`.
+# - see: #7978
 ["check:ledger"]
 description = "The features ledger round-trips, keeps its constraints, names paths that exist, an exemplar for every language feature and a witness or an open gap for every implemented one"
 tools.jq = "1.8.1"
-run = [".config/ledger/cases.bash", ".config/ledger/check.bash"]
+run = [".config/ledger/cases.bash", ".config/ledger/stamp-cases.bash", ".config/ledger/check.bash"]
 
 # A refusal in the tree points at what resolves it (#2529). Every
 # `TrackingIssue` constant (`crates/core-term/src/failure.rs`), the issue an

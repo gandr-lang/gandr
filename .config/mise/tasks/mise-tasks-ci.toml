@@ -2956,15 +2956,31 @@ trap 'rm -rf "$tables"' EXIT
 rows_at() { { git show "$1:ledger/features.sql" 2> /dev/null || true; printf '%s\n' 'SELECT * FROM feature ORDER BY id;'; } | sqlite3 -json; }
 rows_at "${usage_base:?}" > "$tables/base.json"
 rows_at "${usage_head:-HEAD}" > "$tables/head.json"
-findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null}" \
+findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null}" --arg from "$(git rev-parse --short=12 "${usage_base:?}")" \
   --slurpfile base "$tables/base.json" --slurpfile head "$tables/head.json" \
   '($base | add // []) as $base | ($head | add // []) as $head
    | (INDEX($base[]; .id)) as $was | (INDEX($head[]; .id)) as $now
-   | {pr: $pr, body: $body, rows: [$head[].id],
+   | {pr: $pr, from: $from, body: $body, rows: [$head[].id],
       touched: ([$head[] | select($was[.id] != .) | {id, since, status, issue}] + [$base[] | select($now[.id] == null) | {id, since: null, status: null, issue: null}])}' \
   | jq -r -L "$root/.config/bodies" -f "$root/.config/bodies/ledger.jq")
 [[ -z "$findings" ]] || { echo "$findings"; exit 1; }
 {% endraw %}'''
+
+# `ledger:stamp <pr> <base>` adds `#<pr>` to the `since` of each touched row.
+# A touched row is one that the change from `<base>` to `HEAD` adds or edits.
+# It has the status implemented or partial, and its `since` lacks the number.
+# The task commits the ledger file alone, signed. A second run writes nothing.
+#
+# `pr:open` runs it once `gh pr create` gives the number. The refusal of
+# `pr:land` names it with the base that `pr:land` reads.
+# - see: #7978, `.config/ledger/stamp.bash`
+["ledger:stamp"]
+description = "Write a pull request's number into the since of each ledger row its change touches, and commit it"
+usage = '''
+arg "<pr>" help="the pull request's number"
+arg "<base>" help="the commit the change is read from"
+'''
+run = '.config/ledger/stamp.bash "${usage_pr:?}" "${usage_base:?}"'
 
 # A reserved grammar rule is not lowered (#2528): `ledger:reserved <base>
 # [--head <ref>]` reads the syntax ledger's rows at `<base>` and at the head
@@ -5057,6 +5073,35 @@ git push --quiet --force-with-lease -u origin HEAD
 hold=${usage_hold:-}
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body" ${hold:+--draft})
 echo "$url"
+# The ledger rows that the change touches carry the number of the pull
+# request. `pr:land` refuses a named row without it. GitHub gives the number
+# only now, and `ledger:stamp` commits it.
+#
+# Then the checks that the ledger alone selects run on the stamped tree. The
+# gate carries to that tree when the stamp changes `since` values alone. Any
+# other diff runs the gate. The push sends the stamped head and its records,
+# and a restack carries from it.
+# - see: #7978, `passed.bash stamp`
+number=${url##*/}
+pushed=$(git rev-parse HEAD)
+# The restack above moves the fork, so the stamp reads the change from the
+# fork of the pushed head, as the carry does.
+stamp_base=$(git merge-base HEAD "origin/$base")
+if ! mise run --quiet ledger:stamp "$number" "$stamp_base"; then
+  echo "#$number is open, and its ledger rows lack its number. Run \`mise run ledger:stamp $number $stamp_base\` and push, then run \`pr:land\`" >&2
+  exit 2
+fi
+if [[ $(git rev-parse HEAD) != "$pushed" ]]; then
+  read -ra stamp_checks < <(mise tasks ls --json \
+    | jq -c '{tasks: [.[] | .name | select(startswith("check:"))], changed: ["ledger/features.sql"], comments: [], landing: true}' \
+    | jq -r -L "$config_dir/gate-scope" -f "$config_dir/gate-scope/select.jq" | jq -r 'join(" ::: ")')
+  mise run "${stamp_checks[@]}" || { echo "#$number is open, and the checks of its stamped ledger fail. Fix them and push, then run \`pr:land\`" >&2; exit 2; }
+  "$passed" stamp "$pushed" HEAD "$stamp_base" || mise run check
+  "$passed" require pr:open HEAD || exit 2
+  git push --quiet --force-with-lease origin HEAD
+  "$(git rev-parse --show-toplevel)/.config/gate-scope/verdict.bash" publish HEAD || echo "pr:open: the records of the gate were not pushed, so the jobs run the checks again (#7684)" >&2
+  gated=$(git rev-parse HEAD)
+fi
 # Held from its opening (#3253): a held pull request is no member of a stack,
 # so it is not linked, and nothing lands it until `pr:release`.
 if [[ -n "$hold" ]]; then
