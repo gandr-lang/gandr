@@ -1,0 +1,106 @@
+test: hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206
+package: gandr-surface-lsp
+command: mise run debug:test gandr-surface-lsp hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206 --break visit_rotating
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_lsp-b2d875686bd4ddfc"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_lsp-b2d875686bd4ddfc' (x86_64).
+(lldb) settings set -- target.run-args  "hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex visit_rotating
+Breakpoint 1: 21 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lsp-b2d875686bd4ddfc`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000005598d68
+(lldb) run
+
+running 1 test
+test hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206 ... no nightly rotation
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3327885 launched: 'target/debug-trace/debug/deps/gandr_surface_lsp-b2d875686bd4ddfc' (x86_64)
+Process 3327885 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 3327885 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 3327885 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 3327885 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 3327885 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 3327885 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 3327885 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 3327885 stopped and restarted: thread 2 received signal: SIGCHLD
+Process 3327885 stopped
+* thread #2, name = 'hover::tests::s', stop reason = breakpoint 1.18
+       frame #0: 0x000055555722e5d2 gandr_surface_lsp-b2d875686bd4ddfc`<gandr_workflow_sweep::Sweep>::visit_rotating(self={coverage:Sampled, changed:{names:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, head:{0:"6a20c7aaec867db858617de98b5eba357904d093"}}, rotation:Whole}, sample={name:{0:"every_corpus_tile_hovers_or_names_its_issue_1206"}, size:{0:36}}, nights={0:7}, candidates=size=814) at lib.rs:318:5
+   315 	    ///   to a sampled run or ignored by a full one, or a night count ignored,
+   316 	    ///   changes a count.
+   317 	    /// - witness: `tests::a_rotating_sweep_covers_the_corpus_over_its_nights`
+-> 318 	    #[spec(ensures: |ret| self.coverage != Coverage::Full || ret.len() == candidates.iter().filter(|candidate| self.rotation.holds(sample.name, nights, candidate) == Held::Tonight).count())]
+    	    ^
+   319 	    #[inline]
+   320 	    #[must_use]
+   321 	    pub fn visit_rotating(
+(lldb) bt 24
+* thread #2, name = 'hover::tests::s', stop reason = breakpoint 1.18
+   * frame #0: 0x000055555722e5d2 gandr_surface_lsp-b2d875686bd4ddfc`<gandr_workflow_sweep::Sweep>::visit_rotating(self={coverage:Sampled, changed:{names:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, head:{0:"6a20c7aaec867db858617de98b5eba357904d093"}}, rotation:Whole}, sample={name:{0:"every_corpus_tile_hovers_or_names_its_issue_1206"}, size:{0:36}}, nights={0:7}, candidates=size=814) at lib.rs:318:5
+     frame #1: 0x0000555556df2aa2 gandr_surface_lsp-b2d875686bd4ddfc`gandr_surface_lsp::hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206 at hover.rs:3403:33
+     frame #2: 0x0000555556dbb7b7 gandr_surface_lsp-b2d875686bd4ddfc`gandr_surface_lsp::hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206::{closure#0}((null)={}) at hover.rs:3399:62
+     frame #3: 0x0000555556e033f6 gandr_surface_lsp-b2d875686bd4ddfc`<gandr_surface_lsp::hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #4: 0x000055555730595b gandr_surface_lsp-b2d875686bd4ddfc`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #5: 0x0000555557305959 gandr_surface_lsp-b2d875686bd4ddfc`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #6: 0x0000555557312fe5 gandr_surface_lsp-b2d875686bd4ddfc`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #7: 0x0000555557312fe0 gandr_surface_lsp-b2d875686bd4ddfc`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #8: 0x0000555557312fe0 gandr_surface_lsp-b2d875686bd4ddfc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #9: 0x0000555557312fcb gandr_surface_lsp-b2d875686bd4ddfc`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #10: 0x0000555557312fcb gandr_surface_lsp-b2d875686bd4ddfc`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #11: 0x0000555557312fcb gandr_surface_lsp-b2d875686bd4ddfc`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #12: 0x0000555557312fb6 gandr_surface_lsp-b2d875686bd4ddfc`test::run_test::{closure#0} at lib.rs:668:43
+     frame #13: 0x000055555730db44 gandr_surface_lsp-b2d875686bd4ddfc`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #14: 0x000055555730dac9 gandr_surface_lsp-b2d875686bd4ddfc`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #15: 0x0000555557316122 gandr_surface_lsp-b2d875686bd4ddfc`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #16: 0x0000555557316113 gandr_surface_lsp-b2d875686bd4ddfc`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x0000555557316113 gandr_surface_lsp-b2d875686bd4ddfc`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #18: 0x0000555557316103 gandr_surface_lsp-b2d875686bd4ddfc`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #19: 0x0000555557316103 gandr_surface_lsp-b2d875686bd4ddfc`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #20: 0x0000555557316103 gandr_surface_lsp-b2d875686bd4ddfc`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #21: 0x00005555573160f4 gandr_surface_lsp-b2d875686bd4ddfc`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #22: 0x000055555ab100ff gandr_surface_lsp-b2d875686bd4ddfc`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2273:9 [inlined]
+     frame #23: 0x000055555ab100f8 gandr_surface_lsp-b2d875686bd4ddfc`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:118:17
+(lldb) frame variable --depth 3
+(gandr_workflow_sweep::Sweep *) self = 0x00007ffff79fcab0 {coverage:Sampled, changed:{names:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, head:{0:"6a20c7aaec867db858617de98b5eba357904d093"}}, rotation:Whole}
+(gandr_workflow_sweep::sample::Sample) sample = {name:{0:"every_corpus_tile_hovers_or_names_its_issue_1206"}, size:{0:36}}
+(gandr_workflow_sweep::rotation::Nights) nights = {0:7}
+(&[gandr_workflow_sweep::corpus::Source]) candidates = size=814 {
+  [0] = {path:"corpus/classifier/implicit-telescope.gandr", name:{0:"fixture/classifier/implicit-telescope.gandr"}, class:{0:"fixture/classifier"}}
+  [1] = {path:"corpus/classifier/relative-monad-sort-errors.gandr", name:{0:"fixture/classifier/relative-monad-sort-errors.gandr"}, class:{0:"fixture/classifier"}}
+  [2] = {path:"corpus/classifier/static-beta.gandr", name:{0:"fixture/classifier/static-beta.gandr"}, class:{0:"fixture/classifier"}}
+  [3] = {path:"corpus/classifier/static-lambda-argument.gandr", name:{0:"fixture/classifier/static-lambda-argument.gandr"}, class:{0:"fixture/classifier"}}
+  [4] = {path:"corpus/classifier/universe-refusals.gandr", name:{0:"fixture/classifier/universe-refusals.gandr"}, class:{0:"fixture/classifier"}}
+  [5] = {path:"corpus/classifier/unknown-capital.gandr", name:{0:"fixture/classifier/unknown-capital.gandr"}, class:{0:"fixture/classifier"}}
+  [6] = {path:"corpus/fragment/addressable-obligation.gandr", name:{0:"fixture/fragment/addressable-obligation.gandr"}, class:{0:"fixture/fragment"}}
+  [7] = {path:"corpus/fragment/blamed-run.gandr", name:{0:"fixture/fragment/blamed-run.gandr"}, class:{0:"fixture/fragment"}}
+  [8] = {path:"corpus/fragment/exits.gandr", name:{0:"fixture/fragment/exits.gandr"}, class:{0:"fixture/fragment"}}
+  [9] = {path:"corpus/fragment/missing-exit.gandr", name:{0:"fixture/fragment/missing-exit.gandr"}, class:{0:"fixture/fragment"}}
+  [10] = {path:"corpus/fragment/nested-runs.gandr", name:{0:"fixture/fragment/nested-runs.gandr"}, class:{0:"fixture/fragment"}}
+  [11] = {path:"corpus/fragment/non-synthesisable-definition.gandr", name:{0:"fixture/fragment/non-synthesisable-definition.gandr"}, class:{0:"fixture/fragment"}}
+  [12] = {path:"corpus/fragment/non-synthesisable-head.gandr", name:{0:"fixture/fragment/non-synthesisable-head.gandr"}, class:{0:"fixture/fragment"}}
+  [13] = {path:"corpus/fragment/shape-refusal.gandr", name:{0:"fixture/fragment/shape-refusal.gandr"}, class:{0:"fixture/fragment"}}
+  [14] = {path:"corpus/fragment/stage-not-below.gandr", name:{0:"fixture/fragment/stage-not-below.gandr"}, class:{0:"fixture/fragment"}}
+  [15] = {path:"corpus/fragment/type-mismatch.gandr", name:{0:"fixture/fragment/type-mismatch.gandr"}, class:{0:"fixture/fragment"}}
+  ...
+}
+(bool) __anodized_pre = false
+*** Some of the displayed variables have more members than the debugger will show by default. To show all of them, you can either use the --show-all-children option to frame variable or raise the limit by changing the target.max-children-count setting.
+(lldb) up
+frame #1: 0x0000555556df2aa2 gandr_surface_lsp-b2d875686bd4ddfc`gandr_surface_lsp::hover::tests::sweeps::every_corpus_tile_hovers_or_names_its_issue_1206 at hover.rs:3403:33
+   3400	        {
+   3401	            let sweep = Sweep::asked().expect("the run's sweep resolves");
+   3402	            eprintln!("{}", sweep.rotation());
+-> 3403	            let sources = sweep.visit_rotating(
+    	                                ^
+   3404	                SAMPLE,
+   3405	                NIGHTS,
+   3406	                &corpus::sources().expect("the corpus reads"),
+(lldb) frame variable --depth 3
+(gandr_workflow_sweep::Sweep) sweep = {coverage:Sampled, changed:{names:{map:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}, head:{0:"6a20c7aaec867db858617de98b5eba357904d093"}}, rotation:Whole}

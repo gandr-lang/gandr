@@ -1,0 +1,71 @@
+/// `extension-types`: Extension types as face-theory signatures.
+/// Implemented: an extension type as a face-theory signature, the reader
+/// `T.#{.l = v}`, `T.#{f ↦ v}` or a system of faces `T.#{f ↦ v, g ↦ w}`, its
+/// coercions to and from the base, and the kernel's replay of its formation and
+/// of a system's meets.
+/// Not implemented: every other case.
+///
+/// - owes: #641
+/// - owes: #5536
+//! An extension type stated as the signature the face theory generates for it.
+//! `ext Val on left is zero` over the two points of `Two` is the type of cells
+//! fixed to `zero` on the face `left`: a cell holds its value off the face,
+//! `ins` introduces it and `outp`, `outq` read it at each point. The boundary,
+//! β and η are the signature's laws, so each holds by conversion, on a neutral
+//! cell as on an introduced one
+//! [Zhang-2024-three_noncubical_applications_extension_types]. The member `ext`
+//! generates this signature from its spelling (`generated.gandr`).
+//!
+//! - cites: [Zhang-2024-three_noncubical_applications_extension_types]
+//!
+//! [Zhang-2024-three_noncubical_applications_extension_types]: https://arxiv.org/abs/2311.05658 "Zhang, Three non-cubical applications of extension types"
+
+/// The cells of `Val` over `Two` fixed to `zero` on `left`, with `c` a cell
+/// nothing introduces. The boundary reads `zero` at `left` of every cell, `c`
+/// included; β reads an introduced cell's value at the point off the face; η
+/// rebuilds a cell from its value there.
+@[normalizes("cells(outp(c), outq(ins(one)), ins(outq(c))) ~> cells(zero, one, c)")]
+theory ZeroFiber where
+  boundary Two {p, q};
+  face left = {p};
+  sort Val : Type;
+  sort Ext : Type;
+
+  oper zero : Val;
+  oper one : Val;
+  oper c : Ext;
+  oper cells : (b : Val, v : Val, e : Ext) --> Val;
+  oper ins : (y : Val) --> Ext;
+  oper outp : (e : Ext) --> Val;
+  oper outq : (e : Ext) --> Val;
+
+  rule boundary : outp e ==> zero;
+  rule beta : outq (ins y) ==> y;
+  rule eta : ins (outq e) ==> e;
+
+/// A server's configuration, whose face `secure` holds its port and its
+/// transport.
+type Config = *{host : String, port : Integer, tls : Bool} where
+  face secure = {port, tls};
+
+/// A configuration on the secure face holds its host alone, and reads its
+/// fixed port back.
+def port_of(c : Config.#{secure ↦ *{.port = 443, .tls = true}}) -> Integer { c.port }
+
+/// A configuration on the secure port.
+def local : Config = *{.host = "localhost", .port = 443, .tls = true};
+
+/// `local` stands at the secure face by the coercion in: its port and its
+/// transport convert with the values the face fixes.
+def local_port : Integer = port_of (local);
+
+/// The port of any configuration.
+def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer { c.port }
+
+/// A configuration on the secure face, by its host alone.
+def secured : Config.#{secure ↦ *{.port = 443, .tls = true}} = *{.host = "localhost"};
+
+/// `secured` stands at `Config` by the coercion out: its record reads the
+/// port the face fixes.
+@[runs("443")]
+def secured_port : Integer = any_port (secured);

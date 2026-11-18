@@ -1,0 +1,26 @@
+// A theory seals a module that has a law.
+//
+// `:> Model(S)` checks the law at the representation.
+//
+// The law crosses the kernel at the abstract sort.
+// The module hides its representation from clients.
+//
+// - see: #1073
+
+/// `Unital` declares a carrier, a unit, a product and a left-unit law.
+theory Unital where
+  sort M : Type;
+  oper e : M;
+  oper mul : (x : M, y : M) --> M;
+  rule unitL : mul e x <=> x;
+
+/// `Sealed` implements `Model(Unital)` with integer right projection.
+module Sealed :> Model(Unital) where
+  type M = Integer;
+
+  def e : Integer = 0;
+
+  def mul(x : Integer, y : Integer) -> Integer { y }
+
+  /// The unit law follows by computation.
+  def unitL(x : Integer) -> Path(mul e x, x) { Path.here x }

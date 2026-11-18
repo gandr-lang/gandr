@@ -1,0 +1,10 @@
+def short(
+  A : Type,
+  x : A,
+  y : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp)
+) -> Path[.A = Path[.A = A](x, y)](fm, fp) {
+  fill[1, 3] (chain 1) fa
+}

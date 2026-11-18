@@ -1,0 +1,74 @@
+//! `imported` includes a theory from another source.
+//!
+//! `PointedMonoid` extends the imported `Monoid` with `point`. `Successor`
+//! models the extension with an integer successor. `include` names a block of
+//! an imported source unqualified, as it names a block of its own source.
+//!
+//! `pointed` applies the chosen element, then doubles it.
+//!
+//! - see: #1224
+
+// The source imports the semigroup and monoid theories.
+import "./monoid.gandr";
+
+/// `PointedMonoid` adds a chosen element to `Monoid`.
+theory PointedMonoid where
+  include Monoid;
+  oper point : M;
+
+/// `Successor` models `PointedMonoid` with the integer successor.
+module Successor : Model(PointedMonoid) where
+  type M = Integer -> Integer;
+
+  /// `andThen` composes `f` then `g`.
+  def andThen(
+    f : Integer -> Integer,
+    g : Integer -> Integer,
+    x : Integer
+  ) -> Integer =
+    g (f x)
+
+  /// `ident` returns its input.
+  def ident(x : Integer) -> Integer { x }
+
+  /// `succ` adds one.
+  def succ(x : Integer) -> Integer { x + 1 }
+
+  def mul(
+    f : Integer -> Integer,
+    g : Integer -> Integer
+  ) -> Integer -> Integer =
+    thunk { andThen f g }
+
+  def one : Integer -> Integer = ident;
+
+  def point : Integer -> Integer = succ;
+
+  /// `assoc` verifies the included associativity law.
+  def assoc(
+    f : Integer -> Integer,
+    g : Integer -> Integer,
+    h : Integer -> Integer
+  ) -> Path(mul (mul f g) h, mul f (mul g h)) =
+    Path.here (thunk { andThen f (thunk { andThen g h }) })
+
+  /// `unitL` verifies the included left unit law.
+  def unitL(f : Integer -> Integer) -> Path(
+    mul one f,
+    f
+  ) =
+    Path.here f
+
+  /// `unitR` verifies the included right unit law.
+  def unitR(f : Integer -> Integer) -> Path(
+    mul f one,
+    f
+  ) =
+    Path.here f
+
+/// `pointed` applies the chosen element, then doubles it.
+@[runs("8")]
+def pointed() -> Integer =
+  let p = Successor.point
+  let h = Successor.mul p (fun (n) { n * 2 })
+  h 3

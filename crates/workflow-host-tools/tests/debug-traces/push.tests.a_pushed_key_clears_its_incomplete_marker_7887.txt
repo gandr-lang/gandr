@@ -1,0 +1,53 @@
+test: push::tests::a_pushed_key_clears_its_incomplete_marker_7887
+package: gandr-workflow-host-tools
+command: mise run debug:test gandr-workflow-host-tools push::tests::a_pushed_key_clears_its_incomplete_marker_7887 --break push$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-workflow-host-tools/52f4a47535e29ce1/out/gandr_workflow_host_tools-52f4a47535e29ce1"
+Current executable set to 'target/debug-trace/debug/build/gandr-workflow-host-tools/52f4a47535e29ce1/out/gandr_workflow_host_tools-52f4a47535e29ce1' (x86_64).
+(lldb) settings set -- target.run-args  "push::tests::a_pushed_key_clears_its_incomplete_marker_7887" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex push$
+Breakpoint 1: 84 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_workflow_host_tools-52f4a47535e29ce1`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x000000000027f408
+(lldb) run
+5 locations added to breakpoint 1
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 424185 launched: 'target/debug-trace/debug/build/gandr-workflow-host-tools/52f4a47535e29ce1/out/gandr_workflow_host_tools-52f4a47535e29ce1' (x86_64)
+Process 424185 stopped
+* thread #1, name = 'gandr_workflow_', stop reason = breakpoint 1.46
+       frame #0: 0x00005555557edd01 gandr_workflow_host_tools-52f4a47535e29ce1`<alloc::vec::Vec<u8>>::as_slice at mod.rs:1861:86 [inlined]
+(lldb) bt 24
+* thread #1, name = 'gandr_workflow_', stop reason = breakpoint 1.46
+   * frame #0: 0x00005555557edd01 gandr_workflow_host_tools-52f4a47535e29ce1`<alloc::vec::Vec<u8>>::as_slice at mod.rs:1861:86 [inlined]
+     frame #1: 0x00005555557edd01 gandr_workflow_host_tools-52f4a47535e29ce1`<std::sys::os_str::bytes::Buf>::as_slice at bytes.rs:164:44 [inlined]
+     frame #2: 0x00005555557edd01 gandr_workflow_host_tools-52f4a47535e29ce1`<std::ffi::os_str::OsString as core::ops::index::Index<core::ops::range::RangeFull>>::index at os_str.rs:656:38 [inlined]
+     frame #3: 0x00005555557edd01 gandr_workflow_host_tools-52f4a47535e29ce1`<std::ffi::os_str::OsString as core::ops::deref::Deref>::deref at os_str.rs:674:14 [inlined]
+     frame #4: 0x00005555557edd01 gandr_workflow_host_tools-52f4a47535e29ce1`<std::path::PathBuf>::_push at path.rs:1344:19
+     frame #5: 0x000055555578dc15 gandr_workflow_host_tools-52f4a47535e29ce1`<std::path::PathBuf>::push::<&str> at path.rs:1339:14 [inlined]
+     frame #6: 0x000055555578dbfc gandr_workflow_host_tools-52f4a47535e29ce1`test::term::terminfo::searcher::get_dbpath_for_term at searcher.rs:36:21 [inlined]
+     frame #7: 0x000055555578da76 gandr_workflow_host_tools-52f4a47535e29ce1`<test::term::terminfo::TermInfo>::from_name at mod.rs:91:9 [inlined]
+     frame #8: 0x000055555578da76 gandr_workflow_host_tools-52f4a47535e29ce1`<test::term::terminfo::TermInfo>::from_env at mod.rs:66:25 [inlined]
+     frame #9: 0x000055555578da5a gandr_workflow_host_tools-52f4a47535e29ce1`<test::term::terminfo::TerminfoTerminal<std::io::stdio::Stdout>>::new at mod.rs:175:9
+     frame #10: 0x0000555555798bcf gandr_workflow_host_tools-52f4a47535e29ce1`test::term::stdout at term.rs:34:5 [inlined]
+     frame #11: 0x0000555555798bba gandr_workflow_host_tools-52f4a47535e29ce1`test::console::get_formatter at console.rs:285:24
+     frame #12: 0x0000555555799107 gandr_workflow_host_tools-52f4a47535e29ce1`test::console::run_tests_console at console.rs:322:19
+     frame #13: 0x000055555578548a gandr_workflow_host_tools-52f4a47535e29ce1`test::test_main_inner at lib.rs:152:19
+     frame #14: 0x0000555555786088 gandr_workflow_host_tools-52f4a47535e29ce1`test::test_main_env_args at lib.rs:179:5
+     frame #15: 0x0000555555669b25 gandr_workflow_host_tools-52f4a47535e29ce1`gandr_workflow_host_tools::main at lib.rs:1
+     frame #16: 0x000055555565978b gandr_workflow_host_tools-52f4a47535e29ce1`<fn() -> std::process::ExitCode as core::ops::function::FnOnce<((null)={}, (null)=<unavailable>)>>::call_once at function.rs:250:5
+     frame #17: 0x00005555556b3c0e gandr_workflow_host_tools-52f4a47535e29ce1`std::sys::backtrace::__rust_begin_short_backtrace::<fn() -> std::process::ExitCode, std::process::ExitCode>(f={}) at backtrace.rs:166:18
+     frame #18: 0x0000555555654511 gandr_workflow_host_tools-52f4a47535e29ce1`std::rt::lang_start::<std::process::ExitCode>::{closure#0} at rt.rs:206:18
+     frame #19: 0x00005555557eefe8 gandr_workflow_host_tools-52f4a47535e29ce1`<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe as core::ops::function::FnOnce<()>>::call_once at function.rs:287:21 [inlined]
+     frame #20: 0x00005555557eefe5 gandr_workflow_host_tools-52f4a47535e29ce1`std::panicking::catch_unwind::do_call::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> at panicking.rs:573:43 [inlined]
+     frame #21: 0x00005555557eefe5 gandr_workflow_host_tools-52f4a47535e29ce1`std::panicking::catch_unwind::<i32, &dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe> at panicking.rs:541:19 [inlined]
+     frame #22: 0x00005555557eefd0 gandr_workflow_host_tools-52f4a47535e29ce1`std::panic::catch_unwind::<&dyn core::ops::function::Fn<(), Output = i32> + core::marker::Sync + core::panic::unwind_safe::RefUnwindSafe, i32> at panic.rs:359:14 [inlined]
+     frame #23: 0x00005555557eefd0 gandr_workflow_host_tools-52f4a47535e29ce1`std::rt::lang_start_internal::{closure#0} at rt.rs:175:24 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

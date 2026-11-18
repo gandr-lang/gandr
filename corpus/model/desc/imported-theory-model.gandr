@@ -1,0 +1,27 @@
+// A `Model(S)` can read a theory that another source declares.
+//
+// `Model(S)` reads an imported theory as it reads a local theory.
+//
+// The imported theory provides the signature.
+// The module below provides one model of that signature.
+//
+// - see: #726
+
+// The naturals' signature, `theory Nat`.
+import "./second-order-signatures.gandr";
+
+/// A counting model of the imported naturals: the carrier is the integers,
+/// zero is `0` and the successor adds one.
+module Counting : Model(Nat) where {
+  type Nat = Integer;
+
+  def zero : Integer = 0;
+
+  def succ(n : Integer) -> Integer { n + 1 }
+
+  /// Two successors of zero: the derived operations run.
+  @[runs("2")]
+  def two() -> Integer =
+    let z = zero
+    succ (succ z)
+}

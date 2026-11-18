@@ -1,0 +1,631 @@
+//! The generalized logical framework's first rungs: the first-order model a
+//! signature code generates, and one evaluation and readback for every
+//! simply-sorted signature.
+//!
+//! This module holds the representability bit's refusal and the first of the
+//! four checks, generation: the fold's output is Kaposi and Xie's
+//! single-substitution presentation, rule for rule. The other three checks —
+//! identification, both views and the kernel — and the three-signature
+//! property are in `model`.
+
+use gandr_theory_levitation::Attrs;
+use gandr_theory_levitation::BridgeArity;
+use gandr_theory_levitation::DeclPolarity;
+use gandr_theory_levitation::FreeTerm;
+use gandr_theory_levitation::Name;
+use gandr_theory_levitation::NominalId;
+use gandr_theory_levitation::NominalSerial;
+use gandr_theory_levitation::OperDesc;
+use gandr_theory_levitation::ParamDesc;
+use gandr_theory_levitation::Representability;
+use gandr_theory_levitation::RuleFace;
+use gandr_theory_levitation::SortDesc;
+use gandr_theory_levitation::SortIndex;
+use gandr_theory_levitation::SortRef;
+use gandr_theory_levitation::SurfaceSpan;
+use gandr_theory_levitation::TheoryDesc;
+use gandr_theory_levitation::TranslationError;
+use gandr_theory_levitation::WfKind;
+use gandr_theory_levitation::check_desc;
+use gandr_theory_levitation::derive_cell_var_meta;
+use gandr_theory_levitation::first_order;
+use gandr_theory_levitation::serialize_desc;
+
+mod model;
+
+/// A single-output operation fixture.
+///
+/// # Specification
+/// trivial.
+fn op(
+    name: impl Into<Name>,
+    inputs: Vec<SortRef>,
+    output: SortRef,
+) -> OperDesc
+{
+    OperDesc::new(
+        name,
+        BridgeArity::single_output(inputs, output),
+        Attrs::empty(),
+    )
+}
+
+/// A signature fixture: sorts and operations, no source equations.
+///
+/// # Specification
+/// trivial.
+fn signature(
+    name: impl Into<Name>,
+    sorts: Vec<SortDesc>,
+    operations: Vec<OperDesc>,
+) -> TheoryDesc<()>
+{
+    TheoryDesc::new(
+        NominalId::new(NominalSerial::from(0_u64), name),
+        [],
+        [],
+        operations,
+        [],
+        DeclPolarity::Data,
+        Attrs::empty(),
+    )
+    .with_sorts(sorts)
+}
+
+/// The binding and application signature of pure λ-calculus syntax.
+///
+/// # Specification
+/// trivial.
+fn lc() -> TheoryDesc<()>
+{
+    signature(
+        "LC",
+        vec![SortDesc::new("Tm", DeclPolarity::Data).representable()],
+        vec![
+            op(
+                "lam",
+                vec![SortRef::new("t", "Tm").pi_plus([SortIndex::new("x", "Tm")])],
+                SortRef::new("", "Tm"),
+            ),
+            op(
+                "app",
+                vec![SortRef::new("t", "Tm"), SortRef::new("u", "Tm")],
+                SortRef::new("", "Tm"),
+            ),
+        ],
+    )
+}
+
+/// The identity-return signature: value and computation types, values
+/// indexed by their type (representable), computations indexed by theirs, and
+/// `f`, `arrow`, `ret` and `lam : (VTm a ⇒⁺ CTm b) → CTm (arrow a b)`. Its
+/// operations and index binders are lowercase, as a `theory` block writes them,
+/// so its rendering reparses.
+///
+/// # Specification
+/// trivial.
+fn identity_return() -> TheoryDesc<()>
+{
+    let a = FreeTerm::var("a");
+    let b = FreeTerm::var("b");
+    signature(
+        "IdentityReturn",
+        vec![
+            SortDesc::new("VTy", DeclPolarity::Data),
+            SortDesc::new("CTy", DeclPolarity::Data),
+            SortDesc::family("VTm", DeclPolarity::Data, [SortIndex::new("a", "VTy")])
+                .representable(),
+            SortDesc::family("CTm", DeclPolarity::Data, [SortIndex::new("b", "CTy")]),
+        ],
+        vec![
+            op("f", vec![SortRef::new("a", "VTy")], SortRef::new("", "CTy")),
+            op(
+                "arrow",
+                vec![SortRef::new("a", "VTy"), SortRef::new("b", "CTy")],
+                SortRef::new("", "CTy"),
+            ),
+            op(
+                "ret",
+                vec![
+                    SortRef::new("a", "VTy"),
+                    SortRef::new("t", "VTm").applied([a.clone()]),
+                ],
+                SortRef::new("", "CTm").applied([FreeTerm::op("f", [a.clone()])]),
+            ),
+            op(
+                "lam",
+                vec![
+                    SortRef::new("a", "VTy"),
+                    SortRef::new("b", "CTy"),
+                    SortRef::new("t", "CTm")
+                        .applied([b.clone()])
+                        .pi_plus([SortIndex::new("x", "VTm").applied([a.clone()])]),
+                ],
+                SortRef::new("", "CTm").applied([FreeTerm::op("arrow", [a, b])]),
+            ),
+        ],
+    )
+}
+
+#[test]
+fn restricted_binding_requires_representability()
+{
+    let mut source = lc();
+    assert_eq!(check_desc(&source), []);
+    assert!(
+        serialize_desc(&source)
+            .as_ref()
+            .contains("t : (x : Tm) -> Tm")
+    );
+    // An ordinary domain: one refusal, by name, for the one binder.
+    source.sorts[0].representability = Representability::Ordinary;
+    let kinds: Vec<WfKind> = check_desc(&source)
+        .iter()
+        .map(|diagnostic| diagnostic.kind)
+        .collect();
+    assert_eq!(kinds, [WfKind::NonRepresentableBinder]);
+    // An undeclared domain is refused by the same name.
+    source.sorts[0].representability = Representability::Representable;
+    source.opers[0].arity.inputs[0].bindings[0].sort = Name::from("Absent");
+    let kinds: Vec<WfKind> = check_desc(&source)
+        .iter()
+        .map(|diagnostic| diagnostic.kind)
+        .collect();
+    assert_eq!(kinds, [WfKind::NonRepresentableBinder]);
+    // Every offending binder is reported, not only the first.
+    let mut twice = lc();
+    twice.sorts[0].representability = Representability::Ordinary;
+    twice.opers[1].arity.inputs[1] =
+        SortRef::new("u", "Tm").pi_plus([SortIndex::new("y", "Tm"), SortIndex::new("z", "Tm")]);
+    // A telescope renders outermost binder first.
+    assert!(
+        serialize_desc(&twice)
+            .as_ref()
+            .contains("u : (y : Tm) -> (z : Tm) -> Tm")
+    );
+    let kinds: Vec<WfKind> = check_desc(&twice)
+        .iter()
+        .map(|diagnostic| diagnostic.kind)
+        .collect();
+    assert_eq!(kinds, [WfKind::NonRepresentableBinder; 3]);
+}
+
+#[test]
+fn generation()
+{
+    // The single-substitution presentation of pure λ-calculus, derived from
+    // Kaposi and Xie's Definitions 3–4 by the §6 translation with §7's
+    // replacement of parallel substitution by single substitution and lifting:
+    // contexts and q/p stay, the four index laws are vacuous for the unindexed
+    // `Tm`, and naturality lifts `lam`'s substitution once. β belongs to the
+    // source theory, not its binding signature. Three sorts, nine operations,
+    // six equations.
+    let expected = r#"theory LC$ssc where {
+        sort $Con : Type;
+        sort $Sub(D : $Con, G : $Con) : Type;
+        sort Tm(G : $Con) : Type;
+        oper $empty : $Con;
+        oper $sub_Tm : (G : $Con, D : $Con, t : Tm(G), s : $Sub(D, G)) --> Tm(D);
+        oper $extend_Tm : (G : $Con) --> $Con;
+        oper $p_Tm : (G : $Con) --> $Sub($extend_Tm(G), G);
+        oper $q_Tm : (G : $Con) --> Tm($extend_Tm(G));
+        oper $single_Tm : (G : $Con, a : Tm(G)) --> $Sub(G, $extend_Tm(G));
+        oper $lift_Tm : (G : $Con, D : $Con, s : $Sub(D, G)) --> $Sub($extend_Tm(D), $extend_Tm(G));
+        oper lam : (G : $Con, t : Tm($extend_Tm(G))) --> Tm(G);
+        oper app : (G : $Con, t : Tm(G), u : Tm(G)) --> Tm(G);
+        rule $sub_Tm($q_Tm, $single_Tm(b)) ==> b;
+        rule $sub_Tm($q_Tm, $lift_Tm(s)) ==> $q_Tm;
+        rule $sub_Tm($sub_Tm(b, $p_Tm), $lift_Tm(s)) ==> $sub_Tm($sub_Tm(b, s), $p_Tm);
+        rule $sub_Tm($sub_Tm(b, $p_Tm), $single_Tm(a)) ==> b;
+        rule $sub_Tm(lam(t), s) ==> lam($sub_Tm(t, $lift_Tm(s)));
+        rule $sub_Tm(app(t, u), s) ==> app($sub_Tm(t, s), $sub_Tm(u, s)); }"#;
+    let model = first_order(&lc()).expect("LC is a finitary signature");
+    assert_eq!(
+        serialize_desc(&model).as_ref(),
+        expected.split_whitespace().collect::<Vec<_>>().join(" ")
+    );
+    assert_eq!(
+        (model.sorts.len(), model.opers.len(), model.rules.len()),
+        (3, 9, 6)
+    );
+    assert_eq!(check_desc(&model), []);
+    // §7 prints the eight single-substitution laws for dependent types and
+    // terms (`Σ U λTy. Ty ⇒ U⁺`, p. 10:18), not a λ-calculus table: four term
+    // laws for `Tm`, then four index laws for the `Ty` that indexes it.
+    let source = signature(
+        "Dependent",
+        vec![
+            SortDesc::new("Ty", DeclPolarity::Data),
+            SortDesc::family("Tm", DeclPolarity::Data, [SortIndex::new("A", "Ty")]).representable(),
+        ],
+        vec![],
+    );
+    let model = first_order(&source).expect("dependent family translates");
+    let equations: Vec<String> = model
+        .rules
+        .iter()
+        .map(|rule| format!("{} = {}", rule.lhs, rule.rhs))
+        .collect();
+    assert_eq!(equations, [
+        "$sub_Tm($q_Tm, $single_Tm(b)) = b",
+        "$sub_Tm($q_Tm, $lift_Tm(s)) = $q_Tm",
+        "$sub_Tm($sub_Tm(b, $p_Tm), $lift_Tm(s)) = $sub_Tm($sub_Tm(b, s), $p_Tm)",
+        "$sub_Tm($sub_Tm(b, $p_Tm), $single_Tm(a)) = b",
+        "$sub_Ty($sub_Ty(A, $p_Tm), $lift_Tm(s)) = $sub_Ty($sub_Ty(A, s), $p_Tm)",
+        "$sub_Ty($sub_Ty(A, $p_Tm), $single_Tm(b)) = A",
+        "$sub_Ty($sub_Ty(A, $single_Tm(b)), s) = $sub_Ty($sub_Ty(A, $lift_Tm(s)), $single_Tm($sub_Tm(b, s)))",
+        "$sub_Ty($sub_Ty(A, $lift_Tm($p_Tm)), $single_Tm($q_Tm)) = A",
+    ]);
+    assert_eq!(check_desc(&model), []);
+}
+
+#[test]
+fn indexed_signature_translates_without_name_cases()
+{
+    let model = first_order(&identity_return()).expect("identity-return translates");
+    assert_eq!(check_desc(&model), []);
+    let lam = model
+        .opers
+        .iter()
+        .find(|operation| operation.name.as_ref() == "lam")
+        .expect("lambda operation");
+    let body = &lam.arity.inputs[3];
+    assert_eq!(
+        body.arguments
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        [
+            "$extend_VTm(G, a)",
+            "$sub_CTy(G, $extend_VTm(G, a), b, $p_VTm(G, a))",
+        ]
+    );
+    assert!(body.bindings.is_empty());
+    // Only the representable family gets variables.
+    assert!(
+        !model
+            .opers
+            .iter()
+            .any(|operation| operation.name.as_ref() == "$q_CTm")
+    );
+    let renamed = signature(
+        "Renamed",
+        vec![SortDesc::new("Expression", DeclPolarity::Data).representable()],
+        vec![op(
+            "abstract",
+            vec![SortRef::new("body", "Expression").pi_plus([
+                SortIndex::new("outer", "Expression"),
+                SortIndex::new("inner", "Expression"),
+            ])],
+            SortRef::new("", "Expression"),
+        )],
+    );
+    let renamed = first_order(&renamed).expect("names do not select translation cases");
+    assert_eq!(
+        renamed.rules.last().expect("naturality").rhs.to_string(),
+        "abstract($sub_Expression(body, $lift_Expression($lift_Expression(s))))"
+    );
+}
+
+#[test]
+fn translation_refuses_non_signatures()
+{
+    let mut source = lc();
+    source.sorts[0].representability = Representability::Ordinary;
+    let diagnostics = check_desc(&source);
+    assert_eq!(
+        first_order(&source),
+        Err(TranslationError::Malformed(diagnostics))
+    );
+    // A well-formed description with constructors is data, not an operation
+    // signature.
+    assert_eq!(
+        first_order(&gandr_theory_levitation::bool_desc::<()>()),
+        Err(TranslationError::NonSignatureMembers)
+    );
+    let reserved = signature(
+        "Reserved",
+        vec![SortDesc::new("$Con", DeclPolarity::Data)],
+        vec![],
+    );
+    assert_eq!(
+        first_order(&reserved),
+        Err(TranslationError::ReservedName(Name::from("$Con")))
+    );
+    let unknown = signature(
+        "Unknown",
+        vec![SortDesc::family("Tm", DeclPolarity::Data, [
+            SortIndex::new("A", "Missing"),
+        ])],
+        vec![],
+    );
+    assert_eq!(
+        first_order(&unknown),
+        Err(TranslationError::UnknownIndexSort(Name::from("Missing")))
+    );
+    // Each product condition refused alone, on well-formed arities of `app`.
+    let mut outputs = lc();
+    outputs.opers[1].arity.outputs = Box::from([SortRef::new("v", "Tm"), SortRef::new("w", "Tm")]);
+    let mut monomials = lc();
+    monomials.opers[1].arity.factors = Box::from([1_u32, 1]);
+    monomials.opers[1].arity.dest = Box::from([0_u32, 0]);
+    let mut reindexed = lc();
+    reindexed.opers[1].arity.source = Box::from([1_u32, 0]);
+    for nonproduct in [outputs, monomials, reindexed] {
+        assert_eq!(check_desc(&nonproduct), []);
+        assert_eq!(
+            first_order(&nonproduct),
+            Err(TranslationError::NonProductOperation(Name::from("app")))
+        );
+    }
+    // A parameter alone is a non-signature member too.
+    let mut parameterised = lc();
+    parameterised.params = Box::from([ParamDesc::new("a", (), Attrs::empty())]);
+    assert_eq!(check_desc(&parameterised), []);
+    assert_eq!(
+        first_order(&parameterised),
+        Err(TranslationError::NonSignatureMembers)
+    );
+    // A port abstracting an atom has no context extension in the model.
+    let mut abstracting = lc();
+    abstracting.sorts = Box::from([abstracting.sorts[0].clone(), SortDesc {
+        representability: Representability::Atom,
+        ..SortDesc::new("Name", DeclPolarity::Data)
+    }]);
+    abstracting.opers[1].arity.inputs[0] =
+        SortRef::new("t", "Tm").abstracting([SortIndex::new("a", "Name")]);
+    assert_eq!(check_desc(&abstracting), []);
+    assert_eq!(
+        first_order(&abstracting),
+        Err(TranslationError::AtomAbstraction(Name::from("app")))
+    );
+    // A metavariable applied on a left side to a term, not to the variables
+    // its fields bind, stands in no context of the model.
+    let unpatterned = with_equations(lc(), vec![(
+        FreeTerm::op("app", [
+            FreeTerm::op("lam", [FreeTerm::lam(
+                "x",
+                FreeTerm::inst("t", [FreeTerm::op("app", [
+                    FreeTerm::bound("x"),
+                    FreeTerm::bound("x"),
+                ])]),
+            )]),
+            FreeTerm::var("u"),
+        ]),
+        FreeTerm::var("u"),
+    )]);
+    assert_eq!(check_desc(&unpatterned), []);
+    assert_eq!(
+        first_order(&unpatterned),
+        Err(TranslationError::UnreadEquation(0))
+    );
+}
+
+/// A signature's source equations, each face's variables derived from its
+/// left side.
+///
+/// # Specification
+/// trivial.
+fn with_equations(
+    mut source: TheoryDesc<()>,
+    equations: Vec<(FreeTerm, FreeTerm)>,
+) -> TheoryDesc<()>
+{
+    source.rules = equations
+        .into_iter()
+        .map(|(lhs, rhs)| {
+            let vars = derive_cell_var_meta(&lhs);
+            RuleFace::new(lhs, rhs, vars, SurfaceSpan::default())
+        })
+        .collect();
+    source
+}
+
+/// The model's reading of each source equation, in written order.
+///
+/// # Specification
+/// trivial.
+fn images(source: &TheoryDesc<()>) -> Vec<String>
+{
+    let model = first_order(source).expect("the signature translates");
+    assert_eq!(check_desc(&model), []);
+    let first = model.rules.len().saturating_sub(source.rules.len());
+    model
+        .rules
+        .iter()
+        .skip(first)
+        .map(|rule| format!("{} = {}", rule.lhs, rule.rhs))
+        .collect()
+}
+
+/// A source equation reads in the model with each instantiation as the
+/// substitution operator: every law's image is the one written by hand
+/// against Kaposi and Xie's single-substitution calculus, a metavariable in
+/// the context of the variables its left side applies it to.
+#[test]
+fn an_equation_reads_an_instantiation_as_its_substitution()
+{
+    let op = |name: &str, arguments: Vec<FreeTerm>| FreeTerm::op(name, arguments);
+    let inst = |name: &str, arguments: Vec<FreeTerm>| FreeTerm::inst(name, arguments);
+    let var = FreeTerm::var::<&str>;
+    let (lam, bound) = (FreeTerm::lam, FreeTerm::bound);
+    let field = |sort: &str| SortRef::new("k", "C").pi_plus([SortIndex::new("x", sort)]);
+    // β: `t(u)` substitutes `u` for the variable `let`'s field binds.
+    let lets = with_equations(
+        signature(
+            "Let",
+            vec![SortDesc::new("Tm", DeclPolarity::Data).representable()],
+            vec![op_desc("let", vec![
+                SortRef::new("u", "Tm"),
+                SortRef::new("t", "Tm").pi_plus([SortIndex::new("x", "Tm")]),
+            ])],
+        ),
+        vec![(
+            op("let", vec![var("u"), var("t")]),
+            inst("t", vec![var("u")]),
+        )],
+    );
+    assert_eq!(images(&lets), ["let(u, t) = $sub_Tm(t, $single_Tm(u))"]);
+    // State's `getGet`: the pattern on the left is `k` itself, and `k(s, s)`
+    // substitutes the newer variable by the older.
+    let state = with_equations(
+        signature(
+            "State",
+            vec![
+                SortDesc::new("S", DeclPolarity::Data).representable(),
+                SortDesc::new("C", DeclPolarity::Data),
+            ],
+            vec![op_desc("get", vec![field("S")])],
+        ),
+        vec![(
+            op("get", vec![lam(
+                "s",
+                op("get", vec![lam(
+                    "t",
+                    inst("k", vec![bound("s"), bound("t")]),
+                )]),
+            )]),
+            op("get", vec![lam(
+                "s",
+                inst("k", vec![bound("s"), bound("s")]),
+            )]),
+        )],
+    );
+    assert_eq!(images(&state), [
+        "get(get(k)) = get($sub_C(k, $single_S($q_S)))"
+    ]);
+    // The relative monad's laws: a field's variable is `$q`, and `l`, under
+    // a field it does not take, is weakened past it.
+    let monad = with_equations(
+        signature(
+            "Monad",
+            vec![
+                SortDesc::new("V", DeclPolarity::Data).representable(),
+                SortDesc::new("C", DeclPolarity::Data),
+            ],
+            vec![
+                op_desc("ret", vec![SortRef::new("a", "V")]),
+                op_desc("ext", vec![SortRef::new("m", "C"), field("V")]),
+            ],
+        ),
+        vec![
+            (
+                op("ext", vec![op("ret", vec![var("a")]), var("k")]),
+                inst("k", vec![var("a")]),
+            ),
+            (
+                op("ext", vec![var("m"), lam("x", op("ret", vec![bound("x")]))]),
+                var("m"),
+            ),
+            (
+                op("ext", vec![op("ext", vec![var("m"), var("k")]), var("l")]),
+                op("ext", vec![
+                    var("m"),
+                    lam("x", op("ext", vec![inst("k", vec![bound("x")]), var("l")])),
+                ]),
+            ),
+        ],
+    );
+    assert_eq!(images(&monad), [
+        "ext(ret(a), k) = $sub_C(k, $single_V(a))",
+        "ext(m, ret($q_V)) = m",
+        "ext(ext(m, k), l) = ext(m, ext(k, $sub_C(l, $lift_V($p_V))))",
+    ]);
+    // A field whose body the metavariable does not take: `q` is weakened past
+    // it on the left and stands alone on the right.
+    let vacuous = with_equations(
+        signature(
+            "Vacuous",
+            vec![
+                SortDesc::new("Val", DeclPolarity::Data).representable(),
+                SortDesc::new("Proc", DeclPolarity::Data),
+            ],
+            vec![op_desc("new", vec![
+                SortRef::new("body", "Proc").pi_plus([SortIndex::new("x", "Val")]),
+            ])],
+        ),
+        vec![(op("new", vec![lam("x", var("q"))]), var("q"))],
+    );
+    assert_eq!(images(&vacuous), ["new($sub_Proc(q, $p_Val)) = q"]);
+    // A pattern taking its variables out of order: the newest is kept as the
+    // metavariable's first, the older weakened past and single-substituted
+    // back in as its second; the pattern taking them in order is `k` itself.
+    let swap = with_equations(
+        signature(
+            "Swap",
+            vec![
+                SortDesc::new("V", DeclPolarity::Data).representable(),
+                SortDesc::new("C", DeclPolarity::Data),
+            ],
+            vec![op_desc("swap", vec![SortRef::new("k", "C").pi_plus([
+                SortIndex::new("x", "V"),
+                SortIndex::new("y", "V"),
+            ])])],
+        ),
+        vec![(
+            op("swap", vec![lam(
+                "x",
+                lam("y", inst("k", vec![bound("y"), bound("x")])),
+            )]),
+            op("swap", vec![lam(
+                "x",
+                lam("y", inst("k", vec![bound("x"), bound("y")])),
+            )]),
+        )],
+    );
+    assert_eq!(images(&swap), [
+        "swap($sub_C($sub_C(k, $lift_V($lift_V($p_V))), $single_V($sub_V($q_V, $p_V)))) = swap(k)",
+    ]);
+}
+
+/// A single-output operation of the sort `C`, or `Tm` where it reads one.
+///
+/// # Specification
+/// trivial.
+fn op_desc(
+    name: impl Into<Name>,
+    inputs: Vec<SortRef>,
+) -> OperDesc
+{
+    let output = if inputs.iter().any(|input| input.sort.as_ref() == "Tm") {
+        "Tm"
+    }
+    else if inputs.iter().any(|input| input.sort.as_ref() == "Proc") {
+        "Proc"
+    }
+    else {
+        "C"
+    };
+    op(name, inputs, SortRef::new("", output))
+}
+
+#[test]
+fn each_translation_refusal_reads_as_its_own_message()
+{
+    let named = [
+        TranslationError::ReservedName(Name::from("app")),
+        TranslationError::UnknownIndexSort(Name::from("app")),
+        TranslationError::NonProductOperation(Name::from("app")),
+        TranslationError::AtomAbstraction(Name::from("app")),
+    ];
+    for refusal in &named {
+        assert!(
+            refusal.to_string().contains("app"),
+            "a refusal of a named component names it: {refusal}"
+        );
+    }
+    let messages: Vec<String> = [
+        TranslationError::Malformed(Vec::new()),
+        TranslationError::NonSignatureMembers,
+        TranslationError::UnreadEquation(0),
+    ]
+    .iter()
+    .chain(&named)
+    .map(ToString::to_string)
+    .collect();
+    for (first, left) in messages.iter().enumerate() {
+        for right in messages.iter().skip(first.saturating_add(1)) {
+            assert_ne!(left, right, "no two refusals read alike");
+        }
+    }
+}

@@ -1,0 +1,166 @@
+//! A category with families as a theory whose sorts depend on earlier sorts.
+//! Contexts and substitutions form a category, a type lives in a context, and a
+//! term has a type in a context
+//! [Huang-2026-fat_cell_structures_generalized_algebraic_theories], § 1.1.
+//!
+//! Dependent type theory states its syntax and its models through this
+//! signature. `Tm(g, a)` reads `a` at the sort `Ty(g)`, so a term's sort
+//! names the context of its type. Comprehension extends a context by a type,
+//! and substitution moves types and terms between contexts. The block's value
+//! of `Theory` keeps each index as data, so a program reads it back.
+//!
+//! The standard model reads a context as a type. A type in a context is a
+//! family over it, and a term is a section of that family. The block states
+//! the category laws and the laws on types. Their rules carry each context
+//! that a substitution stands between, so two identities compose at one
+//! context and the unit laws join. The pathological twin keeps the composite
+//! law on terms.
+//!
+//! - see: #522
+//! - see: #5016
+//! - see: #5017
+//! - see: #5042
+//! - cites: [Huang-2026-fat_cell_structures_generalized_algebraic_theories]
+//!
+//! [Huang-2026-fat_cell_structures_generalized_algebraic_theories]: https://doi.org/10.4230/LIPIcs.LICS.2026.58 "Huang and Angiuli, Fat Cell Structures and Generalized Algebraic Theories"
+
+/// The CwF signature: four sorts, each over the sorts before it, and the
+/// operations of a category with families.
+pub theory CwF where
+  /// Contexts.
+  sort Con : Type;
+  /// Substitutions from `d` to `g`.
+  sort Sub(d : Con, g : Con) : Type;
+  /// Types in a context.
+  sort Ty(g : Con) : Type;
+  /// Terms of a type in a context.
+  sort Tm(g : Con, a : Ty g) : Type;
+
+  /// The empty context.
+  oper empty : Con;
+  /// Comprehension: a context extended by a type in it.
+  oper ext : (g : Con, a : Ty g) --> Con;
+  /// The identity substitution.
+  oper id : (g : Con) --> Sub g g;
+  /// Composition: `s` after `t`.
+  oper comp : (s : Sub d g, t : Sub e d) --> Sub e g;
+  /// The substitution into the empty context.
+  oper eps : (g : Con) --> Sub g empty;
+  /// Substitution in a type: it moves the type along `s`.
+  oper subTy : (a : Ty g, s : Sub d g) --> Ty d;
+  /// Substitution in a term: it moves the term along `s`, to its moved type.
+  oper subTm : (t : Tm g a, s : Sub d g) --> Tm d subTy(a, s);
+  /// The projection that forgets the newest type.
+  oper p : (a : Ty g) --> Sub ext(g, a) g;
+  /// The newest variable.
+  oper q : (a : Ty g) --> Tm ext(g, a) subTy(a, p(a));
+  /// A substitution extended by a term.
+  oper pair : (s : Sub d g, t : Tm d subTy(a, s)) --> Sub d ext(g, a);
+
+  /// The identity on the left.
+  rule idl : comp (id g) s ==> s;
+  /// The identity on the right.
+  rule idr : comp s (id d) ==> s;
+  /// Composition is associative.
+  rule assoc : comp (comp s t) u ==> comp s (comp t u);
+  /// The identity leaves a type as it is.
+  rule tyId : subTy a (id g) ==> a;
+  /// Two substitutions in turn move a type as their composite does.
+  rule tyComp : subTy (subTy a s) t ==> subTy a (comp s t);
+
+/// The standard model: a context is a type, a type in it a family over it,
+/// and a term a section of the family.
+pub module Standard : Model(CwF) where
+  /// A context is a type.
+  type Con = Type;
+  /// A substitution is a function between contexts.
+  type Sub(d : Con, g : Con) = d -> g;
+  /// A type in a context is a family over it.
+  type Ty(g : Con) = g -> Type;
+  /// A term is a section: at each point, a value of the family there.
+  type Tm(g : Con, a : Ty g) = (x : g) -> a(x);
+
+  /// The empty context has one point.
+  def empty : Type = Unit;
+
+  /// Comprehension pairs a point with a point of its type.
+  def ext(g : Type, a : g -> Type) -> Type { return type(*{x : g, y : a(x)}) }
+
+  /// The identity function.
+  def id(g : Type) -> g -> g { fun (x) { x } }
+
+  /// Composition of two functions.
+  def comp(d : Type, g : Type, e : Type, s : d -> g, t : e -> d) -> e -> g =
+    fun (x) { s (t x) }
+
+  /// Every point goes to the one point.
+  def eps(g : Type) -> g -> Unit { fun (_x) { *{} } }
+
+  /// A family after a function: it reads the family at the function's result.
+  def subTy(g : Type, d : Type, a : g -> Type, s : d -> g) -> d -> Type =
+    fun (x) { a (s x) }
+
+  /// A section read after a function.
+  def subTm(g : Type, a : g -> Type, d : Type, t : (x : g) -> a(x), s : d -> g) -> (
+    x : d
+  ) -> a(s(x)) =
+    fun (x) { t (s x) }
+
+  /// The first projection.
+  def p(g : Type, a : g -> Type) -> *{x : g, y : a(x)} -> g { fun (z) { z.0 } }
+
+  /// The point a pair holds first.
+  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }
+
+  /// The second projection, at the family read at the first.
+  def q(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =
+    fun (z) { z.1 }
+
+  /// The pair of a function and a section: each point goes to its image and
+  /// to the section's value there.
+  def pair(
+    d : Type,
+    g : Type,
+    a : g -> Type,
+    s : d -> g,
+    t : (x : d) -> a(s(x))
+  ) -> d -> *{x : g, y : a(x)} =
+    fun (z) { *{s z, t z} }
+
+/// A family over the integers that is `Bool` at every point.
+def flags(_n : Integer) -> Type { return Bool }
+
+/// The newest variable reads the second point of a pair.
+@[runs("+{.0 = *{}}")]
+def newest() -> Bool =
+  let read = Standard.q Integer flags
+  read (3, true)
+
+/// Weakening reads the first point of a pair.
+@[runs("3")]
+def weakened() -> Integer =
+  let read = Standard.p Integer flags
+  read (3, false)
+
+/// The links of a sort chain or an index chain.
+def rec links(chain : Theory) -> Integer =
+  match chain where
+    | Sort(_name, _indices, rest) => { let r = links[<] rest; r + 1 }
+    | Port(_name, _sort, _indices, rest) => { let r = links[<] rest; r + 1 }
+    | _ => 0
+
+/// The index ports of the last sort of a sort chain.
+def rec lastIndices(chain : Theory) -> Integer =
+  match chain where
+    | Sort(_name, indices, rest) => match rest where
+      | Sort(_n, _i, _r) => lastIndices[<] rest
+      | _ => links indices
+    | _ => 0
+
+/// The CwF declares four sorts.
+@[runs("4")]
+def sorts() -> Integer { match CwF { | Presents(s, _o, _r) => links s | _ => 0 } }
+
+/// `Tm` has two index ports: a context and a type in it.
+@[runs("2")]
+def termIndices() -> Integer { match CwF { | Presents(s, _o, _r) => lastIndices s | _ => 0 } }

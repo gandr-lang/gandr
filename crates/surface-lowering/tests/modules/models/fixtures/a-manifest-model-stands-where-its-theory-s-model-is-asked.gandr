@@ -1,0 +1,24 @@
+theory Counter where {
+  sort C : Type;
+  oper start : C;
+  oper step : (c : C) --> C;
+}
+theory Constant where {
+  oper k : Integer;
+}
+theory Sg where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule assoc : mul (mul x y) z ==> mul x (mul y z);
+}
+def any(m : Model Counter) -> Model Counter { m }
+def closed(m : Model Counter with sort C = Integer) -> Model Counter {
+  become any m
+}
+def open(x : Type, m : Model Counter with sort C = x) -> Model Counter {
+  become any m
+}
+def anySg(s : Model Sg) -> Model Sg { s }
+def lawful(m : Model Sg with sort M = Integer) -> Model Sg {
+  become anySg m
+}

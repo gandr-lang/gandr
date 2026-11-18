@@ -1,0 +1,547 @@
+//! The meaning a rewrite keeps: two parses of one source, each lowered into
+//! one arena, compared declaration by declaration.
+//!
+//! A layout keeps every token, so the content digest is its check. A rewrite
+//! changes tokens on purpose — `*{A, B}` for `A * B` — and the digest with
+//! them, so its check is the lowering: the rewritten text lowers to what the
+//! source lowers to. The two lowerings share an arena and admit their
+//! declarations at the same positions, so a reference to a declaration is one
+//! index in both, and the core's syntactic equality, which never reads an
+//! allocation's position, compares what each declaration lowered to.
+
+use alloc::collections::BTreeMap;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::mem::discriminant;
+
+use anodized::spec;
+use gandr_core_term::CertificateEquality;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Crossing;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::equal_certificate_folded;
+use gandr_core_term::equal_comp_type_folded;
+use gandr_core_term::equal_type_folded;
+use gandr_surface_diagnostics::Label;
+use gandr_surface_diagnostics::report_span;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::LoweredDeclaration;
+use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::LoweringBudget;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::lower_unit;
+use gandr_surface_lowering::namespace::Recognition;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::SyntaxTree;
+use quenchant_shape::shape::Maybe;
+
+use crate::Withdrawal;
+use crate::Withdrawn;
+use crate::site::Placement;
+use crate::site::Sites;
+
+/// Whether two lowerings mean one thing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Agreement
+{
+    /// Every declaration lowered to the same core.
+    Same,
+    /// The rewritten text has other parser obligations.
+    ParserObligations(Vec<Differing>),
+    /// These declarations of the first lowered otherwise in the second, in
+    /// order.
+    Declarations(Vec<Differing>),
+    /// The two do not declare the same names in the same order.
+    Unpaired,
+}
+
+/// The checker's half of the meaning check: the bodies it elaborates and the
+/// maps it applies where a model crosses.
+///
+/// It answers the body it elaborates for each declaration of a lowered
+/// module, and where it carried a model to a model of a theory its own
+/// includes by a reduct, or put a manifest model's sorts back by a forgetting
+/// map.
+///
+/// Two spellings of one program can lower to different cores and still be
+/// one program once the checker elaborates them: a nested call and the `let`
+/// statement that binds it lower to a nested node and a bind, and the checker
+/// runs the nested node there, as the bind. A rewrite that moves between such
+/// spellings is checked by the bodies the checker elaborates, so the
+/// formatter asks a checker for them; the crate depends on none, and a caller
+/// that judges modules supplies one. Without one, no such rewrite runs.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an implementation answers, for each declaration of `module`
+///   lowered into `arena`, in the module's order, the body the checker
+///   elaborates for it, minting into `arena`, or none where it defines none;
+///   the refusal the checker refuses it with, or none where it refuses none;
+///   and each value of `module`'s lowering the checker applied a reduct or a
+///   forgetting map to, with the map's constant and the carriers it applied the
+///   map at, minted into `arena`.
+/// - provides: the elaborated half of [`crate::format_beside`]'s meaning check.
+/// - fails: not applicable to the trait itself.
+/// - panics: not applicable to the trait itself.
+pub trait Elaborate
+{
+    /// What the checker elaborates for `module`, lowered into `arena`. The
+    /// trait's clauses are this method's.
+    ///
+    /// # Specification
+    /// trivial.
+    fn elaborate(
+        &self,
+        arena: &mut CoreArena,
+        module: &LoweredModule<'_>,
+    ) -> Elaboration;
+}
+
+/// What a checker elaborates for one lowered module.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Elaboration
+{
+    /// The body for each declaration, in the module's order; none for one it
+    /// defines nothing for.
+    pub definitions: Vec<Option<ValueId>>,
+    /// The refusal for each declaration the checker refuses, in the module's
+    /// order; none for one it does not refuse.
+    pub refusals: Vec<Option<Refused>>,
+    /// Each value of the module's lowering standing where a model of a theory
+    /// its own model's theory includes is asked, or where its theory's model
+    /// is asked of a model whose sorts are manifest: the map the checker
+    /// applies there, and the carriers it applies the map at before the value.
+    pub crossings: BTreeMap<ValueId, Crossing>,
+}
+
+/// What the checker refuses one declaration with: what the refusal blames,
+/// and where it stands in the unit's text.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Refused
+{
+    /// What the refused bytes are.
+    pub culprit: Label,
+    /// The bytes the refusal blames, absent where the origin table records
+    /// none.
+    pub site: Maybe<ByteSpan, report_span::Absent>,
+}
+
+/// What a checker elaborated for two lowerings of one source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Elaborated<'source>
+{
+    /// The source's.
+    pub before: &'source Elaboration,
+    /// The rewritten text's.
+    pub after: Elaboration,
+}
+
+/// `tree`, the text `unit` lays out, lowered into `arena`, or nothing when
+/// the lowering refuses it whole.
+///
+/// # Specification
+/// trivial.
+pub fn lowered<'source>(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'source>,
+    unit: &Unit,
+    arena: &mut CoreArena,
+) -> Option<LoweredModule<'source>>
+{
+    lower_unit(
+        grammar,
+        tree,
+        unit,
+        arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .ok()
+}
+
+/// The withdrawal of each declaration `module` lowered at or after `base`
+/// whose forms' keys `held` accepts and whose name `reader` maps to the
+/// declaration that reads it: the declarations a reader's meaning depends on
+/// through their spelling.
+///
+/// # Specification
+/// trivial.
+pub fn read<Held, Reader>(
+    module: &LoweredModule<'_>,
+    base: ByteOffset,
+    held: Held,
+    reader: Reader,
+) -> Vec<Differing>
+where
+    Held: Fn(&[NodeKey]) -> bool,
+    Reader: Fn(&str) -> Option<String>,
+{
+    module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.span().start() >= base)
+        .filter_map(|declaration| {
+            let keys: Vec<NodeKey> = halves(declaration).collect();
+            if !held(&keys) {
+                return None;
+            }
+            let name = format!("{}", declaration.name());
+            let by = reader(&name)?;
+            Some(Differing {
+                keys,
+                withdrawal: Withdrawal {
+                    declaration: name,
+                    span: own(declaration.span(), base),
+                    reason: Withdrawn::Read(by),
+                },
+            })
+        })
+        .collect()
+}
+
+/// The declarations whose rewritten candidate has other parser obligations.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the obligations of each text and the differing declarations,
+///   growth within the parser's obligations
+pub fn parser_obligations(
+    module: &LoweredModule<'_>,
+    base: ByteOffset,
+    forms: &[(NodeKey, ByteSpan)],
+) -> Vec<Differing>
+{
+    let mut differing = Vec::with_capacity(forms.len());
+    for &(key, form) in forms {
+        let declaration = module.declarations().iter().find(|declaration| {
+            let span = own(declaration.span(), base);
+            span.start() < form.end() && form.start() < span.end()
+        });
+        let (declaration, span) = declaration.map_or_else(
+            || (String::from("source"), form),
+            |declaration| {
+                (
+                    format!("{}", declaration.name()),
+                    own(declaration.span(), base),
+                )
+            },
+        );
+        differing.push(Differing {
+            keys: Vec::from([key]),
+            withdrawal: Withdrawal {
+                declaration,
+                span,
+                reason: Withdrawn::Obligations,
+            },
+        });
+    }
+    differing
+}
+
+/// The keys of the forms holding `declaration`: its signature, its
+/// definition and a form refused at collection, those it has.
+///
+/// # Specification
+/// trivial.
+fn halves(declaration: &LoweredDeclaration<'_>) -> impl Iterator<Item = NodeKey>
+{
+    [
+        declaration.signature(),
+        declaration.definition(),
+        declaration.refused_form(),
+    ]
+    .into_iter()
+    .filter_map(|half| match half {
+        Maybe::Present(key) => Some(key.form()),
+        Maybe::Absent(_) => None,
+    })
+}
+
+/// The keys of the forms holding each declaration of `module` that
+/// `elaborations` — a checker's, in the module's order — holds no body for.
+///
+/// # Specification
+/// trivial.
+pub fn unelaborated(
+    module: &LoweredModule<'_>,
+    elaborations: &[Option<ValueId>],
+) -> Vec<NodeKey>
+{
+    module
+        .declarations()
+        .iter()
+        .zip(elaborations)
+        .filter(|&(_, body)| body.is_none())
+        .flat_map(|(declaration, _)| halves(declaration))
+        .collect()
+}
+
+/// Whether `before` and `after`, lowered into `arena`, declare the same names
+/// in the same order, each to the same core, and which of `before`'s
+/// declarations lowered otherwise.
+///
+/// # Specification
+/// - requires: both modules were lowered into `arena`, and `elaborated`, when
+///   given, holds a checker's elaborations of the two.
+/// - ensures: [`Agreement::Unpaired`] unless the two hold as many declarations;
+///   else [`Agreement::Same`] exactly when each pair, in order, has one name,
+///   role and container and outcomes of one kind whose types, bodies and data
+///   signatures are syntactically equal — evidence erased, no reduction, a
+///   returned composite read as its fold, as the bridge erases it — bodies that
+///   are not counting as equal where `elaborated` holds equal elaborations of
+///   both, or no elaboration of either and a checker refusal of each that
+///   blames one culprit at one recorded site under `sites`, whose seals agree
+///   but for their types' positions, and whose refusals are of one kind at one
+///   site under `sites`; else [`Agreement::Declarations`] with each of
+///   `before`'s declarations whose pair is not so, in order: the keys of the
+///   forms holding it, its name, its span in the source starting at `base`, and
+///   why — the refusal the rewritten declaration met, refused otherwise where
+///   both are refused, or that it lowered otherwise.
+/// - provides: the check a rewrite's output passes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every rewrite of the table, at each direction, is checked
+///   over the corpus by the rewrites' sweep, and a rewrite whose output swaps
+///   two operands is withdrawn from its declaration.
+/// - witness: `rewrite::tests::a_rewrite_that_changes_what_a_source_means_is_withdrawn`
+/// - witness: `tests::rewrite::sweeps::every_source_formats_into_either_form_and_keeps_its_meaning`
+/// - witness: `tests::rewrite::a_rewrite_is_checked_beside_every_kind_of_declaration`
+/// - witness: `tests::rewrite::a_rewrite_that_moves_a_refusal_keeps_its_site_6726`
+/// - witness: `tests::rewrite::a_tail_return_pairs_two_refusals_of_one_culprit_6261`
+///
+/// # Cost
+/// - allocation: the differing declarations, growth within the module's
+///   declarations
+#[spec(ensures: |ret| !matches!(ret, Agreement::Declarations(ref keys) if keys.is_empty()))]
+pub fn agree(
+    arena: &CoreArena,
+    (before, after): (&LoweredModule<'_>, &LoweredModule<'_>),
+    (base, sites): (ByteOffset, &Sites),
+    elaborated: Option<&Elaborated<'_>>,
+) -> Agreement
+{
+    let types = |left: ValueTypeId, right: ValueTypeId| {
+        equal_type_folded(arena, left, right) == CertificateEquality::Equal
+    };
+    let all_types = |left: &[ValueTypeId], right: &[ValueTypeId]| {
+        left.len() == right.len()
+            && left
+                .iter()
+                .zip(right)
+                .all(|(&left, &right)| types(left, right))
+    };
+    let values =
+        |left, right| equal_certificate_folded(arena, left, right) == CertificateEquality::Equal;
+    // Bodies that lower otherwise agree where the checker elaborates them
+    // alike, when it was asked, or refuses both at one recorded site.
+    let elaborates = |position: usize| {
+        let Some(elaborated) = elaborated
+        else {
+            return false;
+        };
+        let at = |elaboration: &Elaboration| {
+            (
+                elaboration.definitions.get(position).copied().flatten(),
+                elaboration.refusals.get(position).copied().flatten(),
+            )
+        };
+        match (at(elaborated.before), at(&elaborated.after)) {
+            ((Some(left), _), (Some(right), _)) => values(left, right),
+            ((None, Some(left)), (None, Some(right))) => {
+                left.culprit == right.culprit
+                    && matches!(
+                        (left.site, right.site),
+                        (Maybe::Present(_), Maybe::Present(_))
+                    )
+                    && sites.placed(base, (left.site, right.site)) == Placement::Same
+            },
+            _ => false,
+        }
+    };
+    let declared = before.declarations();
+    let written = after.declarations();
+    if declared.iter().len() != written.iter().len() {
+        return Agreement::Unpaired;
+    }
+    let differing: Vec<Differing> = declared
+        .iter()
+        .zip(written)
+        .enumerate()
+        .filter(|&(position, (left, right))| {
+            left.name() != right.name()
+                || left.role() != right.role()
+                || left.container() != right.container()
+                || !match (left.outcome(), right.outcome()) {
+                    (
+                        DeclarationOutcome::Completed {
+                            declared_type: left_type,
+                            body: left_body,
+                        },
+                        DeclarationOutcome::Completed {
+                            declared_type: right_type,
+                            body: right_body,
+                        },
+                    ) => {
+                        types(left_type, right_type)
+                            && (values(left_body, right_body) || elaborates(position))
+                    },
+                    (
+                        DeclarationOutcome::Uncompleted {
+                            declared_type: left_type,
+                        },
+                        DeclarationOutcome::Uncompleted {
+                            declared_type: right_type,
+                        },
+                    ) => types(left_type, right_type),
+                    (
+                        DeclarationOutcome::Bodied { body: left_body },
+                        DeclarationOutcome::Bodied { body: right_body },
+                    ) => values(left_body, right_body) || elaborates(position),
+                    (
+                        DeclarationOutcome::Data(left_index),
+                        DeclarationOutcome::Data(right_index),
+                    ) => match (before.data(left_index), after.data(right_index)) {
+                        (
+                            quenchant_shape::shape::Maybe::Present(left_data),
+                            quenchant_shape::shape::Maybe::Present(right_data),
+                        ) => {
+                            let named =
+                                before.constructors(left_index) == after.constructors(right_index);
+                            all_types(left_data.parameters(), right_data.parameters())
+                                && types(left_data.kind(), right_data.kind())
+                                && left_data.constructors().len() == right_data.constructors().len()
+                                && left_data
+                                    .constructors()
+                                    .iter()
+                                    .zip(right_data.constructors())
+                                    .all(|(left, right)| all_types(left, right))
+                                && left_data.presentation() == right_data.presentation()
+                                && named
+                        },
+                        _ => false,
+                    },
+                    (
+                        DeclarationOutcome::Codata(left_index),
+                        DeclarationOutcome::Codata(right_index),
+                    ) => match (before.codata(left_index), after.codata(right_index)) {
+                        (
+                            quenchant_shape::shape::Maybe::Present(left_codata),
+                            quenchant_shape::shape::Maybe::Present(right_codata),
+                        ) => {
+                            all_types(left_codata.parameters(), right_codata.parameters())
+                                && types(left_codata.kind(), right_codata.kind())
+                                && left_codata.observations().len()
+                                    == right_codata.observations().len()
+                                && left_codata
+                                    .observations()
+                                    .iter()
+                                    .zip(right_codata.observations())
+                                    .all(|(&left, &right)| {
+                                        equal_comp_type_folded(arena, left, right)
+                                            == CertificateEquality::Equal
+                                    })
+                        },
+                        _ => false,
+                    },
+                    (
+                        DeclarationOutcome::Abstract(left_seal),
+                        DeclarationOutcome::Abstract(right_seal),
+                    ) => {
+                        types(left_seal.kind, right_seal.kind)
+                            && types(left_seal.representation, right_seal.representation)
+                            && left_seal.extent == right_seal.extent
+                            && left_seal.sealing == right_seal.sealing
+                            && left_seal.component == right_seal.component
+                            && left_seal.mark == right_seal.mark
+                    },
+                    (DeclarationOutcome::World, DeclarationOutcome::World) => true,
+                    (DeclarationOutcome::Refused(left), DeclarationOutcome::Refused(right)) => {
+                        discriminant(&left) == discriminant(&right)
+                            && sites.placed(base, (left.span(), right.span())) == Placement::Same
+                    },
+                    _ => false,
+                }
+        })
+        .map(|(_, (left, right))| Differing {
+            keys: halves(left).collect(),
+            withdrawal: Withdrawal {
+                declaration: format!("{}", left.name()),
+                span: own(left.span(), base),
+                reason: reason(left.outcome(), right.outcome()),
+            },
+        })
+        .collect();
+    if differing.is_empty() {
+        Agreement::Same
+    }
+    else {
+        Agreement::Declarations(differing)
+    }
+}
+
+/// `span`, a span of a unit's text, in the text of the source starting at
+/// `base`.
+///
+/// # Specification
+/// trivial.
+fn own(
+    span: ByteSpan,
+    base: ByteOffset,
+) -> ByteSpan
+{
+    let shift = |offset: ByteOffset| {
+        ByteOffset::from(usize::from(offset).saturating_sub(usize::from(base)))
+    };
+    ByteSpan::new(shift(span.start()), shift(span.end())).unwrap_or(span)
+}
+
+/// Why a declaration that lowered to `written` and, rewritten, to `outcome`
+/// keeps its spelling.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the text of the reason, diagnostic
+fn reason(
+    written: DeclarationOutcome<'_>,
+    outcome: DeclarationOutcome<'_>,
+) -> Withdrawn
+{
+    match (written, outcome) {
+        (DeclarationOutcome::Refused(_), DeclarationOutcome::Refused(refusal)) => {
+            Withdrawn::Otherwise(format!("{refusal}"))
+        },
+        (_, DeclarationOutcome::Refused(refusal)) => Withdrawn::Refused(format!("{refusal}")),
+        (
+            _,
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World,
+        ) => Withdrawn::Lowered,
+    }
+}
+
+/// A declaration that lowered otherwise once rewritten.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Differing
+{
+    /// The keys of the forms holding it in the source.
+    pub keys: Vec<NodeKey>,
+    /// What the caller reports.
+    pub withdrawal: Withdrawal,
+}

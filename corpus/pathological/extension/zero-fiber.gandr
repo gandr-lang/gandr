@@ -1,0 +1,26 @@
+// A cell introduced with a value on the face it is fixed on violates its
+// boundary: the boundary law and β at that point rewrite one term to two
+// normal forms, a variable and `zero`, no rule the path order orients joins
+// them, and the block's rules are refused by name. The extension type of
+// `../../model/extension/zero-fiber.gandr` introduces a cell by its value off
+// the face alone.
+//
+// - see: #641 — `FreeFiber`
+
+/// `ins` takes the cell's value at both points, so `outp(ins(x, y))` reads
+/// `zero` by the boundary and `x` by β.
+@[refuses("RulesUncompleted")]
+theory FreeFiber where
+  boundary Two {p, q};
+  face left = {p};
+  sort Val : Type;
+  sort Ext : Type;
+
+  oper zero : Val;
+  oper ins : (x : Val, y : Val) --> Ext;
+  oper outp : (e : Ext) --> Val;
+  oper outq : (e : Ext) --> Val;
+
+  rule boundary : outp e ==> zero;
+  rule betaLeft : outp (ins x y) ==> x;
+  rule betaRight : outq (ins x y) ==> y;

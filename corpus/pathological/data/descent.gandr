@@ -1,0 +1,31 @@
+// What descent refuses. A claim at the parameter's own value stands at
+// its stage, not below it; claims under matches on two parameters descend on
+// two at once, which is the sized rung's. The twin of
+// `../../model/data/descent.gandr`; its `Nat` is the one
+// `../../model/data/data-base.gandr` declares.
+//
+// - see: #518 — `again`
+// - see: #392 — `both`
+
+/// Natural numbers, the data every definition here descends on.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+/// A call at the matched parameter itself rather than a field of it: not
+/// below the stage the match took it apart at.
+@[refuses("StageNotBelow")]
+def rec again(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => again[<] n
+
+/// One claim under a match on `n`, another under the match on `m`: the
+/// definition would descend on both, a measure the sized rung states.
+@[refuses("DescentOnSeveralParameters")]
+def rec both(m : Nat, n : Nat) -> Nat =
+  match m where
+    | Zero => match n where
+      | Zero => Zero
+      | Succ(q) => both[<] m q
+    | Succ(p) => both[<] p n

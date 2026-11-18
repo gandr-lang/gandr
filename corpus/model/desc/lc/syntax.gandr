@@ -1,0 +1,119 @@
+//! This source defines the pure lambda calculus.
+//!
+//! `LC` has one substitution. It is the single-substitution calculus of § 7 of
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics].
+//! It is the presentation that `first_order` mints from `theory Lambda`. Its
+//! names omit the generated `$`, and its context arguments are implicit, as a
+//! `theory` block writes them.
+//!
+//! The source uses de Bruijn indices. `Lift` is a substitution constructor, so
+//! the substitution laws reach their inductive steps by conversion. Lifting as
+//! a definition reaches them too.
+//!
+//! - see: #640
+//! - see: #2422
+//! - cites: [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]
+//!
+//! [Kaposi-2024-secondorder_generalised_algebraic_theories_signatures_firstorder_semantics]: https://doi.org/10.4230/LIPIcs.FSCD.2024.10 "Kaposi and Xie, Second-Order Generalised Algebraic Theories"
+
+// The naturals, the de Bruijn indices.
+import "../model-in-source.gandr";
+
+/// `LC` is the pure lambda calculus with single substitution. No order of
+/// paths orients law 3, so the checker refuses the rules, but the block still
+/// derives `Model(LC)`.
+@[refuses("RulesUnoriented")]
+pub theory LC where
+  sort Con : Type;
+  sort Sub(d : Con, g : Con) : Type;
+  sort Tm(g : Con) : Type;
+
+  oper empty : Con;
+  oper subTm : (t : Tm g, s : Sub d g) --> Tm d;
+  oper extendTm : (g : Con) --> Con;
+  oper pTm : Sub extendTm(g) g;
+  oper qTm : Tm extendTm(g);
+  oper singleTm : (a : Tm g) --> Sub g extendTm(g);
+  oper liftTm : (s : Sub d g) --> Sub extendTm(d) extendTm(g);
+  oper lam : (t : Tm extendTm(g)) --> Tm g;
+  oper app : (t : Tm g, u : Tm g) --> Tm g;
+
+  rule law1 : subTm qTm (singleTm b) <=> b;
+  rule law2 : subTm qTm (liftTm s) <=> qTm;
+  rule law3 : subTm (subTm b pTm) (liftTm s) <=> subTm (subTm b s) pTm;
+  rule law4 : subTm (subTm b pTm) (singleTm a) <=> b;
+  rule law5 : subTm (lam t) s <=> lam (subTm t (liftTm s));
+  rule law6 : subTm (app t u) s <=> app (subTm t s) (subTm u s);
+
+/// `Term` stores variables, abstractions and applications.
+pub data Term : Type where
+  | Ix : (n : N) --> Term
+  | Lam : (t : Term) --> Term
+  | Ap : (t : Term, u : Term) --> Term
+
+/// `Ren` stores a shift or a lift.
+pub data Ren : Type where
+  | RShift : (k : N) --> Ren
+  | RLift : (r : Ren) --> Ren
+
+/// `Env` stores a shift, a term with a rest or a lift.
+pub data Env : Type where
+  | Shift : (k : N) --> Env
+  | Cons : (a : Term, s : Env) --> Env
+  | Lift : (s : Env) --> Env
+
+/// `plus` adds its second argument to its first.
+pub def rec plus(n : N, k : N) -> N =
+  match k where
+    | Z => n
+    | S(j) => S (plus[<] n j)
+
+/// `plusTwo` adds `j` and `k` to `n`.
+pub def rec plusTwo(n : N, j : N, k : N) -> N =
+  match k where
+    | Z => plus n j
+    | S(i) => S (plusTwo[<] n j i)
+
+/// `rlook` applies a renaming to an index.
+pub def rec rlook(n : N, r : Ren) -> N =
+  match r where
+    | RShift(k) => plus n k
+    | RLift(q) => match n where
+      | Z => Z
+      | S(m) => S (rlook[<] m q)
+
+/// `rename` applies a renaming to a term.
+pub def rec rename(t : Term, r : Ren) -> Term =
+  match t where
+    | Ix(n) => Ix (rlook n r)
+    | Lam(b) => Lam (rename[<] b (RLift r))
+    | Ap(f, a) => Ap (rename[<] f r) (rename[<] a r)
+
+/// `wk` adds one to each index.
+pub def wk(t : Term) -> Term =
+  rename t (RShift (S Z))
+
+/// `shiftBy` shifts a term under `k` binders.
+pub def shiftBy(a : Term, k : N) -> Term =
+  match k where
+    | Z => a
+    | S(j) => rename a (RShift (S j))
+
+/// `look` returns the term for `n` under `k` binders, where `k` counts the
+/// binders that the lookup crosses. Each lift that it passes adds one.
+pub def rec look(n : N, s : Env, k : N) -> Term =
+  match s where
+    | Shift(j) => Ix (plusTwo n j k)
+    | Cons(a, r) => match n where
+      | Z => shiftBy a k
+      | S(m) => look[<] m r k
+    | Lift(r) => match n where
+      | Z => Ix (plus Z k)
+      | S(m) => look[<] m r (S k)
+
+/// `subst` applies a substitution to a term.
+pub def rec subst(t : Term, s : Env) -> Term =
+  match t where
+    | Ix(n) => look n s Z
+    | Lam(b) => Lam (subst[<] b (Lift s))
+    | Ap(f, a) => Ap (subst[<] f s) (subst[<] a s)

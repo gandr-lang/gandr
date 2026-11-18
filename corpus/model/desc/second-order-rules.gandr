@@ -1,0 +1,61 @@
+//! A second-order rule can apply a bound variable.
+//!
+//! `t(u)` instantiates the variable `t` with argument `u`. It substitutes one
+//! argument for each variable that the port of `t` binds.
+//!
+//! The higher-order recursive path order proves termination. It puts the
+//! instantiation below an application that holds the variable and every
+//! argument directly.
+//! Pattern unification finds each critical pair. The second-order reader joins
+//! each pair.
+//!
+//! - see: #2328 — `LetOverlap`
+//! - cites: [Jouannaud-1999-the_higher_order_recursive_path_ordering]
+//! - cites: [Klop-1993-combinatory_reduction_systems_introduction_and_survey]
+//! - cites: [Mayr-1998-higher_order_rewrite_systems_and_their_confluence]
+//!
+//! [Jouannaud-1999-the_higher_order_recursive_path_ordering]: https://doi.org/10.1109/LICS.1999.782635 "Jouannaud and Rubio, The higher-order recursive path ordering"
+//! [Klop-1993-combinatory_reduction_systems_introduction_and_survey]: https://doi.org/10.1016/0304-3975(93)90091-7 "Klop, van Oostrom and van Raamsdonk, Combinatory reduction systems: introduction and survey"
+//! [Mayr-1998-higher_order_rewrite_systems_and_their_confluence]: https://doi.org/10.1016/S0304-3975(97)00143-6 "Mayr and Nipkow, Higher-order rewrite systems and their confluence"
+
+/// ζ substitutes the bound term into the `let` body.
+theory Let where
+  sort Tm : Type+;
+  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
+  rule zeta : let u t <=> t u;
+
+/// `LetPair` instantiates its body with two arguments, outermost binder first.
+theory LetPair where
+  sort Tm : Type+;
+  oper let2 : (u : Tm, v : Tm, t : pi+ (x : Tm). pi+ (y : Tm). Tm) --> Tm;
+  rule zeta2 : let2 u v t <=> t u v;
+
+/// Completion joins the two `f` rules independently from ζ.
+theory LetBeside where
+  sort Tm : Type+;
+  oper zero : Tm;
+  oper one : Tm;
+  oper f : (a : Tm) --> Tm;
+  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
+  rule zeta : let u t <=> t u;
+  rule fZero : f a <=> zero;
+  rule fOne : f a <=> one;
+
+/// ζ and `zetaZero` join at `t(zero)`.
+theory LetOverlap where
+  sort Tm : Type+;
+  oper zero : Tm;
+  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
+  rule zeta : let u t <=> t u;
+  rule zetaZero : let zero t <=> t zero;
+
+/// The presentation stores ζ's right side as an `Inst` node.
+@[runs("1")]
+def instantiates() -> Integer { match Let {
+  | Presents(sorts, opers, rules) => match rules where
+    | Rule(name, left, right, rest) => match right where
+      | Inst(variable, arguments) => 1
+      | _ => 0
+    | _ => 0
+  | _ => 0
+} }
