@@ -7,8 +7,8 @@
 WITH named(crate, path, kind, shown) AS (
   SELECT crate, path, kind, crate || CASE path WHEN '' THEN '' ELSE '::' || path END FROM purpose
 ),
-listed(crate, path, kind, location, shown) AS (
-  SELECT crate, path, kind, location, crate || CASE path WHEN '' THEN '' ELSE '::' || path END FROM entry
+listed(crate, path, kind, location, stands, shown) AS (
+  SELECT crate, path, kind, location, stands, crate || CASE path WHEN '' THEN '' ELSE '::' || path END FROM entry
 ),
 held(crate, path, kind) AS (
   SELECT h.crate, h.path, h.kind FROM held_by h, host WHERE h.system = host.system
@@ -49,15 +49,19 @@ SELECT h.crate || '::' || h.path || ' (' || h.kind || '): a held_by row for ' ||
 FROM held_by h
 WHERE NOT EXISTS (SELECT 1 FROM purpose p WHERE (p.crate, p.path, p.kind) = (h.crate, h.path, h.kind))
 UNION ALL
-SELECT l.shown || ' (module, ' || l.location || '): no row, and its crate has the crate row; the crate row lands with a row for every module'
+SELECT l.shown || ' (module, ' || l.location || '): no row, and '
+  || CASE l.stands WHEN 'item' THEN 'its entry stands for an item it holds; the module row states that item''s purpose'
+     ELSE 'its crate has the crate row; the crate row lands with a row for every module' END
 FROM listed l
 WHERE l.kind = 'module'
-  AND EXISTS (SELECT 1 FROM purpose c WHERE c.crate = l.crate AND c.kind = 'crate')
+  AND (l.stands = 'item' OR EXISTS (SELECT 1 FROM purpose c WHERE c.crate = l.crate AND c.kind = 'crate'))
   AND NOT EXISTS (SELECT 1 FROM purpose p WHERE (p.crate, p.path, p.kind) = (l.crate, l.path, l.kind))
 UNION ALL
-SELECT n.shown || ' (module): a module row, and its crate has no crate row; module rows land with the crate row'
+SELECT n.shown || ' (module): a module row, and its crate has no crate row; module rows land with the crate row, or stand for an item'
 FROM named n
 WHERE n.kind = 'module' AND NOT EXISTS (SELECT 1 FROM purpose c WHERE c.crate = n.crate AND c.kind = 'crate')
+  AND n.crate IN (SELECT crate FROM entry)
+  AND NOT EXISTS (SELECT 1 FROM entry e WHERE (e.crate, e.path, e.kind, e.stands) = (n.crate, n.path, 'module', 'item'))
 UNION ALL
 SELECT shown || ' (' || kind || '): concern ' || tag || ' is no key of ledger/concerns.sql'
 FROM tags WHERE tag NOT IN (SELECT id FROM concern)

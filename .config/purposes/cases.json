@@ -16,10 +16,10 @@
         "3": { "crate_id": 1, "path": ["core", "option", "Option"], "kind": "enum" }
       }
     },
-    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\nx-y\tmemo\tmodule\tcrates/x-y/src/memo.rs\nx-y\tmemo::Memo\tstruct\tcrates/x-y/src/memo.rs:3"
+    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\t\nx-y\tmemo\tmodule\tcrates/x-y/src/memo.rs\t\nx-y\tmemo::Memo\tstruct\tcrates/x-y/src/memo.rs:3\t"
   },
   {
-    "name": "the items one macro invocation generates with their module share its span and are its entry",
+    "name": "#7983: the items one macro invocation generates with their module share its span, and the module's entry stands for them, marked `item`",
     "args": { "crate": "x-y" },
     "input": {
       "format_version": 61,
@@ -44,7 +44,7 @@
         "5": { "crate_id": 0, "path": ["gandr_x_y", "site", "Site"], "kind": "struct" }
       }
     },
-    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\nx-y\tsite\tmodule\tcrates/x-y/src/site.rs\nx-y\tsite::Site\tstruct\tcrates/x-y/src/site.rs:30\nx-y\tsite::reason\tmodule\tcrates/x-y/src/site.rs:10"
+    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\t\nx-y\tsite\tmodule\tcrates/x-y/src/site.rs\t\nx-y\tsite::Site\tstruct\tcrates/x-y/src/site.rs:30\t\nx-y\tsite::reason\tmodule\tcrates/x-y/src/site.rs:10\titem"
   },
   {
     "name": "a module and a function with one name are two entries, the module at its declaration",
@@ -62,7 +62,7 @@
         "2": { "crate_id": 0, "path": ["gandr_x_y", "parse"], "kind": "function" }
       }
     },
-    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\nx-y\tparse\tfunction\tcrates/x-y/src/lib.rs:20\nx-y\tparse\tmodule\tcrates/x-y/src/parse.rs:1"
+    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\t\nx-y\tparse\tfunction\tcrates/x-y/src/lib.rs:20\t\nx-y\tparse\tmodule\tcrates/x-y/src/parse.rs:1\t"
   },
   {
     "name": "an associated function the table lists under its struct or trait is that item's and has no entry; a module's function has one",
@@ -88,7 +88,7 @@
         "6": { "crate_id": 0, "path": ["gandr_x_y", "hash", "of"], "kind": "function" }
       }
     },
-    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\nx-y\tHash\tstruct\tcrates/x-y/src/lib.rs:3\nx-y\tMix\ttrait\tcrates/x-y/src/lib.rs:11\nx-y\thash\tmodule\tcrates/x-y/src/hash.rs:1\nx-y\thash::of\tfunction\tcrates/x-y/src/hash.rs:4"
+    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\t\nx-y\tHash\tstruct\tcrates/x-y/src/lib.rs:3\t\nx-y\tMix\ttrait\tcrates/x-y/src/lib.rs:11\t\nx-y\thash\tmodule\tcrates/x-y/src/hash.rs:1\t\nx-y\thash::of\tfunction\tcrates/x-y/src/hash.rs:4\t"
   },
   {
     "name": "another rustdoc JSON format is refused",

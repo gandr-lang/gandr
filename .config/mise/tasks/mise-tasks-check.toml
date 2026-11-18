@@ -2108,30 +2108,43 @@ fi
 echo "census check OK: $(jq length .config/census/cases.json) cases give their recorded output"
 '''
 
-# The purposes ledger (`ledger/purposes.sql`): the dump builds with every
-# constraint holding and is its own re-dump, and every concern tag is a key of
-# `ledger/concerns.sql`, once in its row, that a site of the concern there
-# covers: a site covers its module, the modules below it and their items, and
-# a site at the empty module its whole crate. A crate with a row is held to
-# its entries as `purposes:items` reads them: every public item has a row,
-# every row names an entry, a crate row lands with a row for every module, and
-# a module row with the crate row. A crate with no row is not read: it waits
-# for its first pass. A gate documents only the rowed crates that its change
-# reaches (#6895): `GATE_SCOPE` excludes each package that the change does
-# not reach. A change of the ledgers, of this check's programs or of the
-# ledger tasks documents every rowed crate, and so does a run with no
-# `GATE_BASE`. A rowed crate with no package stays in, since its rows are a
-# finding in any scope. A row whose entry only some systems compile has a
-# `held_by` row for each system that holds it, and a host reads such a row
-# against its own listing only when a `held_by` row names the host's system,
-# since rustdoc lists no entry that a `cfg` of the host leaves out (#7674).
-# `.config/purposes/findings.sql` gives every finding, and
-# `.config/purposes/held-cases.bash` holds it to its cases on each system.
-# Each case in `.config/purposes/cases.json` holds the
-# entry program's arguments, an input, and the output it must give or that it
-# fails; each in `.config/purposes/coverage.json` the tags and sites the
-# coverage program reads and the findings it gives. Every finding is printed
-# before the gate fails.
+# The purposes ledger. Its dump builds with every constraint, and it is its
+# own re-dump. Each concern tag is a key of the concerns ledger, once in its
+# row. A site of that concern covers the tagged item.
+# - see: `ledger/purposes.sql`, `ledger/concerns.sql`
+#
+# A site covers its module, the modules below it and their items. A site at
+# the empty module covers its whole crate.
+#
+# The check holds a crate with a row to its entries, as `purposes:items` reads
+# them. Each public item has a row, and each row names an entry. A crate row
+# lands with a row for each module. A module row lands with the crate row.
+#
+# A module whose entry stands for an item it holds has its row in each rowed
+# crate. A macro's enum in its module is such an item.
+#
+# The check does not read a crate with no row. That crate waits for its first
+# pass. A gate documents only the rowed crates that its change reaches.
+# `GATE_SCOPE` excludes each package that the change does not reach.
+# - see: #6895
+#
+# A change of the ledgers, of the check's programs or of the ledger tasks
+# documents each rowed crate. A run with no `GATE_BASE` does the same. A rowed
+# crate with no package stays in, because its rows are a finding in any scope.
+#
+# Rustdoc lists no entry that a `cfg` of the host omits. So a row whose entry
+# only some systems compile has a `held_by` row for each such system. A host
+# reads that row against its own listing only when a `held_by` row names the
+# host's system.
+# - see: #7674
+#
+# One query gives each finding, and a script holds the query to its cases on
+# each system. A case of the entry program holds its arguments, an input, and
+# the output or the failure. A case of the coverage program holds the tags and
+# the sites, and the findings. The check prints each finding before the gate
+# fails.
+# - see: `.config/purposes/findings.sql`, `.config/purposes/held-cases.bash`,
+#   `.config/purposes/cases.json`, `.config/purposes/coverage.json`
 ["check:purposes"]
 description = "Every public item of a crate the purposes ledger rows has its row, and every row names an item"
 tools.jq = "1.8.1"
@@ -2170,7 +2183,7 @@ touch "$fresh/entries.tsv"
 if (( ${#checked[@]} )); then mise run --quiet purposes:items "${checked[@]}" > "$fresh/entries.tsv"; fi
 printf '%s\n' "${checked[@]}" > "$fresh/checked.txt"
 system=$(uname -s | tr '[:upper:]' '[:lower:]')
-sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $fresh/entries.tsv entry" \
+sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT, stands TEXT);' ".import $fresh/entries.tsv entry" \
   'CREATE TABLE checked(crate TEXT);' ".import $fresh/checked.txt checked" \
   'CREATE TABLE host(system TEXT);' "INSERT INTO host VALUES('$system');"
 findings=$(sqlite3 -bail "$db" < .config/purposes/findings.sql)
