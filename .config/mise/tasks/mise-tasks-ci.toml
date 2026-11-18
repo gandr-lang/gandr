@@ -3149,11 +3149,13 @@ exit "$status"
 # observation, each `{{field}}` filled from `--fields` (`template.jq`), and
 # a `kind:defect` that is no `collector` and fails `unit:check` is refused
 # unless it carries `status:unsectioned`, its claiming seat's to section
-# (#3134). A unit filed whole is sectioned before its claim, so it is signed
-# by construction: once `unit:check` passes on the filed issue, `issue:file`
-# writes the frame's marker and then labels it `shape:signed`, the label
-# `pr:open` waits for (`signed.jq`). A refused check stops the task before
-# both, and the issue stays unsigned with the check's findings (#7545).
+# (#3134). A unit filed whole is sectioned before its claim. A unit that is no
+# `kind:feature` or `kind:performance` is signed by construction: once
+# `unit:check` passes on the filed issue, `issue:file` writes the frame's
+# marker and then labels it `shape:signed`, the label `pr:open` waits for
+# (`signed.jq`). A feature or performance unit waits for `unit:sign`. A
+# refused check stops the task before either path, and the issue stays
+# unsigned with the check's findings (#7545, #7598).
 ["issue:file"]
 description = "File an issue with its full label set once its title and body name nothing private, linked and its dependencies set"
 usage = '''
@@ -3296,13 +3298,22 @@ for blocked in "${blocks[@]}"; do
 done
 if [[ $unit == true ]]; then
   mise run --quiet unit:check --fix "$number" >&2
-  # A unit filed whole is signed once the check passes (#7545): the marker of
-  # the frame its sections pass at, or `claim:take` refuses it (#7129), then
-  # `shape:signed`. A failed edit leaves a marker that no label reads.
-  source "$config_dir/bodies/frame.bash"
-  unit_frame_signoff "$root" "$number" "issue:file" > /dev/null
-  gh issue edit "$number" --add-label shape:signed > /dev/null \
-    || { echo "issue:file: #$number passes unit:check and carries its frame marker, and GitHub refuses the label shape:signed: add the label to #$number by hand" >&2; exit 1; }
+  signed=$(jq -n -r -L "$config_dir/bodies" --argjson labels "$(printf '%s\n' "${labels[@]}" | jq -R -s -c 'split("\n") | map(select(. != ""))')" \
+    'include "sections"; signed_by_construction($labels)') || exit 1
+  if [[ $signed == true ]]; then
+    # A mechanically checked unit carries the marker before `shape:signed`, or
+    # `claim:take` refuses it (#7129). A failed edit leaves a marker unread.
+    source "$config_dir/bodies/frame.bash"
+    unit_frame_signoff "$root" "$number" "issue:file" > /dev/null
+    gh issue edit "$number" --add-label shape:signed > /dev/null \
+      || { echo "issue:file: #$number passes unit:check and carries its frame marker, and GitHub refuses the label shape:signed: add the label to #$number by hand" >&2; exit 1; }
+  elif [[ $signed == false ]]; then
+    kind=$(printf '%s\n' "${labels[@]}" | jq -Rr 'select(startswith("kind:"))')
+    printf 'issue:file: #%s is a %s unit; it waits for unit:sign\n' "$number" "$kind" >&2
+  else
+    printf 'issue:file: the signing predicate returns `%s`, not a boolean\n' "$signed" >&2
+    exit 1
+  fi
 fi
 echo "$url"
 {% endraw %}'''

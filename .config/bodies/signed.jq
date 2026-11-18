@@ -20,10 +20,11 @@
 # wakes the seat, and the seat runs `pr:open` again.
 # - see: #4164, `.config/pr-stack/await.jq`
 #
-# `issue:file` labels a filed issue when it passes `unit:check`. Thus an
-# issue with its sections before its claim has its sign-off already. The
-# task skips an epic and a `collector`, which keep their own shape.
-# - see: #7545
+# `issue:file` labels a filed unit when it passes `unit:check` and its kind
+# makes that sign mechanical. A feature or performance unit waits for
+# `unit:sign`. Thus a mechanically signed issue has its sign-off already.
+# The task skips an epic and a `collector`, which keep their own shape.
+# - see: #7545, #7598
 
 include "findings";
 include "await" {search: "../pr-stack"};

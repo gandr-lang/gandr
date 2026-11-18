@@ -114,6 +114,28 @@ while IFS= read -r case; do
       statuses="$a $b"
       tail="closed: $(awk '/^issue close/ { printf "%s`%s`", (n++ ? ", " : ""), $0 }' "$work/stub/calls")"
       ;;
+    unit-signing)
+      jq -r .body <<< "$case" > "$work/unit.md"
+      feature=0
+      run a a mise run --quiet issue:file "$(jq -r .title <<< "$case")" "$work/unit.md" \
+        kind:feature area:workflow priority:medium effort:easy || feature=$?
+      feature_created=$(awk '/^issue create / { print (/ --label shape:signed( |$)/ ? "yes" : "no"); exit }' "$work/stub/calls")
+      feature_after=$(awk '/^issue comment 1 / { printf "%smarker", (n++ ? ", " : "") }
+        /^issue edit 1 --add-label shape:signed$/ { printf "%slabel", (n++ ? ", " : "") }
+        END { if (!n) printf "nothing" }' "$work/stub/calls")
+      feature_stderr=$(awk '/^issue:file: #1 is a kind:feature unit; it waits for unit:sign$/ { print; exit }' "$work/out-a")
+      echo '[]' > "$work/stub/board.json"
+      : > "$work/stub/calls"
+      defect=0
+      run a a mise run --quiet issue:file "$(jq -r .title <<< "$case")" "$work/unit.md" \
+        kind:defect area:workflow priority:medium effort:easy || defect=$?
+      defect_created=$(awk '/^issue create / { print (/ --label shape:signed( |$)/ ? "yes" : "no"); exit }' "$work/stub/calls")
+      defect_after=$(awk '/^issue comment 1 / { printf "%smarker", (n++ ? ", " : "") }
+        /^issue edit 1 --add-label shape:signed$/ { printf "%slabel", (n++ ? ", " : "") }
+        END { if (!n) printf "nothing" }' "$work/stub/calls")
+      tail="feature: exit $feature; signed at the create: $feature_created; after it: $feature_after; stderr: $feature_stderr; defect: exit $defect; signed at the create: $defect_created; after it: $defect_after"
+      statuses="$feature $defect"
+      ;;
     unit)
       status=0
       jq -r .body <<< "$case" > "$work/unit.md"
