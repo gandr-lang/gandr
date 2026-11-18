@@ -666,6 +666,7 @@ mod tests
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::MatchFault;
+    use gandr_surface_lowering::NativeFault;
     use gandr_surface_lowering::Offer;
     use gandr_surface_lowering::OperandCount;
     use gandr_surface_lowering::PayloadForm;
