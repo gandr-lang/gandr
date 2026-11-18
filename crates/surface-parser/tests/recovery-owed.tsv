@@ -128,10 +128,7 @@ fixture/model/data/injective-index.gandr	453	1	2440
 fixture/model/data/injective-index.gandr	472	1	2440
 fixture/model/data/motive-parameterised.gandr	142	1	2440
 fixture/model/data/refined-binder.gandr	117	1	2440
-fixture/model/data/rose.gandr	322	1	7957
-fixture/model/data/rose.gandr	492	1	7957
 fixture/model/data/rose.gandr	513	5	2440
-fixture/model/data/rose.gandr	602	1	7957
 fixture/model/data/stratified.gandr	13	1	2440
 fixture/model/data/stuck-arm-call.gandr	14	1	2440
 fixture/model/data/stuck-arm-constant-fold.gandr	144	1	2440
@@ -897,8 +894,7 @@ fixture/pathological/strings/views.gandr	180	1	2440
 fixture/pathological/strings/views.gandr	299	1	2440
 fixture/pathological/universe/closed.gandr	29	1	2440
 fixture/pathological/universe/family-motive.gandr	21	1	2440
-fixture/pathological/universe/ir-codes.gandr	241	1	7957
-fixture/pathological/universe/pair-and-path-codes.gandr	66	1	7957
+fixture/pathological/universe/ir-codes.gandr	243	3	7986
 fixture/pathological/universe/v-infinity.gandr	105	1	2440
 fixture/pathological/universe/v-infinity.gandr	153	1	2440
 fixture/pathological/worlds/capability-accounting.gandr	38	1	2440
