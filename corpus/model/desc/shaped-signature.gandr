@@ -20,7 +20,7 @@ theory Cells where
   face corner = {tl};
   face none = {};
   sort Cell : Type;
-  oper fill : () --> Cell;
+  oper fill : Cell;
 
 /// Structural recursion over a face chain: one per `Face`.
 def rec faces(chain : Theory) -> Integer =

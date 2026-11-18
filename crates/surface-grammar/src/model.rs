@@ -870,12 +870,18 @@ pub enum RetiredForm
     /// `(p, q)`, which `*{p, q}` replaces. A group still receives a call's
     /// outputs.
     ParenthesizedProductPattern,
+    /// A theory operation of no input written `oper c : () --> T`, which the
+    /// constant `oper c : T` replaces.
+    EmptyOperationInputs,
+    /// A theory operation of no input applied to `()` in a term, `c ()`,
+    /// which the constant's bare name `c` replaces.
+    EmptyOperationCall,
 }
 
 impl RetiredForm
 {
     /// Every retired spelling, in the order of the enum.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 13] = [
         Self::ShapeMember,
         Self::UnitValue,
         Self::PositionalPathCarrier,
@@ -887,6 +893,8 @@ impl RetiredForm
         Self::BracketFaces,
         Self::ParenthesizedProduct,
         Self::ParenthesizedProductPattern,
+        Self::EmptyOperationInputs,
+        Self::EmptyOperationCall,
     ];
 
     /// The surface name of the spelling: the row's surface and the tag of its
@@ -910,6 +918,8 @@ impl RetiredForm
             Self::BracketFaces => "bracket_faces",
             Self::ParenthesizedProduct => "parenthesized_product",
             Self::ParenthesizedProductPattern => "parenthesized_product_pattern",
+            Self::EmptyOperationInputs => "empty_operation_inputs",
+            Self::EmptyOperationCall => "empty_operation_call",
         })
     }
 
@@ -934,6 +944,8 @@ impl RetiredForm
             Self::BracketFaces => "T.#{f ↦ v}",
             Self::ParenthesizedProduct => "*{A, B}",
             Self::ParenthesizedProductPattern => "*{p, q}",
+            Self::EmptyOperationInputs => "oper c : T",
+            Self::EmptyOperationCall => "c",
         })
     }
 
@@ -958,6 +970,7 @@ impl RetiredForm
             Self::BracketFaces => "↦",
             Self::ParenthesizedProduct => "(A, B)",
             Self::ParenthesizedProductPattern => "(p, q)",
+            Self::EmptyOperationInputs | Self::EmptyOperationCall => "()",
         })
     }
 }

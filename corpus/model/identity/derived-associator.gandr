@@ -24,9 +24,9 @@ pub theory Monoid where
   oper mul : (x : M, y : M) --> M;
 
   /// The left unit rule.
-  rule unitL : mul (e ()) x <=> x;
+  rule unitL : mul e x <=> x;
   /// The right unit rule.
-  rule unitR : mul x (e ()) <=> x;
+  rule unitR : mul x e <=> x;
   /// Binary associativity.
   rule assoc : mul (mul x y) z <=> mul x (mul y z);
 

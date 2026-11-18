@@ -18,7 +18,7 @@
 pub theory Restriction where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
 
@@ -42,7 +42,8 @@ def rec abstracted(chain : Theory) -> Integer =
     | Bound(name, sort, indices, binders, rest) => abstracted[<] rest
     | _ => 0
 
-/// This recursion counts abstracting input ports of each operation.
+/// This recursion counts abstracting input ports of each operation. A
+/// constant has no input port, so it adds nothing.
 def rec abstracting(chain : Theory) -> Integer =
   match chain where
     | Oper(name, inputs, outputs, rest) => {
@@ -50,6 +51,7 @@ def rec abstracting(chain : Theory) -> Integer =
       let r = abstracting[<] rest;
       here + r
     }
+    | Const(name, inputs, outputs, rest) => abstracting[<] rest
     | _ => 0
 
 /// Only `nu` abstracts in the restriction signature.

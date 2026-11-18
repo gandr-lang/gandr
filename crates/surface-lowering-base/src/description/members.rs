@@ -33,6 +33,7 @@ use super::written::WrittenTerm;
 use super::written::head;
 use super::written::member_name;
 use super::written::port_name;
+use crate::circuit::SignatureFault;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Placed;
@@ -54,6 +55,10 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns `Malformed` for missing names, classifiers or delimiters.
     ///
+    /// # Cost
+    /// - allocation: the operation's ports, its bridge and where each is
+    ///   written, durable by the theory's description
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-input, two-output declaration distinguishes
     ///   lost ports and wrong bridge maps.
@@ -69,7 +74,8 @@ impl Reader<'_, '_>
         if !run.eat(Spelling(":")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
-        let (inputs, written_inputs) = if run.eat(Spelling("(")).0 {
+        let listed = run.eat(Spelling("(")).0;
+        let (inputs, written_inputs) = if listed {
             let read = self.ports(run)?;
             if !run.eat(Spelling("-->")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
@@ -79,7 +85,8 @@ impl Reader<'_, '_>
         else {
             (Vec::new(), Vec::new())
         };
-        let (outputs, written_outputs) = if run.eat(Spelling("(")).0 {
+        let tupled = run.eat(Spelling("(")).0;
+        let (outputs, written_outputs) = if tupled {
             self.ports(run)?
         }
         else {
@@ -91,6 +98,15 @@ impl Reader<'_, '_>
                 sort,
             }])
         };
+        // An operation of no input and one result is written `oper f : R`:
+        // the reader refuses the empty input list `() -->` by its name.
+        if listed && inputs.is_empty() && !tupled {
+            return Err(
+                run.fault(DescriptionFault::Signature(SignatureFault::Retired(
+                    gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
+                ))),
+            );
+        }
         let input_count =
             u32::try_from(inputs.len()).map_err(|_error| run.fault(DescriptionFault::Malformed))?;
         let output_count = u32::try_from(outputs.len())
@@ -362,6 +378,10 @@ impl Reader<'_, '_>
     /// # Errors
     /// As [`Self::free_term`].
     ///
+    /// # Cost
+    /// - allocation: the term's nodes and where each is written, durable by the
+    ///   theory's description
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `Z` and `S(Z)` in `Skip(S(Z))` read as constructor
     ///   terms.
@@ -428,10 +448,14 @@ impl Reader<'_, '_>
                         run.end()?;
                         match <[Placed; 1]>::try_from(components) {
                             Ok([only]) => pending.push(TermFrame::Read(only)),
+                            // `c ()` applies a constant to no input: the
+                            // constant is its bare name `c`.
                             Err(components) if components.is_empty() => {
                                 return Err(DescriptionDiagnostic {
                                     span: at.span,
-                                    fault: DescriptionFault::Malformed,
+                                    fault: DescriptionFault::Signature(SignatureFault::Retired(
+                                        gandr_surface_grammar::RetiredForm::EmptyOperationCall,
+                                    )),
                                 });
                             },
                             Err(components) => {
@@ -566,6 +590,16 @@ impl Reader<'_, '_>
                     else {
                         TermKind::Operation
                     };
+                    // `c()` calls a constant with no input: the constant is
+                    // its bare name `c`.
+                    if args.is_empty() && matches!(kind, TermKind::Operation) {
+                        return Err(DescriptionDiagnostic {
+                            span: at.span,
+                            fault: DescriptionFault::Signature(SignatureFault::Retired(
+                                gandr_surface_grammar::RetiredForm::EmptyOperationCall,
+                            )),
+                        });
+                    }
                     pending.push(TermFrame::Apply(name, ArgumentCount(args.len()), kind));
                     pending.extend(args.into_iter().rev().map(TermFrame::Read));
                 },

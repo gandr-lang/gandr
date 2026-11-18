@@ -1,6 +1,6 @@
 {}module Words : Model(Counter) where {{
   type C = String;
-  def start() -> -F String {{ "" }}
+  def start = "";
   def step(s : String) -> -F String {{ s }}
   def read(s : String) -> -F Integer {{ 0 }}
 }}

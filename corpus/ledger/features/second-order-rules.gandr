@@ -51,25 +51,25 @@ theory LetPair where
 @[checks]
 theory LetBeside where
   sort Tm : Type+;
-  oper zero : () --> Tm;
-  oper one : () --> Tm;
+  oper zero : Tm;
+  oper one : Tm;
   oper f : (a : Tm) --> Tm;
   oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
   rule zeta : let u t <=> t u;
-  rule fZero : f a <=> zero ();
-  rule fOne : f a <=> one ();
+  rule fZero : f a <=> zero;
+  rule fOne : f a <=> one;
 
-/// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap at
-/// the root, both reducts are `t(zero())`, and an inspected call
+/// ζ beside a rule rewriting `let` at `zero`: their left sides overlap at
+/// the root, both reducts are `t(zero)`, and an inspected call
 /// fires both by substitution, the inner `let` at `x` and the outer at
-/// `zero()`.
+/// `zero`.
 @[normalizes("let(zero, bind x . let(x, bind y . y)) ~> zero")]
 theory LetOverlap where
   sort Tm : Type+;
-  oper zero : () --> Tm;
+  oper zero : Tm;
   oper let : (u : Tm, t : (x : Tm) -> Tm) --> Tm;
   rule zeta : let u t <=> t u;
-  rule zetaZero : let (zero ()) t <=> t (zero ());
+  rule zetaZero : let zero t <=> t zero;
 
 /// ζ's right side is the instantiation of `t`, which the presentation keeps
 /// as an `Inst` node.

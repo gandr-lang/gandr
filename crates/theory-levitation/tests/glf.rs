@@ -204,7 +204,7 @@ fn generation()
         sort $Con : Type;
         sort $Sub(D : $Con, G : $Con) : Type;
         sort Tm(G : $Con) : Type;
-        oper $empty : () --> $Con;
+        oper $empty : $Con;
         oper $sub_Tm : (G : $Con, D : $Con, t : Tm(G), s : $Sub(D, G)) --> Tm(D);
         oper $extend_Tm : (G : $Con) --> $Con;
         oper $p_Tm : (G : $Con) --> $Sub($extend_Tm(G), G);

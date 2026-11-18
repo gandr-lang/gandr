@@ -67,19 +67,19 @@ pub theory Thir.Wp where
   /// A precondition, which each transformer computes.
   sort Pre : Type;
   /// The number zero.
-  oper zero : () --> Num;
+  oper zero : Num;
   /// The number after `n`.
   oper succ : (n : Num) --> Num;
   /// The integer value `n`.
   oper int : (n : Num) --> Val;
   /// The boolean true.
-  oper tt : () --> Val;
+  oper tt : Val;
   /// The boolean false.
-  oper ff : () --> Val;
+  oper ff : Val;
   /// The integer literal `n`.
   oper lit : (n : Num) --> Exp;
   /// The function's parameter, read.
-  oper param : () --> Exp;
+  oper param : Exp;
   /// The conditional that runs `t` when `c` is true and `f` when it is false.
   oper cond : (c : Exp, t : Exp, f : Exp) --> Exp;
   /// A `return` of the value of `e`.
@@ -87,7 +87,7 @@ pub theory Thir.Wp where
   /// The item `g` called at the argument `e`.
   oper call : (g : Fun, e : Exp) --> Exp;
   /// `identity`, an item a call names.
-  oper identity : () --> Fun;
+  oper identity : Fun;
   /// The caller's postcondition at the value `v`.
   oper post : (v : Val) --> Pre;
   /// The precondition `t` or `f` that the value `v` picks.
@@ -101,7 +101,7 @@ pub theory Thir.Wp where
   /// A literal ends at its integer.
   rule literal : vexpr (lit n) x k r ==> k (int n);
   /// Reading the parameter ends at its value.
-  rule read : vexpr (param ()) x k r ==> k x;
+  rule read : vexpr param x k r ==> k x;
   /// A conditional evaluates its condition, then branches on the value.
   rule conditional : vexpr (cond c t f) x k r ==> vexpr
     c
@@ -109,9 +109,9 @@ pub theory Thir.Wp where
     (bind v. (branch v (vexpr t x k r) (vexpr f x k r)))
     r;
   /// True picks the first arm.
-  rule yes : branch (tt ()) t f ==> t;
+  rule yes : branch tt t f ==> t;
   /// False picks the second arm.
-  rule no : branch (ff ()) t f ==> f;
+  rule no : branch ff t f ==> f;
   /// A `return` sends its operand's value to the return continuation.
   rule returned : vexpr (ret e) x k r ==> vexpr e x r r;
   /// A call evaluates its argument, then needs the callee's transformer

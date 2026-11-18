@@ -3,10 +3,10 @@ error[RulesNeverComplete]: this rule and an earlier one rewrite one term to two 
   │
 3 │ ┏ theory Extrusion where
 4 │ ┃   sort Proc : Type;
-5 │ ┃   oper nil : () --> Proc;
+5 │ ┃   oper nil : Proc;
 6 │ ┃   oper par : (p : Proc, q : Proc) --> Proc;
 7 │ ┃   oper nu : (p : Proc) --> Proc;
-8 │ ┃   rule gc : nu (nil ()) ==> nil ();
+8 │ ┃   rule gc : nu nil ==> nil;
 9 │ ┃   rule scope : par (nu p) q ==> nu (par p q);
   │ ┗━━━┬─────────────────────────────────────────┛ rules whose completion never ends
   │     │

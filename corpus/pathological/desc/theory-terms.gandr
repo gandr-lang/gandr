@@ -19,13 +19,13 @@ theory Mon where
   /// The carrier.
   sort M : Type;
   /// The unit.
-  oper one : () --> M;
+  oper one : M;
   /// The product.
   oper mul : (x : M, y : M) --> M;
   /// The unit on the left.
-  rule unitL : mul (one ()) x <=> x;
+  rule unitL : mul one x <=> x;
   /// The unit on the right.
-  rule unitR : mul x (one ()) <=> x;
+  rule unitR : mul x one <=> x;
   /// Associativity, which neither orientation makes decrease.
   rule assoc : mul (mul x y) z <=> mul x (mul y z);
 
@@ -44,7 +44,7 @@ theory Pair where
   /// The pairs.
   sort Q : Type;
   /// The one point.
-  oper origin : () --> P;
+  oper origin : P;
   /// A pair of two points.
   oper pair : (x : P, y : P) --> Q;
 

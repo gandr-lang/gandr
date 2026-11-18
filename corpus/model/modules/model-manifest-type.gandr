@@ -50,9 +50,8 @@ def onward(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
     | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
     | +{.1 = +{.1 = u}} => +{.0 = u}
 
-/// `first` gives the first right-nested state.
-def first() -> Unit + (Unit + Unit) =
-  +{.0 = *{}}
+/// `first` is the first right-nested state.
+def first : Unit + (Unit + Unit) = +{.0 = *{}};
 
 /// `rightward` packages a counter with the right nesting. The carrier is no
 /// field, so the record holds the start and the step.
@@ -69,7 +68,7 @@ def leftward : Model Counter with sort C = (Unit + Unit) + Unit = Path.walk (fun
 /// `stepOnce` steps a right-nested counter.
 def stepOnce(m : Model Counter with sort C = Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
   match m where
-    | *{.start = s, .step = t} => t (s ())
+    | *{.start = s, .step = t} => t s
 
 /// `second` gives the second right-nested state.
 @[runs("+{.1 = +{.0 = *{}}}")]
@@ -78,7 +77,7 @@ def second() -> Unit + (Unit + Unit) { stepOnce rightward }
 /// `stepOnceLeft` steps a left-nested counter.
 def stepOnceLeft(m : Model Counter with sort C = (Unit + Unit) + Unit) -> (Unit + Unit) + Unit =
   match m where
-    | *{.start = s, .step = t} => t (s ())
+    | *{.start = s, .step = t} => t s
 
 /// `secondLeft` transports the second state to the left nesting.
 @[runs("+{.0 = +{.1 = *{}}}")]
@@ -94,8 +93,8 @@ module Thirds : Model(Counter) where
   /// `C` names the right-nested carrier.
   type C = Unit + (Unit + Unit);
 
-  /// `start` gives the first state.
-  def start() -> Unit + (Unit + Unit) { first () }
+  /// `start` is the first state.
+  def start : Unit + (Unit + Unit) = first;
 
   /// `step` advances the state.
   def step(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { onward c }

@@ -24,7 +24,7 @@ pub module LCSyntax : Model(LC) where
   type Tm(g : N) = Term;
 
   /// The empty context has no variables.
-  def empty() -> N { Z }
+  def empty : N = Z;
 
   /// A substitution applied to a term.
   def subTm(g : N, d : N, t : Term, s : Env) -> Term { subst t s }

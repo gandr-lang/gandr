@@ -8,7 +8,7 @@ theory Gen where {
   oper inCell : (yq : Val) --> Cell;
   oper outCellp : (e : Cell) --> Val;
   oper outCellq : (e : Cell) --> Val;
-  rule boundaryCellp : outCellp e ==> zero ();
+  rule boundaryCellp : outCellp e ==> zero;
   rule betaCellq : outCellq (inCell yq) ==> yq;
   rule etaCell : inCell (outCellq e) ==> e;
 }

@@ -33,7 +33,7 @@ theory ListMap where
   oper dbl : F;
   oper one : E;
 
-  rule mapNil : map f (nil ()) <=> nil ();
+  rule mapNil : map f nil <=> nil;
   rule mapCons : map f (cons x xs) <=> cons (app f x) (map f xs);
   rule appCompose : app (compose f g) x <=> app f (app g x);
   rule composeAssoc : compose (compose f g) h <=> compose f (compose g h);

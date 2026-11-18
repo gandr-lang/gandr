@@ -1,13 +1,13 @@
 theory Counter where {
   sort C : Type;
-  oper zero : () --> C;
+  oper zero : C;
 }
 
 theory Pairing where {
   sort A : Type;
   sort B : Type;
-  oper first : () --> A;
-  oper second : () --> B;
+  oper first : A;
+  oper second : B;
 }
 
 theory Semigroup where {
@@ -17,7 +17,7 @@ theory Semigroup where {
 
 theory Monoid where {
   include Semigroup;
-  oper one : () --> M;
+  oper one : M;
 }
 
 def counted(m : Model(Counter) with sort C = Integer) -> -F Integer { return 0 }

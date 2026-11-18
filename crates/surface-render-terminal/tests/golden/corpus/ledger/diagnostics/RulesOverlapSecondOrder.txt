@@ -3,8 +3,8 @@ error[RulesOverlapSecondOrder]: this rule and an earlier one rewrite overlapping
    │
  9 │   rule zeta : let u t <=> t u;
    │   ─────────────────────────── the rule it overlaps
-10 │   rule toZero : let (zero ()) t <=> zero ();
-   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts from a rule that substitutes
+10 │   rule toZero : let zero t <=> zero;
+   │   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ parts from a rule that substitutes
    │
    ├ note: `LetToZero` is refused with RulesOverlapSecondOrder, as its expectation states
    ╰ help: add a rule for the second-order overlap

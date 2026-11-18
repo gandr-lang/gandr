@@ -6,8 +6,8 @@ theory Semigroup where {
 /// A semigroup with a unit.
 theory Monoid where {
   include Semigroup;
-  oper one : () --> M;
-  rule unitL : mul (one ()) x ==> x;
+  oper one : M;
+  rule unitL : mul one x ==> x;
 }
 
 module Ints : Model(Semigroup) where {

@@ -6,9 +6,9 @@
 theory T where
   sort Nat : Type;
   sort Bit : Type;
-  oper zero : () --> Nat;
+  oper zero : Nat;
   oper low : (n : Nat) --> Bit;
-  rule crossed : low (zero ()) ==> zero ();
+  rule crossed : low zero ==> zero;
 
 @[refuses("UnstatedComponent.IllSorted")]
 def model : Model T;

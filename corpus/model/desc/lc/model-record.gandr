@@ -21,7 +21,7 @@ def lcSyntax : *{
   con : Type,
   sub : (con, con) -> Type,
   tm : con -> Type,
-  empty : () -> con,
+  empty : con,
   subTm : (g : con, d : con, tm(g), sub(d, g)) -> tm(d),
   extendTm : con -> con,
   pTm : (g : con) -> sub(extendTm(g), g),

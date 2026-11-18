@@ -1381,7 +1381,9 @@ fn a_face_past_its_shape_is_refused_by_name()
         ),
         (
             "theory Cells where { shape Square : 4 { left = {0, 2}; }; sort A : Type; }",
-            DescriptionFault::Signature(SignatureFault::RetiredShapeMember),
+            DescriptionFault::Signature(SignatureFault::Retired(
+                gandr_surface_grammar::RetiredForm::ShapeMember,
+            )),
             "the retired `shape`",
         ),
     ] {
@@ -2286,7 +2288,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
     );
     assert_eq!(
         faces(&format!(
-            "theory Call where {{ {state} oper f : (a : S) --> C; oper g : () --> C; rule r : get (bind s . (f s)) <=> g (); }}"
+            "theory Call where {{ {state} oper f : (a : S) --> C; oper g : C; rule r : get (bind s . (f s)) <=> g; }}"
         )),
         [(
             get(bind("s", FreeTerm::op("f", [bound("s")]))),
@@ -2299,7 +2301,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
 #[test]
 fn a_rule_term_names_an_atom_inside_its_abstraction()
 {
-    let restriction = "sort Name : Atom; sort Proc : Type; oper nil : () --> Proc; oper par : (p : Proc, q : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
+    let restriction = "sort Name : Atom; sort Proc : Type; oper nil : Proc; oper par : (p : Proc, q : Proc) --> Proc; oper nu : (p : bind (a : Name) . Proc) --> Proc;";
     let signature = format!("{restriction} oper out : (c : Name, p : Proc) --> Proc;");
     let report = described(
         format!(
@@ -2349,7 +2351,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     assert_eq!(
         faces(
             format!(
-                "theory Occurs where {{ {signature} rule use : nu (bind a . (out a (nil ()))) ==> nil (); }}"
+                "theory Occurs where {{ {signature} rule use : nu (bind a . (out a nil)) ==> nil; }}"
             )
             .as_str()
         ),
@@ -2362,7 +2364,7 @@ fn a_rule_term_names_an_atom_inside_its_abstraction()
     assert_eq!(
         faces(
             format!(
-                "theory Beside where {{ {signature} rule use : par (nu (bind a . p)) a ==> nil (); }}"
+                "theory Beside where {{ {signature} rule use : par (nu (bind a . p)) a ==> nil; }}"
             )
             .as_str()
         ),

@@ -15,7 +15,7 @@ theory Ticker where
   sort C : Type;
 
   /// The start.
-  oper start : () --> C;
+  oper start : C;
   /// One step.
   oper step : (c : C) --> C;
 
@@ -25,7 +25,7 @@ module Bare where
   type C = Integer;
 
   /// Zero.
-  def start() -> Integer { 0 }
+  def start : Integer = 0;
 
   /// One more.
   def step(n : Integer) -> Integer { n + 1 }

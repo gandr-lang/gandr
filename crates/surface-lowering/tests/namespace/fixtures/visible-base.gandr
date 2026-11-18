@@ -9,11 +9,11 @@ pub data Bit : Type where { | O : Bit }
 data Hid : Type where { | H : Hid }
 pub theory Pointed where {
   sort P : Type;
-  oper pt : () --> P;
+  oper pt : P;
 }
 theory Closed where {
   sort Q : Type;
-  oper qt : () --> Q;
+  oper qt : Q;
 }
 pub module Open where { def x = 6; }
 module Shut where { def y = 7; }

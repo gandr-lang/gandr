@@ -787,7 +787,9 @@ impl Reader<'_, '_>
                 continue;
             }
             if reading.eat(Spelling("shape")).0 {
-                diagnostics.push(reading.signature_fault(SignatureFault::RetiredShapeMember));
+                diagnostics.push(reading.signature_fault(SignatureFault::Retired(
+                    gandr_surface_grammar::RetiredForm::ShapeMember,
+                )));
                 continue;
             }
             if reading.eat(Spelling("boundary")).0 {
@@ -1720,6 +1722,11 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns the precise signature boundary or malformed syntax.
     ///
+    /// # Cost
+    /// - allocation: the operation's ports, their sorts and its name, durable
+    ///   by the theory's description
+    /// - allocation: the list of ports that the shared-name scan reads, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a filler, a data-spelled operation, a shared port
     ///   name and a two-output operation separate the declines from admission,
@@ -1745,11 +1752,11 @@ impl Reader<'_, '_>
         // `oper next : +U[ω] (T -> -F T)`, a thunk of curried arrows, is the
         // operation of those inputs and that output, as is the box standing
         // for it, `oper next : T -> T`; `oper inner : Model(T)`
-        // a model of the theory `T` nested in this one; `oper zero : T`, a type
-        // alone with no arrow and no port group, a constant of `T`; and `oper
-        // zero : () --> T` an operation of no inputs. A listed domain opens
-        // the judgment's own port group, so the operation of two inputs the
-        // box `(T, T) -> T` stands for is written `(T, T) --> T` here.
+        // a model of the theory `T` nested in this one; and `oper zero : T`, a
+        // type alone with no arrow and no port group, a constant of `T`. A
+        // listed domain opens the judgment's own port group, so the operation
+        // of two inputs the box `(T, T) -> T` stands for is written
+        // `(T, T) --> T` here.
         let thunked = self.thunked(run)?;
         let modeled = match kind {
             OperationKind::Operation if thunked.is_none() => self.modeled(run)?,
@@ -1786,6 +1793,19 @@ impl Reader<'_, '_>
         };
         if run.at(Spelling("{")).0 {
             return Err(run.signature_fault(SignatureFault::OperationFiller));
+        }
+        // An operation of no input and one unnamed result is a constant,
+        // `oper c : T`: the reader refuses the empty input list `() -->` by its
+        // name. An unnamed port carries the name `fresh_port` mints.
+        if kind == OperationKind::Operation
+            && thunked.is_none()
+            && boundary.inputs.is_empty()
+            && matches!(boundary.outputs.as_slice(), [only]
+                if only.name.as_ref().starts_with(FRESH_PORT))
+        {
+            return Err(run.signature_fault(SignatureFault::Retired(
+                gandr_surface_grammar::RetiredForm::EmptyOperationInputs,
+            )));
         }
         run.end()?;
         let ports: Vec<&SortRef> = boundary.inputs.iter().chain(&boundary.outputs).collect();

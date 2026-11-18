@@ -877,8 +877,7 @@ fn an_instance_with_a_wrong_law_endpoint_is_refused_naming_the_law()
 }
 
 /// `oper z : T` is a constant: a model gives it by a value of the carrier, and
-/// a function of no inputs, what `oper z : () --> T` derives, is mismatched at
-/// the constant's witness.
+/// a function of no inputs is mismatched at the constant's witness.
 #[test]
 fn a_constant_is_a_value_of_its_type_1226()
 {

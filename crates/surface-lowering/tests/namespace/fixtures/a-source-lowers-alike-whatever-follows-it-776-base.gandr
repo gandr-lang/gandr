@@ -1,6 +1,6 @@
 pub theory Nat where {
   sort Nat : Type;
-  oper zero : () --> Nat;
+  oper zero : Nat;
   oper succ : (n : Nat) --> Nat;
 }
 pub data Point : Type where { | One : Point }

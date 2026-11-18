@@ -19,11 +19,11 @@ theory Deaf where
   sort Name : Atom;
   sort Val : Type+;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper out : (v : Val, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   oper listen : (c : Name, k : pi+ (x : Val). Proc) --> Proc;
-  rule deaf : nu (bind c. (listen c (bind x. (out x (nil ()))))) ==> nil ();
+  rule deaf : nu (bind c. (listen c (bind x. (out x nil)))) ==> nil;
 
 /// The field variable `x` does not occur in `q`, so this law needs no atom
 /// freshness condition.

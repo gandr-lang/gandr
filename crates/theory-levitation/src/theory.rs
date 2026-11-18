@@ -236,12 +236,12 @@
 //! An `oper` member written at a type alone, `oper zero : T`, declares a
 //! constant of that type: in a second-order generalised algebraic theory an
 //! operation's type is any type of the context (Kaposi and Xie), and a model
-//! interprets a constant as an element of its type's interpretation, where
-//! `oper zero : () --> T` is an operation with no inputs, a model's function
-//! of none. A constant is a `Const` member of the operation chain with `Oper`'s
-//! fields, no input ports and its type as its one output port; its rules and
-//! terms apply it to no arguments as they do a nullary operation. A
-//! presentation that declares no constant keeps the bytes it had.
+//! interprets a constant as an element of its type's interpretation. The
+//! reader refuses the empty input list `oper zero : () --> T` by its name. A
+//! constant is a `Const` member of the operation chain with `Oper`'s fields,
+//! no input ports and its type as its one output port; its rules and terms
+//! apply it to no arguments as they do a nullary operation. A presentation
+//! that declares no constant keeps the bytes it had.
 //!
 //! # Nested models
 //!
@@ -743,7 +743,7 @@ pub enum OperationKind
     /// An `obs` member: an observation of its input's sort.
     Observation,
     /// An `oper` member written at a type alone, `oper zero : T`: a constant of
-    /// that type, where `oper zero : () --> T` is an operation with no inputs.
+    /// that type.
     Constant,
     /// An `oper` member written at a model type, `oper inner : Model(T)`: a
     /// model of the theory its one output port's sort names.

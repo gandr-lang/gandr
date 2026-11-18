@@ -828,12 +828,18 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
 /// Render one operation as its ruled judgment-style member, in the named-port
 /// normal form (`oper add : (m : Nat, n : Nat) --> (q : Nat)`); a port with
 /// no authored name spells its sort bare, and a single unnamed output drops
-/// its parentheses.
+/// its parentheses. An operation of no input and one unnamed output is a
+/// constant, `oper zero : Nat`.
 ///
 /// # Specification
 /// - ensures: named-port input notation and an output tuple, except that a sole
-///   anonymous output is its bare sort; both empty tuples are explicit.
+///   anonymous output is its bare sort, and with no input it stands alone after
+///   the colon; both empty tuples are explicit otherwise.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the member's text, durable by the serialized description
+/// - allocation: the text of each port, setup
 ///
 /// # Adequacy
 /// - hypothesis: L3 — zero, one named, one anonymous and two output ports have
@@ -842,15 +848,20 @@ pub fn serialize_desc<G>(desc: &TheoryDesc<G>) -> SerializedDescText
 /// - witness: `generic::tests::port_rendering_distinguishes_authored_and_placeholder_names`
 #[spec(ensures: |ref text| text.strip_prefix("oper ")
     .and_then(|body| body.strip_prefix(oper.name.as_ref()))
-    .is_some_and(|body| body.starts_with(" : (")) && text.contains(") --> "))]
+    .is_some_and(|body| body.starts_with(" : ")))]
 fn render_oper_member(oper: &OperDesc) -> String
 {
     let inputs: Vec<String> = oper.arity.inputs.iter().map(render_port).collect();
     let outputs: Vec<String> = oper.arity.outputs.iter().map(render_port).collect();
-    let outputs = match *oper.arity.outputs {
-        [ref only] if matches!(authored_name(only), Maybe::Absent(_)) => outputs.concat(),
-        _ => format!("({})", outputs.join(", ")),
+    let (outputs, constant) = match *oper.arity.outputs {
+        [ref only] if matches!(authored_name(only), Maybe::Absent(_)) => {
+            (outputs.concat(), inputs.is_empty())
+        },
+        _ => (format!("({})", outputs.join(", ")), false),
     };
+    if constant {
+        return format!("oper {} : {outputs}", oper.name);
+    }
     format!("oper {} : ({}) --> {outputs}", oper.name, inputs.join(", "))
 }
 
@@ -1267,7 +1278,7 @@ mod tests
         .with_circuits(circuits);
         assert_eq!(
             serialize_desc(&desc).as_ref(),
-            "theory Ordered where { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
+            "theory Ordered where { sort A : Type; sort B : Type; oper first : A; oper second : A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
         );
     }
 

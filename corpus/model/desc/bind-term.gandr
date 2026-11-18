@@ -18,7 +18,7 @@
 theory Scope where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
+  oper nil : Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
   rule scope : par (nu (bind a. p)) q <=> nu (bind a. (par p q)) where {| a # q};
@@ -28,11 +28,11 @@ theory Scope where
 theory Alpha where
   sort Name : Atom;
   sort Proc : Type;
-  oper nil : () --> Proc;
-  oper stop : () --> Proc;
+  oper nil : Proc;
+  oper stop : Proc;
   oper nu : (p : bind (a : Name). Proc) --> Proc;
-  rule gc : nu (bind a. (nil ())) ==> nil ();
-  rule halt : nu (bind b. (nil ())) ==> stop ();
+  rule gc : nu (bind a. nil) ==> nil;
+  rule halt : nu (bind b. nil) ==> stop;
 
 /// This recursion counts `Derived` links in a rule chain. Completion adds each
 /// derived rule to join a critical pair.
@@ -47,7 +47,7 @@ def rec derived(chain : Theory) -> Integer =
     | _ => 0
 
 /// Completion derives two rules for the alpha-equivalent overlap in `Alpha`,
-/// as many as for the block with `nu(nil())` on both left sides. A comparison
+/// as many as for the block with `nu(nil)` on both left sides. A comparison
 /// of atoms by name finds no overlap and derives no rule.
 @[runs("2")]
 def derivations() -> Integer { match Alpha {

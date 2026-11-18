@@ -15,13 +15,13 @@ import "./second-order-signatures.gandr";
 module Counting : Model(Nat) where {
   type Nat = Integer;
 
-  def zero() -> Integer { 0 }
+  def zero : Integer = 0;
 
   def succ(n : Integer) -> Integer { n + 1 }
 
   /// Two successors of zero: the derived operations run.
   @[runs("2")]
   def two() -> Integer =
-    let z = zero ()
+    let z = zero
     succ (succ z)
 }

@@ -4,7 +4,7 @@
 @[refuses("RulesOverlapSecondOrder")]
 theory LetToZero where
   sort Tm : Type+;
-  oper zero : () --> Tm;
+  oper zero : Tm;
   oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
   rule zeta : let u t <=> t u;
-  rule toZero : let (zero ()) t <=> zero ();
+  rule toZero : let zero t <=> zero;

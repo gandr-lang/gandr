@@ -47,12 +47,12 @@ theory Undeclared where
   oper put : (s : S, k : C) --> C;
   rule putPut : put s (put (f s) k) <=> put (f s) k;
 
-/// ζ beside a rule rewriting `let` at `zero()` to `zero()`: their left sides
-/// overlap at the root, and the reducts `t(zero())` and `zero()` part.
+/// ζ beside a rule rewriting `let` at `zero` to `zero`: their left sides
+/// overlap at the root, and the reducts `t(zero)` and `zero` part.
 @[refuses("RulesOverlapSecondOrder")]
 theory LetToZero where
   sort Tm : Type+;
-  oper zero : () --> Tm;
+  oper zero : Tm;
   oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
   rule zeta : let u t <=> t u;
-  rule toZero : let (zero ()) t <=> zero ();
+  rule toZero : let zero t <=> zero;

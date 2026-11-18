@@ -490,8 +490,8 @@ fn a_scope_extrusion_family_never_completes()
     // after the second or the third derived rule, though each derived rule
     // wraps the one before.
     for flat in [
-        "rule flat : par (par (par (nil ()) p) q) r ==> par (par (nil ()) q) r;",
-        "rule flat : par (par (par (par (nil ()) p) q) r) s ==> par (par (par (nil ()) q) r) s;",
+        "rule flat : par (par (par nil p) q) r ==> par (par nil q) r;",
+        "rule flat : par (par (par (par nil p) q) r) s ==> par (par (par nil q) r) s;",
     ] {
         let block = alloc::format!(
             include_str!(
@@ -738,7 +738,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
         format!(
             "theory Let where {{
     sort Tm : Type+;
-    oper zero : () --> Tm;
+    oper zero : Tm;
     oper f : (a : Tm) --> Tm;
     oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
     rule zeta : let u t <=> t u;
@@ -746,7 +746,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
 }}"
         )
     };
-    let joins = theory("rule zetaZero : let (zero ()) t <=> t (zero ());");
+    let joins = theory("rule zetaZero : let zero t <=> t zero;");
     lowered(SourceText::from(joins.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -756,8 +756,8 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
     });
     for (rules, later) in [
         (
-            "rule toZero : let (zero ()) t <=> zero ();",
-            "rule toZero : let (zero ()) t <=> zero ()",
+            "rule toZero : let zero t <=> zero;",
+            "rule toZero : let zero t <=> zero",
         ),
         (
             "rule under : f (let u t) <=> f u;",
@@ -791,7 +791,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
             );
         });
     }
-    let apart = theory("rule fZero : f (zero ()) <=> zero ();");
+    let apart = theory("rule fZero : f zero <=> zero;");
     lowered(SourceText::from(apart.as_str()), |module| {
         assert_eq!(
             module.cells().diagnostics,
@@ -850,7 +850,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
             "theory Pi where {{
     sort Name : Atom;
     sort Proc : Type;
-    oper nil : () --> Proc;
+    oper nil : Proc;
     oper par : (p : Proc, q : Proc) --> Proc;
     oper out : (c : {channel}, p : Proc) --> Proc;
     oper nu : (p : bind (a : Name) . Proc) --> Proc;
@@ -922,7 +922,7 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule vacant : nu (bind a . (nil ())) <=> nil ()"
+            "rule vacant : nu (bind a . nil) <=> nil"
         );
         assert_eq!(
             text(source, first).as_ref(),

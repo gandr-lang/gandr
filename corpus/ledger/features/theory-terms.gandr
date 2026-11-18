@@ -23,13 +23,13 @@ theory Mag where
   /// The carrier.
   sort M : Type;
   /// The unit.
-  oper one : () --> M;
+  oper one : M;
   /// The product.
   oper mul : (x : M, y : M) --> M;
   /// The unit on the left.
-  rule unitL : mul (one ()) x <=> x;
+  rule unitL : mul one x <=> x;
   /// The unit on the right.
-  rule unitR : mul x (one ()) <=> x;
+  rule unitR : mul x one <=> x;
 
 /// The unit cancels on both sides, so the product converts to the unit.
 @[checks]

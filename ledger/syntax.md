@@ -243,7 +243,7 @@ A rule no source can mold, with the reason and what the reason is read from: the
 | ---- | ---- | ---- | ------ | --------- |
 | `instantiation.type` | instantiation | `TYPE` | the form holds no tile, so no tree names the rule | grammar |
 
-## Superseded — 12 spellings
+## Superseded — 14 spellings
 
 An old spelling and the spelling that replaces it. A spelling the grammar still parses, so that a stale source reaches the decline of the elaborator, names the open issue that removes it, and `check:ledger` refuses a row whose issue does not stand open. A spelling that a source meets as a refusal names the refusal, and `check:ledger` refuses a row whose exemplar under `corpus/ledger/syntax/superseded/` does not state it.
 
@@ -261,6 +261,8 @@ An old spelling and the spelling that replaces it. A spelling the grammar still 
 | `parenthesized_type` | `parenthesized_product` | `*{A, B}` | refused as [`RetiredSpelling.parenthesized_product`](../corpus/ledger/syntax/superseded/parenthesized-product.gandr) | a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product |
 | `telescope_type` | `view_telescope` | `*{ … }` | refused as [`RetiredSpelling.view_telescope`](../corpus/ledger/syntax/superseded/view-telescope.gandr) | the glued token `#{` is refused by name: `*{` opens the telescope and the record |
 | `theory_declaration` | `shape_member` | `boundary B {…}; face f = {…}` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it |
+| `theory_declaration` | `empty_operation_inputs` | `oper c : T` | refused as [`RetiredSpelling.empty_operation_inputs`](../corpus/ledger/syntax/superseded/empty-operation-inputs.gandr) | an operation of no input is a constant: `oper c : T` states it, and the reader refuses `() -->` by name |
+| `theory_declaration` | `empty_operation_call` | `c` | refused as [`RetiredSpelling.empty_operation_call`](../corpus/ledger/syntax/superseded/empty-operation-call.gandr) | a constant is its bare name in a term: the reader refuses `c ()` by name |
 
 ## Attributes — 20 attributes
 
