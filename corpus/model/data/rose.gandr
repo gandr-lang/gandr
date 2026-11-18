@@ -1,0 +1,162 @@
+//! Rose trees use direct and mutual forms.
+//!
+//! `Bush` stores its children in `List`.
+//! The list parameter is strictly positive.
+//! Its measure maps over the children at a lower stage.
+//! A run passes `map` the children's type as a code.
+//!
+//! `Rose` and `Forest` form one mutual block.
+//! Their measures are one fixpoint over the sum of their domains.
+//! Each measure is that fixpoint at its own summand.
+//! The mutual measures keep a later weight parameter.
+//! Each recursive call uses a smaller tree or forest.
+//!
+//! - see: #3722 — a measure keeps a parameter in its sibling call
+//! - see: #517 — `Bush`
+//! - see: #393 — `nodes`
+//! - see: #452 — `shrub_nodes`, `grown_nodes`
+//! - see: `../../pathological/data/rose.gandr`
+//! - cites: [Abel-2004-termination_checking_with_types]
+//!
+//! [Abel-2004-termination_checking_with_types]: https://doi.org/10.1051/ita:2004015 "Abel, Termination checking with types"
+
+// The naturals the measures count in, their addition, and the lists the
+// direct form nests through.
+import "./data-base.gandr";
+
+// The lists' `map`, which the direct form's measures recurse through.
+import "./recursive-lists.gandr";
+
+/// The direct form: a node over a list of nodes, nested through `List`'s
+/// strictly positive parameter.
+data Bush : Type where
+  | Sprout : (kids : List Bush) --> Bush
+
+/// A node without children, written directly.
+def sprig : Bush = Sprout (Nil : List Bush);
+
+/// A node over two childless nodes, written directly.
+def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List Bush) : List Bush) : List Bush);
+
+/// This function sums a list of numbers.
+def rec sum(xs : List Nat) -> Nat =
+  match xs where
+    | Nil => Zero
+    | Cons(x, rest) => plus x (sum[<] rest)
+
+/// `nodes` measures each `Bush` node.
+/// It maps itself over the children at a lower stage.
+def rec nodes(t : Bush) -> Nat =
+  match t where
+    | Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
+
+/// `grow` adds a childless node to each node.
+/// It maps itself over the children at their stage.
+def rec grow(t : Bush) -> Bush =
+  match t where
+    | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List Bush)
+
+/// The check expects three nodes in `shrub`.
+@[runs("Succ (Succ (Succ Zero))")]
+def shrub_nodes : () -> Nat = nodes shrub;
+
+/// The check counts `shrub` after it grows to six nodes.
+/// Its root and each child gain a childless node.
+@[runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))")]
+def grown_nodes : () -> Nat = nodes (grow shrub);
+
+/// The tree and its forest, one block: each family names the other, and
+/// the two measures recurse through each other.
+rec {
+  /// A node over its forest of children.
+  @[checks]
+  data Rose : Type where {
+    | Node : (kids : Forest) --> Rose
+  }
+
+  /// The children of a node, in order.
+  @[checks]
+  data Forest : Type where {
+    | Empty : Forest
+    | More : (head : Rose, tail : Forest) --> Forest
+  }
+
+  /// The nodes of a tree: its own and its children's.
+  @[checks]
+  def rec treeSize(t : Rose) -> Nat {
+    match t where
+      | Node(kids) => { let s = forestSize[<] kids; Succ s }
+  }
+
+  /// The nodes of a forest: each tree's, summed.
+  @[checks]
+  def rec forestSize(ts : Forest) -> Nat =
+    match ts where
+      | Empty => Zero
+      | More(t, rest) => { let a = treeSize[<] t; let b = forestSize[<] rest; plus a b }
+}
+
+/// A node without children.
+def leaf : Rose = Node Empty;
+
+/// A node over two leaves.
+def sapling : Rose = Node (More leaf (More leaf Empty));
+
+/// The sapling's three nodes.
+@[runs("Succ (Succ (Succ Zero))")]
+def sapling_nodes : () -> Nat = treeSize sapling;
+
+/// A forest of a sapling and a leaf: four nodes.
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
+def forested : () -> Nat = forestSize (More sapling (More leaf Empty));
+
+/// These measures keep the weight `k` through mutual calls.
+/// Each measure descends on its first parameter.
+rec {
+  /// The nodes of a tree, each weighing `k`.
+  @[checks]
+  def rec treeWeight(t : Rose, k : Nat) -> Nat {
+    match t where
+      | Node(kids) => plus k (forestWeight[<] kids k)
+  }
+
+  /// The nodes of a forest, each weighing `k`.
+  @[checks]
+  def rec forestWeight(ts : Forest, k : Nat) -> Nat =
+    match ts where
+      | Empty => Zero
+      | More(t, rest) => plus (treeWeight[<] t k) (forestWeight[<] rest k)
+}
+
+/// The check weighs the three sapling nodes by two.
+@[runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))")]
+def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));
+
+/// Two members that rebuild a tree and its forest, one block. Each member
+/// returns its own family, so the joint's goal differs from member to
+/// member, and a case over the sum computes it.
+///
+/// - see: #3880
+rec {
+  /// A copy of the tree, one node at a time.
+  @[checks]
+  def rec bumpTree(t : Rose) -> Rose {
+    match t where
+      | Node(kids) => Node (bumpForest[<] kids)
+  }
+
+  /// A copy of the forest, one tree at a time.
+  @[checks]
+  def rec bumpForest(ts : Forest) -> Forest =
+    match ts where
+      | Empty => Empty
+      | More(t, rest) => More (bumpTree[<] t) (bumpForest[<] rest)
+}
+
+/// The sapling's copy keeps its three nodes.
+@[runs("Succ (Succ (Succ Zero))")]
+def rebuilt_nodes : () -> Nat = treeSize (bumpTree sapling);
+
+/// The copy of a forest of a sapling and a leaf keeps its four nodes.
+@[runs("Succ (Succ (Succ (Succ Zero)))")]
+def rebuilt_forest : () -> Nat = forestSize (bumpForest (More sapling (More leaf Empty)));

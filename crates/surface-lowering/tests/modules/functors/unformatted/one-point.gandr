@@ -1,0 +1,5 @@
+module OnePoint : Model(Semi) where {
+  type M = Unit;
+  def mul(a : Unit, b : Unit) -> -F Unit { *{} }
+  def assoc(x : Unit, y : Unit, z : Unit) -> -F Path[.A = Unit](mul (mul x y) z, mul x (mul y z)) { Path.here *{} }
+}

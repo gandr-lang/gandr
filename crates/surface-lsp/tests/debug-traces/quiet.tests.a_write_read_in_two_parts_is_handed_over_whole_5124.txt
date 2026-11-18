@@ -1,0 +1,115 @@
+test: quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124
+package: gandr-surface-lsp
+command: mise run debug:test gandr-surface-lsp quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124 --break quiet::queue
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lsp/c297e86665b80e90/out/gandr_surface_lsp-c297e86665b80e90"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lsp/c297e86665b80e90/out/gandr_surface_lsp-c297e86665b80e90' (x86_64).
+(lldb) settings set -- target.run-args  "quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex quiet::queue
+Breakpoint 1: where = gandr_surface_lsp-c297e86665b80e90`gandr_surface_lsp::quiet::queue + 51 at quiet.rs:473:6, address = 0x0000000001a0dd13
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lsp-c297e86665b80e90`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000055be198
+(lldb) run
+
+running 1 test
+test quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3668789 launched: 'target/debug-trace/debug/build/gandr-surface-lsp/c297e86665b80e90/out/gandr_surface_lsp-c297e86665b80e90' (x86_64)
+Process 3668789 stopped
+* thread #2, name = 'quiet::tests::a', stop reason = breakpoint 1.1
+       frame #0: 0x0000555556f61d13 gandr_surface_lsp-c297e86665b80e90`gandr_surface_lsp::quiet::queue(read=Message(Ok(Notification{method:{0:"initialized"}, params:Object({map:{…}})}), {0:true}), queued=size=0, (null)=({map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, {map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}), (null)=({__0:false}, {__0:false}, {__0:false})) at quiet.rs:473:6
+   470 	fn queue(
+   471 	    read: Read,
+   472 	    queued: &mut VecDeque<Classified>,
+-> 473 	    (changed, edited): (&mut BTreeSet<PathBuf>, &mut BTreeSet<PathBuf>),
+    	     ^
+   474 	    (proposed, admitted, behind): (&mut Proposed, &mut Woken, &mut Behind),
+   475 	) -> Option<End>
+   476 	{
+(lldb) bt 24
+* thread #2, name = 'quiet::tests::a', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555556f61d13 gandr_surface_lsp-c297e86665b80e90`gandr_surface_lsp::quiet::queue(read=Message(Ok(Notification{method:{0:"initialized"}, params:Object({map:{…}})}), {0:true}), queued=size=0, (null)=({map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, {map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}), (null)=({__0:false}, {__0:false}, {__0:false})) at quiet.rs:473:6
+     frame #1: 0x0000555556f2138c gandr_surface_lsp-c297e86665b80e90`gandr_surface_lsp::quiet::paced::<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>::{closure#0}(scope={data:strong=2, weak=0, scope:{}, env:{}}) at quiet.rs:761:35
+     frame #2: 0x0000555556fcc7f5 gandr_surface_lsp-c297e86665b80e90`std::thread::scoped::scope::<gandr_surface_lsp::quiet::paced<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>::{closure#0}, core::result::Result<(), gandr_surface_lsp::transport::TransportFault>>::{closure#0} at scoped.rs:158:51
+     frame #3: 0x0000555556ee4d86 gandr_surface_lsp-c297e86665b80e90`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<gandr_surface_lsp::quiet::paced<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>::{closure#0}, core::result::Result<(), gandr_surface_lsp::transport::TransportFault>>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once(self=<unavailable>, (null)=<unavailable>) at unwind_safe.rs:275:9
+     frame #4: 0x00005555571180fa gandr_surface_lsp-c297e86665b80e90`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<gandr_surface_lsp::quiet::paced<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>::{closure#0}, core::result::Result<(), gandr_surface_lsp::transport::TransportFault>>::{closure#0}>, core::result::Result<(), gandr_surface_lsp::transport::TransportFault>>(data={f:{value:{0:{0:{f:{…}, _ref__scope:{…}}}}}, r:{value:{0:Err(Truncated)}}, p:{value:{0:{pointer:(), vtable:0x00007ffff0002e00}}}}) at panicking.rs:576:43
+     frame #5: 0x00005555570119cb gandr_surface_lsp-c297e86665b80e90`__rust_try + 27
+     frame #6: 0x0000555556faa89c gandr_surface_lsp-c297e86665b80e90`std::panicking::catch_unwind::<core::result::Result<(), gandr_surface_lsp::transport::TransportFault>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<gandr_surface_lsp::quiet::paced<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>::{closure#0}, core::result::Result<(), gandr_surface_lsp::transport::TransportFault>>::{closure#0}>>(f={0:{f:{input:{buf:{buf:{…}, pos:82, filled:82, initialized:false}, inner:{first:{…}, second:{…}, done_first:true}}, read:{inner:{flavor:List(…)}}, _ref__frames:{inner:{flavor:List(…)}}, _ref__visit:{_ref__handed:size=0}}, _ref__scope:{data:strong=2, weak=0, scope:{}, env:{}}}}) at panicking.rs:544:19
+     frame #7: 0x0000555556faa833 gandr_surface_lsp-c297e86665b80e90`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<gandr_surface_lsp::quiet::paced<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>::{closure#0}, core::result::Result<(), gandr_surface_lsp::transport::TransportFault>>::{closure#0}>, core::result::Result<(), gandr_surface_lsp::transport::TransportFault>>(f={0:{f:{input:{buf:{buf:{…}, pos:82, filled:82, initialized:false}, inner:{first:{…}, second:{…}, done_first:true}}, read:{inner:{flavor:List(…)}}, _ref__frames:{inner:{flavor:List(…)}}, _ref__visit:{_ref__handed:size=0}}, _ref__scope:{data:strong=2, weak=0, scope:{}, env:{}}}}) at panic.rs:359:14 [inlined]
+     frame #8: 0x0000555556faa833 gandr_surface_lsp-c297e86665b80e90`std::thread::scoped::scope::<gandr_surface_lsp::quiet::paced<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>::{closure#0}, core::result::Result<(), gandr_surface_lsp::transport::TransportFault>>(f={input:{buf:{buf:{data_ptr:{None:(…), value:{…}}, length:8192}, pos:82, filled:82, initialized:false}, inner:{first:{inner:size=82, pos:82}, second:{rest:{inner:size=58, pos:0}, paused:true}, done_first:true}}, read:{inner:{flavor:List({counter:{…}})}}, _ref__frames:{inner:{flavor:List({counter:{…}})}}, _ref__visit:{_ref__handed:size=0}}) at scoped.rs:158:18
+     frame #9: 0x0000555556f07f0b gandr_surface_lsp-c297e86665b80e90`gandr_surface_lsp::quiet::paced::<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>(input={buf:{buf:{data_ptr:{None:(), value:{value:{…}}}, length:8192}, pos:82, filled:82, initialized:false}, inner:{first:{inner:size=82, pos:82}, second:{rest:{inner:size=58, pos:0}, paused:true}, done_first:true}}, inbox=<unavailable>, visit={_ref__handed:size=0}) at quiet.rs:708:5
+     frame #10: 0x0000555556d0f795 gandr_surface_lsp-c297e86665b80e90`gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124 at quiet.rs:1237:9
+     frame #11: 0x0000555556cf2eb7 gandr_surface_lsp-c297e86665b80e90`gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#0}((null)={}) at quiet.rs:1211:61
+     frame #12: 0x0000555556bd6596 gandr_surface_lsp-c297e86665b80e90`<gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #13: 0x000055555727036b gandr_surface_lsp-c297e86665b80e90`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #14: 0x0000555557270369 gandr_surface_lsp-c297e86665b80e90`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #15: 0x000055555727d8b5 gandr_surface_lsp-c297e86665b80e90`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #16: 0x000055555727d8b0 gandr_surface_lsp-c297e86665b80e90`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #17: 0x000055555727d8b0 gandr_surface_lsp-c297e86665b80e90`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #18: 0x000055555727d89b gandr_surface_lsp-c297e86665b80e90`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #19: 0x000055555727d89b gandr_surface_lsp-c297e86665b80e90`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #20: 0x000055555727d89b gandr_surface_lsp-c297e86665b80e90`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #21: 0x000055555727d886 gandr_surface_lsp-c297e86665b80e90`test::run_test::{closure#0} at lib.rs:677:43
+     frame #22: 0x0000555557278274 gandr_surface_lsp-c297e86665b80e90`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #23: 0x00005555572781f9 gandr_surface_lsp-c297e86665b80e90`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+(lldb) frame variable --depth 3
+(gandr_surface_lsp::quiet::Read) read = Message(Ok(Notification{method:{0:"initialized"}, params:Object({map:{…}})}), {0:true}) {
+  0 = Ok(Notification{method:{0:"initialized"}, params:Object({map:{…}})}) {
+    0 = Notification{method:{0:"initialized"}, params:Object({map:{…}})} {
+      method = {0:"initialized"} {...}
+      params = Object({map:{…}}) {...}
+    }
+  }
+  1 = {0:true}
+}
+(alloc::collections::vec_deque::VecDeque<core::result::Result<gandr_surface_lsp::rpc::Incoming, gandr_surface_lsp::rpc::Malformed>, alloc::alloc::Global> *) queued = 0x00007ffff79fcf88 size=0
+((&mut alloc::collections::btree::set::BTreeSet<std::path::PathBuf, alloc::alloc::Global>, &mut alloc::collections::btree::set::BTreeSet<std::path::PathBuf, alloc::alloc::Global>))  = ({map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, {map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}})
+((&mut gandr_surface_lsp::quiet::Proposed, &mut gandr_surface_lsp::quiet::Woken, &mut gandr_surface_lsp::quiet::Behind))  = ({__0:false}, {__0:false}, {__0:false})
+(lldb) up
+frame #1: 0x0000555556f2138c gandr_surface_lsp-c297e86665b80e90`gandr_surface_lsp::quiet::paced::<alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<u8>>, gandr_surface_lsp::quiet::tests::Pausing>>, gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure#2}, ()>::{closure#0}(scope={data:strong=2, weak=0, scope:{}, env:{}}) at quiet.rs:761:35
+   758 	                    );
+   759 	                    match received {
+   760 	                        Ok(frame) => {
+-> 761 	                            end = queue(
+    	                                  ^
+   762 	                                frame,
+   763 	                                &mut queued,
+   764 	                                (&mut changed, &mut edited),
+(lldb) frame variable --depth 3
+(std::thread::scoped::Scope *) scope = 0x00007ffff79fdee0 {data:strong=2, weak=0, scope:{}, env:{}}
+(gandr_surface_lsp::quiet::tests::a_write_read_in_two_parts_is_handed_over_whole_5124::{closure_env#2}) visit = {_ref__handed:size=0}
+(std::sync::mpsc::Receiver<gandr_surface_lsp::quiet::Read>) frames = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(std::sync::mpsc::Sender<gandr_surface_lsp::quiet::Read>) read = {inner:{flavor:List({counter:{senders:{…}, receivers:{…}, destroy:{…}, chan:{…}}})}}
+(alloc::io::buffered::bufreader::BufReader<core::io::util::Chain<core::io::cursor::Cursor<alloc::vec::Vec<unsigned char, alloc::alloc::Global> >, gandr_surface_lsp::quiet::tests::Pausing> > *) input = 0x00007ffff79fe280 {buf:{buf:{data_ptr:{None:(), value:{value:{…}}}, length:8192}, pos:82, filled:82, initialized:false}, inner:{first:{inner:size=82, pos:82}, second:{rest:{inner:size=58, pos:0}, paused:true}, done_first:true}}
+(std::thread::scoped::ScopedJoinHandle<void>) _reader = {0:{native:{id:140737345742528}, thread:{inner:{pointer:strong=2, weak=0}}, packet:strong=2, weak=0}}
+(gandr_surface_lsp::quiet::Deadlines) deadlines = {0:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::collections::vec_deque::VecDeque<core::result::Result<gandr_surface_lsp::rpc::Incoming, gandr_surface_lsp::rpc::Malformed>, alloc::alloc::Global>) queued = size=0
+(alloc::collections::btree::set::BTreeSet<std::path::PathBuf, alloc::alloc::Global>) changed = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(alloc::collections::btree::set::BTreeSet<std::path::PathBuf, alloc::alloc::Global>) edited = {map:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}}
+(gandr_surface_lsp::quiet::Proposed) proposed = {0:false}
+(gandr_surface_lsp::quiet::Woken) admitted = {0:false}
+(gandr_surface_lsp::quiet::Behind) behind = {0:false}
+(core::option::Option<gandr_surface_lsp::quiet::End>) end = None
+(core::result::Result<gandr_surface_lsp::quiet::Read, std::sync::mpsc::RecvTimeoutError>) received = Ok(Message(Ok(Notification{method:{0:"initialized"}, params:Object({…})}), {0:true})) {
+  0 = Message(Ok(Notification{method:{0:"initialized"}, params:Object({…})}), {0:true}) {
+    0 = Ok(Notification{method:{0:"initialized"}, params:Object({…})}) {
+      0 = Notification{method:{0:"initialized"}, params:Object({…})} {...}
+    }
+    1 = {0:true}
+  }
+}
+(gandr_surface_lsp::quiet::Read) frame = Message(Ok(Notification{method:{0:"initialized"}, params:Object({map:{…}})}), {0:true}) {
+  0 = Ok(Notification{method:{0:"initialized"}, params:Object({map:{…}})}) {
+    0 = Notification{method:{0:"initialized"}, params:Object({map:{…}})} {
+      method = {0:"initialized"} {...}
+      params = Object({map:{…}}) {...}
+    }
+  }
+  1 = {0:true}
+}

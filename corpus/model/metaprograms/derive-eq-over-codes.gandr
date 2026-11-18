@@ -1,0 +1,46 @@
+//! `derive-eq-over-codes` models generic equality from
+//! levitated declaration code.
+//!
+//! `Nat` and `Tagged` give closed codes that `Eq.generic` can traverse.
+//! The pathological twin refuses parameterized and mutually recursive codes.
+//!
+//! The checker lowers the traversal to closed core and judges the result.
+//! The kernel replays the checked derivation.
+//! So the kernel trusts no part of the derivation.
+//!
+//! - cites: [Chapman-2010-gentle_art_levitation]
+//!
+//! [Chapman-2010-gentle_art_levitation]: https://doi.org/10.1145/1863543.1863547 "Chapman, Dagand, McBride and Morris, The Gentle Art of Levitation"
+
+/// `Nat` gives unary naturals as a unit and a recursive occurrence.
+data Nat : Type where
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+
+/// `Tagged` gives a product of `Bool` and `Nat`.
+data Tagged : Type where
+  | Tagged : (shown : Bool, count : Nat) --> Tagged
+
+/// `eqNat` compares naturals by constructor and recurses at `var Nat`.
+def eqNat = Eq.generic Nat;
+
+/// `eqTagged` compares tagged naturals leaf by leaf and uses `Nat`
+/// equality for `count`.
+def eqTagged = Eq.generic Tagged;
+
+/// `sameNat` compares two copies of two.
+@[runs("+{.0 = *{}}")]
+def sameNat() -> Bool { eqNat (Succ (Succ Zero)) (Succ (Succ Zero)) }
+
+/// `shorterNat` compares one and two, and the recursion reaches `Zero`
+/// on one side.
+@[runs("+{.1 = *{}}")]
+def shorterNat() -> Bool { eqNat (Succ Zero) (Succ (Succ Zero)) }
+
+/// `sameTagged` compares two tagged naturals with equal leaves.
+@[runs("+{.0 = *{}}")]
+def sameTagged() -> Bool { eqTagged (Tagged true (Succ Zero)) (Tagged true (Succ Zero)) }
+
+/// `recountedTagged` compares tagged naturals that differ only in `count`.
+@[runs("+{.1 = *{}}")]
+def recountedTagged() -> Bool { eqTagged (Tagged true (Succ Zero)) (Tagged true Zero) }

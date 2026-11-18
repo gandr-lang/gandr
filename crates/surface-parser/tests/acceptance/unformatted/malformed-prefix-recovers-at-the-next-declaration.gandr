@@ -1,0 +1,2 @@
+def bad[A : Type, broken](x : Type) -> Type { pure x }
+def good[B : Type](y : Type) -> Type { pure y }

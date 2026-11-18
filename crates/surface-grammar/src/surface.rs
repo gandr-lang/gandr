@@ -1,0 +1,1038 @@
+//! The built-in surface: the named precedence table, the term, type-and-shell
+//! and circuit rule assemblies, and the named-kind lists.
+//!
+//! # One delimiter per arity-shaped former
+//!
+//! Three delimiters spell the formers over a finite arity, each at the type,
+//! the value and the pattern or observation: `*{…}` the telescope — the
+//! tuple, the record and Σ — `+{…}` the sum over labels, and `&{…}` the lazy
+//! record over labels. An entry is positional, labelled by its index, or
+//! labelled. A type entry is `k : T`; a value entry `.l = v` stores a value,
+//! a lazy-record entry `.l => c` defines a computation run when observed,
+//! and a pattern entry `.l` puns its label where `.l = p` renames it. A
+//! positional label is a number, `.0`, which the labeler reads as `.` then
+//! `0`. `A * B`, `A + B`, `C & D`, `(a, b)`, `*{}`, `Unit` and `Void` stay
+//! as written. The session select and offer are the sum and the lazy record
+//! over labels read where a session type is read, so they are not second
+//! rules; they, the session field and the record type, value, pattern and
+//! update forms are recorded as adaptations for the parity inventory. A
+//! parenthesised type's entries take the same `k : T` shape: the domain of
+//! the telescope Π `(x : A, y : B(x)) -> C`.
+//!
+//! A type entry's key is a type hole rather than an `identifier` tile. A
+//! form's own tile continues the open form and so outranks every atom at its
+//! token, which would read the `a` of `(a -> -F b)` as a key before the arrow
+//! could say otherwise; as a hole, the word molds as the type variable it
+//! reads as, and the `:` after it makes it a key, which the lowering reads as
+//! a bare lowercase word. The highlighter gives such a key the type-variable
+//! role, and a shorthand value key `*{ x = 1, … }` the variable role, every
+//! key alike.
+//!
+//! A leading-dot value entry takes a `*{` of its own. A mold is one tile
+//! occurrence, and one `*{` followed by both a hole and a `.` would admit an
+//! operand before the `.`, so `*{ p.x, p.y }` would read its projection dot
+//! as a label's; the labelled `*{` is followed only by `.` and the hole-led
+//! one only by an operand or `}`, so the next token decides. A telescope
+//! value is labelled throughout or positional throughout. The `+{` and `&{`
+//! value forms open on two tiles, `+` `{` and `&` `{`, molded where an
+//! operand starts, so neither competes with the infix `+` or `&`, which
+//! follows one.
+//!
+//! - Alternatives: a prefix `=` pun `*{=n}`, a new prefix reading inside
+//!   braces; a type-directed pattern `*{n, v}` that binds positionally or puns
+//!   by the scrutinee's type, where renaming a label silently changes a
+//!   pattern's meaning; keys as `identifier` tiles behind a lookahead window,
+//!   which the continuation rank pre-empts.
+//! - Reversal: a labelled type entry that must be told apart from a positional
+//!   one at its first token, which needs a lead tile there, as the value
+//!   entries have.
+//!
+//! The delimiters moved the pinned shape from 2490 molds and the fingerprint
+//! `0xcf11_4827_9fa4_5c8e`.
+//!
+//! # Built-in surface
+//!
+//! `built_in` is the gandr surface: 24 precedence groups and 21 tighter-than
+//! edges, then the term forms, the type-and-shell forms and the circuit forms.
+//! The groups form one expression chain, one pattern chain and one type chain
+//! whose union and lazy-product bands are mutually incomparable between the
+//! sum band and the relations' band below them; the item group stands apart
+//! from all three. Its pinned shape is 2973 molds, 85 labels
+//! projected to more than one mold, and the fingerprint
+//! `0xee6f_487a_216c_e17c`; a change to any form, group or edge moves the
+//! fingerprint, and the test pinning it states the change.
+//!
+//! ### Relations between types are one infix band
+//!
+//! `A ≃ B`, `A ≅ B` and `A ⇝ B` — the equivalence, the quasi-inverse and the
+//! flow between two types — are three binary forms in one band,
+//! `type.equivalence`, nested to the right, below the union and lazy-product
+//! bands and above the arrows. Each glyph is the one tile of its
+//! form. The labeler offers the ASCII spellings `<~>` and `~~>` as the tiles
+//! `≃` and `⇝`, so an alias molds the glyph's form and prints back as the
+//! glyph. `≅` has no ASCII infix spelling: `Iso(A, B)` is its spelling as an
+//! application, a type head the lowering resolves as it resolves `Flow`.
+//!
+//! - Alternatives: the relations as type applications alone, `Iso(A, B)` and
+//!   `Flow[.A = Type](A, B)`, which hide the relation in a head and an
+//!   argument; an ASCII tile per alias, a second mold per form whose spelling
+//!   the printer would have to choose; the arrows' band, where `A ≃ B -> C`
+//!   would nest the arrow into the relation.
+//! - Reversal: a relation that takes a third operand, a universe or a level, is
+//!   written as an application.
+//!
+//! The band moved the pinned shape from 2970 molds and the fingerprint
+//! `0x5b42_f41a_90bb_98d8`.
+//!
+//! ### Lists close on an optional separator
+//!
+//! Every comma-separated list of one or more elements — arguments, parameters,
+//! fields, type arguments, patterns, tuple and record elements, attribute
+//! blocks — may end with a comma before its closer, so a list spread one
+//! element per line reads the same whatever line is last. A parenthesised
+//! expression is not a list: `(a,)` is the one-element tuple, whose comma is
+//! its spelling rather than an optional tail, and a tuple of two or more
+//! elements may still close on a comma. A one-element tuple pattern and a
+//! one-element parenthesised type have no reading of their own: the one-element
+//! product, value and pattern are `*{A}`, `*{a}` and `*{x}`, one delimiter per
+//! arity-shaped former (`src/surface.rs`). A case or offer arm may open with
+//! `|`, so an or-pattern spread over lines can lead each line with its
+//! separator. A mold is one tile occurrence, and an occurrence a hole can
+//! follow admits an operand before any successor, so an optional bar after a
+//! shared `{` or `,` would let `{ A | B => …` read `A` before the arm's bar;
+//! the arm block instead spells its opener and its separator twice, once
+//! followed by a hole and once by the bar.
+//!
+//! - Alternatives: a leading bar as an optional prefix of the arm, which ties
+//!   every or-pattern with a bar-led arm; a trailing comma only on lists of two
+//!   or more, which leaves the one-element list the place a reordering breaks.
+//! - Reversal: a list whose trailing comma means something — a one-element
+//!   tuple — takes the comma out of that list's optional tail.
+//!
+//! The optional separators and the doubled arm block moved the pinned shape
+//! from 2378 molds and the fingerprint `0xf9c2_15a1_2bea_b69c`; the one-element
+//! tuple moved it from 2489 molds and `0x3930_dc67_fa9f_b403`.
+//!
+//! ### An attribute block is a form of its own
+//!
+//! A block of attributes before a top-level declaration is an `attribute_block`
+//! item form of its own, whatever follows it: a definition, a signature, a
+//! function or a data declaration. `def` opens the definition family with no
+//! prefix. Attributes ride a declaration as a leading block, carried in the
+//! tree as nodes at declaration sort and filed by the lowering under the
+//! declaration's content identity, which adding, editing or removing an
+//! attribute leaves unchanged. Standing outside the declaration's form, the
+//! blocks stay out of its digest. At the top level `@[` opens one reading; a
+//! block inside the definition's form would tie with the standalone one before
+//! a data declaration, and only the token after `]` would tell them apart, so
+//! every attributed definition would run lookahead windows past its block.
+//!
+//! A module member keeps its blocks inside its form,
+//! `attributed_module_member`, a definition or a type member after its blocks:
+//! nothing else at the module-member sort opens with `@[`, so no tie arises
+//! there, and its identity covers its attributes.
+//!
+//! - Alternatives: the definition's inline block, with the lookahead window
+//!   extended past a long block's closer, which runs windows on every
+//!   attributed definition and keys the definition by its attributes; a longer
+//!   fixed window, which moves the bound without removing it.
+//! - Reversal: a consumer that must key a module member by an identity its
+//!   attributes leave alone moves the member's blocks into a module-member form
+//!   of their own, as at the top level.
+//!
+//! ### A data member's `:` after a constructor name has one reading
+//!
+//! A `data` member led by a constructor name has two tails: the generator
+//! judgment `Ctor : Side (--> Result)?`, the one constructor form, and the
+//! declined Haskell-style `Ctor(fields) (: Result)?`, kept admissible so the
+//! elaborator's decline names the respelling. The declined tail annotates a
+//! result only after its field tuple. Were its fields optional on their own, a
+//! fieldless `None : Maybe(a)` would read its `:` two ways with the same tiles,
+//! and the parser's lookahead window would choose between them inconsistently:
+//! the generator for `None : Outer`, the declined tail for `Nil : List(a)`. The
+//! two lowerings read the member's tiles alike, so requiring the field tuple
+//! changes no lowered module.
+//!
+//! - Alternatives: a parser rule keeping the generator reading of the tie,
+//!   which leaves the grammar ambiguous for every other consumer of the mold
+//!   table; dropping the declined tail's result annotation altogether, which
+//!   loses the respelling hint for `Ctor(x : A) : T`.
+//! - Reversal: a stale spelling `Ctor : T` that must be told apart from the
+//!   generator, which needs a distinct lead rather than a second reading of the
+//!   same tiles.
+//!
+//! The change moved the fingerprint from `0x5984_1cfd_3dbe_9111`.
+//!
+//! # Frozen tables
+//!
+//! Building the built-in grammar is dominated by numbering and interning its
+//! molds, and every `gandr check` would pay it before the first source. The
+//! table is a function of the constant rules, so it is computed once, when the
+//! rules change, and committed: `src/surface/frozen.rs` holds each mold's
+//! label, context, rule, closing class, form-membership bits, successors and
+//! least interchangeable mold, each context's facing and step lists, the 233
+//! distinct step lists once each, and the digest of the rules it was built
+//! from. `built_in` assembles the rules, digests them, and thaws the table when
+//! the digest matches — the statics are read where the compiler placed them,
+//! and what is derived from them (bounds, the label index, the dense flags, the
+//! successor runs, the fingerprint) is recomputed as the gated build computes
+//! it. Rules that digest otherwise are built through every gate, so a stale
+//! file costs time, never a different grammar.
+//!
+//! The gates do not run on the thaw path: they proved these rules when the file
+//! was generated. `surface::tests::the_frozen_tables_are_the_built_ones` builds
+//! the rules through every gate, renders the table and compares the rendering
+//! with the committed file byte for byte, then compares the thawed grammar with
+//! the built one whole, fingerprint included. A change to any rule fails that
+//! test until `UPDATE_EXPECT=1` rewrites the file, and the rewrite is a
+//! reviewed diff of the table. The digest covers what the table reads of a rule
+//! — name, sort, group and form — and not its provenance or adaptation records,
+//! which the grammar reads from the rules themselves.
+//!
+//! - Alternatives: a build script running the gated build at every compile,
+//!   which builds the grammar crate twice and hides the table from review; a
+//!   serialized blob with its own decoder and refusals, where the statics need
+//!   neither; building the table in parallel at first use, which the per-rule
+//!   interning caps at a few times faster and which contends with the source
+//!   workers, where thawing is thirty times faster at every width; memoizing
+//!   the per-occurrence canonical forms, which removes about a quarter of the
+//!   build.
+//! - Reversal: a grammar assembled at run time from user-declared operators,
+//!   where the built-in table is not the table a source parses under; or a
+//!   gated build fast enough that a 290 KB generated file stops paying for
+//!   itself.
+
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_theory_graphs::Assoc;
+use gandr_theory_graphs::Prec;
+use gandr_theory_graphs::PrecCycle;
+use gandr_theory_graphs::PrecDag;
+use gandr_theory_graphs::PrecDagError;
+use gandr_theory_graphs::PrecSpec;
+
+use crate::model::Pbg;
+use crate::model::PbgError;
+use crate::model::PrecName;
+use crate::model::PrecTable;
+use crate::model::Rule;
+use crate::model::Sort;
+
+mod circuit;
+
+mod frozen;
+
+mod term;
+
+mod type_shell;
+
+/// The named precedence groups, in dense id order.
+const PREC_GROUPS: &[(&str, Assoc)] = &[
+    ("item.singleton", Assoc::Non),
+    ("expression.atom", Assoc::Non),
+    ("expression.postfix", Assoc::Left),
+    ("expression.unary", Assoc::Non),
+    ("expression.mul", Assoc::Left),
+    ("expression.add", Assoc::Left),
+    ("expression.cmp", Assoc::Left),
+    ("expression.and", Assoc::Left),
+    ("expression.or", Assoc::Left),
+    ("expression.pure", Assoc::Right),
+    ("pattern.atom", Assoc::Non),
+    ("pattern.as", Assoc::Left),
+    ("pattern.or", Assoc::Left),
+    ("type.atom", Assoc::Non),
+    ("type.path", Assoc::Left),
+    ("type.application", Assoc::Non),
+    ("type.product", Assoc::Right),
+    ("type.sum", Assoc::Right),
+    ("type.union", Assoc::Right),
+    ("type.lazy_product", Assoc::Right),
+    ("type.arrow", Assoc::Right),
+    ("expression.cons", Assoc::Right),
+    ("pattern.cons", Assoc::Right),
+    ("type.equivalence", Assoc::Right),
+    ("expression.pipe", Assoc::Left),
+    ("expression.application", Assoc::Left),
+    ("type.juxtaposition", Assoc::Left),
+];
+
+/// The tighter-than edges between named groups, in the order the DAG lists
+/// them: by the tighter group's id, then the looser's.
+///
+/// The word cons `∷` sits between the additive and comparison bands of the
+/// expression chain and between the atom and `as` bands of the pattern chain,
+/// right-associative in both, so `g ∷ h ∷ p` is `g ∷ (h ∷ p)`. The relations
+/// between two types, `≃`, `≅` and `⇝`, sit below the union and lazy-product
+/// bands and above the arrows: `A * B ≃ C` relates the product,
+/// and `A ≃ B -> C` is an arrow out of the relation. The plugging `|>`
+/// sits between logical or and the exits, left-associative, so
+/// `a |> f |> g` plugs `a` into `f` and that into `g`. Juxtaposition sits
+/// between the postfix and unary bands, left-associative. Thus `f x y` is
+/// `(f x) y`, `f x.y` applies `f` to `x.y`, and `-f x` negates `f x`. A
+/// type's juxtaposition sits between the path and application bands,
+/// left-associative. Thus `Vec A n` is `(Vec A) n`, `M.T A` applies `M.T`,
+/// and `-F Maybe A` returns `Maybe A`. Each group added after the first
+/// chains comes last in [`PREC_GROUPS`], so every earlier group keeps its id.
+const PREC_EDGES: &[(&str, &str)] = &[
+    ("expression.atom", "expression.postfix"),
+    ("expression.postfix", "expression.application"),
+    ("expression.unary", "expression.mul"),
+    ("expression.mul", "expression.add"),
+    ("expression.add", "expression.cons"),
+    ("expression.cmp", "expression.and"),
+    ("expression.and", "expression.or"),
+    ("expression.or", "expression.pipe"),
+    ("pattern.atom", "pattern.cons"),
+    ("pattern.as", "pattern.or"),
+    ("type.atom", "type.path"),
+    ("type.path", "type.application"),
+    ("type.path", "type.juxtaposition"),
+    ("type.application", "type.product"),
+    ("type.product", "type.sum"),
+    ("type.sum", "type.union"),
+    ("type.sum", "type.lazy_product"),
+    ("type.union", "type.equivalence"),
+    ("type.lazy_product", "type.equivalence"),
+    ("expression.cons", "expression.cmp"),
+    ("pattern.cons", "pattern.as"),
+    ("type.equivalence", "type.arrow"),
+    ("expression.pipe", "expression.pure"),
+    ("expression.application", "expression.unary"),
+    ("type.juxtaposition", "type.application"),
+];
+
+/// The label of juxtaposition's tile, `f x`.
+///
+/// One space, the gap that writes an application. The tile is zero bytes
+/// wide. No lexeme holds whitespace, so no lexeme spells the tile, and the
+/// melder pushes it between two expression operands.
+pub const APPLICATION: &str = " ";
+
+/// The tiles that open a shell form: a shell block, a subshell and a command
+/// substitution. A shell form's words stay flat side by side, so the melder
+/// pushes no juxtaposition tile inside one.
+pub const FLAT_OPENERS: &[&str] = &["#!{", "subshell_open", "command_substitution_start"];
+
+/// The reserved lowercase keywords (the tree-sitter grammar's `KW`, the wired
+/// subset).
+///
+/// A reserved keyword is never an ordinary `identifier` (tree-sitter's `word`
+/// reservation), so a lowercase word matching one molds only to its own
+/// keyword tile — not the wide identifier menu that would let, say, `ret` be
+/// read as a variable.
+///
+/// One place reads a reserved word as a name: the slot a form opens for a
+/// name, as `def match(…)` writes one, where no tile of the word continues the
+/// form. The parser reads the name there and owes the word, so the
+/// declaration stays whole. The lowering reads the same word in a name's tile
+/// and refuses the form that holds it, by the word.
+///
+/// The fold-in globally reserves the thirteen new
+/// keyword-led forms' leads — `data` / `codata` declarations, `def rec`
+/// (`rec`), `data` / `codata` operation and 2-cell members (`op` / `rule`),
+/// the `for … in` / `while` / `break` / `continue` control forms, the `match …
+/// with …` view, the `import` declaration, and the `module` declaration. A
+/// corpus + fixture sweep found no collision with any existing identifier, so
+/// all reserve globally (the keyword table is provisional; a real collision
+/// would move the offender to a contextual keyword). `loop` met that collision
+/// first: the book's circle names its cell `loop` (`loop : Base <-> Base`),
+/// so `loop` is contextual — its tile molds where `loop { … }` opens an
+/// expression, the identifier everywhere else, and the window after the word
+/// tells the two apart at an expression slot (`{` against anything else).
+/// `codata`
+/// reserves as one whole word — the labeler munches the maximal
+/// `[A-Za-z0-9_]` run, so `codata` never lexes as two words (the
+/// longest-match hazard is a non-issue here). The operator-declaration fixity
+/// classes (`infixl` / `infixr` / `infix` / `prefix` / `postfix`) are
+/// deliberately NOT reserved: they mold as contextual tiles only where the
+/// `op`-led fixity form expects them, so they remain ordinary identifiers
+/// everywhere else.
+/// `run` is reserved as the lead of the inline run and never enters the
+/// ordinary identifier menu. `let`, the binding statement's lead, stays
+/// contextual: a theory names an operation `let`, and the statement's slot is
+/// the only one where its tile stands.
+///
+/// The circuit block form reserves exactly its two **item-position**
+/// leads, `theory` and `oper`: at a fresh top-level slot a lowercase word is
+/// otherwise an expression statement, so an unreserved form-first lead would
+/// tie its own tile against `identifier` at every declaration. Its four other
+/// leads stay **contextual** — the member keyword `sort` (beside the already-
+/// reserved `data` / `rule`) and the body statements `node` / `feed` are
+/// `≐`-successors inside an open `theory` block or circuit body, so a user
+/// program may still bind `sort`, `node`, or `feed` as an ordinary name;
+/// `theory` and `oper` it may not. `sort` in particular could not be reserved
+/// even if wanted: `list.sort` is a live projection in the corpus. Contextual
+/// is not the same as inadmissible-elsewhere, and the circuit grammar module
+/// records the one slot where `sort`'s mold does collide with a type variable.
+///
+/// The capability scope reserves its lead `handle`: it opens an expression,
+/// where an unreserved lead would tie its own tile against `identifier` at
+/// every expression slot. Temporary access reserves its leads `access`,
+/// `resume` and `abort` for the same reason, and `unwind`, the tile after an
+/// access's body, so a name there is never read as the next statement.
+///
+/// A world declaration reserves its lead `world`, an item-position lead as
+/// `theory` is, and the mobility mark its lead `mobile`, which opens a module
+/// signature's field where an unreserved word would tie against the value
+/// field's `identifier`. A flow declaration reserves its lead `flow` for the
+/// same reason as `world`; `via`, which names the flow an import reads its
+/// source through, stays contextual, since no identifier stands after an
+/// import's signature. The extern block's `from`, before the library it
+/// names, stays contextual too, since no identifier stands after the block's
+/// convention: a relation's record names its map back `from`, and a pattern
+/// or a projection reads that field by its label.
+///
+/// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
+/// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
+/// tile against `identifier` there.
+///
+/// `where` is reserved: it ends a declaration's head, whose last slot is a
+/// type, and opens the block of its members.
+pub const RESERVED_WORDS: &[&str] = &[
+    "def", "run", "as", "extern", "type", "fun", "pure", "return", "become", "thunk", "force",
+    "match", "if", "else", "hold", "dup", "drop", "send", "recv", "close", "select", "offer",
+    "fork", "acquire", "release", "migrate", "at", "true", "false", "mu", "end", "data", "codata",
+    "rec", "op", "rule", "for", "in", "while", "break", "continue", "with", "import", "module",
+    "theory", "oper", "handle", "access", "unwind", "resume", "abort", "world", "mobile", "inf",
+    "pub", "flow", "where",
+];
+
+/// The named node kinds of the surface's tree-sitter grammar, ascending.
+pub const TREE_SITTER_NAMED_KINDS: &[&str] = &[
+    "and_expression",
+    "annotation_expression",
+    "argument",
+    "arguments",
+    "arm",
+    "as_pattern",
+    "at_type",
+    "attribute",
+    "attribute_block",
+    "binary_expression",
+    "block",
+    "block_comment",
+    "boolean",
+    "call_expression",
+    "character",
+    "close_expression",
+    "command",
+    "command_name",
+    "command_substitution",
+    "constructor",
+    "constructor_pattern",
+    "def_function",
+    "def_signature",
+    "def_value",
+    "double_quoted_string",
+    "drop_expression",
+    "dup_expression",
+    "end_session_type",
+    "environment_assignment",
+    "escape_sequence",
+    "expression_statement",
+    "extern_block",
+    "extern_function",
+    "extern_type",
+    "f_type",
+    "file_descriptor",
+    "force_expression",
+    "function_type",
+    "grade",
+    "hold_expression",
+    "hole",
+    "hole_name",
+    "host_escape",
+    "identifier",
+    "if_expression",
+    "instantiation_expression",
+    "lambda_expression",
+    "lazy_product_type",
+    "line_comment",
+    "list_expression",
+    "list_operator",
+    "list_pattern",
+    "literal_pattern",
+    "match_expression",
+    "migrate_expression",
+    "module_declaration",
+    "mu_session_type",
+    "negation",
+    "number",
+    "offer_expression",
+    "offer_session_type",
+    "or_expression",
+    "or_pattern",
+    "parameter",
+    "parameters",
+    "parenthesized_expression",
+    "parenthesized_type",
+    "pipeline",
+    "primitive_type",
+    "product_type",
+    "projection_expression",
+    "receive_session_type",
+    "record_expression",
+    "record_field",
+    "record_pattern",
+    "record_pattern_field",
+    "record_type",
+    "record_type_field",
+    "record_update_expression",
+    "redirection",
+    "redirection_operator",
+    "rest_pattern",
+    "pure_expression",
+    "select_expression",
+    "select_session_type",
+    "send_expression",
+    "send_session_type",
+    "session_field",
+    "shebang",
+    "shell_block",
+    "shell_list",
+    "shell_word",
+    "single_quoted_string",
+    "source_file",
+    "string",
+    "subshell",
+    "sum_type",
+    "thunk_expression",
+    "tuple_expression",
+    "tuple_pattern",
+    "type_abstraction",
+    "type_application",
+    "type_identifier",
+    "type_variable",
+    "typed_number",
+    "u_type",
+    "unary_expression",
+    "union_type",
+    "unit",
+    "variable_expansion",
+    "variable_name",
+    "wildcard",
+];
+
+/// The named kinds only this grammar has: declaration, control and datatype
+/// forms the tree-sitter grammar does not produce, and the reserved or folded
+/// member forms inside them.
+///
+/// A rule may carry one as its provenance, and an
+/// [`Adaptation`](crate::Adaptation) one as its surface form, without it being
+/// a tree-sitter kind; [`named_kind_parity`](crate::named_kind_parity) never
+/// enumerates them. Disjoint from [`TREE_SITTER_NAMED_KINDS`].
+///
+/// Two groups: the constructs' own rule provenances, then the member forms
+/// recorded as adaptation surfaces.
+pub const PBG_ONLY_KINDS: &[&str] = &[
+    // construct kinds (new rule provenances)
+    "abort_expression",
+    "access_expression",
+    "acquire_expression",
+    "assignment_statement",
+    "become_expression",
+    "bind_expression",
+    "break_expression",
+    "break_value_expression",
+    "bridge_type",
+    "capability_type",
+    "codata_declaration",
+    "cons_pattern",
+    "continue_expression",
+    "data_declaration",
+    "derived_rule_declaration",
+    "equivalence_type",
+    "extension_type",
+    "flow_declaration",
+    "flow_type",
+    "for_expression",
+    "fork_expression",
+    "forget_model_expression",
+    "glob_expression",
+    "handle_expression",
+    "import_declaration",
+    "index_expression",
+    "inner_attribute_block",
+    "isomorphism_type",
+    "circuit_declaration",
+    "labelled_sum_expression",
+    "labelled_sum_pattern",
+    "labelled_sum_type",
+    "lazy_record_expression",
+    "lazy_record_type",
+    "let_statement",
+    "linear_function_type",
+    "loop_expression",
+    "manifest_sort",
+    "manifest_type",
+    "moded_type",
+    "recv_expression",
+    "release_expression",
+    "offers_declaration",
+    "pack_model_expression",
+    "path_declaration",
+    "path_type",
+    "pub_declaration",
+    "module_statement",
+    "representable_universe_type",
+    "record_selection_expression",
+    "rec_block",
+    "resume_expression",
+    "return_expression",
+    "run_expression",
+    "splice_expression",
+    "staged_type",
+    "telescope_expression",
+    "telescope_pattern",
+    "telescope_type",
+    "theory_declaration",
+    "type_path",
+    "type_quote_expression",
+    "unknown_type",
+    "universe_type",
+    "universe_flow_type",
+    "value_function_type",
+    "var_statement",
+    "view_expression",
+    "while_expression",
+    "world_declaration",
+    // reserved / folded / diverged member surfaces (adaptation surfaces)
+    "bare_type_params",
+    "braced_variable_expansion",
+    "cell_member",
+    "circuit_body",
+    "circuit_member",
+    "circuit_signature",
+    "codata_observation",
+    "data_generator",
+    "def_rec",
+    "feed_statement",
+    "glued_type_application",
+    "grade_prefix",
+    "if_answer_type",
+    "import_statement",
+    "match_answer_type",
+    "match_with_view",
+    "node_statement",
+    "op_member",
+    "parameterized_observation",
+    "rule_member",
+    "string_interpolation",
+];
+
+/// Builds the built-in surface grammar.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a checked grammar over [`built_in_prec_table`]'s DAG, whose item,
+///   expression, pattern and type bands are mutually incomparable and chained
+///   only as [`PREC_EDGES`] declares; its forms range over tiles and holes, and
+///   named kinds appear only as rule provenance. The mold table is thawed from
+///   the frozen tables while the rules digest to theirs, and built through
+///   every gate otherwise; both are the same table.
+/// - fails: a precedence or gate violation in the constant rules.
+/// - panics: none.
+/// - intension: the term rules, then the type-and-shell rules, then the circuit
+///   rules, so mold ids follow that order.
+///
+/// # Errors
+/// Any [`PbgError`] [`built_in_prec_table`] or [`Pbg::build`] reports.
+///
+/// # Adequacy
+/// - hypothesis: The built-in grammar supplies L3 exact fingerprint, precedence
+///   and named-kind observations, catching missing rule families, changed band
+///   relations and reordered mold identities; corpus parsing covers admitted
+///   examples, not every source or a machine-dependent build-time limit. The
+///   frozen-table witness compares the thawed grammar with the gated build
+///   whole.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::surface::built_in_precedence_bands_are_exact`
+/// - witness: `tests::surface::named_kind_coverage_is_semantic`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.dag().groups().count() == PREC_GROUPS.len() && pbg.dag().groups().zip(PREC_GROUPS.iter()).all(|((_, name, assoc), &(expected, expected_assoc))| name == expected && assoc == expected_assoc) && [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember, Sort::Block].iter().all(|sort| pbg.forms().keys().any(|&(present, _)| present == *sort))))]
+#[inline]
+pub fn built_in() -> Result<Pbg, PbgError>
+{
+    let precs = built_in_prec_table()?;
+    let rules = built_in_rules(&precs)?;
+    Pbg::thawed(precs, rules, &frozen::BUILT_IN)
+}
+
+/// The built-in rules over the built-in precedence table.
+///
+/// # Specification
+/// - requires: `precs` is [`built_in_prec_table`]'s table.
+/// - ensures: the term rules, then the type-and-shell rules, then the circuit
+///   rules, then the forgetting map's form and the labelled rows, last so that
+///   they renumber no mold before them and lose every tie to them.
+/// - fails: a group a rule list names is missing from `precs`.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError::MissingPrec`] from a rule list.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each rule list's own witness pins its count and order;
+///   the frozen-table witness builds this list through every gate and compares
+///   it with the thawed grammar.
+/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| !rules.is_empty()))]
+fn built_in_rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
+{
+    let mut rules = term::rules(precs)?;
+    rules.extend(type_shell::rules(precs)?);
+    rules.extend(circuit::rules(precs)?);
+    rules.extend(term::forgetting(precs)?);
+    rules.extend(type_shell::labelled_rows(precs)?);
+    Ok(rules)
+}
+
+/// Builds the built-in precedence table.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the groups of [`PREC_GROUPS`], ids in that order, with the edges
+///   of [`PREC_EDGES`]; the DAG [`built_in`] builds over.
+/// - fails: a malformed or cyclic constant.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError::PrecedenceSpec`], [`PbgError::MissingPrec`],
+/// [`PbgError::PrecedenceCycle`] or [`PbgError::PrecedenceDag`].
+///
+/// # Adequacy
+/// - hypothesis: Every constant group, direct edge, declared chain and
+///   cross-band pair supplies an L2 finite census with L3 exact identity,
+///   associativity and comparison observations, catching reordered ids, missing
+///   edges and false comparability; alternative constant tables are outside
+///   this witness.
+/// - witness: `tests::surface::built_in_precedence_bands_are_exact`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.dag().groups().count() == PREC_GROUPS.len() && table.dag().groups().zip(PREC_GROUPS.iter()).enumerate().all(|(index, ((prec, name, assoc), &(expected, expected_assoc)))| usize::from(u16::from(prec.index())) == index && name == expected && assoc == expected_assoc && table.get(PrecName(expected)) == Some(prec)) && table.dag().edges().count() == PREC_EDGES.len() && table.dag().edges().zip(PREC_EDGES.iter()).all(|((tighter, looser), &(expected_tighter, expected_looser))| table.dag().name(tighter).is_some_and(|name| name == expected_tighter) && table.dag().name(looser).is_some_and(|name| name == expected_looser))))]
+#[inline]
+pub fn built_in_prec_table() -> Result<PrecTable, PbgError>
+{
+    let mut spec = PrecSpec::new();
+    for &(name, assoc) in PREC_GROUPS {
+        spec.insert(name, assoc).map_err(PbgError::from)?;
+    }
+    for &(tighter, looser) in PREC_EDGES {
+        let tighter_prec = lookup_prec(&spec, PrecName(tighter))?;
+        let looser_prec = lookup_prec(&spec, PrecName(looser))?;
+        spec.add_edge(tighter_prec, looser_prec)
+            .map_err(PbgError::from)?;
+    }
+    let names = prec_table_names(&spec)?;
+    let dag = PrecDag::build(&spec).map_err(|error| dag_error(&spec, error))?;
+    Ok(PrecTable::new(dag, names))
+}
+
+/// Looks up a group of `spec` by name.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: returns the group named `name`.
+/// - fails: a name `spec` does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError::MissingPrec`] naming the absent group.
+///
+/// # Adequacy
+/// - hypothesis: For known, custom and missing names, L3 exact identity and
+///   refusal observations catch wrong lookup and lost spelling; arbitrary
+///   precedence inventories are not exhausted.
+/// - witness: `surface::tests::precedence_helper_failures_preserve_named_context`
+/// - witness: `surface::tests::precedence_names_keep_constant_order`
+#[spec(ensures: |ret| ret == spec.groups().find_map(|(prec, candidate, _)| (candidate == name.0).then_some(prec)).ok_or(PbgError::MissingPrec { name: name.0 }))]
+fn lookup_prec(
+    spec: &PrecSpec,
+    name: PrecName,
+) -> Result<Prec, PbgError>
+{
+    spec.groups()
+        .find_map(|(prec, candidate, _assoc)| (candidate == name.0).then_some(prec))
+        .ok_or(PbgError::MissingPrec { name: name.0 })
+}
+
+/// Every constant group name with its id in `spec`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one pair per [`PREC_GROUPS`] entry, in order.
+/// - fails: a constant name `spec` does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError::MissingPrec`].
+///
+/// # Adequacy
+/// - hypothesis: For a reverse-inserted full table and empty and selectively
+///   incomplete tables, L3 exact order, identity and first-missing-name
+///   observations catch source-order leakage and omitted lookups; every subset
+///   of constants is not exhausted.
+/// - witness: `surface::tests::precedence_names_keep_constant_order`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| match *error { PbgError::MissingPrec { name } => PREC_GROUPS.iter().find(|&&(candidate, _)| !spec.groups().any(|(_, present, _)| present == candidate)).is_some_and(|&(missing, _)| missing == name), PbgError::InvalidSort { .. } | PbgError::PrecedenceSpec(_) | PbgError::PrecedenceCycle { .. } | PbgError::PrecedenceDag(_) | PbgError::Walk(_) | PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::Assumption3Conflict { .. } | PbgError::MoldOverflow | PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } => false }, |names| names.len() == PREC_GROUPS.len() && names.iter().zip(PREC_GROUPS.iter()).all(|(&(name, prec), &(expected, _))| name.0 == expected && spec.name(prec).is_some_and(|actual| actual == expected))))]
+fn prec_table_names(spec: &PrecSpec) -> Result<Vec<(PrecName, Prec)>, PbgError>
+{
+    PREC_GROUPS
+        .iter()
+        .map(|&(name, _assoc)| lookup_prec(spec, PrecName(name)).map(|prec| (PrecName(name), prec)))
+        .collect()
+}
+
+/// Lifts a DAG refusal into the grammar's error domain, naming a cycle's
+/// groups.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a cycle becomes [`PbgError::PrecedenceCycle`] with each group's
+///   constant name, in walk order; any other refusal is wrapped as
+///   [`PbgError::PrecedenceDag`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For a named three-node cycle, unknown and invalid cycle ids,
+///   and the inconsistency refusal, L3 exact variant, naming and edge
+///   observations catch reordered cycles, dropped endpoints and lost refusal
+///   classes. The predicate observes variant, length and endpoints without
+///   copying the consumed cycle; arbitrary graph causes and interior walks are
+///   not exhausted.
+/// - witness: `surface::tests::precedence_helper_failures_preserve_named_context`
+/// - witness: `surface::tests::cyclic_named_precedence_spec_reports_closed_named_witness`
+#[spec(captures: expected = (core::mem::discriminant(&error), match &error { &PrecDagError::Cycle(PrecCycle { ref witness }) => Some((witness.len(), witness.first().map(|&prec| static_prec_name(spec, prec)), witness.last().map(|&prec| static_prec_name(spec, prec)))), &PrecDagError::Graph(_) | &PrecDagError::Inconsistent => None }), ensures: |ret| match ret {
+    PbgError::PrecedenceCycle { ref witness } => expected.1.is_some_and(|(len, first, last)| witness.len() == len && witness.first().copied().map(PrecName) == first && witness.last().copied().map(PrecName) == last),
+    PbgError::PrecedenceDag(ref cause) => expected.1.is_none() && core::mem::discriminant(cause) == expected.0,
+    PbgError::InvalidSort { .. } | PbgError::MissingPrec { .. } | PbgError::PrecedenceSpec(_) | PbgError::Walk(_) | PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::Assumption3Conflict { .. } | PbgError::MoldOverflow | PbgError::UnknownMold { .. } | PbgError::UnknownRCtx { .. } => false,
+})]
+fn dag_error(
+    spec: &PrecSpec,
+    error: PrecDagError,
+) -> PbgError
+{
+    match error {
+        PrecDagError::Cycle(PrecCycle { witness }) => PbgError::PrecedenceCycle {
+            witness: witness
+                .into_iter()
+                .map(|prec| static_prec_name(spec, prec).0)
+                .collect(),
+        },
+        PrecDagError::Graph(_) | PrecDagError::Inconsistent => PbgError::PrecedenceDag(error),
+    }
+}
+
+/// The constant name of a group of `spec`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a group whose name is a constant returns that constant; a group
+///   with any other name returns `<unknown-precedence>`; an id `spec` does not
+///   hold returns `<invalid-precedence>`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For constant, custom and invalid group identities, L3 exact
+///   names and distinct fallback classes catch wrong name projection and
+///   conflated refusal contexts; all possible custom spellings are not
+///   exhausted.
+/// - witness: `surface::tests::precedence_helper_failures_preserve_named_context`
+/// - witness: `surface::tests::cyclic_named_precedence_spec_reports_closed_named_witness`
+#[spec(ensures: |ret| ret == spec.name(prec).map_or(PrecName("<invalid-precedence>"), |name| PREC_GROUPS.iter().find(|&&(candidate, _)| name == candidate).map_or(PrecName("<unknown-precedence>"), |&(constant, _)| PrecName(constant))))]
+fn static_prec_name(
+    spec: &PrecSpec,
+    prec: Prec,
+) -> PrecName
+{
+    let Some(name) = spec.name(prec)
+    else {
+        return PrecName("<invalid-precedence>");
+    };
+    PREC_GROUPS
+        .iter()
+        .find(|&&(candidate, _assoc)| name == candidate)
+        .map_or(PrecName("<unknown-precedence>"), |&(candidate, _assoc)| {
+            PrecName(candidate)
+        })
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeSet;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_theory_graphs::PrecIndex;
+
+    use super::*;
+
+    #[test]
+    fn precedence_helper_failures_preserve_named_context()
+    {
+        let mut spec = PrecSpec::new();
+        let custom = spec
+            .insert("custom", Assoc::Non)
+            .expect("one custom precedence should insert");
+        let invalid = Prec::new(PrecIndex::from(7));
+        assert_eq!(Ok(custom), lookup_prec(&spec, PrecName("custom")));
+
+        assert!(matches!(
+            lookup_prec(&spec, PrecName("missing")),
+            Err(PbgError::MissingPrec { name: "missing" })
+        ));
+        assert_eq!(
+            PrecName("<unknown-precedence>"),
+            static_prec_name(&spec, custom)
+        );
+        assert_eq!(
+            PrecName("<invalid-precedence>"),
+            static_prec_name(&spec, invalid)
+        );
+        assert_eq!(
+            PbgError::PrecedenceCycle {
+                witness: vec!["<unknown-precedence>", "<invalid-precedence>"],
+            },
+            dag_error(
+                &spec,
+                PrecDagError::Cycle(PrecCycle {
+                    witness: vec![custom, invalid],
+                })
+            )
+        );
+        assert_eq!(
+            PbgError::PrecedenceDag(PrecDagError::Inconsistent),
+            dag_error(&spec, PrecDagError::Inconsistent)
+        );
+    }
+
+    #[test]
+    fn cyclic_named_precedence_spec_reports_closed_named_witness()
+    {
+        // Three groups spelled with constant names, each tighter than the
+        // next and the last tighter than the first: the DAG refuses the spec,
+        // and the grammar names the cycle group by group, closed, along edges
+        // the spec actually declares.
+        let names = ["expression.atom", "expression.postfix", "expression.unary"];
+        let mut spec = PrecSpec::new();
+        let a = spec
+            .insert(names[0], Assoc::Non)
+            .expect("first group inserts");
+        let b = spec
+            .insert(names[1], Assoc::Left)
+            .expect("second group inserts");
+        let c = spec
+            .insert(names[2], Assoc::Right)
+            .expect("third group inserts");
+        spec.add_edge(a, b).expect("edge a b");
+        spec.add_edge(b, c).expect("edge b c");
+        spec.add_edge(c, a).expect("edge c a");
+
+        let refusal = PrecDag::build(&spec).expect_err("a cyclic spec is refused");
+        let PbgError::PrecedenceCycle { witness } = dag_error(&spec, refusal)
+        else {
+            panic!("a cycle is named as a precedence cycle");
+        };
+        assert!(witness.len() >= 2, "the witness is a walk, not a point");
+        assert_eq!(witness.first(), witness.last(), "the witness is closed");
+        assert!(
+            witness.iter().all(|name| names.contains(name)),
+            "every witness group is named by its constant: {witness:?}"
+        );
+        let declared: BTreeSet<(&str, &str)> = spec
+            .edges()
+            .filter_map(|(from, to)| Some((spec.name(from)?.into(), spec.name(to)?.into())))
+            .collect();
+        let walked: Vec<(&str, &str)> = witness
+            .windows(2)
+            .filter_map(|pair| match *pair {
+                [from, to] => Some((from, to)),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            walked.iter().all(|edge| declared.contains(edge)),
+            "every step of the witness is a declared edge: {walked:?}"
+        );
+    }
+
+    #[test]
+    fn precedence_names_keep_constant_order()
+    {
+        let mut reversed = PrecSpec::new();
+        for &(name, assoc) in PREC_GROUPS.iter().rev() {
+            reversed
+                .insert(name, assoc)
+                .expect("distinct constant names");
+        }
+        let names = prec_table_names(&reversed).expect("all names are present");
+        assert_eq!(
+            PREC_GROUPS
+                .iter()
+                .map(|&(name, _)| name)
+                .collect::<Vec<_>>(),
+            names.iter().map(|&(name, _)| name.0).collect::<Vec<_>>()
+        );
+        for (index, &(name, prec)) in names.iter().rev().enumerate() {
+            assert_eq!(index, usize::from(u16::from(prec.index())));
+            assert_eq!(Ok(prec), lookup_prec(&reversed, name));
+        }
+        assert_eq!(
+            Err(PbgError::MissingPrec {
+                name: "item.singleton"
+            }),
+            prec_table_names(&PrecSpec::new())
+        );
+        let mut incomplete = PrecSpec::new();
+        for &(name, assoc) in PREC_GROUPS {
+            if name != "expression.mul" {
+                incomplete.insert(name, assoc).expect("distinct names");
+            }
+        }
+        assert_eq!(
+            Err(PbgError::MissingPrec {
+                name: "expression.mul"
+            }),
+            prec_table_names(&incomplete)
+        );
+    }
+
+    /// The frozen tables are the gated build's: the committed source is the
+    /// rendering of the table built through every gate, and the grammar
+    /// [`built_in`] thaws from it is that grammar, byte for byte. A change to
+    /// the built-in rules fails here until `UPDATE_EXPECT=1` rewrites the
+    /// frozen source.
+    #[test]
+    fn the_frozen_tables_are_the_built_ones()
+    {
+        extern crate std;
+
+        let precs = built_in_prec_table().expect("the built-in table builds");
+        let rules = built_in_rules(&precs).expect("the built-in rules build");
+        let built = Pbg::build_table(precs, rules).expect("the built-in rules pass every gate");
+        expect_test::expect_file!["surface/frozen.rs"]
+            .assert_eq(&built.frozen_source().expect("a string sink never fails"));
+        let thawed = built_in().expect("the built-in grammar thaws");
+        assert_eq!(
+            alloc::format!("{built:?}"),
+            alloc::format!("{thawed:?}"),
+            "the thawed grammar differs from the built one",
+        );
+    }
+
+    /// Rules that no longer digest to the frozen tables' rules are built
+    /// through every gate, never thawed: the built-in rules less their last
+    /// one give the grammar the gated build gives them.
+    #[test]
+    fn a_stale_frozen_table_builds_its_rules()
+    {
+        let precs = built_in_prec_table().expect("the built-in table builds");
+        let mut rules = built_in_rules(&precs).expect("the built-in rules build");
+        rules.pop();
+        let built =
+            Pbg::build_table(precs.clone(), rules.clone()).expect("a prefix passes every gate");
+        let thawed = Pbg::thawed(precs, rules, &frozen::BUILT_IN).expect("stale rules build");
+        assert_eq!(alloc::format!("{built:?}"), alloc::format!("{thawed:?}"));
+    }
+}
