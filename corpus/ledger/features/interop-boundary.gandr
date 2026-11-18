@@ -6,21 +6,23 @@
 /// call applies the arguments in order and leaves an answered function
 /// unforced, and a refused definition never reaches a run. An `extern "rust"`
 /// block of fixed-width members declares an interface that its source's
-/// definitions perform and the Rust caller's host answers, and the checker
+/// definitions perform and the Rust caller's host answers. A source whose
+/// import opens the block's source reads the interface too, and the checker
 /// admits a block carrying `boundary` against the rows it names where the block
 /// stands. A value crosses by its layout as words the Rust caller lends: a list
 /// Rust holds tagged or packed answers the `length` Rust counts, and
 /// `Option<&u32>` reads by its null niche.
-/// Not implemented: a source that imports a block does not see its interface.
+/// Not implemented: a source handler of a block's interface.
 ///
 /// The Rust caller is `crates/surface-dispatcher/tests/boundary.rs`; each call
 /// below is one it makes.
 ///
 /// - see: corpus/model/interop/boundary/round-trip.gandr
+/// - see: corpus/model/interop/boundary/imported.gandr
 /// - see: corpus/model/interop/boundary/by-layout.gandr
-/// - owes: #3138
+/// - owes: #7859
 
-// `double` and `less`.
+// `double`, `less`, and the block `Boundary` with `quadrupled`.
 import "../../model/interop/boundary/round-trip.gandr";
 
 /// `double` at 21, the call the Rust caller makes first.
@@ -30,3 +32,9 @@ def answer() -> Integer = double 21;
 /// `less` at 7 and 19: the order the Rust caller passes decides the sign.
 @[runs("- 12")]
 def reversed() -> Integer = less 7 19;
+
+/// The block of `round-trip.gandr`, read through the import: the row names
+/// its interface, and only the Rust caller's host answers it.
+def eightfold(x : u32) -> [Boundary] u32 =
+  let y = quadrupled x
+  Boundary.add y y
