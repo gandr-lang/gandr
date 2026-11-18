@@ -5653,9 +5653,9 @@ mod tests
             LoweringRefusal::MalformedForm {
                 span: at(16_usize, 17_usize),
                 form: FormName::from(NamedKind("parenthesized_type")),
-                fault: FormFault::MisplacedTile,
+                fault: FormFault::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProduct),
             },
-            "a type list anywhere but before an arrow is refused at its first comma"
+            "a type list anywhere but before an arrow is the retired product, refused at its first comma"
         );
         assert_eq!(
             refusal(SourceText::from("def z : Integer -> Integer -> String ;")),
@@ -7428,6 +7428,119 @@ mod tests
                 [DeclarationOutcome::Completed { .. }]
             ),
             "an arm whose pattern is one name reads as an arm"
+        );
+    }
+
+    /// #5192: a list in parentheses outside the domain of an arrow and a
+    /// function's outputs is the old spelling of a product. The lowering
+    /// refuses it by its name at the first comma, in a signature and in a
+    /// record field. The domain `(A, B) -> C` and the outputs `-> (A, B)`
+    /// keep their readings.
+    #[test]
+    fn a_parenthesized_product_is_refused_by_name_5192()
+    {
+        let pbg = grammar();
+        let lowered = |source: &'static str| {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("parses")
+                .into_tree();
+            let mut arena = CoreArena::new();
+            let module = lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .expect("lowers");
+            outcomes(&module)
+        };
+        let product = FormFault::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProduct);
+        for (source, comma) in [
+            ("def p : (Integer, String);\n", 16),
+            ("def r : *{ x : (Integer, Integer) };\n", 23),
+        ] {
+            assert_eq!(
+                lowered(source),
+                [DeclarationOutcome::Refused(
+                    LoweringRefusal::MalformedForm {
+                        span: span(ByteOffset::from(comma), ByteOffset::from(comma + 1)),
+                        form: FormName::from(NamedKind("parenthesized_type")),
+                        fault: product,
+                    }
+                )],
+                "{source}"
+            );
+        }
+        let domain = lowered("def f : (Integer, Integer) -> Integer;\n");
+        assert!(
+            matches!(domain.as_slice(), [DeclarationOutcome::Uncompleted { .. }]),
+            "a domain keeps its reading: {domain:?}"
+        );
+        let outputs = lowered("def d(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }\n");
+        assert!(
+            matches!(outputs.as_slice(), [DeclarationOutcome::Completed { .. }]),
+            "a group of outputs keeps its reading: {outputs:?}"
+        );
+    }
+
+    /// #5192: a group in parentheses receives a call's outputs alone. Over a
+    /// stored product, in a `let` with or without a type and in a match arm,
+    /// the lowering refuses it by its name: `*{p, q}` is the pattern. A
+    /// group over a call's outputs keeps its reading.
+    #[test]
+    fn a_parenthesized_product_pattern_is_refused_by_name_5192()
+    {
+        let pbg = grammar();
+        let lowered = |source: &'static str| {
+            let tree = gandr_surface_parser::parse(&pbg, SourceText::from(source))
+                .expect("parses")
+                .into_tree();
+            let mut arena = CoreArena::new();
+            let module = lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default(),
+            )
+            .expect("lowers");
+            outcomes(&module)
+        };
+        let refused = |start: usize| {
+            [DeclarationOutcome::Refused(
+                LoweringRefusal::MalformedForm {
+                    span: span(ByteOffset::from(start), ByteOffset::from(start + 6)),
+                    form: FormName::TUPLE_PATTERN,
+                    fault: FormFault::product_pattern(),
+                },
+            )]
+        };
+        for (source, start) in [
+            (
+                "def s() -> Integer { let pair : *{Integer, Integer} = *{1, 2}; let (a, b) = pair; a }\n",
+                67,
+            ),
+            (
+                "def t() -> Integer { let (a, b) : *{Integer, Integer} = *{1, 2}; a }\n",
+                25,
+            ),
+            (
+                include_str!("lower/fixtures/a-match-arm-group-is-refused-by-name-5192.gandr"),
+                70,
+            ),
+        ] {
+            assert_eq!(lowered(source), refused(start), "{source}");
+        }
+        let outputs = lowered(include_str!(
+            "lower/fixtures/a-group-over-outputs-keeps-its-reading-5192.gandr"
+        ));
+        assert!(
+            matches!(outputs.as_slice(), [
+                DeclarationOutcome::Completed { .. },
+                DeclarationOutcome::Completed { .. }
+            ]),
+            "a group over a call's outputs keeps its reading: {outputs:?}"
         );
     }
 

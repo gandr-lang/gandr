@@ -787,8 +787,10 @@ fn add_type_rules(
     // `x : A` — the telescope `(x : A, y : B(x)) -> C`. One rule, so `(` keeps
     // a single type-sort mold; the binder's name is a type hole the `:` after
     // it makes a key, so `(a -> -F b)` still reads its `a` as a type. The
-    // lowering refuses a list or a binder anywhere but before `->`.
-    rules.push(rule(
+    // lowering refuses a list anywhere but before `->` and as a function's
+    // outputs: the product `*{A, B}` replaces `(A, B)`, and the refusal names
+    // it.
+    let mut parenthesized = rule(
         RuleName("parenthesized_type"),
         ty,
         type_atom,
@@ -797,7 +799,13 @@ fn add_type_rules(
             comma1(entry_shape(ty)),
             tile(TileLabel(")")),
         ]),
+    );
+    parenthesized.adaptations.push(Adaptation::refused(
+        RuleName("parenthesized_type"),
+        RetiredForm::ParenthesizedProduct,
+        AdaptationReason("a list in parentheses outside the domain of an arrow and a function's outputs is refused by name at its first comma: `*{A, B}` is the product"),
     ));
+    rules.push(parenthesized);
     // The telescope `*{ … }`: the tuple, the record and Σ are one former, so
     // one rule spells all three. An entry is a bare type, positional and
     // labelled by its index, or a labelled `k : T`; `*{}` is the unit and

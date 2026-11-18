@@ -552,6 +552,26 @@ impl FormFault
             gandr_surface_grammar::RetiredForm::PositionalPathCarrier
         })
     }
+
+    /// The fault of a group in parentheses that matches a stored product:
+    /// `(p, q)` for `*{p, q}`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`FormFault::Retired`] of the retired product pattern.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `let` group and a match arm's group over a stored
+    ///   product are each refused with this fault.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_pattern_is_refused_by_name_5192`
+    #[spec(ensures: |ret| matches!(ret, Self::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProductPattern)))]
+    #[inline]
+    #[must_use]
+    pub const fn product_pattern() -> Self
+    {
+        Self::Retired(gandr_surface_grammar::RetiredForm::ParenthesizedProductPattern)
+    }
 }
 
 impl fmt::Display for FormFault

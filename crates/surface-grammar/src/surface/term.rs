@@ -1724,6 +1724,9 @@ fn attributes_parameters_externs(
 ///   forms their own bands and every other form the atom band.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the refused adaptation of `tuple_pattern`, setup
+///
 /// # Adequacy
 /// - hypothesis: For the built-in band table, L3 grammar identity and corpus
 ///   role observations catch lost or reordered forms, changed provenance and
@@ -1769,8 +1772,9 @@ fn patterns(
     // A group of patterns receiving a call's outputs, positional `(q, r)` or
     // labelled `(.q, .r)`, `(.r = rem, .q = quo)`. The labelled group takes a
     // `(` of its own, decided by the very next tile, as the labelled telescope
-    // does, so a dot after an operand is never a label's.
-    out.push(r(
+    // does, so a dot after an operand is never a label's. Over a stored
+    // product the group is the retired pattern, and `*{p, q}` replaces it.
+    let mut tuple = r(
         RuleName("tuple_pattern"),
         Provenance("tuple_pattern"),
         s,
@@ -1789,7 +1793,13 @@ fn patterns(
                 t(TileLabel(")")),
             ]),
         ]),
+    );
+    tuple.adaptations.push(Adaptation::refused(
+        RuleName("tuple_pattern"),
+        RetiredForm::ParenthesizedProductPattern,
+        AdaptationReason("a group in parentheses over a stored product, in a `let` or a match arm, is refused by name: `*{p, q}` is the pattern; a group over a call's outputs keeps its reading"),
     ));
+    out.push(tuple);
     // The telescope pattern `*{ x, y }`, `*{ .n, .v }` punning its labels and
     // `*{ .n = m }` renaming one. An entry's shape is inlined, since a
     // standalone `record_pattern_field` rule would give its `identifier`

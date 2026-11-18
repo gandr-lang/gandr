@@ -5829,21 +5829,27 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///
     /// # Specification
     /// - requires: as [`Self::pattern`]; `pieces` is scratch.
-    /// - ensures: as [`Self::pattern`], for one pattern; a telescope or tuple
-    ///   pattern's components and a sum pattern's payload are queued with the
-    ///   component's or summand's type the queued pattern's stated type writes,
-    ///   when it writes one.
-    /// - fails: as [`Self::pattern`].
+    /// - ensures: as [`Self::pattern`], for one pattern; a telescope pattern's
+    ///   components and a sum pattern's payload are queued with the component's
+    ///   or summand's type the queued pattern's stated type writes, when it
+    ///   writes one.
+    /// - fails: as [`Self::pattern`]; a group in parentheses, which matches a
+    ///   stored product here, with [`FormFault::product_pattern`].
     /// - panics: none.
     ///
     /// # Errors
     /// As [`Self::pattern`].
+    ///
+    /// # Cost
+    /// - allocation: the field patterns queued on `work`, growth within the
+    ///   pattern's own entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::pattern`].
     /// - witness: `gandr-surface-lowering::lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
     /// - witness: `gandr-surface-lowering::lower::native::tests::telescope_patterns_split_and_project`
     /// - witness: `gandr-surface-lowering::lower::native::tests::sum_patterns_case_on_the_stated_arity`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_pattern_is_refused_by_name_5192`
     #[spec(captures: before = patterns.shapes.len(), ensures: patterns.shapes.len() >= before)]
     fn pattern_shape(
         &mut self,
@@ -6066,11 +6072,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 .push((queued.slot, head.span, PatternReading::Constructor));
             return Ok(shape);
         }
+        // A match scrutinee is a value, so a group in parentheses here matches
+        // a stored product: its pattern is `*{p, q}`.
         if name == FormName::TUPLE_PATTERN {
-            let mut cursor = Cursor::new(&pieces.pieces, at.span);
-            closed(here, &mut cursor, TileName::PAREN_OPEN)?;
-            let entries = Context::tuple_entries(here, &mut cursor)?;
-            return self.components(here, queued, &entries, patterns, work);
+            return Err(here.fault(at.span, FormFault::product_pattern()));
         }
         if name == FormName::TELESCOPE_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
