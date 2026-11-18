@@ -3789,7 +3789,12 @@ impl<'pbg> MeldState<'pbg>
         else {
             return SeparatorTaken::from(false);
         };
-        if self.nearest_open_form() != Some(frontier) {
+        if self.frontiers.iter().any(|&index| {
+            index > frontier.0
+                && self.stack.get(index).is_some_and(|cell| {
+                    matches!(cell.role, Role::FormTile { mold, open: true, .. } if self.pbg.closing_class(mold).is_some())
+                })
+        }) {
             return SeparatorTaken::from(false);
         }
         let Some(frontier_cell) = self.stack.get(usize::from(frontier)).copied()
@@ -6549,6 +6554,18 @@ impl<'pbg> MeldState<'pbg>
             && let Some(Role::FormTile { mold, .. }) =
                 self.stack.get(frontier_index).map(|cell| cell.role)
             && bool::from(FormTable::is_form_last(self.pbg, mold))
+        {
+            self.close_form(StackIndex::from(frontier));
+            return;
+        }
+        // A form that a stray mid opened, and that no tile continued, already
+        // owes its absent opener at that mid (`continue_form`). It closes as
+        // it stands, with no ghost end: the writer left out the tiles before
+        // the mid, and no tile after it.
+        if let Some(Role::FormTile {
+            mold, start: true, ..
+        }) = self.stack.get(frontier_index).map(|cell| cell.role)
+            && !bool::from(FormTable::is_form_first(self.pbg, mold))
         {
             self.close_form(StackIndex::from(frontier));
             return;
