@@ -10,6 +10,4 @@ def whiskerStatedHere(
 ) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g)](
   Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a,
   Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a
-) {
-  Path.here (Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a)
-}
+) = Path.here (Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a);

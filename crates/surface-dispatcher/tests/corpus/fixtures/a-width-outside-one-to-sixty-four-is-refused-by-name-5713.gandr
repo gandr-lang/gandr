@@ -12,17 +12,17 @@ import std.crypto (key);
 /// A draw of no bits under the generator.
 @[distributes("1 0")]
 def empty() -> [std.rand.Eff] Integer =
-  lcg 8 0 (thunk { std.rand.draw 0 })
+  lcg 8 0 (std.rand.draw 0)
 
 /// A draw of 65 bits under the generator.
 @[distributes("1 0")]
 def wide() -> [std.rand.Eff] Integer =
-  lcg 8 0 (thunk { std.rand.draw 65 })
+  lcg 8 0 (std.rand.draw 65)
 
 /// A generator of 70 bits.
 @[distributes("1 0")]
 def wideGenerator() -> [std.rand.Eff] Integer =
-  lcg 70 0 (thunk { std.rand.draw 2 })
+  lcg 70 0 (std.rand.draw 2)
 
 /// A key of 65 bits.
 @[distributes("1 0")]
@@ -37,4 +37,4 @@ def emptyMultiplier() -> [std.rand.Eff] Integer =
 /// A draw of 2 bits under a generator of 1 bit: the exact model answers it.
 @[distributes(("1/4 0", "1/4 1", "1/4 2", "1/4 3"))]
 def passedOn() -> [std.rand.Eff] Integer =
-  lcg 1 0 (thunk { std.rand.draw 2 })
+  lcg 1 0 (std.rand.draw 2)

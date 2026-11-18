@@ -3,7 +3,7 @@ module Point :> *{type T, z : T} where {
   def z = 0;
 }
 module Square(S : *{type T, z : T}) :> *{type U, w : U} where {
-  type U = S.T * S.T;
+  type U = *{S.T, S.T};
   def w = (S.z, S.z);
 }
 module Squared = Square(Point);

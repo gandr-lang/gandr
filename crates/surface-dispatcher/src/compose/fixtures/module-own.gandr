@@ -1,3 +1,2 @@
 import "./base.gandr";
-def two : Integer;
-def two = one;
+def two : Integer = one;
