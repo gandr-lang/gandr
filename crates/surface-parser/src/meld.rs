@@ -6558,14 +6558,24 @@ impl<'pbg> MeldState<'pbg>
             self.close_form(StackIndex::from(frontier));
             return;
         }
-        // A form that a stray mid opened, and that no tile continued, already
-        // owes its absent opener at that mid (`continue_form`). It closes as
-        // it stands, with no ghost end: the writer left out the tiles before
-        // the mid, and no tile after it.
-        if let Some(Role::FormTile {
-            mold, start: true, ..
-        }) = self.stack.get(frontier_index).map(|cell| cell.role)
+        // A form that a stray separator opened, a `;`, `=` or `,`, and that no
+        // tile continued, already owes its absent opener at the separator
+        // (`continue_form`). It closes as it stands, with no ghost end: the
+        // writer left out the tiles before the separator, and no tile after
+        // it. A form that another mid opened keeps its ghost end, so a close
+        // at the margin weighs it as the standing reading does.
+        if let Some(cell) = self.stack.get(frontier_index)
+            && let Role::FormTile {
+                mold, start: true, ..
+            } = cell.role
             && !bool::from(FormTable::is_form_first(self.pbg, mold))
+            && matches!(
+                self.source.get(
+                    usize::try_from(cell.start).unwrap_or(usize::MAX)
+                        .. usize::try_from(cell.end).unwrap_or(usize::MAX)
+                ),
+                Some(";" | "=" | ",")
+            )
         {
             self.close_form(StackIndex::from(frontier));
             return;
