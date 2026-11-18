@@ -2,7 +2,7 @@ error[NoFiller]: `fill` needs a generator whose sides compose its cells, a cell 
    ╭▸ corpus/ledger/diagnostics/NoFiller.gandr:29:3
    │
 25 │   def unmade(a : Path[.A = Path[.A = Circle](Base, Base)](loop, loop)) -> Path[.A = Path[.A = Circle](
-   │   │          ─ checked; while checking the body of this function; binds a : Path[.A = Path[.A = Circle](Base, Base)](loop, loop)
+   │   │          ─ checked; while checking the body of this function; binds a : Path[.A = Path[.A = Circle] Base Base] loop loop
    │ ┌─┘
    │ │
 26 │ │   Base,

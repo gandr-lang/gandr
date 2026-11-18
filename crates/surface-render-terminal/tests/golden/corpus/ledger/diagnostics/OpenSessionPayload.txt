@@ -7,7 +7,7 @@ error[OpenSessionPayload]: a session type's payload names a variable bound outsi
   │ │                                                            ━━━━━━━ a session payload open over a binder
 6 │ │   (Path.here String)
 7 │ │   (Path.here (type(?String. end)));
-  │ └──────────────────────────────────┘ checked against `Path[.A = Type](?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
+  │ └──────────────────────────────────┘ checked against `Path[.A = Type] (?String >> end) (?String >> end)`; while forming this type under its binder; binds _ : Type
   │
   ├ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
   ╰ help: bind the session payload inside the run's protocol
