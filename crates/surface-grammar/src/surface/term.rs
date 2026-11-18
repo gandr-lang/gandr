@@ -1724,6 +1724,9 @@ fn attributes_parameters_externs(
 ///   forms their own bands and every other form the atom band.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the refused adaptation of `tuple_pattern`, setup
+///
 /// # Adequacy
 /// - hypothesis: For the built-in band table, L3 grammar identity and corpus
 ///   role observations catch lost or reordered forms, changed provenance and

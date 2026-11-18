@@ -8110,6 +8110,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// # Errors
     /// The statement's refusal.
     ///
+    /// # Cost
+    /// - allocation: the names of a group's components and the outputs it
+    ///   binds, growth within the group's components
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — each such statement reads its bound computation in
     ///   the previous frame and introduces its names only for subsequent
@@ -14254,6 +14258,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Errors
     /// The form's refusal.
+    ///
+    /// # Cost
+    /// - allocation: a result's group of outputs and an annotation's reading,
+    ///   growth within the group's entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — parenthesized type operands keep the surrounding
