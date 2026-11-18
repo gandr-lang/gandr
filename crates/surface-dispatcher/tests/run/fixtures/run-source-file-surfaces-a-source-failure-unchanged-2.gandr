@@ -1,1 +1,2 @@
-def only : Integer = "one";
+def only : Integer;
+def only = "one";

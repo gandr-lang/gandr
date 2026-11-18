@@ -3,25 +3,23 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 
-def predecessor(n : Nat) -> Nat {
+def predecessor(n : Nat) -> Nat = {
   let m = match n {
     | Zero => return n
     | Succ(p) => pure p
   };
   m
-}
+};
 
-def first(n : Nat) -> Nat {
+def first(n : Nat) -> Nat = {
   let k = loop { break(Succ n) };
   Succ k
-}
+};
 
-def same(n : Nat) -> Nat {
-  n
-}
+def same(n : Nat) -> Nat = n;
 
-def unused(n : Nat) -> Nat {
+def unused(n : Nat) -> Nat = {
   let u = same n;
   let _ = same n;
   n
-}
+};

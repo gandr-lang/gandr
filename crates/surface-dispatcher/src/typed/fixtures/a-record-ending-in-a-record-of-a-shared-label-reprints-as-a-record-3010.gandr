@@ -9,7 +9,8 @@ type Long = *{
   g : String,
   i : Plain
 };
-def long : Long = *{
+def long : Long;
+def long = *{
   a = "a",
   b = "b",
   c = "c",

@@ -1,3 +1,4 @@
 import "./base.gandr";
 
-def t : Integer = Seat.task;
+def t : Integer;
+def t = Seat.task;

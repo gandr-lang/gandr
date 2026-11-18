@@ -4,4 +4,4 @@ def b : Natural;
 def c : Integer * Integer;
 def d : Integer;
 @[refuses("UnresolvedName")]
-def e() -> Integer { 3 }
+def e() -> Integer = 3;

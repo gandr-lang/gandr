@@ -1,8 +1,10 @@
-def raw : (Type -> Type[-]) -> Type -> Type -> Type = fun (T) {
-  fun (A) { fun (B) { type(+U (A -> T A) * +U (+U (T A) -> +U (A -> T B) -> T B)) } }
+def raw : (Type -> Type[-]) -> Type -> Type -> Type;
+def raw = fun (T) {
+  fun (A) { fun (B) { type(*{+U (A -> T A), +U (+U (T A) -> +U (A -> T B) -> T B)}) } }
 };
 
-def pairs : raw(fun (X) { -F (X * X) }, Integer, Integer) = *{
+def pairs : raw(fun (X) { -F *{X, X} }, Integer, Integer);
+def pairs = *{
   fun (a) { *{a, a} },
   fun (m) { fun (k) { let p = force m; become (force k) 1 } }
 };

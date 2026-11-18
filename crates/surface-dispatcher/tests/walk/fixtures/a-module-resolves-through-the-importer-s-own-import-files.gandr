@@ -1,3 +1,4 @@
 pub module Seat where {
-  def task : Integer = 1;
+  def task : Integer;
+  def task = 1;
 }

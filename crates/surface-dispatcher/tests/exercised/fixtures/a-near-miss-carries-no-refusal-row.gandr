@@ -1,5 +1,5 @@
 @[refuses("NotSynthesisable")]
-def a() -> Integer { become force (thunk { 3 }) }
+def a() -> Integer = become force (thunk { 3 });
 @[refuses("ShapeMismatch")]
 def b : Integer = thunk { 3 };
 @[refuses("MalformedLiteral")]

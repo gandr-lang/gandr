@@ -1,15 +1,7 @@
-def a() -> Integer {
-  return 1 ^ 2
-}
+def a() -> Integer = return 1 ^ 2;
 
-def b() -> Integer {
-  return a ()
-}
+def b() -> Integer = return a ();
 
-def c() -> Integer {
-  1
-}
+def c() -> Integer = 1;
 
-def d() -> Integer {
-  c ()
-}
+def d() -> Integer = c ();

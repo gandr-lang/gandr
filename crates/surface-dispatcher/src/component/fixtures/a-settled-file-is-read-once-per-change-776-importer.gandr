@@ -1,4 +1,3 @@
 import "./base.gandr";
 /// The importer.
-def ten : Integer;
-def ten = nine;
+def ten : Integer = nine;

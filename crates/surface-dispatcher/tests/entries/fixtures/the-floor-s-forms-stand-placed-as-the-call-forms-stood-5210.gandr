@@ -12,7 +12,7 @@ theory Monad where
   oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
 
-def heard : Run(Ask.Coded) = recorded (received One) closed;
+def heard : Run Ask.Coded = recorded (received One) closed;
 
 def whisker = Path.ap (fun (q) { Path.step q g }) a;
 

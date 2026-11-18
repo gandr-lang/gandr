@@ -2,5 +2,4 @@ import "./left.gandr";
 import "./right.gandr";
 import "./base.gandr";
 
-def top : Point;
-def top = left;
+def top : Point = left;

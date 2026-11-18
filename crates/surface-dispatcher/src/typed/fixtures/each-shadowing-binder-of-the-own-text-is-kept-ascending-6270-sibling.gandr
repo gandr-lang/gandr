@@ -1,2 +1,2 @@
 pub def here : Integer = 1;
-def lost(here : Integer) -> -F Integer { return here }
+def lost(here : Integer) -> Integer = here;

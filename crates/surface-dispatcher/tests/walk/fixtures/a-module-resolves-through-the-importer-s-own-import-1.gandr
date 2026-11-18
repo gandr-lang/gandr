@@ -1,4 +1,5 @@
 import "./shared.gandr";
 import "./base.gandr";
 
-def m : Integer = Seat.task;
+def m : Integer;
+def m = Seat.task;

@@ -1,3 +1,3 @@
 def pair : Integer * String = *{1, "a"};
-def pure_pair() -> Integer * String { *{1, "a"} }
-def pure_pair_sugared() -> Integer * String { pure *{1, "a"} }
+def pure_pair() -> Integer * String = *{1, "a"};
+def pure_pair_sugared() -> Integer * String = pure *{1, "a"};

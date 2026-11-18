@@ -9,7 +9,7 @@ theory Cat where {
 module Fns : Model(Cat) where {
   type Ob = Type;
   type Hom(a : Ob, b : Ob) = a -> b;
-  def ident(t : Type, x : t) -> t { x }
+  def ident(t : Type, x : t) -> t = x;
   def compose(
     t : Type,
     u : Type,
@@ -17,23 +17,17 @@ module Fns : Model(Cat) where {
     f : t -> u,
     g : u -> v,
     x : t
-  ) -> v {
-    become g (f x)
-  }
-  def id(t : Type) -> t -> t { thunk { become ident t } }
+  ) -> v = become g (f x);
+  def id(t : Type) -> t -> t = thunk { become ident t };
   def comp(
     t : Type,
     u : Type,
     v : Type,
     f : t -> u,
     g : u -> v
-  ) -> t -> v {
-    thunk { become compose t u v f g }
-  }
+  ) -> t -> v = thunk { become compose t u v f g };
   def unitL(p : Type, q : Type, f : p -> q) -> Path[.A = (p -> q)](
     comp p p q (id p) f,
     f
-  ) {
-    Path.here f
-  }
+  ) = Path.here f;
 }

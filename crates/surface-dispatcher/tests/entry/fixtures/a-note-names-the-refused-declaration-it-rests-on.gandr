@@ -6,6 +6,4 @@ def x() -> Integer {
   return 3 ~ 4
 }
 
-def b() -> Integer {
-  return x ()
-}
+def b() -> Integer = return x ();

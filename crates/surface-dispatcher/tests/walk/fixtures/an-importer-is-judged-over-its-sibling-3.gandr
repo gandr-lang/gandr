@@ -1,1 +1,2 @@
-def apart : Integer = 1;
+def apart : Integer;
+def apart = 1;
