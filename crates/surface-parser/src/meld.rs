@@ -5053,14 +5053,7 @@ impl<'pbg> MeldState<'pbg>
             reason = "bounded: `labels` holds one token's candidate labels, which the labeler caps"
         )
     )]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            allocation_free_region,
-            reason = "the one lookup of the `(` label in the grammar's label map allocates nothing"
-        )
-    )]
-    #[spec(ensures: |ret| bool::from(ret) == <&[LabelId]>::from(labels).iter().any(|&label| (!bool::from(spaced) || self.pbg.label_id(LabelText("(")) != Some(label)) && self.pbg.label_candidates(label).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
+    #[spec(ensures: |ret| bool::from(ret) == <&[LabelId]>::from(labels).iter().any(|&label| self.pbg.label_candidates(label).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok() && !(bool::from(spaced) && self.pbg.mold(right).is_ok_and(|def| def.label == "(")))))]
     fn successor_label_in(
         &self,
         mold: MoldId,
@@ -5069,14 +5062,15 @@ impl<'pbg> MeldState<'pbg>
     ) -> SuccessorLabelPresence
     {
         let labels = <&[LabelId]>::from(labels);
-        let opener = self
-            .pbg
-            .label_id(LabelText("("))
-            .filter(|_| bool::from(spaced));
+        let opener = |right: MoldId| {
+            bool::from(spaced) && self.pbg.mold(right).is_ok_and(|def| def.label == "(")
+        };
         SuccessorLabelPresence::from(self.pbg.mold_successors(mold).iter().any(|&(_, right)| {
-            self.pbg
-                .mold_label(right)
-                .is_some_and(|label| labels.contains(&label) && Some(label) != opener)
+            !opener(right)
+                && self
+                    .pbg
+                    .mold_label(right)
+                    .is_some_and(|label| labels.contains(&label))
         }))
     }
 
