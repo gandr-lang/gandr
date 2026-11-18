@@ -2943,7 +2943,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 81_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 82_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3181,11 +3181,6 @@ mod tests
                 span: s(89_usize, 90_usize),
                 name: SurfaceName::from("r"),
             },
-            LoweringRefusal::MethodAsValue {
-                span: s(89_usize, 90_usize),
-                method: SurfaceName::from("first"),
-                mode: crate::module::ReceiverMode::Deduced,
-            },
             LoweringRefusal::StrayReceiverMode {
                 span: s(91_usize, 92_usize),
                 mode: SurfaceName::from("shared"),
@@ -3318,6 +3313,11 @@ mod tests
                 span: s(151_usize, 152_usize),
                 callee: SurfaceName::from("sumDiff"),
             },
+            LoweringRefusal::MethodAsValue {
+                span: s(153_usize, 154_usize),
+                method: SurfaceName::from("first"),
+                mode: crate::module::ReceiverMode::Deduced,
+            },
         ]
     }
 
@@ -3410,6 +3410,7 @@ mod tests
             s(147_usize, 148_usize),
             s(149_usize, 150_usize),
             s(151_usize, 152_usize),
+            s(153_usize, 154_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

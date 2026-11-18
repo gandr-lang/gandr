@@ -11,6 +11,8 @@ use gandr_core_term::Zone;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 
 use crate::CandidateCount;
@@ -26,6 +28,7 @@ use crate::lower::native::tests::lowered;
 use crate::lower::native::tests::refusal_of;
 use crate::lower::native::tests::tail_of;
 use crate::module::DeclarationOutcome;
+use crate::module::ReceiverMode;
 use crate::resolve::SurfaceName;
 
 /// A counter's methods, one per receiver mode, and a block calling each on
@@ -535,4 +538,51 @@ fn a_qualified_call_is_the_dot_call_at_every_mode_7974()
         "a place of a list no var holds has nothing to lend: {:?}",
         refusal_of(&module, SurfaceName::from("unheld"))
     );
+}
+
+#[test]
+fn a_method_needing_its_hold_is_no_value_7980()
+{
+    let source = format!(
+        include_str!("tests/unformatted/a-method-needing-its-hold-is-no-value-7980.gandr"),
+        COUNTER = COUNTER,
+        PLACES = PLACES
+    );
+    let mut arena = CoreArena::new();
+    let source = listing(&source);
+    let module = listed(&source, &mut arena);
+    for (name, path, method, mode) in [
+        ("bumped", "Counter.bump", "bump", ReceiverMode::Exclusive),
+        ("placed", "Places.first", "first", ReceiverMode::Deduced),
+    ] {
+        let Some(at) = source.find(&format!("let f = {path};")).map(|at| at + 8)
+        else {
+            panic!("`{name}` writes `{path}`")
+        };
+        let span = ByteSpan::new(ByteOffset::from(at), ByteOffset::from(at + path.len()))
+            .expect("the path's bytes are a span");
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::MethodAsValue {
+                span,
+                method: SurfaceName::from(method),
+                mode,
+            },
+            "`{name}` names `{path}` as a value, and no value carries its receiver's hold"
+        );
+    }
+    for name in ["readable", "spendable"] {
+        let Some(declaration) = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+        else {
+            panic!("`{name}` is declared")
+        };
+        assert!(
+            matches!(declaration.outcome(), DeclarationOutcome::Completed { .. }),
+            "`{name}` binds a shared or consumed method, which needs no hold: {:?}",
+            declaration.outcome()
+        );
+    }
 }

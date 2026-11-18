@@ -55,6 +55,24 @@ def raisedWhileRead() -> Integer =
   var xs = pair
   access shared xs as v { (xs.first ()) as w { resume w 3 }; pure 0 }
 
+/// A method that answers a place, named as a value. No function value carries
+/// the hold that the place needs.
+@[refuses("MethodAsValue")]
+def bound() -> Integer =
+  var xs = pair
+  let f = Places.first
+  let y = f xs
+  pure y
+
+/// A function that applies its argument to a list.
+def applied(g : List Integer -> Integer, ys : List Integer) -> Integer =
+  g ys
+
+/// The same method as the argument of a function.
+@[refuses("MethodAsValue")]
+def passed() -> Integer =
+  applied Places.first pair
+
 /// An element index with a bare bracket for static arguments. An index uses
 /// the selector `.#[ … ]`.
 @[refuses("MalformedForm")]

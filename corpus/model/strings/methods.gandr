@@ -91,3 +91,19 @@ def readWhereNotTaken() -> Integer =
   match Shared 1 (Nil : List Integer) where
     | Inline(bs) => { count (s.bytes ()) }
     | Shared(n, bs) => s.len ()
+
+/// `lenBound` binds the shared method `len` as a value, then applies it.
+/// A shared receiver needs no hold, so the value reads the length.
+@[runs("3")]
+def lenBound() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
+  let f = Str.len
+  f s
+
+/// `bytesBound` binds the consumed method `bytes` as a value.
+/// The value takes the string and returns its bytes.
+@[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
+def bytesBound() -> List Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
+  let f = Str.bytes
+  f s
