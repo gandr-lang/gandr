@@ -7,9 +7,9 @@ data T : Type where {
   | V : T
 }
 
-def ext(g : N) -> N { S g }
+def ext(g : N) -> N = S g;
 
-def k(g : N, t : T) -> T { t }
+def k(g : N, t : T) -> T = t;
 
 def w : *{
   c : Type,

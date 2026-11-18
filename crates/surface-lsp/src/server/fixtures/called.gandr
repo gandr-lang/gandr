@@ -8,4 +8,4 @@ def rec plus(n : Nat, m : Nat) -> -F Nat =
     | Succ(p) => Succ (plus[<] n p)
 def f : +U (-F Nat);
 def f = thunk { plus Zero (Succ ()) };
-def ap(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat { g x }
+def ap(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat = g x;

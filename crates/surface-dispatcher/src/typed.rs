@@ -8536,17 +8536,17 @@ mod tests
                 ),
                 (
                     Some("answer"),
-                    Some(14_usize),
+                    Some(13_usize),
                     Some((Some("answer"), Some(4_usize))),
                     Some("answer")
                 ),
                 (
                     Some("two"),
-                    Some(15_usize),
+                    Some(14_usize),
                     Some((Some("two"), Some(6_usize))),
                     Some("Counting.two")
                 ),
-                (Some("add"), Some(16_usize), None, None),
+                (Some("add"), Some(15_usize), None, None),
             ],
             "each binder, its line, the hidden site with its line, and the printer's name"
         );
@@ -11661,7 +11661,7 @@ mod tests
         ));
         let table = table(source);
         assert_eq!(
-            answer(&table, source, SourceText::from("v }")),
+            answer(&table, source, SourceText::from("v;")),
             agreed(Subject::Term, SourceText::from("Vec Nat k")),
             "the use answers under its function's binders"
         );

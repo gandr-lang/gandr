@@ -679,7 +679,7 @@ fn an_inferred_run_is_reported_where_a_lint_reaches()
         let start = text
             .as_ref()
             .get(context ..)
-            .and_then(|rest| rest.find("{ id (id n) }"))
+            .and_then(|rest| rest.find("= id (id n);"))
             .expect("nested")
             .saturating_add(context)
             .saturating_add(6_usize);
