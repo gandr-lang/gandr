@@ -605,6 +605,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `gandr-surface-lowering::lower::access::tests::a_shared_access_lowers_without_an_unwind`
     /// - witness: `gandr-surface-lowering::lower::access::tests::an_access_of_a_place_lowers_with_its_index`
+    ///
+    /// # Cost
+    /// - allocation: the view's entry in the set of lent views, growth within
+    ///   the accesses of the declaration
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |accessed| matches!(*accessed, Accessed::Access { body, .. } if self.cx().results.contains(&body.last))))]
     fn access(
         &mut self,

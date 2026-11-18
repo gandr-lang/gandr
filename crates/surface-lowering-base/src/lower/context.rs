@@ -405,9 +405,6 @@ pub struct Context<'run, 'source>
     /// slot a threading loop holds again for its passes and for what follows
     /// it.
     pub held: BTreeSet<ScopeId>,
-    /// The binders of the views each `access` lends: the receiver a method's
-    /// function takes in the access a call of the method elaborates to.
-    pub lent: BTreeSet<ScopeId>,
     /// The parameters at a session type each function body places, stretch
     /// by stretch.
     pub endpoints: ByForm<session::PlacedEndpoint>,
@@ -776,6 +773,9 @@ pub struct Context<'run, 'source>
     pub current: Current,
     /// The current source's own positions, in ascending order.
     pub own: Vec<NodeIndex>,
+    /// The binders of the views each `access` lends: the receiver a method's
+    /// function takes in the access a call of the method elaborates to.
+    pub lent: BTreeSet<ScopeId>,
 }
 
 impl<'run, 'source> Context<'run, 'source>
@@ -947,7 +947,6 @@ impl<'run, 'source> Context<'run, 'source>
             reentered: BTreeMap::new(),
             tested: BTreeSet::new(),
             held: BTreeSet::new(),
-            lent: BTreeSet::new(),
             endpoints: ByForm::default(),
             threading: BTreeMap::new(),
             reheld: BTreeMap::new(),
@@ -1050,6 +1049,7 @@ impl<'run, 'source> Context<'run, 'source>
             source_of,
             current: Current::default(),
             own,
+            lent: BTreeSet::new(),
         }
     }
 }

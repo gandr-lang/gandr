@@ -1499,6 +1499,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_method_of_a_source_not_imported_is_out_of_scope`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    ///
+    /// # Cost
+    /// - allocation: the candidates and each one's whole path, growth within
+    ///   the methods of that name
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|candidate| self.cx().collected.receivers.get(&candidate.slot) == Some(&candidate.mode))))]
     fn methods_named(
         &mut self,
