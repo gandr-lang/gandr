@@ -416,10 +416,10 @@ fn the_printer_decides_every_inner_space()
     assert_eq!(
         text(&grammar, source, WIDE),
         "@[checks]\n\
-         def f(x : Integer, y : Integer) -> -F Integer { return x + y; }\n\
+         def f(x : Integer, y : Integer) -> -F Integer = { return x + y; };\n\
          def p = *{a = 1, b = - 2};\n\
          def q : +{A : Integer, B : Unit};\n\
-         def g[r : Row](k : Integer) -> [Partial | r] Unit { pure *{} }\n\
+         def g[r : Row](k : Integer) -> [Partial | r] Unit = pure *{};\n\
          def l = fun (x) { x };\n\
          def c = thunk { fun (x) { x } };\n\
          def m = r.a[0];\n\
@@ -441,7 +441,7 @@ fn a_terminator_touches_the_form_it_ends()
         "import \"./base.gandr\" as prelude;\n\
          world seat;\n\
          def a = 1;\n\
-         def f(a : Type, y : a) -> -F a {\n  let x : a = same a y;\n  loop { break };\n  return x\n}\n\
+         def f(a : Type, y : a) -> -F a = {\n  let x : a = same a y;\n  loop { break };\n  return x\n};\n\
          def t = *{1, 2};\n",
         "no space stands before a `;`, whatever ends the form it closes"
     );
@@ -472,7 +472,7 @@ fn a_continuation_line_indents_under_its_statement()
         include_str!("format/unformatted/a-continuation-line-indents-under-its-statement.gandr");
     assert_eq!(
         text(&grammar, source, WIDE),
-        "def f(x : Integer) -> -F Integer {\n  let y = inc x\n    ;\n  let z = inc y;\n  return z\n}\n",
+        "def f(x : Integer) -> -F Integer = {\n  let y = inc x\n    ;\n  let z = inc y;\n  return z\n};\n",
         "a line indented past its statement continues it; one after a separator starts a statement"
     );
 }
@@ -487,7 +487,7 @@ fn a_block_final_semicolon_stays_in_both_spellings_7733()
     for width in [NARROW, WIDE] {
         assert_eq!(
             text(&grammar, source, width),
-            "def laid() -> -F Unit =\n  pure *{};\ndef braced() -> -F Unit { pure *{}; }\n",
+            "def laid() -> -F Unit =\n  pure *{};\ndef braced() -> -F Unit = { pure *{}; };\n",
             "a block's last `;` stays in the laid-out and the braced spelling at {width}"
         );
     }

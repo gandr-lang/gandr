@@ -1,2 +1,2 @@
 import "./count.gandr" ;
-def counted() -> Integer { count (#[1]) }
+def counted() -> Integer = count (#[1]);

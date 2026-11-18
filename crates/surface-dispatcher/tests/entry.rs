@@ -624,12 +624,12 @@ fn an_inferred_exit_is_reported_where_a_lint_reaches()
     );
     let asked = at(text
         .as_ref()
-        .find("{ n }")
+        .find("= n;")
         .expect("asked")
         .saturating_add(2_usize));
     let unasked = at(text
         .as_ref()
-        .rfind("{ n }")
+        .rfind("= n;")
         .expect("unasked")
         .saturating_add(2_usize));
     let finding = |diagnostic: gandr_surface_diagnostics::Diagnostic| {

@@ -1,5 +1,3 @@
-def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) {
-  match i {
+def backOf(a : Type, b : Type, i : a ≅ b) -> -F +U (b -> -F a) = match i {
     | *{t, k, s, r} => k
-  }
-}
+  };

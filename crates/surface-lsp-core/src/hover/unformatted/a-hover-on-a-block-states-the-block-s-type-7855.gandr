@@ -1,4 +1,4 @@
-def nested() -> -F Unit {
+def nested() -> -F Unit = {
   let u = { pure *{}; };
   pure u
-}
+};
