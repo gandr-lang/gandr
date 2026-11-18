@@ -49,7 +49,7 @@ def firstManifest : Model Pairing with { sort A = Integer } = *{
 };
 
 /// A count of a counter whose counts are integers is an integer.
-def countOfIntegers(a : Model Counter with { sort C = Integer }, c : a.C) -> Integer { c }
+def countOfIntegers(a : Model Counter with { sort C = Integer }, c : a.C) -> Integer = c;
 
 /// `b` counts in `a`'s counts, so a count of `a` steps in `b`.
 def stepShared(a : Model Counter, b : Model Counter with { sort C = a.C }, c : a.C) -> Integer =

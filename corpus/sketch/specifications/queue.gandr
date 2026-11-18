@@ -34,7 +34,7 @@ pub def pop[a : Type](q : Queue a) -> [State(Heap)] Maybe a #spec{
     | size(q) <= old (size q)
     | size(q) == old (size q) - 1 || r == none
   }
-} {
+} = {
   if q.count == 0 {
     none
   } else {
@@ -43,7 +43,7 @@ pub def pop[a : Type](q : Queue a) -> [State(Heap)] Maybe a #spec{
     q.count := q.count - 1;
     x
   }
-}
+};
 
 /// Adds an element at the back, refusing it when the queue is full.
 pub def push[a : Type](q : Queue a, x : a) -> [State(Heap)] Bool #spec{
@@ -53,7 +53,7 @@ pub def push[a : Type](q : Queue a, x : a) -> [State(Heap)] Bool #spec{
     | accepted == (old (size q) < capacity q)
     | size(q) == old (size q) + (if accepted { 1 } else { 0 })
   }
-} {
+} = {
   if q.count == capacity q {
     false
   } else {
@@ -61,7 +61,7 @@ pub def push[a : Type](q : Queue a, x : a) -> [State(Heap)] Bool #spec{
     q.count := q.count + 1;
     true
   }
-}
+};
 
 /// Empties a queue one element at a time and answers how many it removed.
 pub def rec drain[a : Type](q : Queue a) -> [State(Heap)] Nat #spec{
@@ -71,8 +71,7 @@ pub def rec drain[a : Type](q : Queue a) -> [State(Heap)] Nat #spec{
     | removed == old (size q)
   }
   decreases size q
-} {
+} =
   match pop q where
     | None => 0
     | Some(_) => drain q + 1
-}
