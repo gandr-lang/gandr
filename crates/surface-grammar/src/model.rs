@@ -1970,6 +1970,10 @@ impl Pbg
     ///   frozen-table witness compares the two assemblies whole.
     /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
     /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    ///
+    /// # Cost
+    /// - allocation: the grouped forms, the rule names, the adaptation records
+    ///   and the tile automaton, setup
     #[spec(captures: count = rules.len(), ensures: |ret| ret.rules.len() == count && ret.rule_names.len() <= count && ret.adaptations.iter().eq(ret.rules.iter().flat_map(|rule| rule.adaptations.iter())))]
     fn assemble(
         dag: PrecDag,

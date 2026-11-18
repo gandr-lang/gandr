@@ -1674,6 +1674,10 @@ impl<'source> Respelling<'_, 'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the node's extent, derivation and spelling, growth within
+    ///   the source
     fn leave(
         &mut self,
         at: NodeIndex,
@@ -4239,6 +4243,9 @@ impl<'source> Builder<'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: one leaf of the respelled stream, growth within the source
     fn glue(&mut self)
     {
         self.gap(Spelling(" "));

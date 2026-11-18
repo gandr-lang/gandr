@@ -5053,6 +5053,13 @@ impl<'pbg> MeldState<'pbg>
             reason = "bounded: `labels` holds one token's candidate labels, which the labeler caps"
         )
     )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            allocation_free_region,
+            reason = "the one lookup of the `(` label in the grammar's label map allocates nothing"
+        )
+    )]
     #[spec(ensures: |ret| bool::from(ret) == <&[LabelId]>::from(labels).iter().any(|&label| (!bool::from(spaced) || self.pbg.label_id(LabelText("(")) != Some(label)) && self.pbg.label_candidates(label).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
     fn successor_label_in(
         &self,

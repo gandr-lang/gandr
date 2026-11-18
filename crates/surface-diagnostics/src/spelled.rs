@@ -1133,6 +1133,9 @@ fn printed_names(held: &[Vec<Option<String>>]) -> Vec<Vec<Option<Name<'_>>>>
 /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
 /// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
 /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
+///
+/// # Cost
+/// - allocation: each declaration's spelled path, diagnostic
 #[spec(ensures: |ret| module.declarations().iter().all(|declaration|
     ret.get(usize::from(declaration.constant())).is_some()))]
 #[inline]
@@ -1222,6 +1225,9 @@ fn path_at(at: &(String, String)) -> String
 ///   of its point, which reads back to their certificate and reprints as
 ///   itself.
 /// - witness: `tests::diagnostics::a_higher_cell_s_words_spell_at_the_wrapped_point_6446`
+///
+/// # Cost
+/// - allocation: the carrier and the point at each wrapping, diagnostic
 #[spec(ensures: |ret| ret.1.matches("Path.here").count() >= usize::from(wraps))]
 fn wrapped(
     family: String,

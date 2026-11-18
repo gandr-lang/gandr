@@ -483,10 +483,9 @@ impl Reading
     {
         let (left, right) = columns.map_or((Bound::Root, Bound::Root), |held| held.bounds);
         let (left, right) = (BoundShape::of(left), BoundShape::of(right));
-        let flag = |read: fn(MoldColumns<'_>) -> bool| columns.is_some_and(read);
-        let has_pred = flag(|held| bool::from(held.predecessor));
-        let has_succ = flag(|held| bool::from(held.successor));
-        let required_tail = flag(|held| bool::from(held.required_tail));
+        let has_pred = columns.is_some_and(|held| bool::from(held.predecessor));
+        let has_succ = columns.is_some_and(|held| bool::from(held.successor));
+        let required_tail = columns.is_some_and(|held| bool::from(held.required_tail));
         let kind = match (has_pred, has_succ) {
             (false, true) if left == BoundShape::Value => TileKind::AbsorbingStart,
             (false, true) => TileKind::Start,
@@ -512,8 +511,8 @@ impl Reading
             prec: def.prec,
             neighbours: (has_pred, has_succ),
             membership: (
-                flag(|held| bool::from(held.first)),
-                flag(|held| bool::from(held.complete_last)),
+                columns.is_some_and(|held| bool::from(held.first)),
+                columns.is_some_and(|held| bool::from(held.complete_last)),
                 required_tail,
             ),
             hole,
@@ -588,6 +587,9 @@ impl TileAutomaton
     ///   reading's components; a dropped component merges molds a parser tells
     ///   apart, and a misplaced bit admits a mold no frontier takes.
     /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    ///
+    /// # Cost
+    /// - allocation: the kind, class and set tables and the class map, setup
     #[spec(ensures: |ret| ret.kinds.len() == table.len().0 && ret.observations.len() == ret.kinds.len() && ret.sets.len() == SET_COUNT.saturating_mul(ret.width) && ret.width.saturating_mul(WORD_BITS) >= ret.kinds.len())]
     pub(crate) fn derive(
         table: &MoldTable,

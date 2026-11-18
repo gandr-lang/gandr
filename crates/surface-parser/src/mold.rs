@@ -4442,6 +4442,9 @@ impl<'pbg> Molder<'pbg>
     ///   an ascription as a binder.
     /// - witness: `tests::grammar::every_type_operator_spelling_reads_cleanly`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    ///
+    /// # Cost
+    /// - allocation: the eligible menu, growth within the candidates
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(

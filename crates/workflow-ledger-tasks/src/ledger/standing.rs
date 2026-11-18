@@ -568,6 +568,9 @@ fn shadowed(
 ///   not.
 /// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
+///
+/// # Cost
+/// - allocation: the rule's required tiles and the word's molding, setup
 #[spec(ensures: |ret| ret == Standing::Committed || matches!(ret, Standing::Internal(Internal::Captured { .. })))]
 fn captured(
     pbg: &Pbg,

@@ -3537,6 +3537,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ///   juxtaposed path type over the words of a circle, matched with no arms.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_juxtaposed_path_type_states_its_endpoints_5750`
+    ///
+    /// # Cost
+    /// - allocation: the form's operands, growth within the node's operands
     #[spec(captures: before = self.cx().fuel.remaining(), ensures: self.cx().fuel.remaining() <= before)]
     #[inline]
     pub fn unwrapped(
@@ -4885,6 +4888,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - hypothesis: L3 — as [`Self::empty_case`] and [`Self::data_field`].
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    ///
+    /// # Cost
+    /// - allocation: the read form's operands, growth within the stated type's
+    ///   operands
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |stated| match *stated {
         Maybe::Present(Stated::Family { form, .. }) => form < self.cx().collected.data.len(),
         Maybe::Present(Stated::Path) | Maybe::Absent(_) => true,
