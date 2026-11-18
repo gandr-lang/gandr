@@ -1,18 +1,28 @@
 //! A command's image over the named programs: each program reads back from
 //! its bytes, checks, and runs as its first command runs. A node that names
-//! a core annotation is refused by name, and bytes with a fault are refused
-//! by name.
+//! a core annotation writes it in the image's table, and bytes with a fault
+//! are refused by name.
 
+use gandr_core_content::ArenaNode;
+use gandr_core_content::Reference;
+use gandr_core_content::Resolver;
+use gandr_core_content::codec::Bytes;
+use gandr_core_content::codec::CodecError;
+use gandr_core_content::codec::Sink as NodeSink;
+use gandr_core_content::codec::Writer;
+use gandr_core_content::codec::write_index;
+use gandr_core_content::codec::write_nodes;
+use gandr_core_content::codec::write_selection;
+use gandr_core_content::seating;
+use gandr_core_content::tabled_roots;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::ConsumerNode;
 use gandr_core_sequent::Definitions;
-use gandr_core_sequent::NodeAddress;
 use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::ProducerNode;
-use gandr_runtime_emitter::image::Annotated;
+use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::image::ImageRefusal;
-use gandr_runtime_emitter::image::Uncodable;
 use gandr_runtime_emitter::image::encode;
 use gandr_runtime_emitter::image::read;
 use gandr_storage_values::CanonicalValue;
@@ -20,42 +30,33 @@ use gandr_storage_values::CanonicalWord;
 use gandr_storage_values::ConstructorTag;
 use gandr_storage_values::DecodeWork;
 use gandr_storage_values::TokenBody;
+use gandr_storage_values::TokenBytes;
 use gandr_storage_values::TokenOffset;
 use gandr_storage_values::TokenReader;
 use gandr_storage_values::TokenSink;
 use gandr_storage_values::ValueError;
 use gandr_storage_values::encode_flat;
+use quenchant_shape::shape::Maybe;
 
 use crate::support::Label;
 use crate::support::agree;
 use crate::support::focus;
 use crate::support::named;
 
-/// Each named program that reaches no core annotation writes its image,
-/// reads it back into a fresh arena that checks, and answers on both tiers
-/// what its first command answers. Its image read back writes the same
-/// bytes. Each other program is refused by the kind of annotation that it
-/// reaches, and the counts are stated.
+/// Each named program writes its image, reads it back into a fresh arena
+/// that checks, and answers on both tiers what its first command answers.
+/// Its image read back writes the same bytes. A program that reaches a fold
+/// or a handler writes its annotations in the table.
 #[test]
 fn each_named_program_reads_back_and_runs_alike()
 {
     let definitions = Definitions::new();
     let mut written = 0_usize;
-    let mut refused = Vec::new();
     for named in named() {
         let name = named.program.name;
         let (arena, root) = focus(&named.program);
-        let bytes = match encode(&arena, &definitions, root) {
-            Ok(bytes) => bytes,
-            Err(ImageRefusal::Uncodable {
-                form: Uncodable::Annotation(kind),
-                ..
-            }) => {
-                refused.push(kind);
-                continue;
-            },
-            Err(refusal) => panic!("{name}: the image writes: {refusal}"),
-        };
+        let bytes = encode(&arena, &definitions, root)
+            .unwrap_or_else(|refusal| panic!("{name}: the image writes: {refusal}"));
         let back = read(bytes.as_body())
             .unwrap_or_else(|refusal| panic!("{name}: the bytes read back: {refusal}"));
         assert_eq!(
@@ -70,15 +71,7 @@ fn each_named_program_reads_back_and_runs_alike()
         );
         written = written.saturating_add(1);
     }
-    assert_eq!(
-        (written, refused),
-        (29, vec![
-            Annotated::Fold,
-            Annotated::Handle,
-            Annotated::Handle,
-            Annotated::Handle
-        ])
-    );
+    assert_eq!(written, 33);
 }
 
 /// Two focuses of each named program, each into an arena of its own, give
@@ -99,9 +92,62 @@ fn two_focuses_give_equal_bytes()
     }
 }
 
-/// A command with a code is refused by name, with the code's address.
+/// A resolver for a table that names no constant.
+struct Closed;
+
+impl Resolver for Closed
+{
+    /// No constant is named.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resolve(
+        &self,
+        _position: ConstantIndex,
+    ) -> Reference
+    {
+        Reference::Unoccupied
+    }
+
+    /// No constant is placed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        _reference: &Reference,
+    ) -> Maybe<ConstantIndex, seating::Absent>
+    {
+        Maybe::Absent(seating::Absent::Unplaced)
+    }
+}
+
+/// The bytes that the node codec writes.
+#[derive(Default)]
+#[repr(transparent)]
+struct Buffer(Vec<u8>);
+
+impl NodeSink for Buffer
+{
+    /// Append `bytes`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn put(
+        &mut self,
+        bytes: Bytes<'_>,
+    )
+    {
+        self.0.extend_from_slice(bytes.0);
+    }
+}
+
+/// A command with a code of the unit type writes the code in its table and
+/// reads back to a command that checks and writes the same bytes. An image
+/// that names a root past its table, and a table with a byte past its last
+/// place, are refused by name.
 #[test]
-fn an_annotation_is_refused_by_name()
+fn a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name()
 {
     let mut arena = CommandArena::new();
     let annotations = arena.annotations_mut();
@@ -116,12 +162,60 @@ fn an_annotation_is_refused_by_name()
     let root = arena
         .mint_cut(gandr_theory_cell_complexes::Polarity::Positive, code, top)
         .expect("a cut mints");
+    let bytes = encode(&arena, &Definitions::new(), root).expect("a code writes");
+    let back = read(bytes.as_body()).expect("a code reads back");
     assert_eq!(
-        encode(&arena, &Definitions::new(), root),
-        Err(ImageRefusal::Uncodable {
-            node: NodeAddress::Producer(code),
-            form: Uncodable::Annotation(Annotated::Code),
-        })
+        encode(&back.arena, &back.definitions, back.root),
+        Ok(bytes),
+        "the read command writes the same bytes"
+    );
+    let (nodes, places) = tabled_roots(arena.annotations(), &Closed, &[ArenaNode::Value(quoted)]);
+    let mut table = Buffer::default();
+    let mut writer = Writer { sink: &mut table };
+    write_nodes(&mut writer, &nodes).expect("the table writes");
+    for place in &places {
+        write_index(&mut writer, place.node).expect("a place writes");
+        write_selection(&mut writer, &place.support);
+    }
+    let table: &'static [u8] = Vec::leak(table.0);
+    let script = |ordinal: u64, table: &'static [u8]| -> &'static [Record] {
+        Vec::leak(vec![
+            Record::Open(0x03),
+            Record::Word(1),
+            Record::Word(1),
+            Record::Word(1),
+            Record::Word(0),
+            Record::Word(0),
+            Record::Word(1),
+            Record::Bytes(table),
+            Record::Open(0x2c),
+            Record::Word(ordinal),
+            Record::Close,
+            Record::Open(0x47),
+            Record::Close,
+            Record::Open(0x64),
+            Record::Word(0),
+            Record::Word(0),
+            Record::Word(0),
+            Record::Close,
+            Record::Close,
+        ])
+    };
+    assert_eq!(
+        read_script(script(0, table)),
+        Ok(CommandId::from(0_u32)),
+        "the code of the unit type sent to the top"
+    );
+    assert_eq!(
+        read_script(script(1, table)),
+        Err(ImageRefusal::Annotation(seating::Absent::Unplaced)),
+        "a root past the table"
+    );
+    let longer: &'static [u8] = Vec::leak(table.iter().copied().chain([0_u8]).collect());
+    assert_eq!(
+        read_script(script(0, longer)),
+        Err(ImageRefusal::Table(CodecError::Corrupt)),
+        "a byte past the last place"
     );
 }
 
@@ -135,6 +229,8 @@ enum Record
     Word(u64),
     /// The innermost constructor closes.
     Close,
+    /// A run of bytes.
+    Bytes(&'static [u8]),
 }
 
 /// A value that writes `records` as they stand.
@@ -158,6 +254,7 @@ impl CanonicalValue for Script
             Record::Open(tag) => sink.open(ConstructorTag::from(tag)),
             Record::Word(word) => sink.word(CanonicalWord::from(word)),
             Record::Close => sink.close(),
+            Record::Bytes(bytes) => sink.bytes(TokenBytes::from(bytes)),
         })
     }
 

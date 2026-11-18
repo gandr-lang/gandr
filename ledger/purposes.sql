@@ -541,6 +541,7 @@ INSERT INTO purpose VALUES('core-content','codec::Word','struct','Holds one litt
 INSERT INTO purpose VALUES('core-content','codec::Writer','struct','Writes tags, words, counts and framed bytes to one sink.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::check_discovery','function','Refuses a table whose nodes are not numbered by discovery from its roots, so one graph has one table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_effect_row','function','Reads an instance map and refuses a duplicate or a noncanonical label.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-content','codec::read_effect_signature','function','Reads an effect signature and refuses a duplicate or a noncanonical operation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_evidence','function','Reads the termination evidence of a fixpoint in the form that its writer gives.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_index','function','Reads one node index of a table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_indices','function','Reads child indices, and allocates only as the input holds them.',NULL,'fits','sound',NULL);
@@ -552,10 +553,13 @@ INSERT INTO purpose VALUES('core-content','codec::read_pasting','function','Read
 INSERT INTO purpose VALUES('core-content','codec::read_reference','function','Reads a reference to an item, a node or a source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_row_tail','function','Reads the tail of a row literal: absent, or the row term that it names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_selection','function','Reads a selection of the widths of a scope.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-content','codec::read_session_action','function','Reads a session action: its kind, its endpoint, then its label, payload, arms or fork edges.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_sign','function','Reads the sign of a numeric literal.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-content','codec::read_table_place','function','Reads a place in a table: a node of it and its support against the node''s scope.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_type','function','Reads the content of a type, so the store and the image give back one table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::read_world','function','Reads a world: the host''s world, or the world that a reference names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::write_effect_row','function','Writes an instance map in its canonical order, so equal rows give equal bytes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-content','codec::write_effect_signature','function','Writes an effect signature in canonical operation order, so equal signatures give equal bytes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::write_evidence','function','Writes the termination evidence of a fixpoint in a stable wire order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::write_index','function','Writes one node index of a table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::write_indices','function','Writes a variadic sequence of child indices with its count.',NULL,'fits','sound',NULL);
@@ -568,6 +572,7 @@ INSERT INTO purpose VALUES('core-content','codec::write_reference','function','W
 INSERT INTO purpose VALUES('core-content','codec::write_region','function','Writes the region that a capability or a kept type lives in.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::write_scope','function','Writes the two widths of a scope as one word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::write_selection','function','Writes the indices of a selection, zone by zone.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-content','codec::write_session_action','function','Writes a session action: its kind, its endpoint, then its label, payload, arms or fork edges.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::write_type','function','Writes the content of a type: its table, then the support of its root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','codec::write_world','function','Writes a world: the host''s world, or the reference of a world.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-content','content::ArenaNode','enum','Names a node of a core arena of any of the four sorts: the root a table is read from or minted to.',NULL,'fits','sound',NULL);
@@ -986,7 +991,9 @@ INSERT INTO purpose VALUES('core-sequent','il::SPAWN','constant','Names the cell
 INSERT INTO purpose VALUES('core-sequent','il::Selector','enum','Names the field a select node reads from the value it meets: a tuple''s component or a record''s label.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','il::SequentWatermark','struct','Holds a snapshot of the three family lengths and the scopes'' word arena, so restoring an arena drops exactly the nodes minted after it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','il::Suspension','enum','Names a suspended command a run closes over the bindings it captures: a thunk, a recursive thunk, a copattern object, or a bind frame.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-sequent','il::command_annotations','function','Lists the core types that a command names: the types of an operation''s or a handler''s interface, and the protocol of a fork.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','il::command_children','function','Visits a command''s children in edge order, each beside the binders the command opens over it, stopping at the first refusal.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-sequent','il::consumer_annotations','function','Lists the core types that a consumer names: the element type and the result type of a fold.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','il::consumer_children','function','Visits a consumer''s children in edge order, each beside the binders the consumer opens over it, stopping at the first refusal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','il::producer_children','function','Visits a producer''s children in edge order, each beside the binders the producer opens over it, stopping at the first refusal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-sequent','inspect::Stats','struct','Holds the node population of an arena: the counts of its three families.',NULL,'fits','sound',NULL);
@@ -2255,10 +2262,9 @@ INSERT INTO purpose VALUES('runtime-emitter','fuse::Rule','enum','Names a rewrit
 INSERT INTO purpose VALUES('runtime-emitter','fuse::dispatches','function','Counts the dispatches a function costs, one per instruction, the stencil table''s charge for every stencil.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','fuse::replay','function','Re-derives the function a trace fuses from the unfused one and the decisions alone, in order, searching for nothing, refusing a forged, entered or unordered decision by name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','host::release','function','Releases an object and its owners: every object whose count reaches zero has its block on the free list of its size, and every other value counts one owner fewer.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','image::Annotated','enum','Names a node form that names core types of the arena''s annotations: a code, a fold, an operation request, a handler or a session action.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','image::ImageRefusal','enum','Names why a command has no image or why bytes give no command: a form the image does not write, a dangling node, an undefined constant, the value plane''s refusal, a constant defined twice, a refused node or mark, or a root that does not check closed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','image::ImageRefusal','enum','Names why a command has no image or why bytes give no command: a form the image does not write, a dangling node, an undefined constant, the value plane''s refusal, a constant defined twice, a refused node or mark, a root that does not check closed, a table of annotations that the node codec refuses, or an annotation that does not mint.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','image::Read','struct','A command read from its image: a fresh arena that holds its nodes alone, the definitions that it unfolds, and its root.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','image::Uncodable','enum','Names a node form that the image does not write: a form that names a core annotation, or a constructor head that does not cross.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','image::Uncodable','enum','Names a node form that the image does not write: a constructor head that does not cross.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','image::encode','function','Writes the canonical bytes of the command that a root reaches, with the definitions that it unfolds, so equal commands give equal bytes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','image::read','function','Mints the command that bytes write into a fresh arena and judges its root again with check_command.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','lower::Bound','struct','Records a bind frame a reified stack holds: what moves a stack in the run''s answer into the caller''s store.',NULL,'fits','sound',NULL);

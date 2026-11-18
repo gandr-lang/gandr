@@ -32,8 +32,13 @@ path = "tests/lib.rs"
 #
 # The block compiler keys each block by a digest. It reads the text of each
 # object of the assembler. Its map of blocks takes no lock on a warm read.
+#
+# The image of a command writes its annotations as one content table of the
+# core-content crate. It writes the table in the node codec of that crate.
+# It reads the reason of an absent value through the shape crate.
 [dependencies]
 blake3.workspace = true
+gandr-core-content.workspace = true
 gandr-core-fork.workspace = true
 gandr-core-sequent.workspace = true
 gandr-core-session.workspace = true
@@ -46,6 +51,7 @@ gandr-storage-values.workspace = true
 gandr-theory-cell-complexes.workspace = true
 object.workspace = true
 papaya.workspace = true
+quenchant-shape.workspace = true
 
 [build-dependencies]
 gandr-runtime-stencils.workspace = true

@@ -1,7 +1,7 @@
-//! A command's image over the corpus: each `runs` item that names no core
-//! annotation reads back from its bytes, checks, and runs as its first
-//! command runs. Each other item is refused by the kind of annotation or
-//! head that it reaches, and the counts of each kind are stated.
+//! A command's image over the corpus: each `runs` item reads back from its
+//! bytes, checks, and runs as its first command runs, its annotations
+//! included. Each item whose head does not cross is refused by name, and the
+//! counts of each kind of annotation that the written items reach are stated.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -22,7 +22,6 @@ use gandr_core_sequent::Provenance;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::reach;
 use gandr_core_term::CoreArena;
-use gandr_runtime_emitter::image::Annotated;
 use gandr_runtime_emitter::image::ImageRefusal;
 use gandr_runtime_emitter::image::Uncodable;
 use gandr_runtime_emitter::image::encode;
@@ -117,12 +116,28 @@ fn items() -> Vec<Item>
     found
 }
 
+/// A kind of node that names an annotation.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Kind
+{
+    /// A code.
+    Code,
+    /// A fold over a list.
+    Fold,
+    /// An operation request.
+    Perform,
+    /// A handler.
+    Handle,
+    /// A session action.
+    Session,
+}
+
 /// The kinds of annotation that `root` reaches, through each definition
 /// that it unfolds.
 ///
 /// # Specification
 /// trivial.
-fn annotated(item: &Item) -> BTreeSet<Annotated>
+fn annotated(item: &Item) -> BTreeSet<Kind>
 {
     let mut seen = BTreeSet::new();
     let mut order = Vec::new();
@@ -143,24 +158,24 @@ fn annotated(item: &Item) -> BTreeSet<Annotated>
                         }
                     },
                     Some(&ProducerNode::Code(_)) => {
-                        kinds.insert(Annotated::Code);
+                        kinds.insert(Kind::Code);
                     },
                     _ => {},
                 },
                 NodeAddress::Consumer(id) => {
                     if let Some(&ConsumerNode::ListFold { .. }) = item.arena.consumer(id) {
-                        kinds.insert(Annotated::Fold);
+                        kinds.insert(Kind::Fold);
                     }
                 },
                 NodeAddress::Command(id) => match item.arena.command(id) {
                     Some(&CommandNode::Perform { .. }) => {
-                        kinds.insert(Annotated::Perform);
+                        kinds.insert(Kind::Perform);
                     },
                     Some(&CommandNode::Handle { .. }) => {
-                        kinds.insert(Annotated::Handle);
+                        kinds.insert(Kind::Handle);
                     },
                     Some(&CommandNode::Session { .. }) => {
-                        kinds.insert(Annotated::Session);
+                        kinds.insert(Kind::Session);
                     },
                     _ => {},
                 },
@@ -170,17 +185,18 @@ fn annotated(item: &Item) -> BTreeSet<Annotated>
     kinds
 }
 
-/// Each `runs` item that reaches no annotation writes its image, reads it
-/// back into a fresh arena that checks, and answers on both tiers what its
-/// first command answers. Its image read back writes the same bytes. Each
-/// other item is refused by name, and the counts of each kind are stated, so
-/// a change in the corpus or in the codec shows here.
+/// Each `runs` item writes its image, reads it back into a fresh arena that
+/// checks, and answers on both tiers what its first command answers. Its
+/// image read back writes the same bytes. An item whose head does not cross
+/// is refused by name. The counts of the written items and of each kind of
+/// annotation that they reach are stated, so a change in the corpus or in
+/// the codec shows here.
 #[test]
 fn each_runs_item_reads_back_and_runs_alike()
 {
     let mut written = 0_usize;
     let mut heads = 0_usize;
-    let mut refused: BTreeMap<Annotated, usize> = BTreeMap::new();
+    let mut reached: BTreeMap<Kind, usize> = BTreeMap::new();
     for item in items() {
         match encode(&item.arena, &item.definitions, item.root) {
             Ok(bytes) => {
@@ -200,19 +216,8 @@ fn each_runs_item_reads_back_and_runs_alike()
                     item.name
                 );
                 written = written.saturating_add(1);
-            },
-            Err(ImageRefusal::Uncodable {
-                form: Uncodable::Annotation(_),
-                ..
-            }) => {
-                let kinds = annotated(&item);
-                assert!(
-                    !kinds.is_empty(),
-                    "{}: a refused item reaches an annotation",
-                    item.name
-                );
-                for kind in kinds {
-                    let count = refused.entry(kind).or_default();
+                for kind in annotated(&item) {
+                    let count = reached.entry(kind).or_default();
                     *count = count.saturating_add(1);
                 }
             },
@@ -226,16 +231,16 @@ fn each_runs_item_reads_back_and_runs_alike()
         }
     }
     assert_eq!(
-        (written, heads, refused),
+        (written, heads, reached),
         (
-            514,
+            783,
             4,
             BTreeMap::from([
-                (Annotated::Code, 183),
-                (Annotated::Fold, 7),
-                (Annotated::Perform, 60),
-                (Annotated::Handle, 73),
-                (Annotated::Session, 15),
+                (Kind::Code, 183),
+                (Kind::Fold, 7),
+                (Kind::Perform, 60),
+                (Kind::Handle, 73),
+                (Kind::Session, 15),
             ])
         )
     );

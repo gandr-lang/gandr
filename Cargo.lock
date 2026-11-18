@@ -1624,6 +1624,7 @@ name = "gandr-runtime-emitter"
 version = "0.0.0"
 dependencies = [
  "blake3",
+ "gandr-core-content",
  "gandr-core-fork",
  "gandr-core-sequent",
  "gandr-core-session",
@@ -1637,6 +1638,7 @@ dependencies = [
  "libc",
  "object",
  "papaya",
+ "quenchant-shape",
 ]
 
 [[package]]

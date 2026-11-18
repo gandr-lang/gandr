@@ -74,6 +74,7 @@ use crate::Occurrence;
 use crate::Reference;
 use crate::Sort;
 use crate::SupportedNode;
+use crate::TablePlace;
 use crate::TypeContent;
 
 /// The decoder's cap on a level atom's offset.
@@ -2725,7 +2726,11 @@ fn read_session_type(reader: &mut Reader<'_>) -> Result<SessionType<NodeIndex>, 
 /// - hypothesis: L3 — every action kind survives persistence with its endpoint,
 ///   label and children.
 /// - witness: `gandr-core-incremental::codec::tests::session_nodes_persist_their_protocol_and_children`
-fn write_session_action<Out>(
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
+#[inline]
+pub fn write_session_action<Out>(
     writer: &mut Writer<'_, Out>,
     action: &SessionAction<NodeIndex, NodeIndex, NodeIndex>,
 ) -> Result<(), CodecError>
@@ -2804,8 +2809,15 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — every action kind round-trips.
 /// - witness: `gandr-core-incremental::codec::tests::session_nodes_persist_their_protocol_and_children`
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
+///
+/// # Cost
+/// - allocation: the label and the arms of the action, growth within the bytes
 #[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor > before)]
-fn read_session_action(
+#[inline]
+pub fn read_session_action(
     reader: &mut Reader<'_>
 ) -> Result<SessionAction<NodeIndex, NodeIndex, NodeIndex>, CodecError>
 {
@@ -3046,8 +3058,12 @@ pub fn read_pasting(
 /// - hypothesis: L3 — persistence distinguishes operation names and ordered
 ///   type edges.
 /// - witness: `gandr-core-incremental::codec::tests::control_nodes_persist_names_frames_and_branch_order`
+///
+/// # Errors
+/// A [`CodecError`] for a value that has no byte form, or a sink that refuses.
 #[spec(ensures: |ret| matches!(ret, Ok(()) | Err(CodecError::Unrepresentable)))]
-fn write_effect_signature<Out>(
+#[inline]
+pub fn write_effect_signature<Out>(
     writer: &mut Writer<'_, Out>,
     signature: &gandr_core_term::effect::EffectSig<NodeIndex>,
 ) -> Result<(), CodecError>
@@ -3078,8 +3094,12 @@ where
 ///
 /// # Cost
 /// - allocation: the operations of the interface, growth within the bytes
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
 #[spec(captures: before = reader.cursor, ensures: |ret| match ret { Ok(_) => reader.cursor > before && reader.cursor <= reader.bytes.len(), Err(error) => error == CodecError::Corrupt })]
-fn read_effect_signature(
+#[inline]
+pub fn read_effect_signature(
     reader: &mut Reader<'_>
 ) -> Result<gandr_core_term::effect::EffectSig<NodeIndex>, CodecError>
 {
@@ -4874,4 +4894,38 @@ const fn sign_tag(sign: Sign) -> Tag
         Sign::Negative => Tag(0),
         Sign::NonNegative => Tag(1),
     }
+}
+
+/// Read a place in the table `nodes`: a node of it and its support, read
+/// against the node's scope.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a node past the table, and as
+///   [`read_selection`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a report and a command image read back the places that
+///   they wrote.
+/// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Errors
+/// A [`CodecError`] for bytes that the writer does not give.
+///
+/// # Cost
+/// - allocation: the decoded table place, growth within the bytes
+#[inline]
+pub fn read_table_place(
+    reader: &mut Reader<'_>,
+    nodes: &[SupportedNode],
+) -> Result<TablePlace, CodecError>
+{
+    let node = read_index(reader)?;
+    let scope = nodes
+        .get(usize::from(node))
+        .map(SupportedNode::scope)
+        .ok_or(CodecError::Corrupt)?;
+    let support = read_selection(reader, scope)?;
+    Ok(TablePlace { node, support })
 }
