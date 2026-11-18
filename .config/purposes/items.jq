@@ -20,8 +20,8 @@
 #   declaration; a private one at the file of the first entry beneath it;
 # - the crate: the root module, kind `crate`, path empty.
 #
-# `<stands>` is `item` for a module whose entry stands for an item it holds,
-# so the item's row is the module's; it is empty for every other entry.
+# `<stands>` is `item` for a module whose entry stands for an item it holds.
+# The item's row is then the module's. `<stands>` is empty for each other entry.
 #
 # The reading is rustdoc's JSON format 61. Another format stops the program
 # with an error naming it.
