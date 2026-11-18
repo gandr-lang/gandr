@@ -1,4 +1,5 @@
 /// `f_type.row`: a computation type with the capabilities it uses, open
 /// through a row variable after the bar.
-def idle[r : Row]() -> [Partial | r] Unit =
+@[checks]
+def idle[r : Row]() -> -F [Partial | r] Unit =
   pure *{}
