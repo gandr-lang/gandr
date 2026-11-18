@@ -2,8 +2,8 @@
 /// table. The signature has no body, and the mark `native` names the row.
 /// Implemented: `std.string` declares `string.append` as `append`, and a call
 /// of the declaration is a call of the row.
-/// Not implemented: the declaration of every other row, which keeps its
-/// reserved name alone.
+/// Not implemented: each other row keeps its reserved name, and no module of
+/// `std` declares it.
 ///
 /// - owes: #7833 — the declaration of every other row
 
