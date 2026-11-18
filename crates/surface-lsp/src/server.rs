@@ -12742,17 +12742,17 @@ mod tests
                     Some(1_usize)
                 ),
                 (
-                    Some(15_u64),
+                    Some(14_u64),
                     String::from("shadows answer (declared line 5) · 1 use"),
                     Some(1_usize)
                 ),
                 (
-                    Some(16_u64),
+                    Some(15_u64),
                     String::from("shadows two (Counting.two) · 1 use"),
                     Some(1_usize)
                 ),
                 (
-                    Some(17_u64),
+                    Some(16_u64),
                     String::from("shadows builtin add · 1 use"),
                     Some(1_usize)
                 ),

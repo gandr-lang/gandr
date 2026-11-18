@@ -1,10 +1,7 @@
-def pick(s : +{ok : Integer, err : String, gone : Unit}) -> String {
+def pick(s : +{ok : Integer, err : String, gone : Unit}) -> String =
   match s { | +{.ok = n} => "ok" | +{.err = e} => e | +{.gone = u} => "gone" }
-}
-def indexed(s : String + String + Integer) -> Integer {
+def indexed(s : String + String + Integer) -> Integer =
   match s { | +{.2 = n} => n | _ => 0 }
-}
-def nested(t : Integer * +{ok : Integer, err : String}) -> String {
+def nested(t : Integer * +{ok : Integer, err : String}) -> String =
   match t { | *{n, +{.ok = m}} => "ok" | *{n, +{.err = e}} => e }
-}
-def single(s : +{only : Integer}) -> Integer { match s { | +{.only = n} => n } }
+def single(s : +{only : Integer}) -> Integer = match s { | +{.only = n} => n };

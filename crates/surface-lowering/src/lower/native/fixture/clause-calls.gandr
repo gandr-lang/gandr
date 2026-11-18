@@ -10,6 +10,6 @@ def rec length(a : Type) : List(a) -> Nat where =
   | Nil => Zero
   | Cons(_, rest) => Succ (length[<] a rest)
 
-def two() -> Nat { length Nat (Cons Zero (Cons Zero (Nil : List(Nat)))) }
+def two() -> Nat = length Nat (Cons Zero (Cons Zero (Nil : List(Nat))));
 
-def one() -> Nat { length Nat (Cons Zero Nil) }
+def one() -> Nat = length Nat (Cons Zero Nil);

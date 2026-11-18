@@ -1,9 +1,7 @@
-def a() -> Integer {
+def a() -> Integer =
   return 1 ~ 2
-}
 
-def x() -> Integer {
+def x() -> Integer =
   return 3 ~ 4
-}
 
 def b() -> Integer = return x ();

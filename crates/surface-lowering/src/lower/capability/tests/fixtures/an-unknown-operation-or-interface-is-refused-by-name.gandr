@@ -1,5 +1,5 @@
 def held : Cap { delete };
-def row(c : Cap { read }) -> -F [Radio] String { c.read "x" }
+def row(c : Cap { read }) -> -F [Radio] String = c.read "x";
 def sent(c : Cap { read }) -> [std.fs.Eff] String = c.delete "x";
 def scoped() -> Unit = handle c : Radio { pure *{} } with { | pure(x) => pure x };
 def twice() -> Unit = handle c : std.process.Exit.Eff {

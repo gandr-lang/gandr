@@ -3,13 +3,11 @@ theory Magma where {
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
 }
-def exchange(b : Bool) -> Bool {
+def exchange(b : Bool) -> Bool =
   match b {
     | true => +{.1 = *{}}
     | false => +{.0 = *{}}
   }
-}
-def keep(e : +{Unit}) -> +{Unit} {
+def keep(e : +{Unit}) -> +{Unit} =
   e
-}
 def unnamed = ua[1, 4] Monoid Magma (*{mul = exchange, one = keep}) (*{mul = exchange, one = keep});
