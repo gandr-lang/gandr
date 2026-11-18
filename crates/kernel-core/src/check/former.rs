@@ -28,9 +28,11 @@
 //! witnesses cover admission, refusals, dependent arguments and motives,
 //! record assignment and canonical artifact reconstruction.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::CompTypeId;
@@ -88,10 +90,10 @@ pub(super) struct Signature<'signature>
     pub indices: &'signature [ValueTypeId],
     /// Field types scoped under the entire parameter telescope, then the
     /// fields before them in their constructor.
-    pub constructors: &'signature [Vec<ValueTypeId>],
+    pub constructors: &'signature [SmallVec<ValueTypeId, 0, Global>],
     /// Each constructor's result index, scoped under the parameters and its
     /// fields; empty when `indices` is.
-    pub results: &'signature [Vec<ValueId>],
+    pub results: &'signature [SmallVec<ValueId, 0, Global>],
     /// The positive universe bounding the fields.
     pub kind: ValueTypeId,
 }
@@ -369,6 +371,10 @@ pub(super) fn index_at(
 /// # Errors
 /// Returns `DataArgumentArity` for an unrepresentable telescope.
 ///
+/// # Cost
+/// - allocation: the shifted arguments and the instantiated field type in the
+///   arena, growth within the prefix's parameters
+///
 /// # Adequacy
 /// - hypothesis: L3 — a list's tail reads its element parameter past the head's
 ///   binder, and a dependent field keeps the binder it names.
@@ -422,6 +428,10 @@ pub(super) fn field_type(
 /// Returns a native former refusal, `ConstructorFamily` for a constructor of
 /// another family than its classifier, `ConstructorIndex` for a classifier at
 /// another index, or an arena fault.
+///
+/// # Cost
+/// - allocation: the field-check goals pushed on `goals`, growth within the
+///   constructor's fields
 ///
 /// # Adequacy
 /// - hypothesis: L3 — equal carriers do not erase identity, arity or payload
@@ -596,6 +606,10 @@ pub(super) fn constructor(
 /// # Errors
 /// Returns `DataArgumentArity` for an unrepresentable parameter telescope.
 ///
+/// # Cost
+/// - allocation: the shifted arguments and the instantiated result index,
+///   durable by the arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — `Cons`'s `S(n)` keeps its length field while its element
 ///   parameter is instantiated.
@@ -645,6 +659,10 @@ fn stated_beneath(
 /// # Errors
 /// Returns `ConstructorArity` for an unrepresentable field telescope and
 /// `DataArgumentArity` for an unrepresentable parameter one.
+///
+/// # Cost
+/// - allocation: the instantiated result index and its shifted fields, durable
+///   by the arena's identifiers
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `Cons`'s `S(n)` reads its length field.
@@ -710,6 +728,10 @@ fn result_index(
 /// Returns `ConstructorArity` when the telescope cannot be represented,
 /// `IndexedSignature` for a missing stated index and `DataArgumentArity` for a
 /// missing classifier argument.
+///
+/// # Cost
+/// - allocation: the branch classifier, its constructor and its equations,
+///   growth within the constructor's fields and the family's indices
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a dependent motive rejects a branch at a wrong index; a
@@ -886,6 +908,10 @@ pub(super) type Scrutinised = (
 /// # Errors
 /// Returns native shape, coverage, instantiation or arena refusals.
 ///
+/// # Cost
+/// - allocation: the branch obligations, the field reads and the instantiated
+///   result, growth within the case's branches
+///
 /// # Adequacy
 /// - hypothesis: L3 — omitted and surplus arms both refuse before branch
 ///   checking; a circle case with its loop arm checks the arm.
@@ -1001,7 +1027,10 @@ pub(super) fn case(
     };
     for (index, fields) in signature.constructors.iter().enumerate() {
         let tag = ConstructorTag::from(index);
-        let stated = signature.results.get(index).map_or(&[][..], Vec::as_slice);
+        let stated = signature
+            .results
+            .get(index)
+            .map_or(&[][..], SmallVec::as_slice);
         let expected = branch_type(
             arena,
             session,
@@ -1086,6 +1115,9 @@ quenchant_shape::reason_enum! {
 ///
 /// # Errors
 /// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the motive at the scrutinee, growth within the motive's terms
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a case of no branches over `Path[.A = N](Succ(Zero),

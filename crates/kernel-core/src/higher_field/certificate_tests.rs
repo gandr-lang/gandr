@@ -239,7 +239,7 @@ fn certificate_identity_unfolds()
         classifier,
         boolean.not,
         boolean.not,
-        alloc::sync::Arc::default(),
+        gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
     );
     assert!(
         matches!(unfold(&mut arena, left, missing, budget.replay), Err(HigherError::Relation(RelationError::Typing(error))) if matches!(*error, KernelError::Path(PathError::Coverage(_))))

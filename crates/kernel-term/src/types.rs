@@ -197,9 +197,12 @@
 //! [`TermArena::value_type_element`]: crate::TermArena::value_type_element
 //! [`TermArena::comp_type_element`]: crate::TermArena::comp_type_element
 
+use alloc::alloc::Global;
 use core::fmt;
 
 use anodized::spec;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 
 use crate::arena::CompTypeId;
@@ -290,7 +293,7 @@ pub enum ValueType
         /// Admission position of the datatype declaration; never unfolds.
         declaration: ConstantIndex,
         /// Arguments in telescope order, including quoted type parameters.
-        arguments: alloc::vec::Vec<ValueId>,
+        arguments: SmallVec<ValueId, 0, Global>,
     },
     /// A structural record, canonically ordered by field label.
     Record(alloc::collections::BTreeMap<crate::FieldLabel, ValueTypeId>),
@@ -298,7 +301,7 @@ pub enum ValueType
     Session
     {
         /// Raw syntax; formation checks closure and contractivity.
-        graph: alloc::sync::Arc<crate::session::Graph>,
+        graph: Shared<crate::session::Graph, Global>,
         /// The payload product, one component per payload code, in order.
         payloads: ValueTypeId,
     },
@@ -679,6 +682,6 @@ pub enum CompType
         /// The admitted codata declaration.
         declaration: ConstantIndex,
         /// One value per parameter of the declaration's telescope.
-        arguments: alloc::vec::Vec<ValueId>,
+        arguments: SmallVec<ValueId, 0, Global>,
     },
 }

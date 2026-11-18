@@ -743,6 +743,10 @@ impl core::error::Error for RelationError
 /// # Errors
 /// As `fails`.
 ///
+/// # Cost
+/// - allocation: the relation's nodes, data clauses and pending worklist,
+///   growth within the code's type structure
+///
 /// # Adequacy
 /// - hypothesis: L3 — both modes share every constructor boundary; nested
 ///   sealed types refuse even when both requested endpoints would be identical.

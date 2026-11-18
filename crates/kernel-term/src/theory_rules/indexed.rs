@@ -67,10 +67,13 @@
 //!   indexed by terms, and an operation's implicit arguments: the indices its
 //!   sorting fixes.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
+
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 
 use crate::StringLiteral;
 use crate::ValueId;
@@ -169,13 +172,13 @@ struct Sorting<'arena>
 {
     /// Its implicit indices: the variables its ports' index terms name that no
     /// input port binds, in order of first occurrence, inputs first.
-    implicits: Vec<&'arena StringLiteral>,
+    implicits: SmallVec<&'arena StringLiteral, 0, Global>,
     /// Each input port's name and sort, in order.
-    inputs: Vec<(&'arena StringLiteral, PortSort<'arena>)>,
+    inputs: SmallVec<(&'arena StringLiteral, PortSort<'arena>), 0, Global>,
     /// Each port's sort over the indices the reading carries, the inputs in
     /// order and then the output: each index that applies an operation with
     /// indices of its own carries them, where the ports fix them.
-    stated: Vec<Box<[Stated]>>,
+    stated: SmallVec<Box<[Stated]>, 0, Global>,
 }
 
 /// Which index positions the indexed reading carries.
@@ -278,38 +281,46 @@ struct Indexer
     /// The unifier's graph, terms and sorts alike.
     graph: Graph,
     /// Each rule variable's term node, by ordinal.
-    terms: Vec<Option<Node>>,
+    terms: SmallVec<Option<Node>, 0, Global>,
     /// Each rule variable's sort node, by ordinal.
-    sorts: Vec<Option<Node>>,
+    sorts: SmallVec<Option<Node>, 0, Global>,
     /// The sorted nodes of the side being read, the next argument on top.
-    stack: Vec<Sorted>,
+    stack: SmallVec<Sorted, 0, Global>,
     /// The arguments of the application being read, in order.
-    arguments: Vec<Sorted>,
+    arguments: SmallVec<Sorted, 0, Global>,
     /// Every application's implicit indices, end to end.
-    implicits: Vec<Node>,
+    implicits: SmallVec<Node, 0, Global>,
     /// Where each position of the left side keeps its implicit indices.
-    left: Vec<Option<Span>>,
+    left: SmallVec<Option<Span>, 0, Global>,
     /// Where each position of the right side keeps its implicit indices.
-    right: Vec<Option<Span>>,
+    right: SmallVec<Option<Span>, 0, Global>,
     /// The nodes a sort term is built from.
-    built: Vec<Node>,
+    built: SmallVec<Node, 0, Global>,
     /// The unifier's pairs.
-    pairs: Vec<(Node, Node)>,
+    pairs: SmallVec<(Node, Node), 0, Global>,
     /// An implicit index, flattened.
-    flat: Vec<Flat>,
+    flat: SmallVec<Flat, 0, Global>,
     /// The flattening's stack.
-    flattening: Vec<Node>,
+    flattening: SmallVec<Node, 0, Global>,
     /// The occurs check's marks.
-    marks: Vec<Mark>,
+    marks: SmallVec<Mark, 0, Global>,
     /// The occurs check's walk.
-    walk: Vec<(Node, Position)>,
+    walk: SmallVec<(Node, Position), 0, Global>,
     /// The indices no rule variable is, in order of first meeting.
-    unknowns: Vec<Node>,
+    unknowns: SmallVec<Node, 0, Global>,
     /// Each variable's binding as a sort is normalized.
-    bindings: Vec<Option<Span>>,
+    bindings: SmallVec<Option<Span>, 0, Global>,
     /// A right side as a sort's normalization builds it.
-    rewritten: Vec<Flat>,
+    rewritten: SmallVec<Flat, 0, Global>,
 }
+
+/// The buffers that [`Reader::elaborated`] reuses: its stack of sorted terms,
+/// the nodes it builds, and its pairs of nodes.
+type Scratch<'scratch> = (
+    &'scratch mut SmallVec<Sorted, 0, Global>,
+    &'scratch mut SmallVec<Node, 0, Global>,
+    &'scratch mut SmallVec<(Node, Node), 0, Global>,
+);
 
 impl<'arena> Reader<'arena>
 {
@@ -335,6 +346,11 @@ impl<'arena> Reader<'arena>
     /// - intension: one walk of each chain, each index term read from a
     ///   worklist, the flexible sorts grown to their least fixed point.
     ///
+    /// # Cost
+    /// - allocation: the sort ranks, the read operations, the flexible sorts
+    ///   and each operation's sorting, growth within the chains' sorts and
+    ///   operations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a category's composition is implicit in its three
     ///   objects and its identity in none, so its laws read indexed; a plain
@@ -351,7 +367,7 @@ impl<'arena> Reader<'arena>
         let tagged = |found: Option<(ConstructorTag, &'arena [ValueId])>| {
             found.map(|(tag, fields)| (usize::from(tag), fields))
         };
-        let mut binders = Vec::new();
+        let mut binders = SmallVec::<_, 0, Global>::new();
         let mut ranked: BTreeMap<&'arena StringLiteral, Rank> = BTreeMap::new();
         let mut at = sorts;
         loop {
@@ -375,7 +391,7 @@ impl<'arena> Reader<'arena>
         if binders.is_empty() {
             return None;
         }
-        let mut read = Vec::new();
+        let mut read = SmallVec::<_, 0, Global>::new();
         let mut at = operations;
         loop {
             let (name, inputs, outputs, rest) = match tagged(self.constructor(at))? {
@@ -444,7 +460,7 @@ impl<'arena> Reader<'arena>
             ranks,
         };
         let mut fuel = RewriteFuel::from(PRESENTATION_FUEL);
-        let mut pending = Vec::new();
+        let mut pending = SmallVec::<_, 0, Global>::new();
         let mut named: BTreeMap<&'arena StringLiteral, Named> = BTreeMap::new();
         for (name, inputs, output) in read {
             named.clear();
@@ -454,7 +470,7 @@ impl<'arena> Reader<'arena>
                     .enumerate()
                     .map(|(place, &(input, _))| (input, Named::Input(Position(place)))),
             );
-            let mut implicits = Vec::new();
+            let mut implicits = SmallVec::<_, 0, Global>::new();
             for port in inputs.iter().map(|&(_, port)| port).chain([output]) {
                 let _count = self.carried_terms(port, &signature, &mut pending)?;
                 while let Some(term) = pending.pop() {
@@ -515,6 +531,11 @@ impl<'arena> Reader<'arena>
     /// - intension: each index term read in pre-order from a worklist, then
     ///   built from its last node to its first.
     ///
+    /// # Cost
+    /// - allocation: the reading graph, the ports' carried index terms and
+    ///   their templates, growth within the operation's ports and their carried
+    ///   index terms
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the type a term substitution moves its term's type to
     ///   carries the two contexts the substitution stands between.
@@ -531,13 +552,13 @@ impl<'arena> Reader<'arena>
         ),
         (signature, ranked): (&Signature<'arena>, &BTreeMap<&'arena StringLiteral, Rank>),
         fuel: &mut RewriteFuel,
-    ) -> Option<Vec<Box<[Stated]>>>
+    ) -> Option<SmallVec<Box<[Stated]>, 0, Global>>
     {
         // An index term as written, and its node as read when it reads.
-        type ReadIndex = (Vec<Stated>, Option<Node>);
+        type ReadIndex = (SmallVec<Stated, 0, Global>, Option<Node>);
         let width = implicits.len().checked_add(inputs.len())?;
         let mut graph = Graph::default();
-        let names: Vec<Node> = (0 .. width)
+        let names: SmallVec<Node, 0, Global> = (0 .. width)
             .map(|place| {
                 graph.nodes.push(GraphNode::Symbol {
                     symbol: TheorySymbol(NAMED_BASE.saturating_add(place)),
@@ -551,11 +572,18 @@ impl<'arena> Reader<'arena>
             Named::Implicit(place) => place,
             Named::Input(Position(place)) => Position(implicits.len().saturating_add(place)),
         };
-        let mut sorts: Vec<Option<Node>> = alloc::vec![None; width];
-        let (mut pending, mut stack, mut built, mut pairs, mut children) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let mut sorts: SmallVec<Option<Node>, 0, Global> =
+            SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(None, width));
+        let (mut pending, mut stack, mut built, mut pairs, mut children) = (
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+        );
         // Each port's sort symbol and index terms, each as written and as read.
-        let mut read: Vec<(TheorySymbol, Vec<ReadIndex>)> = Vec::new();
+        let mut read: SmallVec<(TheorySymbol, SmallVec<ReadIndex, 0, Global>), 0, Global> =
+            SmallVec::<_, 0, Global>::new();
         for (place, port) in inputs
             .iter()
             .map(|&(_, port)| port)
@@ -566,7 +594,7 @@ impl<'arena> Reader<'arena>
             let symbol = TheorySymbol(SORT_BASE.saturating_add(rank.0));
             pending.clear();
             let _count = self.carried_terms(port, signature, &mut pending)?;
-            let mut carried = Vec::with_capacity(pending.len());
+            let mut carried = SmallVec::<_, 0, Global>::with_capacity(Count::from(pending.len()));
             for &term in pending.iter().rev() {
                 let written = self.written_index(term, named)?;
                 let read = if matches!(*written.as_slice(), [Stated::Named(_)]) {
@@ -612,10 +640,16 @@ impl<'arena> Reader<'arena>
             }
             read.push((symbol, carried));
         }
-        let (mut flat, mut flattening) = (Vec::new(), Vec::new());
-        let mut stated = Vec::with_capacity(read.len());
+        let (mut flat, mut flattening) = (
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let mut stated = SmallVec::<_, 0, Global>::with_capacity(Count::from(read.len()));
         for (symbol, carried) in read {
-            let mut template = alloc::vec![Stated::Symbol(symbol, FieldCount::from(carried.len()))];
+            let mut template = SmallVec::<_, 0, Global>::from_iter([Stated::Symbol(
+                symbol,
+                FieldCount::from(carried.len()),
+            )]);
             for (written, read) in carried {
                 let solved = match read {
                     Some(node) => {
@@ -637,7 +671,7 @@ impl<'arena> Reader<'arena>
                                 },
                                 Flat::Variable(_) => None,
                             })
-                            .collect::<Option<Vec<Stated>>>()
+                            .collect::<Option<SmallVec<Stated, 0, Global>>>()
                     },
                     None => None,
                 };
@@ -660,6 +694,10 @@ impl<'arena> Reader<'arena>
     /// - executable: none — the template is the term's own reading.
     /// - intension: the term read in pre-order from a worklist.
     ///
+    /// # Cost
+    /// - allocation: the pending subterms and the written template nodes,
+    ///   growth within the index term's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::stated`].
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
@@ -667,10 +705,10 @@ impl<'arena> Reader<'arena>
         &mut self,
         term: ValueId,
         named: &BTreeMap<&'arena StringLiteral, Named>,
-    ) -> Option<Vec<Stated>>
+    ) -> Option<SmallVec<Stated, 0, Global>>
     {
-        let mut pending = alloc::vec![term];
-        let mut written = Vec::new();
+        let mut pending = SmallVec::<_, 0, Global>::from_iter([term]);
+        let mut written = SmallVec::<_, 0, Global>::new();
         while let Some(term) = pending.pop() {
             let node = match self
                 .constructor(term)
@@ -709,6 +747,11 @@ impl<'arena> Reader<'arena>
     /// - intension: the template built from its last node to its first, each
     ///   application taking its arguments off a stack.
     ///
+    /// # Cost
+    /// - allocation: the template's nodes, their children and the stack of
+    ///   sorted arguments, growth within the written term's nodes and the
+    ///   signature's implicit indices
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::stated`].
     /// - witness: `theory_rules::tests::a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042`
@@ -718,7 +761,7 @@ impl<'arena> Reader<'arena>
         (graph, names, sorts): (&mut Graph, &[Node], &mut [Option<Node>]),
         slot: &S,
         signature: &Signature<'arena>,
-        (stack, built, pairs): (&mut Vec<Sorted>, &mut Vec<Node>, &mut Vec<(Node, Node)>),
+        (stack, built, pairs): Scratch<'_>,
         fuel: &mut RewriteFuel,
     ) -> Option<Node>
     where
@@ -796,7 +839,7 @@ impl<'arena> Reader<'arena>
                     for place in 0 .. count {
                         graph.children.push(at(place)?.term);
                     }
-                    stack.truncate(base);
+                    stack.truncate(Count::from(base));
                     graph.nodes.push(GraphNode::Symbol {
                         symbol,
                         first,
@@ -822,15 +865,19 @@ impl<'arena> Reader<'arena>
     /// - panics: none.
     /// - executable: none — the ports are the chain's own fields, read once.
     ///
+    /// # Cost
+    /// - allocation: the ports by name and sort, growth within the chain's
+    ///   ports
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::signature`].
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
     fn port_sorts(
         &self,
         mut ports: ValueId,
-    ) -> Option<Vec<(&'arena StringLiteral, PortSort<'arena>)>>
+    ) -> Option<SmallVec<(&'arena StringLiteral, PortSort<'arena>), 0, Global>>
     {
-        let mut read = Vec::new();
+        let mut read = SmallVec::<_, 0, Global>::new();
         loop {
             match self
                 .constructor(ports)
@@ -860,13 +907,17 @@ impl<'arena> Reader<'arena>
     /// - executable: none — the terms pushed are the chain's own fields, and
     ///   `pending`'s prior contents are not named by any predicate's inputs.
     ///
+    /// # Cost
+    /// - allocation: the chain's terms on the pending stack, growth within the
+    ///   `Arg` chain's length
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::signature`].
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
     fn index_terms(
         &self,
         mut chain: ValueId,
-        pending: &mut Vec<ValueId>,
+        pending: &mut SmallVec<ValueId, 0, Global>,
     ) -> Option<FieldCount>
     {
         let start = pending.len();
@@ -881,7 +932,7 @@ impl<'arena> Reader<'arena>
                     chain = rest;
                 },
                 Some(_) | None => {
-                    pending.truncate(start);
+                    pending.truncate(Count::from(start));
                     return None;
                 },
             }
@@ -910,7 +961,7 @@ impl<'arena> Reader<'arena>
         &self,
         port: PortSort<'arena>,
         signature: &Signature<'arena>,
-        pending: &mut Vec<ValueId>,
+        pending: &mut SmallVec<ValueId, 0, Global>,
     ) -> Option<FieldCount>
     {
         let start = pending.len();
@@ -931,7 +982,7 @@ impl<'arena> Reader<'arena>
                 write = write.checked_add(1)?;
             }
         }
-        pending.truncate(write);
+        pending.truncate(Count::from(write));
         Some(FieldCount::from(write.checked_sub(start)?))
     }
 
@@ -964,7 +1015,7 @@ impl<'arena> Reader<'arena>
     pub(super) fn indexed(
         &mut self,
         signature: &Signature<'arena>,
-    ) -> Option<Vec<TheoryRule>>
+    ) -> Option<SmallVec<TheoryRule, 0, Global>>
     {
         if self
             .rules
@@ -990,6 +1041,10 @@ impl<'arena> Reader<'arena>
     /// - panics: none.
     /// - executable: none — as [`Self::indexed`].
     ///
+    /// # Cost
+    /// - allocation: the rank order, the lower rules and the indexed reading of
+    ///   each rule, growth within the theory's rules
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::indexed`].
     /// - witness: `theory_rules::tests::a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042`
@@ -998,17 +1053,24 @@ impl<'arena> Reader<'arena>
         rules: &[TheoryRule],
         signature: &Signature<'arena>,
         fuel: &mut RewriteFuel,
-    ) -> Option<Vec<TheoryRule>>
+    ) -> Option<SmallVec<TheoryRule, 0, Global>>
     {
-        let mut order: Vec<(Option<Rank>, usize)> = rules
+        let mut order: SmallVec<(Option<Rank>, usize), 0, Global> = rules
             .iter()
             .enumerate()
             .map(|(place, rule)| (self.rank(signature, rule), place))
             .collect();
         order.sort_unstable();
         let mut indexer = Indexer::default();
-        let mut indexed: Vec<Option<TheoryRule>> = alloc::vec![None; rules.len()];
-        let (mut below, mut ranked): (Vec<TheoryRule>, Vec<TheoryRule>) = (Vec::new(), Vec::new());
+        let mut indexed: SmallVec<Option<TheoryRule>, 0, Global> =
+            SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(None, rules.len()));
+        let (mut below, mut ranked): (
+            SmallVec<TheoryRule, 0, Global>,
+            SmallVec<TheoryRule, 0, Global>,
+        ) = (
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let mut current = None;
         for (rank, place) in order {
             if rank != current {
@@ -1057,6 +1119,10 @@ impl Indexer
     /// - panics: none.
     /// - executable: none — as [`Reader::indexed`].
     ///
+    /// # Cost
+    /// - allocation: the expanded sides of the indexed rule, growth within the
+    ///   rule's sides
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Reader::indexed`].
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
@@ -1094,7 +1160,10 @@ impl Indexer
                 }
             }
             let variables = Ordinal(self.terms.len());
-            let mut sides = (Vec::new(), Vec::new());
+            let mut sides = (
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::new(),
+            );
             self.expanded(
                 reader,
                 signature,
@@ -1133,6 +1202,10 @@ impl Indexer
     /// - intension: the side read from its last node to its first, each
     ///   application taking its arguments off a stack, as [`Graph::load`] does.
     ///
+    /// # Cost
+    /// - allocation: the side's graph nodes, children, implicit indices and
+    ///   reading stack, growth within the rule's sides
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Reader::indexed`].
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
@@ -1141,13 +1214,13 @@ impl Indexer
         reader: &mut Reader<'_>,
         signature: &Signature<'_>,
         side: &[TheoryNode],
-        at: &mut Vec<Option<Span>>,
+        at: &mut SmallVec<Option<Span>, 0, Global>,
         fuel: &mut RewriteFuel,
     ) -> Option<Sorted>
     {
         self.stack.clear();
         at.clear();
-        at.resize(side.len(), None);
+        at.resize(Count::from(side.len()), None);
         for (position, &node) in side.iter().enumerate().rev() {
             let sorted = match node {
                 TheoryNode::Variable(variable) => Sorted {
@@ -1235,6 +1308,10 @@ impl Indexer
     /// - fails: none.
     /// - panics: none.
     /// - executable: none — the solution is the graph's own state.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the graph's nodes and children before the first
+    ///   attempt, growth within the graph's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a `CwF`'s identity law on terms sorts only after its
@@ -1363,6 +1440,10 @@ impl Indexer
     /// - panics: none.
     /// - executable: none — the solution is the graph's own state.
     ///
+    /// # Cost
+    /// - allocation: the set of free variables the rule variables resolve to,
+    ///   growth within the rule's variables
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Reader::indexed`].
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
@@ -1395,6 +1476,12 @@ impl Indexer
     /// - panics: none.
     /// - executable: none — the side written is the reading's result.
     ///
+    /// # Cost
+    /// - allocation: the map from each held term's node to its first rule
+    ///   variable, setup
+    /// - allocation: the written side with its implicit indices, growth within
+    ///   the side's nodes and their flattened indices
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Reader::indexed`].
     /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
@@ -1403,7 +1490,7 @@ impl Indexer
         reader: &mut Reader<'_>,
         signature: &Signature<'_>,
         (side, at): (&[TheoryNode], &[Option<Span>]),
-        (out, Ordinal(variables)): (&mut Vec<TheoryNode>, Ordinal),
+        (out, Ordinal(variables)): (&mut SmallVec<TheoryNode, 0, Global>, Ordinal),
         fuel: &mut RewriteFuel,
     ) -> Option<()>
     {
@@ -1481,6 +1568,10 @@ impl Indexer
 /// - intension: the template built from its last node to its first, each symbol
 ///   taking its subterms off `built`.
 ///
+/// # Cost
+/// - allocation: the graph's new nodes and children, and the built stack,
+///   growth within the template's terms
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Reader::indexed`].
 /// - witness: `theory_rules::tests::a_categorys_laws_join_over_their_objects_1510`
@@ -1488,7 +1579,7 @@ fn grown<R>(
     graph: &mut Graph,
     template: &[Stated],
     resolve: R,
-    built: &mut Vec<Node>,
+    built: &mut SmallVec<Node, 0, Global>,
 ) -> Option<Node>
 where
     R: Fn(Named) -> Option<Node>,
@@ -1527,13 +1618,17 @@ where
 /// - executable: none — the nodes built are the graph's own state.
 /// - intension: the term built from its last node to its first, as [`grown`].
 ///
+/// # Cost
+/// - allocation: the graph's new nodes and children, and the stack of built
+///   nodes, growth within the flattened term's items
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Indexer::sorted_alike`].
 /// - witness: `theory_rules::tests::a_cwfs_laws_on_terms_join_modulo_its_laws_on_types_5042`
 fn loaded(
     graph: &mut Graph,
     flat: &[Flat],
-    built: &mut Vec<Node>,
+    built: &mut SmallVec<Node, 0, Global>,
 ) -> Option<Node>
 {
     built.clear();
@@ -1565,14 +1660,20 @@ fn loaded(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the slots up to the variable's ordinal, growth within the
+///   rule's variables
+/// - allocation: the free node for a new variable, growth within the graph's
+///   nodes
 fn variable_node(
     graph: &mut Graph,
-    slots: &mut Vec<Option<Node>>,
+    slots: &mut SmallVec<Option<Node>, 0, Global>,
     Ordinal(ordinal): Ordinal,
 ) -> Option<Node>
 {
     if slots.len() <= ordinal {
-        slots.resize(ordinal.checked_add(1)?, None);
+        slots.resize(Count::from(ordinal.checked_add(1)?), None);
     }
     let slot = slots.get_mut(ordinal)?;
     if let Some(node) = *slot {
@@ -1602,7 +1703,7 @@ fn renumbered(
     right: &mut [TheoryNode],
 ) -> Option<()>
 {
-    let mut seen: Vec<RuleVariable> = Vec::new();
+    let mut seen: SmallVec<RuleVariable, 0, Global> = SmallVec::<_, 0, Global>::new();
     for node in left.iter_mut() {
         if let TheoryNode::Variable(ref mut variable) = *node {
             let Ordinal(place) = first_seen(&mut seen, *variable);

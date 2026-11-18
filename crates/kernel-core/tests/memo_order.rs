@@ -5,8 +5,11 @@
 //! refused, so a later declaration that recalls the formation must check them
 //! again.
 
+use alloc::alloc::Global;
+
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -56,8 +59,8 @@ fn families(environment: &mut Environment) -> (ConstantIndex, ConstantIndex)
         .value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![universe],
-        vec![],
+        SmallVec::<_, 0, Global>::from_iter([universe]),
+        SmallVec::<_, 0, Global>::from_iter([]),
         universe,
     );
     let data = environment
@@ -73,8 +76,8 @@ fn families(environment: &mut Environment) -> (ConstantIndex, ConstantIndex)
     let kind = arena.value_type_universe(GroundSort::Computation, Level::zero());
     let declaration = staging.codata(
         LevelSignature::monomorphic(),
-        vec![universe],
-        vec![head],
+        SmallVec::<_, 0, Global>::from_iter([universe]),
+        SmallVec::<_, 0, Global>::from_iter([head]),
         kind,
     );
     let codata = environment
@@ -109,9 +112,10 @@ fn declared(
             arena.value_type_path(universe, code, input)
         },
         Kind::Universe => arena.value_type_element(input, Level::zero()),
-        Kind::Data => arena.value_type_data(data, vec![input]),
+        Kind::Data => arena.value_type_data(data, SmallVec::<_, 0, Global>::from_iter([input])),
         Kind::Codata => {
-            let boxed = arena.comp_type_codata(codata, vec![input]);
+            let boxed =
+                arena.comp_type_codata(codata, SmallVec::<_, 0, Global>::from_iter([input]));
             arena.value_type_thunk(boxed)
         },
     }

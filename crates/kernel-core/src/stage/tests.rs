@@ -1,5 +1,8 @@
 //! Kernel-only adversarial witnesses for stage formation and replay.
 
+use alloc::alloc::Global;
+
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::stage::Index;
 use gandr_kernel_term::stage::Step;
 
@@ -96,7 +99,7 @@ fn conversion_round_trips()
     let first = Certificate {
         source: splice_quote,
         target: variable,
-        steps: Vec::from([Step {
+        steps: SmallVec::<_, 0, Global>::from_iter([Step {
             source: splice_quote,
             target: variable,
             rule: Rule::SpliceQuote,
@@ -111,7 +114,7 @@ fn conversion_round_trips()
     let second = Certificate {
         source: quote_splice,
         target: variable,
-        steps: Vec::from([Step {
+        steps: SmallVec::<_, 0, Global>::from_iter([Step {
             source: quote_splice,
             target: variable,
             rule: Rule::QuoteSplice,
@@ -139,7 +142,7 @@ fn certificate_tampering_is_refused()
     let mut certificate = Certificate {
         source,
         target: one,
-        steps: Vec::from([Step {
+        steps: SmallVec::<_, 0, Global>::from_iter([Step {
             source,
             target: one,
             rule: Rule::SpliceQuote,
@@ -201,7 +204,7 @@ fn local_rules_and_transitive_congruence()
             let mut certificate = Certificate {
                 source,
                 target,
-                steps: Vec::from([Step {
+                steps: SmallVec::<_, 0, Global>::from_iter([Step {
                     source,
                     target,
                     rule,
@@ -242,7 +245,7 @@ fn local_rules_and_transitive_congruence()
     let mut certificate = Certificate {
         source,
         target: one,
-        steps: Vec::from([
+        steps: SmallVec::<_, 0, Global>::from_iter([
             Step {
                 source: splice,
                 target: one,
@@ -264,7 +267,9 @@ fn local_rules_and_transitive_congruence()
         replay(&mut arena, &[token], &certificate, &mut Budget(10_000)),
         Ok(inner)
     );
-    certificate.steps.remove(0);
+    certificate
+        .steps
+        .remove(gandr_kernel_data::Count::from(0_usize));
     assert_eq!(
         replay(&mut arena, &[token], &certificate, &mut Budget(10_000)),
         Err(StageError::InvalidCertificate)
@@ -333,7 +338,7 @@ fn typing_refusals_preserve_stage_boundary()
     let certificate = Certificate {
         source: inner_one,
         target: outer_one,
-        steps: Vec::new(),
+        steps: SmallVec::<_, 0, Global>::new(),
     };
     assert_eq!(
         replay(&mut arena, &[token], &certificate, &mut Budget(1000)),

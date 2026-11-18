@@ -166,6 +166,10 @@ pub(super) fn level(
 /// Returns `CodataOccurrence` for an unguarded or non-uniform self reference,
 /// and `ArenaFault` for an unreadable node.
 ///
+/// # Cost
+/// - allocation: the search's seen nodes and its pending walk, growth within
+///   the nodes that the observation reaches
+///
 /// # Adequacy
 /// - hypothesis: L3 — a stream's tail is admitted; a self reference in a domain
 ///   and one at other arguments are refused.
@@ -326,6 +330,10 @@ fn argument_at(
 /// # Errors
 /// Returns `ArenaFault`, `NotACodataType`, `DataArgumentArity` or
 /// `CodataWithoutObservations`.
+///
+/// # Cost
+/// - allocation: the instantiated observations and their lazy product, growth
+///   within the declaration's observations
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a stream of naturals reads as `F Nat & Stream Nat`, its

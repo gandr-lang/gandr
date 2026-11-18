@@ -142,6 +142,7 @@ digraph crates {
   "core-checker-base" -> "kernel-check-memo";
   "core-checker-base" -> "kernel-conversion-trace";
   "core-checker-base" -> "kernel-core";
+  "core-checker-base" -> "kernel-data";
   "core-checker-base" -> "kernel-strata";
   "core-checker-base" -> "kernel-term";
   "core-checker-base" -> "theory-ordered-algebras";
@@ -153,10 +154,12 @@ digraph crates {
   "core-checker-bridge" -> "kernel-check-memo";
   "core-checker-bridge" -> "kernel-conversion-trace";
   "core-checker-bridge" -> "kernel-core";
+  "core-checker-bridge" -> "kernel-data";
   "core-checker-bridge" -> "kernel-strata";
   "core-checker-bridge" -> "kernel-term";
   "core-checker-bridge" -> "theory-deep-inference";
   "core-content" -> "core-term";
+  "core-content" -> "kernel-data";
   "core-content" -> "kernel-strata";
   "core-content" -> "kernel-term";
   "core-content" -> "theory-levitation";
@@ -170,6 +173,7 @@ digraph crates {
   "core-incremental" -> "kernel-check-memo";
   "core-incremental" -> "kernel-conversion-trace";
   "core-incremental" -> "kernel-core";
+  "core-incremental" -> "kernel-data";
   "core-incremental" -> "kernel-strata";
   "core-incremental" -> "kernel-term";
   "core-incremental" -> "theory-levitation";
@@ -180,9 +184,11 @@ digraph crates {
   "core-nbe" -> "core-term";
   "core-nbe" -> "kernel-check-memo";
   "core-nbe" -> "kernel-conversion-trace";
+  "core-nbe" -> "kernel-data";
   "core-nbe" -> "kernel-strata";
   "core-nbe" -> "kernel-term";
   "core-nbe-base" -> "core-term";
+  "core-nbe-base" -> "kernel-data";
   "core-nbe-base" -> "kernel-strata";
   "core-nbe-base" -> "kernel-term";
   "core-nbe-base" -> "theory-spec-combinators";
@@ -192,9 +198,11 @@ digraph crates {
   "core-sequent" -> "theory-cell-complexes";
   "core-session" -> "core-term";
   "core-session" -> "kernel-core";
+  "core-session" -> "kernel-data";
   "core-session" -> "kernel-term";
   "core-session" -> "theory-deep-inference";
   "core-term" -> "kernel-check-memo";
+  "core-term" -> "kernel-data";
   "core-term" -> "kernel-strata";
   "core-term" -> "kernel-term";
   "core-term" -> "theory-levitation";
@@ -222,6 +230,7 @@ digraph crates {
   "kernel-strata" -> "kernel-data";
   "kernel-term" -> "kernel-check-memo";
   "kernel-term" -> "kernel-conversion-trace";
+  "kernel-term" -> "kernel-data";
   "kernel-term" -> "kernel-strata";
   "kernel-term" -> "theory-path-orders";
   "runtime-emitter" -> "core-content";
@@ -375,6 +384,7 @@ digraph crates {
   "surface-lowering" -> "theory-levitation";
   "surface-lowering" -> "theory-shapes";
   "surface-lowering-base" -> "core-term";
+  "surface-lowering-base" -> "kernel-data";
   "surface-lowering-base" -> "kernel-strata";
   "surface-lowering-base" -> "kernel-term";
   "surface-lowering-base" -> "surface-grammar";
@@ -429,6 +439,7 @@ digraph crates {
   "surface-lowering-model" -> "surface-syntax";
   "surface-lowering-model" -> "theory-levitation";
   "surface-lowering-native" -> "core-term";
+  "surface-lowering-native" -> "kernel-data";
   "surface-lowering-native" -> "kernel-strata";
   "surface-lowering-native" -> "kernel-term";
   "surface-lowering-native" -> "surface-lowering-base";
@@ -535,6 +546,7 @@ digraph crates {
   "surface-session" -> "core-incremental";
   "surface-session" -> "core-nbe";
   "surface-session" -> "core-term";
+  "surface-session" -> "kernel-data";
   "surface-session" -> "kernel-term";
   "surface-session" -> "storage-artifact";
   "surface-session" -> "storage-records";

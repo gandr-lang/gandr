@@ -1,8 +1,11 @@
 //! Finite wire framing and truncation boundaries.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
-use alloc::vec;
+
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 
 use super::Evidence;
 use super::Graph;
@@ -22,29 +25,29 @@ fn session_artifact_retains_graph_payloads_and_evidence()
     let mut arena = crate::TermArena::new();
     let payload = arena.value_type_base(crate::BaseType::String);
     let payloads = arena.value_type_product(&[payload]);
-    let graph = alloc::sync::Arc::new(Graph {
+    let graph = Shared::new(Graph {
         root: State(0),
-        nodes: vec![
+        nodes: SmallVec::<_, 0, Global>::from_iter([
             Node::Mu(State(1)),
             Node::Send(PayloadSlot(0), State(2)),
             Node::Var(State(0)),
-        ],
+        ]),
     });
-    let evidence = alloc::sync::Arc::new(Evidence {
+    let evidence = Shared::new(Evidence {
         pairs: [StatePair {
             source: State(1),
             target: State(1),
         }]
         .into(),
-        payloads: vec![(PayloadSlot(0), PayloadSlot(0))],
+        payloads: SmallVec::<_, 0, Global>::from_iter([(PayloadSlot(0), PayloadSlot(0))]),
     });
-    let session = arena.value_type_session(alloc::sync::Arc::clone(&graph), payloads);
+    let session = arena.value_type_session(Shared::clone(&graph), payloads);
     let code = arena.value_quote(session);
     let classifier = arena.value_type_path_universe(code, code);
     let payload_code = arena.value_quote(payload);
     let proof = arena.value_path_refl(payload_code);
     let proofs = arena.value_tuple(&[proof]);
-    let value = arena.value_session_path(classifier, alloc::sync::Arc::clone(&evidence), proofs);
+    let value = arena.value_session_path(classifier, Shared::clone(&evidence), proofs);
     let declaration = crate::DeclarationBuilder::new(&mut arena).def(
         crate::LevelSignature::monomorphic(),
         classifier,
@@ -140,20 +143,24 @@ fn session_flow_artifact_retains_its_classifier_and_evidence()
         )
     };
     let narrow = arena.value_type_session(
-        alloc::sync::Arc::new(Graph {
+        Shared::new(Graph {
             root: State(0),
-            nodes: vec![select(&["old"]), Node::End],
+            nodes: SmallVec::<_, 0, Global>::from_iter([select(&["old"]), Node::End]),
         }),
         payloads,
     );
     let wide = arena.value_type_session(
-        alloc::sync::Arc::new(Graph {
+        Shared::new(Graph {
             root: State(0),
-            nodes: vec![select(&["old", "pause"]), Node::End, Node::End],
+            nodes: SmallVec::<_, 0, Global>::from_iter([
+                select(&["old", "pause"]),
+                Node::End,
+                Node::End,
+            ]),
         }),
         payloads,
     );
-    let evidence = alloc::sync::Arc::new(Evidence {
+    let evidence = Shared::new(Evidence {
         pairs: [
             StatePair {
                 source: State(0),
@@ -165,13 +172,13 @@ fn session_flow_artifact_retains_its_classifier_and_evidence()
             },
         ]
         .into(),
-        payloads: vec![],
+        payloads: SmallVec::<_, 0, Global>::new(),
     });
     let source = arena.value_quote(narrow);
     let target = arena.value_quote(wide);
     let classifier = arena.value_type_flow_universe(source, target);
     let proofs = arena.value_unit();
-    let value = arena.value_session_flow(classifier, alloc::sync::Arc::clone(&evidence), proofs);
+    let value = arena.value_session_flow(classifier, Shared::clone(&evidence), proofs);
     let declaration = crate::DeclarationBuilder::new(&mut arena).def(
         crate::LevelSignature::monomorphic(),
         classifier,
@@ -219,7 +226,7 @@ fn session_words_preserve_graph_and_relation()
 {
     let graph = Graph {
         root: State(0),
-        nodes: vec![
+        nodes: SmallVec::<_, 0, Global>::from_iter([
             Node::Mu(State(1)),
             Node::Select(
                 [
@@ -233,7 +240,7 @@ fn session_words_preserve_graph_and_relation()
             Node::Offer([(Label(String::from("again")), State(5))].into()),
             Node::Var(State(0)),
             Node::End,
-        ],
+        ]),
     };
     let evidence = Evidence {
         pairs: BTreeSet::from([
@@ -246,10 +253,10 @@ fn session_words_preserve_graph_and_relation()
                 target: State(4),
             },
         ]),
-        payloads: vec![
+        payloads: SmallVec::<_, 0, Global>::from_iter([
             (PayloadSlot(0), PayloadSlot(2)),
             (PayloadSlot(1), PayloadSlot(1)),
-        ],
+        ]),
     };
     let mut bytes = EncodedArtifact::new();
     graph.write(|word| bytes.put_uvarint(WireU64::from(word.0)));
@@ -287,7 +294,7 @@ fn session_wire_goldens_and_malformed_fields_are_distinct()
 {
     let graph = Graph {
         root: State(3),
-        nodes: vec![
+        nodes: SmallVec::<_, 0, Global>::from_iter([
             Node::Send(PayloadSlot(4), State(5)),
             Node::Receive(PayloadSlot(6), State(7)),
             Node::Select([(Label("λ".into()), State(8))].into()),
@@ -295,9 +302,9 @@ fn session_wire_goldens_and_malformed_fields_are_distinct()
             Node::End,
             Node::Mu(State(10)),
             Node::Var(State(11)),
-        ],
+        ]),
     };
-    let mut words = alloc::vec::Vec::new();
+    let mut words = SmallVec::<_, 0, Global>::new();
     graph.write(|word| words.push(word.0));
     assert_eq!(words, [
         3, 7, 0x53, 4, 5, 0x54, 6, 7, 0x55, 1, 2, 0xce, 0xbb, 8, 0x56, 1, 1, 120, 9, 0x57, 0x58,
@@ -315,10 +322,10 @@ fn session_wire_goldens_and_malformed_fields_are_distinct()
             },
         ]
         .into(),
-        payloads: vec![
+        payloads: SmallVec::<_, 0, Global>::from_iter([
             (PayloadSlot(5), PayloadSlot(6)),
             (PayloadSlot(1), PayloadSlot(0)),
-        ],
+        ]),
     };
     words.clear();
     evidence.write(|word| words.push(word.0));
@@ -338,10 +345,10 @@ fn session_wire_goldens_and_malformed_fields_are_distinct()
         site: crate::MalformedSite::Session,
     };
     for words in [
-        vec![0_u64, 1, 0x55, 2, 1, 97, 0, 1, 97, 0],
-        vec![0, 1, 0x56, 1, 1, 0xff, 0],
-        vec![0, 1, 0x55, 1, 1, 256, 0],
-        vec![0, 1, 0x5a],
+        SmallVec::<_, 0, Global>::from_iter([0_u64, 1, 0x55, 2, 1, 97, 0, 1, 97, 0]),
+        SmallVec::<_, 0, Global>::from_iter([0, 1, 0x56, 1, 1, 0xff, 0]),
+        SmallVec::<_, 0, Global>::from_iter([0, 1, 0x55, 1, 1, 256, 0]),
+        SmallVec::<_, 0, Global>::from_iter([0, 1, 0x5a]),
     ] {
         let mut bytes = EncodedArtifact::new();
         for word in words {

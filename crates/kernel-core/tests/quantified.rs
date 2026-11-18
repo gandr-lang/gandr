@@ -2,10 +2,13 @@
 //! carries beside its plain declared type, its own body checked at minted
 //! stages, and each call reading its binders off its arguments.
 
+use alloc::alloc::Global;
+
 use anodized::spec;
 use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -41,12 +44,15 @@ fn nat(environment: &mut Environment) -> CheckedId
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(position, vec![]);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     environment
@@ -63,7 +69,7 @@ fn unary(
     nat: ConstantIndex,
 ) -> ValueTypeId
 {
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let arrow = arena.comp_type_arrow(nat_type, returner);
     arena.value_type_thunk(arrow)
@@ -93,7 +99,7 @@ fn spine(
 fn below_i(path: &[PlacedChild]) -> StageMark
 {
     StageMark::new(
-        path.to_vec(),
+        path.iter().copied().collect(),
         StageBinder::from(0_usize),
         StageReach::Below(StageDepth::from(core::num::NonZeroU32::MIN)),
     )
@@ -113,7 +119,7 @@ fn apply_at(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let function = unary(arena, nat);
     let returner = arena.comp_type_returner(nat_type);
     let inner = arena.comp_type_arrow(nat_type, returner);
@@ -139,10 +145,13 @@ fn apply_at(
 /// trivial.
 fn quantified() -> StageSignature
 {
-    StageSignature::new(vec![StageBound::Unbounded], vec![
-        below_i(&[0_usize, 0, 0, 0].map(PlacedChild::from)),
-        below_i(&[0_usize, 1, 0].map(PlacedChild::from)),
-    ])
+    StageSignature::new(
+        SmallVec::<_, 0, Global>::from_iter([StageBound::Unbounded]),
+        SmallVec::<_, 0, Global>::from_iter([
+            below_i(&[0_usize, 0, 0, 0].map(PlacedChild::from)),
+            below_i(&[0_usize, 1, 0].map(PlacedChild::from)),
+        ]),
+    )
 }
 
 /// `helped : U (Nat → F Nat) = fix h. λn. case n { zero ↦ return zero ;
@@ -159,9 +168,14 @@ fn helped(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let on_zero = arena.computation_return(zero);
     let head = arena.value_constant(apply);
     let claim = arena.value_variable(DeBruijnIndex::from(2));
@@ -169,7 +183,11 @@ fn helped(
     let called = spine(arena, head, &[claim, handed]);
     let on_successor = arena.computation_lambda(called);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_zero, on_successor]),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let declared = unary(arena, nat);
@@ -241,10 +259,10 @@ fn arguments_at_apart_stages_disagree_by_name_1227()
     let same = apply_at(
         &mut environment,
         nat,
-        StageSignature::new(vec![StageBound::Unbounded], vec![
-            at(&[0, 0, 0, 0]),
-            at(&[0, 1, 0]),
-        ]),
+        StageSignature::new(
+            SmallVec::<_, 0, Global>::from_iter([StageBound::Unbounded]),
+            SmallVec::<_, 0, Global>::from_iter([at(&[0, 0, 0, 0]), at(&[0, 1, 0])]),
+        ),
     )
     .expect("the helper checks at its minted stage")
     .position();
@@ -267,9 +285,10 @@ fn a_mark_reaching_no_data_type_is_refused()
     let refused = apply_at(
         &mut environment,
         nat,
-        StageSignature::new(vec![StageBound::Unbounded], vec![below_i(&[
-            PlacedChild::from(0_usize),
-        ])]),
+        StageSignature::new(
+            SmallVec::<_, 0, Global>::from_iter([StageBound::Unbounded]),
+            SmallVec::<_, 0, Global>::from_iter([below_i(&[PlacedChild::from(0_usize)])]),
+        ),
     );
     assert!(
         matches!(refused, Err(KernelError::StageUnplaced)),
@@ -278,9 +297,10 @@ fn a_mark_reaching_no_data_type_is_refused()
     let refused = apply_at(
         &mut environment,
         nat,
-        StageSignature::new(vec![StageBound::Below(StageBinder::from(0_usize))], vec![
-            below_i(&[0_usize, 1, 0].map(PlacedChild::from)),
-        ]),
+        StageSignature::new(
+            SmallVec::<_, 0, Global>::from_iter([StageBound::Below(StageBinder::from(0_usize))]),
+            SmallVec::<_, 0, Global>::from_iter([below_i(&[0_usize, 1, 0].map(PlacedChild::from))]),
+        ),
     );
     assert!(
         matches!(refused, Err(KernelError::StageUnplaced)),
@@ -336,7 +356,7 @@ fn bounded_at(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let inner = arena.comp_type_arrow(nat_type, returner);
     let outer = arena.comp_type_arrow(nat_type, inner);
@@ -355,19 +375,19 @@ fn bounded_at(
         )
     };
     let signature = StageSignature::new(
-        vec![
+        SmallVec::<_, 0, Global>::from_iter([
             StageBound::Unbounded,
             StageBound::Below(StageBinder::from(0_usize)),
-        ],
-        vec![
+        ]),
+        SmallVec::<_, 0, Global>::from_iter([
             at(0, &[0, 0]),
             at(1, &[0, 1, 0]),
             StageMark::new(
-                [0_usize, 1, 1, 0].map(PlacedChild::from).to_vec(),
+                SmallVec::<_, 0, Global>::from_iter([0_usize, 1, 1, 0].map(PlacedChild::from)),
                 StageBinder::from(0_usize),
                 StageReach::Below(StageDepth::from(core::num::NonZeroU32::MIN)),
             ),
-        ],
+        ]),
     );
     let declaration = staging
         .def(LevelSignature::monomorphic(), declared, value)
@@ -391,9 +411,14 @@ fn a_bounded_binder_read_above_its_bound_is_refused_1241()
     for second in [1_u32, 0] {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let nat_type = arena.value_type_data(nat, vec![]);
+        let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
         let returner = arena.comp_type_returner(nat_type);
-        let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+        let zero = arena.value_constructor(
+            nat,
+            nat_type,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let on_zero = arena.computation_return(zero);
         // Under λp: `p` 0, `n` 1, `h` 2.
         let head = arena.value_constant(bounded);
@@ -407,7 +432,11 @@ fn a_bounded_binder_read_above_its_bound_is_refused_1241()
         let bound = arena.computation_bind(called, recursed);
         let on_successor = arena.computation_lambda(bound);
         let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
-        let case = arena.computation_data_case(scrutinee, returner, vec![on_zero, on_successor]);
+        let case = arena.computation_data_case(
+            scrutinee,
+            returner,
+            SmallVec::<_, 0, Global>::from_iter([on_zero, on_successor]),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
         let declared = unary(arena, nat);

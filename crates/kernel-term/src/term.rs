@@ -77,7 +77,12 @@
 //! [`FIXPOINT_JOINT`]: crate::FIXPOINT_JOINT
 //! [`FIXPOINT_GUARDED`]: crate::FIXPOINT_GUARDED
 
+use alloc::alloc::Global;
+
 use anodized::spec;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 
 use crate::arena::CompTypeId;
@@ -317,7 +322,7 @@ pub enum Value
         /// Position in the declaration's constructor table.
         tag: crate::ConstructorTag,
         /// Constructor fields in declaration order.
-        fields: alloc::vec::Vec<ValueId>,
+        fields: SmallVec<ValueId, 0, Global>,
     },
     /// A structural record in canonical label order.
     Record(alloc::collections::BTreeMap<crate::FieldLabel, ValueId>),
@@ -339,7 +344,7 @@ pub enum Value
         /// Source and target session codes.
         path_type: ValueTypeId,
         /// Finite untrusted relation, replayed at formation.
-        evidence: alloc::sync::Arc<crate::session::Evidence>,
+        evidence: Shared<crate::session::Evidence, Global>,
         /// Native payload-path tuple, one path per payload, in order.
         payload_paths: ValueId,
     },
@@ -350,7 +355,7 @@ pub enum Value
         /// Source and target session codes.
         flow_type: ValueTypeId,
         /// Finite untrusted relation, replayed at formation.
-        evidence: alloc::sync::Arc<crate::session::Evidence>,
+        evidence: Shared<crate::session::Evidence, Global>,
         /// Native payload-path tuple, one path per payload obligation, in
         /// order.
         payload_paths: ValueId,
@@ -363,7 +368,7 @@ pub enum Value
         /// The point `a`.
         point: ValueId,
         /// The dialogue relating the point to each endpoint, untrusted.
-        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,
+        dialogues: Shared<crate::EndpointDialogues, Global>,
     },
     /// A leaf-natural forward translator inhabiting its `Flow_U` classifier,
     /// with one proposed image per source constructor pattern and no inverse.
@@ -379,7 +384,7 @@ pub enum Value
         /// index and stays closed under every rewrite.
         outputs: alloc::boxed::Box<[ValueId]>,
         /// One replay dialogue per output, untrusted.
-        dialogues: alloc::sync::Arc<[crate::Dialogue]>,
+        dialogues: ThinShared<(), crate::Dialogue, Global>,
     },
     /// The arrow's action at function codes: a flow of results over a flow
     /// of arguments, each boundary running the way its variance fixes.
@@ -420,7 +425,7 @@ pub enum Value
         /// The closed backward translator.
         backward: ValueId,
         /// Untrusted dialogue data, never a formation verdict.
-        evidence: alloc::sync::Arc<PathEvidence>,
+        evidence: Shared<PathEvidence, Global>,
     },
     /// Univalence `ua(e)` of the bi-invertible record `e` between two codes'
     /// types: the identity at the value universe between the two codes,
@@ -434,7 +439,7 @@ pub enum Value
         /// The point `a`.
         point: ValueId,
         /// The dialogue relating the point to each endpoint, untrusted.
-        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,
+        dialogues: Shared<crate::EndpointDialogues, Global>,
     },
     /// A returned endpoint: the value the pure computation returns, standing
     /// where a value is read, such as `mul(neutral, x)` at a path endpoint.
@@ -446,7 +451,7 @@ pub enum Value
     Higher
     {
         /// The guarded program, untrusted until replayed.
-        program: alloc::sync::Arc<crate::HigherProgram>,
+        program: Shared<crate::HigherProgram, Global>,
         /// One evidence value per guard layer, in layer order.
         evidence: alloc::boxed::Box<[ValueId]>,
     },
@@ -455,7 +460,7 @@ pub enum Value
     HigherEvaluation
     {
         /// One pair of replay dialogues per component, untrusted.
-        dialogues: alloc::sync::Arc<[crate::EvaluationDialogues]>,
+        dialogues: ThinShared<(), crate::EvaluationDialogues, Global>,
         /// The returned values and output evidence of each component.
         components: alloc::boxed::Box<[crate::EvaluationComponent]>,
     },
@@ -466,7 +471,7 @@ pub enum Value
     QuantifiedEvaluation
     {
         /// The steps, in pre-order, untrusted.
-        steps: alloc::sync::Arc<[crate::QuantifiedStep]>,
+        steps: ThinShared<(), crate::QuantifiedStep, Global>,
         /// Each step's value children in step order: three per return, two
         /// per application.
         children: alloc::boxed::Box<[ValueId]>,
@@ -626,7 +631,7 @@ pub enum Computation
         motive: CompTypeId,
         /// One branch per constructor, each binding its fields in order, then
         /// one equation per index of the family.
-        branches: alloc::vec::Vec<ComputationId>,
+        branches: SmallVec<ComputationId, 0, Global>,
         /// How many equations each branch binds after its fields: the
         /// family's index count, none for a family indexed by nothing.
         equations: EquationCount,
@@ -1186,11 +1191,17 @@ impl JointPositions
 pub struct PathEvidence
 {
     /// Backward after forward, once for every source constructor pattern.
-    pub source:
-        alloc::vec::Vec<alloc::vec::Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>>,
+    pub source: SmallVec<
+        SmallVec<gandr_kernel_conversion_trace::ConversionDecision<()>, 0, Global>,
+        0,
+        Global,
+    >,
     /// Forward after backward, once for every target constructor pattern.
-    pub target:
-        alloc::vec::Vec<alloc::vec::Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>>,
+    pub target: SmallVec<
+        SmallVec<gandr_kernel_conversion_trace::ConversionDecision<()>, 0, Global>,
+        0,
+        Global,
+    >,
 }
 
 /// One canonical unsigned word of portable path evidence.

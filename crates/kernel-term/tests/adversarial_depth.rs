@@ -16,7 +16,10 @@
 //!
 //! The adversarial-depth totality suite.
 
+use alloc::alloc::Global;
+
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::ArtifactImage;
 use gandr_kernel_term::DeclarationBuilder;
@@ -100,7 +103,7 @@ const SMALL_STACK_BYTES: usize = 256 * 1024;
 /// - witness: `tests::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct Bytes(Vec<u8>);
+struct Bytes(SmallVec<u8, 0, Global>);
 
 impl AsRef<[u8]> for Bytes
 {
@@ -178,8 +181,14 @@ fn deep_artifact_bytes() -> Bytes
     }
     let builder = DeclarationBuilder::new(&mut arena);
     let declaration = builder.axiom(LevelSignature::monomorphic(), declared);
-    let declarations = vec![MarkedDeclaration::new(AdmissionMark::Checked, declaration)];
-    let bytes = Bytes(Vec::from(encode(&arena, &declarations)));
+    let declarations = SmallVec::<_, 0, Global>::from_iter([MarkedDeclaration::new(
+        AdmissionMark::Checked,
+        declaration,
+    )]);
+    let bytes = Bytes(SmallVec::<u8, 0, Global>::from(encode(
+        &arena,
+        &declarations,
+    )));
     // The producing arena is dropped here, on the caller's ordinary stack and
     // with no ordering care taken, which is the first half of the claim.
     bytes
@@ -242,7 +251,7 @@ fn a_deep_artifact_round_trips_byte_identically()
     let artifact = decode(ArtifactImage::from(bytes.as_ref())).expect("the deep artifact decodes");
     assert_eq!(
         bytes.0,
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
         "a decoded deep artifact re-encodes to the bytes it came from"
     );
 }

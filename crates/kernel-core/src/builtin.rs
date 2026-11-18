@@ -19,9 +19,10 @@
 //!   of § 2.2 and its three constructors, and `E` and `F` by recursion on a
 //!   signature.
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::Builtin;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
@@ -68,6 +69,10 @@ use crate::replay::Unfoldings;
 ///
 /// # Errors
 /// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the canonical-form terms that the check builds in the arena,
+///   growth within the declaration's nodes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the canonical signature and pair types admit and a second
@@ -262,11 +267,15 @@ struct Unshaped;
 #[spec(ensures: |ret| ret.is_err()
     || (parameters.len() == 1
         && indices.is_empty()
-        && constructors.iter().map(Vec::len).eq([1_usize, 2, 2])))]
+        && constructors.iter().map(|fields| fields.len()).eq([1_usize, 2, 2])))]
 fn signature(
     arena: &TermArena,
     holder: ConstantIndex,
-    (parameters, indices, constructors): (&[ValueTypeId], &[ValueTypeId], &[Vec<ValueTypeId>]),
+    (parameters, indices, constructors): (
+        &[ValueTypeId],
+        &[ValueTypeId],
+        &[SmallVec<ValueTypeId, 0, Global>],
+    ),
 ) -> Result<(), Departure>
 {
     let shapes = Shapes { arena };
@@ -348,10 +357,14 @@ fn signature(
 #[spec(ensures: |ret| ret.is_err()
     || (parameters.len() == 2
         && indices.is_empty()
-        && constructors.iter().map(Vec::len).eq([2_usize])))]
+        && constructors.iter().map(|fields| fields.len()).eq([2_usize])))]
 fn pair(
     arena: &TermArena,
-    (parameters, indices, constructors): (&[ValueTypeId], &[ValueTypeId], &[Vec<ValueTypeId>]),
+    (parameters, indices, constructors): (
+        &[ValueTypeId],
+        &[ValueTypeId],
+        &[SmallVec<ValueTypeId, 0, Global>],
+    ),
 ) -> Result<(), Departure>
 {
     let shapes = Shapes { arena };
@@ -419,6 +432,10 @@ fn pair(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the equations at each constructor and the unfoldings with the
+///   holder's body, growth within the entries' definitions
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`admit`].
 /// - witness: `builtin::tests::a_departing_holder_is_refused_at_its_departure_5304`
@@ -453,7 +470,7 @@ fn answers(
         let fields = fields.iter().map(|&index| var(arena, index)).collect();
         arena.value_constructor_of(
             signature,
-            alloc::vec![output],
+            SmallVec::<_, 0, Global>::from_iter([output]),
             ConstructorTag::from(tag),
             fields,
         )
@@ -539,12 +556,12 @@ fn answers(
                 var(arena, 3)
             };
             let asked = family(arena, fields, (2, 6, 5, 4), decoded);
-            let (head, rest) = (var(arena, 1), var(arena, 0));
+            let given_fields = [var(arena, 1), var(arena, 0)];
             let given = arena.value_constructor_of(
                 pairs,
-                alloc::vec![first, asked],
+                SmallVec::<_, 0, Global>::from_iter([first, asked]),
                 ConstructorTag::from(0_usize),
-                alloc::vec![head, rest],
+                SmallVec::<_, 0, Global>::from_iter(given_fields),
             );
             let (output, over, decoder) = (var(arena, 6), var(arena, 5), var(arena, 4));
             let left = call(arena, body, &[output, read, over, decoder, given]);
@@ -585,7 +602,8 @@ fn answers(
                 var(arena, 1)
             };
             let asked = family(arena, body, (0, 4, 3, 2), decoded);
-            let pairs = arena.value_type_data(pairs, alloc::vec![first, asked]);
+            let pairs =
+                arena.value_type_data(pairs, SmallVec::<_, 0, Global>::from_iter([first, asked]));
             let quoted = arena.value_quote(pairs);
             (left, arena.computation_return(quoted))
         };

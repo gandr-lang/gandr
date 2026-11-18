@@ -486,7 +486,7 @@ pub enum ContentNode
         /// The inverse map.
         backward: NodeIndex,
         /// The untrusted round-trip dialogues.
-        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+        evidence: gandr_kernel_data::Shared<gandr_kernel_term::PathEvidence, alloc::alloc::Global>,
     },
     /// Native transport.
     Transport(NodeIndex, NodeIndex),
@@ -3884,7 +3884,7 @@ fn value_content(
             path_type: found.value_type()?,
             forward: found.value()?,
             backward: found.value()?,
-            evidence: alloc::sync::Arc::clone(evidence),
+            evidence: gandr_kernel_data::Shared::clone(evidence),
         },
         Value::Variable { zone, index } => ContentNode::Variable { zone, index },
         Value::Constant(position) => ContentNode::Constant(layout.resolve(position)),
@@ -4411,6 +4411,10 @@ fn comp_type_content(
 ///   checks the former, sort and child-slot sorts without recalling `image`.
 /// - panics: propagates a panic from `image`.
 ///
+/// # Cost
+/// - allocation: the renumbered node with its child lists and copied labels,
+///   growth within the node's children
+///
 /// # Adequacy
 /// - hypothesis: L2 — an interleaved signature is renumbered independently. The
 ///   malformed-table witness checks cycles, dangling children and root
@@ -4901,7 +4905,7 @@ where
             path_type: image(path_type),
             forward: image(forward),
             backward: image(backward),
-            evidence: alloc::sync::Arc::clone(evidence),
+            evidence: gandr_kernel_data::Shared::clone(evidence),
         },
         ContentNode::Transport(path, value) => {
             let path = image(path);
@@ -5905,7 +5909,7 @@ fn mint_node(
             seat(states, path_type)?,
             seat(states, forward)?,
             seat(states, backward)?,
-            alloc::sync::Arc::clone(evidence),
+            gandr_kernel_data::Shared::clone(evidence),
         )),
         ContentNode::Variable { zone, index } => {
             ArenaNode::Value(arena.value_variable(zone, index))

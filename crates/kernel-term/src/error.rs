@@ -558,10 +558,11 @@ mod tests
 {
     extern crate std;
 
+    use alloc::alloc::Global;
     use alloc::format;
     use alloc::string::String;
-    use alloc::vec;
-    use alloc::vec::Vec;
+
+    use gandr_kernel_data::SmallVec;
 
     use super::DecodeError;
     use super::MalformedSite;
@@ -596,15 +597,15 @@ mod tests
         let refusal = self::std::io::Write::write_all(&mut empty.as_mut_slice(), b"x")
             .expect_err("an exhausted byte sink refuses output")
             .kind();
-        let distinct = |texts: Vec<String>| {
+        let distinct = |texts: SmallVec<String, 0, Global>| {
             for (index, text) in texts.iter().enumerate() {
                 for other in texts.iter().skip(index.saturating_add(1)) {
                     assert_ne!(text, other, "different causes remain distinguishable");
                 }
             }
         };
-        let mut errors = vec![DecodeError::Truncated];
-        let mut names = Vec::new();
+        let mut errors = SmallVec::<_, 0, Global>::from_iter([DecodeError::Truncated]);
+        let mut names = SmallVec::<_, 0, Global>::new();
         for kind in [
             ReservedKind::ModuleSig,
             ReservedKind::ModuleDef,
@@ -617,7 +618,7 @@ mod tests
             errors.push(error);
         }
         distinct(names);
-        let mut names = Vec::new();
+        let mut names = SmallVec::<_, 0, Global>::new();
         for slot in [
             ReservedSlot::MintedAtomTable,
             ReservedSlot::ModeGradeAnnotation,
@@ -630,7 +631,7 @@ mod tests
             errors.push(error);
         }
         distinct(names);
-        let mut names = Vec::new();
+        let mut names = SmallVec::<_, 0, Global>::new();
         for site in [
             TagSite::Admission,
             TagSite::DeclarationKind,
@@ -661,7 +662,7 @@ mod tests
             }
         }
         distinct(names);
-        let mut names = Vec::new();
+        let mut names = SmallVec::<_, 0, Global>::new();
         for site in [
             MalformedSite::Header,
             MalformedSite::Varint,
@@ -698,7 +699,7 @@ mod tests
             assert!(format!("{error}").contains(format!("{version}").as_str()));
             errors.push(error);
         }
-        let mut rendered = Vec::new();
+        let mut rendered = SmallVec::<_, 0, Global>::new();
         for error in errors {
             check_sink(refusal, &error);
             rendered.push(format!("{error}"));

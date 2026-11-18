@@ -61,10 +61,16 @@
 //! [`DeclarationBuilder`]: crate::DeclarationBuilder
 //! [`Declaration`]: crate::Declaration
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Identity;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
+use quenchant_shape::shape::Maybe;
 
 use crate::base::BaseType;
 use crate::base::Literal;
@@ -724,7 +730,7 @@ struct Floor
 /// standing above a lower one.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default)]
-struct Floors(Vec<Floor>);
+struct Floors(SmallVec<Floor, 0, Global>);
 
 impl Floors
 {
@@ -732,6 +738,9 @@ impl Floors
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the truncation's floor, growth within the arena's length
     #[inline]
     fn lower(
         &mut self,
@@ -923,7 +932,7 @@ pub struct TermArena
     comp_type_supports: Family<Reads>,
     /// The empty endpoint dialogues every reflexivity minted without a
     /// dialogue shares, so minting one allocates no evidence.
-    unrelated: alloc::sync::Arc<crate::EndpointDialogues>,
+    unrelated: Shared<crate::EndpointDialogues, Global>,
     /// The truncations that dropped a node, for the readers that name nodes
     /// by position; not part of the arena's content.
     truncations: Truncations,
@@ -961,20 +970,12 @@ pub struct Family<Node>
 {
     /// The whole chunks of the frozen nodes, [`CHUNK`] nodes each, oldest
     /// first. Each clone shares the list and each chunk by reference.
-    #[expect(
-        clippy::rc_buffer,
-        reason = "a freeze pushes chunks onto the list in place while no clone shares it"
-    )]
-    frozen: Option<alloc::sync::Arc<Vec<Chunk<Node>>>>,
+    frozen: Option<Shared<SmallVec<Chunk<Node>, 0, Global>, Global>>,
     /// The frozen nodes after the whole chunks, fewer than [`CHUNK`], in
     /// segments oldest first, each shared by reference with each clone. Each
     /// segment holds more than twice the nodes of the next, so the tail keeps
     /// at most five segments.
-    #[expect(
-        clippy::rc_buffer,
-        reason = "a freeze extends the newest segment in place while no clone shares it"
-    )]
-    tail: Vec<alloc::sync::Arc<Vec<Node>>>,
+    tail: SmallVec<Shared<SmallVec<Node, 0, Global>, Global>, 0, Global>,
     /// Where each segment of the tail ends, past the whole chunks, oldest
     /// first, and `u8::MAX` past the last segment. A read finds its segment
     /// by four comparisons, with no walk of the tail. Each end is below
@@ -984,12 +985,12 @@ pub struct Family<Node>
     /// at once.
     frozen_len: usize,
     /// The nodes minted after them.
-    own: Vec<Node>,
+    own: SmallVec<Node, 0, Global>,
 }
 
 /// A whole chunk of a family's frozen nodes: [`CHUNK`] nodes inline after the
 /// reference counts, shared by reference with each clone of the family.
-type Chunk<Node> = alloc::sync::Arc<[Node]>;
+type Chunk<Node> = ThinShared<(), Node, Global>;
 
 /// Where the tail of a family holds one frozen node: its segment, from the
 /// oldest, and the node's place in that segment.
@@ -1028,26 +1029,26 @@ impl<Node> Default for Family<Node>
     {
         Self {
             frozen: None,
-            tail: Vec::new(),
+            tail: SmallVec::<_, 0, Global>::new(),
             ends: [u8::MAX; SEGMENTS],
             frozen_len: 0,
-            own: Vec::new(),
+            own: SmallVec::<_, 0, Global>::new(),
         }
     }
 }
 
-impl<Node> From<Vec<Node>> for Family<Node>
+impl<Node> From<SmallVec<Node, 0, Global>> for Family<Node>
 {
     /// The family holding `nodes` as its own, in order, nothing frozen.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn from(nodes: Vec<Node>) -> Self
+    fn from(nodes: SmallVec<Node, 0, Global>) -> Self
     {
         Self {
             frozen: None,
-            tail: Vec::new(),
+            tail: SmallVec::<_, 0, Global>::new(),
             ends: [u8::MAX; SEGMENTS],
             frozen_len: 0,
             own: nodes,
@@ -1070,8 +1071,7 @@ impl<Node: PartialEq> PartialEq for Family<Node>
     {
         // Two families frozen over one shared list and one shared tail hold
         // their frozen nodes alike, so only the nodes minted since are read.
-        if self.frozen.as_ref().map(alloc::sync::Arc::as_ptr)
-            == other.frozen.as_ref().map(alloc::sync::Arc::as_ptr)
+        if self.frozen.as_ref().map(Shared::as_ptr) == other.frozen.as_ref().map(Shared::as_ptr)
             && self.shared_tail(other).is_some()
         {
             return self.own == other.own;
@@ -1096,10 +1096,10 @@ impl<Node> Family<Node>
     {
         Self {
             frozen: None,
-            tail: Vec::new(),
+            tail: SmallVec::<_, 0, Global>::new(),
             ends: [u8::MAX; SEGMENTS],
             frozen_len: 0,
-            own: Vec::new(),
+            own: SmallVec::<_, 0, Global>::new(),
         }
     }
 
@@ -1121,7 +1121,7 @@ impl<Node> Family<Node>
         let whole = mine
             .iter()
             .zip(theirs)
-            .take_while(|&(left, right)| alloc::sync::Arc::ptr_eq(left, right))
+            .take_while(|&(left, right)| ThinShared::ptr_eq(left, right) == Identity::Same)
             .count();
         let tail = if whole == mine.len() && whole == theirs.len() {
             self.shared_tail(other).map_or(0, |length| length.0)
@@ -1149,7 +1149,7 @@ impl<Node> Family<Node>
                 .tail
                 .iter()
                 .zip(&other.tail)
-                .all(|(mine, theirs)| alloc::sync::Arc::ptr_eq(mine, theirs)))
+                .all(|(mine, theirs)| Shared::ptr_eq(mine, theirs) == Identity::Same))
         .then(|| ArenaLength(self.tail.iter().map(|segment| segment.len()).sum()))
     }
 
@@ -1160,7 +1160,7 @@ impl<Node> Family<Node>
     #[inline]
     fn chunks(&self) -> &[Chunk<Node>]
     {
-        self.frozen.as_deref().map_or(&[], Vec::as_slice)
+        self.frozen.as_deref().map_or(&[], SmallVec::as_slice)
     }
 
     /// Where the tail holds the frozen node `within` places past the whole
@@ -1303,6 +1303,10 @@ impl<Node> Family<Node>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the node's place in the family, growth within the family's
+    ///   nodes
     #[inline]
     pub fn push(
         &mut self,
@@ -1330,6 +1334,10 @@ impl<Node: Clone> Family<Node>
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: a copy of the kept nodes of a chunk or segment that a
+    ///   clone shares, growth within the family's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — truncations past the frozen nodes and into them, each
     ///   read back beside a clone taken before.
@@ -1345,7 +1353,7 @@ impl<Node: Clone> Family<Node>
     )
     {
         if let Some(own) = length.0.checked_sub(self.frozen_len) {
-            self.own.truncate(own);
+            self.own.truncate(Count::from(own));
             return;
         }
         self.own.clear();
@@ -1355,22 +1363,25 @@ impl<Node: Clone> Family<Node>
         {
             // A cut chunk: the chunks from it on go, and the nodes it keeps
             // take a tail of their own.
-            let chunks = alloc::sync::Arc::make_mut(list);
-            let kept = chunks
-                .get(whole)
-                .filter(|_| cut != 0)
-                .map(|chunk| chunk.get(.. cut).unwrap_or_default().to_vec());
-            chunks.truncate(whole);
-            self.tail = kept.map(alloc::sync::Arc::new).into_iter().collect();
+            let chunks = Shared::make_mut(list);
+            let kept = chunks.get(whole).filter(|_| cut != 0).map(|chunk| {
+                SmallVec::<_, 0, Global>::from_iter(
+                    chunk.get(.. cut).unwrap_or_default().iter().cloned(),
+                )
+            });
+            chunks.truncate(Count::from(whole));
+            self.tail = kept.map(Shared::new).into_iter().collect();
         }
         else if let Some(TailPlace { segment, place }) = self.segment_of(ArenaLength(cut)) {
-            self.tail.truncate(segment.saturating_add(1));
+            self.tail.truncate(Count::from(segment.saturating_add(1)));
             if let Some(last) = self.tail.last_mut() {
-                if let Some(nodes) = alloc::sync::Arc::get_mut(last) {
-                    nodes.truncate(place);
+                if let Maybe::Present(nodes) = Shared::get_mut(last) {
+                    nodes.truncate(Count::from(place));
                 }
                 else {
-                    *last = alloc::sync::Arc::new(last.get(.. place).unwrap_or_default().to_vec());
+                    *last = Shared::new(SmallVec::<_, 0, Global>::from_iter(
+                        last.get(.. place).unwrap_or_default().iter().cloned(),
+                    ));
                 }
             }
         }
@@ -1405,6 +1416,10 @@ impl<Node: Clone> Family<Node>
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the frozen chunks, the tail segments and the copies of
+    ///   shared segments, growth within the family's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a family frozen many times, with nodes minted between
     ///   and a clone taken after some of the freezes, reads back every node at
@@ -1426,15 +1441,15 @@ impl<Node: Clone> Family<Node>
         let mut nodes = self.own.drain(..);
         let held = self.tail.iter().map(|segment| segment.len()).sum::<usize>();
         if held.saturating_add(nodes.len()) >= CHUNK {
-            let mut chunk = Vec::with_capacity(CHUNK);
+            let mut chunk = SmallVec::<_, 0, Global>::with_capacity(Count::from(CHUNK));
             for segment in self.tail.drain(..) {
-                match alloc::sync::Arc::try_unwrap(segment) {
+                match Shared::try_unwrap(segment) {
                     Ok(owned) => chunk.extend(owned),
                     Err(shared) => chunk.extend(shared.iter().cloned()),
                 }
             }
             chunk.extend(nodes.by_ref().take(CHUNK.saturating_sub(held)));
-            let chunks = alloc::sync::Arc::make_mut(self.frozen.get_or_insert_default());
+            let chunks = Shared::make_mut(self.frozen.get_or_insert_default());
             chunks.push(chunk.into());
             while nodes.len() >= CHUNK {
                 chunks.push(nodes.by_ref().take(CHUNK).collect());
@@ -1445,11 +1460,18 @@ impl<Node: Clone> Family<Node>
             self.mark_ends();
             return;
         }
-        if let Some(newest) = self.tail.last_mut().and_then(alloc::sync::Arc::get_mut) {
+        if let Some(newest) = self
+            .tail
+            .last_mut()
+            .and_then(|last| match Shared::get_mut(last) {
+                Maybe::Present(nodes) => Some(nodes),
+                Maybe::Absent(_) => None,
+            })
+        {
             newest.extend(nodes);
         }
         else {
-            self.tail.push(alloc::sync::Arc::new(nodes.collect()));
+            self.tail.push(Shared::new(nodes.collect()));
         }
         self.merge_tail();
         self.mark_ends();
@@ -1461,6 +1483,10 @@ impl<Node: Clone> Family<Node>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the merged segment and a copy of a segment that a clone
+    ///   shares, growth within the family's nodes
     #[inline]
     fn merge_tail(&mut self)
     {
@@ -1469,8 +1495,8 @@ impl<Node: Clone> Family<Node>
             && let Some(newer) = self.tail.pop()
             && let Some(older) = self.tail.last_mut()
         {
-            let nodes = alloc::sync::Arc::make_mut(older);
-            match alloc::sync::Arc::try_unwrap(newer) {
+            let nodes = Shared::make_mut(older);
+            match Shared::try_unwrap(newer) {
                 Ok(owned) => nodes.extend(owned),
                 Err(shared) => nodes.extend(shared.iter().cloned()),
             }
@@ -1491,6 +1517,10 @@ impl<Node: Clone> Family<Node>
     /// - panics: none.
     /// - executable: none — the answer borrows the family mutably, so no clause
     ///   can read the family beside it; the witness reads it after.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the chunk list, chunk, or tail segment that a
+    ///   clone shares, growth within the family's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a frozen node and a node minted since, each changed
@@ -1514,11 +1544,11 @@ impl<Node: Clone> Family<Node>
         if let Some(list) = self.frozen.as_mut()
             && at < list.len()
         {
-            let chunk = alloc::sync::Arc::make_mut(list).get_mut(at)?;
-            return alloc::sync::Arc::make_mut(chunk).get_mut(within);
+            let chunk = Shared::make_mut(list).get_mut(at)?;
+            return ThinShared::make_mut(chunk).get_mut(within);
         }
         let TailPlace { segment, place } = self.segment_of(ArenaLength(within))?;
-        alloc::sync::Arc::make_mut(self.tail.get_mut(segment)?).get_mut(place)
+        Shared::make_mut(self.tail.get_mut(segment)?).get_mut(place)
     }
 }
 
@@ -1571,7 +1601,7 @@ impl TermArena
     #[inline]
     pub fn value_type_session(
         &mut self,
-        graph: alloc::sync::Arc<crate::session::Graph>,
+        graph: Shared<crate::session::Graph, Global>,
         payloads: ValueTypeId,
     ) -> ValueTypeId
     {
@@ -1586,7 +1616,7 @@ impl TermArena
     pub fn value_session_path(
         &mut self,
         path_type: ValueTypeId,
-        evidence: alloc::sync::Arc<crate::session::Evidence>,
+        evidence: Shared<crate::session::Evidence, Global>,
         payload_paths: ValueId,
     ) -> ValueId
     {
@@ -1605,7 +1635,7 @@ impl TermArena
     pub fn value_session_flow(
         &mut self,
         flow_type: ValueTypeId,
-        evidence: alloc::sync::Arc<crate::session::Evidence>,
+        evidence: Shared<crate::session::Evidence, Global>,
         payload_paths: ValueId,
     ) -> ValueId
     {
@@ -3926,7 +3956,7 @@ impl TermArena
         path_type: ValueTypeId,
         forward: ValueId,
         backward: ValueId,
-        evidence: alloc::sync::Arc<crate::PathEvidence>,
+        evidence: Shared<crate::PathEvidence, Global>,
     ) -> ValueId
     {
         self.alloc_value(Value::PathEquiv {
@@ -4028,7 +4058,7 @@ impl TermArena
         point: ValueId,
     ) -> ValueId
     {
-        let dialogues = alloc::sync::Arc::clone(&self.unrelated);
+        let dialogues = Shared::clone(&self.unrelated);
         self.alloc_value(Value::Here { point, dialogues })
     }
 
@@ -4041,7 +4071,7 @@ impl TermArena
     pub fn value_here_relating(
         &mut self,
         point: ValueId,
-        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,
+        dialogues: Shared<crate::EndpointDialogues, Global>,
     ) -> ValueId
     {
         self.alloc_value(Value::Here { point, dialogues })
@@ -4090,7 +4120,7 @@ impl TermArena
         point: ValueId,
     ) -> ValueId
     {
-        let dialogues = alloc::sync::Arc::clone(&self.unrelated);
+        let dialogues = Shared::clone(&self.unrelated);
         self.alloc_value(Value::Stay { point, dialogues })
     }
 
@@ -4103,7 +4133,7 @@ impl TermArena
     pub fn value_stay_relating(
         &mut self,
         point: ValueId,
-        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,
+        dialogues: Shared<crate::EndpointDialogues, Global>,
     ) -> ValueId
     {
         self.alloc_value(Value::Stay { point, dialogues })
@@ -4120,7 +4150,7 @@ impl TermArena
         flow_type: ValueTypeId,
         translator: ValueId,
         outputs: alloc::boxed::Box<[ValueId]>,
-        dialogues: alloc::sync::Arc<[crate::Dialogue]>,
+        dialogues: ThinShared<(), crate::Dialogue, Global>,
     ) -> ValueId
     {
         self.alloc_value(Value::ForwardFlow {
@@ -4268,7 +4298,7 @@ impl TermArena
     #[inline]
     pub fn value_higher(
         &mut self,
-        program: alloc::sync::Arc<crate::HigherProgram>,
+        program: Shared<crate::HigherProgram, Global>,
         evidence: alloc::boxed::Box<[ValueId]>,
     ) -> ValueId
     {
@@ -4283,7 +4313,7 @@ impl TermArena
     #[inline]
     pub fn value_higher_evaluation(
         &mut self,
-        dialogues: alloc::sync::Arc<[crate::EvaluationDialogues]>,
+        dialogues: ThinShared<(), crate::EvaluationDialogues, Global>,
         components: alloc::boxed::Box<[crate::EvaluationComponent]>,
     ) -> ValueId
     {
@@ -4301,7 +4331,7 @@ impl TermArena
     #[inline]
     pub fn value_quantified_evaluation(
         &mut self,
-        steps: alloc::sync::Arc<[crate::QuantifiedStep]>,
+        steps: ThinShared<(), crate::QuantifiedStep, Global>,
         children: alloc::boxed::Box<[ValueId]>,
     ) -> ValueId
     {
@@ -4387,6 +4417,10 @@ impl TermArena
     ///   constructor and truncation disciplines.
     /// - fails: never; a missing node has no observable children.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the list of the node's direct children, growth within the
+    ///   node's fields and components
     ///
     /// # Adequacy
     /// - hypothesis: L3 builds all former families with distinguishable
@@ -4476,9 +4510,9 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
     pub(crate) fn children_of(
         &self,
         node: AnyNode,
-    ) -> Vec<AnyNode>
+    ) -> SmallVec<AnyNode, 0, Global>
     {
-        let mut children: Vec<AnyNode> = Vec::new();
+        let mut children: SmallVec<AnyNode, 0, Global> = SmallVec::<_, 0, Global>::new();
         match node {
             AnyNode::Value(id) => match self.value(id) {
                 Some(&Value::Constructor {
@@ -4958,7 +4992,7 @@ impl TermArena
     pub fn value_type_data(
         &mut self,
         declaration: ConstantIndex,
-        arguments: Vec<ValueId>,
+        arguments: SmallVec<ValueId, 0, Global>,
     ) -> ValueTypeId
     {
         self.alloc_value_type(ValueType::Data {
@@ -4991,7 +5025,7 @@ impl TermArena
         family: crate::ConstantIndex,
         datatype: ValueTypeId,
         tag: crate::ConstructorTag,
-        fields: Vec<ValueId>,
+        fields: SmallVec<ValueId, 0, Global>,
     ) -> ValueId
     {
         self.alloc_value(Value::Constructor {
@@ -5012,9 +5046,9 @@ impl TermArena
     pub fn value_constructor_of(
         &mut self,
         family: crate::ConstantIndex,
-        arguments: Vec<ValueId>,
+        arguments: SmallVec<ValueId, 0, Global>,
         tag: crate::ConstructorTag,
-        fields: Vec<ValueId>,
+        fields: SmallVec<ValueId, 0, Global>,
     ) -> ValueId
     {
         let datatype = self.value_type_data(family, arguments);
@@ -5058,7 +5092,7 @@ impl TermArena
         &mut self,
         scrutinee: ValueId,
         motive: CompTypeId,
-        branches: Vec<ComputationId>,
+        branches: SmallVec<ComputationId, 0, Global>,
     ) -> ComputationId
     {
         self.computation_data_case_with_equations(scrutinee, motive, branches, EquationCount::NONE)
@@ -5074,7 +5108,7 @@ impl TermArena
         &mut self,
         scrutinee: ValueId,
         motive: CompTypeId,
-        branches: Vec<ComputationId>,
+        branches: SmallVec<ComputationId, 0, Global>,
         equations: EquationCount,
     ) -> ComputationId
     {
@@ -5136,7 +5170,7 @@ impl TermArena
     pub fn comp_type_codata(
         &mut self,
         declaration: ConstantIndex,
-        arguments: Vec<ValueId>,
+        arguments: SmallVec<ValueId, 0, Global>,
     ) -> CompTypeId
     {
         self.alloc_comp_type(CompType::Codata {
@@ -5352,12 +5386,16 @@ mod tests
     #[test]
     fn a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476()
     {
-        use alloc::vec::Vec;
+        use alloc::alloc::Global;
 
-        let rows = |family: &super::Family<u32>| family.iter().copied().collect::<Vec<_>>();
+        use gandr_kernel_data::SmallVec;
+
+        let rows = |family: &super::Family<u32>| {
+            family.iter().copied().collect::<SmallVec<_, 0, Global>>()
+        };
         let mut family = super::Family::default();
-        let mut plain = Vec::new();
-        let mut clones = Vec::new();
+        let mut plain = SmallVec::<_, 0, Global>::new();
+        let mut clones = SmallVec::<_, 0, Global>::new();
         let mut next = 0_u32;
         for (round, run) in [3_u32, 0, 1, 5, 2, 0, 7, 1].into_iter().enumerate() {
             for _ in 0 .. run {
@@ -5375,8 +5413,16 @@ mod tests
         plain.push(next);
         assert_eq!(rows(&family), plain, "every node in allocation order");
         assert_eq!(
-            family.iter().rev().copied().collect::<Vec<_>>(),
-            plain.iter().rev().copied().collect::<Vec<_>>(),
+            family
+                .iter()
+                .rev()
+                .copied()
+                .collect::<SmallVec<_, 0, Global>>(),
+            plain
+                .iter()
+                .rev()
+                .copied()
+                .collect::<SmallVec<_, 0, Global>>(),
             "and from the other end"
         );
         for (offset, node) in plain.iter().enumerate() {
@@ -5405,7 +5451,7 @@ mod tests
             let mut cut = family.clone();
             cut.truncate(super::ArenaLength::from(length));
             let mut expected = rows(&family);
-            expected.truncate(length);
+            expected.truncate(gandr_kernel_data::Count::from(length));
             assert_eq!(rows(&cut), expected, "a truncation to {length}");
             assert_eq!(usize::from(cut.len()), length);
             cut.push(200);
@@ -5422,7 +5468,7 @@ mod tests
             alone.freeze();
             alone.truncate(super::ArenaLength::from(length));
             let mut expected = plain.clone();
-            expected.truncate(length);
+            expected.truncate(gandr_kernel_data::Count::from(length));
             assert_eq!(rows(&alone), expected, "a truncation to {length}, alone");
             alone.push(200);
             assert_eq!(
@@ -5799,7 +5845,7 @@ mod tests
             AnyNode::ValueType(removed_value_type),
             AnyNode::CompType(removed_comp_type),
         ] {
-            assert_eq!(arena.children_of(node), alloc::vec![]);
+            assert!(arena.children_of(node).is_empty());
         }
         arena.truncate_to(stale);
         assert_eq!(arena, kept, "a stale high mark cannot grow a family");

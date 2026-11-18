@@ -29,7 +29,7 @@ The kernel's own data types: a region whose ids carry its brand, a small vector,
 
 - The region: `Region`, `scoped` and `scoped_in` hold values under a `Budget` with ids branded by the scope; `Adopt`, `Translation`, `Id::key` and `Region::seat` are the three crossings, and `Region::forks` forks `Width` children over one frozen prefix, each answer among the `Siblings`.
 - The small vector: `SmallVec<T, N, A>` keeps up to `N` items in place and all of them past `N` in one block of `A`, and `try_reserve` answers a refused grow with `Refused`.
-- The shared pointer: `Shared<T, A>` shares one value by one count with no weak count, `Unique<T, A>` builds the value before the share, and `ThinShared<H, T, A>` is one word over a header and a slice.
+- The shared pointer: `Shared<T, A>` shares one value by one count with no weak count, `Unique<T, A>` builds the value before the share, and `ThinShared<H, T, A>` is one word over a header and a slice. An empty default of `ThinShared` with no header, over the global allocator, shares one static block and allocates nothing.
 - The small string: `SmallString<A>` holds a text of up to 23 bytes inline, a static text, or a block of `A`, in 24 bytes for the global allocator.
 
 ## Expected features

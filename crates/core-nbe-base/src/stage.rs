@@ -76,10 +76,12 @@
 //! reusing the glued evaluator. Residual extraction supports closed first-order
 //! natural functions, rather than general closure conversion.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::stage::Arena;
 use gandr_kernel_term::stage::Budget;
 use gandr_kernel_term::stage::Certificate;
@@ -121,6 +123,10 @@ enum Task
 /// # Errors
 /// Returns stage syntax, substitution, `Exhausted`, or `Unbalanced` errors.
 ///
+/// # Cost
+/// - allocation: the task stack, the normal map and the certificate steps,
+///   growth within the work allowance of the budget
+///
 /// # Adequacy
 /// - hypothesis: L2/L3 — residual power at exponents zero through eight is
 ///   compared with integer exponentiation; tampered certificates are refused.
@@ -142,7 +148,7 @@ pub fn normalize(
 {
     let mut tasks = Vec::from([Task::Visit(root)]);
     let mut normals = BTreeMap::new();
-    let mut steps = Vec::new();
+    let mut steps = SmallVec::<_, 0, Global>::new();
     while let Some(task) = tasks.pop() {
         budget.spend()?;
         match task {

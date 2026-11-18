@@ -24,20 +24,23 @@ test = true
 name = "tests"
 path = "tests/lib.rs"
 
-# The session runs the dispatcher's two composition halves over the built-in
-# grammar, carries the parser's completion obligations, reads the lowered
-# module's declarations, origins and import scope, hands the same
-# declarations to the incremental checker with its checkpoint stores, names
-# the kernel's literals and indices in its edit actions, reads a
-# declaration's produced verdict to decide what it evaluates, and commits the
-# kernel artifact as records into a block store, reading it back through the
-# kernel's decoder; the printer spells a checkpoint's type for every face.
-# The trace layer names a revision's constants as the diagnostics spell them,
-# so a face prints a traced goal on demand.
+# The session drives each half of the dispatcher's composition with the
+# default grammar. It carries the parser's completion obligations. It reads the
+# lowered module's declarations, origins and import scope. It hands the same
+# declarations to the incremental checker with its checkpoint stores. It names
+# the kernel's literals and indices in its edit actions.
+#
+# A declaration's produced verdict decides what the session evaluates. The
+# session commits the kernel artifact as records into a block store, and the
+# kernel's decoder reads it again. The printer spells a checkpoint's type for
+# every face. The trace layer names a revision's constants as the diagnostics
+# spell them, so a face prints a traced goal on demand.
+#
 # The session molds forms and judges candidates through the fork crate's
-# trait, on the pool the driver hands it.
-# The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# trait, on the pool the driver hands it. The pinned anodized facade supplies
+# core-only specification helpers. It does not enable its logic/BigInt
+# feature. A checkpoint shares a path's evidence in the blocks of the data
+# crate.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -47,6 +50,7 @@ gandr-core-fork.workspace = true
 gandr-core-incremental.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-data.workspace = true
 gandr-kernel-term.workspace = true
 gandr-storage-artifact.workspace = true
 gandr-storage-records.workspace = true

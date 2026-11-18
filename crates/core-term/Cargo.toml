@@ -36,6 +36,7 @@ path = "tests/lib.rs"
 [dependencies]
 anodized.workspace = true
 gandr-kernel-check-memo.workspace = true
+gandr-kernel-data.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-levitation.workspace = true

@@ -1,8 +1,11 @@
 //! The replay of a match's cover derivation at its definition's admission.
 
+use alloc::alloc::Global;
+
 use anodized::spec;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::ConstantIndex;
@@ -33,8 +36,11 @@ fn two(environment: &mut Environment) -> ConstantIndex
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![unit]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([unit]),
+        ]),
         kind,
     );
     environment
@@ -80,27 +86,32 @@ fn derivation(
     let zero = cover.mint(Step::Var(0));
     let succ = cover.mint(Step::Var(1));
     let constructors = match broken {
-        Broken::Order => vec![
+        Broken::Order => SmallVec::<_, 0, Global>::from_iter([
             (ConstructorTag::from(1_usize), FieldCount::from(1_usize)),
             (ConstructorTag::from(0_usize), FieldCount::from(0_usize)),
-        ],
-        Broken::Dropped => vec![(ConstructorTag::from(0_usize), FieldCount::from(0_usize))],
-        Broken::Fields => vec![
+        ]),
+        Broken::Dropped => SmallVec::<_, 0, Global>::from_iter([(
+            ConstructorTag::from(0_usize),
+            FieldCount::from(0_usize),
+        )]),
+        Broken::Fields => SmallVec::<_, 0, Global>::from_iter([
             (ConstructorTag::from(0_usize), FieldCount::from(0_usize)),
             (ConstructorTag::from(1_usize), FieldCount::from(2_usize)),
-        ],
+        ]),
         Broken::Whole
         | Broken::Family
         | Broken::Loop
         | Broken::Dangling
         | Broken::Absurd
-        | Broken::Root => vec![
+        | Broken::Root => SmallVec::<_, 0, Global>::from_iter([
             (ConstructorTag::from(0_usize), FieldCount::from(0_usize)),
             (ConstructorTag::from(1_usize), FieldCount::from(1_usize)),
-        ],
+        ]),
     };
     let loops = match broken {
-        Broken::Loop => vec![Loop::new(family, CellIndex::from(0_usize))],
+        Broken::Loop => {
+            SmallVec::<_, 0, Global>::from_iter([Loop::new(family, CellIndex::from(0_usize))])
+        },
         Broken::Whole
         | Broken::Order
         | Broken::Dropped
@@ -108,18 +119,18 @@ fn derivation(
         | Broken::Family
         | Broken::Dangling
         | Broken::Absurd
-        | Broken::Root => vec![],
+        | Broken::Root => SmallVec::new(),
     };
     let branches = match broken {
-        Broken::Dropped => vec![zero],
-        Broken::Loop => vec![zero, succ, zero],
-        Broken::Dangling => vec![zero, StepId::from(9_u32)],
+        Broken::Dropped => SmallVec::<_, 0, Global>::from_iter([zero]),
+        Broken::Loop => SmallVec::<_, 0, Global>::from_iter([zero, succ, zero]),
+        Broken::Dangling => SmallVec::<_, 0, Global>::from_iter([zero, StepId::from(9_u32)]),
         Broken::Whole
         | Broken::Order
         | Broken::Fields
         | Broken::Family
         | Broken::Absurd
-        | Broken::Root => vec![zero, succ],
+        | Broken::Root => SmallVec::<_, 0, Global>::from_iter([zero, succ]),
     };
     let cases = match broken {
         Broken::Family => Cases::Data {
@@ -141,7 +152,7 @@ fn derivation(
         },
     };
     let branches = if broken == Broken::Absurd {
-        vec![]
+        SmallVec::new()
     }
     else {
         branches
@@ -163,14 +174,18 @@ fn case_of_two(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let datatype = arena.value_type_data(family, vec![]);
+    let datatype = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
     let returned = arena.computation_return(unit);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
     let motive = arena.comp_type_returner(unit_type);
     let succ = arena.computation_lambda(returned);
-    let case = arena.computation_data_case(scrutinee, motive, vec![returned, succ]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([returned, succ]),
+    );
     let function = arena.computation_lambda(case);
     let body = arena.value_thunk(function);
     let arrow = arena.comp_type_arrow(datatype, motive);
@@ -178,10 +193,10 @@ fn case_of_two(
     let root = if broken == Broken::Root { succ } else { case };
     let declaration = staging
         .def(LevelSignature::monomorphic(), declared, body)
-        .covered(vec![Covered {
+        .covered(SmallVec::<_, 0, Global>::from_iter([Covered {
             root,
             cover: derivation(family, broken),
-        }]);
+        }]));
     environment.add_decl(declaration).map(|_admitted| ())
 }
 

@@ -156,6 +156,25 @@ enum Operation
     Remove(usize),
     /// Pop the last item if it is below the bound.
     PopIf(u16),
+    /// Insert the item at the index, if the index is at most the length.
+    Insert(usize, u16),
+    /// Extend by clones of the items of a slice.
+    ExtendFromSlice(Vec<u16>),
+    /// Resize to the length, with clones of the item.
+    Resize(usize, u16),
+    /// Replace the range, clamped to the length, with the items.
+    ReplaceRange(usize, usize, Vec<u16>),
+    /// Split at the index, if the index is at most the length.
+    SplitOff(usize),
+    /// Append a vector of the items.
+    Append(Vec<u16>),
+    /// Drop each item that equals the item before it.
+    Dedup,
+    /// Take up to the count of items from the back of the range, clamped to
+    /// the length, and drop the drain.
+    DrainBack(usize, usize, usize),
+    /// Give the spare room of the block back.
+    ShrinkToFit,
 }
 
 /// Any operation, over lengths up to about three times the largest `N`.
@@ -177,6 +196,29 @@ fn operation() -> impl Strategy<Value = Operation>
         (0_usize .. 24_usize).prop_map(Operation::SwapRemove),
         (0_usize .. 24_usize).prop_map(Operation::Remove),
         any::<u16>().prop_map(Operation::PopIf),
+        (0_usize .. 24_usize, any::<u16>()).prop_map(|(at, item)| Operation::Insert(at, item)),
+        prop::collection::vec(any::<u16>(), 0_usize .. 12_usize)
+            .prop_map(Operation::ExtendFromSlice),
+        (0_usize .. 24_usize, 0_u16 .. 4_u16).prop_map(|(len, item)| Operation::Resize(len, item)),
+        (
+            0_usize .. 24_usize,
+            0_usize .. 24_usize,
+            prop::collection::vec(any::<u16>(), 0_usize .. 12_usize)
+        )
+            .prop_map(|(first, second, items)| {
+                Operation::ReplaceRange(first.min(second), first.max(second), items)
+            }),
+        (0_usize .. 24_usize).prop_map(Operation::SplitOff),
+        prop::collection::vec(any::<u16>(), 0_usize .. 12_usize).prop_map(Operation::Append),
+        Just(Operation::Dedup),
+        (0_usize .. 24_usize, 0_usize .. 24_usize, 0_usize .. 8_usize).prop_map(
+            |(first, second, taken)| Operation::DrainBack(
+                first.min(second),
+                first.max(second),
+                taken
+            )
+        ),
+        Just(Operation::ShrinkToFit),
     ]
 }
 
@@ -211,8 +253,10 @@ fn agree<const N: usize>(operations: &[Operation]) -> Result<(), TestCaseError>
             },
             Operation::Drain(start, end) => {
                 let (start, end) = (start.min(model.len()), end.min(model.len()));
+                let drain = small.drain(start .. end);
+                prop_assert_eq!(Some(drain.as_slice()), model.get(start .. end));
                 prop_assert!(
-                    small.drain(start .. end).eq(model.drain(start .. end)),
+                    drain.eq(model.drain(start .. end)),
                     "the drain yields the model's range"
                 );
             },
@@ -244,6 +288,56 @@ fn agree<const N: usize>(operations: &[Operation]) -> Result<(), TestCaseError>
                     model.pop_if(|item| *item < bound)
                 );
             },
+            Operation::Insert(at, item) => {
+                if at <= model.len() {
+                    small.insert(Count::from(at), item);
+                    model.insert(at, item);
+                }
+            },
+            Operation::ExtendFromSlice(ref items) => {
+                small.extend_from_slice(items);
+                model.extend_from_slice(items);
+            },
+            Operation::Resize(len, item) => {
+                small.resize(Count::from(len), item);
+                model.resize(len, item);
+            },
+            Operation::ReplaceRange(start, end, ref items) => {
+                let (start, end) = (start.min(model.len()), end.min(model.len()));
+                small.replace_range(start .. end, items.iter().copied());
+                drop(model.splice(start .. end, items.iter().copied()));
+            },
+            Operation::SplitOff(at) => {
+                if at <= model.len() {
+                    let rest = small.split_off(Count::from(at));
+                    let kept = model.split_off(at);
+                    prop_assert_eq!(rest.as_slice(), kept.as_slice());
+                }
+            },
+            Operation::Append(ref items) => {
+                let mut other: SmallVec<u16, N, Global> = items.iter().copied().collect();
+                small.append(&mut other);
+                model.extend_from_slice(items);
+                prop_assert!(other.is_empty(), "the appended vector is empty");
+            },
+            Operation::Dedup => {
+                small.dedup();
+                model.dedup();
+            },
+            Operation::DrainBack(start, end, taken) => {
+                let (start, end) = (start.min(model.len()), end.min(model.len()));
+                let mut drain = small.drain(start .. end);
+                let mut kept = model.drain(start .. end);
+                for _ in 0 .. taken {
+                    prop_assert_eq!(drain.next_back(), kept.next_back());
+                }
+                prop_assert_eq!(drain.as_slice(), kept.as_slice());
+            },
+            Operation::ShrinkToFit => {
+                small.shrink_to_fit();
+                model.shrink_to_fit();
+                prop_assert_eq!(usize::from(small.capacity()), model.len().max(N));
+            },
         }
         prop_assert_eq!(small.as_slice(), model.as_slice());
         prop_assert_eq!(
@@ -255,8 +349,20 @@ fn agree<const N: usize>(operations: &[Operation]) -> Result<(), TestCaseError>
         small.clone().into_iter().eq(model.iter().copied()),
         "the clone yields the model's items by value"
     );
+    prop_assert!(
+        small
+            .clone()
+            .into_iter()
+            .rev()
+            .eq(model.iter().rev().copied()),
+        "the clone yields the model's items by value from the back"
+    );
     let collected: SmallVec<u16, N, Global> = model.iter().copied().collect();
     prop_assert_eq!(collected.as_slice(), model.as_slice());
+    let converted = Vec::from(small.clone());
+    prop_assert_eq!(converted.as_slice(), model.as_slice());
+    let boxed = small.into_boxed_slice();
+    prop_assert_eq!(&*boxed, model.as_slice());
     Ok(())
 }
 

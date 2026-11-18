@@ -13,9 +13,12 @@
 //! rules compute: a closed call walks the tree to one leaf, which is one step
 //! of a rule, and the recursive calls it makes are calls of the same rules.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
@@ -217,6 +220,12 @@ struct Linker<'walk>
 ///
 /// # Errors
 /// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the families of the operation's inputs, growth within the
+///   operation's arity
+/// - allocation: the pending tree nodes and the learned case facts, growth
+///   within the tree's nodes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the tree of `or`'s three rules is admitted, the same tree
@@ -809,6 +818,12 @@ impl Linker<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the minted slots, the work stack and each constructor's
+    ///   field values, growth within the built values
+    /// - allocation: the minted value in the arena, durable by the arena's
+    ///   identifiers
     fn value(
         &mut self,
         arena: &mut TermArena,
@@ -835,11 +850,12 @@ impl Linker<'_>
                         self.work.extend(fields.iter().map(|&field| (field, false)));
                         continue;
                     }
-                    let mut values = Vec::with_capacity(fields.len());
+                    let mut values =
+                        SmallVec::<_, 0, Global>::with_capacity(Count::from(fields.len()));
                     for field in fields {
                         values.push((*self.minted.get(field.0)?)?);
                     }
-                    arena.value_constructor_of(family, Vec::new(), tag, values)
+                    arena.value_constructor_of(family, SmallVec::<_, 0, Global>::new(), tag, values)
                 },
             };
             *self.minted.get_mut(position.0)? = Some(value);

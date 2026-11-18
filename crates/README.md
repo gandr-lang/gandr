@@ -35,7 +35,7 @@ flowchart BT
   workflow
   kernel -->|5| theory
   core -->|14| theory
-  core -->|35| kernel
+  core -->|43| kernel
   storage -->|6| theory
   storage -->|1| kernel
   runtime -->|1| theory
@@ -43,7 +43,7 @@ flowchart BT
   runtime -->|6| core
   runtime -->|3| storage
   surface -->|38| theory
-  surface -->|28| kernel
+  surface -->|31| kernel
   surface -->|48| core
   surface -->|11| storage
   surface -->|7| runtime

@@ -73,6 +73,8 @@ use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_check_memo::MemoRecord;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
@@ -2297,6 +2299,10 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the open tasks for the node's children, growth within the
+///   node's children in the arena
+///
 /// # Adequacy
 /// - hypothesis: L3 on lambda, bind, case, dependent-code and dependent-pair
 ///   positions; exact rewritten free indices separate dropped children,
@@ -2989,6 +2995,11 @@ fn popped(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a copy of the node's children where a child changes, growth
+///   within the node's children
+/// - allocation: the rewritten value node, durable by the arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 on a literal replacement, a pair of differently scoped
 ///   variables, a carried replacement and an unreadable root; exact
@@ -3113,7 +3124,7 @@ fn close_value(
                 id
             }
             else {
-                arena.value_session_path(classifier, alloc::sync::Arc::clone(evidence), paths)
+                arena.value_session_path(classifier, Shared::clone(evidence), paths)
             }
         },
         Value::Univalence(equivalence) => {
@@ -3137,7 +3148,7 @@ fn close_value(
                 id
             }
             else {
-                arena.value_session_flow(classifier, alloc::sync::Arc::clone(evidence), paths)
+                arena.value_session_flow(classifier, Shared::clone(evidence), paths)
             }
         },
         Value::PathRefl(code) => {
@@ -3158,7 +3169,7 @@ fn close_value(
                 id
             }
             else {
-                arena.value_here_relating(rewritten, alloc::sync::Arc::clone(dialogues))
+                arena.value_here_relating(rewritten, Shared::clone(dialogues))
             }
         },
         Value::Stay {
@@ -3170,7 +3181,7 @@ fn close_value(
                 id
             }
             else {
-                arena.value_stay_relating(rewritten, alloc::sync::Arc::clone(dialogues))
+                arena.value_stay_relating(rewritten, Shared::clone(dialogues))
             }
         },
         Value::ForwardFlow {
@@ -3197,7 +3208,7 @@ fn close_value(
                 id
             }
             else {
-                let dialogues = alloc::sync::Arc::clone(dialogues);
+                let dialogues = ThinShared::clone(dialogues);
                 let outputs = rewritten.unwrap_or_else(|| outputs.clone());
                 arena.value_forward_flow(classifier, map, outputs, dialogues)
             }
@@ -3257,7 +3268,7 @@ fn close_value(
                     *slot = result;
                 }
             }
-            let program = alloc::sync::Arc::clone(program);
+            let program = Shared::clone(program);
             rewritten.map_or(id, |evidence| arena.value_higher(program, evidence))
         },
         Value::HigherEvaluation {
@@ -3284,7 +3295,7 @@ fn close_value(
                     *slot = result;
                 }
             }
-            let dialogues = alloc::sync::Arc::clone(dialogues);
+            let dialogues = ThinShared::clone(dialogues);
             rewritten.map_or(id, |components| {
                 arena.value_higher_evaluation(dialogues, components)
             })
@@ -3304,7 +3315,7 @@ fn close_value(
                     *slot = result;
                 }
             }
-            let steps = alloc::sync::Arc::clone(steps);
+            let steps = ThinShared::clone(steps);
             rewritten.map_or(id, |children| {
                 arena.value_quantified_evaluation(steps, children)
             })
@@ -3350,7 +3361,7 @@ fn close_value(
                     rewritten_type,
                     rewritten_forward,
                     rewritten_backward,
-                    alloc::sync::Arc::clone(evidence),
+                    Shared::clone(evidence),
                 )
             }
         },
@@ -3673,6 +3684,10 @@ fn shifted_variable(
 /// - provides: the computation arm of the combining half.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the rewritten computation node and its copied branches, growth
+///   within the node's children
 ///
 /// # Adequacy
 /// - hypothesis: L3 on lambda, bind and case bodies plus unreadable roots;
@@ -4082,6 +4097,10 @@ fn close_computation(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a copy of the changed node's children and the fresh value-type
+///   node, growth within the value-type node's children
+///
 /// # Adequacy
 /// - hypothesis: L3 — rewriting consumes exactly its child outcomes; closed
 ///   nodes retain their identities, while substituting a quote fires decoding.
@@ -4232,7 +4251,7 @@ fn close_value_type(
                 id
             }
             else {
-                arena.value_type_session(alloc::sync::Arc::clone(graph), rewritten)
+                arena.value_type_session(Shared::clone(graph), rewritten)
             }
         },
         ValueType::List(element) => {
@@ -4337,6 +4356,10 @@ fn close_value_type(
 /// - provides: the computation-type arm of the combining half.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: a copy of the node's children and the rewritten
+///   computation-type node, growth within the node's children
 ///
 /// # Adequacy
 /// - hypothesis: L3 on a closed returner, a dependent code decode and

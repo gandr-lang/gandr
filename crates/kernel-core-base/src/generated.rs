@@ -6,8 +6,10 @@
 //! eliminations of a generated term read values bound in other scopes, and
 //! its variables read binders of its own and binders past it.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
@@ -259,6 +261,9 @@ fn popped_computation(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the stacks of values and computations and their terms, setup
 #[inline]
 pub fn generated(
     arena: &mut TermArena,
@@ -356,7 +361,7 @@ pub fn generated(
                 computations.push(arena.computation_data_case_with_equations(
                     scrutinee,
                     motive,
-                    Vec::from([first, second]),
+                    SmallVec::<_, 0, Global>::from_iter([first, second]),
                     EquationCount::from(usize::from(equations)),
                 ));
             },
@@ -408,6 +413,9 @@ pub fn generated(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the constructor's index and its field, setup
 fn constructed(
     arena: &mut TermArena,
     values: &mut Vec<ValueId>,
@@ -416,14 +424,14 @@ fn constructed(
 {
     let index = popped_value(arena, values);
     let fields = if tag == ConstructorTag::from(0_usize) {
-        Vec::new()
+        SmallVec::<_, 0, Global>::new()
     }
     else {
-        Vec::from([popped_value(arena, values)])
+        SmallVec::<_, 0, Global>::from_iter([popped_value(arena, values)])
     };
     arena.value_constructor_of(
         ConstantIndex::from(0_usize),
-        Vec::from([index]),
+        SmallVec::<_, 0, Global>::from_iter([index]),
         tag,
         fields,
     )
@@ -477,6 +485,9 @@ fn scrutinised(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the redex's terms and their branches, setup
 fn redexed(
     arena: &mut TermArena,
     head: Head,
@@ -544,7 +555,7 @@ fn redexed(
             arena.computation_data_case_with_equations(
                 scrutinee,
                 motive,
-                Vec::from([first, second]),
+                SmallVec::<_, 0, Global>::from_iter([first, second]),
                 EquationCount::from(usize::from(equations)),
             )
         },

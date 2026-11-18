@@ -1,8 +1,9 @@
 //! The universe clause reaches native paths without erasing certificate action.
 
+use alloc::alloc::Global;
 use alloc::vec;
-use alloc::vec::Vec;
 
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -55,8 +56,8 @@ fn a_universe_fibre_reads_its_data_codes_through_the_admission_log()
         let integer = staging.arena().value_type_base(BaseType::Integer);
         let staged = staging.data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            vec![vec![integer]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([integer])]),
             kind,
         );
         let _admitted = environment
@@ -65,8 +66,14 @@ fn a_universe_fibre_reads_its_data_codes_through_the_admission_log()
     }
     let entries = environment.entries();
     let mut arena = environment.arena().clone();
-    let old = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let other = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let old = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let other = arena.value_type_data(
+        ConstantIndex::from(1_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let old = arena.value_quote(old);
     let other = arena.value_quote(other);
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());

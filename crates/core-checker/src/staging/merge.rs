@@ -259,6 +259,10 @@ impl Merge
     /// Returns `StageError::Unbalanced`, `StageError::UnknownTerm`,
     /// `StageError::UnknownType` or `StageError::Overflow`.
     ///
+    /// # Cost
+    /// - allocation: the worker's placement of the segment's classifiers and
+    ///   terms in the arena, growth within the segment's classifiers and terms
+    ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — the power and double programs merge to the arena
     ///   and certificates one-arena normalization gives, term for term, from

@@ -1755,6 +1755,10 @@ pub fn mint_in(
 /// - provides: `Unplaced` when no item of the program carries it.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the value former's child lists and copied labels, growth
+///   within the value's children
+///
 /// # Adequacy
 /// - hypothesis: L2 — a missing abstract reference is refused; repeated keys
 ///   and skipped positions distinguish successful relocation by occurrence.

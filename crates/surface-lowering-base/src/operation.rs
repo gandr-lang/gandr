@@ -393,6 +393,10 @@ struct Work<'face>
 /// # Errors
 /// [`RouteFault`].
 ///
+/// # Cost
+/// - allocation: the plan's arms, rows, decision nodes and carried rules,
+///   growth within the operation's rules and their inputs
+///
 /// # Adequacy
 /// - hypothesis: L3 — a two-output operation over a helper runs to its results
 ///   in order, an operation missing a constructor has no route, a call to a
@@ -476,7 +480,7 @@ pub fn plan_operation(
         .map(|face| (&face.lhs, &face.rhs))
         .chain(derived.iter().map(|&&(ref lhs, ref rhs)| (lhs, rhs)))
         .map(|sides| read_rule(sides, operation, (table, own)))
-        .collect::<Result<Vec<_>, _>>()
+        .collect::<Result<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>, _>>()
         .map(gandr_kernel_term::OperationRules::new)?;
     Ok(OperationPlan {
         inputs,

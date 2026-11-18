@@ -1,9 +1,9 @@
 //! Recursive nominal blocks, structural fixpoints typed by stages and gated
 //! fixpoint unfolding through admission and replay.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
-use alloc::sync::Arc;
 
 use anodized::spec;
 use gandr_kernel_conversion_trace::ConversionDecision;
@@ -20,6 +20,7 @@ use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::replay;
 use gandr_kernel_core::stage_order::below;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Component;
@@ -255,7 +256,10 @@ fn held(
             return arena.value_quote_computation(element);
         },
         Holder::QuotedCodata => {
-            let codata = arena.comp_type_codata(ConstantIndex::from(0_usize), vec![code]);
+            let codata = arena.comp_type_codata(
+                ConstantIndex::from(0_usize),
+                SmallVec::<_, 0, Global>::from_iter([code]),
+            );
             return arena.value_quote_computation(codata);
         },
         Holder::Case => {
@@ -266,7 +270,7 @@ fn held(
             let arm = arena.computation_return(unit);
             let one = arena.value_type_unit();
             let motive = arena.comp_type_returner(one);
-            arena.computation_data_case(code, motive, vec![arm])
+            arena.computation_data_case(code, motive, SmallVec::<_, 0, Global>::from_iter([arm]))
         },
         Holder::SigmaSplit => {
             let body = arena.computation_return(unit);
@@ -314,19 +318,37 @@ fn held(
         Holder::ForwardFlow => {
             let one = arena.value_type_unit();
             let flow = arena.value_type_flow(one, code, code);
-            return arena.value_forward_flow(flow, code, Box::from([code]), Arc::from(Vec::new()));
+            return arena.value_forward_flow(
+                flow,
+                code,
+                Box::from([code]),
+                gandr_kernel_data::ThinShared::from_header_and_iter((), []),
+            );
         },
         Holder::SessionPath => {
             let one = arena.value_type_unit();
-            return arena.value_session_path(one, Arc::new(Evidence::default()), code);
+            return arena.value_session_path(
+                one,
+                gandr_kernel_data::Shared::new(Evidence::default()),
+                code,
+            );
         },
         Holder::SessionFlow => {
             let one = arena.value_type_unit();
-            return arena.value_session_flow(one, Arc::new(Evidence::default()), code);
+            return arena.value_session_flow(
+                one,
+                gandr_kernel_data::Shared::new(Evidence::default()),
+                code,
+            );
         },
         Holder::Equivalence => {
             let one = arena.value_type_unit();
-            return arena.value_path_equiv(one, code, code, Arc::new(PathEvidence::default()));
+            return arena.value_path_equiv(
+                one,
+                code,
+                code,
+                gandr_kernel_data::Shared::new(PathEvidence::default()),
+            );
         },
         Holder::QuotedStaged => {
             let staged = arena.value_type_staged(own, Stage::At(StageId::from(0_usize)));
@@ -404,12 +426,15 @@ fn nat(environment: &mut Environment) -> CheckedId
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(position, vec![]);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     environment
@@ -441,11 +466,14 @@ fn list(environment: &mut Environment) -> CheckedId
     let element = arena.value_type_element(parameter, Level::zero());
     // The tail stands past the head's binder: the parameter is one out.
     let past_head = arena.value_variable(DeBruijnIndex::from(1));
-    let own = arena.value_type_data(position, vec![past_head]);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([past_head]));
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![universe],
-        vec![vec![], vec![element, own]],
+        SmallVec::<_, 0, Global>::from_iter([universe]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([element, own]),
+        ]),
         universe,
     );
     environment
@@ -475,16 +503,19 @@ fn tree(
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
-    let own = arena.value_type_data(position, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(own);
     let branching = arena.comp_type_arrow(nat_type, returner);
     let field = arena.value_type_thunk(branching);
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![field]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([field]),
+        ]),
         kind,
     );
     environment
@@ -532,8 +563,8 @@ fn consumed(environment: &mut Environment) -> CheckedId
     let field = consuming(arena, element, returns);
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![universe],
-        vec![vec![field]],
+        SmallVec::<_, 0, Global>::from_iter([universe]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([field])]),
         universe,
     );
     environment.add_decl(declaration).expect("Test is admitted")
@@ -573,13 +604,13 @@ fn placed(placement: Placement) -> Result<CheckedId, KernelError>
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     let parameter = arena.value_variable(DeBruijnIndex::from(0));
-    let own = arena.value_type_data(position, vec![parameter]);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([parameter]));
     // Past one binder the parameter is one out.
     let past = arena.value_variable(DeBruijnIndex::from(1));
-    let own_past = arena.value_type_data(position, vec![past]);
+    let own_past = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([past]));
     let code = arena.value_quote(own);
     let one = arena.value_quote(unit);
-    let mut parameters = vec![universe];
+    let mut parameters = SmallVec::<_, 0, Global>::from_iter([universe]);
     let field = match placement {
         Placement::Direct => own,
         Placement::Returned => {
@@ -603,20 +634,27 @@ fn placed(placement: Placement) -> Result<CheckedId, KernelError>
             let both = arena.comp_type_with(&[first, returns]);
             arena.value_type_thunk(both)
         },
-        Placement::Nested => arena.value_type_data(list, vec![code]),
+        Placement::Nested => {
+            arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([code]))
+        },
         Placement::Domain => consuming(arena, own, returns),
         Placement::TwoDomains => {
             let inner = consuming(arena, own, returns);
             consuming(arena, inner, returns)
         },
-        Placement::NonUniform => arena.value_type_data(position, vec![one]),
+        Placement::NonUniform => {
+            arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([one]))
+        },
         Placement::NonUniformDomain => {
-            let other = arena.value_type_data(position, vec![one]);
+            let other = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([one]));
             consuming(arena, other, returns)
         },
-        Placement::Consumed => arena.value_type_data(consumed, vec![code]),
+        Placement::Consumed => {
+            arena.value_type_data(consumed, SmallVec::<_, 0, Global>::from_iter([code]))
+        },
         Placement::ConsumedDomain => {
-            let tested = arena.value_type_data(consumed, vec![code]);
+            let tested =
+                arena.value_type_data(consumed, SmallVec::<_, 0, Global>::from_iter([code]));
             consuming(arena, tested, returns)
         },
         Placement::Lifted => arena.value_type_lift(own, Level::zero()),
@@ -624,7 +662,10 @@ fn placed(placement: Placement) -> Result<CheckedId, KernelError>
             let later = usize::from(position)
                 .checked_add(1)
                 .expect("a later position");
-            arena.value_type_data(ConstantIndex::from(later), vec![])
+            arena.value_type_data(
+                ConstantIndex::from(later),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            )
         },
         Placement::Parameter => {
             parameters.push(own);
@@ -646,7 +687,7 @@ fn placed(placement: Placement) -> Result<CheckedId, KernelError>
     let declaration = staging.data(
         LevelSignature::monomorphic(),
         parameters,
-        vec![vec![field]],
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([field])]),
         universe,
     );
     environment.add_decl(declaration)
@@ -693,14 +734,17 @@ fn chain(consumer: Consumer) -> Result<CheckedId, KernelError>
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(chain, vec![]);
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     let test = consuming(arena, own, returns);
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own, test]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own, test]),
+        ]),
         kind,
     );
     environment
@@ -708,7 +752,7 @@ fn chain(consumer: Consumer) -> Result<CheckedId, KernelError>
         .expect("Chain is stratified");
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(chain, vec![]);
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     let test = consuming(arena, own, returns);
@@ -727,7 +771,7 @@ fn chain(consumer: Consumer) -> Result<CheckedId, KernelError>
         .position();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(chain, vec![]);
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     let done = arena.value_unit();
@@ -754,7 +798,11 @@ fn chain(consumer: Consumer) -> Result<CheckedId, KernelError>
     let on_link = arena.computation_lambda(applied);
     let on_link = arena.computation_lambda(on_link);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(scrutinee, returns, vec![on_start, on_link]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([on_start, on_link]),
+    );
     let body = arena.computation_lambda(case);
     let declared = consuming(arena, own, returns);
     let value = arena.value_thunk(body);
@@ -815,12 +863,15 @@ fn wrapped_chain(
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(chain, vec![]);
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
     let held = wrapping(arena, wrapper, own);
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own, held]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own, held]),
+        ]),
         kind,
     );
     environment
@@ -828,7 +879,7 @@ fn wrapped_chain(
         .expect("Chain is stratified");
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(chain, vec![]);
+    let own = arena.value_type_data(chain, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     let done = arena.value_unit();
@@ -837,7 +888,11 @@ fn wrapped_chain(
     let on_link = arena.computation_lambda(applied);
     let on_link = arena.computation_lambda(on_link);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(scrutinee, returns, vec![on_start, on_link]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([on_start, on_link]),
+    );
     let body = arena.computation_lambda(case);
     let declared = consuming(arena, own, returns);
     let value = arena.value_thunk(body);
@@ -960,7 +1015,11 @@ fn case_on_argument(
 ) -> ComputationId
 {
     let argument = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(argument, returner, vec![on_zero, on_successor]);
+    let case = arena.computation_data_case(
+        argument,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_zero, on_successor]),
+    );
     arena.computation_lambda(case)
 }
 
@@ -977,13 +1036,22 @@ fn two_deep(
 ) -> ComputationId
 {
     let field = arena.value_variable(field);
-    let rebuilt = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![field]);
+    let rebuilt = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([field]),
+    );
     let recursive = arena.value_variable(DeBruijnIndex::from(3));
     let forced = arena.computation_force(recursive);
     let called = arena.computation_application(forced, rebuilt);
     let on_inner = arena.computation_lambda(called);
     let inner_scrutinee = arena.value_variable(DeBruijnIndex::from(0));
-    let inner = arena.computation_data_case(inner_scrutinee, returner, vec![returned, on_inner]);
+    let inner = arena.computation_data_case(
+        inner_scrutinee,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([returned, on_inner]),
+    );
     let on_outer = arena.computation_lambda(inner);
     case_on_argument(arena, returner, returned, on_outer)
 }
@@ -1037,10 +1105,15 @@ fn claim(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let returned = arena.computation_return(zero);
     // Under the fixpoint's body: `rec` is 0. Under its λ: `x` 0, `rec`
     // 1. Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2.
@@ -1120,7 +1193,7 @@ fn apply(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let function = arena.comp_type_arrow(nat_type, returner);
     let thunked = arena.value_type_thunk(function);
@@ -1195,7 +1268,7 @@ fn nat_eliminator(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let motive = match motive {
         Motive::Returner => returner,
@@ -1224,7 +1297,11 @@ fn nat_eliminator(
     let applied = arena.computation_application(with_field, induction);
     let on_successor = arena.computation_lambda(applied);
     let argument = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(argument, motive, vec![on_zero, on_successor]);
+    let case = arena.computation_data_case(
+        argument,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([on_zero, on_successor]),
+    );
     let over_argument = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(over_argument, FixpointEvidence::StructuralDescent);
     let over_successor = arena.computation_lambda(fixpoint);
@@ -1257,7 +1334,7 @@ fn plus(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let motive = arena.comp_type_arrow(nat_type, returner);
     let classifier = arena.comp_type_arrow(nat_type, motive);
@@ -1270,8 +1347,12 @@ fn plus(
     // `m_s = thunk (λp. λih. λn. r ← (force ih) n; return (succ r))`.
     let forced = arena.computation_force(first);
     let call = arena.computation_application(forced, innermost);
-    let successor =
-        arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![innermost]);
+    let successor = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([innermost]),
+    );
     let returned = arena.computation_return(successor);
     let bound = arena.computation_bind(call, returned);
     let over_n = arena.computation_lambda(bound);
@@ -1317,8 +1398,8 @@ fn list_eliminator(
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
     let parameter = arena.value_variable(DeBruijnIndex::from(0));
     let element = arena.value_type_element(parameter, Level::zero());
-    let list_type = arena.value_type_data(list, vec![parameter]);
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let list_type = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([parameter]));
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let hypothesis = arena.value_type_thunk(returner);
     let after_tail = arena.comp_type_arrow(hypothesis, returner);
@@ -1348,7 +1429,11 @@ fn list_eliminator(
     let over_head = arena.computation_lambda(applied);
     let on_cons = arena.computation_lambda(over_head);
     let argument = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(argument, returner, vec![on_nil, on_cons]);
+    let case = arena.computation_data_case(
+        argument,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_nil, on_cons]),
+    );
     let over_argument = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(over_argument, FixpointEvidence::StructuralDescent);
     let over_cons = arena.computation_lambda(fixpoint);
@@ -1386,19 +1471,28 @@ fn length(
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
     let innermost = arena.value_variable(DeBruijnIndex::from(0));
     let outer = arena.value_variable(DeBruijnIndex::from(1));
-    let list_type = arena.value_type_data(list, vec![innermost]);
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let list_type = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([innermost]));
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let measured = arena.comp_type_arrow(list_type, returner);
     let classifier = arena.comp_type_pi(universe, measured);
     // `m_nil = thunk (return zero)`.
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let returned_zero = arena.computation_return(zero);
     let nil_method = arena.value_thunk(returned_zero);
     // `m_cons = thunk (λa. λt. λih. r ← force ih; return (succ r))`.
     let forced = arena.computation_force(innermost);
-    let successor =
-        arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![innermost]);
+    let successor = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([innermost]),
+    );
     let returned = arena.computation_return(successor);
     let bound = arena.computation_bind(forced, returned);
     let over_hypothesis = arena.computation_lambda(bound);
@@ -1445,8 +1539,8 @@ fn tree_eliminator(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let tree_type = arena.value_type_data(tree, vec![]);
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let tree_type = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let tree_returner = arena.comp_type_returner(tree_type);
     let branching = arena.comp_type_arrow(nat_type, tree_returner);
@@ -1484,7 +1578,11 @@ fn tree_eliminator(
     let applied = arena.computation_application(with_field, induction);
     let on_node = arena.computation_lambda(applied);
     let argument = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(argument, returner, vec![on_leaf, on_node]);
+    let case = arena.computation_data_case(
+        argument,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_leaf, on_node]),
+    );
     let over_argument = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(over_argument, FixpointEvidence::StructuralDescent);
     let over_node = arena.computation_lambda(fixpoint);
@@ -1508,16 +1606,31 @@ fn double(
     evidence: FixpointEvidence,
 ) -> ComputationId
 {
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let on_zero = arena.computation_return(zero);
     let field = arena.value_variable(DeBruijnIndex::from(0));
     let recursive = arena.value_variable(DeBruijnIndex::from(2));
     let forced = arena.computation_force(recursive);
     let call = arena.computation_application(forced, field);
-    let once = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![field]);
-    let twice = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![once]);
+    let once = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([field]),
+    );
+    let twice = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([once]),
+    );
     let returned = arena.computation_return(twice);
     let bound = arena.computation_bind(call, returned);
     let on_successor = arena.computation_lambda(bound);
@@ -1534,12 +1647,37 @@ fn numerals(
     nat: ConstantIndex,
 ) -> [ValueId; 5]
 {
-    let nat_type = arena.value_type_data(nat, vec![]);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
-    let one = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![zero]);
-    let two = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![one]);
-    let three = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![two]);
-    let four = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![three]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let one = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([zero]),
+    );
+    let two = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([one]),
+    );
+    let three = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([two]),
+    );
+    let four = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([three]),
+    );
     [zero, one, two, three, four]
 }
 
@@ -1573,8 +1711,10 @@ fn dependent_fields_are_admitted()
     let element = arena.value_type_element(code, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![small, element]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([
+            small, element,
+        ])]),
         large,
     );
     let boxed = environment
@@ -1585,14 +1725,16 @@ fn dependent_fields_are_admitted()
     let put = |environment: &mut Environment, quoted: bool| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(position, vec![]);
+        let datatype = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
         let unit = arena.value_type_unit();
         let code = arena.value_quote(unit);
         let second = if quoted { code } else { arena.value_unit() };
-        let constructor =
-            arena.value_constructor(position, datatype, ConstructorTag::from(0), vec![
-                code, second,
-            ]);
+        let constructor = arena.value_constructor(
+            position,
+            datatype,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([code, second]),
+        );
         let declaration = staging.def(LevelSignature::monomorphic(), datatype, constructor);
         environment.add_decl(declaration).map(|_admitted| ())
     };
@@ -1802,13 +1944,13 @@ fn rose(
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(rose, vec![]);
+    let own = arena.value_type_data(rose, SmallVec::<_, 0, Global>::from_iter([]));
     let code = arena.value_quote(own);
-    let kids = arena.value_type_data(list, vec![code]);
+    let kids = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([code]));
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![kids]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([kids])]),
         kind,
     );
     environment
@@ -1827,11 +1969,21 @@ fn a_nested_occurrence_through_a_strictly_positive_parameter_declares()
     let rose = rose(&mut environment, list).position();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(rose, vec![]);
+    let own = arena.value_type_data(rose, SmallVec::<_, 0, Global>::from_iter([]));
     let code = arena.value_quote(own);
-    let kids = arena.value_type_data(list, vec![code]);
-    let none = arena.value_constructor(list, kids, ConstructorTag::from(0), vec![]);
-    let sprig = arena.value_constructor(rose, own, ConstructorTag::from(0), vec![none]);
+    let kids = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([code]));
+    let none = arena.value_constructor(
+        list,
+        kids,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let sprig = arena.value_constructor(
+        rose,
+        own,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([none]),
+    );
     let declaration = staging.def(LevelSignature::monomorphic(), own, sprig);
     let defined = environment.add_decl(declaration);
     assert!(defined.is_ok(), "{defined:?}");
@@ -1883,8 +2035,8 @@ fn map(
         let into = arena.comp_type_returner(target);
         let step = arena.comp_type_arrow(source, into);
         let step = arena.value_type_thunk(step);
-        let from = arena.value_type_data(list, vec![a]);
-        let to = arena.value_type_data(list, vec![b]);
+        let from = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([a]));
+        let to = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([b]));
         let into_list = arena.comp_type_returner(to);
         let last = arena.comp_type_arrow(from, into_list);
         let middle = arena.comp_type_arrow(step, last);
@@ -1896,13 +2048,18 @@ fn map(
     // scrutinee once more.
     let motive = {
         let b = arena.value_variable(DeBruijnIndex::from(4));
-        let to = arena.value_type_data(list, vec![b]);
+        let to = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([b]));
         arena.comp_type_returner(to)
     };
     let on_nil = {
         let b = arena.value_variable(DeBruijnIndex::from(3));
-        let to = arena.value_type_data(list, vec![b]);
-        let nil = arena.value_constructor(list, to, ConstructorTag::from(0), vec![]);
+        let to = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([b]));
+        let nil = arena.value_constructor(
+            list,
+            to,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         arena.computation_return(nil)
     };
     let on_cons = {
@@ -1914,10 +2071,15 @@ fn map(
         let recursed = call(arena, DeBruijnIndex::from(4), rest);
         // Under `r`: `r` 0, `y` 1, `b` 7.
         let element = arena.value_variable(DeBruijnIndex::from(7));
-        let to = arena.value_type_data(list, vec![element]);
+        let to = arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([element]));
         let image = arena.value_variable(DeBruijnIndex::from(1));
         let images = arena.value_variable(DeBruijnIndex::from(0));
-        let cons = arena.value_constructor(list, to, ConstructorTag::from(1), vec![image, images]);
+        let cons = arena.value_constructor(
+            list,
+            to,
+            ConstructorTag::from(1),
+            SmallVec::<_, 0, Global>::from_iter([image, images]),
+        );
         let returned = arena.computation_return(cons);
         let inner = arena.computation_bind(recursed, returned);
         let outer = arena.computation_bind(mapped, inner);
@@ -1925,7 +2087,11 @@ fn map(
         arena.computation_lambda(rest_lambda)
     };
     let xs = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(xs, motive, vec![on_nil, on_cons]);
+    let case = arena.computation_data_case(
+        xs,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([on_nil, on_cons]),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let g_lambda = arena.computation_lambda(fixpoint);
@@ -1976,23 +2142,44 @@ fn size(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
-    let rose_type = arena.value_type_data(rose, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let rose_type = arena.value_type_data(rose, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(rose_type, returner);
     let rose_code = arena.value_quote(rose_type);
     let nat_code = arena.value_quote(nat_type);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
-    let one = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![zero]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let one = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([zero]),
+    );
     let counted = arena.computation_return(one);
     // The node's arm under `kids` 0, `t` 1, `s` 2.
     let listed = match children {
         Children::Field => arena.value_variable(DeBruijnIndex::from(0)),
         Children::Forged => {
-            let kids = arena.value_type_data(list, vec![rose_code]);
-            let nil = arena.value_constructor(list, kids, ConstructorTag::from(0), vec![]);
+            let kids =
+                arena.value_type_data(list, SmallVec::<_, 0, Global>::from_iter([rose_code]));
+            let nil = arena.value_constructor(
+                list,
+                kids,
+                ConstructorTag::from(0),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            );
             let node = arena.value_variable(DeBruijnIndex::from(1));
-            arena.value_constructor(list, kids, ConstructorTag::from(1), vec![node, nil])
+            arena.value_constructor(
+                list,
+                kids,
+                ConstructorTag::from(1),
+                SmallVec::<_, 0, Global>::from_iter([node, nil]),
+            )
         },
     };
     let claim = arena.value_variable(DeBruijnIndex::from(2));
@@ -2001,7 +2188,11 @@ fn size(
     let on_node = arena.computation_bind(mapped, counted);
     let on_node = arena.computation_lambda(on_node);
     let node = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(node, returner, vec![on_node]);
+    let case = arena.computation_data_case(
+        node,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_node]),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(lambda, FixpointEvidence::StructuralDescent);
     let declared = arena.value_type_thunk(classifier);
@@ -2078,11 +2269,16 @@ fn count(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
     let nat_code = arena.value_quote(nat_type);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let returned = arena.computation_return(zero);
     let claim = arena.value_variable(DeBruijnIndex::from(2));
     let handed = arena.value_variable(handed);
@@ -2170,16 +2366,26 @@ fn predecessor(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let returned = arena.computation_return(zero);
     let value = match returning {
         Returning::Field => arena.value_variable(DeBruijnIndex::from(0)),
         Returning::Successor => {
             let argument = arena.value_variable(DeBruijnIndex::from(1));
-            arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![argument])
+            arena.value_constructor(
+                nat,
+                nat_type,
+                ConstructorTag::from(1),
+                SmallVec::<_, 0, Global>::from_iter([argument]),
+            )
         },
     };
     let given = arena.computation_return(value);
@@ -2210,10 +2416,15 @@ fn halve_through(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let returned = arena.computation_return(zero);
     let head = arena.value_constant(pred);
     let field = arena.value_variable(DeBruijnIndex::from(0));
@@ -2339,10 +2550,15 @@ fn telescoped(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let one = arena.value_type_unit();
     let returner = arena.comp_type_returner(nat_type);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let returned = arena.computation_return(zero);
     // Under the successor's field `p`: `p` 0, the inner parameter 1, the
     // outer 2, `rec` 3.
@@ -2382,7 +2598,11 @@ fn telescoped(
     let called = arena.computation_application(applied, second);
     let on_successor = arena.computation_lambda(called);
     let scrutinee = arena.value_variable(scrutinee);
-    let case = arena.computation_data_case(scrutinee, returner, vec![returned, on_successor]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([returned, on_successor]),
+    );
     let inner = arena.computation_lambda(case);
     let outer = arena.computation_lambda(inner);
     let fixpoint = arena.computation_fixpoint(outer, evidence);
@@ -2488,12 +2708,15 @@ fn a_nullary_argument_is_judged_in_each_branch_s_own_scope()
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(position, vec![]);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![own], vec![]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([own]),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        ]),
         kind,
     );
     let swapped = environment
@@ -2502,17 +2725,26 @@ fn a_nullary_argument_is_judged_in_each_branch_s_own_scope()
         .position();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(swapped, vec![]);
+    let nat_type = arena.value_type_data(swapped, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(nat_type);
     let classifier = arena.comp_type_arrow(nat_type, returner);
-    let zero = arena.value_constructor(swapped, nat_type, ConstructorTag::from(1), vec![]);
+    let zero = arena.value_constructor(
+        swapped,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     // Under the `succ` branch's field: `p` 0, `x` 1, `rec` 2; under the
     // `zero` branch: `x` 0, `rec` 1.
     let under_field = call(arena, DeBruijnIndex::from(2), zero);
     let on_successor = arena.computation_lambda(under_field);
     let on_zero = call(arena, DeBruijnIndex::from(1), zero);
     let argument = arena.value_variable(DeBruijnIndex::from(0));
-    let case = arena.computation_data_case(argument, returner, vec![on_successor, on_zero]);
+    let case = arena.computation_data_case(
+        argument,
+        returner,
+        SmallVec::<_, 0, Global>::from_iter([on_successor, on_zero]),
+    );
     let body = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
     let declared = arena.value_type_thunk(classifier);
@@ -2543,27 +2775,32 @@ fn thunked_call(
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let declaration = staging.data(LevelSignature::monomorphic(), vec![], vec![], kind);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        kind,
+    );
     let _empty = environment.add_decl(declaration)?;
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let empty_type = arena.value_type_data(empty, vec![]);
-    let own = arena.value_type_data(position, vec![]);
+    let empty_type = arena.value_type_data(empty, SmallVec::<_, 0, Global>::from_iter([]));
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
     let into = arena.comp_type_returner(own);
     let branch = arena.comp_type_arrow(empty_type, into);
     let field = arena.value_type_thunk(branch);
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![field]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([field])]),
         kind,
     );
     let _family = environment.add_decl(declaration)?;
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(position, vec![]);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
     let into = arena.comp_type_returner(own);
     let arrow = arena.comp_type_arrow(own, into);
     // Under λx, fix y: `y` 0.
@@ -2572,7 +2809,12 @@ fn thunked_call(
     let diverging = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
     let lambda = arena.computation_lambda(diverging);
     let thunked = arena.value_thunk(lambda);
-    let built = arena.value_constructor(position, own, ConstructorTag::from(0), vec![thunked]);
+    let built = arena.value_constructor(
+        position,
+        own,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([thunked]),
+    );
     // Under λt: `t` 0, `rec` 1.
     let called = call(arena, DeBruijnIndex::from(1), built);
     let body = arena.computation_lambda(called);
@@ -2813,7 +3055,7 @@ fn universe(
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(family, vec![]);
+    let own = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
     let returner = arena.comp_type_returner(own);
     let named = arena.value_constant(decoder);
     let forced = arena.computation_force(named);
@@ -2827,30 +3069,30 @@ fn universe(
     let fields = match decoded {
         Decoded::Below => {
             let earlier = arena.value_variable(DeBruijnIndex::from(0));
-            vec![own, decoding(arena, earlier)]
+            SmallVec::<_, 0, Global>::from_iter([own, decoding(arena, earlier)])
         },
         Decoded::Level => {
             let named = arena.value_constant(base);
-            vec![decoding(arena, named)]
+            SmallVec::<_, 0, Global>::from_iter([decoding(arena, named)])
         },
         Decoded::Negative => {
             let unit = arena.value_type_unit();
             let into = arena.comp_type_returner(unit);
             let lifted = arena.value_type_lift(own, Level::zero());
             let arrow = arena.comp_type_arrow(lifted, into);
-            vec![arena.value_type_thunk(arrow)]
+            SmallVec::<_, 0, Global>::from_iter([arena.value_type_thunk(arrow)])
         },
     };
     let arity = fields.len();
     let universe = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], fields],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([]), fields]),
         kind,
     );
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(family, vec![]);
+    let own = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
     let types = arena.value_type_universe(GroundSort::Value, Level::zero());
     let returns = arena.comp_type_returner(types);
     let classifier = arena.comp_type_arrow(own, returns);
@@ -2870,8 +3112,13 @@ fn universe(
     if decoded == Decoded::Level {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let own = arena.value_type_data(family, vec![]);
-        let nat_code = arena.value_constructor(family, own, ConstructorTag::from(0), vec![]);
+        let own = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
+        let nat_code = arena.value_constructor(
+            family,
+            own,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         members.push(staging.def(LevelSignature::monomorphic(), own, nat_code));
     }
     environment.add_block(members)
@@ -2949,14 +3196,14 @@ fn a_definition_of_the_block_is_read_through_602()
     let consumer = arena.value_type_thunk(arrow);
     let bad = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![consumer]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([consumer])]),
         kind,
     );
     let mut staging = environment.stage();
     let arena = staging.arena();
     let types = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(family, vec![]);
+    let own = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
     let quoted = arena.value_quote(own);
     let naming = staging.def(LevelSignature::monomorphic(), types, quoted);
     let verdict = environment.add_block(vec![bad, naming]);
@@ -3011,29 +3258,32 @@ fn forest(rose: Rose) -> Result<CheckedId, KernelError>
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let forests = arena.value_type_data(forest, vec![]);
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
     let node = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![forests]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([forests])]),
         kind,
     );
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let trees = arena.value_type_data(tree, vec![]);
-    let forests = arena.value_type_data(forest, vec![]);
+    let trees = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
     let list = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![trees, forests]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([trees, forests]),
+        ]),
         kind,
     );
     let _block = environment.add_block(vec![node, list])?;
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let trees = arena.value_type_data(tree, vec![]);
-    let forests = arena.value_type_data(forest, vec![]);
+    let trees = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     // `force self (inj v)`, `self` the variable at `own`.
@@ -3051,7 +3301,11 @@ fn forest(rose: Rose) -> Result<CheckedId, KernelError>
     };
     let node_arm = arena.computation_lambda(node_arm);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let on_tree = arena.computation_data_case(scrutinee, returns, vec![node_arm]);
+    let on_tree = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([node_arm]),
+    );
     let unit_value = arena.value_unit();
     let on_nil = arena.computation_return(unit_value);
     // Under `self, x, ts, head, tail`, then the bind's binder.
@@ -3061,7 +3315,11 @@ fn forest(rose: Rose) -> Result<CheckedId, KernelError>
     let on_cons = arena.computation_lambda(on_cons);
     let on_cons = arena.computation_lambda(on_cons);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let on_forest = arena.computation_data_case(scrutinee, returns, vec![on_nil, on_cons]);
+    let on_forest = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([on_nil, on_cons]),
+    );
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
     let cased = arena.computation_case(scrutinee, &[on_tree, on_forest]);
     let body = arena.computation_lambda(cased);
@@ -3133,29 +3391,32 @@ fn joint_forest(joint: Joint) -> Result<CheckedId, KernelError>
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let forests = arena.value_type_data(forest, vec![]);
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
     let node = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![forests]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([forests])]),
         kind,
     );
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let trees = arena.value_type_data(tree, vec![]);
-    let forests = arena.value_type_data(forest, vec![]);
+    let trees = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
     let list = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![trees, forests]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([trees, forests]),
+        ]),
         kind,
     );
     let _block = environment.add_block(vec![node, list])?;
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let trees = arena.value_type_data(tree, vec![]);
-    let forests = arena.value_type_data(forest, vec![]);
+    let trees = arena.value_type_data(tree, SmallVec::<_, 0, Global>::from_iter([]));
+    let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     // `Project(component, force self) v`, `self` the variable at `own`.
@@ -3173,7 +3434,11 @@ fn joint_forest(joint: Joint) -> Result<CheckedId, KernelError>
     };
     let node_arm = arena.computation_lambda(node_arm);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let on_tree = arena.computation_data_case(scrutinee, returns, vec![node_arm]);
+    let on_tree = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([node_arm]),
+    );
     let on_tree = arena.computation_lambda(on_tree);
     let unit_value = arena.value_unit();
     let on_nil = arena.computation_return(unit_value);
@@ -3184,7 +3449,11 @@ fn joint_forest(joint: Joint) -> Result<CheckedId, KernelError>
     let on_cons = arena.computation_lambda(on_cons);
     let on_cons = arena.computation_lambda(on_cons);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let on_forest = arena.computation_data_case(scrutinee, returns, vec![on_nil, on_cons]);
+    let on_forest = arena.computation_data_case(
+        scrutinee,
+        returns,
+        SmallVec::<_, 0, Global>::from_iter([on_nil, on_cons]),
+    );
     let on_forest = arena.computation_lambda(on_forest);
     let body = arena.computation_with(&[on_tree, on_forest]);
     let claimed = match joint {

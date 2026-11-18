@@ -99,7 +99,9 @@ fn an_operation_rule_is_content()
             arity: gandr_kernel_term::FieldCount::from(1_usize),
         };
         let x = OperationNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
-        let rules = OperationRules::new(vec![OperationRule::new([call, x].into(), right.into())]);
+        let rules = OperationRules::new(gandr_kernel_data::SmallVec::from_iter([
+            OperationRule::new([call, x].into(), right.into()),
+        ]));
         let program = Program::new(arena, vec![Item::new(
             ItemKey::from("it"),
             Declaration::new(

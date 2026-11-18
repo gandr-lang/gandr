@@ -832,15 +832,20 @@ fn native_tree_comparison_preserves_endpoints_maps_and_evidence()
         let returned = core.computation_return(bound);
         let identity = core.computation_lambda(returned);
         let map = core.value_thunk(identity);
-        let proof = alloc::sync::Arc::new(gandr_kernel_term::PathEvidence {
-            source: Vec::from([Vec::new()]),
-            target: Vec::from([Vec::new()]),
+        let proof = gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence {
+            source: gandr_kernel_data::SmallVec::from_iter([gandr_kernel_data::SmallVec::new()]),
+            target: gandr_kernel_data::SmallVec::from_iter([gandr_kernel_data::SmallVec::new()]),
         });
-        let equiv = core.value_path_equiv(classifier, map, map, alloc::sync::Arc::clone(&proof));
+        let equiv = core.value_path_equiv(
+            classifier,
+            map,
+            map,
+            gandr_kernel_data::Shared::clone(&proof),
+        );
         let wrong_map = core.value_path_equiv(classifier, map, source, proof);
-        let altered = alloc::sync::Arc::new(gandr_kernel_term::PathEvidence {
-            source: Vec::new(),
-            target: Vec::from([Vec::new()]),
+        let altered = gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence {
+            source: gandr_kernel_data::SmallVec::new(),
+            target: gandr_kernel_data::SmallVec::from_iter([gandr_kernel_data::SmallVec::new()]),
         });
         let wrong_evidence = core.value_path_equiv(classifier, map, map, altered);
         let transport = core.computation_transport(product, source);

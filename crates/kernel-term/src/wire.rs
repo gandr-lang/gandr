@@ -14,9 +14,10 @@
 //!
 //! [`decode`]: mod@crate::decode
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 /// One byte read from or written to the artifact image.
 ///
@@ -764,7 +765,7 @@ impl ArtifactImage<'_>
 /// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
-pub struct EncodedArtifact(Vec<u8>);
+pub struct EncodedArtifact(SmallVec<u8, 0, Global>);
 
 impl AsRef<[u8]> for EncodedArtifact
 {
@@ -779,7 +780,7 @@ impl AsRef<[u8]> for EncodedArtifact
     }
 }
 
-impl From<EncodedArtifact> for Vec<u8>
+impl From<EncodedArtifact> for SmallVec<u8, 0, Global>
 {
     /// The bytes the image owns.
     ///
@@ -802,7 +803,7 @@ impl EncodedArtifact
     #[must_use]
     pub(crate) fn new() -> Self
     {
-        Self(Vec::new())
+        Self(SmallVec::<_, 0, Global>::new())
     }
 
     /// An empty image with room for `capacity` bytes, so a writer that knows
@@ -817,7 +818,9 @@ impl EncodedArtifact
     #[must_use]
     pub(crate) fn with_capacity(capacity: ByteCount) -> Self
     {
-        Self(Vec::with_capacity(capacity.0))
+        Self(SmallVec::<_, 0, Global>::with_capacity(
+            gandr_kernel_data::Count::from(capacity.0),
+        ))
     }
 
     /// Empty this image and keep its capacity, so the next segment written
@@ -846,6 +849,9 @@ impl EncodedArtifact
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the tag's byte, growth within the buffer's bytes
     #[inline]
     pub(crate) fn put_tag(
         &mut self,
@@ -859,6 +865,9 @@ impl EncodedArtifact
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the image's bytes, growth within the buffer's bytes
     #[inline]
     pub(crate) fn put_image(
         &mut self,
@@ -876,6 +885,9 @@ impl EncodedArtifact
     /// - provides: the header's version framing, fixed at two bytes so the
     ///   field's width does not depend on the value written.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the version's two bytes, growth within the buffer's bytes
     ///
     /// # Adequacy
     /// - hypothesis: L2 compares mixed-field output with a literal byte
@@ -908,6 +920,9 @@ impl EncodedArtifact
     ///   overlong-rejecting reader.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the varint's bytes, growth within the buffer's bytes
     ///
     /// # Adequacy
     /// - hypothesis: L2 compares every value from zero through 16384 and the
@@ -952,8 +967,9 @@ impl EncodedArtifact
 #[cfg(test)]
 mod tests
 {
-    use alloc::vec;
-    use alloc::vec::Vec;
+    use alloc::alloc::Global;
+
+    use gandr_kernel_data::SmallVec;
 
     use super::EncodedArtifact;
     use super::WireU64;
@@ -965,15 +981,21 @@ mod tests
         let image_of = |value: u64| {
             let mut out = EncodedArtifact::new();
             out.put_uvarint(WireU64::from(value));
-            Vec::from(out)
+            SmallVec::<u8, 0, Global>::from(out)
         };
-        assert_eq!(vec![0x00_u8], image_of(0));
-        assert_eq!(vec![0x7f_u8], image_of(127));
-        assert_eq!(vec![0x80_u8, 0x01], image_of(128));
+        assert_eq!(SmallVec::<_, 0, Global>::from_iter([0x00_u8]), image_of(0));
         assert_eq!(
-            vec![
+            SmallVec::<_, 0, Global>::from_iter([0x7f_u8]),
+            image_of(127)
+        );
+        assert_eq!(
+            SmallVec::<_, 0, Global>::from_iter([0x80_u8, 0x01]),
+            image_of(128)
+        );
+        assert_eq!(
+            SmallVec::<_, 0, Global>::from_iter([
                 0xff_u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01
-            ],
+            ]),
             image_of(u64::MAX)
         );
     }
@@ -1012,11 +1034,13 @@ mod tests
                             .skip(start)
                             .take(end.saturating_sub(start))
                             .copied()
-                            .collect::<Vec<_>>()
+                            .collect::<SmallVec<_, 0, Global>>()
                     });
                     let actual = image
                         .span(super::ByteOffset(start) .. super::ByteOffset(end))
-                        .map(|part| part.as_ref().to_vec());
+                        .map(|part| {
+                            SmallVec::<_, 0, Global>::from_iter(part.as_ref().iter().copied())
+                        });
                     assert_eq!(expected, actual, "range {start}..{end}");
                 }
             }
@@ -1055,7 +1079,7 @@ mod tests
     fn varints_match_a_quotient_reference_at_every_group_boundary()
     {
         let check = |value: u64| {
-            let mut expected = vec![0xa5u8];
+            let mut expected = SmallVec::<_, 0, Global>::from_iter([0xa5u8]);
             let mut quotient = value;
             loop {
                 let digit = u8::try_from(quotient.rem_euclid(128)).expect("base-128 digit");

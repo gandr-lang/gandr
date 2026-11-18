@@ -1119,10 +1119,7 @@ fn the_loose_reach_descends_every_former_and_subtracts_only_its_binders()
                 decoded,
                 unit,
                 unit,
-                Arc::new(PathEvidence {
-                    source: Vec::new(),
-                    target: Vec::new(),
-                }),
+                gandr_kernel_data::Shared::new(PathEvidence::default()),
             )),
             6,
             "an equivalence's path type",
@@ -1132,10 +1129,7 @@ fn the_loose_reach_descends_every_former_and_subtracts_only_its_binders()
                 integer,
                 five,
                 unit,
-                Arc::new(PathEvidence {
-                    source: Vec::new(),
-                    target: Vec::new(),
-                }),
+                gandr_kernel_data::Shared::new(PathEvidence::default()),
             )),
             6,
             "an equivalence's forward map",

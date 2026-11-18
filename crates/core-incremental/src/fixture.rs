@@ -694,22 +694,23 @@ pub fn every_former(noise: Noise) -> Program
     let lambda = arena.computation_lambda(returned);
     let identity = arena.value_thunk(lambda);
     let evidence = gandr_kernel_term::PathEvidence {
-        source: vec![vec![
+        source: gandr_kernel_data::SmallVec::from_iter([gandr_kernel_data::SmallVec::from_iter([
             gandr_kernel_term::EvidenceWord(0)
                 .try_into()
                 .expect("reduce-left word"),
-        ]],
-        target: vec![vec![], vec![
-            gandr_kernel_term::EvidenceWord(0x070C)
+        ])]),
+        target: gandr_kernel_data::SmallVec::from_iter([
+            gandr_kernel_data::SmallVec::new(),
+            gandr_kernel_data::SmallVec::from_iter([gandr_kernel_term::EvidenceWord(0x070C)
                 .try_into()
-                .expect("premise word"),
-        ]],
+                .expect("premise word")]),
+        ]),
     };
     let certificate = arena.value_path_equiv(
         path_type,
         identity,
         identity,
-        alloc::sync::Arc::new(evidence),
+        gandr_kernel_data::Shared::new(evidence),
     );
     push(
         "native-path",

@@ -358,10 +358,6 @@ impl Exported
 ///   than an independent oracle.
 /// - witness: `kernel_export::kernel_export_gate::sweeps::the_kernel_export_exit_gate_holds`
 /// - witness: `kernel_export::kernel_corpus_partition::sweeps::corpus_partition_matches_the_manifest`
-#[expect(
-    clippy::large_enum_variant,
-    reason = "each value lives only until its source's sweep unwraps it, so a box would add an allocation for each source and save nothing"
-)]
 enum Swept
 {
     /// The lowering read it, and it was exported.
@@ -731,7 +727,7 @@ fn export_through(
                     .as_ref()
                     .split('.')
                     .filter_map(|segment| NameSegment::from_text(segment.into()))
-                    .collect::<Vec<_>>(),
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
             )
         })
         .collect();
@@ -1711,7 +1707,7 @@ mod kernel_generative_distinctness
                 dotted
                     .split('.')
                     .filter_map(|segment| NameSegment::from_text(segment.into()))
-                    .collect::<Vec<_>>(),
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
             )
         };
         let exported = functor_pair();
@@ -1753,7 +1749,8 @@ mod kernel_generative_distinctness
             table.extend_from_slice(key.as_ref().get(.. KEY_WIDTH).expect("a word of the key"));
         }
         table.extend_from_slice(&[0, 2, 4]);
-        let image = Vec::from(exported.artifact);
+        let image =
+            gandr_kernel_data::SmallVec::<u8, 0, alloc::alloc::Global>::from(exported.artifact);
         assert_eq!(
             image
                 .get(MINTED_ATOM_TABLE_COUNT_OFFSET.saturating_sub(1))
@@ -1803,7 +1800,8 @@ mod kernel_generative_distinctness
     fn an_artifact_whose_applications_share_an_atom_is_refused()
     {
         let pair = functor_pair();
-        let mut image = Vec::from(pair.artifact);
+        let mut image =
+            gandr_kernel_data::SmallVec::<u8, 0, alloc::alloc::Global>::from(pair.artifact);
         let first = *image
             .get(FIRST_APPLICATION_ENTRY_OFFSET)
             .expect("the first application's entry");
@@ -1825,8 +1823,6 @@ mod kernel_generative_distinctness
 /// twin whose dialogue reads the wrong unfolding is refused by name.
 mod kernel_ride_readmission
 {
-    use alloc::sync::Arc;
-    use alloc::vec::Vec;
     use std::path::PathBuf;
 
     use gandr_kernel_conversion_trace::ConversionDecision;
@@ -1872,7 +1868,7 @@ mod kernel_ride_readmission
             ["ByHand", "rides"]
                 .into_iter()
                 .filter_map(|segment| NameSegment::from_text(segment.into()))
-                .collect::<Vec<_>>(),
+                .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
         );
         let Some(position) = declarations
             .iter()
@@ -1927,7 +1923,7 @@ mod kernel_ride_readmission
                 | ConversionDecision::Admitted => ConversionDecision::ReduceLeft { redex: () },
             };
         }
-        let forged = arena.value_here_relating(point, Arc::new(tampered));
+        let forged = arena.value_here_relating(point, gandr_kernel_data::Shared::new(tampered));
         let content = DeclarationBuilder::new(&mut arena).def(
             statement.declaration().levels().clone(),
             declared,
@@ -1963,7 +1959,6 @@ mod kernel_ride_readmission
 /// at that path type is refused by name at the endpoint's type.
 mod kernel_transport_readmission
 {
-    use alloc::vec;
     use std::path::PathBuf;
 
     use gandr_kernel_core::Environment;
@@ -2003,7 +1998,7 @@ mod kernel_transport_readmission
 
         let segment =
             NameSegment::from_text("moved_end".into()).expect("`moved_end` is a name segment");
-        let moved_end = StructuredName::from(vec![segment]);
+        let moved_end = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         let Some(position) = declarations
             .iter()
             .position(|marked| *marked.declaration().name() == moved_end)
@@ -2072,8 +2067,6 @@ mod kernel_transport_readmission
 /// dialogue reads the unfolding on the wrong side is refused by name.
 mod kernel_here_congruence_readmission
 {
-    use alloc::sync::Arc;
-    use alloc::vec;
     use std::path::PathBuf;
 
     use gandr_kernel_conversion_trace::ConversionDecision;
@@ -2120,7 +2113,7 @@ mod kernel_here_congruence_readmission
 
         let segment =
             NameSegment::from_text("here_two_up".into()).expect("`here_two_up` is a name segment");
-        let here_two_up = StructuredName::from(vec![segment]);
+        let here_two_up = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         let Some(position) = declarations
             .iter()
             .position(|marked| *marked.declaration().name() == here_two_up)
@@ -2153,7 +2146,7 @@ mod kernel_here_congruence_readmission
         if let Some(reduction) = tampered.right.get_mut(misread) {
             *reduction = ConversionDecision::ReduceRight { redex: () };
         }
-        let forged = arena.value_here_relating(point, Arc::new(tampered));
+        let forged = arena.value_here_relating(point, gandr_kernel_data::Shared::new(tampered));
         let content = DeclarationBuilder::new(&mut arena).def(
             statement.declaration().levels().clone(),
             declared,
@@ -2190,8 +2183,6 @@ mod kernel_here_congruence_readmission
 /// name.
 mod kernel_discard_readmission
 {
-    use alloc::sync::Arc;
-    use alloc::vec;
     use std::path::PathBuf;
 
     use gandr_kernel_conversion_trace::ConversionDecision;
@@ -2237,7 +2228,8 @@ mod kernel_discard_readmission
 
         let segment = NameSegment::from_text("unreadApplied".into())
             .expect("`unreadApplied` is a name segment");
-        let unread_applied = StructuredName::from(vec![segment]);
+        let unread_applied =
+            StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         let Some(position) = declarations
             .iter()
             .position(|marked| *marked.declaration().name() == unread_applied)
@@ -2289,7 +2281,7 @@ mod kernel_discard_readmission
                 side: ConversionSide::Left,
             };
         }
-        let forged = arena.value_here_relating(point, Arc::new(tampered));
+        let forged = arena.value_here_relating(point, gandr_kernel_data::Shared::new(tampered));
         let mut rebuilt = arena.computation_return(forged);
         for _ in 0 .. binders {
             rebuilt = arena.computation_lambda(rebuilt);
@@ -2339,7 +2331,6 @@ mod kernel_discard_readmission
 /// diverge are refused by name.
 mod kernel_presented_readmission
 {
-    use alloc::vec;
     use alloc::vec::Vec;
     use std::path::PathBuf;
 
@@ -2391,7 +2382,7 @@ mod kernel_presented_readmission
             .expect("the circle readmits, `cancelled_word` by its endpoints' normal forms");
         let position = |name: &str| {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
             declarations
                 .iter()
                 .position(|marked| *marked.declaration().name() == named)
@@ -2431,10 +2422,9 @@ mod kernel_presented_readmission
 
         let x = RuleNode::Variable(RuleVariable::from(0_u32));
         let loop_ = RuleNode::Constructor(ConstructorTag::from(1_usize));
-        let growing = Presentation::new(vec![PresentedRule::new(
-            [loop_, x].into(),
-            [loop_, loop_, x].into(),
-        )]);
+        let growing = Presentation::new(gandr_kernel_data::SmallVec::from_iter([
+            PresentedRule::new([loop_, x].into(), [loop_, loop_, x].into()),
+        ]));
         let grown = presenting(growing);
         let refusal = Environment::replay(arena, &grown)
             .expect_err("a rule that grows its word does not present the circle");
@@ -2533,7 +2523,7 @@ mod kernel_presented_readmission
             .expect("the loop is apart from the empty word, its square and its inverse");
         let position = |name: &str| {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
             declarations
                 .iter()
                 .position(|marked| *marked.declaration().name() == named)
@@ -2578,7 +2568,12 @@ mod kernel_presented_readmission
         };
         let predecessor =
             arena.value_constructor(family, datatype, ConstructorTag::from(2_usize), fields);
-        let cancelled = arena.value_constructor(family, datatype, tag, vec![predecessor]);
+        let cancelled = arena.value_constructor(
+            family,
+            datatype,
+            tag,
+            gandr_kernel_data::SmallVec::from_iter([predecessor]),
+        );
         let forged = arena.value_type_path(carrier, cancelled, right);
         let forged = if dependent {
             arena.comp_type_pi(forged, codomain)
@@ -2606,10 +2601,10 @@ mod kernel_presented_readmission
         // apartness rule refuses to read their normal forms as elements.
         let x = RuleNode::Variable(RuleVariable::from(0_u32));
         let c = |tag: usize| RuleNode::Constructor(ConstructorTag::from(tag));
-        let divergent = Presentation::new(vec![
+        let divergent = Presentation::new(gandr_kernel_data::SmallVec::from_iter([
             PresentedRule::new([c(1), c(2), x].into(), [x].into()),
             PresentedRule::new([c(1), c(2), x].into(), [c(0)].into()),
-        ]);
+        ]));
         let mut twin = declarations.clone();
         let Some(marked) = twin.get_mut(integers)
         else {
@@ -2650,7 +2645,7 @@ mod kernel_presented_readmission
         Environment::replay(arena.clone(), &declarations)
             .expect("`mirror` readmits: it respects both cancellations");
         let segment = NameSegment::from_text("mirror".into()).expect("a name segment");
-        let named = StructuredName::from(vec![segment]);
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         let mirror = declarations
             .iter()
             .position(|marked| *marked.declaration().name() == named)
@@ -2686,7 +2681,11 @@ mod kernel_presented_readmission
         };
         // The twin reads `Unloop(x)` with the `Loop(x)` arm: both letters
         // become `Unloop`, so `Loop(Unloop(x))` is sent two letters from `x`.
-        let broken = vec![branches[0], branches[1], branches[1]];
+        let &[base_arm, loop_arm, _] = &*branches
+        else {
+            panic!("`mirror` has an arm for each of the three letters");
+        };
+        let broken = gandr_kernel_data::SmallVec::from_iter([base_arm, loop_arm, loop_arm]);
         let case = arena.computation_data_case(scrutinee, motive, broken);
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(lambda, evidence);
@@ -2724,7 +2723,7 @@ mod kernel_presented_readmission
         Environment::replay(arena.clone(), &declarations)
             .expect("`native_wind` readmits on the native model's two laws");
         let segment = NameSegment::from_text("native_wind".into()).expect("a name segment");
-        let named = StructuredName::from(vec![segment]);
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         let wind = declarations
             .iter()
             .position(|marked| *marked.declaration().name() == named)
@@ -2739,7 +2738,10 @@ mod kernel_presented_readmission
         };
         // The twin cites each law for the other's rule: `unturn(turn(n)) = n`
         // where `Loop(Unloop(x))` computes `turn(unturn(f(x)))`.
-        let forged = marked.declaration().clone().lawful(vec![second, first]);
+        let forged = marked
+            .declaration()
+            .clone()
+            .lawful(gandr_kernel_data::SmallVec::from_iter([second, first]));
         let mut twin = declarations.clone();
         twin[wind] = MarkedDeclaration::new(marked.mark(), forged);
         let refusal = Environment::replay(arena, &twin)
@@ -2784,7 +2786,11 @@ mod kernel_presented_readmission
         // The twin rewrites `add(m, Zero)` to `Succ(m)`, as the pathological
         // `rules-diverge` source writes it: at `add(Zero, Zero)` the first rule
         // gives `Zero` and the second `Succ(Zero)`.
-        let mut forged = rules.to_vec();
+        let mut forged = rules.iter().cloned().collect::<gandr_kernel_data::SmallVec<
+            _,
+            0,
+            alloc::alloc::Global,
+        >>();
         forged[1] = gandr_kernel_term::OperationRule::new(
             rules[1].left().into(),
             [
@@ -2983,10 +2989,9 @@ mod kernel_presented_readmission
             marked
                 .declaration()
                 .clone()
-                .ruled(gandr_kernel_term::OperationRules::new(vec![
-                    zero.clone(),
-                    recursion.clone(),
-                ]));
+                .ruled(gandr_kernel_term::OperationRules::new(
+                    gandr_kernel_data::SmallVec::from_iter([zero.clone(), recursion.clone()]),
+                ));
         let mut twin = declarations.clone();
         twin[add] = MarkedDeclaration::new(marked.mark(), twin_declaration);
         let refusal = Environment::replay(arena, &twin)
@@ -3059,7 +3064,7 @@ mod kernel_presented_readmission
             let mut arena = decoded.arena().clone();
             let position = |name: &str| {
                 let segment = NameSegment::from_text(name.into()).expect("a name segment");
-                let named = StructuredName::from(vec![segment]);
+                let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
                 declarations
                     .iter()
                     .position(|marked| *marked.declaration().name() == named)
@@ -3105,7 +3110,12 @@ mod kernel_presented_readmission
             // arm then relates `Unloop(spinWords(windWords(x)))` to
             // `Unloop(x)`, or `back(loop) ∷ spin(wind(q))` to `back(loop) ∷ q`,
             // not the motive at the loop.
-            let tampered = vec![branches[0], branches[2], branches[2]];
+            let &[base_arm, _, unloop_arm] = &*branches
+            else {
+                panic!("`sect` has an arm for each of the three letters");
+            };
+            let tampered =
+                gandr_kernel_data::SmallVec::from_iter([base_arm, unloop_arm, unloop_arm]);
             let case = arena.computation_data_case(scrutinee, motive, tampered);
             let lambda = arena.computation_lambda(case);
             let fixpoint = arena.computation_fixpoint(lambda, evidence);
@@ -3146,7 +3156,7 @@ mod kernel_presented_readmission
         let declarations = decoded.declarations().to_vec();
         for name in ["walkSecond", "walkWritten"] {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
             let marked = declarations
                 .iter()
                 .find(|marked| *marked.declaration().name() == named)
@@ -3179,7 +3189,7 @@ mod kernel_presented_readmission
         let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let segment = NameSegment::from_text("splitPair".into()).expect("a name segment");
-        let named = StructuredName::from(vec![segment]);
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         let marked = declarations
             .iter()
             .find(|marked| *marked.declaration().name() == named)
@@ -3217,7 +3227,7 @@ mod kernel_presented_readmission
             "stepOmittedThrough",
         ] {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
             let marked = declarations
                 .iter()
                 .find(|marked| *marked.declaration().name() == named)
@@ -3249,7 +3259,7 @@ mod kernel_presented_readmission
         let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let segment = NameSegment::from_text("twoLevels".into()).expect("a name segment");
-        let named = StructuredName::from(vec![segment]);
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         let marked = declarations
             .iter()
             .find(|marked| *marked.declaration().name() == named)
@@ -3281,7 +3291,7 @@ mod kernel_presented_readmission
         let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let segment = NameSegment::from_text("go".into()).expect("a name segment");
-        let named = StructuredName::from(vec![segment]);
+        let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         let go = declarations
             .iter()
             .find(|marked| *marked.declaration().name() == named)
@@ -3314,7 +3324,7 @@ mod kernel_presented_readmission
         let declarations = decoded.declarations().to_vec();
         for name in ["unitAt", "keepAt", "trek", "walkOf"] {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
             let marked = declarations
                 .iter()
                 .find(|marked| *marked.declaration().name() == named)
@@ -3335,7 +3345,6 @@ mod kernel_presented_readmission
 /// name at the step case it no longer meets.
 mod kernel_open_fold_readmission
 {
-    use alloc::vec;
     use std::path::PathBuf;
 
     use gandr_kernel_core::EndpointSide;
@@ -3374,7 +3383,7 @@ mod kernel_open_fold_readmission
             .expect("open-fold readmits, `wind_unfolded` by the bind its endpoint reads through");
         let position = |name: &str| {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
             declarations
                 .iter()
                 .position(|marked| *marked.declaration().name() == named)
@@ -3414,7 +3423,11 @@ mod kernel_open_fold_readmission
         // The twin's `Loop` arm returns `P(n)` and its `Unloop` arm `S(n)`: it
         // still respects both cancellations, but `windWords(Loop(x))` now
         // reads as `P(windWords(x))`, which `wind_unfolded` does not meet.
-        let swapped = vec![branches[0], branches[2], branches[1]];
+        let &[base_arm, loop_arm, unloop_arm] = &*branches
+        else {
+            panic!("`wind` has an arm for each of the three letters");
+        };
+        let swapped = gandr_kernel_data::SmallVec::from_iter([base_arm, unloop_arm, loop_arm]);
         let case = arena.computation_data_case(scrutinee, motive, swapped);
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(lambda, evidence);
@@ -3454,7 +3467,6 @@ mod kernel_open_fold_readmission
 /// owing a loop it no longer respects, and is refused by name there.
 mod kernel_loop_elimination_readmission
 {
-    use alloc::vec;
     use std::path::PathBuf;
 
     use gandr_kernel_core::Environment;
@@ -3496,7 +3508,7 @@ mod kernel_loop_elimination_readmission
         });
         let position = |name: &str| {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
             declarations
                 .iter()
                 .position(|marked| *marked.declaration().name() == named)
@@ -3532,7 +3544,7 @@ mod kernel_loop_elimination_readmission
         // reflexivity, so `invLooper(invLooper(x))` no longer follows `x`
         // round the loop and `involutive`'s answer at `Base` is not carried
         // to itself.
-        let collapsed = vec![branches[0]];
+        let collapsed = gandr_kernel_data::SmallVec::from_iter([branches[0]]);
         let case = arena.computation_data_case(scrutinee, motive, collapsed);
         let lambda = arena.computation_lambda(case);
         let body = arena.value_thunk(lambda);
@@ -3586,7 +3598,6 @@ mod kernel_loop_elimination_readmission
 /// derived rules and peaks its value carries.
 mod kernel_presentation_readmission
 {
-    use alloc::vec;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -3655,7 +3666,7 @@ mod kernel_presentation_readmission
         T: AsRef<str>,
     {
         let segment = NameSegment::from_text(text.as_ref().into()).expect("a name segment");
-        StructuredName::from(vec![segment])
+        StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]))
     }
 
     #[test]
@@ -3711,12 +3722,24 @@ mod kernel_presentation_readmission
         // its first argument, `e()`, where `unitL` gives `x`.
         let unit = arguments[0];
         let twin_name = arena.value_literal(Literal::Text(StringLiteral::new("twin".into())));
-        let parting =
-            arena.value_constructor(family, datatype, rule, vec![twin_name, left, unit, rest]);
-        let unit_law =
-            arena.value_constructor(family, datatype, rule, vec![name, left, right, parting]);
-        let forged =
-            arena.value_constructor(family, datatype, tag, vec![sorts, operations, unit_law]);
+        let parting = arena.value_constructor(
+            family,
+            datatype,
+            rule,
+            gandr_kernel_data::SmallVec::from_iter([twin_name, left, unit, rest]),
+        );
+        let unit_law = arena.value_constructor(
+            family,
+            datatype,
+            rule,
+            gandr_kernel_data::SmallVec::from_iter([name, left, right, parting]),
+        );
+        let forged = arena.value_constructor(
+            family,
+            datatype,
+            tag,
+            gandr_kernel_data::SmallVec::from_iter([sorts, operations, unit_law]),
+        );
         let twin_declaration = DeclarationBuilder::new(&mut arena)
             .def(marked.declaration().levels().clone(), declared, forged)
             .named(marked.declaration().name().clone());
@@ -3786,7 +3809,6 @@ mod kernel_presentation_readmission
 /// readmits with the exemplar it stands in.
 mod kernel_naturality_readmission
 {
-    use alloc::vec;
     use std::path::PathBuf;
 
     use gandr_kernel_core::Environment;
@@ -3813,7 +3835,7 @@ mod kernel_naturality_readmission
         let decoded = exported.decoded().expect("naturality's export decodes");
         let declarations = decoded.declarations().to_vec();
         let segment = NameSegment::from_text("natassocAgrees".into()).expect("a name segment");
-        let agrees = StructuredName::from(vec![segment]);
+        let agrees = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
         assert!(
             declarations
                 .iter()
@@ -3830,7 +3852,6 @@ mod kernel_naturality_readmission
 /// name.
 mod kernel_effect_tree_readmission
 {
-    use alloc::vec;
     use std::path::PathBuf;
 
     use gandr_kernel_core::Environment;
@@ -3867,7 +3888,7 @@ mod kernel_effect_tree_readmission
         });
         let definition = |name: &str| {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
-            let named = StructuredName::from(vec![segment]);
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([segment]));
             let position = declarations
                 .iter()
                 .position(|marked| *marked.declaration().name() == named)
@@ -3900,7 +3921,12 @@ mod kernel_effect_tree_readmission
         // The twin keeps `quiet`'s type, `Prog(Either(StateOp, Void),
         // Integer)`, and its continuation, and performs `Left(Raise(4))`:
         // the front of its row is `StateOp`, and `Raise(4)` is an `ExnOp`.
-        let forged = arena.value_constructor(family, datatype, tag, vec![raise, fields[1]]);
+        let forged = arena.value_constructor(
+            family,
+            datatype,
+            tag,
+            gandr_kernel_data::SmallVec::from_iter([raise, fields[1]]),
+        );
         let marked = &declarations[quiet];
         let twin_declaration = DeclarationBuilder::new(&mut arena)
             .def(marked.declaration().levels().clone(), declared, forged)
@@ -3967,7 +3993,7 @@ mod kernel_effect_handler_readmission
                 segments
                     .iter()
                     .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
-                    .collect::<Vec<_>>(),
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
             );
             declarations
                 .iter()
@@ -4057,7 +4083,7 @@ mod kernel_effect_handler_readmission
                 segments
                     .iter()
                     .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
-                    .collect::<Vec<_>>(),
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
             );
             declarations
                 .iter()
@@ -4104,7 +4130,10 @@ mod kernel_effect_handler_readmission
             panic!("`State`'s free model is a data declaration");
         };
         assert_eq!(
-            constructors.iter().map(Vec::len).collect::<Vec<_>>(),
+            constructors
+                .iter()
+                .map(|fields| fields.len())
+                .collect::<Vec<_>>(),
             [1, 2, 2],
             "`Return(x)`, then `get(p, k)` and `put(p, k)`"
         );
@@ -4164,7 +4193,7 @@ mod kernel_effect_handler_readmission
                 segments
                     .iter()
                     .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
-                    .collect::<Vec<_>>(),
+                    .collect::<gandr_kernel_data::SmallVec<_, 0, alloc::alloc::Global>>(),
             );
             declarations
                 .iter()
@@ -4229,8 +4258,8 @@ mod kernel_effect_handler_readmission
             panic!("state-handler readmits, the scope in scope a fold: {refusal:?}")
         });
         let content = |name: &str| {
-            let named = StructuredName::from(Vec::from([
-                NameSegment::from_text(name.into()).expect("a name segment")
+            let named = StructuredName::from(gandr_kernel_data::SmallVec::from_iter([
+                NameSegment::from_text(name.into()).expect("a name segment"),
             ]));
             let marked = declarations
                 .iter()

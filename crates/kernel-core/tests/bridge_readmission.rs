@@ -8,6 +8,7 @@
 //! The readmission cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use gandr_kernel_conversion_trace::ConversionDecision;
@@ -22,6 +23,8 @@ use gandr_kernel_core::ReplayRefusal;
 use gandr_kernel_core::ValueTypeHead;
 use gandr_kernel_core::identity_recursion::Component;
 use gandr_kernel_core::identity_recursion::EvaluationSide;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::ConstantIndex;
@@ -112,7 +115,7 @@ fn family(
 ) -> ValueId
 {
     let evaluation = || {
-        Vec::from([
+        SmallVec::<_, 0, Global>::from_iter([
             ConversionDecision::Force { thunk: () },
             ConversionDecision::Force { thunk: () },
             ConversionDecision::ComparedShared {
@@ -131,7 +134,10 @@ fn family(
         right,
         evidence,
     }];
-    arena.value_higher_evaluation(dialogues.into(), components.into())
+    arena.value_higher_evaluation(
+        ThinShared::from_header_and_iter((), dialogues),
+        components.into(),
+    )
 }
 
 /// Admit one definition, minted by `build` in a staging arena.
@@ -239,13 +245,16 @@ fn every_bridge_persists_decodes_and_replays()
         ));
     }
     assert_eq!(
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
-        Vec::from(bytes.clone()),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(bytes.clone()),
         "the decoded nodes re-encode to the same bytes"
     );
     let replayed = Environment::replay(artifact.arena().clone(), artifact.declarations())
         .expect("every bridge readmits by replay");
-    assert_eq!(Vec::from(export(&replayed)), Vec::from(bytes));
+    assert_eq!(
+        SmallVec::<u8, 0, Global>::from(export(&replayed)),
+        SmallVec::<u8, 0, Global>::from(bytes)
+    );
 }
 
 #[test]

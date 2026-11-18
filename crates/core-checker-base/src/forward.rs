@@ -65,6 +65,7 @@
 //! result forward. Nothing reverses a flow: a migration that must also run
 //! backward is two flows, or an `equiv`.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -76,7 +77,8 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_data::ThinShared;
+use gandr_kernel_term::Dialogue;
 use quenchant_shape::shape::Maybe;
 
 use crate::code::loose_reach;
@@ -105,7 +107,7 @@ pub struct Forward
     images: Arc<[ValueId]>,
     /// The machine's trace that the translator applied to each pattern
     /// converts to returning its output, in coverage order.
-    dialogues: Arc<[Vec<ConversionDecision<()>>]>,
+    dialogues: ThinShared<(), Dialogue, Global>,
 }
 
 impl Forward
@@ -115,17 +117,21 @@ impl Forward
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared copy of the images at each pattern, growth
+    ///   within the kernel's patterns
     #[inline]
     #[must_use]
     pub fn new(
         classifier: ValueTypeId,
-        (images, dialogues): (Vec<ValueId>, Vec<Vec<ConversionDecision<()>>>),
+        (images, dialogues): (Vec<ValueId>, ThinShared<(), Dialogue, Global>),
     ) -> Self
     {
         Self {
             classifier,
             images: Arc::from(images),
-            dialogues: Arc::from(dialogues),
+            dialogues,
         }
     }
 
@@ -158,7 +164,7 @@ impl Forward
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn dialogues(&self) -> &[Vec<ConversionDecision<()>>]
+    pub const fn dialogues(&self) -> &ThinShared<(), Dialogue, Global>
     {
         &self.dialogues
     }
@@ -261,6 +267,10 @@ pub fn codes(
 ///   recursion.
 /// - measure: the tasks left, then the patterns left.
 ///
+/// # Cost
+/// - allocation: the images and dialogues of the decided forward, growth within
+///   the source's coverage patterns
+///
 /// # Adequacy
 /// - hypothesis: L3 — a field-dropping migration between two records images
 ///   every pattern naturally and its dialogues replay in the kernel; a constant
@@ -335,7 +345,7 @@ pub fn decide(
     Ok(Forward {
         classifier,
         images: Arc::from(images),
-        dialogues: Arc::from(dialogues),
+        dialogues: ThinShared::from_header_and_iter((), dialogues),
     })
 }
 
@@ -364,6 +374,12 @@ pub fn decide(
 /// # Errors
 /// - [`CheckRefusal`] — as above.
 ///
+/// # Cost
+/// - allocation: the cell's leaf table extended by the tail's image, growth
+///   within the pattern's leaves
+/// - allocation: the expected tail recursion and the cell's image, durable by
+///   the arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — a list ridden along a record flow images its cell over
 ///   its own image of the tail and replays in the kernel; a cell whose output
@@ -382,7 +398,7 @@ fn recursive(
     pattern: crate::equiv::Pattern,
     (source, target): (ValueTypeId, ValueTypeId),
     leaves: &[Maybe<Leaf, unread::Absent>],
-) -> Result<(ValueId, Vec<ConversionDecision<()>>), CheckRefusal>
+) -> Result<(ValueId, Dialogue), CheckRefusal>
 {
     let unsupported = CheckRefusal::ForwardUnsupported { at };
     let head = context.whnf_value_type(source)?;

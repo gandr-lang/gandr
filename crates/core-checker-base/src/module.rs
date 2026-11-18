@@ -133,6 +133,7 @@
 //!   more, it names every candidate. So a declared type that meets an undecided
 //!   slot is refused as the slot's resolution refuses it.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -142,6 +143,7 @@ use gandr_core_term::Solutions;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::world::World;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -716,6 +718,12 @@ struct Decision
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the declaration's laws, operation rules and covers kept in the
+///   context, durable by the declaration's constant
+/// - allocation: the kept failure, the elaborated body and the type of each
+///   judged term, growth within the declaration's body
+///
 /// # Adequacy
 /// - hypothesis: L3 — a module with a body refused inside a thunk, a signature
 ///   refused before its body, and an accepted body separate the kept, the unrun
@@ -1231,7 +1239,10 @@ fn decide(
         (Direction::Check(_), Some((plain, marks))) => {
             context.keep_stage_signature(
                 constant,
-                gandr_kernel_term::StageSignature::new(declaration.stages().to_vec(), marks),
+                gandr_kernel_term::StageSignature::new(
+                    SmallVec::<_, 0, Global>::from_iter(declaration.stages().iter().copied()),
+                    marks,
+                ),
             );
             Direction::Check(plain)
         },
@@ -2375,6 +2386,10 @@ impl ModuleRun
     ///   member of a mutual block.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the judged entries, supports, suspensions and copies of
+    ///   taken laws, rules and matches, growth within the module's declarations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a run that takes each accepted declaration of a

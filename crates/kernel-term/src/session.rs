@@ -5,10 +5,12 @@
 //! That product is one ordinary native type child, so payload codes retain
 //! canonical sharing, content identity and universe formation.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
-use alloc::vec::Vec;
+
+use gandr_kernel_data::SmallVec;
 
 /// A position in a finite session graph.
 #[repr(transparent)]
@@ -50,7 +52,7 @@ pub enum Node
 pub struct Graph
 {
     /// Finite syntax occurrences in stable wire order.
-    pub nodes: Vec<Node>,
+    pub nodes: SmallVec<Node, 0, Global>,
     /// Root syntax occurrence.
     pub root: State,
 }
@@ -85,7 +87,7 @@ pub struct Evidence
     /// Every supplied pair is checked, including unreachable extra pairs.
     pub pairs: BTreeSet<StatePair>,
     /// Source and target payload slots for each accompanying `Path_U` value.
-    pub payloads: Vec<(PayloadSlot, PayloadSlot)>,
+    pub payloads: SmallVec<(PayloadSlot, PayloadSlot), 0, Global>,
 }
 
 /// One unsigned word in the canonical session inline payload.

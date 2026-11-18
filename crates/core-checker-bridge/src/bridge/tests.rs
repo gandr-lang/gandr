@@ -62,6 +62,7 @@ fn native_operations_cross_as_audited_assumptions()
     );
 }
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -98,6 +99,8 @@ use gandr_kernel_core::verdict::StoredReceipt;
 use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_kernel_core::verdict::VerdictKey;
 use gandr_kernel_core::verdict::VerdictSource;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::AdmissionMark;
@@ -1042,7 +1045,9 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
     // under it: the kept bytes are written, not encoded again.
     let named = BTreeMap::from([(
         ConstantIndex::from(0_usize),
-        StructuredName::from(vec![NameSegment::from_text(String::from("Num")).unwrap()]),
+        StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
+            NameSegment::from_text(String::from("Num")).unwrap(),
+        ])),
     )]);
     let mut renamed = recorded.clone();
     let marked = first_readmission.marked(
@@ -1846,7 +1851,9 @@ fn an_export_past_a_vacancy_holds_each_admitted_declaration_7273()
     let (mut arena, report) = undecided_beside_later(ReaderOfR::Absent);
     let readmission = readmit(&mut arena, &report);
     let r = DOUBLINGS.saturating_add(3);
-    let name = StructuredName::from(vec![NameSegment::from_text(String::from("r")).unwrap()]);
+    let name = StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
+        NameSegment::from_text(String::from("r")).unwrap(),
+    ]));
     let artifact = gandr_kernel_term::decode_named(
         readmission
             .export(BTreeMap::from([(ConstantIndex::from(r), name.clone())]))
@@ -4921,7 +4928,10 @@ fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
         "the model is over the subject's result"
     );
     assert_eq!(
-        constructors.iter().map(Vec::len).collect::<Vec<_>>(),
+        constructors
+            .iter()
+            .map(|fields| fields.len())
+            .collect::<Vec<_>>(),
         [1, 2],
         "`Return(x)`, then `ask(p, k)`"
     );
@@ -5015,11 +5025,10 @@ fn two_declarations_at_one_row_read_one_model_6642()
         .iter()
         .map(|marked| marked.declaration().name().clone())
         .collect::<Vec<_>>();
-    let model = gandr_kernel_term::StructuredName::from(
+    let model = gandr_kernel_term::StructuredName::from(SmallVec::<_, 0, Global>::from_iter(
         ["effect", "free", "0", "Ask"]
-            .map(|segment| NameSegment::from_text(segment.into()).expect("a name segment"))
-            .to_vec(),
-    );
+            .map(|segment| NameSegment::from_text(segment.into()).expect("a name segment")),
+    ));
     assert_eq!(
         names.len(),
         3,
@@ -5033,7 +5042,10 @@ fn two_declarations_at_one_row_read_one_model_6642()
         panic!("the free model is a data declaration");
     };
     assert_eq!(
-        constructors.iter().map(Vec::len).collect::<Vec<_>>(),
+        constructors
+            .iter()
+            .map(|fields| fields.len())
+            .collect::<Vec<_>>(),
         [1, 2, 2],
         "`Return(x)`, then `ask(p, k)` and `tell(p, k)`"
     );
@@ -5576,7 +5588,10 @@ fn a_deep_handler_of_several_operations_crosses_as_one_fold_2750()
         panic!("the free model is a data declaration");
     };
     assert_eq!(
-        constructors.iter().map(Vec::len).collect::<Vec<_>>(),
+        constructors
+            .iter()
+            .map(|fields| fields.len())
+            .collect::<Vec<_>>(),
         [1, 2, 2],
         "`Return(x)`, then `first(p, k)` and `second(p, k)`"
     );
@@ -5599,12 +5614,21 @@ fn a_deep_handler_of_several_operations_crosses_as_one_fold_2750()
         };
         domain
     };
+    let &[_, ref first, ref second] = &**constructors
+    else {
+        panic!("the free model has three constructors");
+    };
+    let (&[first_carried, first_continuation], &[second_carried, second_continuation]) =
+        (&**first, &**second)
+    else {
+        panic!("each operation carries its payload and its continuation");
+    };
     assert!(
-        unit_typed(constructors[1][0]) && integer_typed(reply(constructors[1][1])),
+        unit_typed(first_carried) && integer_typed(reply(first_continuation)),
         "`first` carries the unit and awaits an integer"
     );
     assert!(
-        integer_typed(constructors[2][0]) && unit_typed(reply(constructors[2][1])),
+        integer_typed(second_carried) && unit_typed(reply(second_continuation)),
         "`second` carries an integer and awaits the unit"
     );
 }
@@ -6035,8 +6059,6 @@ fn an_ascription_crosses_as_a_typed_position_the_kernel_replays()
 #[test]
 fn native_path_module_round_trips()
 {
-    use alloc::sync::Arc;
-
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_core::path_universe::Dialogue;
     use gandr_kernel_core::path_universe::Transport;
@@ -6063,9 +6085,15 @@ fn native_path_module_round_trips()
     let not = arena.value_thunk(not);
     // These are untrusted candidate dialogues, not acceptance marks. The
     // native admission below derives and replays all four round trips.
-    let evidence = Arc::new(PathEvidence {
-        source: vec![vec![ConversionDecision::Decompose], Vec::new()],
-        target: vec![Vec::new(), vec![ConversionDecision::Decompose]],
+    let evidence = Shared::new(PathEvidence {
+        source: SmallVec::from_iter([
+            SmallVec::from_iter([ConversionDecision::Decompose]),
+            SmallVec::new(),
+        ]),
+        target: SmallVec::from_iter([
+            SmallVec::new(),
+            SmallVec::from_iter([ConversionDecision::Decompose]),
+        ]),
     });
     let path = arena.value_path_equiv(path_type, not, not, evidence);
     let refl = arena.value_path_refl(code);
@@ -6164,7 +6192,7 @@ fn an_export_names_each_crossed_declaration_at_its_position()
             segments
                 .into_iter()
                 .map(|segment| NameSegment::from_text(String::from(segment)).unwrap())
-                .collect::<Vec<NameSegment>>(),
+                .collect::<SmallVec<NameSegment, 0, Global>>(),
         )
     };
     let names = BTreeMap::from([
@@ -6235,7 +6263,9 @@ fn an_export_names_each_crossed_declaration_at_its_position()
 fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
 {
     let named = |segment: &str| {
-        StructuredName::from(vec![NameSegment::from_text(String::from(segment)).unwrap()])
+        StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
+            NameSegment::from_text(String::from(segment)).unwrap(),
+        ]))
     };
     let module = |arena: &mut CoreArena, deleted: bool| {
         let integer = arena.value_type_base(BaseType::Integer);
@@ -7281,7 +7311,7 @@ fn an_ascription_crosses_with_the_endpoints_it_related()
     if let Some(law) = stripped.last_mut() {
         *law = gandr_kernel_term::MarkedDeclaration::new(
             law.mark(),
-            law.declaration().clone().relating(Vec::new()),
+            law.declaration().clone().relating(SmallVec::new()),
         );
     }
     let refusal = gandr_kernel_core::Environment::replay(artifact.arena().clone(), &stripped)
@@ -9630,10 +9660,10 @@ fn an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them()
     };
     let x = OperationNode::Variable(RuleVariable::from(0_u32));
     let rules = |own: ConstantIndex, right: &[OperationNode]| {
-        OperationRules::new(vec![OperationRule::new(
+        OperationRules::new(SmallVec::from_iter([OperationRule::new(
             alloc::boxed::Box::from([call(own), x].as_slice()),
             alloc::boxed::Box::from(right),
-        )])
+        )]))
     };
     let own = ConstantIndex::from(1_usize);
     let mut arena = CoreArena::new();
@@ -10673,9 +10703,11 @@ fn a_matches_derivation_crosses_and_the_kernel_replays_it_5104()
     let derivation = |kept: bool| {
         let mut cover = Cover::new();
         let zero = cover.mint(Step::Var(0));
-        let mut branches = Vec::from([zero]);
-        let mut constructors =
-            Vec::from([(ConstructorTag::from(0_usize), FieldCount::from(0_usize))]);
+        let mut branches = SmallVec::<_, 0, Global>::from_iter([zero]);
+        let mut constructors = SmallVec::<_, 0, Global>::from_iter([(
+            ConstructorTag::from(0_usize),
+            FieldCount::from(0_usize),
+        )]);
         if kept {
             branches.push(cover.mint(Step::Var(1)));
             constructors.push((ConstructorTag::from(1_usize), FieldCount::from(1_usize)));
@@ -10684,7 +10716,7 @@ fn a_matches_derivation_crosses_and_the_kernel_replays_it_5104()
             cases: Cases::Data {
                 family: ConstantIndex::from(0_usize),
                 constructors,
-                loops: Vec::new(),
+                loops: SmallVec::new(),
             },
             branches,
         });
@@ -11193,9 +11225,11 @@ fn a_held_match_s_derivation_crosses_at_its_rebuilt_case_6641()
     let derivation = |kept: bool| {
         let mut cover = Cover::new();
         let zero = cover.mint(Step::Var(0));
-        let mut branches = Vec::from([zero]);
-        let mut constructors =
-            Vec::from([(ConstructorTag::from(0_usize), FieldCount::from(0_usize))]);
+        let mut branches = SmallVec::<_, 0, Global>::from_iter([zero]);
+        let mut constructors = SmallVec::<_, 0, Global>::from_iter([(
+            ConstructorTag::from(0_usize),
+            FieldCount::from(0_usize),
+        )]);
         if kept {
             branches.push(cover.mint(Step::Var(1)));
             constructors.push((ConstructorTag::from(1_usize), FieldCount::from(1_usize)));
@@ -11204,7 +11238,7 @@ fn a_held_match_s_derivation_crosses_at_its_rebuilt_case_6641()
             cases: Cases::Data {
                 family: ConstantIndex::from(0_usize),
                 constructors,
-                loops: Vec::new(),
+                loops: SmallVec::new(),
             },
             branches,
         });
@@ -11338,7 +11372,7 @@ fn an_arm_answering_the_wrong_value_is_the_kernel_s_rejection_6641()
     let forged = kernel.computation_data_case_with_equations(
         scrutinee,
         motive,
-        vec![first, wrong],
+        SmallVec::<_, 0, Global>::from_iter([first, wrong]),
         equations,
     );
     let forged = kernel.computation_bind(forged, rest);
@@ -11758,9 +11792,9 @@ fn names_of(module: &[Shaped]) -> BTreeMap<ConstantIndex, StructuredName>
         .map(|(place, declaration)| {
             (
                 ConstantIndex::from(place),
-                StructuredName::from(vec![
+                StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
                     NameSegment::from_text(alloc::format!("d{}", declaration.name.0)).unwrap(),
-                ]),
+                ])),
             )
         })
         .collect()

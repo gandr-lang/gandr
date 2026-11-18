@@ -1,6 +1,7 @@
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
-use alloc::vec;
-use alloc::vec::Vec;
+
+use gandr_kernel_data::SmallVec;
 
 use super::ArmCount;
 use super::BranchCount;
@@ -20,20 +21,20 @@ use crate::FieldCount;
 ///
 /// # Specification
 /// trivial.
-fn signatures() -> BTreeMap<ConstantIndex, Vec<FieldCount>>
+fn signatures() -> BTreeMap<ConstantIndex, SmallVec<FieldCount, 0, Global>>
 {
     BTreeMap::from([
         (
             ConstantIndex::from(0_usize),
-            [0_usize, 1].map(FieldCount::from).to_vec(),
+            SmallVec::<_, 0, Global>::from_iter([0_usize, 1].map(FieldCount::from).iter().copied()),
         ),
         (
             ConstantIndex::from(1_usize),
-            [0_usize, 1].map(FieldCount::from).to_vec(),
+            SmallVec::<_, 0, Global>::from_iter([0_usize, 1].map(FieldCount::from).iter().copied()),
         ),
         (
             ConstantIndex::from(2_usize),
-            [0_usize, 2].map(FieldCount::from).to_vec(),
+            SmallVec::<_, 0, Global>::from_iter([0_usize, 2].map(FieldCount::from).iter().copied()),
         ),
     ])
 }
@@ -45,7 +46,7 @@ fn signatures() -> BTreeMap<ConstantIndex, Vec<FieldCount>>
 fn data(
     family: ConstantIndex,
     counts: &[FieldCount],
-    branches: Vec<StepId>,
+    branches: SmallVec<StepId, 0, Global>,
 ) -> Step
 {
     Step::Split {
@@ -56,7 +57,7 @@ fn data(
                 .enumerate()
                 .map(|(tag, &count)| (ConstructorTag::from(tag), count))
                 .collect(),
-            loops: Vec::new(),
+            loops: SmallVec::<_, 0, Global>::new(),
         },
         branches,
     }
@@ -79,21 +80,25 @@ fn nested(maybe_counts: &[FieldCount]) -> Cover
     let inner = cover.mint(data(
         list_family,
         &[0_usize, 2].map(FieldCount::from),
-        vec![inner_nil, inner_cons],
+        SmallVec::<_, 0, Global>::from_iter([inner_nil, inner_cons]),
     ));
     let zero = cover.mint(Step::Compose(inner));
     let succ = cover.mint(Step::Var(3));
-    let nat = cover.mint(data(nat_family, &[0_usize, 1].map(FieldCount::from), vec![
-        zero, succ,
-    ]));
+    let nat = cover.mint(data(
+        nat_family,
+        &[0_usize, 1].map(FieldCount::from),
+        SmallVec::<_, 0, Global>::from_iter([zero, succ]),
+    ));
     let some = cover.mint(Step::Compose(nat));
-    let maybe_branches = [none_arm, some][.. maybe_counts.len()].to_vec();
+    let maybe_branches = SmallVec::<_, 0, Global>::from_iter(
+        [none_arm, some][.. maybe_counts.len()].iter().copied(),
+    );
     let maybe = cover.mint(data(maybe_family, maybe_counts, maybe_branches));
     let cons = cover.mint(Step::Compose(maybe));
     cover.mint(data(
         list_family,
         &[0_usize, 2].map(FieldCount::from),
-        vec![nil_arm, cons],
+        SmallVec::<_, 0, Global>::from_iter([nil_arm, cons]),
     ));
     cover
 }
@@ -106,7 +111,7 @@ fn a_step_names_its_parts_in_order()
     let right = cover.mint(Step::Var(1));
     let split = cover.mint(Step::Split {
         cases: Cases::Boolean,
-        branches: vec![left, right],
+        branches: SmallVec::<_, 0, Global>::from_iter([left, right]),
     });
     let composed = cover.mint(Step::Compose(split));
     assert_eq!(cover.step(left).map(Step::parts), Some(&[][..]));
@@ -124,20 +129,23 @@ fn each_split_holds_one_branch_per_case()
 {
     let three = Cases::Data {
         family: ConstantIndex::from(0_usize),
-        constructors: vec![
+        constructors: SmallVec::<_, 0, Global>::from_iter([
             (ConstructorTag::from(0_usize), FieldCount::from(0_usize)),
             (ConstructorTag::from(1_usize), FieldCount::from(1_usize)),
             (ConstructorTag::from(2_usize), FieldCount::from(2_usize)),
-        ],
-        loops: Vec::new(),
+        ]),
+        loops: SmallVec::<_, 0, Global>::new(),
     };
     let circle = Cases::Data {
         family: ConstantIndex::from(0_usize),
-        constructors: vec![(ConstructorTag::from(0_usize), FieldCount::from(0_usize))],
-        loops: vec![Loop::new(
+        constructors: SmallVec::<_, 0, Global>::from_iter([(
+            ConstructorTag::from(0_usize),
+            FieldCount::from(0_usize),
+        )]),
+        loops: SmallVec::<_, 0, Global>::from_iter([Loop::new(
             ConstantIndex::from(1_usize),
             CellIndex::from(0_usize),
-        )],
+        )]),
     };
     assert_eq!(three.width(), BranchCount::from(3_usize));
     assert_eq!(
@@ -194,13 +202,13 @@ fn each_broken_rule_is_refused_by_its_own_name()
     swapped.mint(Step::Split {
         cases: Cases::Data {
             family: ConstantIndex::from(0_usize),
-            constructors: vec![
+            constructors: SmallVec::<_, 0, Global>::from_iter([
                 (ConstructorTag::from(1_usize), FieldCount::from(1_usize)),
                 (ConstructorTag::from(0_usize), FieldCount::from(0_usize)),
-            ],
-            loops: Vec::new(),
+            ]),
+            loops: SmallVec::<_, 0, Global>::new(),
         },
-        branches: vec![succ, zero],
+        branches: SmallVec::<_, 0, Global>::from_iter([succ, zero]),
     });
     let mut miscounted = Cover::new();
     let zero = miscounted.mint(Step::Var(0));
@@ -208,20 +216,20 @@ fn each_broken_rule_is_refused_by_its_own_name()
     miscounted.mint(data(
         ConstantIndex::from(0_usize),
         &[0_usize, 2].map(FieldCount::from),
-        vec![zero, succ],
+        SmallVec::<_, 0, Global>::from_iter([zero, succ]),
     ));
     let mut unknown = Cover::new();
     let only = unknown.mint(Step::Var(0));
     unknown.mint(data(
         ConstantIndex::from(7_usize),
         &[FieldCount::from(0_usize)],
-        vec![only],
+        SmallVec::<_, 0, Global>::from_iter([only]),
     ));
     let mut short = Cover::new();
     let only = short.mint(Step::Var(0));
     short.mint(Step::Split {
         cases: Cases::Boolean,
-        branches: vec![only],
+        branches: SmallVec::<_, 0, Global>::from_iter([only]),
     });
     let mut stray = Cover::new();
     stray.mint(Step::Var(2));
@@ -254,7 +262,7 @@ fn a_derivation_grows_linearly_with_its_tree()
             below = cover.mint(data(
                 ConstantIndex::from(0_usize),
                 &[0_usize, 1].map(FieldCount::from),
-                vec![zero, succ],
+                SmallVec::<_, 0, Global>::from_iter([zero, succ]),
             ));
         }
         cover

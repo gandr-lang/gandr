@@ -5170,10 +5170,7 @@ fn each_former_refuses_a_classifier_of_another_shape_by_name()
         integer,
         zero,
         zero,
-        Arc::new(PathEvidence {
-            source: Vec::new(),
-            target: Vec::new(),
-        }),
+        gandr_kernel_data::Shared::new(PathEvidence::default()),
     );
     let list_case = arena.computation_list_case(zero, fine, fine);
     let constructed = arena.value_constructor(

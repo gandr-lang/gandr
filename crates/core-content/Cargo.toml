@@ -13,7 +13,8 @@ publish.workspace = true
 
 # The crate reads the core vocabulary. It also reads the leaves that the
 # core shares with the kernel. These leaves are the literals and indices of
-# the term crate and the levels of the strata crate.
+# the term crate, the levels of the strata crate, and the containers of the
+# data crate.
 #
 # The tag of a source is a prefix of the BLAKE3 digest of its name. The
 # interner of a table indexes its nodes in a `hashbrown` table under
@@ -24,6 +25,7 @@ anodized.workspace = true
 blake3.workspace = true
 foldhash.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-data.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-levitation.workspace = true

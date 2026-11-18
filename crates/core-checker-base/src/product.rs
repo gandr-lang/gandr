@@ -91,8 +91,6 @@
 //!   stage as a product over its matching objects: the telescope a nested
 //!   product writes.
 
-use alloc::sync::Arc;
-
 use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
@@ -498,6 +496,10 @@ pub fn native(
 /// - measure: the admission position of the constant read; a definition only
 ///   names constants admitted before its own.
 ///
+/// # Cost
+/// - allocation: the native reflexivity or equivalence certificate in the
+///   arena, durable by the arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity, an equivalence through a constant and a
 ///   parameter each reach their own arm.
@@ -535,7 +537,10 @@ pub fn certificate(
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
-                let (path_type, evidence) = (decided.classifier(), Arc::clone(decided.evidence()));
+                let (path_type, evidence) = (
+                    decided.classifier(),
+                    gandr_kernel_data::Shared::clone(decided.evidence()),
+                );
                 return Ok(context
                     .arena_mut()
                     .value_path_equiv(path_type, forward, backward, evidence));

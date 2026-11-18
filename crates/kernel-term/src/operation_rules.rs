@@ -35,13 +35,15 @@
 //! normal forms must be one term. Fuel bounds the work, and a pair the fuel
 //! leaves undecided is refused.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::convert::Infallible;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_theory_path_orders::Evidence;
 use gandr_theory_path_orders::Former;
 use gandr_theory_path_orders::Node;
@@ -185,7 +187,7 @@ impl OperationRule
 /// - witness: `encode::tests::a_ruled_definition_closes_its_segment_with_its_rules`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct OperationRules(Arc<[OperationRule]>);
+pub struct OperationRules(ThinShared<(), OperationRule, Global>);
 
 /// Why an operation's rule is refused.
 ///
@@ -334,11 +336,15 @@ impl OperationRules
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared list of the operation's rules, growth within
+    ///   the given rules
     #[inline]
     #[must_use]
-    pub fn new(rules: Vec<OperationRule>) -> Self
+    pub fn new(rules: SmallVec<OperationRule, 0, Global>) -> Self
     {
-        Self(Arc::from(rules))
+        Self(ThinShared::from_header_and_iter((), rules))
     }
 
     /// The rules, in written order.
@@ -596,15 +602,15 @@ impl From<Exhausted> for Unjoined
 struct Scratch
 {
     /// The left reduct of the pair being decided.
-    left: Vec<OperationNode>,
+    left: SmallVec<OperationNode, 0, Global>,
     /// The right reduct of the pair being decided.
-    right: Vec<OperationNode>,
+    right: SmallVec<OperationNode, 0, Global>,
     /// A term being rewritten into.
-    rewritten: Vec<OperationNode>,
+    rewritten: SmallVec<OperationNode, 0, Global>,
     /// The first side's variable bindings.
-    first: Vec<Binding>,
+    first: SmallVec<Binding, 0, Global>,
     /// The second side's variable bindings.
-    second: Vec<Binding>,
+    second: SmallVec<Binding, 0, Global>,
 }
 
 /// What a variable of one side of a unification is bound to.
@@ -671,9 +677,9 @@ enum Placement
 struct System
 {
     /// Every operation rule, each as its two sides.
-    rules: Vec<OperationRule>,
+    rules: SmallVec<OperationRule, 0, Global>,
     /// Every presented family read, with its rules over operation nodes.
-    presentations: Vec<(ConstantIndex, Vec<OperationRule>)>,
+    presentations: SmallVec<(ConstantIndex, SmallVec<OperationRule, 0, Global>), 0, Global>,
 }
 
 /// One decision's view of the ruled definition and what is admitted below it.
@@ -920,6 +926,10 @@ where
     ///   positions its arguments start at, in order.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the argument positions of each node in the side, growth
+    ///   within the side's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::path_greater`].
     /// - witness: `operation_rules::tests::a_growing_rule_is_unoriented`
@@ -930,8 +940,10 @@ where
     ) -> Option<Children>
     {
         let mut children = Children {
-            starts: Vec::with_capacity(side.len()),
-            first: Vec::with_capacity(side.len().saturating_add(1)),
+            starts: SmallVec::<_, 0, Global>::with_capacity(Count::from(side.len())),
+            first: SmallVec::<_, 0, Global>::with_capacity(Count::from(
+                side.len().saturating_add(1),
+            )),
         };
         for (at, &node) in side.iter().enumerate() {
             children.first.push(Position(children.starts.len()));
@@ -956,6 +968,11 @@ where
     /// - measure: each reached definition once.
     /// - executable: none — the closure is the body's own traversal.
     ///
+    /// # Cost
+    /// - allocation: the gathered rules, the reached definitions and families,
+    ///   and each family's read presentation, growth within the reached
+    ///   definitions' rules and the families' presentations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OperationRules::converge`].
     /// - witness: `operation_rules::tests::an_operation_over_an_earlier_one_converges`
@@ -965,10 +982,11 @@ where
     ) -> System
     {
         let mut reached: BTreeSet<ConstantIndex> = BTreeSet::from([self.own.0]);
-        let mut pending: Vec<&OperationRules> = alloc::vec![rules];
+        let mut pending: SmallVec<&OperationRules, 0, Global> =
+            SmallVec::<_, 0, Global>::from_iter([rules]);
         let mut system = System {
-            rules: Vec::new(),
-            presentations: Vec::new(),
+            rules: SmallVec::<_, 0, Global>::new(),
+            presentations: SmallVec::<_, 0, Global>::new(),
         };
         let mut families: BTreeSet<ConstantIndex> = BTreeSet::new();
         while let Some(next) = pending.pop() {
@@ -1145,6 +1163,10 @@ where
     /// - measure: the nodes walked.
     /// - executable: none — as [`Self::root_pair`].
     ///
+    /// # Cost
+    /// - allocation: the binding slots of each side's variables, growth within
+    ///   the two sides' variables
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OperationRules::converge`].
     /// - witness: `operation_rules::tests::two_overlapping_rules_that_join_converge`
@@ -1156,9 +1178,13 @@ where
     ) -> Option<()>
     {
         scratch.first.clear();
-        scratch.first.resize(variables(first).0, Binding::Free);
+        scratch
+            .first
+            .resize(Count::from(variables(first).0), Binding::Free);
         scratch.second.clear();
-        scratch.second.resize(variables(second).0, Binding::Free);
+        scratch
+            .second
+            .resize(Count::from(variables(second).0), Binding::Free);
         let end = self.extent(first, from)?;
         let (mut left, mut right) = (from, onto);
         while left < end {
@@ -1245,16 +1271,20 @@ where
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the rewritten term in the scratch buffer, growth within
+    ///   the term's nodes and the rule's right side
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OperationRules::converge`].
     /// - witness: `operation_rules::tests::an_operation_over_an_earlier_one_converges`
     fn normalize(
         &self,
         system: &System,
-        term: &mut Vec<OperationNode>,
+        term: &mut SmallVec<OperationNode, 0, Global>,
         fuel: &mut RewriteFuel,
-        rewritten: &mut Vec<OperationNode>,
-        bindings: &mut Vec<Binding>,
+        rewritten: &mut SmallVec<OperationNode, 0, Global>,
+        bindings: &mut SmallVec<Binding, 0, Global>,
     ) -> Result<(), Exhausted>
     {
         'rewrite: loop {
@@ -1310,6 +1340,10 @@ where
     /// - measure: the nodes walked.
     /// - executable: none — the bindings are the body's own record of the walk.
     ///
+    /// # Cost
+    /// - allocation: a binding slot for each pattern variable, growth within
+    ///   the pattern's variables
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OperationRules::converge`].
     /// - witness: `operation_rules::tests::an_operation_over_an_earlier_one_converges`
@@ -1318,11 +1352,11 @@ where
         pattern: &[OperationNode],
         term: &[OperationNode],
         at: Position,
-        bindings: &mut Vec<Binding>,
+        bindings: &mut SmallVec<Binding, 0, Global>,
     ) -> Option<Position>
     {
         bindings.clear();
-        bindings.resize(variables(pattern).0, Binding::Free);
+        bindings.resize(Count::from(variables(pattern).0), Binding::Free);
         let mut next = at;
         for &node in pattern {
             match node {
@@ -1498,9 +1532,9 @@ where
 struct Children
 {
     /// Every node's argument positions, node after node.
-    starts: Vec<Position>,
+    starts: SmallVec<Position, 0, Global>,
     /// Where each node's run of `starts` begins, then one past the last run.
-    first: Vec<Position>,
+    first: SmallVec<Position, 0, Global>,
 }
 
 impl Children
@@ -1563,6 +1597,10 @@ fn ordinal(variable: RuleVariable) -> Option<Ordinal>
 /// - panics: none.
 /// - executable: none — the substituted side is the body's own construction.
 ///
+/// # Cost
+/// - allocation: the instantiated side with its substituted subterms, growth
+///   within the side's nodes and the other side's bound spans
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`OperationRules::converge`].
 /// - witness: `operation_rules::tests::two_overlapping_rules_that_join_converge`
@@ -1571,7 +1609,7 @@ fn instantiate(
     (bindings, own): (&[Binding], Ordinal),
     other: &[OperationNode],
     moved: Ordinal,
-    out: &mut Vec<OperationNode>,
+    out: &mut SmallVec<OperationNode, 0, Global>,
 )
 {
     let shifted = |node: OperationNode, by: Ordinal| match node {

@@ -27,8 +27,12 @@
 
 use alloc::alloc::Global;
 use alloc::alloc::handle_alloc_error;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::alloc::Layout;
+use core::borrow::Borrow;
+use core::borrow::BorrowMut;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::Hash;
@@ -56,8 +60,26 @@ const LENGTH: usize = isize::MAX.cast_unsigned();
 /// items.
 const SPILLED: usize = !LENGTH;
 
-/// The capacity of the first block, unless a grow asks for more.
-const FIRST_BLOCK: usize = 4;
+/// The capacity of the first block of items of `T`, unless a grow asks for
+/// more. It is the first capacity of `Vec`: eight items of one byte, four
+/// items of up to a kibibyte, and one larger item. So a vector draws a block
+/// and grows it as often as a `Vec` of its items does.
+///
+/// # Specification
+/// trivial.
+const fn first_block<T>() -> Count
+{
+    let size = size_of::<T>();
+    if size == 1 {
+        Count(8)
+    }
+    else if size <= 1024 {
+        Count(4)
+    }
+    else {
+        Count(1)
+    }
+}
 
 /// A number of items of a vector: its length, its capacity, or the room to
 /// reserve. As a place, it names the slot past that many items.
@@ -188,10 +210,10 @@ impl<T, const N: usize> SmallVec<T, N, Global>
     /// # Adequacy
     /// - hypothesis: L3 — the model test starts each run from this vector.
     /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
-    #[spec(ensures: |ret| ret.count() == Count(0))]
+    #[spec(ensures: |ret| ret.count().0 == 0)]
     #[inline]
     #[must_use]
-    pub fn new() -> Self
+    pub const fn new() -> Self
     {
         Self::new_in(Global)
     }
@@ -232,10 +254,10 @@ where
     /// - hypothesis: L3 — a vector over a counting allocator draws no block
     ///   while its items fit in place.
     /// - witness: `tests::small_vec::a_vector_holds_its_items_in_place_up_to_n_and_in_one_block_past_it`
-    #[spec(ensures: |ret| ret.count() == Count(0))]
+    #[spec(ensures: |ret| ret.count().0 == 0)]
     #[inline]
     #[must_use]
-    pub fn new_in(alloc: A) -> Self
+    pub const fn new_in(alloc: A) -> Self
     {
         const {
             assert!(
@@ -306,7 +328,7 @@ where
     /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
     #[spec(ensures: |ret| ret.0 <= LENGTH)]
     #[inline]
-    fn count(&self) -> Count
+    const fn count(&self) -> Count
     {
         Count(self.tagged & LENGTH)
     }
@@ -455,9 +477,9 @@ where
 
     /// Room for `additional` more items, or the refusal of the grow.
     ///
-    /// The first block holds four items, or the room asked for if that is
-    /// more. Each later grow at least doubles the capacity. A vector of
-    /// zero-sized items never draws a block.
+    /// The first block holds as many items as the first block of a `Vec`, or
+    /// the room asked for if that is more. Each later grow at least doubles
+    /// the capacity. A vector of zero-sized items never draws a block.
     ///
     /// # Errors
     /// [`Refused::Overflow`] when the length would pass `isize::MAX`, and
@@ -496,7 +518,7 @@ where
         }
         let grown = needed
             .max(capacity.saturating_mul(2))
-            .clamp(FIRST_BLOCK, LENGTH);
+            .clamp(first_block::<T>().0, LENGTH);
         let layout = Layout::array::<T>(grown).map_err(|_overflow| Refused::Overflow)?;
         let block = match self.live() {
             Live::Block => {
@@ -528,6 +550,77 @@ where
         };
         self.tagged = len | SPILLED;
         Ok(())
+    }
+
+    /// Gives the spare room of the block back to the allocator, as
+    /// `Vec::shrink_to_fit` does. A vector whose items fit in place moves them
+    /// back in place, and its block returns.
+    ///
+    /// # Specification
+    /// - ensures: the items stay in their order. The capacity is `N` when the
+    ///   length is at most `N`, and the length otherwise. A vector of
+    ///   zero-sized items stays as it is.
+    /// - panics: none; the allocator's refusal goes to its error handler.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test shrinks vectors in place and spilled,
+    ///   and Miri reports a leak or a double free of the block.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(
+        captures: before = self.count(),
+        ensures: self.count() == before
+            && (size_of::<T>() == 0 || self.capacity().0 == before.0.max(N)),
+    )]
+    #[inline]
+    pub fn shrink_to_fit(&mut self)
+    {
+        if size_of::<T>() == 0 || self.live() == Live::Inline {
+            return;
+        }
+        // SAFETY: the tag names the pair live.
+        let (block, capacity) = unsafe { self.raw.heap };
+        let len = self.count().0;
+        if len > N && len == capacity {
+            return;
+        }
+        let Ok(held) = Layout::array::<T>(capacity)
+        else {
+            Refused::Overflow.raise()
+        };
+        if len <= N {
+            let mut inline = MaybeUninit::<[T; N]>::uninit();
+            // SAFETY: the first `len` slots of the block hold the items, the
+            // array holds room for `N` items, at least `len`, and the two do
+            // not overlap.
+            unsafe {
+                ptr::copy_nonoverlapping(block.as_ptr(), inline.as_mut_ptr().cast::<T>(), len);
+            }
+            self.raw = Raw {
+                inline: ManuallyDrop::new(inline),
+            };
+            self.tagged = len;
+            // SAFETY: `block` is a block of `self.alloc` with `held`, its items
+            // moved out, and the cleared tag names it no more, so it returns
+            // once.
+            unsafe {
+                self.alloc.deallocate(block.cast(), held);
+            }
+            return;
+        }
+        let Ok(kept) = Layout::array::<T>(len)
+        else {
+            Refused::Overflow.raise()
+        };
+        // SAFETY: `block` is a block of `self.alloc` with `held`, and `kept` is
+        // smaller, with the same alignment.
+        match unsafe { self.alloc.shrink(block.cast(), held, kept) } {
+            Ok(shrunk) => {
+                self.raw = Raw {
+                    heap: (shrunk.cast(), len),
+                };
+            },
+            Err(_refusal) => handle_alloc_error(kept),
+        }
     }
 
     /// Adds `item` past the last item.
@@ -849,8 +942,318 @@ where
             vec: self,
             next: start.0,
             end: end.0,
+            back: end.0,
             tail_len: len.0.wrapping_sub(end.0),
         }
+    }
+
+    /// Puts `item` at `index`, and moves each item from `index` on up by one.
+    ///
+    /// # Specification
+    /// - ensures: the length grows by one; `item` stands at `index`, and the
+    ///   other items keep their order.
+    /// - panics: when `index` is past the length, or the length passes
+    ///   `isize::MAX`; the allocator's refusal goes to its error handler.
+    /// - intension: one move of each item from `index` on.
+    ///
+    /// # Panics
+    /// When `index` is past the length, as `Vec::insert` panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test inserts at each index up to the
+    ///   length, in place and spilled, against `Vec::insert`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = self.count(), ensures: self.count().0 == before.0.saturating_add(1))]
+    #[inline]
+    pub fn insert(
+        &mut self,
+        index: Count,
+        item: T,
+    )
+    {
+        let len = self.count().0;
+        assert!(
+            index.0 <= len,
+            "the index {} of `insert` is past the length {len}",
+            index.0
+        );
+        self.push(item);
+        if let Some(tail) = self.as_mut_slice().get_mut(index.0 ..) {
+            tail.rotate_right(1);
+        }
+    }
+
+    /// Adds a clone of each item of `items` past the last item, in order.
+    ///
+    /// # Specification
+    /// - ensures: the length grows by the length of `items`, and the last items
+    ///   are clones of `items`, in order.
+    /// - panics: when a clone panics, or the length passes `isize::MAX`; the
+    ///   allocator's refusal goes to its error handler.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test extends by a slice, in place and
+    ///   spilled, against `Vec::extend_from_slice`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = self.count(), ensures: self.count().0 == before.0.saturating_add(items.len()))]
+    #[inline]
+    pub fn extend_from_slice(
+        &mut self,
+        items: &[T],
+    ) where
+        T: Clone,
+    {
+        self.extend(items.iter().cloned());
+    }
+
+    /// Sets the length to `len`: drops the items past `len`, or adds clones
+    /// of `value` past the last item until the length is `len`.
+    ///
+    /// # Specification
+    /// - ensures: the length is `len`; the items before the old length stay,
+    ///   and each item past it is a clone of `value`.
+    /// - panics: when a clone or an item's drop panics, or the length passes
+    ///   `isize::MAX`; the allocator's refusal goes to its error handler.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test resizes to lengths below and past the
+    ///   length, in place and spilled, against `Vec::resize`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(ensures: self.count() == len)]
+    #[inline]
+    pub fn resize(
+        &mut self,
+        len: Count,
+        value: T,
+    ) where
+        T: Clone,
+    {
+        let had = self.count().0;
+        if len.0 <= had {
+            self.truncate(len);
+        }
+        else {
+            self.extend(core::iter::repeat_n(value, len.0.wrapping_sub(had)));
+        }
+    }
+
+    /// Replaces the items of `range` with the items of `items`, in order, and
+    /// drops the items of `range`.
+    ///
+    /// The vector drains the range, adds the new items past the last item, and
+    /// then rotates them into place before the items past the range.
+    ///
+    /// # Specification
+    /// - ensures: the vector holds the items before `range`, then the items of
+    ///   `items`, then the items past `range`.
+    /// - panics: when `range` lies outside the vector, the iterator or an
+    ///   item's drop panics, or the length passes `isize::MAX`.
+    /// - intension: one move of each item past `range` to close the gap, and
+    ///   one rotation of the items from the start of `range`.
+    /// - executable: none — the predicate reads the items of an iterator that
+    ///   the call consumes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test replaces ranges by runs of each
+    ///   length, in place and spilled, against `Vec::splice`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[inline]
+    pub fn replace_range<R, I>(
+        &mut self,
+        range: R,
+        items: I,
+    ) where
+        R: RangeBounds<usize>,
+        I: IntoIterator<Item = T>,
+    {
+        let (start, end) = bounds(&range, self.count());
+        drop(self.drain(start.0 .. end.0));
+        let tail = self.count().0.wrapping_sub(start.0);
+        self.extend(items);
+        if let Some(moved) = self.as_mut_slice().get_mut(start.0 ..) {
+            moved.rotate_left(tail);
+        }
+    }
+
+    /// Splits the vector at `at`: the vector keeps the items before `at`, and
+    /// a new vector over a clone of its allocator holds the rest, in order.
+    ///
+    /// # Specification
+    /// - ensures: the length is `at`, and the new vector holds the items that
+    ///   stood from `at` on, in order.
+    /// - panics: when `at` is past the length; the allocator's refusal goes to
+    ///   its error handler.
+    /// - intension: one move of each item from `at` on.
+    ///
+    /// # Panics
+    /// When `at` is past the length, as `Vec::split_off` panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test splits at each index up to the length,
+    ///   in place and spilled, against `Vec::split_off`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = self.count(),
+        ensures: |ret| self.count() == at && ret.count().0.saturating_add(at.0) == before.0)]
+    #[inline]
+    #[must_use]
+    pub fn split_off(
+        &mut self,
+        at: Count,
+    ) -> Self
+    where
+        A: Clone,
+    {
+        let len = self.count().0;
+        assert!(
+            at.0 <= len,
+            "the index {} of `split_off` is past the length {len}",
+            at.0
+        );
+        let mut rest = Self::with_capacity_in(Count(len.wrapping_sub(at.0)), self.alloc.clone());
+        rest.extend(self.drain(at.0 ..));
+        rest
+    }
+
+    /// Moves each item of `other` past the last item, in order, and leaves
+    /// `other` empty.
+    ///
+    /// # Specification
+    /// - ensures: the length grows by the length of `other`, and `other` is
+    ///   empty.
+    /// - panics: when the length passes `isize::MAX`; the allocator's refusal
+    ///   goes to its error handler.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test appends runs of each length, in place
+    ///   and spilled, against `Vec::append`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: [before = self.count(), moved = other.count()],
+        ensures: self.count().0 == before.0.saturating_add(moved.0) && other.count() == Count(0))]
+    #[inline]
+    pub fn append<const M: usize, B>(
+        &mut self,
+        other: &mut SmallVec<T, M, B>,
+    ) where
+        B: Allocator,
+    {
+        self.extend(other.drain(..));
+    }
+
+    /// Drops each item that equals the item kept before it, so each run of
+    /// equal items keeps its first.
+    ///
+    /// The vector moves each kept item down by a swap, and then truncates, as
+    /// [`SmallVec::retain`] does.
+    ///
+    /// # Specification
+    /// - ensures: no two neighbouring items are equal, and the items keep their
+    ///   order.
+    /// - panics: when a comparison or an item's drop panics. A panic in a
+    ///   comparison leaves each item in the vector, in some order.
+    /// - intension: one comparison of each item and at most one swap of each.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test drops runs of equal items, in place
+    ///   and spilled, against `Vec::dedup`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = self.count(), ensures: self.count() <= before)]
+    #[inline]
+    pub fn dedup(&mut self)
+    where
+        T: PartialEq,
+    {
+        let items = self.as_mut_slice();
+        let mut kept = 0_usize;
+        for index in 0 .. items.len() {
+            let fresh = kept == 0 || items.get(kept.wrapping_sub(1)) != items.get(index);
+            if fresh {
+                items.swap(kept, index);
+                kept = kept.saturating_add(1);
+            }
+        }
+        self.truncate(Count(kept));
+    }
+
+    /// The items as a boxed slice over the vector's allocator.
+    ///
+    /// A vector whose block holds its items hands the block to the box, shrunk
+    /// to the length, as `Vec::into_boxed_slice` does. A vector in place, or an
+    /// empty one, gives its items to a new box.
+    ///
+    /// # Specification
+    /// - ensures: the box holds the items, in order.
+    /// - panics: none; the allocator's refusal goes to its error handler.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test boxes its final items, in place and
+    ///   spilled, and Miri reports a leak or a double free of the block.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = self.count(), ensures: |ret| ret.len() == before.0)]
+    #[inline]
+    #[must_use]
+    pub fn into_boxed_slice(self) -> Box<[T], A>
+    {
+        let vec = ManuallyDrop::new(self);
+        let len = vec.count().0;
+        // SAFETY: `vec` never drops, so its allocator moves out once.
+        let alloc = unsafe { ptr::read(&raw const vec.alloc) };
+        let Ok(kept) = Layout::array::<T>(len)
+        else {
+            Refused::Overflow.raise()
+        };
+        if vec.live() == Live::Block {
+            // SAFETY: the tag names the pair live.
+            let (block, capacity) = unsafe { vec.raw.heap };
+            let Ok(held) = Layout::array::<T>(capacity)
+            else {
+                Refused::Overflow.raise()
+            };
+            if len > 0 {
+                let block = if capacity == len {
+                    block
+                }
+                else {
+                    // SAFETY: `block` is a block of `alloc` with `held`, and
+                    // `kept` is no larger, with the same alignment.
+                    match unsafe { alloc.shrink(block.cast(), held, kept) } {
+                        Ok(shrunk) => shrunk.cast(),
+                        Err(_refusal) => handle_alloc_error(kept),
+                    }
+                };
+                // SAFETY: `block` is a block of `alloc` with the array layout
+                // of `len` items, which the first `len` slots hold, and `vec`
+                // names it no more, so the box owns it.
+                return unsafe {
+                    Box::from_raw_in(ptr::slice_from_raw_parts_mut(block.as_ptr(), len), alloc)
+                };
+            }
+            // SAFETY: `block` is a block of `alloc` with `held` and holds no
+            // item, and `vec` names it no more, so it returns once.
+            unsafe {
+                alloc.deallocate(block.cast(), held);
+            }
+        }
+        let block: NonNull<T> = if kept.size() == 0 {
+            NonNull::dangling()
+        }
+        else {
+            match alloc.allocate(kept) {
+                Ok(block) => block.cast(),
+                Err(_refusal) => handle_alloc_error(kept),
+            }
+        };
+        if vec.live() == Live::Inline {
+            // SAFETY: the inline array holds `len` items, `block` holds room
+            // for `len`, the two do not overlap, and `vec` never drops its
+            // items, so each moves once.
+            unsafe {
+                ptr::copy_nonoverlapping(vec.as_ptr(), block.as_ptr(), len);
+            }
+        }
+        // SAFETY: `block` is a block of `alloc` with the array layout of `len`
+        // items, or a dangling pointer for a layout of no bytes, which a box
+        // never returns; its first `len` slots hold the items.
+        unsafe { Box::from_raw_in(ptr::slice_from_raw_parts_mut(block.as_ptr(), len), alloc) }
     }
 
     /// Gives the block back to the allocator if the vector holds one, and
@@ -959,7 +1362,8 @@ where
 ///
 /// # Specification
 /// - requires: the vector's length is the start of the range, and the slots
-///   from `next` to `end` hold the items not yet yielded.
+///   from `next` to `back` hold the items not yet yielded; the slots from
+///   `back` to `end` hold none.
 pub struct Drain<'vec, T, const N: usize, A>
 where
     A: Allocator,
@@ -968,8 +1372,10 @@ where
     vec: &'vec mut SmallVec<T, N, A>,
     /// The slot of the next item to yield.
     next: usize,
-    /// The end of the range.
+    /// The end of the range, where the items past it start.
     end: usize,
+    /// The slot past the last item not yet yielded.
+    back: usize,
     /// The items past the range.
     tail_len: usize,
 }
@@ -1009,6 +1415,32 @@ where
         }
         self.vec.set_len(Count(start.wrapping_add(self.tail_len)));
     }
+
+    /// The items that the drain has not yet yielded, in order.
+    ///
+    /// # Specification
+    /// - ensures: the slice holds the items from `next` to the end of the
+    ///   range.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test reads a drain's items before it yields
+    ///   them, against the model's range.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(ensures: |ret| ret.len() == self.back.wrapping_sub(self.next))]
+    #[inline]
+    #[must_use]
+    pub fn as_slice(&self) -> &[T]
+    {
+        // SAFETY: the slots from `next` to `back` of the live half hold the
+        // items not yet yielded, and the borrow of `self` keeps them.
+        unsafe {
+            slice::from_raw_parts(
+                self.vec.as_ptr().wrapping_add(self.next),
+                self.back.wrapping_sub(self.next),
+            )
+        }
+    }
 }
 
 impl<T, const N: usize, A> Iterator for Drain<'_, T, N, A>
@@ -1029,7 +1461,7 @@ where
     #[inline]
     fn next(&mut self) -> Option<T>
     {
-        if self.next == self.end {
+        if self.next == self.back {
             return None;
         }
         let at = self.next;
@@ -1045,8 +1477,38 @@ where
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>)
     {
-        let left = self.end.wrapping_sub(self.next);
+        let left = self.back.wrapping_sub(self.next);
         (left, Some(left))
+    }
+}
+
+impl<T, const N: usize, A> DoubleEndedIterator for Drain<'_, T, N, A>
+where
+    A: Allocator,
+{
+    /// # Specification
+    /// - ensures: the last item of the range not yet yielded, or `None` once
+    ///   each is.
+    /// - panics: none.
+    /// - executable: none — the slot's state is no value that a predicate
+    ///   reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test drains a range from its back, in place
+    ///   and spilled, against `Vec::drain`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[inline]
+    fn next_back(&mut self) -> Option<T>
+    {
+        if self.next == self.back {
+            return None;
+        }
+        let at = self.back.wrapping_sub(1);
+        self.back = at;
+        // SAFETY: the slot past `at` items lies between the vector's length
+        // and the range's end, holds an item, and the drain passes it, so it
+        // moves out once.
+        Some(unsafe { self.vec.take(Count(at)) })
     }
 }
 
@@ -1077,9 +1539,9 @@ where
         let mut drain = DropGuard::new(self, Self::close);
         let rest = ptr::slice_from_raw_parts_mut(
             drain.vec.as_mut_ptr().wrapping_add(drain.next),
-            drain.end.wrapping_sub(drain.next),
+            drain.back.wrapping_sub(drain.next),
         );
-        drain.next = drain.end;
+        drain.next = drain.back;
         // SAFETY: the slots of `rest` hold the items that the drain did not
         // yield, and the drain passes them now, so each drops once.
         unsafe {
@@ -1141,6 +1603,34 @@ where
     {
         let left = self.end.wrapping_sub(self.next);
         (left, Some(left))
+    }
+}
+
+impl<T, const N: usize, A> DoubleEndedIterator for IntoIter<T, N, A>
+where
+    A: Allocator,
+{
+    /// # Specification
+    /// - ensures: the last item not yet yielded, or `None` once each is.
+    /// - panics: none.
+    /// - executable: none — the slot's state is no value that a predicate
+    ///   reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test takes the items by value from the
+    ///   back, against a `Vec`'s.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[inline]
+    fn next_back(&mut self) -> Option<T>
+    {
+        if self.next == self.end {
+            return None;
+        }
+        let at = self.end.wrapping_sub(1);
+        self.end = at;
+        // SAFETY: the slot past `at` items lies below the items' end, holds an
+        // item, and the iterator passes it, so it moves out once.
+        Some(unsafe { self.vec.take(Count(at)) })
     }
 }
 
@@ -1262,6 +1752,27 @@ where
     }
 }
 
+impl<'item, T, const N: usize, A> Extend<&'item T> for SmallVec<T, N, A>
+where
+    T: Copy + 'item,
+    A: Allocator,
+{
+    /// Adds a copy of each item past the last item, in order, as `Vec`
+    /// extends by references to `Copy` items.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn extend<I>(
+        &mut self,
+        iter: I,
+    ) where
+        I: IntoIterator<Item = &'item T>,
+    {
+        self.extend(iter.into_iter().copied());
+    }
+}
+
 impl<T, const N: usize, A> Extend<T> for SmallVec<T, N, A>
 where
     A: Allocator,
@@ -1363,6 +1874,70 @@ where
     }
 }
 
+impl<T, const N: usize, A> From<SmallVec<T, N, A>> for Box<[T], A>
+where
+    A: Allocator,
+{
+    /// The items, as [`SmallVec::into_boxed_slice`] gives them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(vec: SmallVec<T, N, A>) -> Self
+    {
+        vec.into_boxed_slice()
+    }
+}
+
+impl<T, const N: usize, A> From<SmallVec<T, N, A>> for Vec<T, A>
+where
+    A: Allocator,
+{
+    /// The items as a vector over the same allocator.
+    ///
+    /// A vector whose block holds its items hands the block to the result
+    /// with no copy, as `Vec::from(Box<[T]>)` does. A vector in place moves
+    /// its items into a new block.
+    ///
+    /// # Specification
+    /// - ensures: the result holds the items, in order.
+    /// - panics: none; the allocator's refusal goes to its error handler.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test converts its final items, in place and
+    ///   spilled, and Miri reports a leak or a double free of the block.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = vec.count(), ensures: |ret| ret.len() == before.0)]
+    #[inline]
+    fn from(vec: SmallVec<T, N, A>) -> Self
+    {
+        let vec = ManuallyDrop::new(vec);
+        let len = vec.count().0;
+        // SAFETY: `vec` never drops, so its allocator moves out once.
+        let alloc = unsafe { ptr::read(&raw const vec.alloc) };
+        if vec.live() == Live::Block {
+            // SAFETY: the tag names the pair live.
+            let (block, capacity) = unsafe { vec.raw.heap };
+            // SAFETY: `block` is a block of `alloc` with the array layout of
+            // `capacity` items, its first `len` slots hold the items, and
+            // `vec` names it no more, so the result owns it.
+            return unsafe { Self::from_raw_parts_in(block.as_ptr(), len, capacity, alloc) };
+        }
+        let mut moved = Self::with_capacity_in(len, alloc);
+        // SAFETY: the inline array holds `len` items, `moved` holds room for
+        // `len`, the two do not overlap, and `vec` never drops its items, so
+        // each moves once.
+        unsafe {
+            ptr::copy_nonoverlapping(vec.as_ptr(), moved.as_mut_ptr(), len);
+        }
+        // SAFETY: the copy above initializes the first `len` slots of `moved`.
+        unsafe {
+            moved.set_len(len);
+        }
+        moved
+    }
+}
+
 impl<T, const N: usize, A> Default for SmallVec<T, N, A>
 where
     A: Allocator + Default,
@@ -1411,6 +1986,181 @@ where
     ) -> bool
     {
         self.as_slice() == other.as_slice()
+    }
+}
+
+impl<T, U, const N: usize, A> PartialEq<[U]> for SmallVec<T, N, A>
+where
+    T: PartialEq<U>,
+    A: Allocator,
+{
+    /// A vector equals a slice of equal items in the same order, as a `Vec`
+    /// does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &[U],
+    ) -> bool
+    {
+        self.as_slice() == other
+    }
+}
+
+impl<T, U, const N: usize, A> PartialEq<&[U]> for SmallVec<T, N, A>
+where
+    T: PartialEq<U>,
+    A: Allocator,
+{
+    /// A vector equals a borrowed slice of equal items in the same order, as
+    /// a `Vec` does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &&[U],
+    ) -> bool
+    {
+        self.as_slice() == *other
+    }
+}
+
+impl<T, U, const N: usize, const M: usize, A> PartialEq<[U; M]> for SmallVec<T, N, A>
+where
+    T: PartialEq<U>,
+    A: Allocator,
+{
+    /// A vector equals an array of equal items in the same order, as a `Vec`
+    /// does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &[U; M],
+    ) -> bool
+    {
+        self.as_slice() == other
+    }
+}
+
+impl<T, U, const N: usize, A> PartialEq<SmallVec<U, N, A>> for [T]
+where
+    T: PartialEq<U>,
+    A: Allocator,
+{
+    /// A slice equals a vector of equal items in the same order, as it equals
+    /// a `Vec`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &SmallVec<U, N, A>,
+    ) -> bool
+    {
+        self == other.as_slice()
+    }
+}
+
+impl<T, U, const N: usize, A> PartialEq<SmallVec<U, N, A>> for &[T]
+where
+    T: PartialEq<U>,
+    A: Allocator,
+{
+    /// A borrowed slice equals a vector of equal items in the same order, as
+    /// it equals a `Vec`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &SmallVec<U, N, A>,
+    ) -> bool
+    {
+        *self == other.as_slice()
+    }
+}
+
+impl<T, U, const N: usize, const M: usize, A> PartialEq<SmallVec<U, N, A>> for [T; M]
+where
+    T: PartialEq<U>,
+    A: Allocator,
+{
+    /// An array equals a vector of equal items in the same order, as it
+    /// equals a `Vec`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &SmallVec<U, N, A>,
+    ) -> bool
+    {
+        self == other.as_slice()
+    }
+}
+
+impl<T, const N: usize, A> AsRef<[T]> for SmallVec<T, N, A>
+where
+    A: Allocator,
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[T]
+    {
+        self.as_slice()
+    }
+}
+
+impl<T, const N: usize, A> AsMut<[T]> for SmallVec<T, N, A>
+where
+    A: Allocator,
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_mut(&mut self) -> &mut [T]
+    {
+        self.as_mut_slice()
+    }
+}
+
+impl<T, const N: usize, A> Borrow<[T]> for SmallVec<T, N, A>
+where
+    A: Allocator,
+{
+    /// The items, as a `Vec` lends them. The vector compares, orders and
+    /// hashes as this slice does, as `Borrow` asks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn borrow(&self) -> &[T]
+    {
+        self.as_slice()
+    }
+}
+
+impl<T, const N: usize, A> BorrowMut<[T]> for SmallVec<T, N, A>
+where
+    A: Allocator,
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn borrow_mut(&mut self) -> &mut [T]
+    {
+        self.as_mut_slice()
     }
 }
 

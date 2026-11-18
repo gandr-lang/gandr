@@ -166,6 +166,10 @@ impl Grouping
     /// # Errors
     /// Returns `StageError::UnknownTerm`.
     ///
+    /// # Cost
+    /// - allocation: the distinct family keys and one group position per step,
+    ///   growth within the certificate's steps
+    ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — a program whose keys first occur in a later
     ///   certificate and interleave within one is harvested by certificate and

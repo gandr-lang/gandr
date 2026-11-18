@@ -6,9 +6,13 @@
 //! meaning: a guard's evidence is checked, a cycle's productivity decided and a
 //! dialogue replayed by the kernel, which owns every verdict.
 
+use alloc::alloc::Global;
+
+use gandr_kernel_data::SmallVec;
+
 /// One decision trace of the portable alphabet the universe-path evidence
 /// uses; unit anchors carry no arena identity.
-pub type Dialogue = alloc::vec::Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>;
+pub type Dialogue = SmallVec<gandr_kernel_conversion_trace::ConversionDecision<()>, 0, Global>;
 
 /// A position in a higher-field program's layer list.
 #[repr(transparent)]
@@ -60,7 +64,7 @@ pub struct HigherProgram
     /// The first layer observed.
     pub root: LayerPosition,
     /// The layers; every position names one of them.
-    pub layers: alloc::vec::Vec<HigherLayer>,
+    pub layers: SmallVec<HigherLayer, 0, Global>,
 }
 
 impl HigherProgram

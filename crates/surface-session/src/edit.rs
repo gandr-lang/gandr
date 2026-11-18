@@ -2975,6 +2975,10 @@ enum Agreement
 ///   every child paired.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the unit-carrying copies of moves that the comparison builds,
+///   growth within the nodes' recorded and dialogue entries
+///
 /// # Adequacy
 /// - hypothesis: L3 — literal, variable, constant and constructor edits, a
 ///   tuple gaining a component, plus payload-bearing node pairs whose children
@@ -3571,6 +3575,10 @@ fn read(
 ///   Unresolved at the requested sort.
 /// - panics: only if `child` panics.
 ///
+/// # Cost
+/// - allocation: the content node's child lists, labels and frames, growth
+///   within the value's fields
+///
 /// # Adequacy
 /// - hypothesis: L3 — hand-built multi-child body formers, generated typed
 ///   source revisions and absent roots in each of the four arena sorts. Exact
@@ -3871,7 +3879,7 @@ where
             path_type: child(Root::ValueType(path_type)),
             forward: child(Root::Value(forward)),
             backward: child(Root::Value(backward)),
-            evidence: alloc::sync::Arc::clone(evidence),
+            evidence: gandr_kernel_data::Shared::clone(evidence),
         },
         Some(&Value::Variable { zone, index }) => ContentNode::Variable { zone, index },
         Some(&Value::Constant(position)) => ContentNode::Constant(program.resolve(position)),
@@ -5962,9 +5970,13 @@ mod tests
         let classifier = arena.value_type_path_universe(source, target);
         let forward = arena.value_path_refl(source);
         let backward = arena.value_path_refl(target);
-        let evidence = Arc::new(PathEvidence::default());
-        let equivalence =
-            arena.value_path_equiv(classifier, forward, backward, Arc::clone(&evidence));
+        let evidence = gandr_kernel_data::Shared::new(PathEvidence::default());
+        let equivalence = arena.value_path_equiv(
+            classifier,
+            forward,
+            backward,
+            gandr_kernel_data::Shared::clone(&evidence),
+        );
         let product = arena.value_path_product(forward, backward);
         let unit = arena.value_unit();
         let transport = arena.computation_transport(product, unit);
@@ -5987,7 +5999,7 @@ mod tests
                         path_type: NodeIndex::from(1_usize),
                         forward: NodeIndex::from(2_usize),
                         backward: NodeIndex::from(3_usize),
-                        evidence: Arc::clone(&evidence),
+                        evidence: gandr_kernel_data::Shared::clone(&evidence),
                     },
                     ContentNode::PathUniverse(NodeIndex::from(4_usize), NodeIndex::from(5_usize)),
                     // The reflexivities name the quotes the universe names:
@@ -6034,12 +6046,16 @@ mod tests
         };
         for replacement in [
             PathEvidence {
-                source: vec![Vec::new()],
-                target: Vec::new(),
+                source: gandr_kernel_data::SmallVec::from_iter(
+                    [gandr_kernel_data::SmallVec::new()],
+                ),
+                target: gandr_kernel_data::SmallVec::new(),
             },
             PathEvidence {
-                source: Vec::new(),
-                target: vec![Vec::new()],
+                source: gandr_kernel_data::SmallVec::new(),
+                target: gandr_kernel_data::SmallVec::from_iter(
+                    [gandr_kernel_data::SmallVec::new()],
+                ),
             },
         ] {
             let mut new = old.clone();
@@ -6059,7 +6075,7 @@ mod tests
             else {
                 panic!("the equivalence former");
             };
-            *evidence = Arc::new(replacement);
+            *evidence = gandr_kernel_data::Shared::new(replacement);
             *tree = Tree::named(nodes);
             let script = diff(&old, &new);
             assert!(matches!(script.actions(), [Action::Replace { path, .. }]

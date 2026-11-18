@@ -1,6 +1,9 @@
 //! Witnesses for conversion: the worklist, its set-aside pairs and the
 //! verdicts each forced rule reaches.
 
+use alloc::alloc::Global;
+
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
@@ -134,40 +137,47 @@ fn a_presented_constructor_is_set_aside_on_either_side()
 
     let looped = ConstructorTag::from(1_usize);
     let x = RuleNode::Variable(RuleVariable::from(0_u32));
-    let rules = Presentation::new(alloc::vec![PresentedRule::new(
+    let rules = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
         [
             RuleNode::Constructor(looped),
             RuleNode::Constructor(looped),
-            x
+            x,
         ]
         .into(),
         [x].into(),
-    )]);
+    )]));
     let mut environment = crate::Environment::new();
     let mut staging = environment.stage();
     let kind = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let own = staging
-        .arena()
-        .value_type_data(ConstantIndex::from(0_usize), alloc::vec::Vec::new());
+    let own = staging.arena().value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let staged = staging
         .data(
             LevelSignature::monomorphic(),
-            alloc::vec::Vec::new(),
-            alloc::vec![alloc::vec![], alloc::vec![own]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
         .presented(rules);
     let _sort = environment.add_decl(staged).expect("the sort admits");
     let presentations = crate::presented::Presentations::of(environment.entries());
     let mut arena = environment.arena().clone();
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec::Vec::new());
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let base = arena.value_constructor(
         ConstantIndex::from(0_usize),
         own,
         ConstructorTag::from(0_usize),
-        alloc::vec::Vec::new(),
+        SmallVec::<_, 0, Global>::new(),
     );
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
     for (left, right) in [(variable, base), (base, variable)] {
@@ -918,9 +928,9 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
 {
     use alloc::collections::BTreeMap;
     use alloc::string::String;
-    use alloc::sync::Arc;
-    use alloc::vec::Vec;
 
+    use gandr_kernel_data::Shared;
+    use gandr_kernel_data::ThinShared;
     use gandr_kernel_term::Component;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::EvaluationComponent;
@@ -952,9 +962,9 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
         arena.value_type_record(BTreeMap::from([(label(name), unit_type)]))
     };
     let session = |arena: &mut TermArena, root: usize| {
-        let graph = Arc::new(Graph {
+        let graph = Shared::new(Graph {
             root: State(root),
-            nodes: alloc::vec![Node::End, Node::End],
+            nodes: SmallVec::<_, 0, Global>::from_iter([Node::End, Node::End]),
         });
         arena.value_type_session(graph, unit_type)
     };
@@ -1005,17 +1015,17 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
             ConstantIndex::from(0_usize),
             unit_type,
             ConstructorTag::from(tag),
-            Vec::new(),
+            SmallVec::<_, 0, Global>::new(),
         )
     };
     let record = |arena: &mut TermArena, name: &str| {
         arena.value_record(BTreeMap::from([(label(name), unit)]))
     };
     let higher = |arena: &mut TermArena, depth: u32, count: usize| {
-        let program = Arc::new(HigherProgram {
+        let program = Shared::new(HigherProgram {
             depth: HigherDepth(depth),
             root: LayerPosition(0),
-            layers: Vec::new(),
+            layers: SmallVec::<_, 0, Global>::new(),
         });
         arena.value_higher(program, alloc::vec![unit; count].into_boxed_slice())
     };
@@ -1026,7 +1036,7 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
             evidence: unit,
         };
         let components = alloc::vec![component; count].into_boxed_slice();
-        arena.value_higher_evaluation(Arc::from([]), components)
+        arena.value_higher_evaluation(ThinShared::from_header_and_iter((), []), components)
     };
     let quantified = |arena: &mut TermArena, fibre: Option<u32>, count: usize| {
         let step = fibre.map_or_else(
@@ -1037,7 +1047,7 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
             },
         );
         arena.value_quantified_evaluation(
-            Arc::from([step]),
+            ThinShared::from_header_and_iter((), [step]),
             alloc::vec![unit; count].into_boxed_slice(),
         )
     };
@@ -1110,7 +1120,11 @@ fn a_former_compares_its_children_only_where_its_shape_agrees()
 
     // Computations: branch counts, labels, components, sides.
     let data_case = |arena: &mut TermArena, count: usize| {
-        arena.computation_data_case(unit, returner, alloc::vec![returned; count])
+        arena.computation_data_case(
+            unit,
+            returner,
+            SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(returned, count)),
+        )
     };
     let case = |arena: &mut TermArena, count: usize| {
         arena.computation_case(unit, &alloc::vec![returned; count])

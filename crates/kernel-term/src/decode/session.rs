@@ -1,11 +1,12 @@
 //! Session inline framing; allocations grow only after bytes are consumed.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 use super::ByteReader;
 use crate::DecodeError;
@@ -50,6 +51,10 @@ fn state(reader: &mut ByteReader<'_>) -> Result<State, DecodeError>
 /// # Errors
 /// Malformed session data or a byte-reader error.
 ///
+/// # Cost
+/// - allocation: the decoded nodes, their branches and their labels, growth
+///   within the session bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 all constructors round-trip; truncation and malformed
 ///   labels cannot yield a graph.
@@ -63,7 +68,7 @@ pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
 {
     let root = state(reader)?;
     let count = reader.read_uvarint()?;
-    let mut nodes = Vec::new();
+    let mut nodes = SmallVec::<_, 0, Global>::new();
     for _ in 0 .. u64::from(count) {
         let tag = reader.read_uvarint()?;
         let node = match crate::session::Word(u64::from(tag)) {
@@ -82,7 +87,7 @@ pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
                 let mut branches = BTreeMap::new();
                 for _ in 0 .. u64::from(count) {
                     let count = reader.read_uvarint()?;
-                    let mut bytes = Vec::new();
+                    let mut bytes = alloc::vec::Vec::new();
                     for _ in 0 .. u64::from(count) {
                         let word = reader.read_uvarint()?;
                         let byte = u8::try_from(u64::from(word)).map_err(|_invalid| malformed())?;
@@ -129,6 +134,10 @@ pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
 /// # Errors
 /// Malformed session data or byte-reader failures.
 ///
+/// # Cost
+/// - allocation: the relation pairs and the ordered payload slots, growth
+///   within the session's bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 relation and payload framing round-trip independently.
 /// - witness: `session::tests::session_words_preserve_graph_and_relation`
@@ -149,7 +158,7 @@ pub fn evidence(reader: &mut ByteReader<'_>) -> Result<Evidence, DecodeError>
         }
     }
     let count = reader.read_uvarint()?;
-    let mut payloads = Vec::new();
+    let mut payloads = SmallVec::<_, 0, Global>::new();
     for _ in 0 .. u64::from(count) {
         let source = state(reader)?;
         let target = state(reader)?;

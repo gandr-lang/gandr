@@ -121,12 +121,14 @@
 //! The record itself, its entries and its admitted declarations, is
 //! [`crate::env`]'s, which names no judgement.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
@@ -4090,7 +4092,7 @@ impl Environment
             .commits
             .generative
             .get(&content)
-            .map_or(0, Vec::len)
+            .map_or(0, |twins| twins.len())
             .saturating_add(usize::from(self.entries.retired()));
         let counted = (0 ..= twins).any(|earlier| {
             UnitKey {
@@ -4833,6 +4835,10 @@ impl Environment
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the directly named positions and the transitive audit set,
+    ///   growth within the declaration's named constants and laws
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — the finite axiom and unchecked chains preserve their
     ///   audit reasons through definitions and through type-level code edges.
@@ -5145,7 +5151,7 @@ struct CommitLog
     dependents: crate::dependents::Dependents,
     /// The positions of the generative admissions, by their content key:
     /// the earlier ones with one content are what a new one's key counts.
-    generative: ChunkedMap<crate::verdict::EntryContentKey, Vec<ConstantIndex>>,
+    generative: ChunkedMap<crate::verdict::EntryContentKey, SmallVec<ConstantIndex, 0, Global>>,
     /// The position of the entry that holds each rank.
     ranked: ChunkedMap<SourceRank, ConstantIndex>,
     /// Whether each live entry's place in rank order is its position.
@@ -5328,6 +5334,10 @@ impl CommitLog
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the generative admission's position under its content key,
+    ///   durable by the entry content keys
     #[inline]
     fn generative(
         &mut self,
@@ -5572,6 +5582,10 @@ impl CommitLog
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the kept rows of the generative index, growth within the
+    ///   generative index's live rows
     fn sweep(
         &mut self,
         entries: &Entries,
@@ -5706,6 +5720,10 @@ impl CommitLog
     /// - panics: none.
     /// - executable: none — the clauses state the tables before and after the
     ///   change, which a predicate may not capture whole.
+    ///
+    /// # Cost
+    /// - allocation: the kept rows of the generative and ranked tables, growth
+    ///   within the first `length` slots of `entries`
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a block refused after one member is admitted leaves
@@ -6356,12 +6374,14 @@ mod theory_rules_tests;
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::collections::BTreeSet;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
 
     use anodized::spec;
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::BaseType;
@@ -7095,9 +7115,12 @@ mod tests
             let body = mint.computation_return(bound);
             let lambda = mint.computation_lambda(body);
             let thunk = mint.value_thunk(lambda);
-            staging.sealed_def(LevelSignature::monomorphic(), declared, thunk, vec![
-                atom.position(),
-            ])
+            staging.sealed_def(
+                LevelSignature::monomorphic(),
+                declared,
+                thunk,
+                SmallVec::<_, 0, Global>::from_iter([atom.position()]),
+            )
         };
         assert!(
             matches!(
@@ -7425,9 +7448,12 @@ mod tests
                     Finisher::Definition => {
                         staging.def(LevelSignature::monomorphic(), declared, body)
                     },
-                    Finisher::SealedDefinition => {
-                        staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![])
-                    },
+                    Finisher::SealedDefinition => staging.sealed_def(
+                        LevelSignature::monomorphic(),
+                        declared,
+                        body,
+                        SmallVec::<_, 0, Global>::from_iter([]),
+                    ),
                     Finisher::Axiom => staging.axiom(LevelSignature::monomorphic(), declared),
                     Finisher::AbstractType => staging.abstract_type(
                         LevelSignature::monomorphic(),
@@ -7790,10 +7816,12 @@ mod tests
     {
         match field {
             Field::Universe(at) => arena.value_type_universe(GroundSort::Value, level(at)),
-            Field::Own => arena.value_type_data(own, vec![]),
+            Field::Own => arena.value_type_data(own, SmallVec::<_, 0, Global>::from_iter([])),
             Field::Earlier(draw) => {
                 match draw.checked_rem(data.len()).and_then(|at| data.get(at)) {
-                    Some(&position) => arena.value_type_data(position, vec![]),
+                    Some(&position) => {
+                        arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]))
+                    },
                     None => arena.value_type_unit(),
                 }
             },
@@ -7821,14 +7849,24 @@ mod tests
                     .iter()
                     .map(|&field| form(staging.arena(), field, own, data))
                     .collect();
-                staging.data(LevelSignature::monomorphic(), vec![], vec![fields], kind)
+                staging.data(
+                    LevelSignature::monomorphic(),
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([fields]),
+                    kind,
+                )
             },
             Member::Codata(kind, field) => {
                 let arena = staging.arena();
                 let result = form(arena, field, own, data);
                 let returns = arena.comp_type_returner(result);
                 let kind = arena.value_type_universe(GroundSort::Computation, level(kind));
-                staging.codata(LevelSignature::monomorphic(), vec![], vec![returns], kind)
+                staging.codata(
+                    LevelSignature::monomorphic(),
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([returns]),
+                    kind,
+                )
             },
             Member::Axiom(field) => {
                 let declared = form(staging.arena(), field, own, data);
@@ -10779,8 +10817,8 @@ mod tests
             .value_type_universe(GroundSort::Value, Level::zero());
         let staged = staging.data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            vec![vec![]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([])]),
             kind,
         );
         let sort = environment
@@ -10790,19 +10828,27 @@ mod tests
         let point = || -> alloc::boxed::Box<[RuleNode]> {
             [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
         };
-        let cells = FreeCells::new(sort, vec![FreeCell::new(point(), point())]);
+        let cells = FreeCells::new(
+            sort,
+            SmallVec::<_, 0, Global>::from_iter([FreeCell::new(point(), point())]),
+        );
         let mut staging = environment.stage();
         let kind = staging
             .arena()
             .value_type_universe(GroundSort::Value, Level::zero());
-        let own = staging
-            .arena()
-            .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let own = staging.arena().value_type_data(
+            ConstantIndex::from(1_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let staged = staging
             .data(
                 LevelSignature::monomorphic(),
-                Vec::new(),
-                vec![vec![], vec![own], vec![own]],
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
                 kind,
             )
             .presented(Presentation::words(cells));
@@ -10819,17 +10865,25 @@ mod tests
             let returned = arena.computation_return(occurrence);
             let lambda = arena.computation_lambda(returned);
             let ident = arena.value_thunk(lambda);
-            let carrier = arena.value_type_data(sort, Vec::new());
-            let base =
-                arena.value_constructor(sort, carrier, ConstructorTag::from(0_usize), Vec::new());
+            let carrier = arena.value_type_data(sort, SmallVec::<_, 0, Global>::new());
+            let base = arena.value_constructor(
+                sort,
+                carrier,
+                ConstructorTag::from(0_usize),
+                SmallVec::<_, 0, Global>::new(),
+            );
             let head = arena.value_constant(ConstantIndex::from(2_usize));
             let forced = arena.computation_force(head);
             let applied = arena.computation_application(forced, base);
             let held = arena.value_returned(applied);
             let reflexivity = arena.value_here(held);
-            let own = arena.value_type_data(words, Vec::new());
-            let empty =
-                arena.value_constructor(words, own, ConstructorTag::from(0_usize), Vec::new());
+            let own = arena.value_type_data(words, SmallVec::<_, 0, Global>::new());
+            let empty = arena.value_constructor(
+                words,
+                own,
+                ConstructorTag::from(0_usize),
+                SmallVec::<_, 0, Global>::new(),
+            );
             let mut view = environment.entries.view();
             let end = view.len();
             view.open(roots.iter().copied(), (SourceRank::ABOVE, end));

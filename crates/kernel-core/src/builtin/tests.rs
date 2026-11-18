@@ -1,6 +1,6 @@
-use alloc::vec;
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::Builtin;
@@ -86,7 +86,7 @@ fn admit_signature(
     let parameter = universe(arena, Level::zero());
     let sig = |arena: &mut TermArena, index: u32| {
         let output = arena.value_variable(DeBruijnIndex::from(index));
-        let applied = arena.value_type_data(holder, vec![output]);
+        let applied = arena.value_type_data(holder, SmallVec::<_, 0, Global>::from_iter([output]));
         arena.comp_type_returner(applied)
     };
     // ι(e : O).
@@ -108,16 +108,24 @@ fn admit_signature(
     let decoded = arena.comp_type_arrow(decode, codomain);
     let decoded = arena.value_type_thunk(decoded);
     let kind = universe(arena, one);
-    let (sigma, delta) = (vec![shape_sigma, picked], vec![shape_delta, decoded]);
+    let (sigma, delta) = (
+        SmallVec::<_, 0, Global>::from_iter([shape_sigma, picked]),
+        SmallVec::<_, 0, Global>::from_iter([shape_delta, decoded]),
+    );
+    let stop = SmallVec::<_, 0, Global>::from_iter([stop]);
     let constructors = match shape {
-        Shape::Canonical => vec![vec![stop], sigma, delta],
-        Shape::Departing => vec![vec![stop], delta, sigma],
+        Shape::Canonical => SmallVec::<_, 0, Global>::from_iter([stop, sigma, delta]),
+        Shape::Departing => SmallVec::<_, 0, Global>::from_iter([stop, delta, sigma]),
     };
     let declaration = staging
         .indexed(
             LevelSignature::monomorphic(),
-            vec![parameter],
-            (Vec::new(), constructors, Vec::new()),
+            SmallVec::<_, 0, Global>::from_iter([parameter]),
+            (
+                SmallVec::<_, 0, Global>::new(),
+                constructors,
+                SmallVec::<_, 0, Global>::new(),
+            ),
             kind,
         )
         .held(Builtin::IrSignature);
@@ -155,15 +163,19 @@ fn admit_pair(
     // A second field of the first type, `A` at 2 under `B` and `x`.
     let plain = element(arena, DeBruijnIndex::from(2_u32));
     let fields = match shape {
-        PairShape::Canonical => vec![x, y],
-        PairShape::Repeated => vec![x, plain],
-        PairShape::Swapped => vec![y, x],
+        PairShape::Canonical => SmallVec::<_, 0, Global>::from_iter([x, y]),
+        PairShape::Repeated => SmallVec::<_, 0, Global>::from_iter([x, plain]),
+        PairShape::Swapped => SmallVec::<_, 0, Global>::from_iter([y, x]),
     };
     let declaration = staging
         .indexed(
             LevelSignature::monomorphic(),
-            vec![first, family],
-            (Vec::new(), vec![fields], Vec::new()),
+            SmallVec::<_, 0, Global>::from_iter([first, family]),
+            (
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([fields]),
+                SmallVec::<_, 0, Global>::new(),
+            ),
             kind,
         )
         .held(Builtin::IrPair);

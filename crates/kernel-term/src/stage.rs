@@ -52,7 +52,6 @@
 
 use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
@@ -61,6 +60,7 @@ use gandr_kernel_check_memo::Probe;
 use gandr_kernel_check_memo::TableFull;
 use gandr_kernel_check_memo::TableHash;
 use gandr_kernel_check_memo::TablePosition;
+use gandr_kernel_data::SmallVec;
 use quenchant_shape::shape::Maybe;
 
 /// Declare an arena-local nominal coordinate.
@@ -197,7 +197,7 @@ pub struct Certificate
     /// Proposed normal form.
     pub target: TermId,
     /// Ordered elementary equations.
-    pub steps: Vec<Step>,
+    pub steps: SmallVec<Step, 0, Global>,
 }
 
 /// Typed refusals shared by syntax, formation, normalization and replay.
@@ -281,11 +281,11 @@ impl core::error::Error for StageError
 pub struct Arena
 {
     /// Canonical classifier descriptors in dependency order.
-    types: Vec<Type>,
+    types: SmallVec<Type, 0, Global>,
     /// Descriptor lookup; equality here concerns syntax, not conversion.
     type_ids: HashIndex<Global>,
     /// Terms in dependency order.
-    terms: Vec<Term>,
+    terms: SmallVec<Term, 0, Global>,
     /// Exact constructor, payload and child lookup within this arena.
     term_ids: HashIndex<Global>,
 }
@@ -303,9 +303,9 @@ impl Default for Arena
     fn default() -> Self
     {
         Self {
-            types: Vec::new(),
+            types: SmallVec::<_, 0, Global>::new(),
             type_ids: HashIndex::new_in(Global),
-            terms: Vec::new(),
+            terms: SmallVec::<_, 0, Global>::new(),
             term_ids: HashIndex::new_in(Global),
         }
     }
@@ -450,6 +450,10 @@ impl Arena
     /// Returns `UnknownType` for an absent child, `Overflow` at the
     /// coordinate bound.
     ///
+    /// # Cost
+    /// - allocation: the new classifier and its entry in the lookup table,
+    ///   durable by the arena's coordinates
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — equal classifiers and forward edges distinguish
     ///   canonicalization and the acyclic-prefix guard. The predicate checks
@@ -509,6 +513,10 @@ impl Arena
     /// Returns the absent child's typed lookup error, or `Overflow` at the
     /// coordinate bound.
     ///
+    /// # Cost
+    /// - allocation: the new term and its place in the lookup table, durable by
+    ///   the arena's term identifiers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — equal and unequal descriptors distinguish exact
     ///   interning; live and forward edges distinguish prefix checking.
@@ -560,7 +568,7 @@ impl Arena
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn extent(&self) -> Extent
+    pub fn extent(&self) -> Extent
     {
         Extent {
             terms: TermId(self.terms.len()),
@@ -655,14 +663,14 @@ impl Arena
                 self.term_ids.remove(TableHash::of(term), position);
             }
         }
-        self.terms.truncate(terms);
+        self.terms.truncate(gandr_kernel_data::Count::from(terms));
         let types = floor.types.0.min(self.types.len());
         for (position, ty) in self.types.iter().enumerate().skip(types) {
             if let Ok(position) = TablePosition::try_from(position) {
                 self.type_ids.remove(TableHash::of(ty), position);
             }
         }
-        self.types.truncate(types);
+        self.types.truncate(gandr_kernel_data::Count::from(types));
     }
 }
 
@@ -878,6 +886,10 @@ pub fn instantiate(
 /// # Errors
 /// Returns a syntax lookup error, `Overflow`, `Exhausted`, or `Unbalanced`.
 ///
+/// # Cost
+/// - allocation: the pending nodes, the memo tables, and the rewritten terms,
+///   growth within the root's reachable nodes at each binder depth
+///
 /// # Adequacy
 /// - hypothesis: L3 — nested binders and shared occurrences observe capture
 ///   avoidance and preservation of bound variables.
@@ -904,7 +916,7 @@ fn rewrite(
     // even when a replacement must be carried under deeply nested binders.
     let mut shifted = BTreeMap::new();
     if let Rewrite::Substitute(argument) = operation {
-        let mut pending = Vec::from([(root, Index(0))]);
+        let mut pending = SmallVec::<_, 0, Global>::from_iter([(root, Index(0))]);
         let mut seen = alloc::collections::BTreeSet::new();
         while let Some((id, depth)) = pending.pop() {
             budget.spend()?;
@@ -929,7 +941,7 @@ fn rewrite(
             );
         }
     }
-    let mut jobs: Vec<_> = shifted
+    let mut jobs: SmallVec<_, 0, Global> = shifted
         .keys()
         .copied()
         .filter(|depth| depth.0 != 0)
@@ -945,7 +957,7 @@ fn rewrite(
     let mut answer = root;
     for (job_root, job, depth_key) in jobs {
         let mut results = BTreeMap::new();
-        let mut pending = Vec::from([(job_root, Index(0), false)]);
+        let mut pending = SmallVec::<_, 0, Global>::from_iter([(job_root, Index(0), false)]);
         while let Some((id, depth, ready)) = pending.pop() {
             budget.spend()?;
             if results.contains_key(&(id, depth)) {
@@ -1107,7 +1119,7 @@ mod tests
             Term::Eliminate(b, outer),
         ];
         let before = terms.map(|term| arena.find(&term));
-        let ids: Vec<_> = terms
+        let ids: SmallVec<_, 0, Global> = terms
             .iter()
             .map(|term| arena.alloc(*term).unwrap())
             .collect();
@@ -1151,14 +1163,16 @@ mod tests
     fn interning_survives_lookup_growth()
     {
         let mut arena = Arena::default();
-        let mut types = Vec::from([arena.alloc_type(Type::Nat(Stage::Outer)).unwrap()]);
+        let mut types = SmallVec::<_, 0, Global>::from_iter([arena
+            .alloc_type(Type::Nat(Stage::Outer))
+            .unwrap()]);
         for model in 0 .. 200 {
             let previous = *types.last().unwrap();
             let universe = arena.alloc_type(Type::Universe(Model(model))).unwrap();
             types.push(arena.alloc_type(Type::Arrow(universe, previous)).unwrap());
         }
-        let mut terms = Vec::new();
-        let mut ids = Vec::new();
+        let mut terms = SmallVec::<_, 0, Global>::new();
+        let mut ids = SmallVec::<_, 0, Global>::new();
         for value in 0 .. 3_000_usize {
             let term = match (value.checked_rem(3), ids.as_slice()) {
                 (Some(1 | 2), &[.., older, newer]) => Term::Apply(newer, older),
@@ -1167,7 +1181,10 @@ mod tests
             terms.push(term);
             ids.push(arena.alloc(term).unwrap());
         }
-        assert_eq!(ids, (0 .. 3_000).map(TermId).collect::<Vec<_>>());
+        assert_eq!(
+            ids,
+            (0 .. 3_000).map(TermId).collect::<SmallVec<_, 0, Global>>()
+        );
         let cloned = arena.clone();
         for (term, id) in terms.iter().zip(&ids) {
             assert_eq!(arena.find(term), Maybe::Present(*id));
@@ -1302,11 +1319,11 @@ mod tests
         arena: &mut Arena,
         zero: TermId,
         outer: TypeId,
-    ) -> (Vec<TermId>, Vec<TypeId>)
+    ) -> (SmallVec<TermId, 0, Global>, SmallVec<TypeId, 0, Global>)
     {
         let arrow = arena.alloc_type(Type::Arrow(outer, outer)).unwrap();
         let lift = arena.alloc_type(Type::Lift(arrow)).unwrap();
-        let mut terms = Vec::new();
+        let mut terms = SmallVec::<_, 0, Global>::new();
         for value in 1 .. 40 {
             let numeral = arena
                 .alloc(Term::Natural(Stage::Outer, Natural(value)))
@@ -1317,7 +1334,7 @@ mod tests
         }
         terms.push(arena.alloc(Term::Code(lift)).unwrap());
         terms.push(arena.alloc(Term::Multiply(zero, terms[0])).unwrap());
-        (terms, Vec::from([arrow, lift]))
+        (terms, SmallVec::<_, 0, Global>::from_iter([arrow, lift]))
     }
 
     #[test]
@@ -1332,7 +1349,7 @@ mod tests
         let mut pristine = arena.clone();
         let first = segment(&mut arena, zero, outer);
         let grown = arena.extent();
-        let above = arena.terms_above(floor).to_vec();
+        let above = SmallVec::<_, 0, Global>::from_iter(arena.terms_above(floor).iter().copied());
         assert_eq!(
             above.len(),
             grown.terms.0.checked_sub(floor.terms.0).unwrap()

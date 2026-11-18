@@ -33,13 +33,17 @@ gandr-kernel-term.workspace = true
 gandr-theory-cell-complexes.workspace = true
 quenchant-shape.workspace = true
 
-# The run suite runs focused commands on the emitter's two tiers, the
-# runtime this IL is lowered to; the differential suite compares their
+# The run suite runs narrow commands on the emitter's two tiers. The emitter
+# compiles this IL for those tiers. The differential suite compares their
 # readback against the core's normaliser, the one evaluator in the tree that
-# shares no step with them. The emitter depending on this crate is a cycle
-# only through the integration target, which links one copy of each.
+# shares no step with them. The emitter depends on this crate. Only the
+# integration target closes that cycle, and it links one copy of each.
+#
+# The tests build the kernel's families and evidence in the containers of the
+# data crate.
 [dev-dependencies]
 gandr-core-nbe.workspace = true
+gandr-kernel-data.workspace = true
 gandr-runtime-emitter.workspace = true
 proptest.workspace = true
 

@@ -70,11 +70,13 @@
 //! leaves that are returned endpoints: `Replay::read_returned_leaves` in
 //! the kernel's `replay` module records which leaves are read, how, and why.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::CellFault;
 use gandr_kernel_term::ConstantIndex;
@@ -260,6 +262,10 @@ impl Presentations
     /// - executable: none — the clauses state the tables before and after the
     ///   admission, which a predicate may not capture whole.
     ///
+    /// # Cost
+    /// - allocation: the declaration's row, its arities, and its place in the
+    ///   registry of its sort, durable by the declaration's position
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`normal_form`].
     /// - witness: `gandr-kernel-core::environment::presented_tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
@@ -268,7 +274,7 @@ impl Presentations
         &mut self,
         (position, rank): (ConstantIndex, SourceRank),
         declaration: &gandr_kernel_term::Declaration,
-        sort: Option<&[Vec<ValueTypeId>]>,
+        sort: Option<&[SmallVec<ValueTypeId, 0, Global>]>,
     )
     {
         if declaration.presentation().rules().is_empty() {
@@ -280,7 +286,7 @@ impl Presentations
         else {
             return;
         };
-        let arities = |table: &[Vec<ValueTypeId>]| -> Arc<[FieldCount]> {
+        let arities = |table: &[SmallVec<ValueTypeId, 0, Global>]| -> Arc<[FieldCount]> {
             table
                 .iter()
                 .map(|fields| FieldCount::from(fields.len()))
@@ -545,6 +551,10 @@ impl Presentations
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the fresh data type of the words a looped path reads as,
+    ///   durable by the arena's identifiers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::words`].
     /// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
@@ -564,7 +574,7 @@ impl Presentations
         }) = arena.value_type(ty)
             && let Some(words) = self.words(arena, domain, (left, right))
         {
-            return arena.value_type_data(words, Vec::new());
+            return arena.value_type_data(words, SmallVec::<_, 0, Global>::new());
         }
         ty
     }
@@ -851,6 +861,10 @@ enum Spelling
 /// - reason: one `for` loop over `side`'s nodes, not recursion.
 /// - measure: the nodes of `side` not yet read.
 ///
+/// # Cost
+/// - allocation: the stack of values that the side's nodes still have to read,
+///   growth within the side's nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Presentations::words`].
 /// - witness: `gandr-kernel-core::environment::presented_tests::a_path_at_a_looped_point_reads_as_its_words`
@@ -916,6 +930,10 @@ fn spells(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the slot table of the constructors' fields, growth within the
+///   declaration's constructor table
+///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's rules admit, a rule placing a constructor
 ///   under another type's field is refused by name, and the words of the
@@ -928,7 +946,7 @@ pub fn admit(
     arena: &TermArena,
     entries: &Entries,
     (position, parameters): (ConstantIndex, &[ValueTypeId]),
-    constructors: &[Vec<ValueTypeId>],
+    constructors: &[SmallVec<ValueTypeId, 0, Global>],
     presentation: &Presentation,
 ) -> Result<(), KernelError>
 {
@@ -971,6 +989,10 @@ pub fn admit(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the sort's slot table and the re-minted cancellation rules,
+///   growth within the sort's constructors and the cells
+///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's loop admits, and its words refuse by name
 ///   with their rules dropped, at a sort admitted later, and a second time.
@@ -980,7 +1002,7 @@ fn words(
     arena: &TermArena,
     entries: &Entries,
     (position, parameters): (ConstantIndex, &[ValueTypeId]),
-    (constructors, rules): (&[Vec<ValueTypeId>], &[PresentedRule]),
+    (constructors, rules): (&[SmallVec<ValueTypeId, 0, Global>], &[PresentedRule]),
     cells: &FreeCells,
 ) -> Result<(), CellFault>
 {
@@ -1047,6 +1069,10 @@ fn words(
 ///   elsewhere.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the slot table, one row per constructor and one slot per
+///   field, growth within the declaration's constructors and their fields
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`admit`], and a pair over a parameter reads its
 ///   second field as dependent.
@@ -1058,8 +1084,8 @@ fn words(
 pub fn slot_table(
     arena: &TermArena,
     position: ConstantIndex,
-    constructors: &[Vec<ValueTypeId>],
-) -> Vec<Vec<RuleSlot<ValueTypeId>>>
+    constructors: &[SmallVec<ValueTypeId, 0, Global>],
+) -> SmallVec<SmallVec<RuleSlot<ValueTypeId>, 0, Global>, 0, Global>
 {
     constructors
         .iter()
@@ -1122,6 +1148,12 @@ enum Origin
 /// - measure: the arena nodes still to flatten, each a strict subterm; the term
 ///   nodes still to rebuild.
 ///
+/// # Cost
+/// - allocation: the flattened constructor term, its pending stack and the
+///   rebuilt fields, growth within the value's constructor term
+/// - allocation: the constructors the rewriting rebuilds, durable by the
+///   arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — `loop(unloop(loop(x)))` normalizes to `loop(x)` over the
 ///   very variable written inside it, a normal form comes back as its own id,
@@ -1156,7 +1188,8 @@ pub fn normal_form(
         ),
         _ => false,
     };
-    let mut term: Vec<RuleTerm<(ValueTypeId, Origin), ValueId>> = Vec::new();
+    let mut term: SmallVec<RuleTerm<(ValueTypeId, Origin), ValueId>, 0, Global> =
+        SmallVec::<_, 0, Global>::new();
     let mut pending = Vec::from([value]);
     while let Some(id) = pending.pop() {
         match arena.value(id) {
@@ -1195,7 +1228,7 @@ pub fn normal_form(
                 payload: (datatype, origin),
             } => {
                 let start = built.len().saturating_sub(usize::from(arity));
-                let fields: Vec<ValueId> = built.drain(start ..).rev().collect();
+                let fields: SmallVec<ValueId, 0, Global> = built.drain(start ..).rev().collect();
                 let kept = match origin {
                     Origin::Written(id) => match arena.value(id) {
                         Some(&Value::Constructor {
@@ -1235,6 +1268,10 @@ pub fn normal_form(
 ///
 /// # Errors
 /// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the constructor slot table and the read nodes of the two
+///   terms, growth within the declaration's constructors and the terms' nodes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `S(Z)` and `Z` over the integers are apart, `S(P(Z))` and
@@ -1278,6 +1315,10 @@ pub fn apart(
 ///   other value. The checker reads its own arena alike.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the constructor's fields appended to the caller's buffer,
+///   growth within the constructor's written fields
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`apart`].
 /// - witness: `gandr-kernel-core::environment::presented_tests::endpoints_are_apart_by_their_normal_forms`
@@ -1287,7 +1328,7 @@ fn node(
     entries: &Entries,
     declaration: ConstantIndex,
     at: ValueId,
-    fields: &mut Vec<ValueId>,
+    fields: &mut SmallVec<ValueId, 0, Global>,
 ) -> TermReading<ValueId>
 {
     match arena.value(at) {
@@ -1320,8 +1361,9 @@ fn node(
 #[cfg(test)]
 mod tests
 {
-    use alloc::vec::Vec;
+    use alloc::alloc::Global;
 
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
@@ -1341,13 +1383,16 @@ mod tests
     fn admission_reads_the_own_type_from_the_table()
     {
         let mut arena = TermArena::new();
-        let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let own = arena.value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let unit = arena.value_type_unit();
-        let table = alloc::vec![
-            alloc::vec![],
-            alloc::vec![own],
-            alloc::vec![own],
-            alloc::vec![unit]
+        let table = [
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+            SmallVec::<_, 0, Global>::from_iter([unit]),
         ];
         assert_eq!(
             crate::presented::admit(
@@ -1359,10 +1404,10 @@ mod tests
             ),
             Ok(())
         );
-        let other = Presentation::new(alloc::vec![PresentedRule::new(
+        let other = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
             [Letter::Mark.node(), Letter::Base.node()].into(),
-            [Letter::Base.node()].into()
-        )]);
+            [Letter::Base.node()].into(),
+        )]));
         assert_eq!(
             crate::presented::admit(
                 &arena,
@@ -1406,12 +1451,12 @@ mod tests
         let unit = arena.value_type_unit();
         assert_eq!(
             crate::presented::slot_table(&arena, ConstantIndex::from(0_usize), &[
-                alloc::vec![head, tail],
-                alloc::vec![head, unit]
+                SmallVec::<_, 0, Global>::from_iter([head, tail]),
+                SmallVec::<_, 0, Global>::from_iter([head, unit])
             ],),
-            alloc::vec![
-                alloc::vec![RuleSlot::Other(head), RuleSlot::Dependent],
-                alloc::vec![RuleSlot::Other(head), RuleSlot::Other(unit)],
+            [
+                SmallVec::<_, 0, Global>::from_iter([RuleSlot::Other(head), RuleSlot::Dependent]),
+                SmallVec::<_, 0, Global>::from_iter([RuleSlot::Other(head), RuleSlot::Other(unit)]),
             ],
             "an open field after the first is dependent, a closed one keeps its classifier"
         );
@@ -1422,12 +1467,25 @@ mod tests
     {
         let mut arena = TermArena::new();
         let sort = ConstantIndex::from(0_usize);
-        let own = arena.value_type_data(sort, Vec::new());
-        let other = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let own = arena.value_type_data(sort, SmallVec::<_, 0, Global>::new());
+        let other = arena.value_type_data(
+            ConstantIndex::from(1_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let side = [Letter::Loop.node(), Letter::Base.node()];
         let word = |arena: &mut TermArena, (family, datatype), tag: Letter| {
-            let base = arena.value_constructor(sort, own, Letter::Base.tag(), Vec::new());
-            arena.value_constructor(family, datatype, tag.tag(), alloc::vec![base])
+            let base = arena.value_constructor(
+                sort,
+                own,
+                Letter::Base.tag(),
+                SmallVec::<_, 0, Global>::new(),
+            );
+            arena.value_constructor(
+                family,
+                datatype,
+                tag.tag(),
+                SmallVec::<_, 0, Global>::from_iter([base]),
+            )
         };
         let spelled = word(&mut arena, (sort, own), Letter::Loop);
         assert_eq!(

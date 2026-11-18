@@ -150,6 +150,7 @@
 //! replayed the same way; without payload paths it identifies the two codes, so
 //! every run of one is a run of the other by conversion alone.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -190,6 +191,7 @@ use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionRelation;
 use gandr_core_term::session::SessionType;
 use gandr_core_term::session::Step as ProtocolStep;
+use gandr_kernel_data::Shared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::session::Evidence;
@@ -241,7 +243,7 @@ pub struct Statement
     classifier: ValueTypeId,
     /// The engine's pairs over the two protocols' node positions, with the
     /// slot pairs the payload paths cover.
-    evidence: Arc<Evidence>,
+    evidence: Shared<Evidence, Global>,
     /// The two payload types of each slot pair `evidence` lists, in its
     /// order: what the payload paths relate.
     owed: Arc<[(ValueTypeId, ValueTypeId)]>,
@@ -279,7 +281,7 @@ impl Statement
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn evidence(&self) -> &Arc<Evidence>
+    pub const fn evidence(&self) -> &Shared<Evidence, Global>
     {
         &self.evidence
     }
@@ -646,6 +648,10 @@ fn converting_evidence(
 /// # Errors
 /// - [`CheckRefusal`] — as above.
 ///
+/// # Cost
+/// - allocation: the statement's payload slots, owed types and shared evidence,
+///   growth within the sessions' owed payload pairs
+///
 /// # Adequacy
 /// - hypothesis: L3 — a protocol and its renamed unfolding are bisimilar, a
 ///   widened selection is a supertype and not an equivalent, the reverse
@@ -701,7 +707,7 @@ pub fn decide(
     Ok(Statement {
         relation,
         classifier,
-        evidence: Arc::new(evidence),
+        evidence: Shared::new(evidence),
         owed,
     })
 }

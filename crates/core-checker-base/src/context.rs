@@ -819,6 +819,9 @@ impl<'arena> CheckingContext<'arena>
     ///   under a binder, instantiated at an argument, or decoded from a quote —
     ///   into the same arena.
     ///
+    /// # Cost
+    /// - allocation: the eight value-type atoms in the arena, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a fresh context synthesises the three rigid atoms and
     ///   rejects a first undeclared constant; admission and budget cases
@@ -5744,7 +5747,11 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         open: crate::code::OpenBinders,
     ) -> Result<
         Maybe<
-            Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>,
+            gandr_kernel_data::SmallVec<
+                gandr_kernel_conversion_trace::ConversionDecision<()>,
+                0,
+                alloc::alloc::Global,
+            >,
             crate::code::converted::Absent,
         >,
         CheckRefusal,
@@ -6066,6 +6073,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Errors
     /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Cost
+    /// - allocation: the held reduct of a code's certified step, durable by the
+    ///   unfolded codes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — separated by a constant's δ-step, a static instance's

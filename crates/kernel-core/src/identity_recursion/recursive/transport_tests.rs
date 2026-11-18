@@ -230,7 +230,7 @@ fn negation_transport_computes()
         classifier,
         boolean.not,
         boolean.not,
-        alloc::sync::Arc::default(),
+        gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
     );
     assert!(matches!(
         ListEquivalence::form(&mut arena, bad, budget),

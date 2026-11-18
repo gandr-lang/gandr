@@ -304,6 +304,10 @@ impl core::error::Error for ProgramError
 /// Returns [`ProgramError::Normalized`], [`ProgramError::Merged`] or
 /// [`ProgramError::Harvested`].
 ///
+/// # Cost
+/// - allocation: the certificates, groupings, readmissions and families of the
+///   checked program, growth within the program's sources
+///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the power and double programs over warm and cold memos
 ///   are checked serially and on a fork that schedules every job last first

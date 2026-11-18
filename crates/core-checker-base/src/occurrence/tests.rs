@@ -102,19 +102,13 @@ fn a_later_position_extends_the_block_through_every_former()
             later_type,
             nothing,
             nothing,
-            Arc::new(PathEvidence {
-                source: Vec::new(),
-                target: Vec::new(),
-            }),
+            gandr_kernel_data::Shared::new(PathEvidence::default()),
         ),
         arena.value_path_equiv(
             unit,
             later,
             nothing,
-            Arc::new(PathEvidence {
-                source: Vec::new(),
-                target: Vec::new(),
-            }),
+            gandr_kernel_data::Shared::new(PathEvidence::default()),
         ),
         arena.value_recorded(Arc::from([RecordedMove::Sent(later), RecordedMove::Closed])),
         arena.value_session_related(SessionRelation::Equivalence, nothing, later, nothing),

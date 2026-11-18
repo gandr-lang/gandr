@@ -1,5 +1,6 @@
 //! Function-relation witnesses with an independent core-nbe producer.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -19,6 +20,7 @@ use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::Zone;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::TraceLog;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::Computation;
@@ -1060,7 +1062,10 @@ fn a_data_domain_covers_as_its_constructors()
     let environment = crate::identity_recursion::tests::shapes();
     let entries = environment.entries();
     let mut arena = environment.arena().clone();
-    let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let shape = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let returned = arena.comp_type_returner(shape);
     let arrow = arena.comp_type_arrow(shape, returned);
     let thunk = arena.value_type_thunk(arrow);

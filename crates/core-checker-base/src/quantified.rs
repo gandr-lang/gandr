@@ -27,6 +27,7 @@
 //! carrier, say — is not marked; it crosses as a stage the kernel never
 //! reads from a term, and the crossing refuses it.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -45,6 +46,7 @@ use gandr_kernel_core::stage_order::Reading;
 use gandr_kernel_core::stage_order::Side;
 use gandr_kernel_core::stage_order::StageOrder;
 use gandr_kernel_core::stage_order::below;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::PlacedChild;
 use gandr_kernel_term::Stage;
 use gandr_kernel_term::StageBinder;
@@ -170,6 +172,10 @@ pub fn mint(
 /// - measure: the unread nodes under `declared`, finite because the arena is
 ///   acyclic.
 ///
+/// # Cost
+/// - allocation: the marks, their paths and the walk's worklist, growth within
+///   the nodes under `declared`
+///
 /// # Adequacy
 /// - hypothesis: L3 — a helper's function parameter and its argument each yield
 ///   a mark and erase to the plain type.
@@ -180,20 +186,23 @@ pub fn split(
     arena: &mut CoreArena,
     declared: ValueTypeId,
     bounds: &[StageBound],
-) -> Result<(ValueTypeId, Vec<StageMark>), CheckRefusal>
+) -> Result<(ValueTypeId, SmallVec<StageMark, 0, Global>), CheckRefusal>
 {
     /// One step of the walk.
     enum Walk
     {
         /// Read the node at the path, recording its stage and opening its
         /// placed children.
-        Open(Part, Vec<PlacedChild>),
+        Open(Part, SmallVec<PlacedChild, 0, Global>),
         /// Rebuild the node from its children's erasures.
         Close(Part, usize),
     }
-    let mut marks = Vec::new();
+    let mut marks = SmallVec::<_, 0, Global>::new();
     let mut erased: Vec<Part> = Vec::new();
-    let mut work = alloc::vec![Walk::Open(Part::Value(declared), Vec::new())];
+    let mut work = alloc::vec![Walk::Open(
+        Part::Value(declared),
+        SmallVec::<_, 0, Global>::new()
+    )];
     while let Some(step) = work.pop() {
         match step {
             Walk::Open(part, path) => {

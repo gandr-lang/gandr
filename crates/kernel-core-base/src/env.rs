@@ -5,6 +5,7 @@
 //! no part of the judgement. `Environment` admits each declaration into the
 //! record.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -12,6 +13,8 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
 use gandr_kernel_term::ChunkedMap;
@@ -24,6 +27,7 @@ use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationBuilder;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::Family;
+use gandr_kernel_term::IndexedTable;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::SealExtent;
@@ -249,7 +253,7 @@ impl StagedDeclaration
     #[must_use]
     pub fn relating(
         self,
-        related: Vec<RelatedEndpoints>,
+        related: SmallVec<RelatedEndpoints, 0, Global>,
     ) -> Self
     {
         Self {
@@ -285,7 +289,7 @@ impl StagedDeclaration
     #[must_use]
     pub fn lawful(
         self,
-        laws: Vec<ConstantIndex>,
+        laws: SmallVec<ConstantIndex, 0, Global>,
     ) -> Self
     {
         Self {
@@ -391,7 +395,7 @@ impl StagedDeclaration
     #[must_use]
     pub fn covered(
         self,
-        covers: Vec<gandr_kernel_term::cover::Covered>,
+        covers: SmallVec<gandr_kernel_term::cover::Covered, 0, Global>,
     ) -> Self
     {
         Self {
@@ -857,8 +861,8 @@ impl<'env> Staging<'env>
     pub fn data(
         self,
         levels: LevelSignature,
-        parameters: Vec<ValueTypeId>,
-        constructors: Vec<Vec<ValueTypeId>>,
+        parameters: SmallVec<ValueTypeId, 0, Global>,
+        constructors: SmallVec<SmallVec<ValueTypeId, 0, Global>, 0, Global>,
         kind: ValueTypeId,
     ) -> StagedDeclaration
     {
@@ -888,8 +892,8 @@ impl<'env> Staging<'env>
     pub fn codata(
         self,
         levels: LevelSignature,
-        parameters: Vec<ValueTypeId>,
-        observations: Vec<CompTypeId>,
+        parameters: SmallVec<ValueTypeId, 0, Global>,
+        observations: SmallVec<CompTypeId, 0, Global>,
         kind: ValueTypeId,
     ) -> StagedDeclaration
     {
@@ -921,8 +925,8 @@ impl<'env> Staging<'env>
     pub fn indexed(
         self,
         levels: LevelSignature,
-        parameters: Vec<ValueTypeId>,
-        table: (Vec<ValueTypeId>, Vec<Vec<ValueTypeId>>, Vec<Vec<ValueId>>),
+        parameters: SmallVec<ValueTypeId, 0, Global>,
+        table: IndexedTable,
         kind: ValueTypeId,
     ) -> StagedDeclaration
     {
@@ -1130,7 +1134,7 @@ impl<'env> Staging<'env>
         levels: LevelSignature,
         declared: ValueTypeId,
         body: ValueId,
-        provenance: Vec<ConstantIndex>,
+        provenance: SmallVec<ConstantIndex, 0, Global>,
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
@@ -1838,10 +1842,10 @@ pub struct EntryLog
     /// The position of each ruled definition, by the fixpoint its body thunks.
     ruled: ChunkedMap<ComputationId, ConstantIndex>,
     /// The positions of each built-in role's holders, ascending.
-    roles: ChunkedMap<gandr_kernel_term::Builtin, Vec<ConstantIndex>>,
+    roles: ChunkedMap<gandr_kernel_term::Builtin, SmallVec<ConstantIndex, 0, Global>>,
     /// The positions of the plain definitions named by their content, by the
     /// digest of their declared type and body, by rank ascending.
-    definitions: ChunkedMap<ContentDigest, Vec<ConstantIndex>>,
+    definitions: ChunkedMap<ContentDigest, SmallVec<ConstantIndex, 0, Global>>,
     /// How many slots are vacancies.
     vacancies: usize,
     /// How many slots are reserved for a release whose commit has not come.
@@ -2480,7 +2484,7 @@ impl Entries
             .log
             .as_deref()
             .and_then(|log| log.definitions.get(&digest))
-            .map_or(&[][..], Vec::as_slice);
+            .map_or(&[][..], SmallVec::as_slice);
         let held = positions
             .partition_point(|&position| self.rank_of(position).is_some_and(|rank| rank < below));
         positions.get(.. held).unwrap_or_default()
@@ -2691,6 +2695,10 @@ impl Entries
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: a copy of the entry log, or of a chunk of its definitions,
+    ///   that a clone shares, growth within the environment's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a prediction left in the indexes names a refused
     ///   definition to each later reader, which the serial run never names.
@@ -2812,6 +2820,10 @@ impl Entries
     /// - executable: none — the clauses state the tables before and after the
     ///   change, which a predicate may not capture whole.
     ///
+    /// # Cost
+    /// - allocation: a copy of a table chunk that a clone shares, growth within
+    ///   the family's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::retire`.
     /// - witness: `gandr-kernel-core::environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
@@ -2877,6 +2889,12 @@ impl Entries
     ///   entry is as it was.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the list of contents whose definitions leave rank order,
+    ///   growth within the environment's definitions
+    /// - allocation: a copy of each chunk that a clone shares, growth within
+    ///   the positions that ranks names
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::rerank`.
@@ -2990,6 +3008,10 @@ impl Entries
     ///   entries were all.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the entry log, or of a chunk of its tables, that
+    ///   a clone shares, growth within the environment's entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a block refused after one member is admitted leaves
@@ -3151,7 +3173,7 @@ impl Entries
 fn sort_constructors<'family>(
     family: &'family Family<Slot>,
     declaration: &Declaration,
-) -> Option<&'family [Vec<ValueTypeId>]>
+) -> Option<&'family [SmallVec<ValueTypeId, 0, Global>]>
 {
     let cells = declaration.presentation().cells()?;
     match *family.get(usize::from(cells.sort()))?.admitted()?.content() {
@@ -3172,9 +3194,13 @@ fn sort_constructors<'family>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the definition's place among the positions under its digest,
+///   growth within the family's definitions
 fn place_definition(
     family: &Family<Slot>,
-    definitions: &mut ChunkedMap<ContentDigest, Vec<ConstantIndex>>,
+    definitions: &mut ChunkedMap<ContentDigest, SmallVec<ConstantIndex, 0, Global>>,
     digest: ContentDigest,
     (position, rank): (ConstantIndex, SourceRank),
 )
@@ -3186,7 +3212,7 @@ fn place_definition(
                 .and_then(Slot::admitted)
                 .is_some_and(|earlier| earlier.rank < rank)
         });
-        positions.insert(at, position);
+        positions.insert(Count::from(at), position);
     });
 }
 
@@ -3198,6 +3224,12 @@ impl EntryLog
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the ruled definition's place under its body root, durable
+    ///   by the body's root thunk
+    /// - allocation: the constant's place among the role's holders, durable by
+    ///   the declaration's role
     fn index(
         &mut self,
         arena: &TermArena,
@@ -3363,6 +3395,10 @@ pub fn collect_reachable(
 ///   later check when it reads the entry.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the set and slice of positions the declaration's content
+///   names, growth within the declaration's content
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a check that reads only what its content names admits,
@@ -3551,6 +3587,10 @@ struct Walk
 ///   every such node is expanded, every constant it names has met `sink`, and
 ///   the worklist is empty again.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the walk's worklist and seen set, growth within the arena's
+///   nodes reachable from the root
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`collect_reachable`] for a gathering sink; a seeking

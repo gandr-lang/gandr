@@ -283,6 +283,10 @@ impl Machine<'_, '_>
     /// - executable: none — agreement is the key's own content comparison, and
     ///   a predicate could state it only by gathering the key again.
     ///
+    /// # Cost
+    /// - allocation: the missed goal's place among the goals under way, growth
+    ///   within the run's frames
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a shared pair answers its repeated goals from the
     ///   memo; one node read under two binder types answers neither from the

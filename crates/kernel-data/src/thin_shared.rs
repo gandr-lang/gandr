@@ -11,18 +11,25 @@
 //! # Safety
 //! - unsafe invariants: the pointer of a [`ThinShared`] names a block that its
 //!   allocator gave with the layout that [`layout`] gives for the block's
-//!   length. The header is initialised, and the first `len` slots past the head
-//!   hold items. The count equals the number of live holders, and the holder
-//!   that takes it from one to zero frees the block, once.
+//!   length, or the static empty block. The header is initialised, and the
+//!   first `len` slots past the head hold items. The count equals the number of
+//!   live holders, and the holder that takes it from one to zero frees the
+//!   block, once. The static empty block is the one exception: its count holds
+//!   one more than its live holders, so no holder takes it to zero, and no
+//!   holder frees it.
 
 use alloc::alloc::Global;
 use core::alloc::Allocator;
 use core::alloc::Layout;
+use core::cmp::Ordering;
 use core::fmt;
+use core::hash::Hash;
+use core::hash::Hasher;
 use core::marker::PhantomData;
 use core::mem::DropGuard;
 use core::mem::align_of;
 use core::mem::offset_of;
+use core::ops::Deref;
 use core::ptr;
 use core::ptr::NonNull;
 use core::slice;
@@ -31,8 +38,11 @@ use anodized::spec;
 
 use crate::shared::Counter;
 use crate::shared::Departure;
+use crate::shared::Holding;
+use crate::shared::Identity;
 use crate::small_vec::Count;
 use crate::small_vec::Refused;
+use crate::small_vec::SmallVec;
 
 /// The head of a thin block: the count, the length and the header. The items
 /// follow it, at the offset of `items`.
@@ -51,6 +61,30 @@ struct Head<H, T>
     /// The place of the first item, with the items' alignment.
     items: [T; 0],
 }
+
+/// An item of the greatest alignment that the static empty block serves. A
+/// head over it has the count and the length where a head over any item of
+/// an alignment up to 16 has them, and its items at the same offset.
+///
+/// # Specification
+/// trivial.
+#[repr(align(16))]
+struct Aligned;
+
+/// The block that each empty default over the global allocator shares, as
+/// `std` shares one block for each empty `Arc` of a slice. Its count starts
+/// at one, the block's own hold, which never leaves. So no holder takes the
+/// count to zero, and no holder returns the block.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(loom))]
+static EMPTY: Head<(), Aligned> = Head {
+    count: Counter::resident(),
+    len: 0,
+    header: (),
+    items: [],
+};
 
 /// The layout of a thin block of `len` items.
 ///
@@ -199,6 +233,70 @@ where
 fn short() -> !
 {
     panic!("the iterator of a thin shared block yields fewer items than its length");
+}
+
+/// Ends a collect whose iterator yields more items than its exact size hint.
+///
+/// # Specification
+/// - ensures: the call does not return.
+/// - panics: always, as [`short`] does on an iterator that misreports its
+///   length.
+/// - executable: none — the function returns no value to read.
+///
+/// # Adequacy
+/// - hypothesis: L2 — an iterator past its exact size hint panics.
+/// - witness: `tests::thin_shared::an_iterator_off_its_exact_hint_panics`
+#[expect(
+    clippy::panic,
+    reason = "an iterator that yields more items than its exact size hint breaks its own trait, and the block has no room for them"
+)]
+fn long() -> !
+{
+    panic!("the iterator of a thin shared block yields more items than its exact size hint");
+}
+
+/// The iterator of a collect whose size hint is exact, with that hint as its
+/// length.
+///
+/// # Specification
+/// trivial.
+struct Hinted<'iter, I>
+{
+    /// The iterator, which the collect reads again after the block is full.
+    items: &'iter mut I,
+    /// The exact size hint of the iterator.
+    len: usize,
+}
+
+impl<I> Iterator for Hinted<'_, I>
+where
+    I: Iterator,
+{
+    type Item = I::Item;
+
+    /// The next item of the iterator.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn next(&mut self) -> Option<I::Item>
+    {
+        self.items.next()
+    }
+
+    /// The exact size hint that the collect read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>)
+    {
+        (self.len, Some(self.len))
+    }
+}
+
+impl<I> ExactSizeIterator for Hinted<'_, I> where I: Iterator
+{
 }
 
 /// A holder of a thin shared block: one word that points at the count, the
@@ -381,6 +479,73 @@ where
         // keeps them.
         unsafe { slice::from_raw_parts(first(self.head), self.head().len) }
     }
+
+    /// Whether two holders share one block.
+    ///
+    /// # Specification
+    /// - ensures: [`Identity::Same`] exactly when both point at one block.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a clone is the same, and the copy of a mutable borrow
+    ///   is distinct.
+    /// - witness: `tests::thin_shared::a_mutable_borrow_writes_a_sole_block_in_place_and_copies_a_shared_one`
+    #[spec(ensures: |ret| (ret == Identity::Same) == ptr::addr_eq(this.head.as_ptr(), other.head.as_ptr()))]
+    #[inline]
+    #[must_use]
+    pub fn ptr_eq(
+        this: &Self,
+        other: &Self,
+    ) -> Identity
+    {
+        if ptr::addr_eq(this.head.as_ptr(), other.head.as_ptr()) {
+            Identity::Same
+        }
+        else {
+            Identity::Distinct
+        }
+    }
+
+    /// The items, borrowed mutably, after a copy of the header and the items
+    /// to a block of their own when other holders share them.
+    ///
+    /// # Specification
+    /// - ensures: `this` is the only holder of its block. A block that other
+    ///   holders share stays theirs, and `this` holds a clone of its header and
+    ///   its items.
+    /// - fails: a copy that the allocator refuses goes to its error handler, as
+    ///   `Box`'s does.
+    /// - panics: when a clone panics; `this` then stays as it was.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sole block takes the write in place, and a shared
+    ///   block moves to a new block while the other holder reads the old items.
+    /// - witness: `tests::thin_shared::a_mutable_borrow_writes_a_sole_block_in_place_and_copies_a_shared_one`
+    #[spec(ensures: usize::from(this.head().count.holders()) == 1)]
+    #[inline]
+    pub fn make_mut(this: &mut Self) -> &mut [T]
+    where
+        H: Clone,
+        T: Clone,
+        A: Clone,
+    {
+        if this.head().count.holding() == Holding::WithOthers {
+            let copy = match Self::from_header_and_iter_in(
+                this.header().clone(),
+                this.slice().iter().cloned(),
+                this.alloc.clone(),
+            ) {
+                Ok(thin) => thin,
+                Err(refused) => refused.raise(),
+            };
+            *this = copy;
+        }
+        let len = this.head().len;
+        // SAFETY: `this` is the only holder, and the mutable borrow of it is
+        // the only borrow. The `Acquire` load ordered each dropped holder's
+        // use before this write. The first `len` slots hold items.
+        unsafe { slice::from_raw_parts_mut(first(this.head), len) }
+    }
 }
 
 impl<H, T, A> Clone for ThinShared<H, T, A>
@@ -466,6 +631,236 @@ where
             .field("header", self.header())
             .field("items", &self.slice())
             .finish()
+    }
+}
+
+impl<T> Default for ThinShared<(), T, Global>
+{
+    /// A holder of no item under a unit header, as `Arc::default` gives an
+    /// empty slice. Each default takes the static empty block, so the call
+    /// draws no block. An item of an alignment past 16 does not compile, so no
+    /// default has a path that allocates. No item of the kernel has one.
+    ///
+    /// # Specification
+    /// - requires: an item of an alignment up to 16, which the compiler checks.
+    /// - ensures: a holder of no item. Two defaults share one block.
+    /// - panics: when the static block's count would pass `isize::MAX`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two defaults share the static block, a mutable borrow
+    ///   of one moves it to a block of its own, and the drops leave the static
+    ///   block whole, under Miri.
+    /// - witness: `tests::thin_shared::an_empty_default_shares_the_static_block`
+    #[spec(ensures: |ret| ret.slice().is_empty())]
+    #[inline]
+    fn default() -> Self
+    {
+        const {
+            assert!(
+                align_of::<T>() <= align_of::<Aligned>()
+                    && offset_of!(Head<(), T>, items) == offset_of!(Head<(), Aligned>, items),
+                "the static empty block serves an item of an alignment up to 16"
+            );
+        }
+        #[cfg(not(loom))]
+        {
+            EMPTY.count.join();
+            // The pointer keeps the provenance of the whole static. A head over
+            // `T` reads the count and the length where the static holds them,
+            // and its items, of which there are none, at the same offset.
+            Self {
+                head: NonNull::from(&EMPTY).cast(),
+                alloc: Global,
+                contents: PhantomData,
+            }
+        }
+        #[cfg(loom)]
+        {
+            Self::from_header_and_iter((), core::iter::empty())
+        }
+    }
+}
+
+impl<T, const N: usize, A> From<SmallVec<T, N, A>> for ThinShared<(), T, Global>
+where
+    A: Allocator,
+{
+    /// A block of the vector's items, in order, under a unit header, as an
+    /// `Arc` of a slice takes a `Vec`. An empty vector takes the static block
+    /// of the default, so it draws no block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(items: SmallVec<T, N, A>) -> Self
+    {
+        if items.is_empty() {
+            return Self::default();
+        }
+        Self::from_header_and_iter((), items)
+    }
+}
+
+impl<T> FromIterator<T> for ThinShared<(), T, Global>
+{
+    /// A block of the items, in order, under a unit header. An iterator whose
+    /// size hint is exact writes its items into one block of that length, as
+    /// an `Arc` of a slice takes an iterator of a trusted length. An empty
+    /// one takes the static block of the default. Any other iterator gathers
+    /// its items in a vector first, since the block needs their count before
+    /// it holds them.
+    ///
+    /// # Specification
+    /// - ensures: the block holds the items of the iterator, in order.
+    /// - panics: when an iterator with an exact size hint yields another count
+    ///   of items, and when the iterator panics.
+    /// - executable: none — the items are consumed, so no predicate reads them
+    ///   after.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an iterator with an exact hint and one without give
+    ///   the same items, an empty collect shares the static block, and an
+    ///   iterator off its exact hint panics.
+    /// - witness: `tests::thin_shared::a_collect_holds_the_items_with_or_without_an_exact_hint`
+    /// - witness: `tests::thin_shared::an_iterator_off_its_exact_hint_panics`
+    #[inline]
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+    {
+        let mut items = iter.into_iter();
+        let (lower, upper) = items.size_hint();
+        if upper != Some(lower) {
+            let gathered: SmallVec<T, 0, Global> = items.collect();
+            return Self::from(gathered);
+        }
+        let thin = if lower == 0 {
+            Self::default()
+        }
+        else {
+            Self::from_header_and_iter((), Hinted {
+                items: &mut items,
+                len: lower,
+            })
+        };
+        if items.next().is_some() {
+            long();
+        }
+        thin
+    }
+}
+
+impl<H, T, A> Deref for ThinShared<H, T, A>
+where
+    A: Allocator,
+{
+    type Target = [T];
+
+    /// The items, as [`ThinShared::slice`] gives them, so a block of a unit
+    /// header reads as an `Arc` of a slice reads.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn deref(&self) -> &[T]
+    {
+        self.slice()
+    }
+}
+
+impl<H, T, A> PartialEq for ThinShared<H, T, A>
+where
+    H: PartialEq,
+    T: PartialEq,
+    A: Allocator,
+{
+    /// Two holders are equal when their headers and their items are, whether
+    /// or not they share one block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.header() == other.header() && self.slice() == other.slice()
+    }
+}
+
+impl<H, T, A> Eq for ThinShared<H, T, A>
+where
+    H: Eq,
+    T: Eq,
+    A: Allocator,
+{
+}
+
+impl<H, T, A> PartialOrd for ThinShared<H, T, A>
+where
+    H: PartialOrd,
+    T: PartialOrd,
+    A: Allocator,
+{
+    /// The order of the headers, and then the slices' lexicographic order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn partial_cmp(
+        &self,
+        other: &Self,
+    ) -> Option<Ordering>
+    {
+        match self.header().partial_cmp(other.header()) {
+            Some(Ordering::Equal) => self.slice().partial_cmp(other.slice()),
+            order => order,
+        }
+    }
+}
+
+impl<H, T, A> Ord for ThinShared<H, T, A>
+where
+    H: Ord,
+    T: Ord,
+    A: Allocator,
+{
+    /// The order of the headers, and then the slices' lexicographic order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn cmp(
+        &self,
+        other: &Self,
+    ) -> Ordering
+    {
+        self.header()
+            .cmp(other.header())
+            .then_with(|| self.slice().cmp(other.slice()))
+    }
+}
+
+impl<H, T, A> Hash for ThinShared<H, T, A>
+where
+    H: Hash,
+    T: Hash,
+    A: Allocator,
+{
+    /// The header, and then the items as their slice hashes them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<S>(
+        &self,
+        state: &mut S,
+    ) where
+        S: Hasher,
+    {
+        self.header().hash(state);
+        self.slice().hash(state);
     }
 }
 

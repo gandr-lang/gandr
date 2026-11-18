@@ -1,10 +1,10 @@
 //! Semantic witnesses for the closed-code identity and relation experiment.
 
+use alloc::alloc::Global;
 use alloc::string::String;
-use alloc::vec;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -240,8 +240,11 @@ pub(super) fn shapes() -> crate::Environment
     let text = staging.arena().value_type_base(BaseType::String);
     let staged = staging.data(
         LevelSignature::monomorphic(),
-        Vec::new(),
-        vec![vec![text], vec![text, text]],
+        SmallVec::<_, 0, Global>::new(),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([text]),
+            SmallVec::<_, 0, Global>::from_iter([text, text]),
+        ]),
         kind,
     );
     let _shape = environment.add_decl(staged).expect("the shape admits");
@@ -249,13 +252,17 @@ pub(super) fn shapes() -> crate::Environment
     let kind = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let own = staging
-        .arena()
-        .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let own = staging.arena().value_type_data(
+        ConstantIndex::from(1_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let staged = staging.data(
         LevelSignature::monomorphic(),
-        Vec::new(),
-        vec![Vec::new(), vec![own]],
+        SmallVec::<_, 0, Global>::new(),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     let _naturals = environment.add_decl(staged).expect("the naturals admit");
@@ -274,7 +281,10 @@ fn a_data_type_relates_its_constructors_fieldwise()
     let entries = environment.entries();
     let mut arena = environment.arena().clone();
     let scalars = scalars(&mut arena);
-    let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let shape = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let code = arena.value_quote(shape);
     let Interpretation::Elements(relation) = interpret(
         &arena,
@@ -292,7 +302,7 @@ fn a_data_type_relates_its_constructors_fieldwise()
             ConstantIndex::from(0_usize),
             shape,
             ConstructorTag::from(0_usize),
-            vec![radius],
+            SmallVec::<_, 0, Global>::from_iter([radius]),
         )
     };
     let rectangle = |arena: &mut TermArena, width, height| {
@@ -300,7 +310,7 @@ fn a_data_type_relates_its_constructors_fieldwise()
             ConstantIndex::from(0_usize),
             shape,
             ConstructorTag::from(1_usize),
-            vec![width, height],
+            SmallVec::<_, 0, Global>::from_iter([width, height]),
         )
     };
     let round = circle(&mut arena, first);
@@ -367,7 +377,10 @@ fn a_data_type_relates_its_constructors_fieldwise()
         "a bridge relates the sides as identity does"
     );
 
-    let naturals = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let naturals = arena.value_type_data(
+        ConstantIndex::from(1_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     for (root, log) in [
         (naturals, Interfaces::of(entries)),
         (shape, Interfaces::NONE),
@@ -647,7 +660,12 @@ fn universe_identity_consumes_path_formation()
     assert_eq!(formed.source, ty);
     assert_eq!(formed.target, ty);
     let classifier = arena.value_type_path_universe(code, code);
-    let bad = arena.value_path_equiv(classifier, unit, unit, alloc::sync::Arc::default());
+    let bad = arena.value_path_equiv(
+        classifier,
+        unit,
+        unit,
+        gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
+    );
     assert!(matches!(
         identity.path(&mut arena, bad, ReplayBudget::from(1000_u64)),
         Err(RelationError::Typing(_))

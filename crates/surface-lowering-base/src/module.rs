@@ -13451,6 +13451,10 @@ impl<'source> LoweredModule<'source>
     /// - fails: never; a path containing the segment separator is omitted.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the structured names and the set of positions that the
+    ///   check meets, growth within the module's declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — real nested declarations export their exact paths.
     ///   Composed metadata separates repeated positions, held declarations,
@@ -13513,7 +13517,9 @@ impl<'source> LoweredModule<'source>
             if !matches!(declaration.role(), Role::Declared | Role::Abstract) {
                 continue;
             }
-            let segments: Option<Vec<NameSegment>> = self
+            let segments: Option<
+                gandr_kernel_data::SmallVec<NameSegment, 0, alloc::alloc::Global>,
+            > = self
                 .path_of(declaration)
                 .into_iter()
                 .map(|segment| NameSegment::from_text(String::from(segment.as_ref())))

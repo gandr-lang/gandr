@@ -395,6 +395,12 @@ fn enter(
 /// # Errors
 /// [`KernelError::ArenaFault`].
 ///
+/// # Cost
+/// - allocation: a copy of the node and its rebuilt children, growth within the
+///   node's children
+/// - allocation: the value type minted over the rebuilt children, durable by
+///   the arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`unseal`].
 /// - witness: `gandr-kernel-core::environment::seal_tests::a_nested_atom_unseals_through_every_former`

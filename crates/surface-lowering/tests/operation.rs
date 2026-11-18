@@ -227,7 +227,7 @@ fn an_operations_rules_read_in_pre_order_over_module_positions()
     // first occurrence on the left, a callee at its own position.
     assert_eq!(
         module.operation_rules(named("divmod")),
-        OperationRules::new(alloc::vec![
+        OperationRules::new(FromIterator::from_iter([
             rule(&[call("divmod", 2), m, zero], &[
                 OperationNode::Results(FieldCount::from(2_usize)),
                 zero,
@@ -241,7 +241,7 @@ fn an_operations_rules_read_in_pre_order_over_module_positions()
                 zero,
                 zero
             ]),
-        ]),
+        ])),
         "each rule reads as the kernel decides it"
     );
     assert!(

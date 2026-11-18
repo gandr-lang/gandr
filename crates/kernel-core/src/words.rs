@@ -87,12 +87,14 @@
 //!   loop along a cell, which moves it to itself where both images of the cell
 //!   are empty, as the evaluator reads it.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::Computation;
@@ -549,6 +551,10 @@ fn inverse(tag: ConstructorTag) -> ConstructorTag
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the relettered node and its one field, durable by the arena's
+///   identifiers
 fn relettered(
     arena: &mut TermArena,
     letter: ValueId,
@@ -562,7 +568,12 @@ fn relettered(
     else {
         return None;
     };
-    Some(arena.value_constructor(family, datatype, tag, Vec::from([rest])))
+    Some(arena.value_constructor(
+        family,
+        datatype,
+        tag,
+        SmallVec::<_, 0, Global>::from_iter([rest]),
+    ))
 }
 
 /// The inverse of a closed word: its letters inverted, last first.
@@ -1116,6 +1127,10 @@ fn spine(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the point's constructor term and its fields, growth within the
+///   cells' point
+///
 /// # Adequacy
 /// - hypothesis: L3 — a loop arm is read at the circle's point `Base`, where
 ///   the flip's arm answers the inverse letter.
@@ -1131,7 +1146,7 @@ pub fn point(
         .presented(words)
         .and_then(crate::presented::PresentedType::cells)?;
     let arities = presentations.sort_arities(words)?;
-    let sort = arena.value_type_data(cells.sort(), Vec::new());
+    let sort = arena.value_type_data(cells.sort(), SmallVec::<_, 0, Global>::new());
     let mut open = false;
     let built = build_side(cells.point(), arities, |node, fields| match node {
         RuleNode::Constructor(tag) => arena.value_constructor(cells.sort(), sort, tag, fields),
@@ -1177,6 +1192,10 @@ pub fn point(
 /// - reason: one `for` over the cells' wrappings.
 /// - measure: the wrappings left.
 ///
+/// # Cost
+/// - allocation: the carrier type and the reflexivity endpoints that the path
+///   follows, durable by the arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — a composite and an inverse transported along a word
 ///   written inline admit at the circle's point and refuse at the wrong
@@ -1208,7 +1227,10 @@ pub fn followed(
             .and_then(crate::presented::PresentedType::cells)
         && let Some(point) = point(arena, presentations, words)
     {
-        let (mut carrier, mut at) = (arena.value_type_data(cells.sort(), Vec::new()), point);
+        let (mut carrier, mut at) = (
+            arena.value_type_data(cells.sort(), SmallVec::<_, 0, Global>::new()),
+            point,
+        );
         for _ in 0 .. usize::from(cells.reflexivities()) {
             carrier = arena.value_type_path(carrier, at, at);
             at = arena.value_here(at);
@@ -1431,6 +1453,10 @@ fn lambdas(
 /// - reason: one `for` substitutes one argument per turn.
 /// - measure: the arguments left.
 ///
+/// # Cost
+/// - allocation: the loop's point and the instantiated arm in the arena, growth
+///   within the case's arguments
+///
 /// # Adequacy
 /// - hypothesis: L3 — the flip's written arm and the collapse's unwritten one
 ///   decide the flip twice and the collapse admitted and the flip once refused;
@@ -1561,6 +1587,11 @@ fn answered(
 /// - reason: one `for` opens a lambda per field and substitutes one per turn,
 ///   another substitutes one argument per turn.
 /// - measure: the fields left, then the arguments left.
+///
+/// # Cost
+/// - allocation: the built cong, the substituted branch and a copy of the
+///   constructor's fields, growth within the fixed arguments and the
+///   constructor's fields
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `mul(⟨mul(Base, Base)⟩, y)` runs its first argument, and
@@ -1790,6 +1821,10 @@ where
 ///   over their images, not recursion.
 /// - measure: the letters left, then the distinct letters left.
 ///
+/// # Cost
+/// - allocation: the distinct letters, their order, their images and steps,
+///   growth within the word's letters
+///
 /// # Adequacy
 /// - hypothesis: L3 — the identity's image of a word of four letters, two of
 ///   them distinct, is the word, and the flip's is each letter inverted in
@@ -1834,8 +1869,18 @@ where
     }
     let mut images = Vec::with_capacity(distinct.len());
     for &tag in &distinct {
-        let empty = arena.value_constructor(family, datatype, FreeCells::nil(), Vec::new());
-        let one = arena.value_constructor(family, datatype, tag, Vec::from([empty]));
+        let empty = arena.value_constructor(
+            family,
+            datatype,
+            FreeCells::nil(),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let one = arena.value_constructor(
+            family,
+            datatype,
+            tag,
+            SmallVec::<_, 0, Global>::from_iter([empty]),
+        );
         images.push(image(
             arena,
             (table, memo),
@@ -2257,6 +2302,10 @@ where
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the reduct's terms in the arena, durable by the arena's
+///   identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — the loop moves reflexivity to the loop in `y. Path[.A =
 ///   S]( Base, y)`, conjugates a loop to itself in `y. Path[.A = S](y, y)`, and
@@ -2358,8 +2407,18 @@ where
         else {
             return Reduction::Stuck;
         };
-        let empty = arena.value_constructor(family, datatype, FreeCells::nil(), Vec::new());
-        let first = arena.value_constructor(family, datatype, tag, Vec::from([empty]));
+        let empty = arena.value_constructor(
+            family,
+            datatype,
+            FreeCells::nil(),
+            SmallVec::<_, 0, Global>::new(),
+        );
+        let first = arena.value_constructor(
+            family,
+            datatype,
+            tag,
+            SmallVec::<_, 0, Global>::from_iter([empty]),
+        );
         let step = arena.computation_path_transport(motive, first, value);
         let one = BinderDepth::from(1_u32);
         let lifted = shift_value_type(arena, table, memo, motive, one, one);
@@ -2590,6 +2649,10 @@ where
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the reduct, the moved rest and the prefixed word, durable by
+///   the arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — the empty word moved along a path parameter is that
 ///   parameter, and a letter before a parameter moved along another is the
@@ -2633,7 +2696,12 @@ pub fn appended(
             };
             let moved = arena.computation_path_transport(motive, path, rest);
             let held = arena.value_returned(moved);
-            let prefixed = arena.value_constructor(family, datatype, tag, Vec::from([held]));
+            let prefixed = arena.value_constructor(
+                family,
+                datatype,
+                tag,
+                SmallVec::<_, 0, Global>::from_iter([held]),
+            );
             Reduction::Reduced(arena.computation_return(prefixed))
         },
         Head::Other => named(arena, unfoldings, value).map_or(Reduction::Stuck, |body| {

@@ -1,6 +1,7 @@
 //! Recursive data, fixpoints and derived eliminators through the checker, the
 //! normaliser and the kernel.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
@@ -57,6 +58,7 @@ use gandr_kernel_core::ReplayNode;
 use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -1138,11 +1140,11 @@ fn kernel_placed(placement: Placement) -> Result<(), KernelError>
     let parameter = arena.value_variable(DeBruijnIndex::from(0));
     let element = arena.value_type_element(parameter, Level::zero());
     let past = arena.value_variable(DeBruijnIndex::from(1));
-    let tail = arena.value_type_data(list, vec![past]);
+    let tail = arena.value_type_data(list, SmallVec::from_iter([past]));
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![universe],
-        vec![vec![], vec![element, tail]],
+        SmallVec::from_iter([universe]),
+        SmallVec::from_iter([SmallVec::new(), SmallVec::from_iter([element, tail])]),
         universe,
     );
     environment.add_decl(declaration).expect("List is admitted");
@@ -1157,8 +1159,8 @@ fn kernel_placed(placement: Placement) -> Result<(), KernelError>
     let tested = arena.value_type_thunk(function);
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![universe],
-        vec![vec![tested]],
+        SmallVec::from_iter([universe]),
+        SmallVec::from_iter([SmallVec::from_iter([tested])]),
         universe,
     );
     environment.add_decl(declaration).expect("Test is admitted");
@@ -1168,12 +1170,12 @@ fn kernel_placed(placement: Placement) -> Result<(), KernelError>
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     let parameter = arena.value_variable(DeBruijnIndex::from(0));
-    let own = arena.value_type_data(position, vec![parameter]);
+    let own = arena.value_type_data(position, SmallVec::from_iter([parameter]));
     let past = arena.value_variable(DeBruijnIndex::from(1));
-    let own_past = arena.value_type_data(position, vec![past]);
+    let own_past = arena.value_type_data(position, SmallVec::from_iter([past]));
     let code = arena.value_quote(own);
     let one = arena.value_quote(unit);
-    let mut parameters = vec![universe];
+    let mut parameters = SmallVec::<_, 0, Global>::from_iter([universe]);
     let consumer = |arena: &mut gandr_kernel_term::TermArena, domain| {
         let function = arena.comp_type_arrow(domain, returns);
         arena.value_type_thunk(function)
@@ -1201,24 +1203,24 @@ fn kernel_placed(placement: Placement) -> Result<(), KernelError>
             let both = arena.comp_type_with(&[first, returns]);
             arena.value_type_thunk(both)
         },
-        Placement::Nested => arena.value_type_data(list, vec![code]),
+        Placement::Nested => arena.value_type_data(list, SmallVec::from_iter([code])),
         Placement::Domain => consumer(arena, own),
         Placement::TwoDomains => {
             let inner = consumer(arena, own);
             consumer(arena, inner)
         },
-        Placement::NonUniform => arena.value_type_data(position, vec![one]),
+        Placement::NonUniform => arena.value_type_data(position, SmallVec::from_iter([one])),
         Placement::NonUniformDomain => {
-            let other = arena.value_type_data(position, vec![one]);
+            let other = arena.value_type_data(position, SmallVec::from_iter([one]));
             consumer(arena, other)
         },
-        Placement::Consumed => arena.value_type_data(consumed, vec![code]),
+        Placement::Consumed => arena.value_type_data(consumed, SmallVec::from_iter([code])),
         Placement::ConsumedDomain => {
-            let tested = arena.value_type_data(consumed, vec![code]);
+            let tested = arena.value_type_data(consumed, SmallVec::from_iter([code]));
             consumer(arena, tested)
         },
         Placement::Lifted => arena.value_type_lift(own, Level::zero()),
-        Placement::Later => arena.value_type_data(ConstantIndex::from(3_usize), vec![]),
+        Placement::Later => arena.value_type_data(ConstantIndex::from(3_usize), SmallVec::new()),
         Placement::Parameter => {
             parameters.push(own);
             unit
@@ -1227,7 +1229,7 @@ fn kernel_placed(placement: Placement) -> Result<(), KernelError>
     let declaration = staging.data(
         LevelSignature::monomorphic(),
         parameters,
-        vec![vec![field]],
+        SmallVec::from_iter([SmallVec::from_iter([field])]),
         universe,
     );
     environment.add_decl(declaration).map(drop)
@@ -1836,13 +1838,21 @@ fn the_kernel_replays_a_conversion_through_a_definition_by_eliminator()
             .collect(),
     );
     let nat = positions[&ConstantIndex::from(at::NAT)];
-    let nat_type = kernel.value_type_data(nat, vec![]);
+    let nat_type = kernel.value_type_data(nat, SmallVec::new());
     let kernel_numeral = |kernel: &mut gandr_kernel_term::TermArena, n: usize| {
-        let mut built =
-            kernel.value_constructor(nat, nat_type, ConstructorTag::from(0_usize), vec![]);
+        let mut built = kernel.value_constructor(
+            nat,
+            nat_type,
+            ConstructorTag::from(0_usize),
+            SmallVec::new(),
+        );
         for _step in 0 .. n {
-            built =
-                kernel.value_constructor(nat, nat_type, ConstructorTag::from(1_usize), vec![built]);
+            built = kernel.value_constructor(
+                nat,
+                nat_type,
+                ConstructorTag::from(1_usize),
+                SmallVec::from_iter([built]),
+            );
         }
         built
     };

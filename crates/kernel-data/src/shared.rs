@@ -36,7 +36,11 @@
 use alloc::alloc::Global;
 use core::alloc::Allocator;
 use core::alloc::Layout;
+use core::borrow::Borrow;
+use core::cmp::Ordering;
 use core::fmt;
+use core::hash::Hash;
+use core::hash::Hasher;
 use core::marker::PhantomData;
 use core::mem::DropGuard;
 use core::mem::ManuallyDrop;
@@ -121,7 +125,7 @@ pub enum Departure
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Holding
+pub enum Holding
 {
     /// The holder is the only one.
     Alone,
@@ -152,6 +156,17 @@ impl Counter
     #[spec(ensures: |ret| ret.holders() == Holders(1))]
     #[inline]
     pub fn one() -> Self
+    {
+        Self(AtomicUsize::new(1))
+    }
+
+    /// The count of the thin shared pointer's static empty block: one, the
+    /// block's own hold, which never leaves.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(not(loom))]
+    pub(crate) const fn resident() -> Self
     {
         Self(AtomicUsize::new(1))
     }
@@ -224,7 +239,7 @@ impl Counter
     ///   sole one in place, and the `loom` model races it with drops.
     /// - witness: `tests::shared::a_mutable_borrow_writes_a_sole_value_in_place_and_copies_a_shared_one`
     #[inline]
-    fn holding(&self) -> Holding
+    pub fn holding(&self) -> Holding
     {
         if self.0.load(Acquire) == 1 {
             Holding::Alone
@@ -733,6 +748,19 @@ where
     {
         this.block().count.holders()
     }
+
+    /// The address of the value, as `Arc::as_ptr` gives it: the same for each
+    /// holder of one block, so two holders share a block when their addresses
+    /// are equal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn as_ptr(this: &Self) -> *const T
+    {
+        ptr::from_ref::<T>(this)
+    }
 }
 
 impl<T, A> Clone for Shared<T, A>
@@ -777,6 +805,35 @@ where
     }
 }
 
+impl<T, A> AsRef<T> for Shared<T, A>
+where
+    A: Allocator,
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &T
+    {
+        self
+    }
+}
+
+impl<T, A> Borrow<T> for Shared<T, A>
+where
+    A: Allocator,
+{
+    /// The value, as an `Arc` lends it. The pointer compares, orders and
+    /// hashes as the value does, as `Borrow` asks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn borrow(&self) -> &T
+    {
+        self
+    }
+}
+
 impl<T, A> Drop for Shared<T, A>
 where
     A: Allocator,
@@ -804,6 +861,22 @@ where
     }
 }
 
+impl<T> Default for Shared<T, Global>
+where
+    T: Default,
+{
+    /// A block of the value's default over the global allocator, with one
+    /// holder, as `Arc::default` gives.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new(T::default())
+    }
+}
+
 impl<T, A> fmt::Debug for Shared<T, A>
 where
     T: fmt::Debug,
@@ -818,6 +891,92 @@ where
     ) -> fmt::Result
     {
         fmt::Debug::fmt(&**self, f)
+    }
+}
+
+impl<T, A> PartialEq for Shared<T, A>
+where
+    T: PartialEq,
+    A: Allocator,
+{
+    /// Two holders are equal when their values are, as two `Arc`s are,
+    /// whether or not they share one block.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        **self == **other
+    }
+}
+
+impl<T, A> Eq for Shared<T, A>
+where
+    T: Eq,
+    A: Allocator,
+{
+}
+
+impl<T, A> PartialOrd for Shared<T, A>
+where
+    T: PartialOrd,
+    A: Allocator,
+{
+    /// The values' order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn partial_cmp(
+        &self,
+        other: &Self,
+    ) -> Option<Ordering>
+    {
+        (**self).partial_cmp(&**other)
+    }
+}
+
+impl<T, A> Ord for Shared<T, A>
+where
+    T: Ord,
+    A: Allocator,
+{
+    /// The values' order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn cmp(
+        &self,
+        other: &Self,
+    ) -> Ordering
+    {
+        (**self).cmp(&**other)
+    }
+}
+
+impl<T, A> Hash for Shared<T, A>
+where
+    T: Hash,
+    A: Allocator,
+{
+    /// A holder hashes as its value does, so it hashes as an `Arc` of the same
+    /// value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<H>(
+        &self,
+        state: &mut H,
+    ) where
+        H: Hasher,
+    {
+        (**self).hash(state);
     }
 }
 

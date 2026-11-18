@@ -837,6 +837,10 @@ pub(crate) fn case_branch_mismatch(
 /// than red: the claim is intensional and exponential, and a timeout is
 /// indeterminate rather than a kill.
 ///
+/// # Cost
+/// - allocation: the worklist of pending pairs and the discharged set, growth
+///   within the compared graphs' reachable pairs
+///
 /// # Adequacy
 /// - hypothesis: L1/L2/L3 — root readability, identity and head separation are
 ///   executable. Finite former and truncation witnesses separate the structural

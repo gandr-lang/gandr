@@ -58,6 +58,7 @@
 //!   checking rule against `Path[.A = Type](A, B)` reads the codes from the
 //!   expected type instead, and admits a λ as the forward translator.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -72,6 +73,9 @@ use gandr_core_term::Zone;
 use gandr_core_term::effect::Purity;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_core::ReplayBudget;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
@@ -105,7 +109,7 @@ pub struct Equivalence
     /// The native classifier `Path_U(⌜A⌝, ⌜B⌝)`.
     classifier: ValueTypeId,
     /// The machine's trace of every round trip, in coverage order.
-    evidence: Arc<PathEvidence>,
+    evidence: Shared<PathEvidence, Global>,
 }
 
 impl Equivalence
@@ -129,7 +133,7 @@ impl Equivalence
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn evidence(&self) -> &Arc<PathEvidence>
+    pub const fn evidence(&self) -> &Shared<PathEvidence, Global>
     {
         &self.evidence
     }
@@ -417,6 +421,12 @@ pub fn translator(
 /// - measure: the tasks left, bounded by the kernel's coverage allowance; then
 ///   the patterns left.
 ///
+/// # Cost
+/// - allocation: the round-trip dialogues for each pattern of both codes'
+///   coverage, growth within the codes' coverage
+/// - allocation: the quoted codes and the path classifier, durable by the
+///   arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — negation is its own inverse at both injections; the
 ///   identity and negation are not inverse; the identity on a list is an
@@ -459,7 +469,7 @@ pub fn decide(
         source,
         target,
         classifier,
-        evidence: Arc::new(evidence),
+        evidence: Shared::new(evidence),
     })
 }
 
@@ -480,6 +490,10 @@ pub fn decide(
 /// - reason: a `for` loop over the finite coverage, not recursion.
 /// - measure: the patterns left.
 ///
+/// # Cost
+/// - allocation: the dialogues of the round trips, one per pattern, growth
+///   within the code's coverage
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`decide`]; an equivalence of a code with itself
 ///   carries both sides' round trips.
@@ -494,7 +508,7 @@ fn round_trips(
     at: ValueId,
     code: ValueTypeId,
     (first, second): (ValueId, ValueId),
-) -> Result<Vec<Vec<ConversionDecision<()>>>, CheckRefusal>
+) -> Result<SmallVec<SmallVec<ConversionDecision<()>, 0, Global>, 0, Global>, CheckRefusal>
 {
     let Maybe::Present(patterns) = coverage(context, code, Vocabulary::Data)?
     else {
@@ -503,7 +517,7 @@ fn round_trips(
             classifier: code,
         });
     };
-    let mut dialogues = Vec::with_capacity(patterns.len());
+    let mut dialogues = SmallVec::<_, 0, Global>::with_capacity(Count::from(patterns.len()));
     for pattern in patterns {
         let arena = context.arena_mut();
         let forced = arena.computation_force(first);

@@ -13,7 +13,6 @@ mod universe_fold_tests;
 use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -36,6 +35,7 @@ use gandr_core_term::Transparency;
 use gandr_core_term::Zone;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::TraceLog;
+use gandr_kernel_data::Shared;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CompType;
@@ -510,7 +510,7 @@ fn translate(
                         types[&path_type],
                         values[&forward],
                         values[&backward],
-                        Arc::clone(evidence),
+                        Shared::clone(evidence),
                     ),
                     Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
                     Value::Constant(index) => core.value_constant(index),
@@ -882,7 +882,7 @@ pub fn evidence(
     target: &[ValueId],
     forward: ValueId,
     backward: ValueId,
-) -> Arc<PathEvidence>
+) -> Shared<PathEvidence, Global>
 {
     let mut evidence = PathEvidence::default();
     for (first, second, patterns, dialogues) in [
@@ -899,7 +899,7 @@ pub fn evidence(
             dialogues.push(dialogue.0.into_iter().map(portable).collect());
         }
     }
-    Arc::new(evidence)
+    Shared::new(evidence)
 }
 
 /// [`evidence`] for patterns that stand under one binder each, a list's tail,
@@ -923,7 +923,7 @@ fn open_evidence(
     patterns: &[ValueId],
     forward: ValueId,
     backward: ValueId,
-) -> Arc<PathEvidence>
+) -> Shared<PathEvidence, Global>
 {
     let mut evidence = PathEvidence::default();
     for (first, second, dialogues) in [
@@ -941,7 +941,7 @@ fn open_evidence(
             dialogues.push(dialogue.0.into_iter().map(portable).collect());
         }
     }
-    Arc::new(evidence)
+    Shared::new(evidence)
 }
 
 /// Construct a raw Bool equivalence with engine-produced evidence.
@@ -1304,7 +1304,7 @@ fn a_non_equivalence_is_refused()
             ty,
             boolean.not,
             boolean.not,
-            Arc::new(PathEvidence::default()),
+            gandr_kernel_data::Shared::new(PathEvidence::default()),
         );
         let declared = arena.value_type_product(&[ty, ty]);
         (declared, arena.value_tuple(&[good, bad]))
@@ -1319,7 +1319,12 @@ fn a_non_equivalence_is_refused()
         let unit = arena.value_unit();
         (
             ty,
-            arena.value_path_equiv(ty, unit, boolean.not, Arc::new(PathEvidence::default())),
+            arena.value_path_equiv(
+                ty,
+                unit,
+                boolean.not,
+                gandr_kernel_data::Shared::new(PathEvidence::default()),
+            ),
         )
     });
     assert!(matches!(
@@ -1471,7 +1476,7 @@ fn certificate_identity_stays_out_of_conversion()
         ty,
         boolean.not,
         boolean.not,
-        Arc::new(PathEvidence::default()),
+        gandr_kernel_data::Shared::new(PathEvidence::default()),
     );
     assert_eq!(
         crate::conv::equal_values(staging.arena(), first, different_evidence),
@@ -1592,7 +1597,12 @@ fn a_translator_may_name_an_admitted_definition()
                 }
             }
             let classifier = arena.value_type_path_universe(boolean.code, boolean.code);
-            let path = arena.value_path_equiv(classifier, constant, constant, Arc::new(evidence));
+            let path = arena.value_path_equiv(
+                classifier,
+                constant,
+                constant,
+                gandr_kernel_data::Shared::new(evidence),
+            );
             (classifier, path)
         })
     };

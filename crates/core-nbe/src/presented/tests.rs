@@ -1,3 +1,4 @@
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
@@ -18,6 +19,7 @@ use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::replay;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -85,10 +87,10 @@ fn circle() -> Presentation
     let looped = RuleNode::Constructor(Letter::Loop.tag());
     let unlooped = RuleNode::Constructor(Letter::Unloop.tag());
     let x = RuleNode::Variable(RuleVariable::from(0_u32));
-    Presentation::new(alloc::vec![
+    Presentation::new(SmallVec::<_, 0, Global>::from_iter([
         PresentedRule::new([looped, unlooped, x].into(), [x].into()),
         PresentedRule::new([unlooped, looped, x].into(), [x].into()),
-    ])
+    ]))
 }
 
 /// The circle word spelled by `letters` over `base`, outermost first, in
@@ -128,19 +130,22 @@ fn kernel_word(
     letters: &[Letter],
 ) -> gandr_kernel_term::ValueId
 {
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let mut built = arena.value_constructor(
         ConstantIndex::from(0_usize),
         own,
         ConstructorTag::from(0_usize),
-        Vec::new(),
+        SmallVec::<_, 0, Global>::new(),
     );
     for &letter in letters.iter().rev() {
         built = arena.value_constructor(
             ConstantIndex::from(0_usize),
             own,
             letter.tag(),
-            alloc::vec![built],
+            SmallVec::<_, 0, Global>::from_iter([built]),
         );
     }
     built
@@ -210,14 +215,19 @@ fn a_circle_word_reads_as_its_reduced_word()
     let kind = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let own = staging
-        .arena()
-        .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let own = staging.arena().value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let staged = staging
         .data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
         .presented(circle());
@@ -341,14 +351,19 @@ fn a_held_call_under_a_presented_constructor_reads_as_what_it_returns()
     let kind = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let own = staging
-        .arena()
-        .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let own = staging.arena().value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let staged = staging
         .data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
         .presented(circle());
@@ -363,10 +378,16 @@ fn a_held_call_under_a_presented_constructor_reads_as_what_it_returns()
     let forced = arena.computation_force(head);
     let applied = arena.computation_application(forced, back);
     let leaf = arena.value_returned(applied);
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
-    let word = arena.value_constructor(ConstantIndex::from(0_usize), own, Loop.tag(), alloc::vec![
-        leaf
-    ]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
+    let word = arena.value_constructor(
+        ConstantIndex::from(0_usize),
+        own,
+        Loop.tag(),
+        SmallVec::<_, 0, Global>::from_iter([leaf]),
+    );
     let base = kernel_word(&mut arena, &[]);
     let unfoldings = Unfoldings::new(alloc::vec![Unfoldable::Opaque, Unfoldable::Body(ident)])
         .presenting(Presentations::of(environment.entries()));
@@ -442,9 +463,10 @@ fn looped_cells(wraps: gandr_kernel_term::Reflexivities) -> gandr_kernel_term::F
     let base = || -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
     };
-    gandr_kernel_term::FreeCells::new(ConstantIndex::from(SORT), alloc::vec![
-        gandr_kernel_term::FreeCell::new(base(), base())
-    ])
+    gandr_kernel_term::FreeCells::new(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([gandr_kernel_term::FreeCell::new(base(), base())]),
+    )
     .wrapped(wraps)
 }
 
@@ -600,22 +622,23 @@ fn kernel_side(
     side: Side,
 ) -> gandr_kernel_term::ValueId
 {
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), Vec::new());
+    let carrier = arena.value_type_data(ConstantIndex::from(SORT), SmallVec::<_, 0, Global>::new());
     let at = |arena: &mut TermArena, tag: usize| {
         arena.value_constructor(
             ConstantIndex::from(SORT),
             carrier,
             ConstructorTag::from(tag),
-            Vec::new(),
+            SmallVec::<_, 0, Global>::new(),
         )
     };
     let empty = |arena: &mut TermArena, words: usize| {
-        let own = arena.value_type_data(ConstantIndex::from(words), Vec::new());
+        let own =
+            arena.value_type_data(ConstantIndex::from(words), SmallVec::<_, 0, Global>::new());
         arena.value_constructor(
             ConstantIndex::from(words),
             own,
             ConstructorTag::from(0_usize),
-            Vec::new(),
+            SmallVec::<_, 0, Global>::new(),
         )
     };
     match side {
@@ -647,14 +670,15 @@ fn kernel_side(
             arena.value_here(end)
         },
         Side::Moved | Side::Word => {
-            let own = arena.value_type_data(ConstantIndex::from(WORDS), Vec::new());
+            let own =
+                arena.value_type_data(ConstantIndex::from(WORDS), SmallVec::<_, 0, Global>::new());
             let end = empty(arena, WORDS);
             let word = MOVED.iter().rev().fold(end, |rest, &tag| {
                 arena.value_constructor(
                     ConstantIndex::from(WORDS),
                     own,
                     ConstructorTag::from(tag),
-                    alloc::vec![rest],
+                    SmallVec::<_, 0, Global>::from_iter([rest]),
                 )
             });
             if matches!(side, Side::Word) {
@@ -688,8 +712,11 @@ fn replayed_sides(
         .value_type_universe(GroundSort::Value, Level::zero());
     let staged = staging.data(
         LevelSignature::monomorphic(),
-        Vec::new(),
-        alloc::vec![alloc::vec![], alloc::vec![]],
+        SmallVec::<_, 0, Global>::new(),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::new(),
+        ]),
         kind,
     );
     let _sort = environment.add_decl(staged).expect("the sort admits");
@@ -700,12 +727,16 @@ fn replayed_sides(
             .value_type_universe(GroundSort::Value, Level::zero());
         let own = staging
             .arena()
-            .value_type_data(ConstantIndex::from(words), Vec::new());
+            .value_type_data(ConstantIndex::from(words), SmallVec::<_, 0, Global>::new());
         let staged = staging
             .data(
                 LevelSignature::monomorphic(),
-                Vec::new(),
-                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::new(),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
                 kind,
             )
             .presented(Presentation::words(looped_cells(

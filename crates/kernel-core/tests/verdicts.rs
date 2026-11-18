@@ -2,6 +2,7 @@
 //! a trusted signer gave over the records as recorded, and never under the
 //! recheck policy.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -29,6 +30,7 @@ use gandr_kernel_core::verdict::VerdictRecord;
 use gandr_kernel_core::verdict::VerdictSource;
 use gandr_kernel_core::verdict::stored;
 use gandr_kernel_core::verdict::verdict_image;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::ConstantIndex;
@@ -878,51 +880,68 @@ fn offer_ranked(
             let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
             staging.data(
                 monomorphic(),
-                alloc::vec![],
-                alloc::vec![alloc::vec![]],
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([])]),
                 kind,
             )
         },
         Offered::Words(sort) => {
             let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-            let own = arena.value_type_data(next, alloc::vec![]);
+            let own = arena.value_type_data(next, SmallVec::<_, 0, Global>::from_iter([]));
             let base = || -> Box<[RuleNode]> {
                 [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
             };
-            let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())]);
+            let cells = FreeCells::new(
+                sort,
+                SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+            );
             staging
                 .data(
                     monomorphic(),
-                    alloc::vec![],
-                    alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([
+                        SmallVec::<_, 0, Global>::from_iter([]),
+                        SmallVec::<_, 0, Global>::from_iter([own]),
+                        SmallVec::<_, 0, Global>::from_iter([own]),
+                    ]),
                     kind,
                 )
                 .presented(Presentation::words(cells))
         },
         Offered::Of(family) => {
-            let declared = arena.value_type_data(family, alloc::vec![]);
+            let declared = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
             staging.axiom(monomorphic(), declared)
         },
         Offered::Block(form) => {
             let forest = ConstantIndex::from(usize::from(next).saturating_add(1));
             let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-            let forests = arena.value_type_data(forest, alloc::vec![]);
+            let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
             let tree = staging.data(
                 monomorphic(),
-                alloc::vec![],
-                alloc::vec![alloc::vec![forests]],
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([
+                    forests,
+                ])]),
                 kind,
             );
             let mut staging = environment.stage();
             let arena = staging.arena();
             let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-            let trees = arena.value_type_data(next, alloc::vec![]);
-            let forests = arena.value_type_data(forest, alloc::vec![]);
-            let mut constructors = alloc::vec![alloc::vec![], alloc::vec![trees, forests]];
+            let trees = arena.value_type_data(next, SmallVec::<_, 0, Global>::from_iter([]));
+            let forests = arena.value_type_data(forest, SmallVec::<_, 0, Global>::from_iter([]));
+            let mut constructors = SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([trees, forests]),
+            ]);
             if matches!(form, Forest::Edited) {
-                constructors.push(alloc::vec![trees]);
+                constructors.push(SmallVec::<_, 0, Global>::from_iter([trees]));
             }
-            let list = staging.data(monomorphic(), alloc::vec![], constructors, kind);
+            let list = staging.data(
+                monomorphic(),
+                SmallVec::<_, 0, Global>::from_iter([]),
+                constructors,
+                kind,
+            );
             let _block = environment
                 .add_block(alloc::vec![tree, list])
                 .expect("the block admits");
@@ -955,9 +974,13 @@ fn point_of(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let declared = arena.value_type_data(sort, alloc::vec![]);
-    let body =
-        arena.value_constructor(sort, declared, ConstructorTag::from(0_usize), alloc::vec![]);
+    let declared = arena.value_type_data(sort, SmallVec::<_, 0, Global>::from_iter([]));
+    let body = arena.value_constructor(
+        sort,
+        declared,
+        ConstructorTag::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let staged = staging.def(LevelSignature::monomorphic(), declared, body);
     let admitted = environment
         .add_decl(staged)

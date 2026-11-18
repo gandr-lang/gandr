@@ -7,6 +7,8 @@ use core::alloc::Allocator;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstructorTag;
@@ -1295,9 +1297,9 @@ struct Crossing
     /// The crossing's binders, ordered outermost first.
     context: Vec<ValueTypeId>,
     /// The source's fields.
-    lefts: Vec<ValueId>,
+    lefts: SmallVec<ValueId, 0, Global>,
     /// The target's fields.
-    rights: Vec<ValueId>,
+    rights: SmallVec<ValueId, 0, Global>,
     /// Evidence of the fields related, paired right-nested.
     proof: ValueId,
 }
@@ -1319,6 +1321,10 @@ struct Crossing
 ///
 /// # Errors
 /// As `fails`.
+///
+/// # Cost
+/// - allocation: the crossed patterns with their contexts and field values,
+///   growth within the fields' patterns
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a circle covers as one pattern over one integer, a
@@ -1344,7 +1350,8 @@ where
     let mut fields = fields.into_iter().rev();
     let Some(last) = fields.next()
     else {
-        let value = arena.value_constructor(declaration, datatype, tag, Vec::new());
+        let value =
+            arena.value_constructor(declaration, datatype, tag, SmallVec::<_, 0, Global>::new());
         return Ok(Vec::from([RelatedPattern {
             context: Vec::new(),
             left: value,
@@ -1356,8 +1363,8 @@ where
         .into_iter()
         .map(|pattern| Crossing {
             context: pattern.context,
-            lefts: Vec::from([pattern.left]),
-            rights: Vec::from([pattern.right]),
+            lefts: SmallVec::<_, 0, Global>::from_iter([pattern.left]),
+            rights: SmallVec::<_, 0, Global>::from_iter([pattern.right]),
             proof: pattern.proof,
         })
         .collect::<Vec<_>>();
@@ -1390,10 +1397,14 @@ where
                     Vec::with_capacity(left.context.len().saturating_add(right.context.len()));
                 context.extend_from_slice(&left.context);
                 context.extend_from_slice(&right.context);
-                let mut lefts = Vec::with_capacity(right.lefts.len().saturating_add(1));
+                let mut lefts = SmallVec::<_, 0, Global>::with_capacity(Count::from(
+                    right.lefts.len().saturating_add(1),
+                ));
                 lefts.push(source);
                 lefts.extend_from_slice(&right.lefts);
-                let mut rights = Vec::with_capacity(right.rights.len().saturating_add(1));
+                let mut rights = SmallVec::<_, 0, Global>::with_capacity(Count::from(
+                    right.rights.len().saturating_add(1),
+                ));
                 rights.push(target);
                 rights.extend_from_slice(&right.rights);
                 crossed.push(Crossing {

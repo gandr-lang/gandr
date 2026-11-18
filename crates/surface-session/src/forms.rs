@@ -392,6 +392,10 @@ impl FormStore
     /// # Errors
     /// The commit's [`MeldError`].
     ///
+    /// # Cost
+    /// - allocation: the runs' identities, the runs to mold and the units the
+    ///   store holds, growth within the revision's runs
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — generated edits of every class, at both roots and
     ///   both widths, submit to the batch composition of each revision with the

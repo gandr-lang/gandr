@@ -14,9 +14,10 @@
 //! - [`StageBound`], [`StageMark`], [`StageReach`]: one binder's bound and one
 //!   occurrence's stage.
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 use crate::term::StageDepth;
 
@@ -110,7 +111,7 @@ pub enum StageReach
 pub struct StageMark
 {
     /// The path from the declared type to the occurrence.
-    path: Vec<PlacedChild>,
+    path: SmallVec<PlacedChild, 0, Global>,
     /// The binder the occurrence's stage is read from.
     binder: StageBinder,
     /// Where it stands relative to that binder.
@@ -137,7 +138,7 @@ impl StageMark
     #[inline]
     #[must_use]
     pub fn new(
-        path: Vec<PlacedChild>,
+        path: SmallVec<PlacedChild, 0, Global>,
         binder: StageBinder,
         reach: StageReach,
     ) -> Self
@@ -189,18 +190,18 @@ impl StageMark
 pub struct StageSignature
 {
     /// Each binder's bound, in binder order.
-    bounds: Vec<StageBound>,
+    bounds: SmallVec<StageBound, 0, Global>,
     /// The occurrences the binders refine, in the order the declared type's
     /// walk reaches them.
-    marks: Vec<StageMark>,
+    marks: SmallVec<StageMark, 0, Global>,
 }
 
 impl StageSignature
 {
     /// The signature of a definition quantified over no stage.
     pub const UNQUANTIFIED: Self = Self {
-        bounds: Vec::new(),
-        marks: Vec::new(),
+        bounds: SmallVec::<_, 0, Global>::new(),
+        marks: SmallVec::<_, 0, Global>::new(),
     };
 
     /// The signature binding one stage per entry of `bounds`, refining the
@@ -221,8 +222,8 @@ impl StageSignature
     #[inline]
     #[must_use]
     pub fn new(
-        bounds: Vec<StageBound>,
-        marks: Vec<StageMark>,
+        bounds: SmallVec<StageBound, 0, Global>,
+        marks: SmallVec<StageMark, 0, Global>,
     ) -> Self
     {
         Self { bounds, marks }

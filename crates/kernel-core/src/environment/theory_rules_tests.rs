@@ -2,10 +2,11 @@
 //! each one admits through `Environment` or reads through conversion, which
 //! stand above the record, so it runs in this crate.
 
+use alloc::alloc::Global;
 use alloc::string::String;
-use alloc::vec;
 use alloc::vec::Vec;
 
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -112,11 +113,15 @@ impl Minting<'_>
     fn node(
         &mut self,
         tag: ConstructorTag,
-        fields: Vec<ValueId>,
+        fields: impl IntoIterator<Item = ValueId>,
     ) -> ValueId
     {
-        self.arena
-            .value_constructor(ConstantIndex::from(0_usize), self.code, tag, fields)
+        self.arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            self.code,
+            tag,
+            SmallVec::<_, 0, Global>::from_iter(fields),
+        )
     }
 
     /// The value of the term `tokens` spell in pre-order.
@@ -133,17 +138,17 @@ impl Minting<'_>
             let value = match token {
                 Token::Var(name) => {
                     let name = self.text(literal(name));
-                    self.node(ConstructorTag::from(VAR), vec![name])
+                    self.node(ConstructorTag::from(VAR), [name])
                 },
                 Token::App(name, arity) => {
-                    let mut chain = self.node(ConstructorTag::from(END), vec![]);
+                    let mut chain = self.node(ConstructorTag::from(END), []);
                     let first = built.len().saturating_sub(arity);
                     for &argument in built.get(first ..).unwrap_or(&[]) {
-                        chain = self.node(ConstructorTag::from(ARG), vec![argument, chain]);
+                        chain = self.node(ConstructorTag::from(ARG), [argument, chain]);
                     }
                     built.truncate(first);
                     let name = self.text(literal(name));
-                    self.node(ConstructorTag::from(APP), vec![name, chain])
+                    self.node(ConstructorTag::from(APP), [name, chain])
                 },
             };
             built.push(value);
@@ -161,33 +166,31 @@ impl Minting<'_>
         members: &[Member],
     ) -> ValueId
     {
-        let mut chain = self.node(ConstructorTag::from(END), vec![]);
+        let mut chain = self.node(ConstructorTag::from(END), []);
         for &member in members.iter().rev() {
             chain = match member {
                 Member::Rule(left, right) => {
                     let name = self.text(literal("r"));
                     let (left, right) = (self.term(left), self.term(right));
-                    self.node(ConstructorTag::from(RULE), vec![name, left, right, chain])
+                    self.node(ConstructorTag::from(RULE), [name, left, right, chain])
                 },
                 Member::Derived(peak, left, right) => {
                     let [outer, position, inner] = peak.map(|numeral| self.text(literal(numeral)));
                     let (left, right) = (self.term(left), self.term(right));
-                    self.node(ConstructorTag::from(DERIVED), vec![
+                    self.node(ConstructorTag::from(DERIVED), [
                         outer, position, inner, left, right, chain,
                     ])
                 },
                 Member::Rank(name, rank) => {
                     let name = self.text(literal(name));
                     let rank = self.text(literal(rank));
-                    self.node(ConstructorTag::from(RANK), vec![name, rank, chain])
+                    self.node(ConstructorTag::from(RANK), [name, rank, chain])
                 },
             };
         }
-        let sorts = self.node(ConstructorTag::from(END), vec![]);
-        let operations = self.node(ConstructorTag::from(END), vec![]);
-        self.node(ConstructorTag::from(PRESENTS), vec![
-            sorts, operations, chain,
-        ])
+        let sorts = self.node(ConstructorTag::from(END), []);
+        let operations = self.node(ConstructorTag::from(END), []);
+        self.node(ConstructorTag::from(PRESENTS), [sorts, operations, chain])
     }
 }
 
@@ -201,16 +204,24 @@ fn admit_code(environment: &mut Environment)
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let string = arena.value_type_base(BaseType::String);
-    let code = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
-    let constructors: Vec<Vec<ValueTypeId>> = PRESENTATION_CODE
+    let code = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let constructors: SmallVec<SmallVec<ValueTypeId, 0, Global>, 0, Global> = PRESENTATION_CODE
         .iter()
         .map(|&(strings, recursions)| {
-            let mut fields = vec![string; strings];
-            fields.extend(core::iter::repeat_n(code, recursions));
-            fields
+            core::iter::repeat_n(string, strings)
+                .chain(core::iter::repeat_n(code, recursions))
+                .collect()
         })
         .collect();
-    let declaration = staging.data(LevelSignature::monomorphic(), vec![], constructors, kind);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        constructors,
+        kind,
+    );
     let _code = environment.add_decl(declaration).expect("the code admits");
 }
 
@@ -225,7 +236,10 @@ fn admit(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let code = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let code = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let body = Minting { arena, code }.presents(members);
     let declaration = staging.def(LevelSignature::monomorphic(), code, body);
     environment.add_decl(declaration).map(|_admitted| ())

@@ -1570,9 +1570,12 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 82] = [
 #[cfg(test)]
 mod tests
 {
-    use alloc::vec::Vec;
+    use alloc::alloc::Global;
 
     use anodized::spec;
+    use gandr_kernel_data::Shared;
+    use gandr_kernel_data::SmallVec;
+    use gandr_kernel_data::ThinShared;
 
     use super::NODE_TAG_TABLE;
     use super::NodeTagVerdict;
@@ -1708,7 +1711,7 @@ mod tests
                     },
                 })
     )]
-    fn one_node_per_former() -> (TermArena, Vec<AnyNode>)
+    fn one_node_per_former() -> (TermArena, SmallVec<AnyNode, 0, Global>)
     {
         let mut arena = TermArena::new();
         let level = gandr_kernel_strata::Level::zero();
@@ -1751,22 +1754,22 @@ mod tests
         let path_type = arena.value_type_path_universe(quote, quote);
         let refl = arena.value_path_refl(quote);
         let map = arena.value_thunk(lambda);
-        let equiv = arena.value_path_equiv(path_type, map, map, alloc::sync::Arc::default());
+        let equiv = arena.value_path_equiv(path_type, map, map, Shared::default());
         let product_path = arena.value_path_product(refl, refl);
         let transport = arena.computation_transport(product_path, pair);
         let element_path = arena.value_type_path(unit_type, unit, unit);
         let here = arena.value_here(unit);
         let element_transport = arena.computation_path_transport(unit_type, here, unit);
         let higher = arena.value_higher(
-            alloc::sync::Arc::new(crate::HigherProgram {
+            Shared::new(crate::HigherProgram {
                 depth: crate::HigherDepth(1),
                 root: crate::LayerPosition(0),
-                layers: alloc::vec![
+                layers: SmallVec::<_, 0, Global>::from_iter([
                     crate::HigherLayer::Guard {
                         tail: crate::LayerPosition(1),
                     },
                     crate::HigherLayer::Redirect(crate::LayerPosition(0)),
-                ],
+                ]),
             }),
             alloc::boxed::Box::from([unit]),
         );
@@ -1776,7 +1779,7 @@ mod tests
             arena.computation_telescope_transport(telescope, here, unit, returned, literal);
         let element_bridge = arena.value_type_bridge(unit_type, unit, literal);
         let evaluation = arena.value_higher_evaluation(
-            alloc::sync::Arc::from([crate::EvaluationDialogues::default()]),
+            ThinShared::from_header_and_iter((), [crate::EvaluationDialogues::default()]),
             alloc::boxed::Box::from([crate::EvaluationComponent {
                 left: unit,
                 right: literal,
@@ -1785,7 +1788,7 @@ mod tests
         );
         let related = arena.computation_related_application(here, (unit, literal), here, ret);
         let quantified = arena.value_quantified_evaluation(
-            alloc::sync::Arc::from([
+            ThinShared::from_header_and_iter((), [
                 crate::QuantifiedStep::Apply {
                     fibre: crate::DeBruijnIndex::from(0_u32),
                     dialogues: crate::EvaluationDialogues::default(),
@@ -1795,27 +1798,30 @@ mod tests
             alloc::boxed::Box::from([thunk, thunk, unit, literal, here]),
         );
         let session = arena.value_type_session(
-            alloc::sync::Arc::new(crate::session::Graph {
-                nodes: alloc::vec![crate::session::Node::End],
+            Shared::new(crate::session::Graph {
+                nodes: SmallVec::<_, 0, Global>::from_iter([crate::session::Node::End]),
                 root: crate::session::State(0),
             }),
             unit_type,
         );
-        let session_path = arena.value_session_path(path_type, alloc::sync::Arc::default(), unit);
+        let session_path = arena.value_session_path(path_type, Shared::default(), unit);
         let flow_type = arena.value_type_flow_universe(quote, quote);
-        let session_flow = arena.value_session_flow(flow_type, alloc::sync::Arc::default(), unit);
+        let session_flow = arena.value_session_flow(flow_type, Shared::default(), unit);
         let element_flow = arena.value_type_flow(unit_type, unit, literal);
         let stay = arena.value_stay(unit);
         let forward_flow = arena.value_forward_flow(
             flow_type,
             map,
             alloc::boxed::Box::from([unit, literal]),
-            alloc::sync::Arc::from([crate::Dialogue::new(), crate::Dialogue::new()]),
+            ThinShared::from_header_and_iter((), [crate::Dialogue::new(), crate::Dialogue::new()]),
         );
         let function_flow = arena.value_function_flow(flow_type, stay, forward_flow);
         let then = arena.value_then(stay, forward_flow, crate::Seam::Sequence);
         let ride = arena.computation_ride(unit_type, stay, literal);
-        let datatype = arena.value_type_data(ConstantIndex::from(0), alloc::vec![quote]);
+        let datatype = arena.value_type_data(
+            ConstantIndex::from(0),
+            SmallVec::<_, 0, Global>::from_iter([quote]),
+        );
         let label = crate::FieldLabel::from(alloc::string::String::from("field"));
         let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([(
             label.clone(),
@@ -1825,11 +1831,15 @@ mod tests
             ConstantIndex::from(0),
             datatype,
             crate::ConstructorTag::from(0),
-            alloc::vec![unit],
+            SmallVec::<_, 0, Global>::from_iter([unit]),
         );
         let record =
             arena.value_record(alloc::collections::BTreeMap::from([(label.clone(), unit)]));
-        let data_case = arena.computation_data_case(constructor, returner, alloc::vec![ret]);
+        let data_case = arena.computation_data_case(
+            constructor,
+            returner,
+            SmallVec::<_, 0, Global>::from_iter([ret]),
+        );
         let projection = arena.computation_record_projection(record, label);
         let fixpoint = arena.computation_fixpoint(lambda, crate::FixpointEvidence::Partial);
         let tuple_projection =
@@ -1846,15 +1856,18 @@ mod tests
         let sigma = arena.value_type_sigma(base, element_path);
         let sigma_split = arena.computation_sigma_split(pair, returner, bind);
         let univalence = arena.value_univalence(pair);
-        let codata = arena.comp_type_codata(ConstantIndex::from(0_usize), alloc::vec![unit]);
+        let codata = arena.comp_type_codata(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::from_iter([unit]),
+        );
         let list_case = arena.computation_list_case(cons, ret, ret);
         let indexed_case = arena.computation_data_case_with_equations(
             constructor,
             returner,
-            alloc::vec![ret],
+            SmallVec::<_, 0, Global>::from_iter([ret]),
             crate::EquationCount::from(1_usize),
         );
-        let nodes = alloc::vec![
+        let nodes = SmallVec::<_, 0, Global>::from_iter([
             AnyNode::ValueType(base),
             AnyNode::ValueType(universe),
             AnyNode::ValueType(product),
@@ -1947,7 +1960,7 @@ mod tests
                     literal,
                 )]),
             )),
-        ];
+        ]);
         (arena, nodes)
     }
 
@@ -2188,7 +2201,7 @@ mod tests
     #[test]
     fn the_frozen_block_keeps_its_order_around_the_retired_tags()
     {
-        let frozen: Vec<_> = NODE_TAG_TABLE
+        let frozen: SmallVec<_, 0, Global> = NODE_TAG_TABLE
             .iter()
             .take(30)
             .map(|row| u8::from(row.tag))
@@ -2197,7 +2210,7 @@ mod tests
             frozen,
             (0_u8 ..= 0x1f)
                 .filter(|tag| !matches!(tag, 0x01 | 0x0B))
-                .collect::<Vec<_>>(),
+                .collect::<SmallVec<_, 0, Global>>(),
             "the unit type and unit value tags are retired; no other frozen byte moved"
         );
     }
@@ -2207,7 +2220,7 @@ mod tests
     {
         assert_eq!(super::SHARING_BLOCK_FIRST, WireTag::from(0x20));
         assert_eq!(super::SHARING_BLOCK_LAST, WireTag::from(0x27));
-        let expected: Vec<_> = (0_u8 ..= 0x1f)
+        let expected: SmallVec<_, 0, Global> = (0_u8 ..= 0x1f)
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
             .chain([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x38, 0x39, 0x3A])
@@ -2216,7 +2229,8 @@ mod tests
             .chain(0x5d ..= 0x6b)
             .chain([0x6D, 0x6E, 0x6F, 0x6C, 0x70, 0x71, 0x72, 0x73])
             .collect();
-        let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
+        let actual: SmallVec<_, 0, Global> =
+            NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);
         for retired in [0x01_u8, 0x0B, 0x28, 0x29] {
             assert!(

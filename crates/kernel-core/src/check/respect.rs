@@ -291,6 +291,10 @@ pub(super) fn obliged(
 ///   each conversion runs under its budget.
 /// - measure: the rules left.
 ///
+/// # Cost
+/// - allocation: the field count of each constructor, growth within the
+///   declaration's constructors
+///
 /// # Adequacy
 /// - hypothesis: L3 — over the circle, a fixpoint recursing through both
 ///   inverse letters is admitted, and a case reading the letter as written is
@@ -688,6 +692,11 @@ pub(super) enum Sethood
 ///   declaration expanded once; not recursion.
 /// - measure: the declarations not yet expanded, then the field types pending.
 ///
+/// # Cost
+/// - allocation: the worklist of pending field types and the set of expanded
+///   declarations, growth within the entries' data declarations and their
+///   constructor fields
+///
 /// # Adequacy
 /// - hypothesis: L3 — as the checker's reading: the integers are a set and the
 ///   circle is not.
@@ -1069,6 +1078,10 @@ where
 /// # Termination
 /// - reason: one `for` loop over the declaration's finite parameters.
 /// - measure: the parameters left.
+///
+/// # Cost
+/// - allocation: the shifted arguments and the instantiated field type, growth
+///   within the declaration's parameters
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`lawful`]: the circle has no parameters, and a

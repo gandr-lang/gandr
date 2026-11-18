@@ -225,6 +225,7 @@ pub use crate::decl::DataFixpoint;
 pub use crate::decl::Declaration;
 pub use crate::decl::DeclarationBuilder;
 pub use crate::decl::DeclarationContent;
+pub use crate::decl::IndexedTable;
 pub use crate::decl::LevelParamCount;
 pub use crate::decl::LevelSignature;
 pub use crate::decl::MarkedDeclaration;

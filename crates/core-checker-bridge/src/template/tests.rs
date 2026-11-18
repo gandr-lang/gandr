@@ -157,7 +157,7 @@ fn every_member_admits_as_its_plain_replay()
         let certificate = Certificate {
             source: step.source,
             target: step.target,
-            steps: Vec::from([*step]),
+            steps: gandr_kernel_data::SmallVec::from_iter([*step]),
         };
         let plain = gandr_kernel_core::stage::replay(
             &mut arena,
@@ -488,7 +488,7 @@ fn families_keep_programs_and_decisions_separate()
     let certificate = Certificate {
         source: other.source,
         target: other.target,
-        steps,
+        steps: gandr_kernel_data::SmallVec::from_iter(steps),
     };
     let first = harvest(&arena, ProgramId(4), core::slice::from_ref(&certificate)).unwrap();
     let second = harvest(&arena, ProgramId(5), core::slice::from_ref(&certificate)).unwrap();
@@ -505,7 +505,7 @@ fn families_keep_programs_and_decisions_separate()
             .flat_map(|family| &family.members)
             .copied()
             .collect::<Vec<_>>(),
-        certificate.steps
+        certificate.steps.as_slice()
     );
     assert!(first.iter().all(|family| family.program == ProgramId(4)));
     assert!(second.iter().all(|family| family.program == ProgramId(5)));
@@ -628,7 +628,7 @@ fn independent_points_are_checked_with_other_points_rigid()
         let certificate = Certificate {
             source: step.source,
             target: step.target,
-            steps: Vec::from([step]),
+            steps: gandr_kernel_data::SmallVec::from_iter([step]),
         };
         let plain =
             gandr_kernel_core::stage::replay(&mut arena, &[], &certificate, &mut Budget(100_000));
@@ -715,7 +715,7 @@ fn outer_predecessors_share_one_peak_point_and_replay()
         let certificate = Certificate {
             source: step.source,
             target: step.target,
-            steps: Vec::from([*step]),
+            steps: gandr_kernel_data::SmallVec::from_iter([*step]),
         };
         let plain =
             gandr_kernel_core::stage::replay(&mut arena, &[], &certificate, &mut Budget(100_000));
@@ -1044,7 +1044,7 @@ fn serialized_images_reconstruct_the_original_equations()
                 let certificate = Certificate {
                     source: decoded_step.source,
                     target: decoded_step.target,
-                    steps: Vec::from([decoded_step]),
+                    steps: gandr_kernel_data::SmallVec::from_iter([decoded_step]),
                 };
                 let classifier = gandr_kernel_core::stage::replay(
                     &mut decoded,
@@ -1213,7 +1213,7 @@ fn empty_and_malformed_families_preserve_refusals()
     let certificate = Certificate {
         source: missing,
         target: missing,
-        steps: Vec::from([step]),
+        steps: gandr_kernel_data::SmallVec::from_iter([step]),
     };
     assert!(
         matches!(harvest(&arena, ProgramId(0), &[certificate]), Err(StageError::UnknownTerm(id)) if id == missing)
@@ -1342,7 +1342,7 @@ fn member_selection_and_complete_replay_reject_near_misses()
     let corrupt = Certificate {
         source: step.source,
         target: outside,
-        steps: Vec::from([Step {
+        steps: gandr_kernel_data::SmallVec::from_iter([Step {
             target: outside,
             ..step
         }]),

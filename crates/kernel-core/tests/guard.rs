@@ -3,12 +3,15 @@
 //! The conversion that unfolds a guarded fixpoint is witnessed in the replay's
 //! own tests.
 
+use alloc::alloc::Global;
+
 use anodized::spec;
 use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::GuardBreak;
 use gandr_kernel_core::GuardNode;
 use gandr_kernel_core::KernelError;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::ComputationId;
@@ -46,12 +49,15 @@ fn nat(environment: &mut Environment) -> ConstantIndex
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(position, vec![]);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     environment
@@ -70,10 +76,20 @@ fn numeral(
     count: Successors,
 ) -> ValueId
 {
-    let nat_type = arena.value_type_data(nat, vec![]);
-    let mut value = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let mut value = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     for _step in 0 .. count.0 {
-        value = arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![value]);
+        value = arena.value_constructor(
+            nat,
+            nat_type,
+            ConstructorTag::from(1),
+            SmallVec::<_, 0, Global>::from_iter([value]),
+        );
     }
     value
 }
@@ -101,10 +117,18 @@ fn datatype(
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(position, vec![]);
-    let constructors = fields(arena, own);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
+    let constructors = fields(arena, own)
+        .into_iter()
+        .map(|row| row.into_iter().collect())
+        .collect();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let declaration = staging.data(LevelSignature::monomorphic(), vec![], constructors, kind);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        constructors,
+        kind,
+    );
     let declaration = match fixpoint {
         DataFixpoint::Greatest => declaration.coinductive(),
         DataFixpoint::Least => declaration,
@@ -132,7 +156,7 @@ fn stream(
 ) -> ConstantIndex
 {
     datatype(environment, fixpoint, |arena, own| {
-        let nat_type = arena.value_type_data(nat, vec![]);
+        let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
         let returns = arena.comp_type_returner(own);
         let rest = arena.value_type_thunk(returns);
         vec![vec![nat_type, rest]]
@@ -162,7 +186,7 @@ fn delay(
 ) -> ConstantIndex
 {
     datatype(environment, fixpoint, |arena, own| {
-        let nat_type = arena.value_type_data(nat, vec![]);
+        let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
         let returns = arena.comp_type_returner(own);
         let later = arena.value_type_thunk(returns);
         let resumed = arena.comp_type_arrow(nat_type, returns);
@@ -235,11 +259,16 @@ fn construct(
     arena: &mut TermArena,
     family: ConstantIndex,
     tag: ConstructorTag,
-    fields: Vec<ValueId>,
+    fields: impl IntoIterator<Item = ValueId>,
 ) -> ComputationId
 {
-    let datatype = arena.value_type_data(family, vec![]);
-    let value = arena.value_constructor(family, datatype, tag, fields);
+    let datatype = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
+    let value = arena.value_constructor(
+        family,
+        datatype,
+        tag,
+        SmallVec::<_, 0, Global>::from_iter(fields),
+    );
     arena.computation_return(value)
 }
 
@@ -267,7 +296,7 @@ fn repeat(
     n: Successors,
 ) -> (CompTypeId, ComputationId)
 {
-    let stream_type = arena.value_type_data(stream, vec![]);
+    let stream_type = arena.value_type_data(stream, SmallVec::<_, 0, Global>::from_iter([]));
     let expected = arena.comp_type_returner(stream_type);
     let head = numeral(arena, nat, n);
     let rest = call(arena, DeBruijnIndex::from(0));
@@ -299,7 +328,7 @@ fn observer(
 ) -> ConstantIndex
 {
     define(environment, |arena| {
-        let delay_type = arena.value_type_data(delay, vec![]);
+        let delay_type = arena.value_type_data(delay, SmallVec::<_, 0, Global>::from_iter([]));
         let returns = arena.comp_type_returner(delay_type);
         let thunk = arena.value_type_thunk(returns);
         let arrow = arena.comp_type_arrow(thunk, returns);
@@ -328,7 +357,7 @@ fn the_stream_of_ones_is_guarded()
     // type.
     let delay = delay(&mut environment, nat, DataFixpoint::Greatest);
     let never = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
-        let delay_type = arena.value_type_data(delay, vec![]);
+        let delay_type = arena.value_type_data(delay, SmallVec::<_, 0, Global>::from_iter([]));
         let expected = arena.comp_type_returner(delay_type);
         let rest = call(arena, DeBruijnIndex::from(0));
         let later = arena.value_thunk(rest);
@@ -339,9 +368,14 @@ fn the_stream_of_ones_is_guarded()
     });
     assert!(never.is_ok(), "the call stands under `Later`: {never:?}");
     let now = define(&mut environment, |arena| {
-        let delay_type = arena.value_type_data(delay, vec![]);
+        let delay_type = arena.value_type_data(delay, SmallVec::<_, 0, Global>::from_iter([]));
         let one = numeral(arena, nat, Successors(1));
-        let value = arena.value_constructor(delay, delay_type, ConstructorTag::from(0), vec![one]);
+        let value = arena.value_constructor(
+            delay,
+            delay_type,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([one]),
+        );
         (delay_type, value)
     });
     assert!(
@@ -362,8 +396,8 @@ fn the_bind_of_the_delay_model_is_guarded()
     //   Op κ ⇒ return Op (thunk (λx. y ← (force κ) x; (force s) y k))
     // }
     let bind = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
-        let nat_type = arena.value_type_data(nat, vec![]);
-        let delay_type = arena.value_type_data(delay, vec![]);
+        let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+        let delay_type = arena.value_type_data(delay, SmallVec::<_, 0, Global>::from_iter([]));
         let returns = arena.comp_type_returner(delay_type);
         let continuation = arena.comp_type_arrow(nat_type, returns);
         let thunked = arena.value_type_thunk(continuation);
@@ -406,7 +440,11 @@ fn the_bind_of_the_delay_model_is_guarded()
         let op = arena.computation_lambda(op);
         // The case on p: p = 1 under λp. λk.
         let scrutinee = variable(arena, 1);
-        let case = arena.computation_data_case(scrutinee, returns, vec![now, later, op]);
+        let case = arena.computation_data_case(
+            scrutinee,
+            returns,
+            SmallVec::<_, 0, Global>::from_iter([now, later, op]),
+        );
         let body = arena.computation_lambda(case);
         (expected, arena.computation_lambda(body))
     });
@@ -426,7 +464,8 @@ fn a_nested_fixpoint_checks_as_two_walks()
     // fix s. return Cons 1 (thunk (fix t. body)), body as given, s at 1 in it.
     let nested = |environment: &mut Environment, guarded: bool| {
         corecursion(environment, FixpointEvidence::Guarded, |arena| {
-            let stream_type = arena.value_type_data(stream, vec![]);
+            let stream_type =
+                arena.value_type_data(stream, SmallVec::<_, 0, Global>::from_iter([]));
             let expected = arena.comp_type_returner(stream_type);
             let outer = call(arena, DeBruijnIndex::from(1));
             let inner = if guarded {
@@ -468,7 +507,7 @@ fn a_node_that_is_none_of_the_five_is_refused()
     // fix s. return Later (thunk ((force observe) (thunk (force s)))): the call
     // stands in an argument of another function.
     let refused = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
-        let delay_type = arena.value_type_data(delay, vec![]);
+        let delay_type = arena.value_type_data(delay, SmallVec::<_, 0, Global>::from_iter([]));
         let expected = arena.comp_type_returner(delay_type);
         let function = arena.value_constant(observe);
         let forced = arena.computation_force(function);
@@ -498,7 +537,7 @@ fn an_argument_that_holds_the_fixpoint_is_refused()
     let stream = stream(&mut environment, nat, DataFixpoint::Greatest);
     // fix s. λt. return Cons 1 (thunk ((force s) (thunk ((force s) t)))).
     let refused = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
-        let stream_type = arena.value_type_data(stream, vec![]);
+        let stream_type = arena.value_type_data(stream, SmallVec::<_, 0, Global>::from_iter([]));
         let returns = arena.comp_type_returner(stream_type);
         let thunk = arena.value_type_thunk(returns);
         let expected = arena.comp_type_arrow(thunk, returns);
@@ -529,7 +568,7 @@ fn a_fixpoint_that_is_no_call_is_refused()
     let observe = observer(&mut environment, delay);
     // fix s. return Later (thunk ((force observe) s)): the bare s.
     let refused = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
-        let delay_type = arena.value_type_data(delay, vec![]);
+        let delay_type = arena.value_type_data(delay, SmallVec::<_, 0, Global>::from_iter([]));
         let expected = arena.comp_type_returner(delay_type);
         let function = arena.value_constant(observe);
         let forced = arena.computation_force(function);
@@ -556,7 +595,7 @@ fn a_call_through_no_constructor_is_refused()
     let delay = delay(&mut environment, nat, DataFixpoint::Greatest);
     // fix s. force s.
     let refused = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
-        let delay_type = arena.value_type_data(delay, vec![]);
+        let delay_type = arena.value_type_data(delay, SmallVec::<_, 0, Global>::from_iter([]));
         (
             arena.comp_type_returner(delay_type),
             call(arena, DeBruijnIndex::from(0)),
@@ -577,7 +616,7 @@ fn a_let_is_transparent_unless_it_binds_the_fixpoint()
     let stream = stream(&mut environment, nat, DataFixpoint::Greatest);
     // fix s. n ← return 1; return Cons n (thunk (force s)), s at 1 in the body.
     let transparent = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
-        let stream_type = arena.value_type_data(stream, vec![]);
+        let stream_type = arena.value_type_data(stream, SmallVec::<_, 0, Global>::from_iter([]));
         let expected = arena.comp_type_returner(stream_type);
         let one = numeral(arena, nat, Successors(1));
         let bound = arena.computation_return(one);
@@ -593,7 +632,7 @@ fn a_let_is_transparent_unless_it_binds_the_fixpoint()
     );
     // fix s. return Cons 1 (thunk (x ← force s; return x)).
     let refused = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
-        let stream_type = arena.value_type_data(stream, vec![]);
+        let stream_type = arena.value_type_data(stream, SmallVec::<_, 0, Global>::from_iter([]));
         let expected = arena.comp_type_returner(stream_type);
         let bound = call(arena, DeBruijnIndex::from(0));
         let x = arena.value_variable(DeBruijnIndex::from(0));
@@ -637,8 +676,8 @@ fn a_coinductive_datatype_admits_no_fold()
     // fix[<] s. λp. return 0 at Delay → F Nat.
     let fold = |environment: &mut Environment, delay: ConstantIndex| {
         corecursion(environment, FixpointEvidence::StructuralDescent, |arena| {
-            let nat_type = arena.value_type_data(nat, vec![]);
-            let delay_type = arena.value_type_data(delay, vec![]);
+            let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+            let delay_type = arena.value_type_data(delay, SmallVec::<_, 0, Global>::from_iter([]));
             let returns = arena.comp_type_returner(nat_type);
             let expected = arena.comp_type_arrow(delay_type, returns);
             let zero = numeral(arena, nat, Successors(0));
@@ -662,13 +701,17 @@ fn a_coinductive_datatype_admits_no_fold()
     // constructors alone.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let zero = numeral(arena, nat, Successors(0));
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let indexed = staging.indexed(
         LevelSignature::monomorphic(),
-        vec![],
-        (vec![nat_type], vec![vec![]], vec![vec![zero]]),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        (
+            SmallVec::<_, 0, Global>::from_iter([nat_type]),
+            SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([])]),
+            SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([zero])]),
+        ),
         kind,
     );
     assert_eq!(

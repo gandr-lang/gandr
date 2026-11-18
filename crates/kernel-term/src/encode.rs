@@ -53,12 +53,14 @@
 //!   [`encode_named`] writes each named place by its content key, and each
 //!   entry of an earlier segment by that segment's place and its offset there.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::ConstraintRelation;
 use gandr_kernel_strata::Level;
 use quenchant_shape::shape::Maybe;
@@ -162,7 +164,7 @@ struct Assigned
     /// The next free global index.
     next: GlobalIndex,
     /// The first global index of each segment, by place.
-    bases: Vec<GlobalIndex>,
+    bases: SmallVec<GlobalIndex, 0, Global>,
 }
 
 /// The content-keyed subterm interner, carrying the global index counter and
@@ -196,7 +198,7 @@ struct Interner
 {
     /// The frozen assignments of an encoding of the sequence's leading
     /// declarations, which this one continues; none for a whole encoding.
-    base: Option<Arc<Assigned>>,
+    base: Option<Shared<Assigned, Global>>,
     /// Arena node to its assigned global index: the sharing-aware memo, so an
     /// in-arena shared node is walked once.
     by_node: BTreeMap<AnyNode, GlobalIndex>,
@@ -227,17 +229,17 @@ struct Frame
 {
     /// The first global index of each segment this interner wrote, in order,
     /// past the segments of its base.
-    bases: Vec<GlobalIndex>,
+    bases: SmallVec<GlobalIndex, 0, Global>,
     /// The current segment's first global index.
     base: GlobalIndex,
     /// The entries of earlier segments that the current segment reads, first
     /// read first: each one's segment by its place, and its offset there.
-    imports: Vec<(usize, u32)>,
+    imports: SmallVec<(usize, u32), 0, Global>,
     /// The place in `imports` of each entry the current segment reads, by
     /// global index, beside the count of the segment that read it: a place of
     /// an earlier segment is stale. A slot for each entry keeps the lookup to
     /// one load, and a segment allocates nothing to forget the reads before it.
-    imported: Vec<(usize, usize)>,
+    imported: SmallVec<(usize, usize), 0, Global>,
 }
 
 /// How a segment writes an admission position.
@@ -289,17 +291,17 @@ struct Placing
     /// The key of each place.
     names: Names,
     /// The keys the current segment names, first named first.
-    table: Vec<ConstantKey>,
+    table: SmallVec<ConstantKey, 0, Global>,
     /// The entry in `table` of each named place's key, by place, beside the
     /// count of the segment that wrote it: an entry of an earlier segment is
     /// stale. A slot for each place keeps the lookup to one load, and a
     /// segment allocates nothing to forget the entries before it.
-    entries: Vec<(usize, usize)>,
+    entries: SmallVec<(usize, usize), 0, Global>,
     /// The count of the segments opened, which marks the current segment's
     /// entries.
     segment: usize,
     /// The keys the entry being written names, in order.
-    named: Vec<ConstantKey>,
+    named: SmallVec<ConstantKey, 0, Global>,
     /// How the entry being written names a key.
     naming: EntryNaming,
 }
@@ -340,7 +342,7 @@ enum EntryNaming
 /// - witness: `encode::tests::a_placed_encoding_writes_each_position_as_its_place_6845`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Places(Arc<[Option<ConstantIndex>]>);
+pub struct Places(ThinShared<(), Option<ConstantIndex>, Global>);
 
 impl Places
 {
@@ -355,6 +357,10 @@ impl Places
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the places of the first `length` positions, growth within
+    ///   `length`
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`encode_placed`].
     /// - witness: `encode::tests::a_placed_encoding_writes_each_position_as_its_place_6845`
@@ -368,13 +374,14 @@ impl Places
     where
         Order: IntoIterator<Item = ConstantIndex>,
     {
-        let mut places = alloc::vec![None; usize::from(length)];
+        let mut places =
+            SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(None, usize::from(length)));
         for (place, position) in order.into_iter().enumerate() {
             if let Some(slot) = places.get_mut(usize::from(position)) {
                 *slot = Some(ConstantIndex::from(place));
             }
         }
-        Self(Arc::from(places))
+        Self(ThinShared::from_header_and_iter((), places))
     }
 
     /// The place of `position` in rank order, or none for a position with no
@@ -470,14 +477,14 @@ impl AsRef<[u8]> for ConstantKey
 pub struct Names
 {
     /// The key of each place as given, a repeat included.
-    keys: Arc<[Option<ConstantKey>]>,
+    keys: ThinShared<(), Option<ConstantKey>, Global>,
     /// The key that names each place alone: none for a place with no key or
     /// with the key of an earlier place.
-    named: Arc<[Option<ConstantKey>]>,
+    named: ThinShared<(), Option<ConstantKey>, Global>,
     /// Each distinct key beside the first place that holds it, in the order of
     /// the keys: one contiguous run that a binary search reads, which a prefix
     /// of a table entry resolves against.
-    places: Arc<[(ConstantKey, ConstantIndex)]>,
+    places: ThinShared<(), (ConstantKey, ConstantIndex), Global>,
     /// How many first bytes keep its keys apart: one more than the longest run
     /// of first bytes that two of its keys share, or none for fewer than two.
     apart: usize,
@@ -510,8 +517,8 @@ impl Names
     where
         Keys: IntoIterator<Item = Option<ConstantKey>>,
     {
-        let keys: Arc<[Option<ConstantKey>]> = keys.into_iter().collect();
-        let mut places: Vec<(ConstantKey, ConstantIndex)> = keys
+        let keys: ThinShared<(), Option<ConstantKey>, Global> = keys.into_iter().collect();
+        let mut places: SmallVec<(ConstantKey, ConstantIndex), 0, Global> = keys
             .iter()
             .enumerate()
             .filter_map(|(place, key)| key.map(|key| (key, ConstantIndex::from(place))))
@@ -519,7 +526,8 @@ impl Names
         // A stable sort keeps the first place of each key before its repeats,
         // and the deduplication keeps that first place alone.
         places.sort_by_key(|&(key, _)| key);
-        places.dedup_by(|later, earlier| later.0 == earlier.0);
+        let mut last = None;
+        places.retain(|&(key, _)| last.replace(key) != Some(key));
         let apart = places
             .windows(2)
             .filter_map(|pair| {
@@ -537,7 +545,8 @@ impl Names
             })
             .max()
             .unwrap_or_default();
-        let mut named: Vec<Option<ConstantKey>> = alloc::vec![None; keys.len()];
+        let mut named: SmallVec<Option<ConstantKey>, 0, Global> =
+            core::iter::repeat_n(None, keys.len()).collect();
         for &(key, place) in &places {
             if let Some(slot) = named.get_mut(usize::from(place)) {
                 *slot = Some(key);
@@ -578,7 +587,7 @@ impl Names
         Keys: IntoIterator<Item = Option<ConstantKey>>,
     {
         keys.into_iter()
-            .collect::<Option<Vec<ConstantKey>>>()
+            .collect::<Option<SmallVec<ConstantKey, 0, Global>>>()
             .map_or_else(Self::default, |keys| Self::new(keys.into_iter().map(Some)))
     }
 
@@ -721,7 +730,7 @@ impl Names
 struct Ordinals
 {
     /// The positions named outside the block, first named first.
-    named: Vec<ConstantIndex>,
+    named: SmallVec<ConstantIndex, 0, Global>,
     /// Each of them, to its place in `named`.
     places: BTreeMap<ConstantIndex, usize>,
     /// The members of the block the declaration belongs to.
@@ -942,7 +951,8 @@ impl Placing
         else {
             let at = usize::from(place);
             if self.entries.len() <= at {
-                self.entries.resize(at.saturating_add(1), (0, 0));
+                self.entries
+                    .resize(gandr_kernel_data::Count::from(at.saturating_add(1)), (0, 0));
             }
             let (stamp, next) = (self.segment, self.table.len());
             match self.entries.get_mut(at) {
@@ -1020,14 +1030,14 @@ impl Interner
     ///   after its prefix, writes the whole encoding's bytes.
     /// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
     #[spec(
-        captures: [kept = Arc::as_ptr(&base), next = base.next],
+        captures: [kept = Shared::as_ptr(&base), next = base.next],
         ensures: |ret| ret.by_node.is_empty()
                 && ret.by_content.is_empty()
-                && ret.base.as_ref().is_some_and(|held| Arc::as_ptr(held) == kept)
+                && ret.base.as_ref().is_some_and(|held| Shared::as_ptr(held) == kept)
                 && ret.next == next,
     )]
     #[inline]
-    fn after(base: Arc<Assigned>) -> Self
+    fn after(base: Shared<Assigned, Global>) -> Self
     {
         Self {
             next: base.next,
@@ -1186,7 +1196,10 @@ impl Interner
     {
         let slot = usize::try_from(u32::from(global)).unwrap_or(usize::MAX);
         if self.frame.imported.len() <= slot {
-            self.frame.imported.resize(slot.saturating_add(1), (0, 0));
+            self.frame.imported.resize(
+                gandr_kernel_data::Count::from(slot.saturating_add(1)),
+                (0, 0),
+            );
         }
         // Each segment pushes its base, so the count of the bases marks it.
         let (stamp, next) = (self.frame.bases.len(), self.frame.imports.len());
@@ -1464,18 +1477,18 @@ pub struct EncodedPrefix
     /// The keys of each leading segment's table of names, whole, segment after
     /// segment, so that an encoding resumed after them writes each at its own
     /// width.
-    keys: Vec<ConstantKey>,
+    keys: SmallVec<ConstantKey, 0, Global>,
     /// The bytes of each leading segment past its table: its imports and its
     /// declaration, segment after segment.
     rests: EncodedArtifact,
     /// Where each leading segment ends, in `keys` and in `rests`.
-    cuts: Vec<(usize, usize)>,
+    cuts: SmallVec<(usize, usize), 0, Global>,
     /// The admission positions of the abstract types among them.
-    atoms: Vec<MintedAtom>,
+    atoms: SmallVec<MintedAtom, 0, Global>,
     /// How many declarations lead.
     count: usize,
     /// What their encoding assigned, shared by every encoding resumed after it.
-    assigned: Arc<Assigned>,
+    assigned: Shared<Assigned, Global>,
 }
 
 impl EncodedPrefix
@@ -1556,9 +1569,10 @@ pub fn encode_prefix(
     }) {
         return Maybe::Absent(encoded_prefix::Absent::OpenSeal);
     }
-    let mut keys = Vec::new();
+    let mut keys = SmallVec::<_, 0, Global>::new();
     let mut rests = EncodedArtifact::new();
-    let mut cuts = Vec::with_capacity(declarations.len());
+    let mut cuts =
+        SmallVec::<_, 0, Global>::with_capacity(gandr_kernel_data::Count::from(declarations.len()));
     let mut interner = Interner {
         positions: Positions::Artifact(Placing {
             names: names.clone(),
@@ -1587,7 +1601,7 @@ pub fn encode_prefix(
         cuts,
         atoms: minted_atoms(declarations),
         count: declarations.len(),
-        assigned: Arc::new(interner.freeze()),
+        assigned: Shared::new(interner.freeze()),
     })
 }
 
@@ -1630,7 +1644,7 @@ pub fn encode_after(
     out.put_version(tags::FORMAT_VERSION);
     let width = names.width();
     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(width))));
-    let mut interner = Interner::after(Arc::clone(&prefix.assigned));
+    let mut interner = Interner::after(Shared::clone(&prefix.assigned));
     interner.positions = Positions::Artifact(Placing {
         names: names.clone(),
         ..Placing::default()
@@ -1815,7 +1829,7 @@ pub struct KeyedSegment
     /// The segment's bytes.
     image: EncodedArtifact,
     /// The positions the segment names outside its block, first named first.
-    named: Vec<ConstantIndex>,
+    named: SmallVec<ConstantIndex, 0, Global>,
 }
 
 impl KeyedSegment
@@ -1886,7 +1900,7 @@ pub fn keyed_segment(
     }
     let mut interner = Interner {
         positions: Positions::Ordinal(Ordinals {
-            named: Vec::new(),
+            named: SmallVec::<_, 0, Global>::new(),
             places: BTreeMap::new(),
             block,
         }),
@@ -1902,7 +1916,7 @@ pub fn keyed_segment(
     );
     let named = match interner.positions {
         Positions::Ordinal(ordinals) => ordinals.named,
-        Positions::Artifact(_) => Vec::new(),
+        Positions::Artifact(_) => SmallVec::<_, 0, Global>::new(),
     };
     Maybe::Present(KeyedSegment { image, named })
 }
@@ -1943,7 +1957,7 @@ pub fn keyed_segment(
     )
     .then_some(MintedAtom::from(position)),
 )))]
-pub fn minted_atoms(declarations: &[MarkedDeclaration]) -> Vec<MintedAtom>
+pub fn minted_atoms(declarations: &[MarkedDeclaration]) -> SmallVec<MintedAtom, 0, Global>
 {
     minted_places(declarations, ConstantIndex::from(0_usize))
         .map(|place| MintedAtom::from(usize::from(place)))
@@ -2138,13 +2152,13 @@ fn encode_declaration(
     encode_structured_name(out, declaration.name());
     encode_level_signature(out, declaration.levels());
 
-    let mut segment: Vec<EncodedEntry> = Vec::new();
-    let mut data_roots = Vec::new();
-    let mut index_roots = Vec::new();
-    let mut related_roots = Vec::new();
-    let mut cover_roots = Vec::new();
+    let mut segment: SmallVec<EncodedEntry, 0, Global> = SmallVec::<_, 0, Global>::new();
+    let mut data_roots = SmallVec::<_, 0, Global>::new();
+    let mut index_roots = SmallVec::<_, 0, Global>::new();
+    let mut related_roots = SmallVec::<_, 0, Global>::new();
+    let mut cover_roots = SmallVec::<_, 0, Global>::new();
     let mut interface_roots = None;
-    let mut observation_roots = Vec::new();
+    let mut observation_roots = SmallVec::<_, 0, Global>::new();
     let (root_declared, root_body, root_sealed) = match *content {
         DeclarationContent::Data {
             kind,
@@ -2158,7 +2172,7 @@ fn encode_declaration(
                 let roots = group
                     .iter()
                     .map(|id| intern(arena, interner, &mut segment, AnyNode::ValueType(*id)))
-                    .collect::<Vec<_>>();
+                    .collect::<SmallVec<_, 0, Global>>();
                 data_roots.push(roots);
             }
             // The indices after the constructors, so a family indexed by
@@ -2191,7 +2205,7 @@ fn encode_declaration(
                 parameters
                     .iter()
                     .map(|id| intern(arena, interner, &mut segment, AnyNode::ValueType(*id)))
-                    .collect::<Vec<_>>(),
+                    .collect::<SmallVec<_, 0, Global>>(),
             );
             observation_roots = observations
                 .iter()
@@ -2332,7 +2346,7 @@ fn encode_declaration(
     }
     if let DeclarationContent::Codata { .. } = *content {
         for group in [
-            data_roots.first().map_or(&[][..], Vec::as_slice),
+            data_roots.first().map_or(&[][..], SmallVec::as_slice),
             &observation_roots,
         ] {
             out.put_uvarint(WireU64::from(WireUsize::from(group.len())));
@@ -2353,7 +2367,7 @@ fn encode_declaration(
         // type rather than believing them.
         encode_stage_signature(out, declaration.stages());
         out.put_uvarint(WireU64::from(0_u64));
-        let renamed: Vec<ConstantIndex> = declaration
+        let renamed: SmallVec<ConstantIndex, 0, Global> = declaration
             .provenance()
             .iter()
             .map(|&atom| interner.positions.rename(atom))
@@ -2725,6 +2739,10 @@ fn encode_operation_side(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the minted-atom table of abstract-type positions, growth
+///   within the sequence's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 compares a mixed abstract-type, definition and axiom
 ///   sequence with a literal whole-artifact fixture, including names, admission
@@ -2867,18 +2885,18 @@ fn encode_sealing_provenance(
 fn intern(
     arena: &TermArena,
     interner: &mut Interner,
-    segment: &mut Vec<EncodedEntry>,
+    segment: &mut SmallVec<EncodedEntry, 0, Global>,
     root: AnyNode,
 ) -> GlobalIndex
 {
-    let mut stack: Vec<(AnyNode, usize)> = Vec::new();
+    let mut stack: SmallVec<(AnyNode, usize), 0, Global> = SmallVec::<_, 0, Global>::new();
     stack.push((root, 0_usize));
     // The children's indices of the node being written, refilled per node.
-    let mut child_globals: Vec<GlobalIndex> = Vec::new();
+    let mut child_globals: SmallVec<GlobalIndex, 0, Global> = SmallVec::<_, 0, Global>::new();
     // The children as an entry writes them, refilled per node: each global
     // index for the content deduplication, then each reference of the segment
     // for the bytes the segment writes.
-    let mut child_words: Vec<WireU64> = Vec::new();
+    let mut child_words: SmallVec<WireU64, 0, Global> = SmallVec::<_, 0, Global>::new();
     while let Some((node, cursor)) = stack.pop() {
         if interner.node(node).is_some() {
             continue;
@@ -3511,6 +3529,10 @@ fn encode_level_signature(
 ///   on bytes exactly when they are equal.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the level's collected atoms and the appended bytes of its
+///   image, growth within the level's atoms
+///
 /// # Adequacy
 /// - hypothesis: L3 compares complete appended bytes, including a nonempty
 ///   prefix, with literal wire fixtures. Text covers NUL, multibyte UTF-8 and
@@ -3548,7 +3570,7 @@ fn encode_level(
 )
 {
     out.put_uvarint(WireU64::from(u64::from(level.constant_part())));
-    let atoms: Vec<_> = level.atoms().collect();
+    let atoms: SmallVec<_, 0, Global> = level.atoms().collect();
     out.put_uvarint(WireU64::from(WireUsize::from(atoms.len())));
     for (variable, offset) in atoms {
         out.put_uvarint(WireU64::from(u64::from(u32::from(variable.index()))));
@@ -3975,9 +3997,11 @@ fn seam_tag(seam: crate::Seam) -> WireTag
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::string::String;
-    use alloc::vec::Vec;
 
+    use gandr_kernel_data::SmallVec;
+    use gandr_kernel_data::ThinShared;
     use quenchant_shape::shape::Maybe;
 
     use super::AnyNode;
@@ -4054,7 +4078,7 @@ mod tests
             ("x".repeat(0x3fff), &[0xff, 0x7f]),
             ("x".repeat(0x4000), &[0x80, 0x80, 1]),
         ];
-        let mut expected: Vec<u8> = Vec::new();
+        let mut expected: SmallVec<u8, 0, Global> = SmallVec::<_, 0, Global>::new();
         for &(ref text, length) in cases {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
@@ -4122,7 +4146,7 @@ mod tests
                 7, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
             ]),
         ];
-        let mut expected: Vec<u8> = Vec::new();
+        let mut expected: SmallVec<u8, 0, Global> = SmallVec::<_, 0, Global>::new();
         for &(ref literal, bytes) in cases {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
@@ -4167,7 +4191,7 @@ mod tests
             (x.clone(), &[0, 1, 0, 0]),
             (mixed, &[7, 2, 2, 1, 0x81, 1, 0]),
         ];
-        let mut expected: Vec<u8> = Vec::new();
+        let mut expected: SmallVec<u8, 0, Global> = SmallVec::<_, 0, Global>::new();
         for &(ref level, bytes) in levels {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
@@ -4177,22 +4201,28 @@ mod tests
             expected.extend_from_slice(bytes);
             assert_eq!(out.as_image().as_ref(), expected.as_slice());
         }
-        let signature = LevelSignature::new(LevelParamCount::from(2_u32), alloc::vec![
-            gandr_kernel_strata::LandmarkConstraint::leq(x.clone(), y.clone())
-                .expect("variable-only sides"),
-            gandr_kernel_strata::LandmarkConstraint::equal(y, x).expect("variable-only sides"),
-        ]);
+        let signature = LevelSignature::new(
+            LevelParamCount::from(2_u32),
+            SmallVec::<_, 0, Global>::from_iter([
+                gandr_kernel_strata::LandmarkConstraint::leq(x.clone(), y.clone())
+                    .expect("variable-only sides"),
+                gandr_kernel_strata::LandmarkConstraint::equal(y, x).expect("variable-only sides"),
+            ]),
+        );
         let signatures: &[(LevelSignature, &[u8])] = &[
             (LevelSignature::monomorphic(), &[0, 0]),
             (
-                LevelSignature::new(LevelParamCount::from(u32::MAX), Vec::new()),
+                LevelSignature::new(
+                    LevelParamCount::from(u32::MAX),
+                    SmallVec::<_, 0, Global>::new(),
+                ),
                 &[0xff, 0xff, 0xff, 0xff, 0x0f, 0],
             ),
             (signature, &[
                 2, 2, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 0,
             ]),
         ];
-        let mut expected: Vec<u8> = Vec::new();
+        let mut expected: SmallVec<u8, 0, Global> = SmallVec::<_, 0, Global>::new();
         for &(ref signature, bytes) in signatures {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
@@ -4459,7 +4489,7 @@ mod tests
                     t0,
                     v0,
                     [v1].into(),
-                    alloc::sync::Arc::from([Vec::new()]),
+                    ThinShared::from_header_and_iter((), [SmallVec::<_, 0, Global>::new()]),
                 )),
                 &[first, second, third],
                 &[0x4C, 1, 0, 3, 0x81, 1, 0x80, 0x80, 1],
@@ -4490,7 +4520,7 @@ mod tests
                 &[0x68, 3, 0x81, 1, 0x80, 0x80, 1, 3, 0x81, 1],
             ),
         ];
-        let mut words: Vec<super::WireU64> = Vec::new();
+        let mut words: SmallVec<super::WireU64, 0, Global> = SmallVec::<_, 0, Global>::new();
         for &(node, children, expected) in cases {
             words.clear();
             words.extend(
@@ -4521,7 +4551,7 @@ mod tests
         let reversed = arena.value_tuple(&[variable, first_unit]);
         let mut interner = super::Interner::new();
         interner.open_segment();
-        let mut first_segment = Vec::new();
+        let mut first_segment = SmallVec::<_, 0, Global>::new();
         assert_eq!(
             super::intern(
                 &arena,
@@ -4562,7 +4592,7 @@ mod tests
         // references from there, and the unit of the first segment is its
         // import zero, written as 2 * 0 + 1.
         interner.open_segment();
-        let mut second_segment = Vec::new();
+        let mut second_segment = SmallVec::<_, 0, Global>::new();
         assert_eq!(
             super::intern(
                 &arena,
@@ -4627,7 +4657,7 @@ mod tests
         let plain_list = arena.value_type_list(integer);
         let staged_list = arena.value_type_list(staged);
         let mut interner = super::Interner::new();
-        let mut segment = Vec::new();
+        let mut segment = SmallVec::<_, 0, Global>::new();
         let plain = super::intern(
             &arena,
             &mut interner,
@@ -4674,10 +4704,10 @@ mod tests
         let quote = builder.arena().value_quote(abstract_type);
         let definition = builder
             .def(LevelSignature::monomorphic(), universe, quote)
-            .named(StructuredName::from(alloc::vec![
+            .named(StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
                 NameSegment::from_text(String::from("a")).expect("segment"),
                 NameSegment::from_text(String::from("é")).expect("segment"),
-            ]));
+            ])));
         let axiom =
             DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), abstract_type);
         let declarations = [
@@ -4726,16 +4756,16 @@ mod tests
         let unit_type = builder.arena().value_type_unit();
         let unit = builder.arena().value_unit();
         let wrapped = builder.arena().value_tuple(&[unit]);
-        let related = alloc::vec![crate::decl::RelatedEndpoints {
+        let related = SmallVec::<_, 0, Global>::from_iter([crate::decl::RelatedEndpoints {
             left: unit,
             right: wrapped,
-            dialogue: alloc::vec![
+            dialogue: SmallVec::<_, 0, Global>::from_iter([
                 ConversionDecision::Decompose,
                 ConversionDecision::ReturnEta {
                     side: ConversionSide::Right,
-                }
-            ],
-        }];
+                },
+            ]),
+        }]);
         let definition = builder
             .def(LevelSignature::monomorphic(), unit_type, unit)
             .relating(related.clone());
@@ -4811,7 +4841,10 @@ mod tests
         let mut builder = DeclarationBuilder::new(&mut arena);
         let unit_type = builder.arena().value_type_unit();
         let unit = builder.arena().value_unit();
-        let laws = alloc::vec![ConstantIndex::from(5_usize), ConstantIndex::from(2_usize)];
+        let laws = SmallVec::<_, 0, Global>::from_iter([
+            ConstantIndex::from(5_usize),
+            ConstantIndex::from(2_usize),
+        ]);
         let definition = builder
             .def(LevelSignature::monomorphic(), unit_type, unit)
             .lawful(laws.clone());
@@ -4876,22 +4909,25 @@ mod tests
         let unit_type = builder.arena().value_type_unit();
         let unit = builder.arena().value_unit();
         let stages = StageSignature::new(
-            alloc::vec![
+            SmallVec::<_, 0, Global>::from_iter([
                 StageBound::Unbounded,
-                StageBound::Below(StageBinder::from(0_usize))
-            ],
-            alloc::vec![
+                StageBound::Below(StageBinder::from(0_usize)),
+            ]),
+            SmallVec::<_, 0, Global>::from_iter([
                 StageMark::new(
-                    alloc::vec![PlacedChild::from(0_usize), PlacedChild::from(1_usize)],
+                    SmallVec::<_, 0, Global>::from_iter([
+                        PlacedChild::from(0_usize),
+                        PlacedChild::from(1_usize),
+                    ]),
                     StageBinder::from(0_usize),
                     StageReach::Below(crate::term::StageDepth::ONE),
                 ),
                 StageMark::new(
-                    alloc::vec![PlacedChild::from(1_usize)],
+                    SmallVec::<_, 0, Global>::from_iter([PlacedChild::from(1_usize)]),
                     StageBinder::from(1_usize),
                     StageReach::At,
                 ),
-            ],
+            ]),
         );
         let definition = builder
             .def(LevelSignature::monomorphic(), unit_type, unit)
@@ -4927,7 +4963,9 @@ mod tests
             site: crate::error::MalformedSite::StageSignature,
         });
         for slot in [&[1_u8, 1][..], &[1_u8, 0, 1, 1, 0, 0][..]] {
-            let mut forged = expected.get(.. 23).unwrap_or_default().to_vec();
+            let mut forged = SmallVec::<_, 0, Global>::from_iter(
+                expected.get(.. 23).unwrap_or_default().iter().copied(),
+            );
             forged.extend_from_slice(slot);
             forged.extend_from_slice(&[0, 0, 0]);
             assert_eq!(
@@ -4947,24 +4985,25 @@ mod tests
         let unit = builder.arena().value_unit();
         // `f(x) ==> S(x)`, f at position 0 and S constructor 1 of the data
         // declaration at position 3.
-        let rules = crate::operation_rules::OperationRules::new(alloc::vec![
-            crate::operation_rules::OperationRule::new(
-                alloc::boxed::Box::from([
-                    OperationNode::Operation {
-                        constant: ConstantIndex::from(0_usize),
-                        arity: crate::presented::FieldCount::from(1_usize),
-                    },
-                    OperationNode::Variable(crate::presented::RuleVariable::from(0_u32)),
-                ]),
-                alloc::boxed::Box::from([
-                    OperationNode::Constructor {
-                        family: ConstantIndex::from(3_usize),
-                        tag: crate::term::ConstructorTag::from(1_usize),
-                    },
-                    OperationNode::Results(crate::presented::FieldCount::from(4_usize)),
-                ]),
-            ),
-        ]);
+        let rules =
+            crate::operation_rules::OperationRules::new(SmallVec::<_, 0, Global>::from_iter([
+                crate::operation_rules::OperationRule::new(
+                    alloc::boxed::Box::from([
+                        OperationNode::Operation {
+                            constant: ConstantIndex::from(0_usize),
+                            arity: crate::presented::FieldCount::from(1_usize),
+                        },
+                        OperationNode::Variable(crate::presented::RuleVariable::from(0_u32)),
+                    ]),
+                    alloc::boxed::Box::from([
+                        OperationNode::Constructor {
+                            family: ConstantIndex::from(3_usize),
+                            tag: crate::term::ConstructorTag::from(1_usize),
+                        },
+                        OperationNode::Results(crate::presented::FieldCount::from(4_usize)),
+                    ]),
+                ),
+            ]));
         let definition = builder
             .def(LevelSignature::monomorphic(), unit_type, unit)
             .ruled(rules.clone());
@@ -5055,7 +5094,7 @@ mod tests
                 crate::Magnitude::from_decimal_text(alloc::string::String::from("7"))
                     .expect("digits"),
             ))),
-            branches: alloc::vec![point, looped],
+            branches: SmallVec::<_, 0, Global>::from_iter([point, looped]),
         });
         let composed = cover.mint(Step::Compose(below));
         for cases in [
@@ -5069,27 +5108,27 @@ mod tests
         ] {
             let _other = cover.mint(Step::Split {
                 cases,
-                branches: alloc::vec![point],
+                branches: SmallVec::<_, 0, Global>::from_iter([point]),
             });
         }
         let _root = cover.mint(Step::Split {
             cases: Cases::Data {
                 family: ConstantIndex::from(3_usize),
-                constructors: alloc::vec![(
+                constructors: SmallVec::<_, 0, Global>::from_iter([(
                     crate::term::ConstructorTag::from(0_usize),
                     crate::presented::FieldCount::from(2_usize),
-                )],
-                loops: alloc::vec![Loop::new(
+                )]),
+                loops: SmallVec::<_, 0, Global>::from_iter([Loop::new(
                     ConstantIndex::from(4_usize),
                     crate::CellIndex::from(0_usize),
-                )],
+                )]),
             },
-            branches: alloc::vec![composed, looped],
+            branches: SmallVec::<_, 0, Global>::from_iter([composed, looped]),
         });
-        let covers = alloc::vec![Covered {
+        let covers = SmallVec::<_, 0, Global>::from_iter([Covered {
             root: returned,
             cover: cover.clone(),
-        }];
+        }]);
         let definition = builder
             .def(LevelSignature::monomorphic(), unit_type, body)
             .covered(covers);
@@ -5133,7 +5172,7 @@ mod tests
             .len()
             .saturating_sub(alone.as_image().as_ref().len())
             .saturating_add(1);
-        let mut unknown = image.as_ref().to_vec();
+        let mut unknown = SmallVec::<_, 0, Global>::from_iter(image.as_ref().iter().copied());
         if let Some(tag) = unknown.get_mut(first_step) {
             *tag = 9;
         }
@@ -5164,13 +5203,14 @@ mod tests
         let integer = builder.arena().value_type_base(BaseType::Integer);
         let head = builder.arena().comp_type_returner(integer);
         let own = builder.arena().value_variable(DeBruijnIndex::from(0_u32));
-        let tail = builder
-            .arena()
-            .comp_type_codata(ConstantIndex::from(0_usize), alloc::vec![own]);
+        let tail = builder.arena().comp_type_codata(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        );
         let codata = builder.codata(
             LevelSignature::monomorphic(),
-            alloc::vec![parameter],
-            alloc::vec![head, tail],
+            SmallVec::<_, 0, Global>::from_iter([parameter]),
+            SmallVec::<_, 0, Global>::from_iter([head, tail]),
             kind,
         );
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, codata)];
@@ -5216,7 +5256,7 @@ mod tests
         );
         // The data kind over the same bytes reads the observation roots as a
         // constructor's fields, and refuses them as computation types.
-        let mut plain = image.as_ref().to_vec();
+        let mut plain = SmallVec::<_, 0, Global>::from_iter(image.as_ref().iter().copied());
         if let Some(kind) = plain.get_mut(kind_at) {
             *kind = u8::from(crate::tags::KIND_DATA);
         }
@@ -5253,7 +5293,8 @@ mod tests
                     builder.literal_identity(LevelSignature::monomorphic(), declared, test);
                 let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, identity)];
                 let bytes = super::encode(&arena, &declarations);
-                let image = bytes.as_image().as_ref().to_vec();
+                let image =
+                    SmallVec::<_, 0, Global>::from_iter(bytes.as_image().as_ref().iter().copied());
                 assert_eq!(
                     image.get(12).copied(),
                     Some(u8::from(crate::tags::KIND_LITERAL_IDENTITY))
@@ -5330,28 +5371,33 @@ mod tests
         let kind = builder
             .arena()
             .value_type_universe(GroundSort::Value, Level::zero());
-        let own = builder
-            .arena()
-            .value_type_data(crate::ConstantIndex::from(0_usize), alloc::vec![]);
+        let own = builder.arena().value_type_data(
+            crate::ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let tag = |ordinal: usize| RuleNode::Constructor(crate::ConstructorTag::from(ordinal));
         let variable = RuleNode::Variable(RuleVariable::from(0_u32));
         // The circle: `base`, `loop(x)`, `unloop(x)`, with
         // `loop(unloop(x)) ==> x` and `unloop(loop(x)) ==> x`.
-        let rules = alloc::vec![
+        let rules = SmallVec::<_, 0, Global>::from_iter([
             PresentedRule::new(
-                alloc::vec![tag(1), tag(2), variable].into(),
-                alloc::vec![variable].into()
+                SmallVec::<_, 0, Global>::from_iter([tag(1), tag(2), variable]).into(),
+                SmallVec::<_, 0, Global>::from_iter([variable]).into(),
             ),
             PresentedRule::new(
-                alloc::vec![tag(2), tag(1), variable].into(),
-                alloc::vec![variable].into()
+                SmallVec::<_, 0, Global>::from_iter([tag(2), tag(1), variable]).into(),
+                SmallVec::<_, 0, Global>::from_iter([variable]).into(),
             ),
-        ];
+        ]);
         let data = builder
             .data(
                 LevelSignature::monomorphic(),
-                alloc::vec![],
-                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::new(),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
                 kind,
             )
             .presented(Presentation::new(rules.clone()));
@@ -5430,20 +5476,26 @@ mod tests
         let kind = builder
             .arena()
             .value_type_universe(GroundSort::Value, Level::zero());
-        let own = builder
-            .arena()
-            .value_type_data(crate::ConstantIndex::from(0_usize), alloc::vec![]);
+        let own = builder.arena().value_type_data(
+            crate::ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let base = || {
             alloc::boxed::Box::from([RuleNode::Constructor(crate::ConstructorTag::from(0_usize))])
         };
-        let cells = FreeCells::new(crate::ConstantIndex::from(0_usize), alloc::vec![
-            FreeCell::new(base(), base())
-        ]);
+        let cells = FreeCells::new(
+            crate::ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+        );
         let data = builder
             .data(
                 LevelSignature::monomorphic(),
-                alloc::vec![],
-                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::new(),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
                 kind,
             )
             .presented(Presentation::words(cells.clone()));
@@ -5505,14 +5557,19 @@ mod tests
         let kind = builder
             .arena()
             .value_type_universe(GroundSort::Value, Level::zero());
-        let own = builder
-            .arena()
-            .value_type_data(crate::ConstantIndex::from(0_usize), alloc::vec![]);
+        let own = builder.arena().value_type_data(
+            crate::ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let data = builder
             .data(
                 LevelSignature::monomorphic(),
-                alloc::vec![],
-                alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::new(),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
                 kind,
             )
             .presented(Presentation::words(wrapped.clone()));
@@ -5598,7 +5655,7 @@ mod tests
             image.as_ref()
         );
         // The plain kind over the same bytes leaves the interface unread.
-        let mut plain = image.as_ref().to_vec();
+        let mut plain = SmallVec::<_, 0, Global>::from_iter(image.as_ref().iter().copied());
         if let Some(kind) = plain.get_mut(kind_at) {
             *kind = u8::from(crate::tags::KIND_ABSTRACT_TYPE);
         }
@@ -5676,7 +5733,7 @@ mod tests
             image.as_ref()
         );
         // The interfaced kind over the same bytes leaves the law unread.
-        let mut lawless = image.as_ref().to_vec();
+        let mut lawless = SmallVec::<_, 0, Global>::from_iter(image.as_ref().iter().copied());
         if let Some(kind) = lawless.get_mut(kind_at) {
             *kind = u8::from(crate::tags::KIND_ABSTRACT_INTERFACED);
         }
@@ -5701,12 +5758,18 @@ mod tests
         let plain_def = builder.def(LevelSignature::monomorphic(), unit_type, unit);
         let lawful_def = plain_def
             .clone()
-            .lawful(alloc::vec![crate::ConstantIndex::from(0_usize)]);
+            .lawful(SmallVec::<_, 0, Global>::from_iter([
+                crate::ConstantIndex::from(0_usize),
+            ]));
         let builder = DeclarationBuilder::new(&mut arena);
         let plain_data = builder.indexed(
             LevelSignature::monomorphic(),
-            alloc::vec![],
-            (alloc::vec![], alloc::vec![alloc::vec![]], alloc::vec![]),
+            SmallVec::<_, 0, Global>::new(),
+            (
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::new()]),
+                SmallVec::<_, 0, Global>::new(),
+            ),
             kind,
         );
         let encoded = |declaration: &Declaration| {
@@ -5714,7 +5777,13 @@ mod tests
                 AdmissionMark::Checked,
                 declaration.clone(),
             )];
-            super::encode(&arena, &marked).as_image().as_ref().to_vec()
+            SmallVec::<_, 0, Global>::from_iter(
+                super::encode(&arena, &marked)
+                    .as_image()
+                    .as_ref()
+                    .iter()
+                    .copied(),
+            )
         };
         // Each row: the plain declaration, its role, the role kind, the
         // counts the holder writes after the plain segment, and the role tag.
@@ -5799,8 +5868,12 @@ mod tests
         let builder = DeclarationBuilder::new(&mut arena);
         let inductive = builder.indexed(
             LevelSignature::monomorphic(),
-            alloc::vec![],
-            (alloc::vec![], alloc::vec![alloc::vec![]], alloc::vec![]),
+            SmallVec::<_, 0, Global>::new(),
+            (
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::new()]),
+                SmallVec::<_, 0, Global>::new(),
+            ),
             kind,
         );
         let encoded = |declaration: &Declaration| {
@@ -5808,7 +5881,13 @@ mod tests
                 AdmissionMark::Checked,
                 declaration.clone(),
             )];
-            super::encode(&arena, &marked).as_image().as_ref().to_vec()
+            SmallVec::<_, 0, Global>::from_iter(
+                super::encode(&arena, &marked)
+                    .as_image()
+                    .as_ref()
+                    .iter()
+                    .copied(),
+            )
         };
         let coinductive = inductive.clone().coinductive();
         let (least, greatest) = (encoded(&inductive), encoded(&coinductive));
@@ -5855,10 +5934,12 @@ mod tests
         let at = builder.arena().value_unit();
         let data = builder.indexed(
             LevelSignature::monomorphic(),
-            alloc::vec![],
-            (alloc::vec![index], alloc::vec![alloc::vec![]], alloc::vec![
-                alloc::vec![at]
-            ]),
+            SmallVec::<_, 0, Global>::new(),
+            (
+                SmallVec::<_, 0, Global>::from_iter([index]),
+                SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::new()]),
+                SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([at])]),
+            ),
             kind,
         );
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, data)];
@@ -5884,7 +5965,10 @@ mod tests
         };
         assert_eq!(indices.len(), 1, "the index classifier is read back");
         assert_eq!(
-            results.iter().map(Vec::len).collect::<Vec<_>>(),
+            results
+                .iter()
+                .map(|result| result.len())
+                .collect::<SmallVec<_, 0, Global>>(),
             [1],
             "the constructor's result index is read back"
         );
@@ -5895,7 +5979,7 @@ mod tests
             image.as_ref()
         );
         // The plain kind over the same bytes leaves the indices unread.
-        let mut plain = image.as_ref().to_vec();
+        let mut plain = SmallVec::<_, 0, Global>::from_iter(image.as_ref().iter().copied());
         if let Some(kind) = plain.get_mut(12) {
             *kind = u8::from(crate::tags::KIND_DATA);
         }
@@ -5916,8 +6000,8 @@ mod tests
             let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
             let declared = arena.value_type_unit();
             let body = arena.value_unit();
-            let mut declarations = Vec::new();
-            let mut expected = Vec::new();
+            let mut declarations = SmallVec::<_, 0, Global>::new();
+            let mut expected = SmallVec::<_, 0, Global>::new();
             for position in 0_u8 .. 6 {
                 let builder = DeclarationBuilder::new(&mut arena);
                 let is_atom = mask.checked_shr(u32::from(position)).unwrap_or(0) & 1 != 0;
@@ -5948,7 +6032,7 @@ mod tests
                 super::minted_atoms(&declarations)
                     .into_iter()
                     .map(usize::from)
-                    .collect::<Vec<_>>(),
+                    .collect::<SmallVec<_, 0, Global>>(),
                 expected
             );
             let mut out = EncodedArtifact::new();
@@ -5961,11 +6045,11 @@ mod tests
             );
             // With no names the table is empty, and each atom at the place p
             // is written as 2p + 1.
-            let mut bytes = alloc::vec![
+            let mut bytes = SmallVec::<_, 0, Global>::from_iter([
                 0xde_u8,
                 0xad,
-                u8::try_from(expected.len()).expect("at most six atoms")
-            ];
+                u8::try_from(expected.len()).expect("at most six atoms"),
+            ]);
             if !expected.is_empty() {
                 bytes.push(0);
                 bytes.extend(expected.into_iter().map(|position| {
@@ -5976,20 +6060,23 @@ mod tests
             assert_eq!(out.as_image().as_ref(), bytes.as_slice());
         }
         for (provenance, expected) in [
-            (Vec::new(), alloc::vec![0]),
             (
-                alloc::vec![
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([0]),
+            ),
+            (
+                SmallVec::<_, 0, Global>::from_iter([
                     ConstantIndex::from(129_usize),
                     ConstantIndex::from(0_usize),
-                    ConstantIndex::from(128_usize)
-                ],
-                alloc::vec![3, 0x81, 1, 0, 0x80, 1],
+                    ConstantIndex::from(128_usize),
+                ]),
+                SmallVec::<_, 0, Global>::from_iter([3, 0x81, 1, 0, 0x80, 1]),
             ),
         ] {
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
             super::encode_sealing_provenance(&mut out, &provenance);
-            let mut bytes = alloc::vec![0xde_u8, 0xad];
+            let mut bytes = SmallVec::<_, 0, Global>::from_iter([0xde_u8, 0xad]);
             bytes.extend(expected);
             assert_eq!(out.as_image().as_ref(), bytes.as_slice());
         }
@@ -6017,9 +6104,9 @@ mod tests
         let quote = builder.arena().value_quote(abstract_type);
         let definition = builder
             .def(LevelSignature::monomorphic(), universe, quote)
-            .named(StructuredName::from(alloc::vec![
+            .named(StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
                 NameSegment::from_text(String::from("a")).expect("segment"),
-            ]));
+            ])));
         let axiom =
             DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), abstract_type);
         let leading = [
@@ -6032,7 +6119,7 @@ mod tests
                 .map(|byte| Some(super::ConstantKey::from([byte; super::CONSTANT_KEY_LEN]))),
         );
         let namings = [super::Names::default(), named];
-        let prefixes: Vec<Vec<_>> = namings
+        let prefixes: SmallVec<SmallVec<_, 0, Global>, 0, Global> = namings
             .iter()
             .map(|names| {
                 (0 ..= leading.len())
@@ -6067,7 +6154,7 @@ mod tests
             integer,
             super::SealScope::Open,
         );
-        let whole: Vec<_> = leading
+        let whole: SmallVec<_, 0, Global> = leading
             .iter()
             .cloned()
             .chain([
@@ -6186,7 +6273,9 @@ mod tests
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
             MarkedDeclaration::new(
                 AdmissionMark::Checked,
-                declaration.named(StructuredName::from(alloc::vec![segment])),
+                declaration.named(StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
+                    segment,
+                ]))),
             )
         };
         let unit = |arena: &mut TermArena, name: &str| {
@@ -6262,7 +6351,7 @@ mod tests
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
             MarkedDeclaration::new(
                 AdmissionMark::Checked,
-                declaration.named(StructuredName::from(alloc::vec![segment])),
+                declaration.named(StructuredName::from(SmallVec::from_iter([segment]))),
             )
         };
         let unit = |arena: &mut TermArena, name: &str| {
@@ -6318,12 +6407,15 @@ mod tests
                 .declaration_segments()
                 .last()
                 .expect("a last segment");
-            let bytes = image
-                .as_image()
-                .as_ref()
-                .get(usize::from(span.start) .. usize::from(span.end))
-                .expect("the segment's bytes")
-                .to_vec();
+            let bytes = SmallVec::<_, 0, Global>::from_iter(
+                image
+                    .as_image()
+                    .as_ref()
+                    .get(usize::from(span.start) .. usize::from(span.end))
+                    .expect("the segment's bytes")
+                    .iter()
+                    .copied(),
+            );
             (decoded, bytes)
         };
         let short_named = super::encode_named(&arena, &short, None, &short_names);
@@ -6459,14 +6551,14 @@ mod tests
                 .as_ref()
                 .get(usize::from(span.start) ..)
                 .and_then(|segment| segment.get(.. usize::from(names.width()).saturating_add(1)))
-                .map(<[u8]>::to_vec)
+                .map(|table| SmallVec::<_, 0, Global>::from_iter(table.iter().copied()))
         };
         assert_eq!(
             (
                 narrow.as_image().as_ref().get(6).copied(),
                 second_table(&narrow, &apart)
             ),
-            (Some(8), Some(alloc::vec![1, 1, 1, 1, 1, 1, 1, 1, 1])),
+            (Some(8), Some(SmallVec::<u8, 0, Global>::from_iter([1; 9]))),
             "the header gives one word, and the table writes the first word of the key"
         );
         assert_eq!(
@@ -6474,7 +6566,7 @@ mod tests
                 wide.as_image().as_ref().get(6).copied(),
                 second_table(&wide, &close)
             ),
-            (Some(9), Some(alloc::vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1])),
+            (Some(9), Some(SmallVec::<u8, 0, Global>::from_iter([1; 10]))),
             "a later key that shares the first word widens the earlier segment's table too"
         );
         let leading = declarations.get(.. 2).expect("two leading declarations");
@@ -6569,11 +6661,13 @@ mod tests
                 .as_ref()
                 .get(table_at .. table_at.saturating_add(length))
                 .expect("the atom table")
-                .to_vec()
+                .iter()
+                .copied()
+                .collect::<SmallVec<_, 0, Global>>()
         };
         // One atom, a table of its key cut to one word, then the atom as twice
         // its entry in that table.
-        let mut keyed = alloc::vec![1_u8, 1];
+        let mut keyed = SmallVec::<_, 0, Global>::from_iter([1_u8, 1]);
         keyed.extend_from_slice(&[1_u8; 8]);
         keyed.push(0);
         let short_named = super::encode_named(&arena, &short, None, &short_names);
@@ -6595,7 +6689,9 @@ mod tests
                 .as_ref()
                 .get(usize::from(span.start) .. usize::from(span.end))
                 .expect("the segment's bytes")
-                .to_vec();
+                .iter()
+                .copied()
+                .collect::<SmallVec<_, 0, Global>>();
             (super::minted_atoms(decoded.declarations()), bytes)
         };
         let (short_atoms, short_segment) = segment(&short_named, &short_names, 0);
@@ -6615,7 +6711,10 @@ mod tests
                 header(&super::encode(&arena, &short), 3),
                 header(&super::encode(&arena, &long), 3)
             ),
-            (alloc::vec![1_u8, 0, 1], alloc::vec![1_u8, 0, 3]),
+            (
+                SmallVec::<_, 0, Global>::from_iter([1_u8, 0, 1]),
+                SmallVec::<_, 0, Global>::from_iter([1_u8, 0, 3])
+            ),
             "bare, the atom's place moves with the insertion"
         );
     }
@@ -6636,10 +6735,10 @@ mod tests
             )
         };
         let declarations = [pair_axiom(&mut arena), pair_axiom(&mut arena)];
-        let bytes = Vec::from(super::encode(&arena, &declarations));
+        let bytes = SmallVec::<u8, 0, Global>::from(super::encode(&arena, &declarations));
         let decoded = crate::decode::decode(ArtifactImage::from(bytes.as_slice()))
             .expect("the two axioms decode");
-        let declared: Vec<_> = decoded
+        let declared: SmallVec<_, 0, Global> = decoded
             .declarations()
             .iter()
             .map(|marked| marked.declaration().declared_id())

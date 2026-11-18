@@ -778,6 +778,10 @@ fn reflexivities(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the constructor nodes of the cells' point, durable by the
+///   arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`]: the circle's point is `Base`.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
@@ -801,7 +805,9 @@ pub fn point(
     let arena = context.arena_mut();
     let mut open = false;
     let point = build_side(cells.point(), arities, |node, fields| match node {
-        RuleNode::Constructor(tag) => arena.value_constructor(cells.sort(), datatype, tag, fields),
+        RuleNode::Constructor(tag) => {
+            arena.value_constructor(cells.sort(), datatype, tag, Vec::from(fields))
+        },
         RuleNode::Variable(_) => {
             open = true;
             arena.value_unit()

@@ -57,6 +57,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
@@ -114,6 +115,10 @@ pub(super) struct Loop
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the loops the case owes, growth within the sort's presented
+///   cells
+///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's case owes its one loop.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
@@ -156,6 +161,12 @@ pub(super) fn loops(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the point's constructor terms in the arena, durable by the
+///   arena's identifiers
+/// - allocation: a copy of the words' sort arities, growth within the
+///   presentation's sorts
+///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's point is `Base`, at which every loop
 ///   witness's answer is read; a wrong point would carry the wrong answer.
@@ -194,18 +205,27 @@ fn point(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the word type, the empty word and the one-letter word in the
+///   arena, durable by the arena's identifiers
 fn letter(
     arena: &mut TermArena,
     owed: Loop,
 ) -> ValueId
 {
-    let words = arena.value_type_data(owed.words, Vec::new());
-    let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
+    let words = arena.value_type_data(owed.words, SmallVec::<_, 0, Global>::new());
+    let empty = arena.value_constructor(
+        owed.words,
+        words,
+        FreeCells::nil(),
+        SmallVec::<_, 0, Global>::new(),
+    );
     arena.value_constructor(
         owed.words,
         words,
         FreeCells::letter(owed.cell),
-        Vec::from([empty]),
+        SmallVec::<_, 0, Global>::from_iter([empty]),
     )
 }
 
@@ -278,8 +298,13 @@ fn sides(
     let binder = binder_use(arena, motive);
     let (family, at, carried) = lifted(arena, (family, at, carried), (reflexivities, binder));
     let word = letter(arena, owed);
-    let words = arena.value_type_data(owed.words, Vec::new());
-    let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
+    let words = arena.value_type_data(owed.words, SmallVec::<_, 0, Global>::new());
+    let empty = arena.value_constructor(
+        owed.words,
+        words,
+        FreeCells::nil(),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let transported = arena.computation_path_transport(family, word, carried);
     let stayed = arena.computation_path_transport(family, empty, carried);
     let mut table = ContentTable::new_in(Global);
@@ -379,6 +404,10 @@ fn lifted(
 ///   point { branches }⟩` otherwise, as the checker reads it.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the case at the point and the value it returns, durable by the
+///   arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — reflexivity and the loop answered at the circle's point
 ///   are read as their words, so the loop at every point is respected.
@@ -387,7 +416,7 @@ fn lifted(
 fn answer(
     arena: &mut TermArena,
     point: ValueId,
-    (motive, branches): (CompTypeId, Vec<ComputationId>),
+    (motive, branches): (CompTypeId, SmallVec<ComputationId, 0, Global>),
 ) -> ValueId
 {
     if let Some(&Value::Constructor {
@@ -558,7 +587,7 @@ pub(super) fn respected(
                         variable.family,
                         variable.datatype,
                         ConstructorTag::from(tag),
-                        Vec::new(),
+                        SmallVec::<_, 0, Global>::new(),
                     );
                     let depth = BinderDepth::from(u32::from(variable.index));
                     left = substitute_computation_at(
@@ -646,6 +675,10 @@ struct Held
 /// # Termination
 /// - reason: the `loop` descends one nested case per turn, never recursing.
 /// - measure: the case's nodes left, each a strict subterm.
+///
+/// # Cost
+/// - allocation: the held variables and the set of variables seen, growth
+///   within the case's nested cases
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `rotInv1`'s case over `a` nests one over `b` at `Base`,

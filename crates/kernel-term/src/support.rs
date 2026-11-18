@@ -26,9 +26,10 @@
 //!   stands under, which [`Reads::join`] and [`Reads::under`] compute (§
 //!   successor-synthesized-context).
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 
+use gandr_kernel_data::SmallVec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::TermArena;
@@ -135,12 +136,16 @@ impl Reads
     /// - panics: none.
     /// - executable: none — the witness reads back every set it builds.
     ///
+    /// # Cost
+    /// - allocation: the boxed slice of a spilled set's indices, growth within
+    ///   the given indices
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — sets on both sides of the word's width, joined and
     ///   stepped out across it, read back and compared.
     /// - witness: `support::tests::reads_are_exactly_the_free_indices`
     #[inline]
-    fn of(indices: Vec<DeBruijnIndex>) -> Self
+    fn of(indices: SmallVec<DeBruijnIndex, 0, Global>) -> Self
     {
         match indices.last() {
             Some(&last) if u32::from(last) >= WORD_INDICES => {
@@ -232,6 +237,10 @@ impl Reads
     ///   word's width, one merge pass over the two sets' indices; no node is
     ///   read.
     ///
+    /// # Cost
+    /// - allocation: the merged indices of the two sets, growth within the two
+    ///   sets' indices
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Reads::of`].
     /// - witness: `support::tests::reads_are_exactly_the_free_indices`
@@ -252,7 +261,7 @@ impl Reads
                 else {
                     return Self(ReadSet::Widest);
                 };
-                let mut merged = Vec::new();
+                let mut merged = SmallVec::<_, 0, Global>::new();
                 let (mut next_first, mut next_second) = (first.next(), second.next());
                 loop {
                     match (next_first, next_second) {
@@ -301,6 +310,10 @@ impl Reads
     /// # Clause cost
     /// - bound: one word operation, or, for a set holding an index past the
     ///   word's width, one pass over its indices; no node is read.
+    ///
+    /// # Cost
+    /// - allocation: the lowered indices of a spilled set, growth within the
+    ///   set's indices
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Reads::of`].
@@ -433,6 +446,10 @@ impl TermArena
     /// - executable: none — the clause would restate the match; the witnesses
     ///   read each former's support back.
     ///
+    /// # Cost
+    /// - allocation: a copy of the single child's support, growth within the
+    ///   value's free variables
+    ///
     /// # Adequacy
     /// - hypothesis: L3 on closed and joined values, variables on both sides of
     ///   the word's width, and a child truncated away; exact supports separate
@@ -560,6 +577,10 @@ impl TermArena
     /// - panics: none.
     /// - executable: none — the clause would restate the match; the witnesses
     ///   read each binding former's support back.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a child's support that the join extends, growth
+    ///   within the binders the computation's children read
     ///
     /// # Adequacy
     /// - hypothesis: L3 on every binding former with a body reading the binders
@@ -721,6 +742,10 @@ impl TermArena
     /// - executable: none — the clause would restate the match; the witnesses
     ///   read each former's support back.
     ///
+    /// # Cost
+    /// - allocation: a copy of a child's support that the type's support joins,
+    ///   growth within the type's children
+    ///
     /// # Adequacy
     /// - hypothesis: L3 on closed types, a type decoding a variable code, a
     ///   dependent pair and a child truncated away.
@@ -815,6 +840,10 @@ impl TermArena
     /// - executable: none — the clause would restate the match; the witnesses
     ///   read each former's support back.
     ///
+    /// # Cost
+    /// - allocation: a copy of a child's support for the returned reads, growth
+    ///   within the child's free binders
+    ///
     /// # Adequacy
     /// - hypothesis: L3 on a returner over a variable code, a dependent arrow
     ///   and a child truncated away.
@@ -867,8 +896,9 @@ impl TermArena
 #[cfg(test)]
 mod tests
 {
-    use alloc::vec::Vec;
+    use alloc::alloc::Global;
 
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::Level;
     use quenchant_shape::shape::Maybe;
 
@@ -887,7 +917,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn listed(reads: &Reads) -> Maybe<Vec<DeBruijnIndex>, read_indices::Absent>
+    fn listed(reads: &Reads) -> Maybe<SmallVec<DeBruijnIndex, 0, Global>, read_indices::Absent>
     {
         match reads.indices() {
             Maybe::Present(read) => Maybe::Present(read.collect()),
@@ -901,7 +931,7 @@ mod tests
     /// trivial.
     fn set(
         indices: impl IntoIterator<Item = DeBruijnIndex>
-    ) -> Maybe<Vec<DeBruijnIndex>, read_indices::Absent>
+    ) -> Maybe<SmallVec<DeBruijnIndex, 0, Global>, read_indices::Absent>
     {
         Maybe::Present(indices.into_iter().collect())
     }
@@ -1014,7 +1044,8 @@ mod tests
         // A body reading `0` through `binders` and one index past them, which
         // is index 0 outside the former.
         let body = |arena: &mut TermArena, binders: u32| {
-            let indices: Vec<_> = (0 ..= binders).map(|index| at(arena, index)).collect();
+            let indices: SmallVec<_, 0, Global> =
+                (0 ..= binders).map(|index| at(arena, index)).collect();
             let tuple = arena.value_tuple(&indices);
             arena.computation_return(tuple)
         };
@@ -1049,7 +1080,11 @@ mod tests
                 "each case branch and not the scrutinee",
             ),
             (
-                arena.computation_data_case(scrutinee, motive, alloc::vec![reads_two]),
+                arena.computation_data_case(
+                    scrutinee,
+                    motive,
+                    SmallVec::<_, 0, Global>::from_iter([reads_two]),
+                ),
                 &[0, 2],
                 "a data case's motive and not its branches",
             ),

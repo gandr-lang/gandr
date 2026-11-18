@@ -348,6 +348,10 @@ impl Account
     ///   judgement lists each declaration of the revision's own text, and #4369
     ///   bounds the list by the edit.
     ///
+    /// # Cost
+    /// - allocation: a row for each key the account does not hold, and the
+    ///   list's buffer, growth within the judgement's declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a comment edit keeps every row with its tier, and an
     ///   edit to one declaration moves that row alone to pending.

@@ -3308,6 +3308,10 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
     /// - provides: the family-specific reconstruction step.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: a copy of the changed former's children and the rewritten
+    ///   value node, growth within the former's children
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — unchanged and changed children of each former are
     ///   read back exactly, with unequal children separating reversed stack
@@ -3692,7 +3696,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                         rewritten_type,
                         rewritten_forward,
                         rewritten_backward,
-                        alloc::sync::Arc::clone(evidence),
+                        gandr_kernel_data::Shared::clone(evidence),
                     )
                 }
             },

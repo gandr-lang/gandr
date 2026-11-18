@@ -100,6 +100,12 @@ pub(super) fn admit(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the stack of pending steps, growth within the derivation's
+///   steps
+/// - allocation: the loops a data case owes, growth within the sort's
+///   presentation cells
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`admit`].
 /// - witness: `tests::cover::every_broken_derivation_is_refused_by_its_rule_5104`
@@ -168,7 +174,7 @@ fn replay(
                                 .map(|cell| Loop::new(words, CellIndex::from(cell))),
                         );
                     }
-                    if owed != *loops {
+                    if owed.as_slice() != loops.as_slice() {
                         return Err(CoverRefusal::Loops(id));
                     }
                 }
