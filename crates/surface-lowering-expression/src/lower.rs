@@ -5639,7 +5639,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     .cx()
                     .natives
                     .get(&SlotIndex::from(usize::from(constant)))
-                    .map_or(resolved.term(), |&primitive| Plan::Primitive(primitive)))
+                    .map_or_else(|| resolved.term(), |&primitive| Plan::Primitive(primitive)))
             },
         }
     }

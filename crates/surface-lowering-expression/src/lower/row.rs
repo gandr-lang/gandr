@@ -15,11 +15,13 @@
 //!
 //! - see: #7961
 
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::equal_type_syntax;
 use gandr_core_term::primitive::PRELUDE;
+use gandr_core_term::primitive::Primitive;
 use gandr_kernel_term::Literal;
 use quenchant_shape::shape::Maybe;
 
@@ -49,12 +51,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   row, when the slot has a body, or when the source is no module of
     ///   `std`.
     /// - panics: none.
+    /// - executable: none — the rows and the refusals are tables of the
+    ///   context, and a predicate would read every slot again.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a marked signature takes its row, and each fault
     ///   takes its own refusal.
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_native_signature_lowers_to_its_row_7961`
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_faulty_native_mark_is_refused_by_name_7961`
+    #[inline]
     pub fn read_natives(&mut self)
     {
         let cx = self.cx_mut();
@@ -116,18 +121,21 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   context's natived. Otherwise the slot takes the refusal of its mark:
     ///   the type differs, or the row has its declaration already.
     /// - panics: none.
+    /// - executable: none — the minted types and values are the arena's, and a
+    ///   predicate would compare every type again.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::read_natives`].
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_native_signature_lowers_to_its_row_7961`
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_faulty_native_mark_is_refused_by_name_7961`
+    #[inline]
     pub fn mint_natives(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
         let cx = self.cx_mut();
-        let mut taken: Vec<_> = cx
+        let mut taken: BTreeSet<Primitive> = cx
             .natived
             .keys()
             .filter_map(|slot| cx.natives.get(slot).copied())
@@ -169,7 +177,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     NativeFault::SecondDeclaration
                 }
                 else {
-                    taken.push(primitive);
+                    let _first = taken.insert(primitive);
                     let origin = Origin::new(entry.named.node, entry.named.span);
                     let body = primitive.thunk(sink.arena);
                     let _value = sink.value(body, origin);

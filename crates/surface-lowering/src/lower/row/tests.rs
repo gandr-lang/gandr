@@ -35,29 +35,6 @@ fn homed() -> Unit
     .expect("one source starts at zero")
 }
 
-/// The span of the `n`-th `native` mark of `text`, from its name through its
-/// closing parenthesis.
-///
-/// # Specification
-/// trivial.
-fn mark(
-    text: &str,
-    n: usize,
-) -> ByteSpan
-{
-    let start = text
-        .match_indices("native(")
-        .nth(n)
-        .map_or(0_usize, |(at, _)| at);
-    let end = text
-        .get(start ..)
-        .and_then(|rest| rest.find(')'))
-        .map_or(start, |close| {
-            start.saturating_add(close).saturating_add(1_usize)
-        });
-    ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("a mark's span")
-}
-
 /// #7961: a signature of `std` that `native` marks takes the row's value at
 /// its declared type, and the checker accepts it. A call of the declaration
 /// lowers to the same term as a call of the row's own name.
@@ -99,6 +76,21 @@ fn a_native_signature_lowers_to_its_row_7961()
 fn a_faulty_native_mark_is_refused_by_name_7961()
 {
     let text = include_str!("tests/unformatted/a-faulty-native-mark-is-refused-by-name-7961.gandr");
+    // The span of the `n`-th `native` mark of a text, from its name through
+    // its closing parenthesis.
+    let mark = |text: &str, n| {
+        let start = text
+            .match_indices("native(")
+            .nth(n)
+            .map_or(0_usize, |(at, _)| at);
+        let end = text
+            .get(start ..)
+            .and_then(|rest| rest.find(')'))
+            .map_or(start, |close| {
+                start.saturating_add(close).saturating_add(1_usize)
+            });
+        ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("a mark's span")
+    };
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text), &homed(), &mut arena);
     for (name, n, fault) in [

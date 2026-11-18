@@ -2217,9 +2217,9 @@ mod kernel_native_audit
         let assumed: alloc::vec::Vec<&StructuredName> = decoded
             .declarations()
             .iter()
-            .map(|marked| marked.declaration())
+            .map(gandr_kernel_term::MarkedDeclaration::declaration)
             .filter(|declaration| matches!(declaration.content(), DeclarationContent::Axiom { .. }))
-            .map(|declaration| declaration.name())
+            .map(gandr_kernel_term::Declaration::name)
             .collect();
         assert!(
             assumed.contains(&&row),
