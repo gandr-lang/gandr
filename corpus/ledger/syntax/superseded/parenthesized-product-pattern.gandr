@@ -1,0 +1,6 @@
+/// `parenthesized_product_pattern`: the retired pattern `(p, q)` over a stored
+/// product. The pattern `*{p, q}` replaces it. The lowering refuses the group in
+/// a `let` and in a match arm, and the refusal names it. A group over a call's
+/// outputs keeps its reading.
+@[refuses("RetiredSpelling.parenthesized_product_pattern")]
+def first() -> Integer { let (a, b) = *{1, 2}; a }

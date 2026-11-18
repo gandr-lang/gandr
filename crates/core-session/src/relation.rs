@@ -1,0 +1,312 @@
+//! One coinductive engine for equivalence and directional subtyping.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+
+use anodized::spec;
+
+use crate::Action;
+use crate::Label;
+use crate::Node;
+use crate::NodeId;
+use crate::Session;
+use crate::TypeError;
+
+/// The relation imposed on each pair of endpoint states.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Relation
+{
+    /// Bisimilarity up to recursive unfolding.
+    Equivalent,
+    /// Left endpoint substitutes for right: fewer selections, more offers.
+    Subtype,
+}
+
+/// Whether all reachable coinductive obligations hold.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Decision
+{
+    /// The root pair belongs to the greatest fixpoint.
+    Related,
+    /// Some required reachable action, payload, or branch disagrees.
+    Unrelated,
+}
+
+/// Decide equivalence or left-to-right subtyping with one visited-pair engine.
+///
+/// # Specification
+/// - ensures: equivalence matches actions, payload identities, label sets, and
+///   continuations up to unfolding; subtyping admits fewer selections and more
+///   offers on the left, with invariant opaque payload identities.
+/// - provides: a decision, not a replayable kernel certificate.
+/// - fails: broken internal arena references retain their construction error.
+/// - panics: none.
+///
+/// Termination follows from finite state-pair visitation and contractive
+/// unfolding. A returned-value predicate cannot observe divergence; the
+/// generated finite oracle witnesses decisions within its stated domain.
+///
+/// # Errors
+/// Returns [`TypeError`] only for a broken internal session invariant.
+///
+/// # Adequacy
+/// - hypothesis: L2 bounded generated protocols are checked against independent
+///   finite greatest-fixpoint elimination; L3 width, continuation, payload, and
+///   one-unfold near-misses distinguish directional and recursive errors.
+/// - witness: `tests::relations::generated_relations_match_finite_oracle`
+/// - witness: `tests::relations::unfolded_recursive_types_are_equivalent`
+/// - witness: `tests::relations::choice_width_and_continuations_are_directional`
+#[spec(ensures: |ret| {
+    let heads = left.head(left.root()).and_then(|(id, node)| node.action(id))
+        .and_then(|a| right.head(right.root()).and_then(|(id, node)| node.action(id))
+            .map(|b| (a, b)));
+    ret.is_ok() && heads.is_ok_and(|(a, b)| {
+        (ret != Ok(Decision::Related) || a == b)
+            && (a != Action::End || b != Action::End || ret == Ok(Decision::Related))
+            && (!core::ptr::eq(core::ptr::from_ref(left), core::ptr::from_ref(right))
+                || ret == Ok(Decision::Related))
+    })
+})]
+#[inline]
+pub fn decide(
+    left: &Session,
+    right: &Session,
+    relation: Relation,
+) -> Result<Decision, TypeError>
+{
+    let result = relate(left, right, relation)?;
+    Ok(match result {
+        RelationResult::Related(_) => Decision::Related,
+        RelationResult::Unrelated => Decision::Unrelated,
+    })
+}
+
+/// The engine's untrusted finite witness or its negative decision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RelationResult
+{
+    /// Candidate data; only independent kernel replay establishes evidence.
+    Related(gandr_kernel_term::session::Evidence),
+    /// Some required local obligation fails.
+    Unrelated,
+}
+
+/// Produce the finite root-reachable relation used by the decision engine.
+///
+/// # Specification
+/// - ensures: Related contains every visited observable pair and preserves the
+///   chosen width direction; no kernel verdict is carried.
+/// - fails: broken session references retain their construction error.
+/// - panics: none.
+///
+/// # Errors
+/// An internal `TypeError`.
+///
+/// # Adequacy
+/// - hypothesis: L1 independent kernel replay accepts generated pairs and
+///   refuses deleted pairs, wrong orientation and inequivalent codes.
+/// - witness: `tests::certified::seat_and_generator_identity_witnesses`
+#[spec(ensures: |ret| match ret {
+    Ok(RelationResult::Related(ref evidence)) => evidence.payloads.is_empty()
+        && left.head(left.root()).is_ok_and(|(a, _)| right.head(right.root()).is_ok_and(|(b, _)|
+            evidence.pairs.contains(&gandr_kernel_term::session::StatePair {
+                source: gandr_kernel_term::session::State(a.0), target: gandr_kernel_term::session::State(b.0),
+            })))
+        && evidence.pairs.iter().all(|pair| left.head(NodeId(pair.source.0)).is_ok_and(|(a, left_node)|
+            right.head(NodeId(pair.target.0)).is_ok_and(|(b, right_node)|
+                a.0 == pair.source.0 && b.0 == pair.target.0 && left_node.action(a) == right_node.action(b)))),
+    Ok(RelationResult::Unrelated) => true,
+    Err(_) => false,
+})]
+#[inline]
+pub fn relate(
+    left: &Session,
+    right: &Session,
+    relation: Relation,
+) -> Result<RelationResult, TypeError>
+{
+    relate_states(left, left.root(), right, right.root(), relation)
+}
+
+/// Produce the finite relation reachable from one state of each session.
+///
+/// # Specification
+/// - ensures: as [`relate`], started from `left_state` and `right_state` rather
+///   than the roots; `relate` is this function at the two roots.
+/// - provides: the relation between two endpoints that have already acted,
+///   whose states are not their protocols' roots.
+/// - fails: a state outside its session's arena, or a broken session reference,
+///   retains its construction error.
+/// - panics: none.
+///
+/// # Errors
+/// [`TypeError::MissingNode`] for a state its session does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two states of one recursive protocol, one past the binder
+///   and one before it, relate exactly when their unfoldings do, and a state
+///   past the arena is refused; L2 — at the two roots, each pair of bounded
+///   generated protocols relates as the independent finite oracle decides.
+/// - witness: `tests::relations::states_past_the_root_relate_through_their_unfoldings`
+/// - witness: `tests::relations::generated_relations_match_finite_oracle`
+#[spec(ensures: |ret| match ret {
+    Ok(RelationResult::Related(ref evidence)) => evidence.payloads.is_empty()
+        && left.head(left_state).is_ok_and(|(a, _)| right.head(right_state).is_ok_and(|(b, _)|
+            evidence.pairs.contains(&gandr_kernel_term::session::StatePair {
+                source: gandr_kernel_term::session::State(a.0), target: gandr_kernel_term::session::State(b.0),
+            }))),
+    Ok(RelationResult::Unrelated) => true,
+    Err(_) => left.head(left_state).is_err() || right.head(right_state).is_err(),
+})]
+#[inline]
+pub fn relate_states(
+    left: &Session,
+    left_state: NodeId,
+    right: &Session,
+    right_state: NodeId,
+    relation: Relation,
+) -> Result<RelationResult, TypeError>
+{
+    let mut visited = BTreeSet::new();
+    let mut pending = alloc::vec![(left_state, right_state)];
+    while let Some((left_id, right_id)) = pending.pop() {
+        let (left_id, left_node) = left.head(left_id)?;
+        let (right_id, right_node) = right.head(right_id)?;
+        if !visited.insert(gandr_kernel_term::session::StatePair {
+            source: gandr_kernel_term::session::State(left_id.0),
+            target: gandr_kernel_term::session::State(right_id.0),
+        }) {
+            continue;
+        }
+        match (left_node, right_node) {
+            (&Node::End, &Node::End) => {},
+            (&Node::Send(a, next_a), &Node::Send(b, next_b))
+            | (&Node::Receive(a, next_a), &Node::Receive(b, next_b))
+                if a == b =>
+            {
+                pending.push((next_a, next_b));
+            },
+            (&Node::Select(ref a), &Node::Select(ref b)) => {
+                if branches(a, b, relation, Orientation::Forward, &mut pending)
+                    == Decision::Unrelated
+                {
+                    return Ok(RelationResult::Unrelated);
+                }
+            },
+            (&Node::Offer(ref a), &Node::Offer(ref b)) => {
+                if branches(b, a, relation, Orientation::Reverse, &mut pending)
+                    == Decision::Unrelated
+                {
+                    return Ok(RelationResult::Unrelated);
+                }
+            },
+            _ => return Ok(RelationResult::Unrelated),
+        }
+    }
+    Ok(RelationResult::Related(
+        gandr_kernel_term::session::Evidence {
+            pairs: visited,
+            payloads: Vec::new(),
+        },
+    ))
+}
+
+/// Decide duality by comparing against exactly one dual transformation.
+///
+/// # Specification
+/// - ensures: returns equivalence of `left` and `right.dual()`.
+/// - fails: broken internal arena references retain their construction error.
+/// - panics: none.
+///
+/// # Errors
+/// Returns [`TypeError`] only for a broken internal session invariant.
+///
+/// # Adequacy
+/// - hypothesis: L2 separately authored generator and seat duals distinguish
+///   directional mistakes; generated L3 payload mismatches reject false duals.
+/// - witness: `tests::protocols::generator_duality_and_two_yields`
+/// - witness: `tests::protocols::seat_duality_report_and_handoff`
+/// - witness: `tests::relations::generated_relations_match_finite_oracle`
+#[spec(ensures: |ret| {
+    let heads = left.head(left.root()).and_then(|(id, node)| node.action(id))
+        .and_then(|a| right.head(right.root()).and_then(|(id, node)| node.action(id))
+            .map(|b| (a, b)));
+    ret.is_ok() && heads.is_ok_and(|(a, b)| {
+        let peers = match (a, b) {
+            (Action::Send(x), Action::Receive(y))
+            | (Action::Receive(x), Action::Send(y)) => x == y,
+            (Action::Select, Action::Offer) | (Action::Offer, Action::Select)
+            | (Action::End, Action::End) => true,
+            _ => false,
+        };
+        (ret != Ok(Decision::Related) || peers)
+            && (a != Action::End || b != Action::End || ret == Ok(Decision::Related))
+    })
+})]
+#[inline]
+pub fn duality(
+    left: &Session,
+    right: &Session,
+) -> Result<Decision, TypeError>
+{
+    decide(left, &right.dual(), Relation::Equivalent)
+}
+
+/// Restore the original endpoint ordering after checking label inclusion.
+#[derive(Clone, Copy, Debug)]
+enum Orientation
+{
+    /// The subset belongs to the left endpoint.
+    Forward,
+    /// The subset belongs to the right endpoint.
+    Reverse,
+}
+
+/// Check label inclusion and enqueue continuations in endpoint order.
+///
+/// # Specification
+/// - ensures: every subset label exists in the superset; equivalence also
+///   requires equal cardinality; continuations retain left-to-right direction.
+/// - provides: `Unrelated` on missing labels or unequal equivalence widths.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 nested choices distinguish width reversal from the separate
+///   obligation to preserve direction inside matched continuations.
+/// - witness: `tests::relations::choice_width_and_continuations_are_directional`
+#[spec(
+    captures: [before = pending.len()],
+    ensures: |ret| (ret == Decision::Related) == (
+        (relation != Relation::Equivalent || subset.len() == superset.len())
+            && subset.keys().all(|label| superset.contains_key(label)))
+        && (ret != Decision::Related || pending.get(before..).is_some_and(|added| added.iter().copied().eq(
+            subset.iter().filter_map(|(label, &sub)| superset.get(label).map(|&sup|
+                match orientation {
+                    Orientation::Forward => (sub, sup),
+                    Orientation::Reverse => (sup, sub),
+                })))))
+)]
+fn branches(
+    subset: &BTreeMap<Label, NodeId>,
+    superset: &BTreeMap<Label, NodeId>,
+    relation: Relation,
+    orientation: Orientation,
+    pending: &mut Vec<(NodeId, NodeId)>,
+) -> Decision
+{
+    if relation == Relation::Equivalent && subset.len() != superset.len() {
+        return Decision::Unrelated;
+    }
+    for (label, &sub) in subset {
+        let Some(&sup) = superset.get(label)
+        else {
+            return Decision::Unrelated;
+        };
+        pending.push(match orientation {
+            Orientation::Forward => (sub, sup),
+            Orientation::Reverse => (sup, sub),
+        });
+    }
+    Decision::Related
+}

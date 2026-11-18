@@ -1,0 +1,56 @@
+//! This source shows the phase distinction in a module.
+//!
+//! Type members are static and value members are dynamic.
+//! A member can read only members at its phase or below it. So a type reads
+//! types and static data. A value reads both.
+//!
+//! A type member that reads the value of a module or a parameter is refused by
+//! name at the value, as `PhaseDependence`.
+//! The lowering keeps static and dynamic members in phase order.
+//!
+//! - see: pathological/modules/phase.gandr
+//! - cites: [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]
+//!
+//! [Sterling-2021-logical_relations_types_proofrelevant_parametricity_program_modules]: https://doi.org/10.1145/3474834 "Sterling and Harper, Logical relations as types: proof-relevant parametricity for program modules"
+
+/// `Sign` is closed data. Its constructors are static.
+data Sign : Type where
+  | Plus : Sign
+  | Minus : Sign
+
+/// `Point` seals a type and its point.
+module Point :> *{type T, z : T} where {
+  type T = Integer;
+  /// `z` gives the point.
+  @[runs("0")]
+  def z = 0;
+}
+
+/// `Square` reads only its argument type in its static member. So the static
+/// part of its result is a function of the static part of its argument.
+module Square(S : *{type T, z : T}) :> *{type U, w : U} where {
+  type U = S.T * S.T;
+  /// `w` pairs the argument point with itself.
+  @[checks]
+  def w = *{S.z, S.z};
+}
+
+/// `Squared` applies `Square` to `Point`.
+module Squared = Square(Point);
+
+/// `squared` reads the applied functor value.
+def squared : Squared.U = Squared.w;
+
+/// `Fixed` reads static literals and constructors in type members.
+module Fixed where {
+  /// `Three` names a constant path.
+  type Three = Path(3, 3);
+  /// `Positive` names a plus-sign path.
+  type Positive = Path(Plus, Plus);
+  /// `three` gives the constant path.
+  @[checks]
+  def three : Three = Path.here 3;
+  /// `positive` gives the plus-sign path.
+  @[checks]
+  def positive : Positive = Path.here Plus;
+}

@@ -1,0 +1,111 @@
+test: goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862
+package: gandr-surface-pretty
+command: mise run debug:test gandr-surface-pretty goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862 --break Walk.*::rebind
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-pretty/6cebc03439086116/out/tests-6cebc03439086116"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-pretty/6cebc03439086116/out/tests-6cebc03439086116' (x86_64).
+(lldb) settings set -- target.run-args  "goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex Walk.*::rebind
+Breakpoint 1: 6 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-6cebc03439086116`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x000000000149e048
+(lldb) run
+
+running 1 test
+test goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 1774466 launched: 'target/debug-trace/debug/build/gandr-surface-pretty/6cebc03439086116/out/tests-6cebc03439086116' (x86_64)
+Process 1774466 stopped
+* thread #2, name = 'goldens::a_plac', stop reason = breakpoint 1.3
+       frame #0: 0x0000555555cff307 tests-6cebc03439086116`<gandr_surface_pretty::walk::Walk>::rebind(self={builder:{pointer:{}, vtable:0x0000555556a41480}, pieces:size=0, binders:{mentioned:{map:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, generated:size=0, next:{0:0}}, names:size=0, opened:size=0, scopes:size=0, occurring:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, hidden:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, loops:size=0, subjects:0, unwinds:0, held:size=0, substituted:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, context:size=1, recursive:None, fidelity:Faithful, unspelled:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, wildcards:Unwritten, bodies:Spelled, protocols:size=0, links:size=0, records:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, fields:None, forms:size=0, form:Explicit, crossed:false, spelling:Unicode, remaining:65535, surface:Expression, elaboration:Checked}, zone=Linear) at walk.rs:10411:5
+   10408	    /// - hypothesis: L3 — a placed buffer is written by its bind's name, and a
+   10409	    ///   minting clause's mint by its own, so each reads back to itself.
+   10410	    /// - witness: `tests::goldens::a_placed_buffer_is_written_by_its_bind_s_name`
+-> 10411	    #[spec(
+    	    ^
+   10412	        captures: [opened = self.opened.len()],
+   10413	        ensures: self.opened.len() == opened.saturating_add(1_usize)
+   10414	            && self.names.len() > opened,
+(lldb) bt 24
+error: tests-6cebc03439086116 0x004317df: DW_TAG_member '__0' refers to type 0x0000000000475499 which was unable to be parsed
+* thread #2, name = 'goldens::a_plac', stop reason = breakpoint 1.3
+   * frame #0: 0x0000555555cff307 tests-6cebc03439086116`<gandr_surface_pretty::walk::Walk>::rebind(self={builder:{pointer:{}, vtable:0x0000555556a41480}, pieces:size=0, binders:{mentioned:{map:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, generated:size=0, next:{0:0}}, names:size=0, opened:size=0, scopes:size=0, occurring:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, hidden:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, loops:size=0, subjects:0, unwinds:0, held:size=0, substituted:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, context:size=1, recursive:None, fidelity:Faithful, unspelled:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, wildcards:Unwritten, bodies:Spelled, protocols:size=0, links:size=0, records:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, fields:None, forms:size=0, form:Explicit, crossed:false, spelling:Unicode, remaining:65535, surface:Expression, elaboration:Checked}, zone=Linear) at walk.rs:10411:5
+     frame #1: 0x0000555555a6d6a3 tests-6cebc03439086116`gandr_surface_pretty::walk::walk::<gandr_surface_pretty::core_source::CoreSource>::{closure#0} at walk.rs:12672:40
+     frame #2: 0x0000555555bf92cc tests-6cebc03439086116`anodized::__::eval_once::<core::result::Result<gandr_surface_pretty::walk::Walked, gandr_surface_pretty::error::PresentationError>, gandr_surface_pretty::walk::walk<gandr_surface_pretty::core_source::CoreSource>::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #3: 0x0000555555a0f5b5 tests-6cebc03439086116`gandr_surface_pretty::walk::walk::<gandr_surface_pretty::core_source::CoreSource>(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=2}, words:{words:{}}, region_binders_from:None}, names:size=0, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=1, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0}, root=Computation({0:1}), (null)=(Computation(Ends), Spelled), style={form:Explicit, spelling:Unicode}, builder={pointer:{}, vtable:0x0000555556a41480}) at walk.rs:12452:1
+     frame #4: 0x0000555555c6da41 tests-6cebc03439086116`gandr_surface_pretty::present::<gandr_surface_pretty::core_source::CoreSource>::{closure#0}::{closure#0}(composer={pointer:{}, vtable:0x0000555556a41480}) at lib.rs:1725:42
+     frame #5: 0x0000555555c6617a tests-6cebc03439086116`gandr_surface_pretty::present::<gandr_surface_pretty::core_source::CoreSource>::{closure#0} at lib.rs:1753:57
+     frame #6: 0x0000555555bf8bca tests-6cebc03439086116`anodized::__::eval_once::<core::result::Result<gandr_surface_pretty::Presentation, gandr_surface_pretty::error::PresentationError>, gandr_surface_pretty::present<gandr_surface_pretty::core_source::CoreSource>::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #7: 0x0000555555c63114 tests-6cebc03439086116`gandr_surface_pretty::present::<gandr_surface_pretty::core_source::CoreSource>(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=2}, words:{words:{}}, region_binders_from:None}, names:size=0, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=1, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0}, root=Computation({0:1}), position=(Computation(Ends), Spelled), style={form:Explicit, spelling:Unicode}, layout=Page({0:98})) at lib.rs:1709:1
+     frame #8: 0x0000555555c65d0f tests-6cebc03439086116`gandr_surface_pretty::present_computation::<gandr_surface_pretty::core_source::CoreSource>::{closure#0} at lib.rs:980:5
+     frame #9: 0x0000555555bf8b48 tests-6cebc03439086116`anodized::__::eval_once::<core::result::Result<gandr_surface_pretty::Presentation, gandr_surface_pretty::error::PresentationError>, gandr_surface_pretty::present_computation<gandr_surface_pretty::core_source::CoreSource>::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #10: 0x0000555555c62ecb tests-6cebc03439086116`gandr_surface_pretty::present_computation::<gandr_surface_pretty::core_source::CoreSource>(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=2}, words:{words:{}}, region_binders_from:None}, names:size=0, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=1, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0}, root=Computation({0:1}), page={0:98}, style={form:Explicit, spelling:Unicode}) at lib.rs:965:1
+     frame #11: 0x0000555555c72148 tests-6cebc03439086116`gandr_surface_pretty::present_whole::{closure#0} at lib.rs:1447:19
+     frame #12: 0x0000555555bf889a tests-6cebc03439086116`anodized::__::eval_once::<core::result::Result<quenchant_shape::shape::Maybe<gandr_surface_pretty::Presentation, gandr_surface_pretty::whole::Absent>, gandr_surface_pretty::error::PresentationError>, gandr_surface_pretty::present_whole::{closure#0}>(closure=<unavailable>) at __.rs:22:5
+     frame #13: 0x0000555555c7866e tests-6cebc03439086116`gandr_surface_pretty::present_whole(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=2}, words:{words:{}}, region_binders_from:None}, names:size=0, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=0, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0}, (null)=<unavailable>, (null)=({0:2}, {0:1}), page={0:100}, style={form:Explicit, spelling:Unicode}) at lib.rs:1138:1
+     frame #14: 0x0000555555af79cf tests-6cebc03439086116`tests::goldens::declared_whole(source={arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=2}, words:{words:{}}, region_binders_from:None}, names:size=0, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=0, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0}, defined=({0:2}, {0:1}), page={0:100}) at goldens.rs:5118:11
+     frame #15: 0x0000555555b3f1ea tests-6cebc03439086116`tests::goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862 at goldens.rs:8071:9
+     frame #16: 0x0000555555af1b47 tests-6cebc03439086116`tests::goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862::{closure#0}((null)={}) at goldens.rs:8036:63
+     frame #17: 0x0000555555b82956 tests-6cebc03439086116`<tests::goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #18: 0x0000555555c81cbb tests-6cebc03439086116`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #19: 0x0000555555c81cb9 tests-6cebc03439086116`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #20: 0x0000555555c8f205 tests-6cebc03439086116`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #21: 0x0000555555c8f200 tests-6cebc03439086116`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x0000555555c8f200 tests-6cebc03439086116`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #23: 0x0000555555c8f1eb tests-6cebc03439086116`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+(lldb) frame variable --depth 3
+(gandr_surface_pretty::walk::Walk *) self = 0x00007ffff7bf7be0 {builder:{pointer:{}, vtable:0x0000555556a41480}, pieces:size=0, binders:{mentioned:{map:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, generated:size=0, next:{0:0}}, names:size=0, opened:size=0, scopes:size=0, occurring:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, hidden:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, loops:size=0, subjects:0, unwinds:0, held:size=0, substituted:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, context:size=1, recursive:None, fidelity:Faithful, unspelled:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, wildcards:Unwritten, bodies:Spelled, protocols:size=0, links:size=0, records:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, fields:None, forms:size=0, form:Explicit, crossed:false, spelling:Unicode, remaining:65535, surface:Expression, elaboration:Checked}
+(gandr_core_term::syntax::Zone) zone = Linear
+(bool) __anodized_pre = true
+(lldb) up
+frame #1: 0x0000555555a6d6a3 tests-6cebc03439086116`gandr_surface_pretty::walk::walk::<gandr_surface_pretty::core_source::CoreSource>::{closure#0} at walk.rs:12672:40
+   12669	                    walk.unwinds.saturating_sub(1_usize)
+   12670	                };
+   12671	            },
+-> 12672	            Task::Rebind(zone) => walk.rebind(zone),
+    	                                       ^
+   12673	            Task::BindScope(zone, opener) => {
+   12674	                walk.bind(source, zone, opener);
+   12675	                walk.scopes.push(walk.opened.len().saturating_sub(1_usize));
+(lldb) frame variable --depth 3
+(gandr_surface_grammar::spelling::Spelling) style__spelling = Unicode
+(gandr_surface_pretty::Form) style__form = Explicit
+(dyn gandr_surface_pretty::compose::Compose) builder = {}
+(gandr_surface_pretty::walk::Bodies) bodies = Spelled
+(gandr_surface_pretty::walk::Admits) admits = Computation(Ends) {
+  0 = Ends
+}
+(gandr_surface_pretty::core_source::CoreNode) root = Computation({0:1}) {
+  0 = {0:1}
+}
+(gandr_surface_pretty::core_source::CoreSource) source = {arena:{values:{frozen:None, own:size=2}, computations:{frozen:None, own:size=3}, value_types:{frozen:None, own:size=3}, comp_types:{frozen:None, own:size=2}, words:{words:{}}, region_binders_from:None}, names:size=0, restoration:{__0:{values:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, computations:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, value_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, comp_types:{root:None, length:0, alloc:{value:{…}}, _marker:{}}}}, constructors:{families:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, consed:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, cases:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}, loops:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, context:size=1, recursive:None, recursive_telescope:size=0, regions:size=0, binders:size=0, arrows:size=0, pairs:size=0, seconds:size=0, sum_labels:size=0, with_labels:size=0, relations:size=0, models:size=0, scopes:size=0, answers:size=0, rows:size=0, crossings:size=0, forgettings:size=0, maps:size=0, implied:size=0, telescopes:size=0, slots:size=0}
+(alloc::collections::btree::set::BTreeSet<gandr_surface_pretty::former::Name, alloc::alloc::Global>) mentioned = {map:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:1, alloc:{value:{0:{}}}, _marker:{}}}
+(&[core::option::Option<gandr_surface_pretty::former::Name>]) context = size=1 {
+  [0] = Some({0:"a"}) {
+    0 = {0:"a"}
+  }
+}
+(gandr_surface_pretty::walk::Walk) walk = {builder:{pointer:{}, vtable:0x0000555556a41480}, pieces:size=0, binders:{mentioned:{map:{root:Some({…}), length:1, alloc:{value:{…}}, _marker:{}}}, generated:size=0, next:{0:0}}, names:size=0, opened:size=0, scopes:size=0, occurring:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, hidden:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, loops:size=0, subjects:0, unwinds:0, held:size=0, substituted:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, context:size=1, recursive:None, fidelity:Faithful, unspelled:{map:{root:None, length:0, alloc:{value:{0:{…}}}, _marker:{}}}, wildcards:Unwritten, bodies:Spelled, protocols:size=0, links:size=0, records:{root:None, length:0, alloc:{value:{0:{}}}, _marker:{}}, fields:None, forms:size=0, form:Explicit, crossed:false, spelling:Unicode, remaining:65535, surface:Expression, elaboration:Checked}
+(core::option::Option<gandr_surface_pretty::core_source::CoreNode>) inserted = None
+(alloc::vec::Vec<gandr_surface_pretty::walk::Task<gandr_surface_pretty::core_source::CoreNode>, alloc::alloc::Global>) tasks = size=2 {
+  [0] = Unbind
+  [1] = Visit{node:Computation({0:0}), admits:Computation(Ends), depth:{0:0}} {
+    node = Computation({0:0}) {
+      0 = {0:0} {...}
+    }
+    admits = Computation(Ends) {
+      0 = Ends
+    }
+    depth = {0:0}
+  }
+}
+(gandr_surface_pretty::walk::Task<gandr_surface_pretty::core_source::CoreNode>) task = Rebind(Linear) {
+  0 = Linear
+}
+(gandr_core_term::syntax::Zone) zone = Linear

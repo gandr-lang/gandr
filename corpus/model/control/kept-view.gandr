@@ -1,0 +1,98 @@
+//! This source shows shared views kept in regions.
+//!
+//! A kept shared view can outlive the access that lent it.
+//! Its held value stays frozen until the region ends.
+//! A value can enter a region at any time and never leaves it.
+//!
+//! The checker orders regions by outlives.
+//! It releases the held value when the region ends.
+//! Lifetimes that control states follow boats
+//! [boats-2024-references_are_jumps].
+//! Regions as ordered extents follow Koronkevich and Bowman
+//! [Koronkevich-2025-type_universes_kripke_worlds].
+//!
+//! - cites: [Koronkevich-2025-type_universes_kripke_worlds]
+//! - cites: [boats-2024-references_are_jumps]
+//!
+//! [Koronkevich-2025-type_universes_kripke_worlds]: https://doi.org/10.1145/3747532 "Koronkevich and Bowman, Type Universes as Kripke Worlds"
+//! [boats-2024-references_are_jumps]: https://without.boats/blog/references-are-like-jumps/ "boats, References are like jumps"
+
+// Early exit's host interface.
+import std.process;
+
+/// `keptView` keeps a thunk in scope `c`.
+/// The thunk reads its shared view after the access ends.
+@[runs("3")]
+def keptView() -> Integer =
+  var s = 3
+  handle c : std.process.Exit.Eff {
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
+    force k
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
+  }
+
+/// `keptAgain` binds the kept thunk at its region type.
+/// It then forces that thunk.
+@[runs("3")]
+def keptAgain() -> Integer =
+  var s = 3
+  handle c : std.process.Exit.Eff {
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
+    let j : (() -> Integer) at c = k;
+    force j
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
+  }
+
+/// The region releases the held value when its scope ends.
+/// `released` then writes the value back.
+@[runs("4")]
+def released() -> Integer =
+  var s = 3
+  let n : Integer = handle c : std.process.Exit.Eff {
+    let k : (() -> Integer) at c = access shared s as w { pure pure w };
+    force k
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
+  };
+  access s as v { resume v (n + 1) };
+  pure s
+
+/// A value read out of a view enters the region as any value does: the read
+/// copies it, so it needs no keep.
+@[runs("3")]
+def keptRead() -> Integer =
+  var s = 3
+  handle c : std.process.Exit.Eff {
+    let n : Integer at c = access shared s as w { pure w };
+    access s as v { resume v (v + 1) };
+    pure 3
+  } with {
+    | pure(x) => pure x
+    | oper exit(code, k) => pure 0
+  }
+
+/// A hold opens a region for its own value.
+/// `keptInHold` keeps a shared view in that region.
+@[runs("3")]
+def keptInHold() -> Integer =
+  var s = 3
+  let k : (() -> Integer) at s = access shared s as w { pure pure w };
+  force k
+
+/// An inner region can keep an outer shared view.
+/// `keptInInner` writes the outer value back after the inner scope ends.
+@[runs("4")]
+def keptInInner() -> Integer =
+  var s = 3
+  let n : Integer = {
+    var r = 0;
+    let k : (() -> Integer) at r = access shared s as w { pure pure w };
+    force k
+  };
+  access s as v { resume v (n + 1) };
+  pure s

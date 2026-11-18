@@ -1,0 +1,126 @@
+test: arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335
+package: gandr-kernel-term
+command: mise run debug:test gandr-kernel-term arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335 --break merge_tail
+
+(lldb) target create "target/debug-trace/debug/build/gandr-kernel-term/a22cca16bdc673b3/out/gandr_kernel_term-a22cca16bdc673b3"
+Current executable set to 'target/debug-trace/debug/build/gandr-kernel-term/a22cca16bdc673b3/out/gandr_kernel_term-a22cca16bdc673b3' (x86_64).
+(lldb) settings set -- target.run-args  "arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex merge_tail
+Breakpoint 1: 8 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_kernel_term-a22cca16bdc673b3`__rustc::rust_panic + 8 at panicking.rs:887:25, address = 0x00000000007499b8
+(lldb) run
+
+running 1 test
+test arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 2169866 launched: 'target/debug-trace/debug/build/gandr-kernel-term/a22cca16bdc673b3/out/gandr_kernel_term-a22cca16bdc673b3' (x86_64)
+Process 2169866 stopped
+* thread #2, name = 'arena::tests::a', stop reason = breakpoint 1.6
+       frame #0: 0x00005555559412a4 gandr_kernel_term-a22cca16bdc673b3`<gandr_kernel_term::arena::Family<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted>>::merge_tail(self={frozen:None, tail:size=1, ends:"\xff\xff\xff\xff\xff", frozen_len:1, own:size=0}) at arena.rs:1468:9
+   1465	    #[inline]
+   1466	    fn merge_tail(&mut self)
+   1467	    {
+-> 1468	        while let [.., ref older, ref newer] = *self.tail.as_slice()
+    	        ^
+   1469	            && older.len() <= newer.len().saturating_mul(2)
+   1470	            && let Some(newer) = self.tail.pop()
+   1471	            && let Some(older) = self.tail.last_mut()
+(lldb) bt 24
+* thread #2, name = 'arena::tests::a', stop reason = breakpoint 1.6
+   * frame #0: 0x00005555559412a4 gandr_kernel_term-a22cca16bdc673b3`<gandr_kernel_term::arena::Family<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted>>::merge_tail(self={frozen:None, tail:size=1, ends:"\xff\xff\xff\xff\xff", frozen_len:1, own:size=0}) at arena.rs:1468:9
+     frame #1: 0x000055555593081b gandr_kernel_term-a22cca16bdc673b3`<gandr_kernel_term::arena::Family<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted>>::freeze::{closure#1} at arena.rs:1455:14
+     frame #2: 0x0000555555941612 gandr_kernel_term-a22cca16bdc673b3`anodized::__::eval_once::<(), <gandr_kernel_term::arena::Family<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted>>::freeze::{closure#1}>(closure={_ref__self:{frozen:None, tail:size=1, ends:"\xff\xff\xff\xff\xff", frozen_len:1, own:size=0}}) at __.rs:32:5 [inlined]
+     frame #3: 0x000055555594160d gandr_kernel_term-a22cca16bdc673b3`<gandr_kernel_term::arena::Family<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted>>::freeze(self={frozen:None, tail:size=1, ends:"\xff\xff\xff\xff\xff", frozen_len:1, own:size=0}) at arena.rs:1416:5
+     frame #4: 0x00005555559530ab gandr_kernel_term-a22cca16bdc673b3`gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335 at arena.rs:5510:20
+     frame #5: 0x0000555555936b67 gandr_kernel_term-a22cca16bdc673b3`gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::{closure#0}((null)={}) at arena.rs:5482:77
+     frame #6: 0x00005555559adea6 gandr_kernel_term-a22cca16bdc673b3`<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #7: 0x0000555555bfe22b gandr_kernel_term-a22cca16bdc673b3`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #8: 0x0000555555bfe229 gandr_kernel_term-a22cca16bdc673b3`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:733:18
+     frame #9: 0x0000555555c0b775 gandr_kernel_term-a22cca16bdc673b3`test::run_test_in_process::{closure#0} at lib.rs:756:74 [inlined]
+     frame #10: 0x0000555555c0b770 gandr_kernel_term-a22cca16bdc673b3`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #11: 0x0000555555c0b770 gandr_kernel_term-a22cca16bdc673b3`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:576:43 [inlined]
+     frame #12: 0x0000555555c0b75b gandr_kernel_term-a22cca16bdc673b3`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #13: 0x0000555555c0b75b gandr_kernel_term-a22cca16bdc673b3`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #14: 0x0000555555c0b75b gandr_kernel_term-a22cca16bdc673b3`test::run_test_in_process at lib.rs:756:27 [inlined]
+     frame #15: 0x0000555555c0b746 gandr_kernel_term-a22cca16bdc673b3`test::run_test::{closure#0} at lib.rs:677:43
+     frame #16: 0x0000555555c06134 gandr_kernel_term-a22cca16bdc673b3`test::run_test::{closure#1} at lib.rs:707:41 [inlined]
+     frame #17: 0x0000555555c060b9 gandr_kernel_term-a22cca16bdc673b3`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #18: 0x0000555555c0e8d2 gandr_kernel_term-a22cca16bdc673b3`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #19: 0x0000555555c0e8c3 gandr_kernel_term-a22cca16bdc673b3`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #20: 0x0000555555c0e8c3 gandr_kernel_term-a22cca16bdc673b3`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:576:43 [inlined]
+     frame #21: 0x0000555555c0e8b3 gandr_kernel_term-a22cca16bdc673b3`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:544:19 [inlined]
+     frame #22: 0x0000555555c0e8b3 gandr_kernel_term-a22cca16bdc673b3`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #23: 0x0000555555c0e8b3 gandr_kernel_term-a22cca16bdc673b3`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+(lldb) frame variable --depth 3
+Traceback (most recent call last):
+  File "~/.rustup/toolchains/nightly-2026-08-07-x86_64-unknown-linux-gnu/lib/rustlib/etc/lldb_providers.py", line 1445, in get_child_at_index
+    return self.value_builder.from_uint("weak", self.weak_count)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.rustup/toolchains/nightly-2026-08-07-x86_64-unknown-linux-gnu/lib/rustlib/etc/lldb_providers.py", line 128, in from_uint
+    data = SBData.CreateDataFromUInt64Array(
+        self.endianness,
+        self.pointer_size,
+        [value],
+    )
+  File "/usr/lib/python3.14/site-packages/lldb/__init__.py", line 5021, in CreateDataFromUInt64Array
+    return _lldb.SBData_CreateDataFromUInt64Array(endian, addr_byte_size, array)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OverflowError: can't convert negative int to unsigned
+Traceback (most recent call last):
+  File "~/.rustup/toolchains/nightly-2026-08-07-x86_64-unknown-linux-gnu/lib/rustlib/etc/lldb_providers.py", line 1445, in get_child_at_index
+    return self.value_builder.from_uint("weak", self.weak_count)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.rustup/toolchains/nightly-2026-08-07-x86_64-unknown-linux-gnu/lib/rustlib/etc/lldb_providers.py", line 128, in from_uint
+    data = SBData.CreateDataFromUInt64Array(
+        self.endianness,
+        self.pointer_size,
+        [value],
+    )
+  File "/usr/lib/python3.14/site-packages/lldb/__init__.py", line 5021, in CreateDataFromUInt64Array
+    return _lldb.SBData_CreateDataFromUInt64Array(endian, addr_byte_size, array)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OverflowError: can't convert negative int to unsigned
+Traceback (most recent call last):
+  File "~/.rustup/toolchains/nightly-2026-08-07-x86_64-unknown-linux-gnu/lib/rustlib/etc/lldb_providers.py", line 1445, in get_child_at_index
+    return self.value_builder.from_uint("weak", self.weak_count)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "~/.rustup/toolchains/nightly-2026-08-07-x86_64-unknown-linux-gnu/lib/rustlib/etc/lldb_providers.py", line 128, in from_uint
+    data = SBData.CreateDataFromUInt64Array(
+        self.endianness,
+        self.pointer_size,
+        [value],
+    )
+  File "/usr/lib/python3.14/site-packages/lldb/__init__.py", line 5021, in CreateDataFromUInt64Array
+    return _lldb.SBData_CreateDataFromUInt64Array(endian, addr_byte_size, array)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+OverflowError: can't convert negative int to unsigned
+(gandr_kernel_term::arena::Family<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted> *) self = 0x00007ffff7bc92c8 {frozen:None, tail:size=1, ends:"\xff\xff\xff\xff\xff", frozen_len:1, own:size=0}
+(alloc::sync::Arc<alloc::vec::Vec<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted, alloc::alloc::Global>, alloc::alloc::Global>) newer = strong=1, weak=0 {
+  data = size=1 {
+    [0] = {0:0}
+  }
+}
+(alloc::sync::Arc<alloc::vec::Vec<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted, alloc::alloc::Global>, alloc::alloc::Global> *) newer = 0x0000000000000001 strong=0, weak=0
+(alloc::sync::Arc<alloc::vec::Vec<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted, alloc::alloc::Global>, alloc::alloc::Global> *) older = 0x0000000000000001 strong=0, weak=0
+(alloc::sync::Arc<alloc::vec::Vec<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted, alloc::alloc::Global>, alloc::alloc::Global> *) older = 0x00007ffff0000d20 strong=0, weak=0
+(lldb) up
+frame #1: 0x000055555593081b gandr_kernel_term-a22cca16bdc673b3`<gandr_kernel_term::arena::Family<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted>>::freeze::{closure#1} at arena.rs:1455:14
+   1452	        else {
+   1453	            self.tail.push(alloc::sync::Arc::new(nodes.collect()));
+   1454	        }
+-> 1455	        self.merge_tail();
+    	             ^
+   1456	        self.mark_ends();
+   1457	    }
+   1458	
+(lldb) frame variable --depth 3
+(gandr_kernel_term::arena::Family<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted>) self = {frozen:None, tail:size=1, ends:"\xff\xff\xff\xff\xff", frozen_len:1, own:size=0}
+(alloc::vec::drain::Drain<gandr_kernel_term::arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335::Counted, alloc::alloc::Global>) nodes = {tail_start:1, tail_len:0, iter:{ptr:{pointer:{__0:0}}, end_or_len:{__0:0}, _marker:{}}, vec:{pointer:size=0}}
+(unsigned long) held = 0

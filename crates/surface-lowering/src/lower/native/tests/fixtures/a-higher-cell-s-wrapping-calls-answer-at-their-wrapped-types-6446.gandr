@@ -1,0 +1,8 @@
+data S3 : Type where
+  | Base3 : S3
+  | surf3 : Path.here (Path.here Base3) <-> Path.here (Path.here Base3)
+
+def empty : Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](Path.here Base3, Path.here Base3)](
+  Path.here (Path.here Base3),
+  Path.here (Path.here Base3)
+) = Path.here (Path.here (Path.here Base3));

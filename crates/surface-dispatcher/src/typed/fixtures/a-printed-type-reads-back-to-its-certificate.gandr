@@ -1,0 +1,7 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+def f(x : Nat) -> Nat { x }
+def h(a : Type, y : a) -> a { y }
+def k(a : Type, y : a) -> a { let z = h a y; z }

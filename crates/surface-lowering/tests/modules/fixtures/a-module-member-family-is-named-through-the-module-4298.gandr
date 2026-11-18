@@ -1,0 +1,4 @@
+module M where { data Box : Type where { | B : (x : Integer) --> Box } def one : Box = B 1; }
+def two : M.Box = M.B 2;
+def three : M.Box = M.Box.B 3;
+def open(b : M.Box) -> Integer { match b { | M.B(x) => x } }
