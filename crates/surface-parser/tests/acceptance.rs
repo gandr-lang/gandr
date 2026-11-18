@@ -1580,6 +1580,56 @@ fn a_value_opener_ends_a_juxtaposed_type_6101() -> Result<(), Failure>
     Ok(())
 }
 
+/// The last member of a declaration body, a `def rec` that lost its `=`
+/// after a result that is a type variable, owes its `=` alone, as at the top
+/// level.
+///
+/// The result `d` opens a moded type, so the body reads as its operand. The
+/// layout writes a `;` after the member, before the block's `}`. Read as it
+/// stands, that `;` is a shell list operator, and the `}` closes a record
+/// type of fixed fields. The block then owed its `{` and its `}` and an
+/// inconsistent meld beside the `=` (#7986).
+#[test]
+fn a_body_s_last_member_owes_its_equals_alone_7986() -> Result<(), Failure>
+{
+    for (source, arrow) in [
+        (
+            "theory S where {\n  def rec f(x : Nat) -> d\n    match x where\n      | Zero => Zero\n}\n",
+            38,
+        ),
+        (
+            "rec {\n  def rec f(x : Nat) -> d\n    match x where\n      | Zero => Zero\n}\n",
+            27,
+        ),
+        (
+            "theory S where {\n  def rec f(x : Nat) -> d\n    x\n}\n",
+            38,
+        ),
+        (
+            "def rec f(x : Nat) -> d\n  match x where\n    | Zero => Zero\n",
+            19,
+        ),
+    ] {
+        let result = parse(built(), SourceText::from(source))?;
+        let owed: Vec<(Oblig, usize)> = result
+            .obligations()
+            .iter()
+            .map(|obligation| (obligation.class, usize::from(obligation.span.start())))
+            .collect();
+        assert_eq!(
+            vec![(Oblig::MissingTile, arrow)],
+            owed,
+            "{source:?} owes only the `=` after its result"
+        );
+    }
+    let whole = "theory S where {\n  def rec f(x : Nat) -> d =\n    match x where\n      | Zero => Zero\n}\n";
+    assert!(
+        bool::from(parse(built(), SourceText::from(whole))?.is_clean()),
+        "the member with its `=` owes nothing"
+    );
+    Ok(())
+}
+
 /// A `def rec` whose `match` lost its first `|` recovers alike before a
 /// declaration with `pub` and before the same declaration without it.
 ///
