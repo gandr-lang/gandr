@@ -1,0 +1,6 @@
+def rec down(n : Nat) -> -F Nat =
+  match n where
+    | Zero => return n
+    | Succ(p) return p
+
+def after : Integer = 1;

@@ -1306,6 +1306,44 @@ fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Failure>
     Ok(())
 }
 
+/// #7902: an arm that lost its `=>` leaves its pattern open above the two
+/// layout blocks that its line ends, the arms of the `match` and the body of
+/// the `def`. Each layout close closes its own block, so the arm owes its
+/// `=>` once at the close, and no close owes a missing opener. The next
+/// declaration reads whole.
+#[test]
+fn a_layout_close_closes_its_own_block_7902() -> Result<(), Failure>
+{
+    let source = include_str!("acceptance/fixtures/a-layout-close-closes-its-own-block-7902.gandr");
+    let result = parse(built(), SourceText::from(source))?;
+    let owed: Vec<_> = result
+        .obligations()
+        .iter()
+        .map(|obligation| {
+            (
+                obligation.class,
+                usize::from(obligation.span.start()),
+                usize::from(obligation.span.end()),
+            )
+        })
+        .collect();
+    let close = source
+        .find("return p\n")
+        .map(|at| at.saturating_add("return p".len()))
+        .ok_or("the arm is written")?;
+    assert_eq!(
+        owed,
+        [(Oblig::MissingTile, close, close)],
+        "the arm owes its `=>` once, at the close of its block"
+    );
+    assert_eq!(
+        significant_children(result.tree(), result.tree().root()).len(),
+        2,
+        "the next declaration reads as its own item"
+    );
+    Ok(())
+}
+
 /// An unclosed value delimiter must be repaired at the declaration boundary,
 /// so a following definition remains a distinct top-level item.
 ///

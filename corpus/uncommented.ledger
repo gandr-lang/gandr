@@ -1828,7 +1828,6 @@ sketch/model-refinement/operations.gandr:size:bc6eb9fd41f7a7b7 uncommented
 sketch/model-refinement/operations.gandr:size:ff1eb19b0d239f31 uncommented
 sketch/providers/provider.gandr:module_declaration:449831ed16ff1c8f uncommented
 sketch/user-notation/derive.gandr:Point.Point:ca18de0a9ac4a649 uncommented
-sketch/user-notation/readers.gandr:def_value:2dcb7839dd636ddd uncommented
 sketch/views-and-layouts/snoc.gandr:Snoc:4db3d983101a1886 uncommented
 sketch/web/export.gandr:Summary.Summary:c77506eb6cd47c5b uncommented
 sketch/web/export.gandr:Verdict.Empty:a740f3a8a712370d uncommented

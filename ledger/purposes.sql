@@ -4533,6 +4533,7 @@ INSERT INTO purpose VALUES('surface-parser','meld::Frontier','struct','The head 
 INSERT INTO purpose VALUES('surface-parser','meld::HeadForm','enum','The open form at the slope head, as the completion query reads it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::HeadFrontier','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::HeadOperandPresence','struct','Half-open stack range `[low, high_exclusive)`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','meld::LayoutOpener','struct','The byte where the layout opener of a layout block starts.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::Mark','struct','A lightweight in-place transaction over a MeldState.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::MeldError','enum','A failure while committing the melder to a SyntaxTree.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::MeldState','struct','A resumable, first-order push machine over a checked PBG.',NULL,'fits','sound',NULL);

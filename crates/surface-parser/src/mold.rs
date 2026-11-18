@@ -292,6 +292,7 @@ use crate::meld::DeclarationBound;
 use crate::meld::DeclarationStart;
 use crate::meld::FormUnit;
 use crate::meld::HeadOperandPresence;
+use crate::meld::LayoutOpener;
 use crate::meld::Mark;
 use crate::meld::MoldAdmissibility;
 use crate::meld::SlopeHeight;
@@ -1297,6 +1298,50 @@ fn ends_declaration(
     }))
 }
 
+/// The byte where the layout opener of the block that the layout close at
+/// `index` ends starts.
+///
+/// The layout pass writes one close for each block that it opened, so its
+/// opens and closes nest as brackets do. The walk runs back from the close
+/// and counts the blocks that open and close between: the first open that
+/// no close between ends is its own. A close reads it only when it continues
+/// no open form, so a source with no fault walks nothing.
+///
+/// # Specification
+/// - requires: `tokens` came from the labeler.
+/// - ensures: the start of the last [`Lexeme::LayoutOpen`] before `index` that
+///   no [`Lexeme::LayoutClose`] between ends, or `None` when every one is
+///   ended.
+/// - panics: none.
+///
+/// # Cost
+/// - time: one step for each token between the opener and the close.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `match` block inside a `def` body puts two closes at
+///   one byte, and each reads its own opener.
+/// - witness: `tests::acceptance::a_layout_close_closes_its_own_block_7902`
+#[spec(ensures: |ret| ret.is_none_or(|start| tokens.get(.. usize::from(index)).is_some_and(|before| before.iter().any(|token| token.lexeme == Lexeme::LayoutOpen && token.start == u32::from(start)))))]
+fn layout_opener(
+    tokens: &[Token],
+    index: TokenIndex,
+) -> Option<LayoutOpener>
+{
+    let mut ended = 0_usize;
+    for token in tokens.get(.. usize::from(index))?.iter().rev() {
+        if token.lexeme == Lexeme::LayoutClose {
+            ended = ended.saturating_add(1);
+        }
+        else if token.lexeme == Lexeme::LayoutOpen {
+            match ended.checked_sub(1) {
+                Some(fewer) => ended = fewer,
+                None => return Some(LayoutOpener::from(token.start)),
+            }
+        }
+    }
+    None
+}
+
 /// The reserved uppercase words (the tree-sitter grammar's `KW` / primitive
 /// type names).
 ///
@@ -2222,6 +2267,7 @@ impl<'pbg> Molder<'pbg>
         state.settle_shadowing_frontiers(CandidateLabels::from(labels.as_slice()));
         self.gather(state, token.lexeme, text, &labels, Ahead::Nothing);
         self.settle_statement(state, token.lexeme, text, &labels, Ahead::Nothing);
+        self.settle_layout_close(state, token.lexeme, text, &labels, Ahead::Nothing);
         state.settle_declaration_boundary(&self.candidates);
         let reading = self.reading;
         let best = self.choose(state, text, Ahead::Nothing);
@@ -2442,6 +2488,7 @@ impl<'pbg> Molder<'pbg>
                 };
                 self.gather(state, token.lexeme, text, &labels, ahead);
                 self.settle_statement(state, token.lexeme, text, &labels, ahead);
+                self.settle_layout_close(state, token.lexeme, text, &labels, ahead);
                 state.settle_declaration_boundary(&self.candidates);
                 self.settle_before_prefixed_head(
                     state,
@@ -3030,6 +3077,73 @@ impl<'pbg> Molder<'pbg>
             Ahead::Nothing => true,
         };
         if closes {
+            state.close_statement(close);
+        }
+        self.gather(state, lexeme, text, labels, ahead);
+    }
+
+    /// Close the layout block that a layout close ends, when the close
+    /// continues no open form.
+    ///
+    /// The layout pass writes a close only for a block that it opened, so a
+    /// close never owes a missing opener. A form that stands open above the
+    /// block stands open for a fault inside it: the close collapses to the
+    /// block's frontier ([`MeldState::layout_close`]), each form above takes
+    /// its ghost end, and the mid tiles between the frontier and the close
+    /// are owed. The close's menu is then gathered again at that frontier.
+    ///
+    /// # Specification
+    /// - requires: `labels` are `text`'s candidate labels and the candidate
+    ///   buffer holds their gathered menu at `state`'s frontier.
+    /// - ensures: `state` is closed by [`MeldState::layout_close`]'s close
+    ///   exactly when `lexeme` is a layout close, no candidate continues the
+    ///   open form and a close is offered; the candidate buffer, sorted, holds
+    ///   the menu gathered at the resulting frontier; consumes no source.
+    /// - provides: the layout close at the end of a layout block.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arm that lost its `=>` before the two closes of
+    ///   its `match` and its `def` owes its `=>` once, and the `def` closes.
+    /// - witness: `tests::acceptance::a_layout_close_closes_its_own_block_7902`
+    /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body gathers the candidate menu the clause walks to check it sorted; #104 owns the cost of the clause"
+        )
+    )]
+    #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
+    fn settle_layout_close(
+        &mut self,
+        state: &mut MeldState<'_>,
+        lexeme: Lexeme,
+        text: TokenText<'_>,
+        labels: &LabelIds,
+        ahead: Ahead<'_, '_>,
+    )
+    {
+        let Ahead::Stream { tokens, index, .. } = ahead
+        else {
+            return;
+        };
+        if lexeme != Lexeme::LayoutClose
+            || self
+                .candidates
+                .iter()
+                .any(|&mold| bool::from(state.would_continue_form(mold)))
+        {
+            return;
+        }
+        let Some(opener) = layout_opener(tokens, index)
+        else {
+            return;
+        };
+        let frontier = state.admissibility_frontier();
+        self.gather_menu(labels, frontier.open, CandidateMenu::Declared);
+        if let Some(close) = state.layout_close(opener, &self.candidates) {
             state.close_statement(close);
         }
         self.gather(state, lexeme, text, labels, ahead);
