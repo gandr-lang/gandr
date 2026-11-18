@@ -1,0 +1,5 @@
+import "./color.gandr";
+import "./signal.gandr";
+def stop : Signal = Signal.Red;
+def paint : Color = Color.Red;
+def either : Signal = Red;

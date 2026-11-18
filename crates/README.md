@@ -1,0 +1,224 @@
+# crates
+
+This file is the naming authority for the workspace's crates. A crate lives at `crates/<category>-<name>` and its package is `gandr-<category>-<name>`; the driver's row names the one exception, and its README gives the reason.
+
+Three disciplines: consult this file before naming a crate; when it is silent, derive the name from the layering below and the crates beside it; add the row in the same change that adds the crate. A divergence is recorded here, not smoothed over.
+
+## Layering
+
+Categories are a layering order: a crate depends only on crates of its own category or of one listed before it. The categories are also the closed vocabulary of commit scopes.
+
+```text
+# Categories in dependency order: each depends only on its own and those above it.
+theory    reusable metatheory machinery
+kernel    the certified trusted base and its substrate: levels, the term arena and sharing format, the checking machine
+core      the core language: call-by-push-value syntax, the unified context, normalization by evaluation
+storage   the content-addressed tier: authenticated record and value planes
+runtime   effectful host machinery below the faces: effects handlers, foreign calls, emitted native code
+surface   syntax, grammar, parsing, lowering, the pipeline a driver invocation enters, and the driver a human or a tool runs
+workflow  repository tooling and gates
+```
+
+## Map
+
+An arrow is one category's dependencies on another, labelled with the count of `[dependencies]` edges between their crates. The count omits dev and build dependencies. Every arrow points down the layering: `check:crate-map` refuses an edge to a category listed after its own and names its two crates. `mise run ledger:crate-map` writes the block between the markers. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot).
+
+<!-- crate-map:begin -->
+```mermaid
+flowchart BT
+  theory
+  kernel
+  core
+  storage
+  runtime
+  surface
+  workflow
+  kernel -->|5| theory
+  core -->|14| theory
+  core -->|35| kernel
+  storage -->|6| theory
+  storage -->|1| kernel
+  runtime -->|1| theory
+  runtime -->|2| kernel
+  runtime -->|6| core
+  runtime -->|3| storage
+  surface -->|38| theory
+  surface -->|28| kernel
+  surface -->|48| core
+  surface -->|11| storage
+  surface -->|7| runtime
+  workflow -->|1| theory
+  workflow -->|2| core
+  workflow -->|18| surface
+```
+<!-- crate-map:end -->
+
+## Members
+
+One row per directory: the directory and what it is.
+
+```text
+# Rows sort lexicographically by directory; the dependency order is § Layering.
+crates/
+├── core-checker-base/             the faces, module run and refusals
+├── core-checker-bridge/           kernel readmission, staging families
+├── core-checker/                  the checking judgement under one name
+├── core-content/                  the content form of a core node: its canonical table, its encoder and its mint, under the checker
+├── core-fork/                     the fork a consumer hands its independent jobs to, and its serial reference
+├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
+├── core-nbe-base/                 the glued domain; the overlay, its erasure and its measure; staging
+├── core-nbe/                      evaluation, readback, conversion, native path transport
+├── core-publish/                  whole files by rename or link
+├── core-sequent/                  the command IL a core program is focused into, the outcome a run answers in and the store its answer is read back from
+├── core-session/                  contractive binary session types, coinductive relation search, endpoint replay, dialogue admission by logical time and certified recorded-run transport
+├── core-term/                     core syntax with native universe paths, the one unified context and the co-de Bruijn carrier
+├── core-unify/                    contextual metavariables and their unifier: most general solutions only, one store of postponed equations woken by their blockers, refutation on stable evidence
+├── kernel-check-memo/             the check-memo seam a checker consults
+├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
+├── kernel-core-base/              the record, its staging, content names, support, rewriting, refusals, verdict keys
+├── kernel-core/                   checking, conversion, admission; native universes and recursors; stage formation; certificate and stage replay
+├── kernel-data/                   the kernel's own data types: a budgeted region whose ids carry its brand, with adopt, the fold's join and the durable key as its crossings; the small vector over any allocator; the shared pointer with one count, and its thin form over a header and a slice
+├── kernel-strata/                 the universe-level oracle with checkable order evidence
+├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
+├── runtime-emitter/               the L machine's commands copy-and-patched into native code under a content cache, or run on the portable executor
+├── runtime-net/                   the network a host holds: streams to peers named by key, chunk fetches and migrations, over iroh
+├── runtime-scope/                 the owner's scoped runtime on the ring: one thread drives a scope's futures, and the scope's end drains every operation it lent memory to
+├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
+├── runtime-uring/                 the kernel's io_uring as the owner wrote it: the ring, its queues, its registrar, a preparer for each operation, and his system-call base beside them
+├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
+├── storage-chunker/               content-defined chunk boundaries and their committed parameters
+├── storage-records/               the authenticated ordered-record plane
+├── storage-schema/                the record plane as C-sets with checked equations
+├── storage-store/                 one store over both planes and named roots
+├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
+├── surface-agentic/               the agentic face of the hub: the Reactive Agent Protocol's toolset by default, the Model Context Protocol for compatibility
+├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
+├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once for every face to project
+├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
+├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: its verbs and their exit codes
+├── surface-evaluate/              the run stage: the dispatcher's engine
+├── surface-features/              the features ledger as data, read by the toolchain and the tools
+├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
+├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
+├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
+├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits, the module pass
+├── surface-lowering-capability/   the lowering's capability family
+├── surface-lowering-exits/        the lowering's exits family
+├── surface-lowering-expression/   the lowering's expressions and types: the plan and the mint of each form
+├── surface-lowering-identity/     the lowering's identity family
+├── surface-lowering-model/        the lowering's model and arity family
+├── surface-lowering-native/       the lowering's native family
+├── surface-lowering/              the molded tree into core terms, over its base
+├── surface-lsp-base/              the server's base: the protocol, positions, markup, inline completion
+├── surface-lsp-core/              the reading, hover, completion, tokens
+├── surface-lsp-diagnostics/       the recheck, kernel tiers, fixes
+├── surface-lsp-navigation/        references, rename, calls, hints
+├── surface-lsp/                   the language server: its handlers and the hub
+├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
+├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
+├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
+├── surface-render-terminal/       the terminal face of the diagnostics model: a diagnostic laid out as a located source snippet, plain or styled
+├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
+├── surface-session/               the interactive session: each revision lowered, judged and checkpointed for the REPL, server and terminal
+├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
+├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
+├── theory-cell-complexes-tools/   the toy alphabet and the adversary frame engine suites test against (dev only)
+├── theory-cell-complexes/         command patterns, matching, the reduction order, the cell alphabet and store
+├── theory-cellular-sheaves/       cellular sheaves: gluing and cohomology
+├── theory-circuit-algebras/       the diagram view, the spine reading, convex embedding matching and the diagram normal form
+├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion
+├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed
+├── theory-decomposition-spaces/   two-mode certificate composition, bounded backward pathway queries and borrowed canonical step fields
+├── theory-deep-inference/         shift equivalence, the causal order and web, the certificate normal form and its replay plan, guarded-family prices
+├── theory-discrete-morse/         acyclic matchings: their check and the greedy matching
+├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
+├── theory-e-graphs/               a proof-producing e-graph over a Lawvere theory's term table
+├── theory-exact-reals/            canonical dyadics, outward-rounded intervals and the scoped plan DAG, outside the kernel
+├── theory-graded-posets/          graded posets with cells as data
+├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
+├── theory-levitation/             the code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
+├── theory-nominal-automata/       nominal word and tree automata over caller-owned names, literal word membership and name dropping
+├── theory-order-maintenance/      order maintenance with constant-time comparison
+├── theory-ordered-algebras/       one law checker for ordered semirings and rings, a counterexample per broken law, its instances, and exact Clifford+T amplitudes
+├── theory-path-orders/            path orders over second-order algebraic terms, the precedence as data, returning a derivation a checker replays
+├── theory-probability/            exact finite distributions, and inference by gluing
+├── theory-shapes/                 finite shapes: decidable subshapes, inclusions, the outer pushout, and face entailment in three bands, derived or refuted
+├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
+├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
+├── theory-stone-duality/          finite Stone duality: the free distributive lattice in normal form, finite Birkhoff duality, and monotone maps as lattice homomorphisms
+├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
+├── workflow-build-state/          the `build-state` binary: build state kept to one build's units, and joined from a lane's shards each unit from one build
+├── workflow-coverage-guard/       the `coverage-guard` binary: main's coverage upload against the one before it, filed on one issue when it drops
+├── workflow-debt-ledger/          the comment and prose gates' debt ledger
+├── workflow-github/               the workflow binaries' one `gh` runner
+├── workflow-host-tools/           the `host-tools` binary: the tools with no binary for a host's target, built once and copied to its hosts
+├── workflow-hotpath-guard/        the `hotpath-guard` binary: a commit's hotpath checks, filed on one issue per regressed function
+├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
+├── workflow-ledger-tasks/         the `ledger` binary: the syntax ledger written, its exemplars verified and swept, the features ledger read
+├── workflow-parser-report/        the `parser-report` binary: the parser read on each axis a syntax candidate is measured against
+├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger and the merge base
+├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
+├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, all of it nightly
+└── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings
+```
+
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
+
+A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
+
+## Compilation
+
+_Projection_ is the compiler: it takes a _choreography_, one program over named _roles_, to an _endpoint_ per role, a closed program whose protocol and crossing data are fixed, and the endpoint is the artifact. A _recipe_ names a program's endpoints. A _deployment_ binds each role to a world key, an instance count and discovery, never entering an artifact's identity, so one artifact runs as two processes or a fleet. A _local artifact_ is a one-role choreography's endpoint: the degenerate case, and the only one built today. A runtime component no type demands is a recipe policy, off by default.
+
+`surface-evaluate` runs a checked source's `main` as a local artifact. `runtime-emitter` holds an endpoint's code, and `runtime-net` holds its network. Projection and the recipe have no crate yet.
+
+## Storage and distribution
+
+The storage crates form the content-addressable CAM. Runtime stores form location-addressable LAMs. Each world has its own LAMs and reaches one logical CAM by canonical-byte digest. A digest proves integrity. The checker and kernel decide validity. The v1 storage vectors define the external contract (`Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`). Their sharing points are the `sharing` concern of `ledger/concerns.sql`.
+
+```mermaid
+flowchart LR
+  subgraph LAMs["a world's LAMs"]
+    world[core-term::world]
+    memory[core-term::memory]
+    emitter[runtime-emitter]
+    sequent[core-sequent]
+    net[runtime-net]
+  end
+  subgraph CAM["the CAM"]
+    chunker[storage-chunker]
+    values[storage-values]
+    records[storage-records]
+    artifact[storage-artifact]
+    store[storage-store]
+  end
+  memory -->|hold: a cell| emitter
+  emitter -->|moves out| sequent
+  world -->|mobile, Open| sequent
+  emitter -->|a std.net.Eff operation| net
+  net -->|a commit's chunks| values
+  sequent -->|crossing::commit| values
+  values -->|crossing::deref| sequent
+  chunker --> values
+  chunker --> records
+  records --> artifact
+  values --> store
+  records --> store
+```
+
+| Crate | Layer | Located | Resident | Wall |
+| ----- | ----- | ------- | -------- | ---- |
+| `storage-chunker` | CAM | none | cut points, κ and cap committed | integrity |
+| `storage-values` | CAM | none | a typed chunk DAG of `ContentPtr`s | integrity |
+| `storage-records` | CAM | none | records under a `TreeRoot` | integrity |
+| `storage-artifact` | CAM | none | a kernel artifact as records | integrity, then validity |
+| `storage-store` | CAM | one host's directory; its roots never cross | chunks, nodes and named roots, a file each | integrity |
+| `runtime-emitter` | LAM | its thread | a run's regions | validity |
+| `runtime-net` | LAM | its process | a stream's frames; served chunks | integrity |
+| `core-sequent` | LAM | its run | the `Store`, append-only | none |
+| `core-term::world` | world | `⊢_w`, `A at w` | — | validity |
+| `core-term::memory` | LAM | a hold's world | a held cell lent to a view | validity |
+
+## Divergences
+
+None.

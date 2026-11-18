@@ -1,0 +1,4 @@
+{negation}def named(xs : List(Bool)) -> -F List(Bool) {{
+  become Path.walk negation negation xs
+}}
+def half = cons *{{}};

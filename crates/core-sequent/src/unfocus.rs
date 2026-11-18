@@ -1,0 +1,2337 @@
+//! Unfocusing: `𝓕⁻¹`, reading a command back as the core computation it
+//! focuses, and a producer back as its core value.
+//!
+//! A command `⟨p |ε c⟩` decodes as a head read from `p` — a `μ`'s body, a
+//! copattern object's function, a recursive thunk forced, or a value — and a
+//! spine read from `c`: an application frame applies, `μ̃` binds, a force
+//! frame forces, a match cases, a selection projects, and the current return
+//! point ends the spine.
+//! The current return point is `★` at the root and covariable `0` under a
+//! `μ`, a thunk, a recursive thunk or a copattern arm; any other covariable
+//! escapes the computation and is refused. Every command focusing builds
+//! decodes, and `𝓕⁻¹ ∘ 𝓕` is the identity on core terms up to the types
+//! focusing erases: a datatype constructor reads back at the unknown value
+//! type and a nominal case at the unknown motive. IL outside that image is
+//! refused by name.
+//!
+//! The walk can close a term as it goes: a producer variable counting past
+//! the decoded root's own binders is replaced by the closed core value the
+//! caller supplies for it. The store's readback closes a closure's body
+//! over its environment this way; the public entry points close nothing.
+//!
+//! Decoding writes into a caller's [`CoreArena`] and truncates it to its entry
+//! watermark when refused.
+//!
+//! # Unfocusing is the left inverse
+//!
+//! `unfocus_command` and `unfocus_value` read the image of focusing back into a
+//! core arena, rule by rule in reverse: a cut against the return point is a
+//! `return`, a force frame a `force`, an application frame an application, a
+//! copattern object of one `apply` arm a `λ`, a `μ̃` a bind, a match on the
+//! injections a `case`, a match on the list's nil and cell its list case, a
+//! nominal match a `case_D` over its branch thunks'
+//! bodies, a selection the projection of its field, a recursive thunk under a
+//! force frame the fixpoint, and a `μ` cut the bind or case it names, under the
+//! frame it was named for. The IL carries no types, so a datatype's
+//! constructor reads back at the unknown value type and a nominal match at the
+//! unknown motive. The return point is `★` at the root and `α0` under the
+//! nearest covariable binder; a covariable reaching past it is a jump the core
+//! cannot state and is refused as `UnfocusRefusal::EscapingContinuation`. A `μ`
+//! in value position, a match the core cannot state and every
+//! other node outside the image is refused by name, and a refused reading
+//! truncates the core arena to its mark.
+//! Over closed well-typed terms `unfocus ∘ focus` is the identity up to the
+//! core's structure and the types focusing erases, which the round-trip
+//! properties check node by node across the two arenas.
+//!
+//! An abstract closure `{v̄; f}` is no form focusing makes: it is what closure
+//! conversion leaves, and it decodes as its code with its environment
+//! substituted. Its code is decoded under one producer binder per
+//! environment value, the values where the closure stands, and the
+//! environment is substituted into the decoded code all at once: a closure
+//! over a thunk is a value, and one over a copattern object or a recursive
+//! thunk is a cut head. So a converted term reads back as the term it
+//! converts.
+//!
+//! The walk is a loop over an explicit task stack, and its one implementation
+//! serves both the public inverse and the store's readback, which closes a
+//! terminal's free variables from its environment: the environment binds
+//! exactly the variables the closure's support selects, so the closing pairs
+//! each selected index with its value and lowers every other free index past
+//! the selected ones below it. The alternative was a readback of its own for a
+//! run's values, which would be a second decoder for the same image to keep in
+//! step. The choice reverses if a run's terminals grow a form focusing never
+//! produces.
+//!
+//! Unfocusing a native List fold closes the ambient variables of the type
+//! annotations the command arena imported rather than copying foreign ids:
+//! `unfocus::tests::closing_fold_annotations_substitutes_captured_codes`.
+
+use alloc::vec::Vec;
+use core::fmt;
+
+use anodized::spec;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
+use gandr_core_term::Zone;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::Component;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Summand;
+
+use crate::boundary::NodeCount;
+use crate::boundary::ProducerArity;
+use crate::il::CommandArena;
+use crate::il::CommandId;
+use crate::il::CommandNode;
+use crate::il::ConstructorTag;
+use crate::il::ConsumerId;
+use crate::il::ConsumerNode;
+use crate::il::DestructorTag;
+use crate::il::Introduces;
+use crate::il::ProducerId;
+use crate::il::ProducerNode;
+use crate::il::Route;
+use crate::il::Selector;
+
+/// Why a command or producer has no core reading.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UnfocusRefusal
+{
+    /// A command address names no command of the arena.
+    DanglingCommand(CommandId),
+    /// A producer address names no producer of the arena.
+    DanglingProducer(ProducerId),
+    /// A consumer address names no consumer of the arena.
+    DanglingConsumer(ConsumerId),
+    /// A control command contains annotations outside the focused image.
+    CommandOutsideTheImage(CommandId),
+    /// The producer stands where no focused term puts it: a `μ` or a
+    /// copattern object as a value, or a head with another arity or shape.
+    ProducerOutsideTheImage(ProducerId),
+    /// The consumer stands where no focused term puts it: a force frame or a
+    /// match after a computation, or a frame with another arity or shape.
+    ConsumerOutsideTheImage(ConsumerId),
+    /// A covariable or `★` that is not the current return point: a jump out
+    /// of the computation being decoded.
+    EscapingContinuation(ConsumerId),
+    /// An internal invariant broke: a builder found no result where its own
+    /// children should have left one. Unreachable while the walk's own pushes
+    /// are the only source of tasks; reported rather than asserted.
+    DecodeInvariant,
+}
+
+impl fmt::Display for UnfocusRefusal
+{
+    /// Names the node with no core reading.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
+            Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
+            Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
+            Self::CommandOutsideTheImage(id) => write!(f, "command {id} is not in focused form"),
+            Self::ProducerOutsideTheImage(id) => {
+                write!(f, "producer {id} is not in focused form")
+            },
+            Self::ConsumerOutsideTheImage(id) => {
+                write!(f, "consumer {id} is not in focused form")
+            },
+            Self::EscapingContinuation(id) => {
+                write!(
+                    f,
+                    "consumer {id} jumps out of the computation being decoded"
+                )
+            },
+            Self::DecodeInvariant => f.write_str("the decoding lost a result it pushed"),
+        }
+    }
+}
+
+impl core::error::Error for UnfocusRefusal
+{
+}
+
+/// Decode a command as the core computation it focuses, with `★` as its
+/// return point.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success a core computation `M` with `𝓕⟦M⟧★` equal to the
+///   command up to node sharing; free producer variables stay free.
+/// - provides: the left inverse of
+///   [`focus_computation`](crate::focus_computation).
+/// - fails: [`UnfocusRefusal`] naming the first node with no core reading;
+///   `core` is then exactly as it was on entry.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L2 — source terms and their independently focused image expose
+///   wrong formers, child order and binder shifts on bounded generated
+///   computations. L3 — dangling roots, malformed heads and escaping
+///   continuations are refused with exact payloads and rollback.
+/// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+/// - witness: `unfocus::tests::an_escaping_covariable_is_refused_and_rolled_back`
+/// - witness: `unfocus::tests::a_capture_standing_as_a_value_is_outside_the_image`
+/// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+#[inline]
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| match ret {
+        | Ok(id) => core.computation(id).is_some(),
+        | Err(_) => core.watermark() == mark,
+    },
+)]
+pub fn unfocus_command(
+    arena: &CommandArena,
+    command: CommandId,
+    core: &mut CoreArena,
+) -> Result<ComputationId, UnfocusRefusal>
+{
+    let decoded = decode(arena, Root::Command(command), core, Closing::default())?;
+    match decoded {
+        Decoded::Computation(computation) => Ok(computation),
+        Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant),
+    }
+}
+
+/// Decode a producer as the core value it focuses.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success a core value `v` with `𝓥⟦v⟧` equal to the producer up
+///   to node sharing.
+/// - provides: the left inverse of [`focus_value`](crate::focus_value).
+/// - fails: as [`unfocus_command`], with the same rollback.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded generated source values are the independent
+///   expected reading. L3 — wrong arities, suspended heads and dangling roots
+///   expose lost image checks through exact refusal and rollback.
+/// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+/// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+#[inline]
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| match ret {
+        | Ok(id) => core.value(id).is_some(),
+        | Err(_) => core.watermark() == mark,
+    },
+)]
+pub fn unfocus_value(
+    arena: &CommandArena,
+    producer: ProducerId,
+    core: &mut CoreArena,
+) -> Result<ValueId, UnfocusRefusal>
+{
+    let decoded = decode(arena, Root::Value(producer), core, Closing::default())?;
+    match decoded {
+        Decoded::Value(value) => Ok(value),
+        Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant),
+    }
+}
+
+/// The binder depths a node is decoded under.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Depth
+{
+    /// Producer binders opened since the decoded root.
+    producers: u32,
+    /// Covariable binders opened since the decoded root, counting the
+    /// root's own return point when it is one.
+    covariables: u32,
+}
+
+impl Depth
+{
+    /// The root of a decoding: no binder opened, `★` the return point.
+    const ROOT: Self = Self {
+        producers: 0,
+        covariables: 0,
+    };
+
+    /// The depth under one more producer binder.
+    ///
+    /// # Specification
+    /// - ensures: the producer count is one higher, saturating at a ceiling no
+    ///   arena of at most `u32::MAX` nodes per family can reach.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the product of zero, one, the penultimate count and
+    ///   the ceiling observes each successor and the untouched opposite depth.
+    ///   Swapped counters, wrapping and premature saturation are distinguished.
+    /// - witness: `unfocus::tests::binder_depths_saturate_independently`
+    #[spec(ensures: |ret| ret.producers == self.producers.saturating_add(1)
+        && ret.covariables == self.covariables
+    )]
+    fn under_producer(self) -> Self
+    {
+        Self {
+            producers: self.producers.saturating_add(1),
+            covariables: self.covariables,
+        }
+    }
+
+    /// The depth under one more covariable binder.
+    ///
+    /// # Specification
+    /// - ensures: the covariable count is one higher, saturating as
+    ///   [`Self::under_producer`] does.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the product of zero, one, the penultimate count and
+    ///   the ceiling observes each successor and the untouched opposite depth.
+    ///   Swapped counters, wrapping and premature saturation are distinguished.
+    /// - witness: `unfocus::tests::binder_depths_saturate_independently`
+    #[spec(ensures: |ret| ret.covariables == self.covariables.saturating_add(1)
+        && ret.producers == self.producers
+    )]
+    fn under_covariable(self) -> Self
+    {
+        Self {
+            producers: self.producers,
+            covariables: self.covariables.saturating_add(1),
+        }
+    }
+
+    /// The depth under a copattern arm of `apply`: one producer, one
+    /// covariable.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under_function_arm(self) -> Self
+    {
+        self.under_producer().under_covariable()
+    }
+
+    /// The depth under `count` more producer binders: an abstract closure's
+    /// environment, over its code.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under_producers(
+        self,
+        count: NodeCount,
+    ) -> Self
+    {
+        Self {
+            producers: u32::try_from(usize::from(count))
+                .map_or(u32::MAX, |count| self.producers.saturating_add(count)),
+            covariables: self.covariables,
+        }
+    }
+}
+
+/// What a decoding starts from.
+#[derive(Clone, Copy, Debug)]
+pub enum Root
+{
+    /// A command, read as a computation returning to `★`.
+    Command(CommandId),
+    /// A producer, read as a value.
+    Value(ProducerId),
+    /// A thunk's suspended command, read as the thunk.
+    ThunkBody(CommandId),
+    /// A recursive thunk's suspended command, read as the thunk of the
+    /// fixpoint it suspends.
+    FixpointBody(CommandId, gandr_kernel_term::FixpointEvidence),
+    /// A copattern object, read as its lambda or lazy product of computations.
+    Copattern(ProducerId),
+    /// A stack bind body, open in one producer and one return covariable.
+    BindBody(CommandId),
+}
+
+/// What a decoding produced.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Decoded
+{
+    /// A core value.
+    Value(ValueId),
+    /// A core computation.
+    Computation(ComputationId),
+}
+
+/// The closed values a decoded root's free producer variables read: the
+/// intuitionistic indices past the root's own binders that its closure
+/// captured, ascending, each beside the closed value it reads. An index the
+/// closing does not select stays a variable, lowered past the captured
+/// indices below it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Closing<'run>
+{
+    /// The captured indices past the root's own binders, strictly ascending.
+    selected: &'run [DeBruijnIndex],
+    /// The closed value each captured index reads, in the same order.
+    values: &'run [ValueId],
+}
+
+impl<'run> Closing<'run>
+{
+    /// The closing reading `values[r]` at `selected[r]`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some` exactly when the two have one value per index and the
+    ///   indices strictly ascend.
+    /// - provides: the one way a readback pairs an environment with what its
+    ///   closure captured.
+    /// - fails: `None` otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shorter environment, a longer one and an unordered
+    ///   selection are refused, and the paired closing reads each value at its
+    ///   index.
+    /// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
+    /// - witness: `readback::tests::an_environment_that_is_not_the_support_is_refused`
+    #[spec(ensures: |ret| ret.is_some() == (selected.len() == values.len()
+        && selected.windows(2).all(|pair| pair.first() < pair.last())))]
+    #[inline]
+    pub(crate) fn new(
+        selected: &'run [DeBruijnIndex],
+        values: &'run [ValueId],
+    ) -> Option<Self>
+    {
+        let ascending = selected
+            .iter()
+            .zip(selected.iter().skip(1))
+            .all(|(before, after)| before < after);
+        (selected.len() == values.len() && ascending).then_some(Self { selected, values })
+    }
+}
+
+/// Decode a root into `core`, closing producer variables past the root's own
+/// binders with `closing`.
+///
+/// # Specification
+/// - requires: every value in `closing` is a closed value of `core`.
+/// - ensures: on success the decoded term; a producer variable of the
+///   intuitionistic zone counting `k` past the binders opened since the root
+///   reads the value `closing` pairs with `k` where it selects `k`, and stays a
+///   variable otherwise, lowered past the selected indices below `k`;
+///   annotations close the same way.
+/// - provides: the one walk both the public inverse and the store's readback
+///   run.
+/// - fails: as [`unfocus_command`]; `core` is then exactly as on entry.
+/// - panics: none.
+/// - intension: one iteration per task, a constant number of tasks per IL node.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded generated source terms and stored closure
+///   readbacks observe decoding independently of the IL traversal. L3 —
+///   substitution at binder/closing boundaries, malformed heads and exact
+///   dangling-root rollback distinguish shift and image-check defects.
+/// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+/// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+/// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+/// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
+/// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+/// - witness: `tests::run::a_function_terminal_reads_back_closed_over_its_environment`
+/// - witness: `tests::run::a_thunk_reads_back_closed_over_its_environment`
+#[spec(
+    requires: closing.values.iter().all(|id| core.value(*id).is_some()),
+    captures: [mark = core.watermark()],
+    ensures: |ret| match ret {
+        | Ok(Decoded::Value(id)) => core.value(id).is_some(),
+        | Ok(Decoded::Computation(id)) => core.computation(id).is_some(),
+        | Err(_) => core.watermark() == mark,
+    },
+)]
+pub fn decode(
+    arena: &CommandArena,
+    root: Root,
+    core: &mut CoreArena,
+    closing: Closing<'_>,
+) -> Result<Decoded, UnfocusRefusal>
+{
+    let mark = core.watermark();
+    let mut walk = Unfocusing {
+        arena,
+        core,
+        closing,
+        tasks: Vec::new(),
+        values: Vec::new(),
+        computations: Vec::new(),
+    };
+    let answer = walk.run(root);
+    if answer.is_err() {
+        core.truncate_to(mark);
+    }
+    answer
+}
+
+/// One unit of pending decoding work.
+#[derive(Clone, Debug)]
+enum Task
+{
+    /// Assemble a literal stack after its independent frame children.
+    Reify(ProducerId),
+    /// Assemble an effect or control instruction at its ambient depth.
+    Control(CommandId, Depth),
+    /// Pop this many computations and build their lazy product.
+    With(NodeCount),
+    /// Project one component of a decoded computation.
+    Project(Component),
+    /// Mint a native list cell from its decoded head and tail.
+    ListCons,
+    /// Rebuild a native fold from decoded branches and its list.
+    ListFold(gandr_core_term::ValueTypeId, gandr_core_term::ValueTypeId),
+    /// Mint a saturated core operation from decoded arguments.
+    Primitive(
+        gandr_core_term::primitive::Primitive,
+        gandr_core_term::primitive::Arguments<ProducerId>,
+    ),
+    /// Mint the decomposition of the decoded dialogue.
+    Decompose,
+    /// Pop one value per payload move and build the dialogue of these moves.
+    Dialogue(alloc::sync::Arc<[gandr_core_term::session::DialogueMove<()>]>),
+    /// Decode a producer as a value; leaves one value.
+    Value(ProducerId, Depth),
+    /// Decode a command as a computation; leaves one computation.
+    Command(CommandId, Depth),
+    /// Extend the computation on top by the spine of `consumer`.
+    Spine(ConsumerId, Depth),
+    /// Pop this many values and build their tuple.
+    Tuple(ProducerArity),
+    /// Pop one value per label and build the record of those labels.
+    Record(alloc::sync::Arc<[gandr_core_term::FieldLabel]>),
+    /// Pop one value per payload move and build the recorded run of these
+    /// moves.
+    Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>),
+    /// Pop one value and build its projection of the selected field.
+    Select(Selector),
+    /// Pop one value and build its injection into this summand.
+    Injection(Summand),
+    /// Pop one value and build its lift.
+    Lift(Level),
+    /// Pop a datatype constructor's field values and build it.
+    Native
+    {
+        /// The constructor's ordinal.
+        tag: gandr_kernel_term::ConstructorTag,
+        /// Its field count.
+        arity: ProducerArity,
+        /// The declaration of the family that declares the constructor.
+        family: gandr_kernel_term::ConstantIndex,
+    },
+    /// Pop one computation and build its thunk.
+    Thunk,
+    /// Pop one computation and build the fixpoint over it.
+    Fixpoint(gandr_kernel_term::FixpointEvidence),
+    /// Pop one value and build its return.
+    Return,
+    /// Pop this many values and build their many-value return.
+    ReturnAll(NodeCount),
+    /// Pop one value and build its force.
+    Force,
+    /// Pop one computation and build its lambda.
+    Lambda,
+    /// Pop an argument value and a head computation and build the
+    /// application.
+    Application,
+    /// Pop a body and a head computation and build the bind.
+    Bind,
+    /// Pop a body and a head computation and build the bind of this many
+    /// values.
+    BindAll(gandr_core_term::ComponentCount),
+    /// Pop this many branches, one per summand, and the scrutinee and build
+    /// the case.
+    Case(NodeCount),
+    /// Pop the branches and the scrutinee and build the nominal case over
+    /// constructors of these field counts.
+    DataCase(
+        NodeCount,
+        alloc::boxed::Box<[gandr_kernel_term::FieldCount]>,
+    ),
+    /// Pop the body and the scrutinee and build the split of this many
+    /// components.
+    Split(gandr_core_term::ComponentCount),
+    /// Pop the cell branch, the empty branch and the scrutinee and build the
+    /// list case.
+    ListCase,
+    /// Pop the decoded code of an abstract closure and its environment's
+    /// values beneath it, innermost on top, and substitute the environment
+    /// into the code.
+    Enclose(NodeCount, Closed),
+}
+
+/// The family an abstract closure's code decodes to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Closed
+{
+    /// A thunk's value.
+    Value,
+    /// A copattern object's or a recursive thunk's computation at a cut head.
+    Computation,
+}
+
+/// The state of one decoding.
+struct Unfocusing<'run>
+{
+    /// The IL read from.
+    arena: &'run CommandArena,
+    /// The core arena built into.
+    core: &'run mut CoreArena,
+    /// The closed values free producer variables read.
+    closing: Closing<'run>,
+    /// The pending work, the next task last.
+    tasks: Vec<Task>,
+    /// Decoded values awaiting their parent.
+    values: Vec<ValueId>,
+    /// Decoded computations awaiting their parent.
+    computations: Vec<ComputationId>,
+}
+
+impl Unfocusing<'_>
+{
+    /// Decode `root` to completion.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the single decoded term.
+    /// - provides: the loop every decoding drives; no task recurses.
+    /// - fails: the first refusal a task raises, or
+    ///   [`UnfocusRefusal::DecodeInvariant`] for a result count other than one.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source terms compared with independently focused and
+    ///   decoded bounded generated inputs expose wrong formers, child order and
+    ///   binder shifts. L3 — malformed heads and exact refusal payloads cover
+    ///   the directed image boundary.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
+    #[spec(ensures: |ret| ret.is_err() || (self.tasks.is_empty()
+        && match ret {
+            | Ok(Decoded::Value(id)) => self.values.len() == 1 && self.values.first() == Some(&id) && self.computations.is_empty(),
+            | Ok(Decoded::Computation(id)) => self.computations.len() == 1 && self.computations.first() == Some(&id) && self.values.is_empty(),
+            | Err(_) => false,
+        })
+    )]
+    fn run(
+        &mut self,
+        root: Root,
+    ) -> Result<Decoded, UnfocusRefusal>
+    {
+        match root {
+            Root::Command(command) => self.tasks.push(Task::Command(command, Depth::ROOT)),
+            Root::Value(producer) => self.tasks.push(Task::Value(producer, Depth::ROOT)),
+            Root::ThunkBody(body) => {
+                self.tasks.push(Task::Thunk);
+                self.tasks
+                    .push(Task::Command(body, Depth::ROOT.under_covariable()));
+            },
+            Root::FixpointBody(body, evidence) => {
+                self.tasks.push(Task::Thunk);
+                self.tasks.push(Task::Fixpoint(evidence));
+                self.tasks.push(Task::Command(
+                    body,
+                    Depth::ROOT.under_producer().under_covariable(),
+                ));
+            },
+            Root::Copattern(producer) => self.copattern_head(producer, Depth::ROOT)?,
+            Root::BindBody(body) => self
+                .tasks
+                .push(Task::Command(body, Depth::ROOT.under_function_arm())),
+        }
+        while let Some(task) = self.tasks.pop() {
+            self.step(task)?;
+        }
+        match (self.values.as_slice(), self.computations.as_slice()) {
+            (&[value], &[]) => Ok(Decoded::Value(value)),
+            (&[], &[computation]) => Ok(Decoded::Computation(computation)),
+            _ => Err(UnfocusRefusal::DecodeInvariant),
+        }
+    }
+
+    /// Run one task.
+    ///
+    /// # Specification
+    /// - requires: a builder's children have left their results.
+    /// - ensures: the task's result, or its follow-up tasks, are pushed.
+    /// - provides: the decoding table of the module documentation.
+    /// - fails: a dangling address, a node outside the image, an escaping
+    ///   continuation, or a missing result.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source terms compared with independently focused and
+    ///   decoded bounded generated inputs expose wrong formers, child order and
+    ///   binder shifts. L3 — malformed heads and exact refusal payloads cover
+    ///   the directed image boundary.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[spec(
+        requires: match &task {
+            | &Task::Reify(source) => self.arena.producer(source).is_none_or(|node| match *node {
+                ProducerNode::Reify(ref frames) => self.values.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
+                    && self.computations.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
+                ProducerNode::Primitive { .. } | ProducerNode::Decompose(_) | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } | ProducerNode::Cocase { .. } | ProducerNode::Closure { .. } | ProducerNode::Mu { .. } => true,
+            }),
+            | &Task::Control(source, _) => self.arena.command(source).is_none_or(|node| match *node {
+                CommandNode::Perform { route: Route::Nearest, .. } | CommandNode::Abandon { .. } => !self.values.is_empty(),
+                CommandNode::Perform { route: Route::Capability(_), .. } => self.values.len() >= 2,
+                CommandNode::Handle { ref clauses, .. } => self.computations.len() >= clauses.len().saturating_add(2),
+                CommandNode::Resume { .. } => !self.values.is_empty() && !self.computations.is_empty(),
+                CommandNode::Reset { .. } | CommandNode::Shift { .. } => !self.computations.is_empty(),
+                CommandNode::Cut { .. } | CommandNode::Deliver { .. } => true,
+                CommandNode::Memory { ref form, .. } => self.values.len() >= form.values().count()
+                    && self.computations.len() >= form.computations().count(),
+                CommandNode::World { ref form, .. } => self.values.len() >= form.values().count()
+                    && self.computations.len() >= form.scoped().count(),
+                CommandNode::Session { ref action, .. } => self.values.len() >= action.values().count()
+                    && self.computations.len() >= action.computations().count(),
+            }),
+            | &Task::With(count) => self.computations.len() >= usize::from(count),
+            | &Task::Bind | &Task::BindAll(_) => self.computations.len() >= 2,
+            | &Task::ReturnAll(count) => self.values.len() >= usize::from(count),
+            | &Task::Project(_) | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
+            | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
+            | &Task::Dialogue(ref turns) => self.values.len() >= usize::from(ConstructorTag::Dialogue(alloc::sync::Arc::clone(turns)).producer_arity()),
+            | &Task::ListCons => self.values.len() >= 2,
+            | &Task::Decompose | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force | &Task::Select(_) => !self.values.is_empty(),
+            | &Task::Application | &Task::Split(_) => !self.values.is_empty() && !self.computations.is_empty(),
+            | &Task::ListCase | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
+            | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
+            | &Task::Record(ref labels) => self.values.len() >= labels.len(),
+            | &Task::Recorded(ref moves) => self.values.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
+            | &Task::Case(branches) | &Task::DataCase(branches, _) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
+            | &Task::Enclose(count, Closed::Value) => self.values.len() > usize::from(count),
+            | &Task::Enclose(count, Closed::Computation) => self.values.len() >= usize::from(count) && !self.computations.is_empty(),
+            | &Task::Value(..) | &Task::Command(..) => true,
+        },
+        ensures: |ret| ret.is_err() || (self.values.last().is_none_or(|id| self.core.value(*id).is_some())
+            && self.computations.last().is_none_or(|id| self.core.computation(*id).is_some())),
+    )]
+    fn step(
+        &mut self,
+        task: Task,
+    ) -> Result<(), UnfocusRefusal>
+    {
+        match task {
+            Task::Reify(source) => self.complete_reify(source),
+            Task::Control(source, depth) => self.complete_control(source, depth),
+            Task::With(count) => {
+                let start = self
+                    .computations
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let components = self
+                    .computations
+                    .get(start ..)
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let with = self.core.computation_with(components);
+                self.computations.truncate(start);
+                self.computations.push(with);
+                Ok(())
+            },
+            Task::Project(component) => {
+                let subject = self.pop_computation()?;
+                self.computations
+                    .push(self.core.computation_project(component, subject));
+                Ok(())
+            },
+            Task::ListFold(element, result) => {
+                let list = self.pop_value()?;
+                let on_cons = self.pop_computation()?;
+                let on_nil = self.pop_computation()?;
+                let folded = self
+                    .core
+                    .computation_list_fold(element, result, list, on_nil, on_cons);
+                self.computations.push(folded);
+                Ok(())
+            },
+            Task::Primitive(primitive, arguments) => {
+                use gandr_core_term::primitive::Arguments;
+                let arguments = match arguments {
+                    Arguments::Unary(_) => Arguments::Unary(self.pop_value()?),
+                    Arguments::Binary(_) => {
+                        let second = self.pop_value()?;
+                        Arguments::Binary([self.pop_value()?, second])
+                    },
+                };
+                let computation = self.core.computation_primitive(primitive, arguments);
+                self.computations.push(computation);
+                Ok(())
+            },
+            Task::Decompose => {
+                let dialogue = self.pop_value()?;
+                let computation = self.core.computation_decompose(dialogue);
+                self.computations.push(computation);
+                Ok(())
+            },
+            Task::Value(producer, depth) => self.value(producer, depth),
+            Task::Command(command, depth) => self.command(command, depth),
+            Task::Spine(consumer, depth) => self.spine(consumer, depth),
+            Task::Tuple(arity) => {
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let components: Vec<ValueId> = self.values.drain(start ..).collect();
+                let tuple = self.core.value_tuple(&components);
+                self.values.push(tuple);
+                Ok(())
+            },
+            Task::Record(labels) => {
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(labels.len())
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let fields: alloc::collections::BTreeMap<_, _> = labels
+                    .iter()
+                    .cloned()
+                    .zip(self.values.drain(start ..))
+                    .collect();
+                let record = self.core.value_record(fields);
+                self.values.push(record);
+                Ok(())
+            },
+            Task::Recorded(shape) => {
+                use gandr_core_term::session::RecordedMove;
+                let arity =
+                    ConstructorTag::Recorded(alloc::sync::Arc::clone(&shape)).producer_arity();
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let mut payloads = self.values.drain(start ..);
+                let mut moves = Vec::with_capacity(shape.len());
+                for movement in shape.iter() {
+                    moves.push(match *movement {
+                        RecordedMove::Sent(()) | RecordedMove::Received(()) => movement
+                            .carrying(payloads.next().ok_or(UnfocusRefusal::DecodeInvariant)?),
+                        RecordedMove::Selected(ref label) => RecordedMove::Selected(label.clone()),
+                        RecordedMove::Offered(ref label) => RecordedMove::Offered(label.clone()),
+                        RecordedMove::Closed => RecordedMove::Closed,
+                    });
+                }
+                drop(payloads);
+                let run = self.core.value_recorded(alloc::sync::Arc::from(moves));
+                self.values.push(run);
+                Ok(())
+            },
+            Task::Dialogue(shape) => {
+                let arity =
+                    ConstructorTag::Dialogue(alloc::sync::Arc::clone(&shape)).producer_arity();
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let mut payloads = self.values.drain(start ..);
+                let mut turns = Vec::with_capacity(shape.len());
+                for turn in shape.iter() {
+                    let movement = turn
+                        .movement
+                        .try_map(|()| payloads.next().ok_or(UnfocusRefusal::DecodeInvariant))?;
+                    turns.push(gandr_core_term::session::DialogueMove {
+                        endpoint: turn.endpoint,
+                        movement,
+                    });
+                }
+                drop(payloads);
+                let dialogue = self.core.value_dialogue(alloc::sync::Arc::from(turns));
+                self.values.push(dialogue);
+                Ok(())
+            },
+            Task::Select(selector) => {
+                let subject = self.pop_value()?;
+                let projected = match selector {
+                    Selector::Component(component) => {
+                        self.core.computation_tuple_projection(subject, component)
+                    },
+                    Selector::Label(label) => {
+                        self.core.computation_record_projection(subject, label)
+                    },
+                };
+                self.computations.push(projected);
+                Ok(())
+            },
+            Task::ListCons => {
+                let tail = self.pop_value()?;
+                let head = self.pop_value()?;
+                self.values.push(self.core.value_list_cons(head, tail));
+                Ok(())
+            },
+            Task::Injection(summand) => {
+                let body = self.pop_value()?;
+                let injection = self.core.value_injection(summand, body);
+                self.values.push(injection);
+                Ok(())
+            },
+            Task::Lift(level) => {
+                let body = self.pop_value()?;
+                let lift = self.core.value_lift(level, body);
+                self.values.push(lift);
+                Ok(())
+            },
+            Task::Native { tag, arity, family } => {
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let fields: Vec<ValueId> = self.values.drain(start ..).collect();
+                let constructed = self
+                    .core
+                    .value_constructor_of(family, Vec::new(), tag, fields);
+                self.values.push(constructed);
+                Ok(())
+            },
+            Task::Thunk => {
+                let body = self.pop_computation()?;
+                let thunk = self.core.value_thunk(body);
+                self.values.push(thunk);
+                Ok(())
+            },
+            Task::Fixpoint(evidence) => {
+                let body = self.pop_computation()?;
+                let fixpoint = self.core.computation_fixpoint(body, evidence);
+                self.computations.push(fixpoint);
+                Ok(())
+            },
+            Task::Enclose(count, closed) => {
+                let code = match closed {
+                    Closed::Value => gandr_core_term::hole::TermId::Value(self.pop_value()?),
+                    Closed::Computation => {
+                        gandr_core_term::hole::TermId::Computation(self.pop_computation()?)
+                    },
+                };
+                let mut environment = Vec::with_capacity(usize::from(count));
+                for _ in 0_usize .. usize::from(count) {
+                    environment.push(self.pop_value()?);
+                }
+                match gandr_core_term::substitute_environment(self.core, code, &environment) {
+                    gandr_core_term::hole::TermId::Value(value) => self.values.push(value),
+                    gandr_core_term::hole::TermId::Computation(computation) => {
+                        self.computations.push(computation);
+                    },
+                }
+                Ok(())
+            },
+            Task::Return => {
+                let value = self.pop_value()?;
+                let returned = self.core.computation_return(value);
+                self.computations.push(returned);
+                Ok(())
+            },
+            Task::ReturnAll(count) => {
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let values: Vec<ValueId> = self.values.drain(start ..).collect();
+                let returned = self.core.computation_return_all(&values);
+                self.computations.push(returned);
+                Ok(())
+            },
+            Task::Force => {
+                let value = self.pop_value()?;
+                let forced = self.core.computation_force(value);
+                self.computations.push(forced);
+                Ok(())
+            },
+            Task::Lambda => {
+                let body = self.pop_computation()?;
+                let lambda = self.core.computation_lambda(body);
+                self.computations.push(lambda);
+                Ok(())
+            },
+            Task::Application => {
+                let argument = self.pop_value()?;
+                let head = self.pop_computation()?;
+                let applied = self.core.computation_application(head, argument);
+                self.computations.push(applied);
+                Ok(())
+            },
+            Task::Bind => {
+                let body = self.pop_computation()?;
+                let head = self.pop_computation()?;
+                let bound = self.core.computation_bind(head, body);
+                self.computations.push(bound);
+                Ok(())
+            },
+            Task::BindAll(arity) => {
+                let body = self.pop_computation()?;
+                let head = self.pop_computation()?;
+                let bound = self.core.computation_bind_all(head, arity, body);
+                self.computations.push(bound);
+                Ok(())
+            },
+            Task::Case(count) => {
+                let start = self
+                    .computations
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let branches: Vec<ComputationId> = self.computations.drain(start ..).collect();
+                let scrutinee = self.pop_value()?;
+                let cased = self.core.computation_case(scrutinee, &branches);
+                self.computations.push(cased);
+                Ok(())
+            },
+            Task::Split(arity) => {
+                let body = self.pop_computation()?;
+                let scrutinee = self.pop_value()?;
+                let split = self.core.computation_split(scrutinee, arity, body);
+                self.computations.push(split);
+                Ok(())
+            },
+            Task::ListCase => {
+                let on_cons = self.pop_computation()?;
+                let on_nil = self.pop_computation()?;
+                let scrutinee = self.pop_value()?;
+                let cased = self.core.computation_list_case(scrutinee, on_nil, on_cons);
+                self.computations.push(cased);
+                Ok(())
+            },
+            Task::DataCase(count, arities) => {
+                let start = self
+                    .computations
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let branches: Vec<ComputationId> = self.computations.drain(start ..).collect();
+                let scrutinee = self.pop_value()?;
+                let motive = self.core.comp_type_unknown();
+                let cased = self.core.computation_data_case(
+                    scrutinee,
+                    motive,
+                    branches,
+                    arities.into_vec(),
+                );
+                self.computations.push(cased);
+                Ok(())
+            },
+        }
+    }
+
+    /// Rebuild a literal stack without nesting independent frame scopes.
+    ///
+    /// # Specification
+    /// - ensures: source frame order is retained, with translated operands and
+    ///   separately closed bind bodies.
+    /// - fails: missing child results or a malformed source producer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed frames with free variables distinguish
+    ///   accidental nesting and reversed operands.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ret| ret.is_err() || self.values.last().is_some_and(|id|
+        matches!((self.arena.producer(source), self.core.value(*id)), (Some(ProducerNode::Reify(source)), Some(gandr_core_term::Value::Reify(frames))) if source.len() == frames.len())))]
+    fn complete_reify(
+        &mut self,
+        source: ProducerId,
+    ) -> Result<(), UnfocusRefusal>
+    {
+        let arena = self.arena;
+        let node = arena
+            .producer(source)
+            .ok_or(UnfocusRefusal::ProducerOutsideTheImage(source))?;
+        let ProducerNode::Reify(ref source) = *node
+        else {
+            return Err(UnfocusRefusal::ProducerOutsideTheImage(source));
+        };
+        let mut frames = Vec::with_capacity(source.len());
+        for frame in source.iter().rev() {
+            frames.push(match *frame {
+                gandr_core_term::control::StackFrame::Apply(_) => {
+                    gandr_core_term::control::StackFrame::Apply(self.pop_value()?)
+                },
+                gandr_core_term::control::StackFrame::Bind(_) => {
+                    gandr_core_term::control::StackFrame::Bind(self.pop_computation()?)
+                },
+                gandr_core_term::control::StackFrame::Project(side) => {
+                    gandr_core_term::control::StackFrame::Project(side)
+                },
+            });
+        }
+        frames.reverse();
+        self.values.push(self.core.value_reify(frames.into()));
+        Ok(())
+    }
+
+    /// Import an interface and close only its ambient type-code variables.
+    ///
+    /// # Specification
+    /// - ensures: names survive, type handles belong to the destination, and
+    ///   substitution protects every producer binder opened inside this root.
+    /// - fails: a dangling annotation within the source command.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct payload and reply codes beneath handler
+    ///   binders distinguish foreign handles and capturing ambient
+    ///   substitutions.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|found|
+        found.name() == signature.name() && found.types().all(|id| self.core.value_type(id).is_some())))]
+    fn signature(
+        &mut self,
+        at: CommandId,
+        signature: &gandr_core_term::effect::EffectSig,
+        depth: Depth,
+    ) -> Result<gandr_core_term::effect::EffectSig, UnfocusRefusal>
+    {
+        let signature = {
+            let mut annotations =
+                gandr_core_term::TypeImporter::new(self.arena.annotations(), self.core);
+            signature.try_map_types(gandr_core_term::effect::TypeOrder::Forward, |id| {
+                annotations
+                    .value_type(id)
+                    .map_err(|gandr_core_term::ImportFault| {
+                        UnfocusRefusal::CommandOutsideTheImage(at)
+                    })
+            })?
+        };
+        if self.closing.selected.is_empty() {
+            return Ok(signature);
+        }
+        signature.try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+            Ok(self.close_type(ty, depth))
+        })
+    }
+
+    /// Import a fork's protocol and close only its ambient type-code
+    /// variables, as [`Self::signature`] closes an interface's types.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`UnfocusRefusal::CommandOutsideTheImage`] for a dangling annotation.
+    fn protocol(
+        &mut self,
+        at: CommandId,
+        protocol: gandr_core_term::ValueTypeId,
+        depth: Depth,
+    ) -> Result<gandr_core_term::ValueTypeId, UnfocusRefusal>
+    {
+        let imported = gandr_core_term::TypeImporter::new(self.arena.annotations(), self.core)
+            .value_type(protocol)
+            .map_err(|gandr_core_term::ImportFault| UnfocusRefusal::CommandOutsideTheImage(at))?;
+        if self.closing.selected.is_empty() {
+            return Ok(imported);
+        }
+        Ok(self.close_type(imported, depth))
+    }
+
+    /// Close an annotation read at `depth`: each index the closing selects
+    /// past `depth`'s producer binders is replaced by its value, the highest
+    /// first, so each substitution lowers only the indices above it.
+    ///
+    /// # Specification
+    /// - requires: `ty` is a type of `core` read at `depth`.
+    /// - ensures: the type with each selected index past `depth` replaced by
+    ///   its closed value and every other index past `depth` lowered past the
+    ///   selected indices below it, as [`Self::variable`] reads a variable.
+    /// - panics: none.
+    /// - executable: none — the substitution is the core's; the witnesses
+    ///   observe the closed annotation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a captured fold annotation reads its captured code,
+    ///   and an interface's types close beneath handler binders.
+    /// - witness: `unfocus::tests::closing_fold_annotations_substitutes_captured_codes`
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    fn close_type(
+        &mut self,
+        ty: gandr_core_term::ValueTypeId,
+        depth: Depth,
+    ) -> gandr_core_term::ValueTypeId
+    {
+        let mut ty = ty;
+        for (&index, &closed) in self.closing.selected.iter().zip(self.closing.values).rev() {
+            let under = depth.producers.saturating_add(u32::from(index));
+            ty = gandr_core_term::instantiate_value_type_under(
+                self.core,
+                ty,
+                closed,
+                gandr_core_term::Binders::from(under),
+            );
+        }
+        ty
+    }
+
+    /// Assemble decoded control children into their source instruction.
+    ///
+    /// # Specification
+    /// - ensures: operation names, clause order and body roles are preserved;
+    ///   signature annotations close at the command's ambient binder depth.
+    /// - fails: missing child results or malformed source annotations.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent round trips with unequal children and
+    ///   type codes expose swapped clauses, lost names and incorrect annotation
+    ///   scope.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ret| ret.is_err() || self.computations.last().is_some_and(|id| self.core.computation(*id).is_some()))]
+    fn complete_control(
+        &mut self,
+        source: CommandId,
+        depth: Depth,
+    ) -> Result<(), UnfocusRefusal>
+    {
+        let arena = self.arena;
+        let node = arena
+            .command(source)
+            .ok_or(UnfocusRefusal::DanglingCommand(source))?;
+        let computation = match *node {
+            CommandNode::Perform {
+                ref signature,
+                ref operation,
+                route,
+                ..
+            } => {
+                let signature = self.signature(source, signature, depth)?;
+                let payload = self.pop_value()?;
+                match route {
+                    Route::Nearest => {
+                        self.core
+                            .computation_perform(signature, operation.clone(), payload)
+                    },
+                    Route::Capability(_) => {
+                        let capability = self.pop_value()?;
+                        self.core.computation_exercise(
+                            capability,
+                            signature,
+                            operation.clone(),
+                            payload,
+                        )
+                    },
+                }
+            },
+            CommandNode::Handle {
+                ref signature,
+                introduces,
+                ref clauses,
+                ..
+            } => {
+                let signature = self.signature(source, signature, depth)?;
+                let mut translated = Vec::with_capacity(clauses.len());
+                for clause in clauses.iter().rev() {
+                    translated.push(gandr_core_term::control::EffectClause {
+                        operation: clause.operation.clone(),
+                        body: self.pop_computation()?,
+                    });
+                }
+                translated.reverse();
+                let on_return = self.pop_computation()?;
+                let subject = self.pop_computation()?;
+                match introduces {
+                    Introduces::Nothing => self.core.computation_handle(
+                        signature,
+                        subject,
+                        on_return,
+                        translated.into(),
+                    ),
+                    Introduces::Capability => self.core.computation_scope(
+                        signature,
+                        subject,
+                        on_return,
+                        translated.into(),
+                    ),
+                }
+            },
+            CommandNode::Resume { .. } => {
+                let body = self.pop_computation()?;
+                let stack = self.pop_value()?;
+                self.core.computation_resume(stack, body)
+            },
+            CommandNode::Abandon { .. } => {
+                let stack = self.pop_value()?;
+                self.core.computation_abandon(stack)
+            },
+            CommandNode::Reset { .. } => {
+                let body = self.pop_computation()?;
+                self.core.computation_reset(body)
+            },
+            CommandNode::Shift { .. } => {
+                let body = self.pop_computation()?;
+                self.core.computation_shift(body)
+            },
+            CommandNode::Memory { ref form, .. } => {
+                let form = form.try_map(
+                    gandr_core_term::session::ChildOrder::Reverse,
+                    self,
+                    |decoder, _| decoder.pop_value(),
+                    |decoder, _| decoder.pop_computation(),
+                )?;
+                self.core.computation_memory(form)
+            },
+            CommandNode::World { ref form, .. } => {
+                let form = form.try_map(
+                    gandr_core_term::session::ChildOrder::Reverse,
+                    self,
+                    |decoder, _| decoder.pop_value(),
+                    |decoder, _| decoder.pop_computation(),
+                )?;
+                self.core.computation_world(form)
+            },
+            CommandNode::Session { ref action, .. } => {
+                let action = action.try_map(
+                    gandr_core_term::session::ChildOrder::Reverse,
+                    self,
+                    |decoder, _| decoder.pop_value(),
+                    |decoder, _| decoder.pop_computation(),
+                    |decoder, protocol| decoder.protocol(source, protocol, depth),
+                )?;
+                self.core.computation_session(action)
+            },
+            CommandNode::Cut { .. } | CommandNode::Deliver { .. } => {
+                return Err(UnfocusRefusal::CommandOutsideTheImage(source));
+            },
+        };
+        self.computations.push(computation);
+        Ok(())
+    }
+
+    /// Decode control bodies under their individual producer and return
+    /// binders.
+    ///
+    /// # Specification
+    /// - ensures: the caller's spine follows the instruction, never its inner
+    ///   bodies; each clause and shift sees only its declared local binders.
+    /// - fails: a missing command.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — round trips under nontrivial outer spines distinguish
+    ///   a duplicated caller from each body's fresh return point.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(captures: work = self.tasks.len(), ensures: |ret| ret.is_err() || self.tasks.len() > work)]
+    fn control_command(
+        &mut self,
+        source: CommandId,
+        depth: Depth,
+    ) -> Result<(), UnfocusRefusal>
+    {
+        let node = self
+            .arena
+            .command(source)
+            .ok_or(UnfocusRefusal::DanglingCommand(source))?;
+        match *node {
+            CommandNode::Cut { .. } => self.tasks.push(Task::Command(source, depth)),
+            CommandNode::Deliver {
+                ref producers,
+                consumer,
+            } => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                self.tasks
+                    .push(Task::ReturnAll(NodeCount::from(producers.len())));
+                for &producer in producers.iter().rev() {
+                    self.tasks.push(Task::Value(producer, depth));
+                }
+            },
+            CommandNode::Perform {
+                route,
+                payload,
+                continuation,
+                ..
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                self.tasks.push(Task::Value(payload, depth));
+                if let Route::Capability(capability) = route {
+                    self.tasks.push(Task::Value(capability, depth));
+                }
+            },
+            CommandNode::Handle {
+                introduces,
+                subject,
+                on_return,
+                ref clauses,
+                continuation,
+                ..
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                for clause in clauses.iter().rev() {
+                    self.tasks.push(Task::Command(
+                        clause.body,
+                        depth.under_covariable().under_producer().under_producer(),
+                    ));
+                }
+                self.tasks
+                    .push(Task::Command(on_return, depth.under_function_arm()));
+                let under = match introduces {
+                    Introduces::Nothing => depth.under_covariable(),
+                    Introduces::Capability => depth.under_function_arm(),
+                };
+                self.tasks.push(Task::Command(subject, under));
+            },
+            CommandNode::Resume {
+                stack,
+                body,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                self.tasks
+                    .push(Task::Command(body, depth.under_covariable()));
+                self.tasks.push(Task::Value(stack, depth));
+            },
+            CommandNode::Abandon {
+                stack,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                self.tasks.push(Task::Value(stack, depth));
+            },
+            CommandNode::Reset { body, continuation } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                self.tasks
+                    .push(Task::Command(body, depth.under_covariable()));
+            },
+            CommandNode::Shift { body, continuation } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                self.tasks
+                    .push(Task::Command(body, depth.under_function_arm()));
+            },
+            CommandNode::Memory {
+                ref form,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                for body in form.computations().rev() {
+                    self.tasks
+                        .push(Task::Command(body, depth.under_covariable()));
+                }
+                for value in form.values() {
+                    self.tasks.push(Task::Value(value, depth));
+                }
+            },
+            CommandNode::World {
+                ref form,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                match *form {
+                    gandr_core_term::world::WorldForm::Hold { .. } => {},
+                    gandr_core_term::world::WorldForm::Leta { body, .. } => {
+                        self.tasks
+                            .push(Task::Command(body, depth.under_function_arm()));
+                    },
+                    gandr_core_term::world::WorldForm::Migrate { body, .. } => {
+                        self.tasks
+                            .push(Task::Command(body, depth.under_covariable()));
+                    },
+                }
+                for value in form.values() {
+                    self.tasks.push(Task::Value(value, depth));
+                }
+            },
+            CommandNode::Session {
+                ref action,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                for body in action.computations().rev() {
+                    self.tasks
+                        .push(Task::Command(body, depth.under_covariable()));
+                }
+                for value in action.values() {
+                    self.tasks.push(Task::Value(value, depth));
+                }
+            },
+        }
+        Ok(())
+    }
+
+    /// Decode a producer as a value, or schedule its children.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a leaf's value is pushed, a closed variable reading its
+    ///   closing value; a composite's builder and children are scheduled.
+    /// - provides: the `𝓥⁻¹` rows.
+    /// - fails: a dangling address, or a `μ`, a copattern object, an abstract
+    ///   closure over anything but a thunk or a head of the wrong arity as
+    ///   [`UnfocusRefusal::ProducerOutsideTheImage`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source terms compared with independently focused and
+    ///   decoded bounded generated inputs expose wrong formers, child order and
+    ///   binder shifts. L3 — malformed heads and exact refusal payloads cover
+    ///   the directed image boundary.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+    #[spec(
+        captures: [work = self.tasks.len(), results = self.values.len()],
+        ensures: |ret| if self.arena.producer(id).is_none() {
+            ret == Err(UnfocusRefusal::DanglingProducer(id))
+        } else { ret.is_err() || self.tasks.len() > work || self.values.len() > results },
+    )]
+    fn value(
+        &mut self,
+        id: ProducerId,
+        depth: Depth,
+    ) -> Result<(), UnfocusRefusal>
+    {
+        let node = self
+            .arena
+            .producer(id)
+            .ok_or(UnfocusRefusal::DanglingProducer(id))?;
+        let leaf = match *node {
+            ProducerNode::Reify(ref frames) => {
+                self.tasks.push(Task::Reify(id));
+                for frame in frames.iter().rev() {
+                    match *frame {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
+                            self.tasks.push(Task::Value(value, depth));
+                        },
+                        gandr_core_term::control::StackFrame::Bind(body) => self
+                            .tasks
+                            .push(Task::Command(body, depth.under_function_arm())),
+                        gandr_core_term::control::StackFrame::Project(_) => {},
+                    }
+                }
+                return Ok(());
+            },
+            ProducerNode::Variable { zone, index } => {
+                self.variable(zone, index, depth);
+                return Ok(());
+            },
+            ProducerNode::Constant(constant) => self.core.value_constant(constant),
+            ProducerNode::Literal(ref literal) => self.core.value_literal(literal.clone()),
+            ProducerNode::Code(code) => {
+                gandr_core_term::TypeImporter::new(self.arena.annotations(), self.core)
+                    .value(code)
+                    .map_err(|gandr_core_term::ImportFault| UnfocusRefusal::DanglingProducer(id))?
+            },
+            ProducerNode::Constructor {
+                ref tag,
+                ref producers,
+                ref consumers,
+            } => {
+                if !consumers.is_empty() || producers.len() != usize::from(tag.producer_arity()) {
+                    return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
+                }
+                match (tag, producers.as_ref()) {
+                    (&ConstructorTag::Tuple(ProducerArity::ZERO), &[]) => self.core.value_unit(),
+                    (&ConstructorTag::ListNil, &[]) => self.core.value_list_nil(),
+                    (&ConstructorTag::ListCons, &[head, tail]) => {
+                        self.tasks.push(Task::ListCons);
+                        self.tasks.push(Task::Value(tail, depth));
+                        self.tasks.push(Task::Value(head, depth));
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Tuple(arity), components)
+                        if usize::from(arity) == components.len() =>
+                    {
+                        self.tasks.push(Task::Tuple(arity));
+                        for &component in components.iter().rev() {
+                            self.tasks.push(Task::Value(component, depth));
+                        }
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Record(ref labels), fields)
+                        if fields.len() == labels.len()
+                            && labels
+                                .iter()
+                                .zip(labels.iter().skip(1))
+                                .all(|(before, after)| before < after) =>
+                    {
+                        self.tasks
+                            .push(Task::Record(alloc::sync::Arc::clone(labels)));
+                        for &field in fields.iter().rev() {
+                            self.tasks.push(Task::Value(field, depth));
+                        }
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Injection(summand), &[body]) => {
+                        self.tasks.push(Task::Injection(summand));
+                        self.tasks.push(Task::Value(body, depth));
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Lift(ref level), &[body]) => {
+                        self.tasks.push(Task::Lift(level.clone()));
+                        self.tasks.push(Task::Value(body, depth));
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Data { tag, arity, family }, fields) => {
+                        self.tasks.push(Task::Native { tag, arity, family });
+                        for &field in fields.iter().rev() {
+                            self.tasks.push(Task::Value(field, depth));
+                        }
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Recorded(ref shape), payloads) => {
+                        self.tasks
+                            .push(Task::Recorded(alloc::sync::Arc::clone(shape)));
+                        for &payload in payloads.iter().rev() {
+                            self.tasks.push(Task::Value(payload, depth));
+                        }
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Dialogue(ref shape), payloads) => {
+                        self.tasks
+                            .push(Task::Dialogue(alloc::sync::Arc::clone(shape)));
+                        for &payload in payloads.iter().rev() {
+                            self.tasks.push(Task::Value(payload, depth));
+                        }
+                        return Ok(());
+                    },
+                    (&ConstructorTag::Web(ref pieces), &[]) => {
+                        self.core.value_web(alloc::sync::Arc::clone(pieces))
+                    },
+                    _ => return Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
+                }
+            },
+            ProducerNode::Thunk { body } => {
+                self.tasks.push(Task::Thunk);
+                self.tasks
+                    .push(Task::Command(body, depth.under_covariable()));
+                return Ok(());
+            },
+            ProducerNode::Closure {
+                ref environment,
+                code,
+            } => {
+                let Some(&ProducerNode::Thunk { .. }) = self.arena.producer(code)
+                else {
+                    return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
+                };
+                let count = NodeCount::from(environment.len());
+                self.tasks.push(Task::Enclose(count, Closed::Value));
+                self.tasks
+                    .push(Task::Value(code, depth.under_producers(count)));
+                self.environment(environment, depth);
+                return Ok(());
+            },
+            ProducerNode::Primitive { .. }
+            | ProducerNode::Decompose(_)
+            | ProducerNode::Fixpoint { .. }
+            | ProducerNode::Cocase { .. }
+            | ProducerNode::Mu { .. } => {
+                return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
+            },
+        };
+        self.values.push(leaf);
+        Ok(())
+    }
+
+    /// Push the value a producer variable reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an intuitionistic variable counting `k` past `depth`'s
+    ///   producer binders reads the closing's value at `k` where it selects
+    ///   `k`, and is rebuilt lowered past the selected indices below `k`
+    ///   otherwise; every other variable is rebuilt as itself.
+    /// - provides: the closing substitution, fused into the walk.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first bound variable, each closing entry, a
+    ///   variable between two captured indices, the first variable past the
+    ///   closing and the linear zone are observed at exact value identity or
+    ///   variable index. Wrong subtraction, binder capture and accidental
+    ///   linear substitution change these boundary readings.
+    /// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
+    #[spec(ensures: self.values.last().is_some_and(|value| {
+        let past = if zone == Zone::Intuitionistic {
+            u32::from(index).checked_sub(depth.producers)
+        } else { None };
+        match past {
+            | Some(past) => match self.closing.selected.binary_search(&DeBruijnIndex::from(past)) {
+                | Ok(rank) => self.closing.values.get(rank) == Some(value),
+                | Err(below) => self.core.value(*value) == Some(&gandr_core_term::Value::Variable {
+                    zone, index: DeBruijnIndex::from(u32::from(index).saturating_sub(u32::try_from(below).unwrap_or(u32::MAX))),
+                }),
+            },
+            | None => self.core.value(*value) == Some(&gandr_core_term::Value::Variable { zone, index }),
+        }
+    }))]
+    fn variable(
+        &mut self,
+        zone: Zone,
+        index: DeBruijnIndex,
+        depth: Depth,
+    )
+    {
+        let past = match zone {
+            Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
+            Zone::Linear => None,
+        };
+        let value = match past {
+            Some(past) => match self
+                .closing
+                .selected
+                .binary_search(&DeBruijnIndex::from(past))
+            {
+                Ok(rank) => self.closing.values.get(rank).copied(),
+                Err(below) => {
+                    // reason: `below` counts distinct `u32` indices under
+                    // `past`, so it fits; the clamp keeps the conversion total.
+                    let lowered = u32::try_from(below).unwrap_or(u32::MAX);
+                    let shifted = u32::from(index).saturating_sub(lowered);
+                    Some(self.core.value_variable(zone, DeBruijnIndex::from(shifted)))
+                },
+            },
+            None => None,
+        };
+        let value = match value {
+            Some(value) => value,
+            None => self.core.value_variable(zone, index),
+        };
+        self.values.push(value);
+    }
+
+    /// Decode a command as a computation: its head, then its spine.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the head is scheduled and the spine after it; a value head
+    ///   met by a force frame or a match is decoded with it.
+    /// - provides: the `𝓕⁻¹` rows for a cut.
+    /// - fails: a dangling address, or a node outside the image.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source terms compared with independently focused and
+    ///   decoded bounded generated inputs expose wrong formers, child order and
+    ///   binder shifts. L3 — malformed heads and exact refusal payloads cover
+    ///   the directed image boundary.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+    #[spec(
+        captures: [work = self.tasks.len()],
+        ensures: |ret| if self.arena.command(id).is_none() {
+            ret == Err(UnfocusRefusal::DanglingCommand(id))
+        } else { ret.is_err() || self.tasks.len() > work },
+    )]
+    fn command(
+        &mut self,
+        id: CommandId,
+        depth: Depth,
+    ) -> Result<(), UnfocusRefusal>
+    {
+        let &CommandNode::Cut {
+            producer, consumer, ..
+        } = self
+            .arena
+            .command(id)
+            .ok_or(UnfocusRefusal::DanglingCommand(id))?
+        else {
+            return self.control_command(id, depth);
+        };
+        let head = self
+            .arena
+            .producer(producer)
+            .ok_or(UnfocusRefusal::DanglingProducer(producer))?;
+        match *head {
+            ProducerNode::Primitive {
+                primitive,
+                arguments,
+            } => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                self.tasks.push(Task::Primitive(primitive, arguments));
+                for argument in arguments.iter().rev() {
+                    self.tasks.push(Task::Value(*argument, depth));
+                }
+                return Ok(());
+            },
+            ProducerNode::Decompose(dialogue) => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                self.tasks.push(Task::Decompose);
+                self.tasks.push(Task::Value(dialogue, depth));
+                return Ok(());
+            },
+            ProducerNode::Mu { body } => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                self.tasks
+                    .push(Task::Command(body, depth.under_covariable()));
+                return Ok(());
+            },
+            ProducerNode::Cocase { .. } => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                return self.copattern_head(producer, depth);
+            },
+            ProducerNode::Fixpoint { body, evidence } => {
+                let then = self.forced(producer, consumer)?;
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks.push(Task::Fixpoint(evidence));
+                self.tasks.push(Task::Command(
+                    body,
+                    depth.under_producer().under_covariable(),
+                ));
+                return Ok(());
+            },
+            ProducerNode::Closure {
+                ref environment,
+                code,
+            } => {
+                let count = NodeCount::from(environment.len());
+                let inner = depth.under_producers(count);
+                let enclose = Task::Enclose(count, Closed::Computation);
+                match self.arena.producer(code) {
+                    Some(&ProducerNode::Cocase { .. }) => {
+                        self.tasks.push(Task::Spine(consumer, depth));
+                        self.tasks.push(enclose);
+                        self.copattern_head(code, inner)?;
+                        self.environment(environment, depth);
+                        return Ok(());
+                    },
+                    Some(&ProducerNode::Fixpoint { body, evidence }) => {
+                        let then = self.forced(producer, consumer)?;
+                        self.tasks.push(Task::Spine(then, depth));
+                        self.tasks.push(enclose);
+                        self.tasks.push(Task::Fixpoint(evidence));
+                        self.tasks.push(Task::Command(
+                            body,
+                            inner.under_producer().under_covariable(),
+                        ));
+                        self.environment(environment, depth);
+                        return Ok(());
+                    },
+                    // A closure over a thunk is a value, cut as one.
+                    Some(
+                        &ProducerNode::Reify(_)
+                        | &ProducerNode::Primitive { .. }
+                        | &ProducerNode::Decompose(_)
+                        | &ProducerNode::Variable { .. }
+                        | &ProducerNode::Constant(_)
+                        | &ProducerNode::Literal(_)
+                        | &ProducerNode::Code(_)
+                        | &ProducerNode::Constructor { .. }
+                        | &ProducerNode::Thunk { .. }
+                        | &ProducerNode::Closure { .. }
+                        | &ProducerNode::Mu { .. },
+                    )
+                    | None => {},
+                }
+            },
+            ProducerNode::Reify(_)
+            | ProducerNode::Variable { .. }
+            | ProducerNode::Constant(_)
+            | ProducerNode::Literal(_)
+            | ProducerNode::Code(_)
+            | ProducerNode::Constructor { .. }
+            | ProducerNode::Thunk { .. } => {},
+        }
+        let observer = self
+            .arena
+            .consumer(consumer)
+            .ok_or(UnfocusRefusal::DanglingConsumer(consumer))?;
+        match *observer {
+            ConsumerNode::ListFold {
+                element,
+                result,
+                on_nil,
+                on_cons,
+                continuation,
+            } => {
+                let mut annotations =
+                    gandr_core_term::TypeImporter::new(self.arena.annotations(), self.core);
+                let element =
+                    annotations
+                        .value_type(element)
+                        .map_err(|gandr_core_term::ImportFault| {
+                            UnfocusRefusal::ConsumerOutsideTheImage(consumer)
+                        })?;
+                let result =
+                    annotations
+                        .value_type(result)
+                        .map_err(|gandr_core_term::ImportFault| {
+                            UnfocusRefusal::ConsumerOutsideTheImage(consumer)
+                        })?;
+                let element = self.close_type(element, depth);
+                let result = self.close_type(result, depth);
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::ListFold(element, result));
+                self.tasks.push(Task::Value(producer, depth));
+                self.tasks.push(Task::Command(
+                    on_cons,
+                    depth.under_covariable().under_producer().under_producer(),
+                ));
+                self.tasks
+                    .push(Task::Command(on_nil, depth.under_covariable()));
+                return Ok(());
+            },
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Force,
+                ref producers,
+                ref consumers,
+            } => {
+                let (&[], &[then]) = (producers.as_ref(), consumers.as_ref())
+                else {
+                    return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
+                };
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks.push(Task::Force);
+            },
+            ConsumerNode::Case { ref arms }
+                if matches!(**arms, [crate::il::PatternArm {
+                    constructor: ConstructorTag::Tuple(_),
+                    ..
+                }]) =>
+            {
+                let [
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::Tuple(arity),
+                        body,
+                    },
+                ] = **arms
+                else {
+                    return Err(UnfocusRefusal::DecodeInvariant);
+                };
+                let mut under = depth;
+                for _ in 0_usize .. usize::from(arity) {
+                    under = under.under_producer();
+                }
+                self.tasks
+                    .push(Task::Split(gandr_core_term::ComponentCount::from(
+                        usize::from(arity),
+                    )));
+                self.tasks.push(Task::Command(body, under));
+            },
+            ConsumerNode::Case { ref arms }
+                if matches!(**arms, [
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::ListNil,
+                        ..
+                    },
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::ListCons,
+                        ..
+                    },
+                ]) =>
+            {
+                let [
+                    crate::il::PatternArm { body: on_nil, .. },
+                    crate::il::PatternArm { body: on_cons, .. },
+                ] = **arms
+                else {
+                    return Err(UnfocusRefusal::DecodeInvariant);
+                };
+                self.tasks.push(Task::ListCase);
+                self.tasks.push(Task::Command(
+                    on_cons,
+                    depth.under_producer().under_producer(),
+                ));
+                self.tasks.push(Task::Command(on_nil, depth));
+            },
+            ConsumerNode::Case { ref arms } => {
+                let in_order = arms.iter().enumerate().all(|(summand, arm)| {
+                    arm.constructor == ConstructorTag::Injection(Summand::from(summand))
+                });
+                if !in_order {
+                    return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
+                }
+                self.tasks.push(Task::Case(NodeCount::from(arms.len())));
+                for arm in arms.iter().rev() {
+                    self.tasks
+                        .push(Task::Command(arm.body, depth.under_producer()));
+                }
+            },
+            ConsumerNode::DataCase {
+                ref branches,
+                ref arities,
+                then,
+            } => {
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks.push(Task::DataCase(
+                    NodeCount::from(branches.len()),
+                    arities.clone(),
+                ));
+                for &branch in branches.iter().rev() {
+                    let node = self
+                        .arena
+                        .producer(branch)
+                        .ok_or(UnfocusRefusal::DanglingProducer(branch))?;
+                    let ProducerNode::Thunk { body } = *node
+                    else {
+                        return Err(UnfocusRefusal::ProducerOutsideTheImage(branch));
+                    };
+                    self.tasks
+                        .push(Task::Command(body, depth.under_covariable()));
+                }
+            },
+            ConsumerNode::Select { ref selector, then } => {
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks.push(Task::Select(selector.clone()));
+            },
+            ConsumerNode::MuTildeAll { .. } => {
+                return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
+            },
+            ConsumerNode::Covariable(_)
+            | ConsumerNode::Top
+            | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::Destructor { .. } => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                self.tasks.push(Task::Return);
+            },
+        }
+        self.tasks.push(Task::Value(producer, depth));
+        Ok(())
+    }
+
+    /// Schedule a copattern object's decoding as a lambda or a lazy product.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one application arm schedules the lambda builder and its
+    ///   body; arms projecting components `0..n` in order schedule the lazy
+    ///   product of `n` components and their bodies.
+    /// - provides: the head rules for a function and a lazy product.
+    /// - fails: a dangling address, or an object whose arms are neither.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a missing producer, a non-function and copattern
+    ///   objects with one valid, one wrong and out-of-order projection arms
+    ///   distinguish shape and head checks by exact refusal. L2 — generated
+    ///   lambda readings observe the scheduled body and binders.
+    /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    #[spec(ensures: |ret| ret == match self.arena.producer(id) {
+        | None => Err(UnfocusRefusal::DanglingProducer(id)),
+        | Some(&ProducerNode::Cocase { ref arms }) if matches!(arms.as_ref(), &[crate::il::CopatternArm { destructor: DestructorTag::Apply, .. }])
+            || arms.iter().enumerate().all(|(position, arm)| arm.destructor == DestructorTag::Project(Component::from(position))) => Ok(()),
+        | Some(_) => Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
+    })]
+    fn copattern_head(
+        &mut self,
+        id: ProducerId,
+        depth: Depth,
+    ) -> Result<(), UnfocusRefusal>
+    {
+        let node = self
+            .arena
+            .producer(id)
+            .ok_or(UnfocusRefusal::DanglingProducer(id))?;
+        let ProducerNode::Cocase { ref arms } = *node
+        else {
+            return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
+        };
+        if let [
+            crate::il::CopatternArm {
+                destructor: DestructorTag::Apply,
+                body,
+            },
+        ] = *arms.as_ref()
+        {
+            self.tasks.push(Task::Lambda);
+            self.tasks
+                .push(Task::Command(body, depth.under_function_arm()));
+        }
+        else if arms.iter().enumerate().all(|(position, arm)| {
+            arm.destructor == DestructorTag::Project(Component::from(position))
+        }) {
+            self.tasks.push(Task::With(NodeCount::from(arms.len())));
+            self.tasks.extend(
+                arms.iter()
+                    .rev()
+                    .map(|arm| Task::Command(arm.body, depth.under_covariable())),
+            );
+        }
+        else {
+            return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
+        }
+        Ok(())
+    }
+
+    /// The continuation a recursive thunk's force frame returns to.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `then` of a `force(then)` frame.
+    /// - provides: the one frame a recursive thunk is cut against.
+    /// - fails: a dangling consumer; any other frame as
+    ///   [`UnfocusRefusal::ProducerOutsideTheImage`] naming `head`, and a force
+    ///   of the wrong arity as [`UnfocusRefusal::ConsumerOutsideTheImage`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — generated recursive thunks decode through it; L3 —
+    ///   the malformed heads name the refused node.
+    /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+    /// - witness: `tests::closures::converted_programs_answer_as_written`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.arena.consumer(consumer),
+        Some(&ConsumerNode::Destructor { tag: DestructorTag::Force, .. })))]
+    fn forced(
+        &self,
+        head: ProducerId,
+        consumer: ConsumerId,
+    ) -> Result<ConsumerId, UnfocusRefusal>
+    {
+        let observer = self
+            .arena
+            .consumer(consumer)
+            .ok_or(UnfocusRefusal::DanglingConsumer(consumer))?;
+        let ConsumerNode::Destructor {
+            tag: DestructorTag::Force,
+            ref producers,
+            ref consumers,
+        } = *observer
+        else {
+            return Err(UnfocusRefusal::ProducerOutsideTheImage(head));
+        };
+        let (&[], &[then]) = (producers.as_ref(), consumers.as_ref())
+        else {
+            return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
+        };
+        Ok(then)
+    }
+
+    /// Schedule an abstract closure's environment values, decoded where the
+    /// closure stands, so they run first, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn environment(
+        &mut self,
+        environment: &[ProducerId],
+        depth: Depth,
+    )
+    {
+        for &value in environment.iter().rev() {
+            self.tasks.push(Task::Value(value, depth));
+        }
+    }
+
+    /// Extend the computation on top by a consumer's spine.
+    ///
+    /// # Specification
+    /// - requires: a computation is on top.
+    /// - ensures: the return point ends the spine; an application frame and a
+    ///   value binder schedule their builders and continue.
+    /// - provides: the spine rows.
+    /// - fails: [`UnfocusRefusal::EscapingContinuation`] for a covariable or
+    ///   `★` that is not the return point, and
+    ///   [`UnfocusRefusal::ConsumerOutsideTheImage`] for a force frame, a
+    ///   match, a selection or a frame of the wrong arity after a computation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — base versus bound return points, a nonzero
+    ///   covariable, both destructor arities and a match observe exact
+    ///   continuation/image refusals. L2 — independent source readings expose
+    ///   misplaced application and binder tasks.
+    /// - witness: `unfocus::tests::spines_distinguish_return_points_and_frame_arities`
+    /// - witness: `unfocus::tests::an_escaping_covariable_is_refused_and_rolled_back`
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[spec(
+        requires: !self.computations.is_empty(),
+        captures: [work = self.tasks.len()],
+        ensures: |ret| match self.arena.consumer(id) {
+            | None => ret == Err(UnfocusRefusal::DanglingConsumer(id)),
+            | Some(&ConsumerNode::Covariable(index)) => if u32::from(index) == 0 && depth.covariables > 0 {
+                ret.is_ok() && self.tasks.len() == work
+            } else { ret == Err(UnfocusRefusal::EscapingContinuation(id)) },
+            | Some(&ConsumerNode::Top) => if depth.covariables == 0 {
+                ret.is_ok() && self.tasks.len() == work
+            } else { ret == Err(UnfocusRefusal::EscapingContinuation(id)) },
+            | Some(&ConsumerNode::ListFold { .. } | &ConsumerNode::Destructor { tag: DestructorTag::Force, .. } | &ConsumerNode::Case { .. } | &ConsumerNode::DataCase { .. } | &ConsumerNode::Select { .. }) =>
+                ret == Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
+            | Some(&ConsumerNode::Destructor { tag, ref producers, ref consumers })
+                if producers.len() != usize::from(tag.producer_arity()) || consumers.len() != 1 => ret == Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
+            | Some(_) => ret.is_ok() && self.tasks.len() > work,
+        },
+    )]
+    fn spine(
+        &mut self,
+        id: ConsumerId,
+        depth: Depth,
+    ) -> Result<(), UnfocusRefusal>
+    {
+        let node = self
+            .arena
+            .consumer(id)
+            .ok_or(UnfocusRefusal::DanglingConsumer(id))?;
+        match *node {
+            ConsumerNode::Covariable(index) => {
+                if u32::from(index) == 0 && depth.covariables > 0 {
+                    Ok(())
+                }
+                else {
+                    Err(UnfocusRefusal::EscapingContinuation(id))
+                }
+            },
+            ConsumerNode::Top => {
+                if depth.covariables == 0 {
+                    Ok(())
+                }
+                else {
+                    Err(UnfocusRefusal::EscapingContinuation(id))
+                }
+            },
+            ConsumerNode::MuTilde { body } => {
+                self.tasks.push(Task::Bind);
+                self.tasks.push(Task::Command(body, depth.under_producer()));
+                Ok(())
+            },
+            ConsumerNode::MuTildeAll { arity, body } => {
+                self.tasks
+                    .push(Task::BindAll(gandr_core_term::ComponentCount::from(
+                        usize::from(arity),
+                    )));
+                self.tasks.push(Task::Command(
+                    body,
+                    depth.under_producers(NodeCount::from(usize::from(arity))),
+                ));
+                Ok(())
+            },
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Project(component),
+                ref producers,
+                ref consumers,
+            } => {
+                let (&[], &[then]) = (producers.as_ref(), consumers.as_ref())
+                else {
+                    return Err(UnfocusRefusal::ConsumerOutsideTheImage(id));
+                };
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks.push(Task::Project(component));
+                Ok(())
+            },
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Apply,
+                ref producers,
+                ref consumers,
+            } => {
+                let (&[argument], &[then]) = (producers.as_ref(), consumers.as_ref())
+                else {
+                    return Err(UnfocusRefusal::ConsumerOutsideTheImage(id));
+                };
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks.push(Task::Application);
+                self.tasks.push(Task::Value(argument, depth));
+                Ok(())
+            },
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Force,
+                ..
+            }
+            | ConsumerNode::ListFold { .. }
+            | ConsumerNode::Case { .. }
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::Select { .. } => Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
+        }
+    }
+
+    /// Pop a decoded value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last value is removed and returned; an empty stack is
+    ///   unchanged and refused.
+    /// - provides: the checked result pop used by decoding builders.
+    /// - fails: [`UnfocusRefusal::DecodeInvariant`] on an empty stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The missing-result invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct results expose wrong-end removal; the exact
+    ///   empty-stack refusal exposes silent or stale underflow.
+    /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
+    #[spec(
+        captures: [last = self.values.last().copied(), length = self.values.len()],
+        ensures: |ret| ret == last.ok_or(UnfocusRefusal::DecodeInvariant)
+            && self.values.len() == length.saturating_sub(1),
+    )]
+    fn pop_value(&mut self) -> Result<ValueId, UnfocusRefusal>
+    {
+        self.values.pop().ok_or(UnfocusRefusal::DecodeInvariant)
+    }
+
+    /// Pop a decoded computation.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last computation is removed and returned; an empty stack
+    ///   is unchanged and refused.
+    /// - provides: the checked result pop used by decoding builders.
+    /// - fails: [`UnfocusRefusal::DecodeInvariant`] on an empty stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The missing-result invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct results expose wrong-end removal; the exact
+    ///   empty-stack refusal exposes silent or stale underflow.
+    /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
+    #[spec(
+        captures: [last = self.computations.last().copied(), length = self.computations.len()],
+        ensures: |ret| ret == last.ok_or(UnfocusRefusal::DecodeInvariant)
+            && self.computations.len() == length.saturating_sub(1),
+    )]
+    fn pop_computation(&mut self) -> Result<ComputationId, UnfocusRefusal>
+    {
+        self.computations
+            .pop()
+            .ok_or(UnfocusRefusal::DecodeInvariant)
+    }
+}
+
+#[cfg(test)]
+mod tests;

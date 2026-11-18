@@ -1,0 +1,29 @@
+[
+  {
+    "name": "#3112: the observation leads, its trailing blank lines trimmed, and each field fills every place the template names it",
+    "input": {
+      "template": "## The shape\n\n#{{pr}} stands as `{{kind}}`; #{{pr}} again.\n",
+      "fields": { "pr": "50", "kind": "conflicting" },
+      "observation": "## Observation\n\nSTALL conflicting #50\n\n\n"
+    },
+    "output": "## Observation\n\nSTALL conflicting #50\n\n## The shape\n\n#50 stands as `conflicting`; #50 again.\n"
+  },
+  {
+    "name": "#3112: a field the template names and the fields lack is refused, never filed as a hole",
+    "input": {
+      "template": "#{{pr}} in `{{lane}}`\n",
+      "fields": { "pr": "50" },
+      "observation": "## Observation\n\nx\n"
+    },
+    "fails": true
+  },
+  {
+    "name": "#3112: a field the template never names is refused, so a misspelt field is caught",
+    "input": {
+      "template": "#{{pr}}\n",
+      "fields": { "pr": "50", "lnae": "x" },
+      "observation": "## Observation\n\nx\n"
+    },
+    "fails": true
+  }
+]

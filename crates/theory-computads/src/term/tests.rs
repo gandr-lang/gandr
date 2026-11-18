@@ -1,0 +1,1290 @@
+use core::cmp::Ordering;
+
+use gandr_theory_coherent_resolutions::CellApp;
+use gandr_theory_coherent_resolutions::CompositePair;
+use gandr_theory_coherent_resolutions::NormalizationBudget;
+use gandr_theory_coherent_resolutions::Overlap;
+use gandr_theory_coherent_resolutions::PairClass;
+use gandr_theory_coherent_resolutions::PairScheme as _;
+use gandr_theory_coherent_resolutions::normalize;
+use gandr_theory_coherent_resolutions::replay_path;
+use gandr_theory_coherent_resolutions::rewrite_at;
+use gandr_theory_levitation::SurfaceSpan;
+
+use super::*;
+
+/// A metavariable term.
+///
+/// # Specification
+/// trivial.
+fn var<N>(name: N) -> Term
+where
+    N: Into<Name>,
+{
+    Term::from(&FreeTerm::var(name))
+}
+
+/// A constructor application.
+///
+/// # Specification
+/// trivial.
+fn ctor<N, const M: usize>(
+    name: N,
+    args: [FreeTerm; M],
+) -> FreeTerm
+where
+    N: Into<Name>,
+{
+    FreeTerm::ctor(name, args)
+}
+
+/// The circle's word `name(inner)`.
+///
+/// # Specification
+/// trivial.
+fn turn<N>(
+    name: N,
+    inner: FreeTerm,
+) -> FreeTerm
+where
+    N: Into<Name>,
+{
+    FreeTerm::ctor(name, [inner])
+}
+
+#[test]
+fn positions_preserve_prefix_boundaries_and_splice_siblings()
+{
+    for (before, after) in [
+        (0, 1),
+        (7, 8),
+        (usize::MAX - 1, usize::MAX),
+        (usize::MAX, usize::MAX),
+    ] {
+        assert_eq!(Count(after), Count(before).next(), "{before} steps once");
+    }
+    let x = FreeTerm::var("x");
+    let right = FreeTerm::op("add", [ctor("Zero", []), x.clone()]);
+    let free = FreeTerm::results([turn("Succ", x.clone()), right.clone()]);
+    let term = Term::from(&free);
+    let paths = [
+        alloc::vec![],
+        alloc::vec![0],
+        alloc::vec![1],
+        alloc::vec![0, 0],
+        alloc::vec![1, 0],
+        alloc::vec![1, 1],
+    ];
+    let positions: Vec<_> = paths
+        .iter()
+        .map(|path| {
+            TermAlphabet::position_at_path(
+                &path
+                    .iter()
+                    .copied()
+                    .map(PositionStep::from)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        positions,
+        TermAlphabet::command_positions(&term),
+        "every node is a position, breadth first"
+    );
+    for (pos, path) in positions.iter().zip(&paths) {
+        assert!(
+            pos.steps()
+                .iter()
+                .copied()
+                .eq(path.iter().copied().map(PositionStep::from)),
+            "a position reads back its path"
+        );
+    }
+    assert_eq!(
+        alloc::vec![TermAlphabet::root_position()],
+        TermAlphabet::command_positions(&Term::from(&ctor("Zero", []))),
+        "a leaf is its own root"
+    );
+    let subterms = [
+        free.clone(),
+        turn("Succ", x.clone()),
+        right,
+        x.clone(),
+        ctor("Zero", []),
+        x.clone(),
+    ];
+    for (pos, expected) in positions.iter().zip(subterms) {
+        let expected = Term::from(&expected);
+        assert_eq!(
+            Maybe::Present(expected.clone()),
+            TermAlphabet::subterm_cmd_at(&term, pos),
+            "the read at {pos:?}"
+        );
+        assert_eq!(
+            Ok(term.clone()),
+            TermAlphabet::splice_cmd_at(&term, pos, expected),
+            "splicing the read back at {pos:?}"
+        );
+    }
+    for (start, end) in [(0, 6), (1, 3), (2, 3), (3, 6), (4, 5), (5, 6), (6, 6)] {
+        assert_eq!(
+            Count(end),
+            term.end_of(Count(start)),
+            "the end from {start}"
+        );
+    }
+    assert_eq!(
+        Count(2),
+        Term(alloc::vec![
+            Head::Results(Count(2)),
+            Head::Var(Name::from("y"))
+        ])
+        .end_of(Count(0)),
+        "a table cut short ends at its length"
+    );
+    let first = TermAlphabet::position_at_path(&[PositionStep::from(0_usize)]);
+    let inner =
+        TermAlphabet::position_at_path(&[PositionStep::from(1_usize), PositionStep::from(1_usize)]);
+    assert_eq!(
+        Ok(Term::from(&FreeTerm::results([
+            ctor("Zero", []),
+            FreeTerm::op("add", [ctor("Zero", []), x.clone()]),
+        ]))),
+        TermAlphabet::splice_cmd_at(&term, &first, Term::from(&ctor("Zero", []))),
+        "a shrinking splice keeps its siblings"
+    );
+    assert_eq!(
+        Ok(Term::from(&FreeTerm::results([
+            turn("Succ", x),
+            FreeTerm::op("add", [ctor("Zero", []), free]),
+        ]))),
+        TermAlphabet::splice_cmd_at(&term, &inner, term.clone()),
+        "a growing splice keeps its siblings"
+    );
+    for path in [alloc::vec![2], alloc::vec![0, 1], alloc::vec![1, 1, 0]] {
+        let pos = TermAlphabet::position_at_path(
+            &path.into_iter().map(PositionStep::from).collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            Maybe::Absent(command_subterm::Absent::OffTerm),
+            TermAlphabet::subterm_cmd_at(&term, &pos),
+            "{pos:?} leaves the term"
+        );
+        assert_eq!(
+            Err(CommandSpliceRefusal::OffTerm),
+            TermAlphabet::splice_cmd_at(&term, &pos, Term::from(&ctor("Zero", []))),
+            "{pos:?} splices nothing"
+        );
+    }
+}
+
+/// The store of `peak`, a rule whose left side is `peak`'s subterm at
+/// `seam`, and then `rules`; and the overlap of the two first rules at
+/// `seam`, whose peak is `peak`'s left side.
+///
+/// # Specification
+/// trivial.
+fn paired(
+    peak: &Cell<TermAlphabet>,
+    rules: &[&Cell<TermAlphabet>],
+    seam: &TermPos,
+) -> (CellStore<TermAlphabet>, Overlap<TermAlphabet>)
+{
+    let mut store = CellStore::new();
+    let left = store.insert(peak.clone());
+    let inner = match TermAlphabet::subterm_cmd_at(peak.lhs(), seam) {
+        Maybe::Present(subterm) => Cell::new(
+            subterm,
+            peak.rhs().clone(),
+            TermOrient::Written,
+            TermProv::SurfaceRule,
+        ),
+        Maybe::Absent(_) => peak.clone(),
+    };
+    let right = store.insert(inner.clone());
+    for &rule in rules {
+        let _id = store.insert(rule.clone());
+    }
+    let overlap = Overlap::from_supplied_confluence(
+        (left, peak),
+        (right, &inner),
+        TermSubst::default(),
+        seam.clone(),
+    );
+    (store, overlap)
+}
+
+#[test]
+fn the_criterion_finds_the_listings_first_redex_below_each_position()
+{
+    let x = FreeTerm::var("x");
+    let zero = || ctor("Zero", []);
+    let add = |left: FreeTerm, right: FreeTerm| FreeTerm::op("add", [left, right]);
+    let nil = || FreeTerm::op("nil", []);
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let out = |channel: &str| FreeTerm::op("out", [FreeTerm::atom(channel), nil()]);
+    let face =
+        |lhs: FreeTerm, rhs: FreeTerm| RuleFace::new(lhs, rhs, Vec::new(), SurfaceSpan::default());
+    // `add(y, Zero) ==> y` binds each variable once, `add(y, y) ==> y` binds
+    // `y` twice, and `nu(bind a . p) ==> p where { | a # p }` scopes `p`.
+    let linear = face_cell(&face(add(FreeTerm::var("y"), zero()), FreeTerm::var("y")));
+    let nonlinear = face_cell(&face(
+        add(FreeTerm::var("y"), FreeTerm::var("y")),
+        FreeTerm::var("y"),
+    ));
+    let collect = conditioned_cell(
+        &face(nu("a", FreeTerm::var("p")), FreeTerm::var("p")).with_fresh(alloc::vec![
+            gandr_theory_levitation::Freshness::new("a", "p")
+        ]),
+    );
+    let peak = face_cell(&face(
+        FreeTerm::results([
+            turn("Succ", turn("Succ", x.clone())),
+            add(zero(), add(x, zero())),
+            add(zero(), zero()),
+            nu("c", out("c")),
+            nu("c", nu("d", out("c"))),
+        ]),
+        zero(),
+    ));
+    let reference = |store: &CellStore<TermAlphabet>,
+                     overlap: &Overlap<TermAlphabet>|
+     -> PairClass<TermAlphabet> {
+        for at in TermAlphabet::command_positions(&overlap.peak) {
+            if TermAlphabet::position_order(&overlap.seam, &at) != PositionOrder::Encloses {
+                continue;
+            }
+            for (cell, rule) in store.iter() {
+                if let Maybe::Present(_) = rewrite_at(rule, &overlap.peak, &at) {
+                    return PairClass::Composite(CellApp::unrecorded(cell, at));
+                }
+            }
+        }
+        PairClass::Unclassed
+    };
+    let path = |steps: &[usize]| {
+        let steps: Vec<PositionStep> = steps.iter().copied().map(PositionStep::from).collect();
+        TermAlphabet::position_at_path(&steps)
+    };
+    // One criterion answers every pair, so its tables carry from one pair to
+    // the next as they do in a joining.
+    let mut criterion = CompositeCriterion::new();
+    let listed = TermAlphabet::command_positions(peak.lhs());
+    let off = path(&[7]);
+    let stores: [&[&Cell<TermAlphabet>]; 4] = [&[&linear], &[&nonlinear], &[&collect], &[
+        &nonlinear, &linear, &collect,
+    ]];
+    for rules in stores {
+        for seam in listed.iter().chain([&off]) {
+            let (store, overlap) = paired(&peak, rules, seam);
+            let class = criterion.class(&store, &overlap);
+            assert_eq!(
+                class,
+                reference(&store, &overlap),
+                "the criterion answers the listing's first redex below {seam:?}"
+            );
+            if let PairClass::Composite(ref below) = class {
+                assert_eq!(
+                    (CompositePair {
+                        overlap: overlap.clone(),
+                        below: below.clone()
+                    })
+                    .replay(&store),
+                    Ok(()),
+                    "the witness below {seam:?} replays"
+                );
+            }
+        }
+    }
+    for (rules, seam, expected) in [
+        (&[&linear][..], path(&[]), Some(path(&[2]))),
+        (&[&linear], path(&[1]), Some(path(&[1, 1]))),
+        (&[&nonlinear], path(&[1]), None),
+        (&[&nonlinear], path(&[]), Some(path(&[2]))),
+        (&[&collect], path(&[3]), None),
+        (&[&collect], path(&[]), Some(path(&[4, 0, 0]))),
+    ] {
+        let (store, overlap) = paired(&peak, rules, &seam);
+        let found = match criterion.class(&store, &overlap) {
+            PairClass::Composite(below) => Some(below.at),
+            PairClass::Unclassed => None,
+        };
+        assert_eq!(found, expected, "the first redex below {seam:?}");
+    }
+}
+
+#[test]
+fn substitution_walks_are_transactional_and_bounded()
+{
+    let x = Name::from("x");
+    let y = Name::from("y");
+    let zero = || Term::from(&ctor("Zero", []));
+    let pair = |left: FreeTerm, right: FreeTerm| Term::from(&FreeTerm::op("add", [left, right]));
+    let subst = TermSubst(BTreeMap::from([(x.clone(), var("y")), (y.clone(), zero())]));
+    let term = pair(FreeTerm::var("x"), FreeTerm::var("y"));
+    assert_eq!(
+        pair(FreeTerm::var("y"), ctor("Zero", [])),
+        subst.apply_once(&term),
+        "one pass replaces each bound variable once"
+    );
+    assert_eq!(
+        pair(ctor("Zero", []), ctor("Zero", [])),
+        subst.apply_fully(&term),
+        "the fixpoint follows the chain"
+    );
+    assert_eq!(
+        zero(),
+        subst.walk(var("x")),
+        "a bare variable walks its chain"
+    );
+    assert_eq!(
+        term,
+        subst.walk(term.clone()),
+        "a compound term is not walked into"
+    );
+    assert_eq!(var("free"), subst.walk(var("free")), "a free leaf stays");
+    assert_eq!(
+        RootAgreement::Clash,
+        TermAlphabet::root_agreement(&term, &zero()),
+        "two operations' roots never meet"
+    );
+    assert_eq!(
+        RootAgreement::May,
+        TermAlphabet::root_agreement(&var("x"), &zero()),
+        "a metavariable root meets any root"
+    );
+    assert_eq!(
+        RootAgreement::May,
+        TermAlphabet::root_agreement(&term, &pair(ctor("Zero", []), FreeTerm::var("z"))),
+        "one operation on both roots is left to unification"
+    );
+    assert_eq!(
+        term,
+        TermSubst::default().apply_fully(&term),
+        "no binding, no change"
+    );
+    assert_eq!(
+        TermSubst::default(),
+        TermAlphabet::restrict_subst(&subst, &[]),
+        "nothing kept"
+    );
+    assert_eq!(
+        TermSubst::default(),
+        TermAlphabet::restrict_subst(&subst, &[Name::from("missing")]),
+        "an absent key keeps nothing"
+    );
+    assert_eq!(
+        TermSubst(BTreeMap::from([(x.clone(), var("y"))])),
+        TermAlphabet::restrict_subst(&subst, &[x.clone(), x.clone()]),
+        "a repeated key keeps one binding"
+    );
+    assert_eq!(
+        subst,
+        TermAlphabet::restrict_subst(&subst, &[x, y]),
+        "every key keeps every binding"
+    );
+    let self_cycle = TermSubst(BTreeMap::from([(Name::from("self"), var("self"))]));
+    assert_eq!(
+        var("self"),
+        self_cycle.walk(var("self")),
+        "a self-cycle stops"
+    );
+    assert_eq!(
+        var("self"),
+        self_cycle.apply_fully(&var("self")),
+        "a self-cycle is bounded"
+    );
+    let seed = TermSubst(BTreeMap::from([(
+        Name::from("held"),
+        Term::from(&turn("Succ", ctor("Zero", []))),
+    )]));
+    let pattern = pair(FreeTerm::var("p"), FreeTerm::var("p"));
+    let target = pair(ctor("Zero", []), ctor("Zero", []));
+    let mut matched = seed.clone();
+    assert!(
+        bool::from(TermAlphabet::match_cmd(&pattern, &target, &mut matched)),
+        "a repeated variable matches equal subterms"
+    );
+    assert_eq!(
+        target,
+        matched.apply_once(&pattern),
+        "the match rebuilds the target"
+    );
+    assert_eq!(
+        Some(&Term::from(&turn("Succ", ctor("Zero", [])))),
+        matched.0.get(&Name::from("held")),
+        "the seed binding is kept"
+    );
+    let saved = matched.clone();
+    let konst = TermAlphabet::skolemize(&var("k"));
+    for (left, right) in [
+        (
+            pattern.clone(),
+            pair(ctor("Zero", []), turn("Succ", ctor("Zero", []))),
+        ),
+        (Term::from(&turn("Succ", FreeTerm::var("p"))), zero()),
+        (zero(), Term::from(&turn("Succ", ctor("Zero", [])))),
+        (zero(), konst.clone()),
+        (
+            Term::from(&ctor("Zero", [])),
+            Term::from(&FreeTerm::op("Zero", [])),
+        ),
+    ] {
+        assert!(
+            !bool::from(TermAlphabet::match_cmd(&left, &right, &mut matched)),
+            "{left:?} does not match {right:?}"
+        );
+        assert_eq!(saved, matched, "a refused match leaves the map");
+    }
+    let mut constant = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::match_cmd(&var("v"), &konst, &mut constant)),
+        "a metavariable matches a skolem constant"
+    );
+    let left = pair(FreeTerm::var("a"), FreeTerm::var("b"));
+    let right = pair(turn("Succ", FreeTerm::var("b")), ctor("Zero", []));
+    let mut unified = seed.clone();
+    assert!(
+        bool::from(TermAlphabet::unify_cmd(&left, &right, &mut unified)),
+        "the two sides unify"
+    );
+    assert_eq!(
+        pair(turn("Succ", ctor("Zero", [])), ctor("Zero", [])),
+        unified.apply_fully(&left),
+        "the unifier's image"
+    );
+    assert_eq!(
+        unified.apply_fully(&left),
+        unified.apply_fully(&right),
+        "the unifier equates both sides"
+    );
+    for (left, right) in [
+        (
+            var("cycle"),
+            Term::from(&turn("Succ", FreeTerm::var("cycle"))),
+        ),
+        (
+            pair(ctor("Zero", []), FreeTerm::var("fresh")),
+            pair(turn("Succ", ctor("Zero", [])), ctor("Zero", [])),
+        ),
+    ] {
+        let mut refused = seed.clone();
+        assert!(
+            !bool::from(TermAlphabet::unify_cmd(&left, &right, &mut refused)),
+            "{left:?} and {right:?} do not unify"
+        );
+        assert_eq!(seed, refused, "a refused unification leaves the map");
+    }
+}
+
+#[test]
+fn a_match_that_copies_nothing_reads_the_images_of_the_copying_match()
+{
+    // The law: the match that copies nothing decides as the copying match,
+    // visits each metavariable once with the image that the copying match
+    // binds, and its images put back in place give the target.
+    let law = |pattern: &Term, target: &Term| {
+        let mut subst = TermSubst::default();
+        let copied = bool::from(TermAlphabet::match_cmd(pattern, target, &mut subst));
+        let mut visited: Vec<(Name, Maybe<TermRef<'_>, binding::Absent>)> = Vec::new();
+        let read = bool::from(TermAlphabet::match_images(pattern, target, |var, image| {
+            visited.push((var.clone(), Maybe::Present(image)));
+        }));
+        assert_eq!(copied, read, "both matches decide alike");
+        let bound: Vec<(Name, Maybe<TermRef<'_>, binding::Absent>)> = subst
+            .0
+            .keys()
+            .map(|var| (var.clone(), TermAlphabet::image(&subst, var)))
+            .collect();
+        assert_eq!(
+            bound, visited,
+            "each visit reads the image that the match binds"
+        );
+        if copied {
+            assert_eq!(
+                *target,
+                TermAlphabet::apply_images(pattern, |var| TermAlphabet::image(&subst, var)),
+                "the images put back in place give the target"
+            );
+        }
+    };
+    let pair = |left: FreeTerm, right: FreeTerm| Term::from(&FreeTerm::op("add", [left, right]));
+    let one = || ctor("Succ", [ctor("Zero", [])]);
+    let twice = pair(FreeTerm::var("x"), FreeTerm::var("x"));
+    law(&twice, &pair(one(), one()));
+    law(&twice, &pair(one(), ctor("Zero", [])));
+    // A scoped metavariable reads its image raw, and the image put back in
+    // place is renumbered by its scope; a scope that refuses the image
+    // refuses both matches.
+    let nil = || FreeTerm::op("nil", []);
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let out = |channel: &str| FreeTerm::op("out", [FreeTerm::atom(channel), nil()]);
+    let collect = conditioned_cell(
+        &RuleFace::new(
+            nu("a", FreeTerm::var("p")),
+            FreeTerm::var("p"),
+            Vec::new(),
+            SurfaceSpan::default(),
+        )
+        .with_fresh(alloc::vec![gandr_theory_levitation::Freshness::new(
+            "a", "p"
+        )]),
+    );
+    law(collect.lhs(), &Term::from(&nu("c", nu("d", out("d")))));
+    law(collect.lhs(), &Term::from(&nu("c", nu("d", out("c")))));
+}
+
+#[test]
+fn a_variable_unifies_with_itself_with_another_and_under_a_term()
+{
+    let mut itself = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::unify_cmd(&var("x"), &var("x"), &mut itself)),
+        "a variable unifies with itself"
+    );
+    assert_eq!(TermSubst::default(), itself, "binding nothing");
+    let mut apart = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::unify_cmd(&var("x"), &var("y"), &mut apart)),
+        "two variables unify"
+    );
+    assert_eq!(
+        apart.apply_fully(&var("x")),
+        apart.apply_fully(&var("y")),
+        "by binding one to the other"
+    );
+    assert_ne!(TermSubst::default(), apart, "a binding is made");
+    let zero = Term::from(&ctor("Zero", []));
+    let mut under = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::unify_cmd(&zero, &var("w"), &mut under)),
+        "a variable on the right unifies with a term on the left"
+    );
+    assert_eq!(zero, under.apply_fully(&var("w")), "binding it to the term");
+}
+
+/// #654: a match is applied once, all at once. Firing associativity at a term
+/// that carries a variable named as one of the rule's own reads that variable
+/// as the term's, never as the rule's to replace again; a unifier, applied
+/// once, is already its fixpoint.
+#[test]
+fn a_substitution_replaces_each_variable_once_all_at_once_654()
+{
+    let mul = |left: FreeTerm, right: FreeTerm| FreeTerm::op("mul", [left, right]);
+    let v = FreeTerm::var;
+    let lhs = Term::from(&mul(mul(v("x"), v("y")), v("z")));
+    let rhs = Term::from(&mul(v("x"), mul(v("y"), v("z"))));
+    let target = Term::from(&mul(mul(v("a"), v("b")), mul(v("c"), v("z"))));
+    let mut matched = TermSubst::default();
+    assert!(bool::from(TermAlphabet::match_cmd(
+        &lhs,
+        &target,
+        &mut matched
+    )));
+    assert_eq!(
+        Term::from(&mul(v("a"), mul(v("b"), mul(v("c"), v("z"))))),
+        TermAlphabet::apply_subst(&matched, &rhs),
+        "the target's own `z` is not the rule's"
+    );
+    let mut unified = TermSubst::default();
+    let chained = Term::from(&mul(v("p"), v("q")));
+    let ground = Term::from(&mul(v("q"), ctor("Zero", [])));
+    assert!(bool::from(TermAlphabet::unify_cmd(
+        &chained,
+        &ground,
+        &mut unified
+    )));
+    let both = Term::from(&mul(ctor("Zero", []), ctor("Zero", [])));
+    assert_eq!(
+        (both.clone(), both),
+        (
+            TermAlphabet::apply_subst(&unified, &chained),
+            TermAlphabet::apply_subst(&unified, &ground)
+        ),
+        "a chained unifier is resolved, so one pass equates both sides"
+    );
+}
+
+#[test]
+fn metadata_names_and_orders_observe_boundaries()
+{
+    let x = Name::from("x");
+    let doubled = || FreeTerm::op("add", [FreeTerm::var("x"), FreeTerm::var("x")]);
+    let term = Term::from(&doubled());
+    assert_eq!(
+        BTreeMap::from([(&x, Occurrences(2))]),
+        occurrences(&term),
+        "two occurrences of one name"
+    );
+    assert!(
+        occurrences(&Term::from(&ctor("Zero", []))).is_empty(),
+        "a ground term"
+    );
+    let counts = occurrences(&term);
+    assert_eq!(
+        HoleDomination::Dominates,
+        dominates(&counts, &BTreeMap::new()),
+        "nothing to dominate"
+    );
+    for (name, count, expected) in [
+        (&x, 1, HoleDomination::Dominates),
+        (&x, 2, HoleDomination::Dominates),
+        (&x, 3, HoleDomination::FallsShort),
+        (&Name::from("missing"), 1, HoleDomination::FallsShort),
+    ] {
+        assert_eq!(
+            expected,
+            dominates(&counts, &BTreeMap::from([(name, Occurrences(count))])),
+            "{name} at {count}"
+        );
+    }
+    for (left, right, expected) in [
+        (
+            turn("Succ", FreeTerm::var("x")),
+            FreeTerm::var("x"),
+            Ordering::Greater,
+        ),
+        (
+            turn("Succ", ctor("Zero", [])),
+            FreeTerm::var("x"),
+            Ordering::Equal,
+        ),
+        (
+            turn("Succ", turn("Succ", FreeTerm::var("x"))),
+            doubled(),
+            Ordering::Equal,
+        ),
+        (
+            turn("Succ", turn("Succ", turn("Succ", FreeTerm::var("x")))),
+            doubled(),
+            Ordering::Equal,
+        ),
+    ] {
+        let (left, right) = (Term::from(&left), Term::from(&right));
+        assert_eq!(
+            expected,
+            TermAlphabet::reduction_cmp(&left, &right),
+            "{left:?} against {right:?}"
+        );
+        assert_eq!(
+            expected.reverse(),
+            TermAlphabet::reduction_cmp(&right, &left),
+            "{right:?} against {left:?}"
+        );
+    }
+    for invertible in [false, true] {
+        let meta = TermAlphabet::derive_meta(
+            &term,
+            &Term::from(&FreeTerm::op("add", [
+                FreeTerm::var("new"),
+                FreeTerm::var("x"),
+            ])),
+            CellInvertibility::from(invertible),
+        );
+        assert_eq!(
+            alloc::vec![x.clone(), Name::from("new")],
+            meta.vars,
+            "first occurrence"
+        );
+        assert_eq!(invertible, bool::from(meta.invertible), "the flag is kept");
+        assert_eq!(
+            alloc::vec![(x.clone(), SeamRole::Forward)],
+            TermAlphabet::hole_flow(&meta, &x),
+            "one forward endpoint"
+        );
+        assert!(
+            TermAlphabet::hole_flow(&meta, &Name::from("missing")).is_empty(),
+            "an absent hole flows nowhere"
+        );
+    }
+    let constants = Term(alloc::vec![
+        Head::Op(Name::from("add"), Count(2)),
+        Head::Konst(x.clone()),
+        Head::Konst(x)
+    ]);
+    assert_eq!(
+        constants,
+        TermAlphabet::skolemize(&term),
+        "each variable its constant"
+    );
+    assert_eq!(
+        constants,
+        TermAlphabet::skolemize(&constants),
+        "a ground term is kept"
+    );
+    for name in ["", "r'"] {
+        let source = var(name);
+        let expected = var(alloc::format!("{name}'"));
+        assert_eq!(
+            (expected.clone(), expected),
+            TermAlphabet::rename_apart((&source, &source), (&source, &source)),
+            "{name} primed once"
+        );
+    }
+    let anchor = Term::from(&FreeTerm::op("add", [
+        FreeTerm::var("r"),
+        FreeTerm::op("add", [FreeTerm::var("r'"), FreeTerm::var("r''")]),
+    ]));
+    let lhs = Term::from(&FreeTerm::op("add", [
+        FreeTerm::var("r"),
+        FreeTerm::var("r'"),
+    ]));
+    let rhs = Term::from(&FreeTerm::op("add", [
+        FreeTerm::var("r"),
+        FreeTerm::var("r"),
+    ]));
+    assert_eq!(
+        (
+            Term::from(&FreeTerm::op("add", [
+                FreeTerm::var("r'''"),
+                FreeTerm::var("r''''")
+            ])),
+            Term::from(&FreeTerm::op("add", [
+                FreeTerm::var("r'''"),
+                FreeTerm::var("r'''")
+            ])),
+        ),
+        TermAlphabet::rename_apart((&anchor, &anchor), (&lhs, &rhs)),
+        "a collision chain is primed past"
+    );
+    let zero = Term::from(&ctor("Zero", []));
+    assert_eq!(
+        (lhs.clone(), rhs.clone()),
+        TermAlphabet::rename_apart((&zero, &zero), (&lhs, &rhs)),
+        "a cell already apart is kept"
+    );
+}
+
+#[test]
+fn a_family_generalizes_to_its_least_general_pattern()
+{
+    let zero = ctor("Zero", []);
+    let one = turn("Succ", zero.clone());
+    let member = |left: FreeTerm, right: FreeTerm| {
+        alloc::vec![
+            Term::from(&FreeTerm::op("add", [left.clone(), left])),
+            Term::from(&right)
+        ]
+    };
+    let first = member(zero.clone(), one.clone());
+    let second = member(one.clone(), one.clone());
+    let family: [&[Term]; 2] = [&first, &second];
+    let Maybe::Present(generalized) = TermAlphabet::anti_unify_cmd(&family)
+    else {
+        panic!("a nonempty even family generalizes");
+    };
+    assert_eq!(
+        alloc::vec![
+            Term::from(&FreeTerm::op("add", [
+                FreeTerm::var("$g$0"),
+                FreeTerm::var("$g$0")
+            ])),
+            Term::from(&one),
+        ],
+        generalized.patterns,
+        "the shared head is kept and the repeated disagreement stands one point"
+    );
+    assert_eq!(1, generalized.points.len(), "one point");
+    for (member, arms) in family.iter().zip(0_usize ..) {
+        let rebuilt: Vec<Term> = generalized
+            .patterns
+            .iter()
+            .map(|pattern| {
+                generalized
+                    .points
+                    .iter()
+                    .filter_map(|point| point.arms.get(arms))
+                    .fold(pattern.clone(), |term, arm| arm.binding.apply_fully(&term))
+            })
+            .collect();
+        assert_eq!(
+            member.to_vec(),
+            rebuilt,
+            "each member is its generalization"
+        );
+    }
+    let taken = alloc::vec![var("$g$0")];
+    let other = alloc::vec![Term::from(&zero)];
+    let Maybe::Present(apart) = TermAlphabet::anti_unify_cmd(&[&taken, &other])
+    else {
+        panic!("a two-member family generalizes");
+    };
+    assert_eq!(
+        alloc::vec![var("$g$1")],
+        apart.patterns,
+        "a point's name avoids every member's"
+    );
+    assert_eq!(
+        Maybe::Absent(anti_unification::Absent::EmptyFamily),
+        TermAlphabet::anti_unify_cmd(&[]),
+        "no member"
+    );
+    assert_eq!(
+        Maybe::Absent(anti_unification::Absent::RaggedFamily),
+        TermAlphabet::anti_unify_cmd(&[&first, &other]),
+        "members of different lengths"
+    );
+}
+
+#[test]
+fn a_rule_keeps_growing_where_no_rule_rewrites_its_wrapping()
+{
+    let v = FreeTerm::var;
+    let nil = || FreeTerm::op("nil", []);
+    let par = |p: FreeTerm, q: FreeTerm| FreeTerm::op("par", [p, q]);
+    let cat = |p: FreeTerm, q: FreeTerm| FreeTerm::op("cat", [p, q]);
+    let nu = |p: FreeTerm| FreeTerm::op("nu", [p]);
+    let grows = |earlier: &(FreeTerm, FreeTerm), later: &(FreeTerm, FreeTerm)| {
+        bool::from(rule_keeps_growing(earlier, later, &[]))
+    };
+    // A scope-extrusion round: the seed under `nu` and beside `q`, extruded.
+    let round = |seed: FreeTerm| (nu(par(seed.clone(), v("q"))), par(seed, v("q")));
+    let first = round(nil());
+    let second = round(par(nil(), v("q'")));
+    let third = round(par(par(nil(), v("q'")), v("q''")));
+    assert!(grows(&first, &second), "the seed wrapped in `par(□, q')`");
+    assert!(
+        grows(&second, &third),
+        "and again, the inner variable renamed"
+    );
+    assert!(!grows(&second, &first), "no rule grows from a larger one");
+    assert!(!grows(&first, &round(nil())), "no rule grows from itself");
+    assert!(
+        !grows(&first, &round(par(FreeTerm::op("stop", []), v("r")))),
+        "a wrapping that does not hold the seed is no growth"
+    );
+    let two = |left: FreeTerm, right: FreeTerm| {
+        (
+            FreeTerm::op("f", [left.clone(), right.clone()]),
+            FreeTerm::op("g", [left, right]),
+        )
+    };
+    assert!(
+        !grows(
+            &two(nil(), nil()),
+            &two(par(nil(), v("r")), par(nil(), v("s")))
+        ),
+        "two subterms wrapped at once"
+    );
+    let beside = |x: &'static str, y: &'static str, seed: FreeTerm| {
+        (
+            FreeTerm::op("f", [v(x), v(y), seed.clone()]),
+            FreeTerm::op("g", [v(x), v(y), seed]),
+        )
+    };
+    assert!(
+        grows(
+            &beside("x", "y", nil()),
+            &beside("z", "w", par(nil(), v("r")))
+        ),
+        "the variables beside the seed renamed one to one"
+    );
+    assert!(
+        !grows(
+            &beside("x", "y", nil()),
+            &beside("z", "z", par(nil(), v("r")))
+        ),
+        "two variables merged"
+    );
+    let pair = round(cat(v("x"), v("y")));
+    assert!(
+        grows(&pair, &round(par(cat(v("x'"), v("y'")), v("r")))),
+        "a seed holding two variables, found renamed inside its wrapping"
+    );
+    assert!(
+        !grows(&pair, &round(par(cat(v("x'"), v("x'")), v("r")))),
+        "and not once the wrapping merges them"
+    );
+    // The block's own left sides, `nu(nil)` and `par(nu(p), q)`, and the two
+    // rules derived so far match no repetition, so the family grows on.
+    let mut lefts = alloc::vec![
+        nu(nil()),
+        par(nu(v("p")), v("q")),
+        first.0.clone(),
+        second.0.clone(),
+    ];
+    assert!(
+        bool::from(rule_keeps_growing(&first, &second, &lefts)),
+        "the family grows beside its rules"
+    );
+    let flattening = |depth: usize| {
+        (0 .. depth).fold(nil(), |inner, layer| {
+            par(inner, FreeTerm::var(alloc::format!("p{layer}")))
+        })
+    };
+    for depth in [3_usize, 4] {
+        lefts.push(flattening(depth));
+        assert!(
+            !bool::from(rule_keeps_growing(&first, &second, &lefts)),
+            "a rule rewriting the wrapping {depth} deep stops the family"
+        );
+        let _flattening = lefts.pop();
+    }
+}
+
+#[test]
+fn a_free_term_reads_back_through_the_alphabet()
+{
+    let nested = FreeTerm::results([
+        FreeTerm::op("add", [turn("Succ", FreeTerm::var("x")), ctor("Zero", [])]),
+        FreeTerm::ctor("Pair", [FreeTerm::var("y"), ctor("Zero", [])]),
+    ]);
+    let term = Term::from(&nested);
+    assert_eq!(
+        Maybe::Present(nested),
+        term.read(),
+        "the term reads back as itself"
+    );
+    assert_eq!(
+        Term(alloc::vec![
+            Head::Results(Count(2)),
+            Head::Op(Name::from("add"), Count(2)),
+            Head::Ctor(Name::from("Succ"), Count(1)),
+            Head::Var(Name::from("x")),
+            Head::Ctor(Name::from("Zero"), Count(0)),
+            Head::Ctor(Name::from("Pair"), Count(2)),
+            Head::Var(Name::from("y")),
+            Head::Ctor(Name::from("Zero"), Count(0)),
+        ]),
+        term,
+        "prefix order, each head its own kind"
+    );
+    assert_ne!(
+        Term::from(&FreeTerm::op("Zero", [])),
+        Term::from(&ctor("Zero", [])),
+        "an operation and a constructor of one spelling are two heads"
+    );
+    assert_eq!(
+        Maybe::Absent(term_reading::Absent::Skolem),
+        TermAlphabet::skolemize(&term).read(),
+        "a skolem constant spells no free term"
+    );
+}
+
+#[test]
+fn abstractions_naming_different_atoms_are_one_term()
+{
+    let restricted = |atom: &str| FreeTerm::op("nu", [FreeTerm::abs(atom, FreeTerm::var("p"))]);
+    let term = Term::from(&restricted("a"));
+    assert_eq!(
+        term,
+        Term::from(&restricted("b")),
+        "the atom an abstraction names is no part of its head"
+    );
+    assert_eq!(
+        Term(alloc::vec![
+            Head::Op(Name::from("nu"), Count(1)),
+            Head::Abs(Binds::Atom),
+            Head::Var(Name::from("p")),
+        ]),
+        term,
+        "an abstraction is its own head"
+    );
+    assert_eq!(
+        Maybe::Present(restricted("a0")),
+        term.read(),
+        "it reads back naming its canonical atom"
+    );
+    let field = FreeTerm::op("nu", [FreeTerm::lam("a", FreeTerm::var("p"))]);
+    assert_ne!(
+        Term::from(&field),
+        term,
+        "a binding field is not an atom's abstraction"
+    );
+    assert_eq!(
+        Maybe::Present(FreeTerm::op("nu", [FreeTerm::lam(
+            "a0",
+            FreeTerm::var("p")
+        )])),
+        Term::from(&field).read(),
+        "and reads back as the field it is"
+    );
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let z = || FreeTerm::op("z", []);
+    let nested = Term::from(&nu("a", nu("b", z())));
+    assert_eq!(
+        Maybe::Present(nu("a0", nu("a1", z()))),
+        nested.read(),
+        "an abstraction under another reads back one deeper"
+    );
+    let below =
+        TermAlphabet::position_at_path(&[PositionStep::from(0_usize), PositionStep::from(0_usize)]);
+    let Maybe::Present(inner) = TermAlphabet::subterm_cmd_at(&nested, &below)
+    else {
+        panic!("the inner restriction is a subterm");
+    };
+    let mut matched = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::match_cmd(
+            &Term::from(&nu("c", z())),
+            &inner,
+            &mut matched
+        )),
+        "a rule's abstraction matches one below another (#1709)"
+    );
+}
+
+#[test]
+fn an_atom_counts_the_abstractions_to_its_binder()
+{
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let out =
+        |channel: &str| FreeTerm::op("out", [FreeTerm::atom(channel), FreeTerm::op("nil", [])]);
+    let heads = |between: usize| {
+        Term(alloc::vec![
+            Head::Op(Name::from("nu"), Count(1)),
+            Head::Abs(Binds::Atom),
+            Head::Op(Name::from("nu"), Count(1)),
+            Head::Abs(Binds::Atom),
+            Head::Op(Name::from("out"), Count(2)),
+            Head::Occ(Binds::Atom, Count(between)),
+            Head::Op(Name::from("nil"), Count(0)),
+        ])
+    };
+    let outer = Term::from(&nu("a", nu("b", out("a"))));
+    assert_eq!(
+        (heads(1), heads(0)),
+        (outer.clone(), Term::from(&nu("a", nu("b", out("b"))))),
+        "an occurrence counts the abstractions between it and its own binder"
+    );
+    assert_eq!(
+        outer,
+        Term::from(&nu("x", nu("y", out("x")))),
+        "the names an occurrence and its binder share are no part of the term"
+    );
+    assert_eq!(
+        heads(0),
+        Term::from(&nu("a", nu("a", out("a")))),
+        "an inner abstraction of the same name shadows the outer"
+    );
+    assert_eq!(
+        Maybe::Present(nu("a0", nu("a1", out("a0")))),
+        outer.read(),
+        "it reads back naming the atom of its binder's depth"
+    );
+    let beside = FreeTerm::op("par", [nu("a", out("a")), nu("b", out("b"))]);
+    assert_eq!(
+        Maybe::Present(FreeTerm::op("par", [
+            nu("a0", out("a0")),
+            nu("a0", out("a0"))
+        ])),
+        Term::from(&beside).read(),
+        "an occurrence beside an abstraction rather than under it counts from its own"
+    );
+    assert_eq!(
+        (
+            Term(alloc::vec![Head::Free(Binds::Atom, Name::from("c"))]),
+            Maybe::Present(FreeTerm::atom("^1")),
+        ),
+        (
+            Term::from(&FreeTerm::atom("c")),
+            Term(alloc::vec![Head::Occ(Binds::Atom, Count(1))]).read(),
+        ),
+        "an atom no abstraction binds stays named, and a dangling occurrence reads as how far it reaches past the root"
+    );
+}
+
+#[test]
+fn the_circles_rules_fire_below_the_root()
+{
+    let base = || ctor("Base", []);
+    let word = |turns: &[&str]| {
+        turns
+            .iter()
+            .rev()
+            .fold(base(), |inner, name| turn(*name, inner))
+    };
+    let x = || FreeTerm::var("x");
+    let faces = [
+        RuleFace::new(
+            turn("Loop", turn("Unloop", x())),
+            x(),
+            Vec::new(),
+            SurfaceSpan::default(),
+        ),
+        RuleFace::new(
+            turn("Unloop", turn("Loop", x())),
+            x(),
+            Vec::new(),
+            SurfaceSpan::default(),
+        ),
+    ];
+    let mut store = CellStore::new();
+    for face in &faces {
+        let cell = face_cell(face);
+        assert_eq!(
+            (
+                Maybe::Present(face.lhs.clone()),
+                Maybe::Present(face.rhs.clone())
+            ),
+            (cell.lhs().read(), cell.rhs().read()),
+            "the cell's faces are the written ones"
+        );
+        assert_eq!(TermOrient::Written, cell.orient(), "as written");
+        store.insert(cell);
+    }
+    for (written, normal, steps) in [
+        (word(&["Loop", "Unloop", "Loop"]), word(&["Loop"]), 1),
+        (word(&["Loop", "Loop", "Unloop"]), word(&["Loop"]), 1),
+        (word(&["Unloop", "Loop"]), word(&[]), 1),
+        (
+            word(&["Loop", "Unloop", "Unloop", "Loop", "Loop"]),
+            word(&["Loop"]),
+            2,
+        ),
+        (word(&["Loop", "Loop"]), word(&["Loop", "Loop"]), 0),
+    ] {
+        let start = Term::from(&written);
+        let reached = normalize(&store, &start, NormalizationBudget::from(16_usize));
+        assert!(
+            !bool::from(reached.exhausted),
+            "{written} reaches a normal form"
+        );
+        assert_eq!(
+            Maybe::Present(normal),
+            reached.normal.read(),
+            "{written} normalizes"
+        );
+        assert_eq!(steps, reached.path.len(), "{written} takes {steps} steps");
+        assert!(
+            bool::from(replay_path(&store, &start, &reached.normal, &reached.path)),
+            "{written}'s path replays"
+        );
+    }
+    let deep = Term::from(&word(&["Loop", "Loop", "Unloop"]));
+    let reached = normalize(&store, &deep, NormalizationBudget::from(16_usize));
+    assert_eq!(
+        Some(&TermAlphabet::position_at_path(&[PositionStep::from(
+            0_usize
+        )])),
+        reached.path.first().map(|step| &step.at),
+        "the redex stands below the root"
+    );
+}
+
+#[test]
+fn a_conditioned_cell_fires_where_its_instance_names_no_atom_it_may_not()
+{
+    let (p, q) = (|| FreeTerm::var("p"), || FreeTerm::var("q"));
+    let nil = || FreeTerm::op("nil", []);
+    let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
+    let nu2 = |outer: &str, inner: &str, body: FreeTerm| {
+        FreeTerm::op("nu2", [FreeTerm::abs(outer, FreeTerm::abs(inner, body))])
+    };
+    let par = |left: FreeTerm, right: FreeTerm| FreeTerm::op("par", [left, right]);
+    let out = |channel: &str| FreeTerm::op("out", [FreeTerm::atom(channel), nil()]);
+    let face = |lhs: FreeTerm, rhs: FreeTerm, fresh: &[(&str, &str)]| {
+        RuleFace::new(lhs, rhs, Vec::new(), SurfaceSpan::default()).with_fresh(
+            fresh
+                .iter()
+                .map(|&(atom, term)| gandr_theory_levitation::Freshness::new(atom, term))
+                .collect::<Vec<_>>(),
+        )
+    };
+    // `nu(bind a . p) ==> p where { | a # p }`
+    let collect = face(nu("a", p()), p(), &[("a", "p")]);
+    // `par(nu(bind a . p), q) ==> nu(bind a . par(p, q)) where { | a # q }`
+    let extrude = face(par(nu("a", p()), q()), nu("a", par(p(), q())), &[(
+        "a", "q",
+    )]);
+    // `nu2(bind a . bind b . p) ==> nu2(bind b . bind a . p)`
+    let swap = face(nu2("a", "b", p()), nu2("b", "a", p()), &[]);
+    let reached = |face: &RuleFace, written: &FreeTerm, steps: usize| {
+        let cell = conditioned_cell(face);
+        assert_eq!(
+            (cell.lhs().read(), cell.rhs().read()),
+            (
+                Maybe::Present(face.lhs.canonical_atoms()),
+                Maybe::Present(face.rhs.canonical_atoms())
+            ),
+            "the cell's faces read back as written"
+        );
+        let mut store = CellStore::new();
+        let _cell = store.insert(cell);
+        let start = Term::from(written);
+        let reached = normalize(&store, &start, NormalizationBudget::from(steps));
+        assert!(
+            bool::from(replay_path(&store, &start, &reached.normal, &reached.path)),
+            "{written}'s path replays"
+        );
+        reached.normal.read()
+    };
+    let canonical = |term: FreeTerm| Maybe::Present(term.canonical_atoms());
+    let unheard = nu("c", nu("d", out("c")));
+    assert_eq!(
+        reached(&collect, &unheard, 4_usize),
+        canonical(nu("c", out("c"))),
+        "a restriction its body does not name is collected, the body's channel counted one \
+         abstraction nearer"
+    );
+    let heard = nu("c", out("c"));
+    assert_eq!(
+        reached(&collect, &heard, 4_usize),
+        canonical(heard.clone()),
+        "a restriction its body names stays"
+    );
+    let open = nu("c", FreeTerm::var("x"));
+    assert_eq!(
+        reached(&collect, &open, 4_usize),
+        canonical(open.clone()),
+        "a restriction over a metavariable stays: its instance may name the channel"
+    );
+    let beside = nu("d", par(nu("c", out("c")), out("d")));
+    assert_eq!(
+        reached(&extrude, &beside, 4_usize),
+        canonical(nu("d", nu("c", par(out("c"), out("d"))))),
+        "the process moved under the restriction counts its channel one abstraction further"
+    );
+    let crossed = nu2("a", "b", out("a"));
+    assert_eq!(
+        reached(&swap, &crossed, 1_usize),
+        canonical(nu2("b", "a", out("a"))),
+        "swapping two abstractions swaps the occurrences naming them"
+    );
+    let kept = face(
+        nu("a", FreeTerm::op("f", [p()])),
+        nu("a", FreeTerm::op("g", [p()])),
+        &[],
+    );
+    assert_eq!(
+        conditioned_cell(&kept),
+        face_cell(&kept),
+        "a variable under the same abstractions on both sides is not scoped"
+    );
+}
+
+#[test]
+fn an_image_holds_a_hole_as_a_variable_or_as_its_constant()
+{
+    let pattern = Term::from(&ctor("Pair", [FreeTerm::var("p"), FreeTerm::var("q")]));
+    let open = Term::from(&ctor("Pair", [
+        ctor("Succ", [FreeTerm::var("y")]),
+        ctor("Zero", []),
+    ]));
+    for (label, target) in [
+        ("open", open.clone()),
+        ("skolemized", TermAlphabet::skolemize(&open)),
+    ] {
+        let mut bound = TermSubst::default();
+        assert!(
+            bool::from(TermAlphabet::match_cmd(&pattern, &target, &mut bound)),
+            "{label}: the pattern matches"
+        );
+        let holds = |var: &str, hole: &str| match bound.image(&Name::from(var)) {
+            Maybe::Present(image) => {
+                bool::from(TermAlphabet::image_holds(image, &Name::from(hole)))
+            },
+            Maybe::Absent(_) => panic!("{label}: the match binds `{var}`"),
+        };
+        assert!(
+            holds("p", "y"),
+            "{label}: an image holds its hole below a constructor"
+        );
+        assert!(!holds("q", "y"), "{label}: a ground image holds no hole");
+        assert!(
+            !holds("p", "y'") && !holds("p", "Succ"),
+            "{label}: a hole of another spelling and a constructor are not held"
+        );
+    }
+}

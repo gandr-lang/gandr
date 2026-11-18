@@ -1,0 +1,13 @@
+def unwritten(
+  A : Type,
+  x : A,
+  y : A,
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, y)
+) -> Path[.A = Path[.A = A](x, y)](Path.step f1 g, Path.step f2 g) {
+  Path.step
+    (Path.ap (fun (q) { Path.step q g }) (Path.back (Path.back a)))
+    (Path.here (Path.step f2 g))
+}

@@ -1,0 +1,4 @@
+{MAYBE}data Pair : Type where {{ | P : (a : Integer, b : Integer) --> Pair }}
+def twice(p : Pair) -> -F Integer {{ match p {{ | P(a, a) => return a }} }}
+def unknown(m : Maybe(Integer)) -> -F Integer {{ match m {{ | Nope(x) => return x | _ => return 1 }} }}
+def wide(m : Maybe(Integer)) -> -F Integer {{ match m {{ | Some(x, y) => return x | None => return 1 }} }}

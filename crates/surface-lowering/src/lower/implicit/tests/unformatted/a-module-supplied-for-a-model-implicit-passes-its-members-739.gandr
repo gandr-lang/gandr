@@ -1,0 +1,3 @@
+{STEPPED}def supplied() -> -F Integer {{ stepped[.s = Up] 4 }}
+def reduct() -> -F Integer {{ stepped[.s = Tens] 4 }}
+def passed[t : Model(Counter)](c : t.C) -> -F Integer {{ stepped[.s = t] c }}
