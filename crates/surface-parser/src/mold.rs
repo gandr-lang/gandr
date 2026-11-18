@@ -1203,13 +1203,14 @@ fn prefixed_head(
 }
 
 primitive_copy_wrapper!(
-    /// Whether a token is the separator that ends a top-level declaration
-    /// before the head of the next one.
+    /// Whether a token is the separator that ends a declaration before the
+    /// head of the next one or before the close of its block.
     struct DeclarationEnd(bool);
 );
 
 /// Return whether the token at `index` of `tokens` is a separator that the
-/// head of a next top-level declaration follows.
+/// head of a next top-level declaration follows, or a layout separator that
+/// the `}` of its block follows.
 ///
 /// A separator is a `;` or a layout block's separator. A closer, a `}` or a
 /// layout block's close, is no separator: it completes the form of a block,
@@ -1221,15 +1222,22 @@ primitive_copy_wrapper!(
 /// further right, so the separator between two members is no declaration
 /// end.
 ///
+/// The layout writes a separator before a `}` on its own line only after the
+/// last member of a declaration body or of a `rec` block. So that separator
+/// ends the member, as the end of the input ends a top-level declaration
+/// (#7986). A `;` that the source writes there stays as it stands.
+///
 /// The test reads tokens alone, so each reading of a token sees the same
 /// ends. It can be wrong: a declaration keyword at the left margin inside an
 /// open bracket ends a declaration too.
 ///
 /// # Specification
 /// - requires: `tokens` came from the labeler over `source`.
-/// - ensures: true exactly when the token at `index` is a layout separator or a
-///   punctuation token spelled `;`, and the next significant token after it
-///   starts its line and heads or prefixes a declaration.
+/// - ensures: true exactly when the next significant token after the token at
+///   `index` starts its line, and either the token is a layout separator or a
+///   punctuation token spelled `;` and the next token heads or prefixes a
+///   declaration, or the token is a layout separator and the next token is a
+///   `}`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1238,8 +1246,12 @@ primitive_copy_wrapper!(
 ///   that the next declaration's head follows closes it. With a `;` between two
 ///   members, or with a block's close, in the set, a member of a `theory` or
 ///   `data` block without its `:` or `|` recovers with more obligations than
-///   the record holds.
+///   the record holds. A body's last `def rec` without its `=`, after a result
+///   that is a type variable, recovers as at the top level only when the layout
+///   separator before the `}` closes it. With a written `;` before a `}` in the
+///   set too, 65 dropped-token rows of the corpus read worse.
 /// - witness: `tests::acceptance::a_declaration_recovers_as_at_the_end_whatever_follows_5747`
+/// - witness: `tests::acceptance::a_body_s_last_member_owes_its_equals_alone_7986`
 /// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
 #[spec(ensures: |ret| !bool::from(ret) || tokens.get(usize::from(index)).is_some_and(|token| matches!(token.lexeme, Lexeme::LayoutSemi | Lexeme::Punct)))]
 #[inline]
@@ -1292,8 +1304,12 @@ fn ends_declaration(
             .ok()
             .and_then(|start| AsRef::<str>::as_ref(source).get(.. start))
             .is_some_and(|before| before.is_empty() || before.ends_with('\n'));
+        let closes = token.lexeme == Lexeme::LayoutSemi
+            && next.lexeme == Lexeme::Punct
+            && AsRef::<str>::as_ref(&next.text(source)) == "}";
         starts_line
-            && (bool::from(heads_declaration(pbg, next, source))
+            && (closes
+                || bool::from(heads_declaration(pbg, next, source))
                 || bool::from(prefixes_declaration(pbg, next, source)))
     }))
 }

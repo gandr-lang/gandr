@@ -1580,6 +1580,65 @@ fn a_value_opener_ends_a_juxtaposed_type_6101() -> Result<(), Failure>
     Ok(())
 }
 
+/// The last member of a declaration body, a `def rec` that lost its `=`
+/// after a result that is a type variable, owes its `=` alone, as at the top
+/// level.
+///
+/// The result `d` opens a moded type, so the body reads as its operand. The
+/// layout writes a `;` after the member, before the block's `}`. Read as it
+/// stands, that `;` is a shell list operator, and the `}` closes a record
+/// type of fixed fields. The block then owed its `{` and its `}` and an
+/// inconsistent meld beside the `=` (#7986).
+#[test]
+fn a_body_s_last_member_owes_its_equals_alone_7986() -> Result<(), Failure>
+{
+    for (source, arrow) in [
+        (
+            include_str!(
+                "acceptance/unformatted/a-body-s-last-member-owes-its-equals-alone-theory-7986.gandr"
+            ),
+            38,
+        ),
+        (
+            include_str!(
+                "acceptance/unformatted/a-body-s-last-member-owes-its-equals-alone-rec-7986.gandr"
+            ),
+            27,
+        ),
+        (
+            include_str!(
+                "acceptance/unformatted/a-body-s-last-member-owes-its-equals-alone-operand-7986.gandr"
+            ),
+            38,
+        ),
+        (
+            include_str!(
+                "acceptance/unformatted/a-body-s-last-member-owes-its-equals-alone-top-7986.gandr"
+            ),
+            19,
+        ),
+    ] {
+        let result = parse(built(), SourceText::from(source))?;
+        let owed: Vec<(Oblig, usize)> = result
+            .obligations()
+            .iter()
+            .map(|obligation| (obligation.class, usize::from(obligation.span.start())))
+            .collect();
+        assert_eq!(
+            vec![(Oblig::MissingTile, arrow)],
+            owed,
+            "{source:?} owes only the `=` after its result"
+        );
+    }
+    let whole =
+        include_str!("acceptance/unformatted/a-body-s-last-member-with-its-equals-7986.gandr");
+    assert!(
+        bool::from(parse(built(), SourceText::from(whole))?.is_clean()),
+        "the member with its `=` owes nothing"
+    );
+    Ok(())
+}
+
 /// A `def rec` whose `match` lost its first `|` recovers alike before a
 /// declaration with `pub` and before the same declaration without it.
 ///
