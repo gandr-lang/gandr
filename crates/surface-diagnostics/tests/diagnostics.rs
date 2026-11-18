@@ -1233,7 +1233,7 @@ fn a_loop_arm_is_named_by_its_loop_823()
         ),
         (
             String::from(
-                "fun (a) { match a { | Base => Base | loop => Path.walk (fun (b) { type(Path[.A = Circle](b, Base)) }) \
+                "fun (a) { match a { | Base => Base | loop => Path.walk (fun (b) { type(Path[.A = Circle] b Base) }) \
                  loop (Path.here\n                      Base) } }"
             ),
             Fidelity::Faithful,

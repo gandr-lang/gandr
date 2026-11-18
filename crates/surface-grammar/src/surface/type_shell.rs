@@ -512,10 +512,7 @@ fn add_type_rules(
                         Regex::sort(endpoint),
                         tile(TileLabel(",")),
                         Regex::sort(endpoint),
-                        Regex::optional(Regex::seq([
-                            tile(TileLabel(",")),
-                            Regex::sort(endpoint),
-                        ])),
+                        Regex::optional(Regex::seq([tile(TileLabel(",")), Regex::sort(endpoint)])),
                         tile(TileLabel(")")),
                     ]),
                     supplied(Listed::Optionally),
