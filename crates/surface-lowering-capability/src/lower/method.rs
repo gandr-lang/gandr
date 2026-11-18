@@ -222,85 +222,55 @@ struct Candidate<'source>
     path: NamePath,
 }
 
-/// The link a selection or a type path writes: `s.f`, `M.f` or `A.B.f`.
+/// The link a selection writes: `s.f`, `M.f`, or `B.f` in `A.B.f`.
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Link
 {
     /// The operand the link selects from.
     operand: Placed,
-    /// The names after the operand's dot, each with its tile's label, in
-    /// written order: each module's, then the selected one's.
-    names: Vec<(Placed, TileName)>,
-    /// How many of the form's pieces the link takes. A type path's argument
-    /// list starts there.
-    read: usize,
+    /// The name the link selects.
+    name: Placed,
+    /// The label of the name's tile: a module's name is a constructor's.
+    label: TileName,
 }
 
-/// The link `pieces` write: an operand, a dot, then names joined by dots.
+/// The link `pieces` write: an operand, a dot, then one name.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the operand, each name with its label and the count of pieces
-///   read, for pieces that open with an operand and a dot and then write a
-///   name, an identifier, a type variable or a type identifier, after each dot;
-///   nothing for any other pieces.
+/// - ensures: the operand, the name and its label, for exactly three pieces: an
+///   operand, a dot, then an identifier or a constructor; nothing for any other
+///   pieces.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a selection, a type path through one module and one
-///   through two.
+/// - hypothesis: L3 — a selection off a value, off a module and off a nested
+///   module.
 /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
-///
-/// # Cost
-/// - allocation: the names, growth within the link's dots
 fn link(pieces: &[Piece]) -> Maybe<Link, unpathed::Absent>
 {
-    let (
-        Some(&Piece::Operand(operand)),
-        Some(&Piece::Tile {
+    let &[
+        Piece::Operand(operand),
+        Piece::Tile {
             label: TileName::DOT,
             ..
-        }),
-    ) = (pieces.first(), pieces.get(1))
+        },
+        Piece::Tile { label, at: name },
+    ] = pieces
     else {
         return Maybe::Absent(unpathed::Absent::Unnamed);
     };
-    let mut names = Vec::new();
-    let mut read = 2_usize;
-    loop {
-        let Some(&Piece::Tile { label, at }) = pieces.get(read)
-        else {
-            return Maybe::Absent(unpathed::Absent::Unnamed);
-        };
-        if ![
-            TileName::IDENTIFIER,
-            TileName::TYPE_VARIABLE,
-            TileName::TYPE_IDENTIFIER,
-            TileName::CONSTRUCTOR,
-        ]
-        .contains(&label)
-        {
-            return Maybe::Absent(unpathed::Absent::Unnamed);
-        }
-        names.push((at, label));
-        read = read.saturating_add(1);
-        let Some(&Piece::Tile {
-            label: TileName::DOT,
-            ..
-        }) = pieces.get(read)
-        else {
-            break;
-        };
-        read = read.saturating_add(1);
+    if label != TileName::IDENTIFIER && label != TileName::CONSTRUCTOR {
+        return Maybe::Absent(unpathed::Absent::Unnamed);
     }
     Maybe::Present(Link {
         operand,
-        names,
-        read,
+        name,
+        label,
     })
 }
 
@@ -624,18 +594,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         else {
             return Err(refused);
         };
-        // A call's pieces are its head and its list. A type path that writes
-        // its own list, `M.f(s)`, is the head alone.
-        let mut called = Pieces::new();
-        let whole = [Piece::Operand(call)];
-        let head = match self.cx().form_at(call)? {
-            Some((_, Former::Call)) => {
-                read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut called)?;
-                Cursor::new(&called.pieces, call.span)
-            },
-            Some((_, Former::TypePath)) => Cursor::new(&whole, call.span),
-            Some(_) | None => return Err(refused),
+        let Some((_, Former::Call)) = self.cx().form_at(call)?
+        else {
+            return Err(refused);
         };
+        let mut called = Pieces::new();
+        read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut called)?;
+        let head = Cursor::new(&called.pieces, call.span);
         match self.method_at(site, &head, Some((call.node, &mut cursor)))? {
             Planned(true) => Ok(()),
             Planned(false) => Err(refused),
@@ -705,41 +670,24 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Projection | Former::TypePath)) = self.cx().form_at(head)?
+        let Some((_, Former::Projection)) = self.cx().form_at(head)?
         else {
             return Ok(Planned(false));
         };
         let mut pieces = Pieces::new();
         read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut pieces)?;
-        // A selection `s.f` and a type path `M.f` or `A.B.f` name a method the
-        // same way. A type path may write the call's list itself, `M.f(s, a)`;
-        // a selection takes its list from the call.
+        // A selection off a value, `s.f`, and one off a module's path, `M.f` or
+        // `A.B.f`, name a method the same way. A module's name selects no
+        // method.
         let Maybe::Present(Link {
             operand: target,
-            names,
-            read,
+            name: selected,
+            label: TileName::IDENTIFIER,
         }) = link(&pieces.pieces)
         else {
             return Ok(Planned(false));
         };
-        let Some(&(selected, label)) = names.last()
-        else {
-            return Ok(Planned(false));
-        };
-        if [TileName::TYPE_IDENTIFIER, TileName::CONSTRUCTOR].contains(&label) {
-            return Ok(Planned(false));
-        }
-        let own = pieces.pieces.get(read ..).unwrap_or_default();
-        let mut listing = if own.is_empty() {
-            ahead.clone()
-        }
-        else if matches!(ahead.peek(), Maybe::Present(_)) {
-            return Ok(Planned(false));
-        }
-        else {
-            Cursor::new(own, head.span)
-        };
-        let Maybe::Present(path) = self.written_path(target, &names)?
+        let Maybe::Present(path) = self.written_path(target, selected)?
         else {
             return Ok(Planned(false));
         };
@@ -784,12 +732,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         let (at, resolved, skipped) = match dotted {
             Maybe::Present(resolved) => (target, Maybe::Present(resolved), 0_usize),
             Maybe::Absent(_) => {
-                let mut peek = listing.clone();
+                let mut peek = ahead.clone();
                 let mut listed: Vec<NodeIndex> = Vec::new();
                 arguments(site, &mut peek, &mut listed)?;
-                if !own.is_empty() && matches!(peek.peek(), Maybe::Present(_)) {
-                    return Ok(Planned(false));
-                }
                 let Some(first) = listed
                     .first()
                     .and_then(|&node| self.cx().tree.node(node).map(|held| Placed::of(node, held)))
@@ -908,7 +853,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             },
         };
         let start = self.cx().operands.entries().len();
-        arguments(site, &mut listing, &mut self.cx_mut().operands)?;
+        arguments(site, &mut ahead, &mut self.cx_mut().operands)?;
         let end = self.cx().operands.entries().len();
         let written = Stretch {
             start: start.saturating_add(skipped).min(end),
@@ -1614,14 +1559,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     }
 
     /// The whole path a method head writes, `A.B.f`: the names its target's
-    /// chain writes, then `names`, the head's own after its target.
+    /// chain writes, then `selected`, the name the head selects.
     ///
     /// # Specification
-    /// - requires: `target` is a method head's operand and `names` the names
-    ///   the head writes after it, in written order.
-    /// - ensures: the name at the chain's root, each link's names outward, then
-    ///   `names`; nothing for a chain any other form ends, or one a link of
-    ///   which writes an argument list.
+    /// - requires: `target` is a method head's operand and `selected` the name
+    ///   the head selects from it.
+    /// - ensures: the name at the chain's root, each link's name outward, then
+    ///   `selected`; nothing for a chain any other form ends.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk down the
     ///   chain runs out of allowance; a form's own refusal where its pieces
     ///   cannot be read.
@@ -1640,44 +1584,35 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
     ///
     /// # Cost
-    /// - allocation: the path's segments and each link's names, growth within
+    /// - allocation: the path's segments and each link's pieces, growth within
     ///   the chain's links
     fn written_path(
         &mut self,
         target: Placed,
-        names: &[(Placed, TileName)],
+        selected: Placed,
     ) -> Result<Maybe<NamePath, unpathed::Absent>, LoweringRefusal<'source>>
     {
-        let mut segments: Vec<Segment> = names
-            .iter()
-            .rev()
-            .map(|&(name, _)| Segment::from(self.cx().name_at(name).as_ref()))
-            .collect();
+        let mut segments = Vec::from([Segment::from(self.cx().name_at(selected).as_ref())]);
         let mut at = target;
         loop {
             self.cx_mut().fuel.spend()?;
             match self.cx().form_at(at)? {
-                Some((_, Former::Name | Former::Constructor | Former::TypeHead)) => {
+                Some((_, Former::Name | Former::Constructor)) => {
                     segments.push(Segment::from(self.cx().name_at(at).as_ref()));
                     break;
                 },
-                Some((_, Former::Projection | Former::TypePath)) => {
+                Some((_, Former::Projection)) => {
                     let mut pieces = Pieces::new();
                     read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
                     let Maybe::Present(Link {
                         operand: inner,
-                        names: links,
-                        read,
+                        name,
+                        ..
                     }) = link(&pieces.pieces)
                     else {
                         return Ok(Maybe::Absent(unpathed::Absent::Unnamed));
                     };
-                    if read != pieces.pieces.len() {
-                        return Ok(Maybe::Absent(unpathed::Absent::Unnamed));
-                    }
-                    for &(name, _) in links.iter().rev() {
-                        segments.push(Segment::from(self.cx().name_at(name).as_ref()));
-                    }
+                    segments.push(Segment::from(self.cx().name_at(name).as_ref()));
                     at = inner;
                 },
                 Some(_) | None => return Ok(Maybe::Absent(unpathed::Absent::Unnamed)),

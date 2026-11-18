@@ -11013,7 +11013,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             ret.is_err()
                 || matches!(
                     self.cx().plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Former(..) | Plan::Constant(_) | Plan::Method(_)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Reapplied(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..) | Plan::Expansion(..) | Plan::StaticApplication(..) | Plan::Called(..) | Plan::Forced(_) | Plan::Former(..) | Plan::Constant(_)))
                 )
         },
     )]
@@ -11023,14 +11023,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        // A path to a method that writes its own list, `M.f(s, a)`, is the
-        // method's call, as its dot call is.
-        let whole = [Piece::Operand(site.at)];
-        if Capability::new(self.host()).method(site, &Cursor::new(&whole, site.at.span))?
-            == arity::Planned(true)
-        {
-            return Ok(());
-        }
         let start = self.cx().operands.entries().len();
         let read = path_arguments(
             site,
