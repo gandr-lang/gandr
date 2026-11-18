@@ -36,6 +36,7 @@
 //! | `where` ending any other line | a declaration body | `;`, and one before the block's close |
 //! | an explicit `{` | a statement block | `;` |
 //! | an explicit `{` after a declaration's `where` | a declaration body | `;`, and one before the `}` |
+//! | an explicit `{` after `rec` | its declarations, as the source's | `;` after a `def` only, and one before the `}` |
 //! | the source | its declarations | `;` after a `def` only, none at the end |
 //!
 //! A `match` head that ends its line with no `where` and no `{` opens its arm
@@ -53,8 +54,10 @@
 //! An item ends with a separator only when it needs one. An item a
 //! line-leading `|` begins is a constructor, a clause or an arm, which the
 //! next item's head ends. An item already ends at a `;`, a `,`, an opening
-//! brace or an explicit `}`, and a declaration also ends at a block's
-//! virtual close, as a braced declaration ends at its brace. A `}` whose `{`
+//! brace or an explicit `}`, and a declaration also ends at the virtual close
+//! of a body, as a braced declaration ends at its brace. The virtual close of
+//! an arm list ends no declaration, since a `match` is an expression: `def f
+//! (x : A) = match x where …` takes its `;` after its arms. A `}` whose `{`
 //! stands right after `=` closes a block expression, and it ends no item, so
 //! `def f() -> T = { … }` takes its `;` as `def f() -> T = e` does. A
 //! declaration body ends only an item a word begins that holds more than that
@@ -87,7 +90,8 @@ enum Sep
     Semi,
     /// Declarations in a body: `;` after each, the last one included.
     Decl,
-    /// The source's declarations: `;` after a `def`.
+    /// The declarations of the source or of a `rec` block: `;` after a
+    /// `def`.
     Top,
     /// Arms: nothing, as a line-leading `|` separates arms.
     Arms,
@@ -286,6 +290,9 @@ enum Prev<'bytes>
     Start,
     /// A token the pass wrote, or a `=` it relabeled as an opener.
     Virtual(Lexeme),
+    /// A block's virtual close that the pass wrote, with the separator of the
+    /// block it closes.
+    Closed(Sep),
     /// A token of the source, with its bytes.
     Written(Lexeme, &'bytes [u8]),
 }
@@ -376,10 +383,10 @@ impl Plan<'_>
         let declaration = matches!(frame.sep, Sep::Decl | Sep::Top);
         let ended = match self.prev {
             Prev::Start => true,
-            Prev::Virtual(lexeme) => {
-                matches!(lexeme, Lexeme::LayoutOpen | Lexeme::LayoutSemi)
-                    || (declaration && lexeme == Lexeme::LayoutClose)
-            },
+            Prev::Virtual(lexeme) => matches!(lexeme, Lexeme::LayoutOpen | Lexeme::LayoutSemi),
+            // An arm list closes inside an expression, so its close ends no
+            // declaration.
+            Prev::Closed(sep) => declaration && sep != Sep::Arms,
             Prev::Written(lexeme, spelled) => {
                 (lexeme == Lexeme::Punct
                     && (matches!(spelled, b";" | b"," | b"{")
@@ -415,7 +422,20 @@ impl Plan<'_>
         if frame.sep == Sep::Decl && bool::from(self.unended(frame)) {
             self.place(Lexeme::LayoutSemi);
         }
+        self.shut(frame.sep);
+    }
+
+    /// Write the virtual close of a layout block whose items `sep` ends.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shut(
+        &mut self,
+        sep: Sep,
+    )
+    {
         self.place(Lexeme::LayoutClose);
+        self.prev = Prev::Closed(sep);
     }
 }
 
@@ -587,7 +607,7 @@ pub(super) fn lay_out(
                 opened = true;
             }
             else {
-                plan.place(Lexeme::LayoutClose);
+                plan.shut(sep);
                 // The block's close is the first close the move counts.
                 if let Some(Move { ref mut closes, .. }) = step {
                     *closes = closes.saturating_sub(1);
@@ -739,7 +759,7 @@ pub(super) fn lay_out(
                 && let Some(frame) = frames.pop()
             {
                 ending = frame.ending;
-                if frame.sep == Sep::Decl && bool::from(plan.unended(&frame)) {
+                if matches!(frame.sep, Sep::Decl | Sep::Top) && bool::from(plan.unended(&frame)) {
                     plan.place(Lexeme::LayoutSemi);
                 }
             }
@@ -763,9 +783,20 @@ pub(super) fn lay_out(
                     else {
                         Ending::Ends
                     },
+                    // A `{` after a declaration's `where` opens a declaration
+                    // body. A `{` after `rec` holds declarations as the
+                    // source does, so a `def` in it takes its `;`.
                     ..Frame::new(
                         Kind::Brace { column: None },
-                        if members { Sep::Decl } else { Sep::Semi },
+                        if members {
+                            Sep::Decl
+                        }
+                        else if before_arrow == b"rec" {
+                            Sep::Top
+                        }
+                        else {
+                            Sep::Semi
+                        },
                     )
                 }
             }
@@ -863,20 +894,27 @@ pub(super) fn lay_out(
     // block opens left of its opener's line, so the block closes at once.
     if next == Next::Reset {
         match pending {
-            Pending::Body { at, .. } | Pending::ArmsWhere { at, .. } => {
+            Pending::Body { at, .. } => {
                 if let Some(opener) = tokens.get_mut(at) {
                     opener.lexeme = Lexeme::LayoutOpen;
                 }
                 plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
-                plan.place(Lexeme::LayoutClose);
+                plan.shut(Sep::Semi);
+            },
+            Pending::ArmsWhere { at, .. } => {
+                if let Some(opener) = tokens.get_mut(at) {
+                    opener.lexeme = Lexeme::LayoutOpen;
+                }
+                plan.prev = Prev::Virtual(Lexeme::LayoutOpen);
+                plan.shut(Sep::Arms);
             },
             Pending::Members { .. } => {
                 plan.place(Lexeme::LayoutOpen);
-                plan.place(Lexeme::LayoutClose);
+                plan.shut(Sep::Decl);
             },
             Pending::Arms { depth, .. } if frames.len() == depth => {
                 plan.place(Lexeme::LayoutOpen);
-                plan.place(Lexeme::LayoutClose);
+                plan.shut(Sep::Arms);
             },
             Pending::Arms { .. } | Pending::None => {},
         }
@@ -1428,6 +1466,23 @@ mod tests
         // The end of the source ends nothing, so a source cut short stays
         // open where it stops.
         assert_eq!(marked("def f(x : A) -> A = x"), "def f(x : A) -> A = x");
+    }
+
+    #[test]
+    fn an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon()
+    {
+        // #7957: the virtual close of an arm list ends no declaration, so a
+        // `def` whose body after `=` is a `match` takes its `;` after it.
+        assert_eq!(
+            marked("def f(x : A) = match x where\n  | a => x\n  | b => x\ndef g : A = x;\n"),
+            "def f(x : A) = match x ⟪where→{⟫\n  | a => x\n  | b => x⟪}⟫⟪;⟫\ndef g : A = x;\n"
+        );
+        // #7957: a `rec { … }` block is a declaration body, so its last
+        // member takes its `;` before the `}`, as each member before it does.
+        assert_eq!(
+            marked("rec {\n  def f(x : A) -> A = x\n  def g(x : A) -> A = x\n}\n"),
+            "rec {\n  def f(x : A) -> A = x⟪;⟫\n  def g(x : A) -> A = x⟪;⟫\n}\n"
+        );
     }
 
     #[test]
