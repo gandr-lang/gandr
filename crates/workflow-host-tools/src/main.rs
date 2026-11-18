@@ -299,6 +299,9 @@ enum Query
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the listing, the lacks and the printed lines, diagnostic
 fn check(
     pin: Option<&Version>,
     code: &mut ExitCode,
@@ -431,6 +434,10 @@ impl Read
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the jobs, the steps and the paths of each build and copy,
+///   setup
 fn build_target(
     read: &Read,
     target: &Target,

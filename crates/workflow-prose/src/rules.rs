@@ -1011,6 +1011,9 @@ pub fn sentences(
 ///   `Limits:`. An off-by-one limit or a dropped citation verdict changes a
 ///   verdict.
 /// - witness: `rules::tests::a_head_and_an_item_hold_their_sentence_counts`
+///
+/// # Cost
+/// - allocation: the findings and their messages, diagnostic
 #[inline]
 #[must_use]
 pub fn shaped(
@@ -1161,6 +1164,9 @@ fn imperative(sentence: &Sentence) -> Agrees
 ///   an issue, one whose help is a statement, one with no label and one whose
 ///   help holds two instructions; any part left unchecked changes a verdict.
 /// - witness: `rules::tests::a_diagnostic_needs_its_what_where_and_imperative`
+///
+/// # Cost
+/// - allocation: the findings and their messages, diagnostic
 #[inline]
 #[must_use]
 pub fn procedure(

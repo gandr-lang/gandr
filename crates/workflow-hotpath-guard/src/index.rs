@@ -543,6 +543,9 @@ impl Index
     /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     /// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
     /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
+    ///
+    /// # Cost
+    /// - allocation: the row's cells, durable by the row's key
     #[inline]
     pub fn record(
         &mut self,

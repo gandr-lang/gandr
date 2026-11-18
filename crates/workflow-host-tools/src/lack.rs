@@ -257,6 +257,9 @@ impl fmt::Display for Lack<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the written text of the tool and the version, diagnostic
     #[inline]
     fn fmt(
         &self,
@@ -318,6 +321,9 @@ pub enum Inspection
 /// - witness: `lack::tests::a_tool_whose_backend_needs_a_disabled_tool_stays_out`
 /// - witness: `lack::tests::an_install_of_another_machine_and_an_empty_install_lack`
 /// - witness: `lack::tests::a_tool_that_the_host_pins_for_itself_stays_out_7262`
+///
+/// # Cost
+/// - allocation: the list of lacks and the paths of the installs, diagnostic
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. })))]
 #[inline]
 pub fn lacks<'listing>(

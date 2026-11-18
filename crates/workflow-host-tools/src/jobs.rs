@@ -62,6 +62,9 @@ pub struct Job
 ///   out is refused by its key.
 /// - witness: `jobs::tests::a_targets_jobs_take_the_locked_versions_and_the_pin`
 /// - witness: `jobs::tests::a_tool_the_lock_leaves_out_is_refused`
+///
+/// # Cost
+/// - allocation: the jobs and the one shared target, setup
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|jobs| jobs.len() <= builds.tool.len()) || matches!(ret, Err(HostToolsError::Unlocked { .. })))]
 #[inline]
 pub fn plan(

@@ -55,6 +55,9 @@ impl Key
     /// - hypothesis: L3 — the same sentence keys alike wherever it moves, and a
     ///   reworded one keys apart; digesting the line instead changes both.
     /// - witness: `ledger::tests::a_moved_sentence_keeps_its_key_and_a_reworded_one_does_not`
+    ///
+    /// # Cost
+    /// - allocation: the key's path and digest, durable by the ledger key
     #[inline]
     #[must_use]
     pub fn of(finding: &Finding) -> Self

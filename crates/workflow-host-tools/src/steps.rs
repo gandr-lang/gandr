@@ -65,6 +65,9 @@ impl Run
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the printed line, diagnostic
     #[inline]
     #[must_use]
     pub fn line(&self) -> String
@@ -106,6 +109,9 @@ impl Run
 /// - witness: `steps::tests::a_cargo_package_clones_stamps_and_installs`
 /// - witness: `steps::tests::a_go_package_clones_and_builds_with_its_stamp`
 /// - witness: `steps::tests::a_missing_program_and_an_unknown_architecture_are_refused`
+///
+/// # Cost
+/// - allocation: the steps of one job and their paths, setup
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|steps| !steps.is_empty()) || matches!(ret, Err(HostToolsError::Host { .. } | HostToolsError::Recipe { .. })))]
 #[inline]
 pub fn steps(
@@ -218,6 +224,9 @@ pub fn steps(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the arguments of one install, setup
 #[inline]
 fn install_args(
     job: &Job,
@@ -252,6 +261,9 @@ fn install_args(
 /// # Adequacy
 /// - hypothesis: L3 — as [`steps`].
 /// - witness: `steps::tests::a_crate_installs_for_the_target_with_its_features_and_programs`
+///
+/// # Cost
+/// - allocation: the environment pairs of one install, setup
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|env| env.len() >= 2) || matches!(ret, Err(HostToolsError::Host { .. })))]
 #[inline]
 fn cargo_env(

@@ -542,6 +542,9 @@ impl Report
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     /// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
     /// - witness: `tests::cli::one_function_past_a_quiet_runner_files_alone`
+    ///
+    /// # Cost
+    /// - allocation: the list of regressions, diagnostic
     #[must_use]
     #[inline]
     pub fn regressions(&self) -> Vec<Regression<'_>>
@@ -593,6 +596,9 @@ impl Report
     ///   unaccepted files the accepted regression and comments on its issue.
     /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     /// - witness: `tests::cli::an_unaccepted_benchmark_beside_an_accepted_one_still_files`
+    ///
+    /// # Cost
+    /// - allocation: the series' acceptance lookup, diagnostic
     fn accepted(
         &self,
         benchmark: &Benchmark,
@@ -716,6 +722,9 @@ impl fmt::Display for Report
     ///   missing verdict changes the asserted comment.
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     /// - witness: `tests::cli::a_landing_with_an_accepted_verdict_files_no_issue`
+    ///
+    /// # Cost
+    /// - allocation: the written report text, diagnostic
     #[inline]
     fn fmt(
         &self,
