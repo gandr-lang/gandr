@@ -110,6 +110,19 @@ fn a_root_form_that_declares_nothing_is_a_symbol_2073()
     ]);
 }
 
+/// A bare `|` after a data declaration's constructors owes a constructor
+/// name. The parser holds a name tile of no width there, and that tile names
+/// no member: the outline holds the type and its one written constructor.
+#[test]
+fn an_owed_constructor_name_is_no_member()
+{
+    let source = include_str!("outline/unformatted/an-owed-constructor-name-is-no-member.gandr");
+    assert_eq!(outline(&Reading::of(SourceText::from(source)).symbols()), [
+        "Color 10 0:0-2:3 at 0:5-0:10",
+        "  Red 9 1:4-1:15 at 1:4-1:7",
+    ]);
+}
+
 /// A family and a theory written as layout blocks hold their members as
 /// their braced spellings do, and a word at column zero after the block
 /// is no member of it.
