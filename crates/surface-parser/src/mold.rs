@@ -3063,7 +3063,7 @@ impl<'pbg> Molder<'pbg>
                 state.rollback_to(&mark);
                 let mark = state.mark();
                 state.close_statement(close);
-                let bound = standing.map_or(WindowBound::Unbounded, WindowBound::AtMost);
+                let bound = standing.map_or(WindowBound::Unbounded, WindowBound::Below);
                 let end = self.mold_window(state, tokens, index, source, &mark, bound);
                 let closed = (end == WindowEnd::Molded)
                     .then(|| state.completion_delta(state.delta_since(&mark)));
