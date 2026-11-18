@@ -1,0 +1,12 @@
+data Tree : Type where {
+  | Leaf : (n : Integer) --> Tree
+  | Node : (l : Tree, r : Tree) --> Tree
+}
+def rec sum(t : Tree) -> Integer {
+  match t {
+    | Leaf(n) => n
+    | Node(l, r) => { let a = sum[<] l; let b = sum[<] r; a + b }
+  }
+}
+def say(s : String) -> [std.io.Console.Eff] Unit { std.io.Console.print s }
+def shout(s : String) -> [std.io.Console.Eff] Integer { let u = say s; 1 }

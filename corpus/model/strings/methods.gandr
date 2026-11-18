@@ -1,0 +1,93 @@
+//! This source models string receiver methods.
+//!
+//! A receiver mode controls each method call. The mode prevents invalid reads,
+//! writes and takes.
+//!
+//! `Str` implements read, write and consumed methods. A call follows its
+//! receiver hold.
+//!
+//! - see: #1488 — `takenInOneArm`
+//! - cites: [Racordon-2023-borrow_checking_hylo]
+//!
+//! [Racordon-2023-borrow_checking_hylo]: https://2023.splashcon.org/details/iwaco-2023-papers/5/Borrow-checking-Hylo "Racordon and Abrahams, Borrow checking Hylo"
+
+// This source imports declarations for lists, bytes, ownership and writes.
+import "../data/data-base.gandr";
+import "./string-base.gandr";
+import "./nul-terminated.gandr";
+import "./small-string.gandr";
+import "./copy-on-write.gandr";
+import "./unique-write.gandr";
+
+/// `Str` groups one method for each receiver mode.
+pub module Str where
+  /// `len` reads a string that a shared receiver lends.
+  def len(self : shared Repr) -> Integer =
+    match self where
+      | Inline(bs) => count bs
+      | Shared(n, bs) => count bs
+  /// `push` writes `b` before the terminating zero.
+  /// It writes the receiver back.
+  def push(self : Repr, b : Integer) -> Unit =
+    access self as v { let w = pushInPlace v b; let t = written w; resume v t }
+  /// `bytes` takes a string and returns its bytes.
+  /// No code reads that string later.
+  def bytes(self : consumed Repr) -> List Integer =
+    match self where
+      | Inline(bs) => bs
+      | Shared(n, bs) => bs
+
+/// `lengths` adds the lengths before and after it appends `!`.
+/// The result is seven.
+@[runs("7")]
+def lengths() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
+  let n = s.len ()
+  s.push 33
+  let m = s.len ()
+  pure n + m
+
+/// `lengthsByPath` calls each method through its path. `Str.push s 33` is
+/// the call `s.push 33`, so it updates the string that `s` holds.
+@[runs("7")]
+def lengthsByPath() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
+  let n = Str.len s
+  Str.push s 33
+  let m = Str.len s
+  pure n + m
+
+/// This test takes `hi` after it receives `!`.
+@[runs("Cons 104 (Cons 105 (Cons 33 (Cons 0 Nil)))")]
+def taken() -> List Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
+  s.push 33
+  s.bytes ()
+
+/// `takenInOneArm` uses a separate match hold in each arm.
+/// The match ends both holds.
+def takenInOneArm(t : Repr) -> List Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
+  match t where
+    | Inline(bs) => s.bytes ()
+    | Shared(n, bs) => bs
+
+/// `takenOnInline` runs the arm that takes the string.
+@[runs("Cons 104 (Cons 105 (Cons 0 Nil))")]
+def takenOnInline() -> List Integer =
+  takenInOneArm (Inline (Nil : List Integer))
+
+/// `keptOnShared` runs the arm that preserves the string.
+/// The match ends the `hi` hold.
+@[runs("Cons 33 Nil")]
+def keptOnShared() -> List Integer =
+  takenInOneArm (Shared 1 (Cons 33 Nil : List Integer))
+
+/// `readWhereNotTaken` reads a string in the arm that does not take it.
+/// That arm reads the string that its match found.
+@[runs("3")]
+def readWhereNotTaken() -> Integer =
+  var s = Inline (Cons 104 (Cons 105 (Cons 0 Nil)) : List Integer)
+  match Shared 1 (Nil : List Integer) where
+    | Inline(bs) => { count (s.bytes ()) }
+    | Shared(n, bs) => s.len ()

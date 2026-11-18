@@ -1,0 +1,21 @@
+/// This source states a suspended function with a dependent value result.
+///
+/// A family of paths forms a value of that function type.
+///
+/// The result type reads the function parameter.
+/// The parameter may use a name different from its type binder.
+///
+/// - see: #3735 — separate parameter names
+/// - see: corpus/model/identity/transport-dependent-element.gandr
+
+/// The `reflFamily` function gives reflexivity for each path in a family.
+def reflFamily(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](q, q) =
+  fun (q : Path[.A = A](x, y)) { Path.here q }
+
+/// The `reflFamilyApart` function uses a parameter name apart from
+/// the type binder.
+def reflFamilyApart(A : Type, x : A, y : A) -> (q : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](
+  q,
+  q
+) =
+  fun (r : Path[.A = A](x, y)) { Path.here r }

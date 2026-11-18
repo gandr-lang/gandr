@@ -1,0 +1,180 @@
+/// This source compares actions whose arguments reduce to the same path.
+///
+/// `whiskerAlong` applies an action that composes with `g`.
+/// A call and its expanded action provide the same outer argument.
+///
+/// The conversion walk compares each action motive below one variable.
+/// The kernel repeats the shared comparison with its own rules.
+///
+/// - see: #3976 — lambda captures
+/// - see: #4005 — action endpoints
+
+/// The `actAlong` function applies `F` to `p`.
+def actAlong(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
+  F x,
+  F y
+) =
+  Path.ap F p
+
+/// The `whiskerAlong` function applies composition with `g` to `a`.
+def whiskerAlong(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
+  actAlong
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+    f1
+    f2
+    a
+
+/// The `actAct` function applies `G` after `F` to `p`.
+def actAct(
+  A : Type,
+  B : Type,
+  C : Type,
+  F : A -> B,
+  G : B -> C,
+  x : A,
+  y : A,
+  p : Path[.A = A](x, y)
+) -> Path[.A = C](G (F x), G (F y)) =
+  actAlong B C G (F x) (F y) (actAlong A B F x y p)
+
+/// The `underAnAction` proof compares the expanded action with
+/// the `whiskerAlong` call.
+def underAnAction(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](
+  Path.step (Path.step fm g) h,
+  Path.step (Path.step fp g) h
+)](
+  actAlong
+    (type(Path[.A = A](x, z)))
+    (type(Path[.A = A](x, w)))
+    (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path[.A = A](x, z) -> Path[.A = A](x, w))
+    (Path.step fm g)
+    (Path.step fp g)
+    (actAlong (type(Path[.A = A](x, y))) (type(Path[.A = A](x, z))) (fun (q : Path[.A = A](x, y)) {
+      Path.step q g
+    } : Path[.A = A](x, y) -> Path[.A = A](x, z)) fm fp fa),
+  actAlong
+    (type(Path[.A = A](x, z)))
+    (type(Path[.A = A](x, w)))
+    (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path[.A = A](x, z) -> Path[.A = A](x, w))
+    (Path.step fm g)
+    (Path.step fp g)
+    (whiskerAlong A x y z fm fp fa g)
+) =
+  Path.here (actAlong (type(Path[.A = A](x, z))) (type(Path[.A = A](x, w))) (fun (r : Path[.A = A](
+    x,
+    z
+  )) { Path.step r h } : Path[.A = A](x, z) -> Path[.A = A](
+    x,
+    w
+  )) (Path.step fm g) (Path.step fp g) (whiskerAlong A x y z fm fp fa g))
+
+/// The `underAWhisker` proof compares the expanded inner action with
+/// the `whiskerAlong` call.
+def underAWhisker(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](
+  Path.step (Path.step fm g) h,
+  Path.step (Path.step fp g) h
+)](
+  whiskerAlong
+    A
+    x
+    z
+    w
+    (Path.step fm g)
+    (Path.step fp g)
+    (actAlong (type(Path[.A = A](x, y))) (type(Path[.A = A](x, z))) (fun (q : Path[.A = A](x, y)) {
+      Path.step q g
+    } : Path[.A = A](x, y) -> Path[.A = A](x, z)) fm fp fa)
+    h,
+  whiskerAlong
+    A
+    x
+    z
+    w
+    (Path.step fm g)
+    (Path.step fp g)
+    (whiskerAlong A x y z fm fp fa g)
+    h
+) =
+  Path.here
+    (whiskerAlong A x z w (Path.step fm g) (Path.step fp g) (whiskerAlong A x y z fm fp fa g) h)
+
+/// The `nestedAtLambdas` proof compares the nested action with `actAct`.
+def nestedAtLambdas(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](
+  Path.step (Path.step fm g) h,
+  Path.step (Path.step fp g) h
+)](
+  actAlong
+    (type(Path[.A = A](x, z)))
+    (type(Path[.A = A](x, w)))
+    (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path[.A = A](x, z) -> Path[.A = A](x, w))
+    (Path.step fm g)
+    (Path.step fp g)
+    (actAlong (type(Path[.A = A](x, y))) (type(Path[.A = A](x, z))) (fun (q : Path[.A = A](x, y)) {
+      Path.step q g
+    } : Path[.A = A](x, y) -> Path[.A = A](x, z)) fm fp fa),
+  actAct
+    (type(Path[.A = A](x, y)))
+    (type(Path[.A = A](x, z)))
+    (type(Path[.A = A](x, w)))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+    (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path[.A = A](x, z) -> Path[.A = A](x, w))
+    fm
+    fp
+    fa
+) =
+  Path.here (actAlong (type(Path[.A = A](x, z))) (type(Path[.A = A](x, w))) (fun (r : Path[.A = A](
+    x,
+    z
+  )) { Path.step r h } : Path[.A = A](x, z) -> Path[.A = A](
+    x,
+    w
+  )) (Path.step fm g) (Path.step fp g) (actAlong (type(Path[.A = A](x, y))) (type(Path[.A = A](
+    x,
+    z
+  ))) (fun (q : Path[.A = A](x, y)) {
+    Path.step q g
+  } : Path[.A = A](x, y) -> Path[.A = A](x, z)) fm fp fa))

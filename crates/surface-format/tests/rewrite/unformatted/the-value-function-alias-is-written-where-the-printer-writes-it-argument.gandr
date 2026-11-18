@@ -1,0 +1,13 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+
+def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) {
+  become Path.walk
+    (+U ((y : Nat) -> (z : Path[.A = Nat](a, y)) -> -F Path[.A = Nat](y, a)))
+    q
+    (Path.here a)
+    (Path.here q)
+    (Path.here a)
+}

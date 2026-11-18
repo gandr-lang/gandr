@@ -1,0 +1,9 @@
+def leave(n : Integer) -> -F Integer {
+  handle c : std.process.Exit.Eff { c.exit 1; return n } with {
+    | pure(x) => pure x + 1
+    | oper exit(code, k) => k *{}
+  }
+}
+def kept() -> -F Integer {
+  handle c : std.process.Exit.Eff { 1 } with { | pure(x) => pure x | oper exit(code, k) => k *{} }
+}

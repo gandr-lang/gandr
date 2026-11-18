@@ -1,0 +1,23 @@
+//! A no-arm match eliminates apart endpoints.
+//!
+//! Natural-number terms have no rewriting rules.
+//! Distinct head constructors make their terms apart.
+//!
+//! The unifier uses this conflict rule with injectivity.
+//! A presented type does not admit open endpoints.
+//!
+//! - cites: [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory]
+//!
+//! [Cockx-2018-proofrelevant_unification_dependent_pattern_matching_only_axioms_your_type_theory]: https://doi.org/10.1017/S095679681800014X "Cockx and Devriese, Proof-relevant unification: dependent pattern matching with only the axioms of your type theory"
+
+// The free naturals.
+import "./data-base.gandr";
+
+/// Zero is no successor, whatever `n` is: the endpoints differ at their heads.
+def zeroNotSucc(n : Nat, e : Path(Zero, Succ n)) -> Nat =
+  match e {}
+
+/// One is no successor of a successor: below the successor both endpoints
+/// share, `Zero` meets `Succ(n)`.
+def oneNotPastTwo(n : Nat, e : Path(Succ Zero, Succ (Succ n))) -> Nat =
+  match e {}
