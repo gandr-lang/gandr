@@ -7,6 +7,7 @@ extern crate alloc;
 use alloc::collections::BTreeSet;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use gandr_storage_records::BlockStore as _;
 use gandr_storage_records::RecordRef;
@@ -157,8 +158,8 @@ pub struct Found
 {
     /// The object's identity, in lowercase hexadecimal.
     digest: String,
-    /// The segment that holds it.
-    file: PathBuf,
+    /// The segment that holds it, shared by each record of the segment.
+    file: Arc<Path>,
     /// Where its bytes start in the segment, past its header.
     offset: u64,
     /// How many bytes it holds.
@@ -175,6 +176,7 @@ pub fn records(directory: &Path) -> Vec<Found>
     let mut found = Vec::new();
     for file in files(directory) {
         let bytes = std::fs::read(&file).expect("a segment reads");
+        let file: Arc<Path> = Arc::from(file);
         let mut rest = bytes.as_slice();
         let mut at = 0_u64;
         while let Some((magic, after)) = rest.split_first_chunk::<4>()
@@ -193,7 +195,7 @@ pub fn records(directory: &Path) -> Vec<Found>
                         .expect("a string takes text");
                     text
                 }),
-                file: file.clone(),
+                file: Arc::clone(&file),
                 offset,
                 length: body,
             });
