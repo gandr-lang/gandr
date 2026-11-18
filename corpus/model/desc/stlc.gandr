@@ -216,11 +216,10 @@ pub data SemEnv : (g : Ctx, d : Ctx) --> Type where
 /// whose later parameters differ, and the first of which reads the type.
 rec {
   /// The depth of a semantic value's type.
-  def rec reflectDepth(a : ObjTy, _v : sem(a, Empty)) -> Integer {
+  def rec reflectDepth(a : ObjTy, _v : sem(a, Empty)) -> Integer =
     match a where
       | Base => 0
       | Arr(dom, _cod) => { let n = reifyDepth[<] dom Empty; n + 1 }
-  }
   /// The depth of a type at a context.
   def rec reifyDepth(a : ObjTy, g : Ctx) -> Integer =
     match a where

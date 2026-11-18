@@ -83,10 +83,9 @@ rec {
 
   /// The nodes of a tree: its own and its children's.
   @[checks]
-  def rec treeSize(t : Rose) -> Nat {
+  def rec treeSize(t : Rose) -> Nat =
     match t where
       | Node(kids) => { let s = forestSize[<] kids; Succ s }
-  }
 
   /// The nodes of a forest: each tree's, summed.
   @[checks]
@@ -115,10 +114,9 @@ def forested : () -> Nat = forestSize (More sapling (More leaf Empty));
 rec {
   /// The nodes of a tree, each weighing `k`.
   @[checks]
-  def rec treeWeight(t : Rose, k : Nat) -> Nat {
+  def rec treeWeight(t : Rose, k : Nat) -> Nat =
     match t where
       | Node(kids) => plus k (forestWeight[<] kids k)
-  }
 
   /// The nodes of a forest, each weighing `k`.
   @[checks]
@@ -140,10 +138,9 @@ def sapling_weight : () -> Nat = treeWeight sapling (Succ (Succ Zero));
 rec {
   /// A copy of the tree, one node at a time.
   @[checks]
-  def rec bumpTree(t : Rose) -> Rose {
+  def rec bumpTree(t : Rose) -> Rose =
     match t where
       | Node(kids) => Node (bumpForest[<] kids)
-  }
 
   /// A copy of the forest, one tree at a time.
   @[checks]

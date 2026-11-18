@@ -18,15 +18,14 @@ import std.mem (Heap);
 
 /// What a key-value store's lookup must do: leave the store as it found it
 /// and answer the bound value.
-pub def lookupSpec[k : Type, v : Type](s : Store k v, key : k) -> Spec (State Heap) (Maybe v) {
+pub def lookupSpec[k : Type, v : Type](s : Store k v, key : k) -> Spec (State Heap) (Maybe v) =
   #spec{
     requires { wellFormed s }
     ensures r {
       | contents(s) == old (contents s)
       | r == find(old(contents(s)), key
     }
-  }
-}
+  };
 
 /// What splitting the first element off a nonempty list must do, its result
 /// named by a pattern.

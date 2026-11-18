@@ -26,7 +26,7 @@ def wk(d : Ctx, g : Ctx, b : ObjTy, r : Ren d g) -> Ren (Extend d b) g =
 rec {
   /// The renamer of a neutral.
   @[refuses("OutOfFragment.mutual_block.staged_after_first")]
-  def rec renNe(g : Ctx, a : ObjTy, t : Ne g a, d : Ctx, r : Ren d g) -> Ne d a {
+  def rec renNe(g : Ctx, a : ObjTy, t : Ne g a, d : Ctx, r : Ren d g) -> Ne d a =
     match t where
       | NVar(_h, b, x) => NVar d b (r b x)
       | NApp(h, b, c, f, u) => {
@@ -34,7 +34,6 @@ rec {
         let u2 = renNf[<] h b u d r;
         NApp d b c f2 u2
       }
-  }
   /// The renamer of a normal form.
   @[refuses("OutOfFragment.mutual_block.staged_after_first")]
   def rec renNf(g : Ctx, a : ObjTy, t : Nf g a, d : Ctx, r : Ren d g) -> Nf d a =

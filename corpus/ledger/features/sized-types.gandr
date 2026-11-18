@@ -91,10 +91,9 @@ rec {
 
   /// The nodes of a tree: its own and its children's.
   @[checks]
-  def rec treeSize(t : Rose) -> Nat {
+  def rec treeSize(t : Rose) -> Nat =
     match t where
       | Node(kids) => { let s = forestSize[<] kids; Succ s }
-  }
 
   /// The nodes of a forest: each tree's, summed.
   @[checks]

@@ -53,11 +53,10 @@ rec {
   /// The decoder, recursing on the code below: the field's decode does not
   /// stand below the code it was read from.
   @[refuses("StageNotBelow")]
-  def rec decode(u : Odd) -> -F Type {
+  def rec decode(u : Odd) -> -F Type =
     match u where
       | TwoC => return Two
       | Over(a, b) => decode[<] a
-  }
 
   /// The code the field decodes, a definition of the block, refused with it.
   @[refuses("StageNotBelow")]
