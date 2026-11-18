@@ -1,0 +1,20 @@
+def identity : +U (Integer -> -F Integer) ;
+def identity = thunk { fun (n) { return n } } ;
+
+def add : (Integer, Integer) -> Integer ;
+def add = thunk { fun (a) { fun (b) { return (a + b) } } } ;
+
+def named : +U ((x : Integer) -> -F Integer) ;
+def named = thunk { fun (x) { return x } } ;
+
+def stated : Integer -> Integer ;
+def stated = thunk { fun (x : Integer) { return x } } ;
+
+def short : +U (Integer -> Integer -> -F Integer) ;
+def short = thunk { fun (a) { become add a } } ;
+
+def renamed : +U ((x : Integer) -> -F Integer) ;
+def renamed = thunk { fun (y) { return y } } ;
+
+def mistyped : Integer -> Integer ;
+def mistyped = thunk { fun (x : String) { return 1 } } ;

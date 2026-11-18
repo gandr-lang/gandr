@@ -1,0 +1,6 @@
+theory Lambda where {
+  sort Tm : Type;
+  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
+  oper app : (t : Tm, u : Tm) --> Tm;
+}
+def g : -F (Nat -> -F Nat) ;

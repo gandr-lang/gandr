@@ -1,0 +1,2 @@
+{PLACES}def element(i : Integer) -> -F Integer {{ var xs = pair; let y = xs.#[i]; pure y }}
+def zeroth() -> -F Integer {{ var xs = pair; let y = xs.#[0]; pure y }}

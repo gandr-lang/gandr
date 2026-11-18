@@ -1,0 +1,44 @@
+// This source shows module members and nested members.
+//
+// `Facts` exports its stated members and hides the others.
+//
+// The checker resolves nested members through the module path. The members of
+// a module see the names around the module and each other.
+//
+// - see: #1057
+
+/// `seed` gives the shared base value.
+def seed = 40;
+
+/// `Facts` exports `inner.answer` and `total`.
+module Facts : *{inner : *{answer : Integer}, total : Integer} where {
+  /// `hidden_reply` tests a refused shell block. The lowering admits no shell
+  /// block yet.
+  @[refuses("OutOfFragment.shell_block")]
+  def hidden_reply = #!{ printf 'hidden module member ran\n'; };
+  /// `base` tests an unsynthesised operator result. A definition with no stated
+  /// type reads an operator value where nothing infers its type.
+  @[refuses("NotSynthesisable")]
+  def base = seed + hidden_reply.exit_code + 1;
+  /// `inner` hides one member.
+  module inner : *{answer : Integer} where {
+    /// `hidden` reads the refused `base`.
+    @[refuses("UnknownConstant")]
+    def hidden = base;
+    /// `answer` depends on the refused `base`.
+    @[refuses("UnknownConstant")]
+    def answer = base + 1;
+  }
+  /// `total` reads the nested answer. The call of the operator is pure, so the
+  /// value stands as what the call returns.
+  @[checks]
+  def total = inner.answer + 1;
+}
+
+/// `after` tests an unsynthesised exported total.
+@[refuses("NotSynthesisable")]
+def after = Facts.total + 1;
+
+/// `gathered` tests a record that names refused `after`.
+@[refuses("UnknownConstant")]
+def gathered = *{after = after, total = Facts.total};

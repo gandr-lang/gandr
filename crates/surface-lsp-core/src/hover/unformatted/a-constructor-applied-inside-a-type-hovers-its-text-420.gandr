@@ -1,0 +1,6 @@
+data U : Type where {
+  | NatC : U
+  | Arrow : (a : U, b : U) --> U
+}
+def el(u : U) -> -F Type { match u { | NatC => return Integer | Arrow(a, b) => return Unit } }
+def k : el(Arrow$0(NatC, NatC)) ;

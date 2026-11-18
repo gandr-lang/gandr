@@ -1,0 +1,84 @@
+//! `monoid` extends theories through `include`.
+//!
+//! An include adds its members before the local members. `UnitAndZero` joins
+//! `Monoid` and `LeftZero` at `Semigroup`, the pushout over what they share.
+//! The join has one carrier and one multiplication. The checker completes the
+//! joined rules.
+//!
+//! `Endo` models `Monoid` with integer endofunctions. `composed` returns `8`.
+//!
+//! - see: #738
+/// `Semigroup` defines a carrier and an associative multiplication.
+pub theory Semigroup where
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule assoc : mul (mul x y) z ==> mul x (mul y z);
+
+/// `Monoid` adds a two-sided unit to `Semigroup`.
+pub theory Monoid where
+  include Semigroup;
+  oper one : M;
+  rule unitL : mul one x ==> x;
+  rule unitR : mul x one ==> x;
+
+/// `LeftZero` adds a multiplication that absorbs on the left.
+pub theory LeftZero where
+  include Semigroup;
+  oper zero : M;
+  rule absorb : mul zero x ==> zero;
+
+/// `UnitAndZero` joins the unit and zero extensions.
+pub theory UnitAndZero where
+  include Monoid;
+  include LeftZero;
+
+/// `Endo` models `Monoid` with integer endofunctions.
+pub module Endo : Model(Monoid) where
+  type M = Integer -> Integer;
+
+  /// `andThen` composes `f` then `g`.
+  def andThen(
+    f : Integer -> Integer,
+    g : Integer -> Integer,
+    x : Integer
+  ) -> Integer =
+    g (f x)
+
+  /// `ident` returns its input.
+  def ident(x : Integer) -> Integer = x;
+
+  def mul(
+    f : Integer -> Integer,
+    g : Integer -> Integer
+  ) -> Integer -> Integer =
+    thunk { andThen f g }
+
+  def one = ident;
+
+  /// `assoc` verifies the included associativity law.
+  def assoc(
+    f : Integer -> Integer,
+    g : Integer -> Integer,
+    h : Integer -> Integer
+  ) -> Path(mul (mul f g) h, mul f (mul g h)) =
+    Path.here (thunk { andThen f (thunk { andThen g h }) })
+
+  /// `unitL` verifies the left unit law.
+  def unitL(f : Integer -> Integer) -> Path(
+    mul one f,
+    f
+  ) =
+    Path.here f
+
+  /// `unitR` verifies the right unit law.
+  def unitR(f : Integer -> Integer) -> Path(
+    mul f one,
+    f
+  ) =
+    Path.here f
+
+/// `composed` adds one, then doubles `3`.
+@[runs("8")]
+def composed() -> Integer =
+  let h = Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 })
+  h 3

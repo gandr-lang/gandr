@@ -1,0 +1,7 @@
+/// A doc line.
+def greet(name : String) -> -F String {
+  /* a block
+     comment */ return "hello ${name}, \"quoted\" ${ { 1 } }";
+}
+def g : Integer ⇝ Integer; // a trailing comment
+def x = (1 + #[2, 3]) /* open
