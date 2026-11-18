@@ -4,6 +4,8 @@
 //
 // The checker resolves nested members through the module path. The members of
 // a module see the names around the module and each other.
+//
+// - see: `dotted-nested.gandr`
 
 /// `seed` gives the shared base value.
 def seed = 40;
