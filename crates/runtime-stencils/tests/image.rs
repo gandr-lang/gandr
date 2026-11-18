@@ -233,10 +233,10 @@ fn each_runs_item_reads_back_and_runs_alike()
     assert_eq!(
         (written, heads, reached),
         (
-            783,
+            788,
             4,
             BTreeMap::from([
-                (Kind::Code, 183),
+                (Kind::Code, 184),
                 (Kind::Fold, 7),
                 (Kind::Perform, 60),
                 (Kind::Handle, 73),
