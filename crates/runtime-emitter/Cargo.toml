@@ -34,8 +34,8 @@ path = "tests/lib.rs"
 # object of the assembler. Its map of blocks takes no lock on a warm read.
 #
 # The image of a command writes its annotations as one content table of the
-# core-content crate, in that crate's node codec, and reads its absent
-# reasons through the shape crate.
+# core-content crate. It writes the table in the node codec of that crate.
+# It reads the reason of an absent value through the shape crate.
 [dependencies]
 blake3.workspace = true
 gandr-core-content.workspace = true

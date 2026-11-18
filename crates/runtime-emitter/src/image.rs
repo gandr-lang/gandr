@@ -380,9 +380,49 @@ impl fmt::Display for ImageRefusal
             Self::Mark(refusal) => write!(f, "a mark is refused: {refusal}"),
             Self::Check(ref refusal) => write!(f, "the root does not check: {refusal}"),
             Self::Open(_) => f.write_str("the root has free variables"),
-            Self::Table(error) => write!(f, "the table of annotations is refused: {error:?}"),
-            Self::Annotation(reason) => write!(f, "an annotation does not mint: {reason:?}"),
+            Self::Table(error) => {
+                write!(
+                    f,
+                    "the table of annotations is refused: {}",
+                    codec_fault(error)
+                )
+            },
+            Self::Annotation(reason) => {
+                write!(f, "an annotation does not mint: {}", mint_fault(reason))
+            },
         }
+    }
+}
+
+/// The words that name a fault of the node codec.
+///
+/// # Specification
+/// trivial.
+const fn codec_fault(error: CodecError) -> &'static str
+{
+    match error {
+        CodecError::Corrupt => "bytes that no table writes",
+        CodecError::NonCanonical => "bytes that are not the one form of their table",
+        CodecError::LevelOffsetTooLarge { .. } => "a level past the cap of the reader",
+        CodecError::Unsupported(_) => "a form that has no byte form",
+        CodecError::Unrepresentable => "a count or a length past its word",
+    }
+}
+
+/// The words that name why a root of the table does not mint.
+///
+/// # Specification
+/// trivial.
+const fn mint_fault(reason: seating::Absent) -> &'static str
+{
+    match reason {
+        seating::Absent::Unresolved => "an id of another arena",
+        seating::Absent::Cyclic => "a node that is its own descendant",
+        seating::Absent::Unplaced => "a root or a constant that the image does not hold",
+        seating::Absent::IllSorted => "a root of another sort",
+        seating::Absent::Unseatable => "an item with no seat",
+        seating::Absent::Unplaceable => "an index past its space",
+        seating::Absent::Unwalked => "a place past the walk",
     }
 }
 
@@ -1517,9 +1557,9 @@ fn action_of(
     indexed.try_map(
         ChildOrder::Forward,
         &mut (),
-        |(), value| indexed_position(value).map(ProducerId::from),
-        |(), body| indexed_position(body).map(CommandId::from),
-        |(), ty| indexed_type(roots, ty),
+        |_state: &mut (), value| indexed_position(value).map(ProducerId::from),
+        |_state: &mut (), body| indexed_position(body).map(CommandId::from),
+        |_state: &mut (), ty| indexed_type(roots, ty),
     )
 }
 
@@ -1930,10 +1970,6 @@ where
 #[expect(
     clippy::too_many_lines,
     reason = "one arm for each node form of the IL, in the order the IL declares them"
-)]
-#[expect(
-    clippy::match_same_arms,
-    reason = "the five reserved tags stand apart from the tags that no node has"
 )]
 fn read_node<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Node<'static>, ValueError>
 where
@@ -2423,7 +2459,7 @@ impl Image<'_>
         let mut buffer = annotations::Buffer::default();
         write_effect_signature(&mut NodeWriter { sink: &mut buffer }, &indexed)
             .map_err(|_unwritten| untaken())?;
-        Ok(buffer.0)
+        Ok(buffer.into_bytes())
     }
 
     /// The bytes of the session action `action`, each child as its position
@@ -2452,14 +2488,14 @@ impl Image<'_>
         let indexed = action.try_map(
             ChildOrder::Forward,
             &mut (),
-            |(), value| at(self.numbering.producer(value)?),
-            |(), body| at(self.numbering.command(body)?),
-            |(), ty| self.indexed(ty),
+            |_state: &mut (), value| at(self.numbering.producer(value)?),
+            |_state: &mut (), body| at(self.numbering.command(body)?),
+            |_state: &mut (), ty| self.indexed(ty),
         )?;
         let mut buffer = annotations::Buffer::default();
         write_session_action(&mut NodeWriter { sink: &mut buffer }, &indexed)
             .map_err(|_unwritten| untaken())?;
-        Ok(buffer.0)
+        Ok(buffer.into_bytes())
     }
 
     /// Write the producers of `ids` after their count.

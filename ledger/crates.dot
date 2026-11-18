@@ -224,6 +224,7 @@ digraph crates {
   "kernel-term" -> "kernel-conversion-trace";
   "kernel-term" -> "kernel-strata";
   "kernel-term" -> "theory-path-orders";
+  "runtime-emitter" -> "core-content";
   "runtime-emitter" -> "core-fork";
   "runtime-emitter" -> "core-sequent";
   "runtime-emitter" -> "core-session";

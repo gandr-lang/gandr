@@ -52,7 +52,20 @@ use quenchant_shape::shape::Maybe;
 /// # Specification
 /// trivial.
 #[derive(Debug, Default)]
-pub(super) struct Buffer(pub(super) Vec<u8>);
+pub(super) struct Buffer(Vec<u8>);
+
+impl Buffer
+{
+    /// The bytes written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(super) fn into_bytes(self) -> Vec<u8>
+    {
+        self.0
+    }
+}
 
 impl Sink for Buffer
 {
