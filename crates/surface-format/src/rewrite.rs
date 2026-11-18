@@ -796,7 +796,10 @@ impl Band
             | "manifest_sort"
             | "send_session_type"
             | "receive_session_type"
-            | "mu_session_type" => Self::Loose,
+            | "mu_session_type"
+            // A lambda binds loose, as the printer binds it, so a parenthesis
+            // around one as a first argument leads its juxtaposition (#5750).
+            | "lambda_expression" => Self::Loose,
             _ => Self::Atom,
         }
     }
@@ -1006,6 +1009,27 @@ fn enclosure(
     }
     else {
         Enclosed::No
+    }
+}
+
+/// The band of a juxtaposition whose head binds at `head` and whose first
+/// argument is `first`: a bridge when the head is a bridge or the first
+/// argument takes parentheses after an atom head, as the printer's `led`
+/// rule binds a former there, so that `-F` encloses it (`-F Var (Extend a
+/// b) c` reads as a call of `Var`); an application otherwise (#5750).
+///
+/// # Specification
+/// trivial.
+fn juxtaposition(
+    head: Band,
+    first: Enclosed,
+) -> Band
+{
+    if head == Band::Bridge || (head <= Band::Atom && first == Enclosed::Yes) {
+        Band::Bridge
+    }
+    else {
+        Band::Application
     }
 }
 
@@ -3476,7 +3500,8 @@ impl<'source> Respelling<'_, 'source>
     /// `Path[.A = T](x, y)`, as the juxtaposition `Path x y`. Each endpoint is
     /// an atom or in its parentheses, and the carrier stays in its brackets.
     /// Nothing is written for a list that holds a comment, or for parts that
-    /// leave a list or a carrier open.
+    /// leave a list or a carrier open. The path binds as [`juxtaposition`]
+    /// states, so a kept form and a rewritten one agree.
     ///
     /// # Specification
     /// trivial.
@@ -3488,6 +3513,7 @@ impl<'source> Respelling<'_, 'source>
     {
         let mut opened = false;
         let mut carrier = false;
+        let mut led: Option<bool> = None;
         for part in parts {
             match part.role {
                 Role::Own(text) => match <&str>::from(text) {
@@ -3504,6 +3530,9 @@ impl<'source> Respelling<'_, 'source>
                 Role::Operand(child) => {
                     let operand = self.operand(child);
                     if opened {
+                        if led.is_none() {
+                            led = Some(operand.enclosed() == Enclosed::Yes);
+                        }
                         out.glue();
                         out.place(&operand, Band::Atom);
                     }
@@ -3519,7 +3548,13 @@ impl<'source> Respelling<'_, 'source>
                 Role::Comment => return None,
             }
         }
-        (!opened && !carrier).then_some(Band::Application)
+        let led = if led == Some(true) {
+            Enclosed::Yes
+        }
+        else {
+            Enclosed::No
+        };
+        (!opened && !carrier).then_some(juxtaposition(Band::Atom, led))
     }
 
     /// Write the type application whose parts are `parts` as juxtaposition.
@@ -3574,21 +3609,20 @@ impl<'source> Respelling<'_, 'source>
             .into_iter()
             .map(|operand| self.operand(operand))
             .collect();
-        let enclosed = |operand: &Operand<'source>| operand.enclosed() == Enclosed::Yes;
-        let led = operands.first().is_some_and(enclosed);
+        let led = operands.first().map_or(Enclosed::No, Operand::enclosed);
         out.fragment(head);
         for operand in &operands {
             out.glue();
             out.place(operand, Band::Atom);
         }
-        Some(if led { Band::Bridge } else { Band::Application })
+        Some(juxtaposition(Band::Atom, led))
     }
 
     /// The band a form of the rule `rule` over `parts` binds at: the rule's
-    /// own band, but a bridge for a type juxtaposition whose first argument
-    /// takes parentheses, `Var (Extend a b) c`, as [`Self::juxtaposed_type`]
-    /// writes it. The juxtaposition nests to the left, so its head is the
-    /// first operand and its first argument the second.
+    /// own band, but [`juxtaposition`]'s for a type juxtaposition, `Var
+    /// (Extend a b) c`, as [`Self::juxtaposed_type`] writes it. The
+    /// juxtaposition nests to the left, so its head is the first operand and
+    /// its first argument the second.
     ///
     /// # Specification
     /// trivial.
@@ -3609,14 +3643,7 @@ impl<'source> Respelling<'_, 'source>
             (Some(head), Some(first)) => {
                 let (head, _) = self.bands(head);
                 let (band, inner) = self.bands(first);
-                if head == Band::Bridge
-                    || (head <= Band::Atom && enclosure(band, inner) == Enclosed::Yes)
-                {
-                    Band::Bridge
-                }
-                else {
-                    Band::Application
-                }
+                juxtaposition(head, enclosure(band, inner))
             },
             (Some(_), None) | (None, _) => Band::Application,
         }
