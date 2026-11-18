@@ -1,0 +1,4 @@
+def h : +U (-F Integer);
+def h = thunk { return 1 };
+def g : +U (-F Integer);
+def g = thunk { become (force h) 1 };

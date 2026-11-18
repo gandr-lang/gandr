@@ -1,0 +1,35 @@
+//! `moved-through` sends a file handle through a writer.
+//!
+//! The writer returns the handle. The parent closes the returned handle. The
+//! move twins refuse a repeated move or a post-move close as `UsedAfterClose`.
+//!
+//! The trace tests settle the writer and parent events.
+//! The source imports `File` from `file-base`.
+//!
+//! Rust passes an owned value through `fn f(x: T) -> T`.
+//! - see: file-base.gandr — the file protocol
+import "./file-base.gandr";
+
+/// `movedThrough` gives a writer a handle that the writer returns.
+@[
+  runs("*{}"),
+  traces(decomposes owner (parallel (event left 0) (event right 0))),
+  traces(decomposes
+    writer
+    (series
+      (event right 0)
+      (event left 0)
+      (event left 1)
+      (parallel (event left 2) (series (event right 1) (event right 2)))))
+]
+def movedThrough() -> Unit =
+  let file = fork (owner : File.Handle) { close owner };
+  let task = fork (writer : File.Writer) {
+    let held = recv writer;
+    send writer held;
+    close writer
+  };
+  send task file
+  let back = recv task
+  close back
+  close task
