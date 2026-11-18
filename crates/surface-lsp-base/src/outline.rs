@@ -1117,6 +1117,9 @@ fn members(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the symbol's name, growth within the members the form writes
 fn member(
     tree: &SyntaxTree<'_>,
     index: &LineIndex<'_>,
