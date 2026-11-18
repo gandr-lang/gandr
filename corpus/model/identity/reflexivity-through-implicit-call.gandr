@@ -1,0 +1,32 @@
+//! A reflexivity whose endpoint calls a definition that omits its implicits.
+//!
+//! The checker solves such implicits from the types of the arguments, and it
+//! fills the declared type with the solutions. The kernel replays the relation
+//! that the checker decides at each endpoint of the filled type.
+//!
+//! `stepImplicit` takes the carrier and the three points as implicits. A call
+//! writes only the two paths. `twoLevels` states a reflexivity one level up,
+//! so its endpoints hold that call. The checker forms the filled type again,
+//! and each reflexivity carries its dialogues to the kernel.
+//!
+//! - see: #5521
+//! - see: `omitted-carrier-in-body.gandr` — a composite whose carrier the signature solves
+
+/// A composite of two paths, its carrier and its points implicit.
+def stepImplicit[t : Type, a : t, b : t, c : t](
+  p : Path[.A = t](a, b),
+  q : Path[.A = t](b, c)
+) -> Path[.A = t](a, c) =
+  Path.walk (fun (y) { type(Path[.A = t](a, y)) }) q p
+
+/// The composite of `f` with a reflexivity, related to `f` one level up.
+def twoLevels(
+  A : Type,
+  x : A,
+  y : A,
+  f : Path[.A = A](x, y)
+) -> Path[.A = Path[.A = Path[.A = A](x, y)](stepImplicit f (Path.here y), f)](
+  Path.here (stepImplicit f (Path.here y)),
+  Path.here f
+) =
+  Path.here (Path.here f)

@@ -1,0 +1,15 @@
+error[DependentBind]: the result type of this `let` depends on the value it binds
+   ╭▸ corpus/ledger/diagnostics/DependentBind.gandr:9:5
+   │
+ 7 │ ┌ def bound() -> Integer =
+ 8 │ │   let p = {
+   │ │   ─── checked against `-F Integer`; while synthesising the computation this binds
+ 9 │ │     let n = one ();
+   │ │     ━━━ its type mentions the bound value: found `-F Path[.A = Integer](n, n)`
+10 │ │     pure Path.here n
+11 │ │   };
+12 │ │   pure 1
+   │ └────────┘ checked against `() -> Integer`; while checking the body of this thunk
+   │
+   ├ note: `bound` is refused with DependentBind, as its expectation states
+   ╰ help: bind a computation whose result type ignores its value

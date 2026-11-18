@@ -1,0 +1,4 @@
+{COUNTER}{PLACES}def bumped() -> -F Integer {{ var s = 1; let f = Counter.bump; pure 0 }}
+def placed() -> -F Integer {{ var xs = pair; let f = Places.first; pure 0 }}
+def readable() -> -F Integer {{ var s = 1; let f = Counter.read; f s }}
+def spendable() -> -F Integer {{ var s = 1; let f = Counter.spend; f s }}

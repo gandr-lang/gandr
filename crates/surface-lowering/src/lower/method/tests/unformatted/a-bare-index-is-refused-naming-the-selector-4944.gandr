@@ -1,0 +1,4 @@
+{PLACES}module Bare where {{
+  def zeroth[m : Mode](self : m List(Integer)) -> -F View[m](Integer) {{ self[0] }}
+}}
+def held() -> -F Integer {{ var xs = pair; let y = xs[1]; pure y }}

@@ -1,0 +1,59 @@
+//! This source tests recursive calls that remain open at a variable.
+//!
+//! The checker keeps a recursive call in an arm until the checker
+//! knows its argument.
+//! The pathological twin refuses an endpoint that gives this call a value.
+//!
+//! The checker retains the open call below the arm constructor.
+//! The kernel replays that retained computation.
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
+
+// This import supplies integers and free naturals.
+import "./circle-base.gandr";
+// The loop's words.
+import "./loop-words.gandr";
+// The winding number into the integers.
+import "./loop-winding.gandr";
+// This import supplies the map from integers to loop words.
+import "./loop-space.gandr";
+
+/// The `Loop` arm maps `windWords(x)` to `S(windWords(x))`.
+def wind_unfolded(x : Words) -> Path[.A = Int](windWords (Loop x), S (windWords x)) =
+  Path.here (S (windWords x))
+
+/// The outer bind reads the inner call first.
+def twice_unfolded(x : Words) -> Path[.A = Int](windWords (Loop (Loop x)), S (S (windWords x))) =
+  Path.here (S (S (windWords x)))
+
+/// The `spinWords` call waits for `S(windWords(x))`.
+/// Its `S` arm reads `spinWords(windWords(x))` as `Loop`.
+def round_unfolded(x : Words) -> Path[.A = Words](
+  spinWords (windWords (Loop x)),
+  Loop (spinWords (windWords x))
+) =
+  Path.here (Loop (spinWords (windWords x)))
+
+/// The base case evaluates every call to its value.
+def base_case() -> Path[.A = Words](spinWords (windWords Nil), Nil) =
+  Path.here Nil
+
+/// The `parity` recursion cases on free naturals.
+/// The checker refuses a case on the presented `Int` before conversion, because
+/// its rules admit none, so this twin uses free naturals.
+def rec parity(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => {
+      let q = parity[<] p;
+      match q where
+        | Zero => Succ Zero
+        | Succ(r) => Zero
+    }
+
+/// The `parity_stuck` endpoint keeps a bind over a variable call.
+@[refuses("EndpointMismatch")]
+def parity_stuck(n : Nat) -> Path[.A = Nat](parity (Succ n), Succ (parity n)) =
+  Path.here (Succ (parity n))

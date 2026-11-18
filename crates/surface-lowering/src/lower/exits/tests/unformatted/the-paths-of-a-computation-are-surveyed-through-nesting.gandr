@@ -1,0 +1,12 @@
+{NAT}def f(n : Nat) -> -F Nat {{
+let a = match n {{ | Zero => pure n | Succ(p) => pure p }} ;
+let b = match n {{ | Zero => return n | Succ(p) => pure p }} ;
+let c = match n {{ | Zero => pure n | Succ(p) => match p {{ | Zero => return p | Succ(q) => pure q }} }} ;
+let d = match n {{ | Zero => pure n | Succ(p) => match p {{ | Zero => pure p | Succ(q) => pure q }} }} ;
+let e = match n {{ | Zero => return n | Succ(p) => match p {{ | Zero => return p | Succ(q) => return q }} }} ;
+match n {{ | Zero => return n | Succ(p) => return p }}
+}}
+def g : +U (-F Nat) ;
+def g = thunk {{ return Zero }} ;
+def h : +U (-F Nat & -F Nat) ;
+def h = thunk {{ &{{.0 => return Succ Zero, .1 => pure Zero}} }} ;

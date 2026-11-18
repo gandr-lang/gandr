@@ -1,0 +1,11 @@
+{INCLUDED}def anySemigroup(s : Model(Semigroup)) -> -F Model(Semigroup) {{ return s }}
+def anyMonoid(m : Model(Monoid)) -> -F Model(Monoid) {{ return m }}
+def throughBoth(m : Model(Monoid) with sort M = Integer) -> -F Model(Semigroup) {{
+  become anySemigroup(m)
+}}
+def forgotten(m : Model(Monoid) with sort M = Integer) -> -F Model(Monoid) {{
+  become anyMonoid(m)
+}}
+def diamond(m : Model(UnitAndZero) with sort M = Unit) -> -F Model(Semigroup) {{
+  become anySemigroup(m)
+}}

@@ -1,0 +1,2 @@
+{STEPPED}def fixed[s : Model(Counter) with sort C = Integer](c : Integer) -> -F Integer {{ s.read (s.incr (c + s.zero)) }}
+def manifest() -> -F Integer {{ fixed[.s = Up] 4 }}

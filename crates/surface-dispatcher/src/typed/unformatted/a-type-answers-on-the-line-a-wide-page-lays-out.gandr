@@ -1,0 +1,2 @@
+def wide(first : Integer, second : Integer, third : Integer, fourth : Integer) -> -F Integer { return first }
+def main() -> -F Integer { wide 1 2 3 4 }
