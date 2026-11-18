@@ -44,14 +44,13 @@ def whiskerHere(
   x : A,
   y : A,
   z : A,
-  f1 : Path[.A = A](x, y),
-  f2 : Path[.A = A](x, y),
-  a : Path[.A = Path[.A = A](x, y)](f1, f2),
-  g : Path(y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g)](
-  Path.ap (fun (q) { Path.step q g }) a,
+  f1 : Path[.A = A] x y,
+  f2 : Path[.A = A] x y,
+  a : Path[.A = Path[.A = A] x y] f1 f2,
+  g : Path y z
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step f1 g) (Path.step f2 g)] (
   Path.ap (fun (q) { Path.step q g }) a
-) =
+) (Path.ap (fun (q) { Path.step q g }) a) =
   Path.here (Path.ap (fun (q) { Path.step q g }) a)
 
 /// The stated binder gives the whisker path its point type.
@@ -60,12 +59,11 @@ def whiskerStatedHere(
   x : A,
   y : A,
   z : A,
-  f1 : Path[.A = A](x, y),
-  f2 : Path[.A = A](x, y),
-  a : Path[.A = Path[.A = A](x, y)](f1, f2),
-  g : Path(y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g)](
-  Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a,
-  Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a
-) =
-  Path.here (Path.ap (fun (q : Path[.A = A](x, y)) { Path.step q g }) a)
+  f1 : Path[.A = A] x y,
+  f2 : Path[.A = A] x y,
+  a : Path[.A = Path[.A = A] x y] f1 f2,
+  g : Path y z
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step f1 g) (Path.step f2 g)] (
+  Path.ap (fun (q : Path[.A = A] x y) { Path.step q g }) a
+) (Path.ap (fun (q : Path[.A = A] x y) { Path.step q g }) a) =
+  Path.here (Path.ap (fun (q : Path[.A = A] x y) { Path.step q g }) a)

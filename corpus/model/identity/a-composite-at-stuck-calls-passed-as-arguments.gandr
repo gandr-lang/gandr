@@ -22,9 +22,9 @@ def composedHere(
   x : A,
   y : A,
   z : A,
-  p : Path[.A = A](x, y),
-  q : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) =
+  p : Path[.A = A] x y,
+  q : Path[.A = A] y z
+) -> Path[.A = Path[.A = A] x z] (Path.step p q) (Path.step p q) =
   Path.here (Path.step p q)
 
 /// `composedHere` at two variables.
@@ -33,9 +33,9 @@ def passedVariables(
   x : A,
   y : A,
   z : A,
-  r : Path[.A = A](x, y),
-  s : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step r s, Path.step r s) =
+  r : Path[.A = A] x y,
+  s : Path[.A = A] y z
+) -> Path[.A = Path[.A = A] x z] (Path.step r s) (Path.step r s) =
   composedHere A x y z r s
 
 /// `composedHere` at one stuck call and one variable.

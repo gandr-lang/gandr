@@ -21,23 +21,22 @@ import "./loop-winding.gandr";
 import "./loop-space.gandr";
 
 /// The `Loop` arm maps `windWords(x)` to `S(windWords(x))`.
-def wind_unfolded(x : Words) -> Path[.A = Int](windWords (Loop x), S (windWords x)) =
+def wind_unfolded(x : Words) -> Path[.A = Int] (windWords (Loop x)) (S (windWords x)) =
   Path.here (S (windWords x))
 
 /// The outer bind reads the inner call first.
-def twice_unfolded(x : Words) -> Path[.A = Int](windWords (Loop (Loop x)), S (S (windWords x))) =
+def twice_unfolded(x : Words) -> Path[.A = Int] (windWords (Loop (Loop x))) (S (S (windWords x))) =
   Path.here (S (S (windWords x)))
 
 /// The `spinWords` call waits for `S(windWords(x))`.
 /// Its `S` arm reads `spinWords(windWords(x))` as `Loop`.
-def round_unfolded(x : Words) -> Path[.A = Words](
-  spinWords (windWords (Loop x)),
+def round_unfolded(x : Words) -> Path[.A = Words] (spinWords (windWords (Loop x))) (
   Loop (spinWords (windWords x))
 ) =
   Path.here (Loop (spinWords (windWords x)))
 
 /// The base case evaluates every call to its value.
-def base_case() -> Path[.A = Words](spinWords (windWords Nil), Nil) =
+def base_case() -> Path[.A = Words] (spinWords (windWords Nil)) Nil =
   Path.here Nil
 
 /// The `parity` recursion cases on free naturals.
@@ -55,5 +54,5 @@ def rec parity(n : Nat) -> Nat =
 
 /// The `parity_stuck` endpoint keeps a bind over a variable call.
 @[refuses("EndpointMismatch")]
-def parity_stuck(n : Nat) -> Path[.A = Nat](parity (Succ n), Succ (parity n)) =
+def parity_stuck(n : Nat) -> Path[.A = Nat] (parity (Succ n)) (Succ (parity n)) =
   Path.here (Succ (parity n))

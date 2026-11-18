@@ -30,10 +30,9 @@ def flat3(x : S3) -> S3 =
 
 /// The winding of a word at the 3-cell: one step for each letter.
 pub def rec wind3(
-  p : Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](Path.here Base3, Path.here Base3)](
-    Path.here (Path.here Base3),
+  p : Path[.A = Path[.A = Path[.A = S3] Base3 Base3] (Path.here Base3) (Path.here Base3)] (
     Path.here (Path.here Base3)
-  )
+  ) (Path.here (Path.here Base3))
 ) -> Int =
   match p where
     | here => Z

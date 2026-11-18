@@ -22,32 +22,28 @@ def comp(
   Path.step p q
 
 /// Reflexivity is the composite's left unit.
-def leftUnit(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step (Path.here Base) p,
-  p
-) =
+def leftUnit(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
+  Path.step (Path.here Base) p
+) p =
   Path.here p
 
 /// The composite definition gives the same left unit.
-def leftUnitComp(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  comp (Path.here Base) p,
-  p
-) =
+def leftUnitComp(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
+  comp (Path.here Base) p
+) p =
   Path.here p
 
 /// A letter before the empty word stays before a path composed after it.
-def letterFirst(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  comp (loop ∷ Path.here Base) p,
-  loop ∷ p
-) =
+def letterFirst(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
+  comp (loop ∷ Path.here Base) p
+) (loop ∷ p) =
   Path.here (loop ∷ p)
 
 /// The loop before `p` differs from `p`.
 @[refuses("EndpointMismatch")]
-def letterKept(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  comp (loop ∷ Path.here Base) p,
-  p
-) =
+def letterKept(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
+  comp (loop ∷ Path.here Base) p
+) p =
   Path.here p
 
 /// The composite again, under another name.
@@ -67,30 +63,30 @@ def compSwapped(
 /// Both names unfold to one transport stuck on `q`, whose motives close over
 /// two definitions' environments and read the binder alone.
 def sameComposite(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Path[.A = Circle](Base, Base)](comp p q, other p q) =
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (comp p q) (other p q) =
   Path.here (comp p q)
 
 /// So the two composites agree after a letter.
 def sameAfterLetter(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Path[.A = Circle](Base, Base)](loop ∷ comp p q, loop ∷ other p q) =
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (loop ∷ comp p q) (loop ∷ other p q) =
   Path.here (loop ∷ comp p q)
 
 /// And a letter before `p` comes first through either name.
 def letterThroughNames(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Path[.A = Circle](Base, Base)](comp (loop ∷ p) q, loop ∷ other p q) =
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (comp (loop ∷ p) q) (loop ∷ other p q) =
   Path.here (loop ∷ comp p q)
 
 /// The transports along `p` and along `q` are not one: the swapped composite
 /// is another path.
 @[refuses("EndpointMismatch")]
 def swapped(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Path[.A = Circle](Base, Base)](comp p q, compSwapped p q) =
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (comp p q) (compSwapped p q) =
   Path.here (comp p q)

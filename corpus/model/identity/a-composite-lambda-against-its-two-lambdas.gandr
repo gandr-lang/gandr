@@ -81,8 +81,8 @@ def actOfCompose(
   G : B -> C,
   x : A,
   y : A,
-  p : Path[.A = A](x, y)
-) -> Path[.A = C](G (F x), G (F y)) =
+  p : Path[.A = A] x y
+) -> Path[.A = C] (G (F x)) (G (F y)) =
   actThrough A C (fun (a : A) { G (F a) } : A -> C) x y p
 
 /// The final proof compares the lambda action with the composite action.

@@ -16,12 +16,11 @@ import "./rename-rename.gandr";
 import "./lookup-weaken.gandr";
 
 /// A lifted rename preserves a weakened lookup.
-def renameLookWeakens(u : Env, q : Ren, m : N) -> Path(
-  rename (wk (look m u Z)) (RLift q),
+def renameLookWeakens(u : Env, q : Ren, m : N) -> Path (rename (wk (look m u Z)) (RLift q)) (
   rename (look m u (S Z)) (RLift q)
 ) =
   Path.walk
-    (fun (z) { type(Path[.A = Term](rename z (RLift q), rename (look m u (S Z)) (RLift q))) })
+    (fun (z) { type(Path[.A = Term] (rename z (RLift q)) (rename (look m u (S Z)) (RLift q))) })
     (lookWeakens m u Z)
     (Path.here (rename (look m u (S Z)) (RLift q)))
 
@@ -29,7 +28,7 @@ def renameLookWeakens(u : Env, q : Ren, m : N) -> Path(
 def shiftPastLift(
   q : Ren,
   n : N
-) -> Path(rlook (rlook n q) (RShift (S Z)), rlook (rlook n (RShift (S Z))) (RLift q)) =
+) -> Path (rlook (rlook n q) (RShift (S Z))) (rlook (rlook n (RShift (S Z))) (RLift q)) =
   match n where
     | Z => shiftAdds (rlook Z q) (S Z)
     | S(j) => shiftAdds (rlook (S j) q) (S Z)
@@ -105,13 +104,13 @@ def rec substRenameSquare(
 def weakenLiftLooks(
   s : Env,
   n : N
-) -> Path(look (rlook n (RShift (S Z))) (Lift s) Z, rename (look n s Z) (RShift (S Z))) =
+) -> Path (look (rlook n (RShift (S Z))) (Lift s) Z) (rename (look n s Z) (RShift (S Z))) =
   match n where
     | Z => lookWeakens Z s Z
     | S(j) => lookWeakens (S j) s Z
 
 /// A lifted substitution of `wk` is `wk` of that substitution.
-pub def substWeaken(x : Term, s : Env) -> Path(subst (wk x) (Lift s), wk (subst x s)) =
+pub def substWeaken(x : Term, s : Env) -> Path (subst (wk x) (Lift s)) (wk (subst x s)) =
   substRenameSquare
     x
     (RShift (S Z))

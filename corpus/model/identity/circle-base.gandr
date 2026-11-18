@@ -42,25 +42,25 @@ pub data Nat : Type where
   | Succ : (n : Nat) --> Nat
 
 /// The `wind` function counts loop and inverse letters.
-pub def rec wind(p : Path[.A = Circle](Base, Base)) -> Int =
+pub def rec wind(p : Path[.A = Circle] Base Base) -> Int =
   match p where
     | here => Z
     | loop ∷ q => S (wind[<] q)
     | back(loop) ∷ q => P (wind[<] q)
 
 /// The `spin` function maps each integer step to its loop letter.
-pub def rec spin(n : Int) -> Path[.A = Circle](Base, Base) =
+pub def rec spin(n : Int) -> Path[.A = Circle] Base Base =
   match n where
     | Z => Path.here Base
     | S(x) => loop ∷ spin[<] x
     | P(x) => back loop ∷ spin[<] x
 
 /// The `loopOn` function prepends a loop to a path word.
-pub def loopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
+pub def loopOn(p : Path[.A = Circle] Base Base) -> Path[.A = Circle] Base Base =
   loop ∷ p
 
 /// The `unloopOn` function prepends an inverse loop to a path word.
-pub def unloopOn(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) =
+pub def unloopOn(p : Path[.A = Circle] Base Base) -> Path[.A = Circle] Base Base =
   back loop ∷ p
 
 /// The `sect` induction makes `spin(wind p)` equal `p` under word cancellation.
@@ -81,12 +81,12 @@ pub def rec retr(n : Int) -> Path[.A = Int](wind (spin n), n) =
     | P(x) => Path.ap down (retr[<] x)
 
 /// Conjugation carries the self loop at every circle point.
-pub def selfloop(x : Circle) -> Path[.A = Circle](x, x) =
+pub def selfloop(x : Circle) -> Path[.A = Circle] x x =
   match x where
     | Base => loop
 
 /// Conjugation fixes reflexivity at every circle point.
-pub def selfrefl(x : Circle) -> Path[.A = Circle](x, x) =
+pub def selfrefl(x : Circle) -> Path[.A = Circle] x x =
   match x where
     | Base => Path.here Base
 

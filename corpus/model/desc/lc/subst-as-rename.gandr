@@ -57,7 +57,9 @@ pub def rec substRenames(
       }) (substRenames[<] x s r h) (Path.here (Ap (subst f s) (subst x s))))
 
 /// The shift by one renames each index by that shift.
-pub def shiftOneRenames(i : N) -> Path[.A = Term](look i (Shift (S Z)) Z, Ix (rlook i (RShift (S Z)))) =
+pub def shiftOneRenames(i : N) -> Path[.A = Term] (look i (Shift (S Z)) Z) (
+  Ix (rlook i (RShift (S Z)))
+) =
   match i where
     | Z => Path.here (Ix (S Z))
     | S(j) => Path.here (Ix (S (S j)))

@@ -229,7 +229,7 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s :
           | Own(m, q, v) => match same l m where
             | true => return type(*{
               w : Val,
-              holds : Path[.A = Maybe Val]((Some w : Maybe Val), below path v),
+              holds : Path[.A = Maybe Val] (Some w : Maybe Val) (below path v),
               post : k(Ends w (Own m q v))
             })
             | false => return Void
@@ -246,7 +246,7 @@ pub def rec wpMem(e : MemExpr, env : Vals, k : Out -> Type, r : Out -> Type, s :
               | Whole => match same l m where
                 | true => return type(*{
                   v1 : Val,
-                  made : Path[.A = Maybe Val]((Some v1 : Maybe Val), setAt path v w),
+                  made : Path[.A = Maybe Val] (Some v1 : Maybe Val) (setAt path v w),
                   post : k(Ends UnitV (Own m Whole v1))
                 })
                 | false => return Void
@@ -315,10 +315,8 @@ pub def headOf(ixs : Ixs) -> Val =
 /// does not repeat.
 pub def linked(b : Nat, rest : Ixs, blocks : Vals, tail : Type) -> Type =
   return type(*{
-    held : Path[.A = Maybe Val](
-      (Some (headOf rest) : Maybe Val),
-      below (Down b (Down Zero Here)) (Tree blocks)
-    ),
+    held : Path[.A = Maybe Val] (Some (headOf
+      rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
     link : tail,
     apart : notIn(rest, b)
   })
@@ -334,7 +332,7 @@ pub def rec chain(ixs : Ixs, blocks : Vals) -> Type =
 /// its blocks chain.
 pub def freeAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> Type =
   return type(*{
-    head : Path[.A = Maybe Val]((Some (headOf ixs) : Maybe Val), nth heads order),
+    head : Path[.A = Maybe Val] (Some (headOf ixs) : Maybe Val) (nth heads order),
     wf : chain(ixs, blocks)
   })
 
@@ -344,13 +342,13 @@ pub def popAt(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs, o : Out) -> T
   match o where
     | Ends(res, s) => match ixs where
       | INil => return type(*{
-        none : Path[.A = Val](res, NoneV),
-        kept : Path[.A = State](s, Own Zero Whole (buddy blocks heads))
+        none : Path[.A = Val] res NoneV,
+        kept : Path[.A = State] s (Own Zero Whole (buddy blocks heads))
       })
       | ICons(b, rest) => return type(*{
-        some : Path[.A = Val](res, SomeV (IntV b)),
+        some : Path[.A = Val] res (SomeV (IntV b)),
         hs : Vals,
-        now : Path[.A = State](s, Own Zero Whole (buddy blocks hs)),
+        now : Path[.A = State] s (Own Zero Whole (buddy blocks hs)),
         rep : freeAt(blocks, hs, order, rest),
         out : notIn(rest, b)
       })
@@ -376,21 +374,18 @@ pub def isSome(m : Maybe Val) -> Type =
     | Some(_x) => return Unit
 
 /// No path joins `Some(y)` to `None`, since `isSome` holds at one end only.
-pub def noneHeld(y : Val, h : Path((Some y : Maybe Val), (None : Maybe Val))) -> Void =
+pub def noneHeld(y : Val, h : Path (Some y : Maybe Val) (None : Maybe Val)) -> Void =
   Path.walk
-    ((m : Maybe Val, Path[.A = Maybe Val]((Some y : Maybe Val), m)) -> isSome(m))
+    ((m : Maybe Val, Path[.A = Maybe Val] (Some y : Maybe Val) m) -> isSome(m))
     h
     (Path.here (Some y : Maybe Val))
     (Path.here h)
     (*{})
 
 /// `nth` at `i` answers the element `setN` writes there, when `i` holds one.
-pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> Path[.A = Maybe Val](
-  (Some y : Maybe Val),
-  nth
-    vs
-    i
-) -> Path[.A = Maybe Val]((Some x : Maybe Val), nth (setN vs i x) i) =
+pub def rec nthSet(vs : Vals, i : Nat, x : Val, y : Val) -> Path[.A = Maybe Val] (
+  Some y : Maybe Val
+) (nth vs i) -> Path[.A = Maybe Val] (Some x : Maybe Val) (nth (setN vs i x) i) =
   match vs where
     | VNil => match i where
       | Zero => fun (h) { match (noneHeld y h : Void) {} }
@@ -420,16 +415,17 @@ pub def headsSet(
   order : Nat,
   w : Val,
   y : Val,
-  h : Path[.A = Maybe Val]((Some y : Maybe Val), nth heads order)
-) -> Path[.A = Maybe Val](
-  (Some (buddy blocks (setN heads order w)) : Maybe Val),
+  h : Path[.A = Maybe Val] (Some y : Maybe Val) (nth heads order)
+) -> Path[.A = Maybe Val] (Some (buddy blocks (setN heads order w)) : Maybe Val) (
   setAt (Down (Succ Zero) (Down order Here)) (buddy blocks heads) w
 ) =
   Path.walk
-    ((m : Maybe Val, Path[.A = Maybe Val]((Some y : Maybe Val), m)) -> Path[.A = Maybe Val](
-      (Some (buddy blocks (setN heads order w)) : Maybe Val),
-      setHeadsAt blocks heads order w m
-    ))
+    ((
+      m : Maybe Val,
+      Path[.A = Maybe Val] (Some y : Maybe Val) m
+    ) -> Path[.A = Maybe Val] (Some (buddy
+      blocks
+      (setN heads order w)) : Maybe Val) (setHeadsAt blocks heads order w m))
     h
     (Path.here (Some y : Maybe Val))
     (Path.here h)
@@ -437,11 +433,11 @@ pub def headsSet(
 
 /// The empty list's postcondition: `None`, the state kept.
 pub def emptyEnds(blocks : Vals, heads : Vals) -> *{
-  none : Path[.A = Val](NoneV, NoneV),
-  kept : Path[.A = State](
-    Own Zero Whole (buddy blocks heads),
-    Own Zero Whole (buddy blocks heads)
-  )
+  none : Path[.A = Val] NoneV NoneV,
+  kept : Path[.A = State] (Own Zero Whole (buddy blocks heads)) (Own
+    Zero
+    Whole
+    (buddy blocks heads))
 } =
   *{none = Path.here NoneV, kept = Path.here (Own Zero Whole (buddy blocks heads))}
 
@@ -452,13 +448,11 @@ pub def restFree(
   order : Nat,
   rest : Ixs,
   y : Val,
-  h : Path[.A = Maybe Val]((Some y : Maybe Val), nth heads order),
+  h : Path[.A = Maybe Val] (Some y : Maybe Val) (nth heads order),
   link : chain(rest, blocks)
 ) -> *{
-  head : Path[.A = Maybe Val](
-    (Some (headOf rest) : Maybe Val),
-    nth (setN heads order (headOf rest)) order
-  ),
+  head : Path[.A = Maybe Val] (Some (headOf
+    rest) : Maybe Val) (nth (setN heads order (headOf rest)) order),
   wf : chain(rest, blocks)
 } =
   let set = nthSet heads order (headOf rest) y
@@ -470,7 +464,7 @@ pub def popNone(
   blocks : Vals,
   heads : Vals,
   order : Nat,
-  h : Path[.A = Maybe Val]((Some NoneV : Maybe Val), nth heads order)
+  h : Path[.A = Maybe Val] (Some NoneV : Maybe Val) (nth heads order)
 ) -> wpMemFn(
   popBody,
   popEnv(order),
@@ -486,7 +480,7 @@ pub def afterWrite(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path[.A = Maybe Val]((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
+  h : Path[.A = Maybe Val] (Some (SomeV (IntV b)) : Maybe Val) (nth heads order),
   link : chain(rest, blocks),
   apart : notIn(rest, b)
 ) -> wpMem(
@@ -508,11 +502,9 @@ pub def afterRead(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path[.A = Maybe Val]((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
-  held : Path[.A = Maybe Val](
-    (Some (headOf rest) : Maybe Val),
-    below (Down b (Down Zero Here)) (Tree blocks)
-  ),
+  h : Path[.A = Maybe Val] (Some (SomeV (IntV b)) : Maybe Val) (nth heads order),
+  held : Path[.A = Maybe Val] (Some (headOf
+    rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
   link : chain(rest, blocks),
   apart : notIn(rest, b)
 ) -> wpMem(
@@ -538,12 +530,10 @@ pub def popSome(
   order : Nat,
   b : Nat,
   rest : Ixs,
-  h : Path[.A = Maybe Val]((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
+  h : Path[.A = Maybe Val] (Some (SomeV (IntV b)) : Maybe Val) (nth heads order),
   wf : *{
-    held : Path[.A = Maybe Val](
-      (Some (headOf rest) : Maybe Val),
-      below (Down b (Down Zero Here)) (Tree blocks)
-    ),
+    held : Path[.A = Maybe Val] (Some (headOf
+      rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
     link : chain(rest, blocks),
     apart : notIn(rest, b)
   }
@@ -567,12 +557,10 @@ pub def popFrom(
   b : Nat,
   rest : Ixs,
   fl : *{
-    head : Path[.A = Maybe Val]((Some (SomeV (IntV b)) : Maybe Val), nth heads order),
+    head : Path[.A = Maybe Val] (Some (SomeV (IntV b)) : Maybe Val) (nth heads order),
     wf : *{
-      held : Path[.A = Maybe Val](
-        (Some (headOf rest) : Maybe Val),
-        below (Down b (Down Zero Here)) (Tree blocks)
-      ),
+      held : Path[.A = Maybe Val] (Some (headOf
+        rest) : Maybe Val) (below (Down b (Down Zero Here)) (Tree blocks)),
       link : chain(rest, blocks),
       apart : notIn(rest, b)
     }
@@ -591,7 +579,7 @@ pub def popFromEmpty(
   blocks : Vals,
   heads : Vals,
   order : Nat,
-  fl : *{head : Path[.A = Maybe Val]((Some NoneV : Maybe Val), nth heads order), wf : Unit}
+  fl : *{head : Path[.A = Maybe Val] (Some NoneV : Maybe Val) (nth heads order), wf : Unit}
 ) -> wpMemFn(
   popBody,
   popEnv(order),

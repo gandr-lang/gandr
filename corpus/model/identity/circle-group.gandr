@@ -22,14 +22,11 @@ import "./circle-base.gandr";
 import "./int-sum.gandr";
 
 /// The successor case adds one loop by computation.
-def spinUp(n : Int) -> Path[.A = Path[.A = Circle](Base, Base)](spin (S n), loop ∷ spin n) =
+def spinUp(n : Int) -> Path[.A = Path[.A = Circle] Base Base] (spin (S n)) (loop ∷ spin n) =
   Path.here (loop ∷ spin n)
 
 /// The predecessor case adds one inverse loop by computation.
-def spinDown(n : Int) -> Path[.A = Path[.A = Circle](Base, Base)](
-  spin (P n),
-  back loop ∷ spin n
-) =
+def spinDown(n : Int) -> Path[.A = Path[.A = Circle] Base Base] (spin (P n)) (back loop ∷ spin n) =
   Path.here (back loop ∷ spin n)
 
 /// The `spinHom` induction uses reverse word order because `spin` adds a loop
@@ -56,14 +53,13 @@ def rec windHom(
 
 /// The kernel replays `spunComm` as `Path.ap(spin, plusComm)`.
 def spunComm(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Path[.A = Circle](Base, Base)](
-  spin (plus (wind q) (wind p)),
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (spin (plus (wind q) (wind p))) (
   spin (plus (wind p) (wind q))
 ) =
   Path.walk (fun (a) {
-    type(Path[.A = Path[.A = Circle](Base, Base)](spin (plus (wind q) (wind p)), spin a))
+    type(Path[.A = Path[.A = Circle] Base Base] (spin (plus (wind q) (wind p))) (spin a))
   }) (plusComm (wind q) (wind p)) (Path.here (spin (plus (wind q) (wind p))))
 
 /// The `comm` chain applies `sect`, `windHom`, and `plusComm` to

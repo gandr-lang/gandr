@@ -18,13 +18,11 @@ import "./univalence.gandr";
 
 /// The transport maps a loop function to an integer function by `spin`,
 /// `f` and `wind`.
-def funBeta(f : Path[.A = Circle](Base, Base) -> Path[.A = Circle](
-  Base,
-  Base
-)) -> Path[.A = Int -> Int](
-  Path.walk (fun (X) { X -> X }) loopsAreIntegers f,
-  fun (n) { wind (f (spin n)) }
-) =
+def funBeta(
+  f : Path[.A = Circle] Base Base -> Path[.A = Circle] Base Base
+) -> Path[.A = Int -> Int] (Path.walk (fun (X) { X -> X }) loopsAreIntegers f) fun (n) {
+  wind (f (spin n))
+} =
   Path.here (fun (n) { wind (f (spin n)) })
 
 /// A run maps a loop function to the successor of its winding.

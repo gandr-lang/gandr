@@ -19,7 +19,7 @@ def path_fun(f : Integer -> Integer) -> Path f f =
   Path.here f
 
 /// `path_app` forms reflexivity at an application.
-def path_app(n : Integer) -> Path(n + 1, n + 1) =
+def path_app(n : Integer) -> Path (n + 1) (n + 1) =
   Path.here (n + 1)
 
 /// `Ix` has one element at each integer index.

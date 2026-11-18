@@ -24,10 +24,9 @@ def backThen(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base)
   Path.step (Path.back p) p
 
 /// The `stated` proof has a written composite path type.
-def stated(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step p loop,
+def stated(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
   Path.step p loop
-) =
+) (Path.step p loop) =
   Path.here (Path.step p loop)
 
 /// The `walkTwice` function composes a path with itself.
@@ -54,7 +53,7 @@ def unthrice(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](B
 
 /// The `stay` declaration gives a path at a natural number.
 @[owes(1)]
-def stay : (a : Nat) -> Path[.A = Nat](a, a);
+def stay : (a : Nat) -> Path[.A = Nat] a a;
 
 /// The `stayUp` proof reads the result of the `stay` declaration.
 def stayUp(a : Nat) -> Path[.A = Nat](Succ a, Succ a) =
@@ -85,11 +84,8 @@ def mappedInto(
   g : b -> a,
   u : b,
   v : b,
-  q : Path[.A = b](u, v)
-) -> Path[.A = Path[.A = a](g u, g v)](
-  Path.ap g q,
-  Path.ap g q
-) =
+  q : Path[.A = b] u v
+) -> Path[.A = Path[.A = a] (g u) (g v)] (Path.ap g q) (Path.ap g q) =
   Path.here (Path.ap g q)
 
 /// A non-path parameter gives no path type to read.

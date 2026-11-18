@@ -16,8 +16,7 @@ import "./subst-id.gandr";
 
 /// The composites of law 4 and of the shift by zero twice agree at every
 /// index.
-def weakenSingleAgree(a : Term, n : N) -> Path(
-  subst (look n (Shift (S Z)) Z) (Cons a (Shift Z)),
+def weakenSingleAgree(a : Term, n : N) -> Path (subst (look n (Shift (S Z)) Z) (Cons a (Shift Z))) (
   subst (look n (Shift Z) Z) (Shift Z)
 ) =
   match n where

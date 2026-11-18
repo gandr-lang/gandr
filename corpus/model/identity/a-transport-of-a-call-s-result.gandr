@@ -18,13 +18,12 @@ def transportInALoopFamily(
   B : Type,
   x : B,
   y : B,
-  p : Path(x, y),
-  v : Path(x, x)
-) -> Path[.A = Path[.A = B](y, y)](
-  Path.walk (fun (z) { type(Path[.A = B](z, z)) }) p v,
-  Path.walk (fun (z) { type(Path[.A = B](z, z)) }) p (handedBack (Path x x) v)
+  p : Path x y,
+  v : Path x x
+) -> Path[.A = Path[.A = B] y y] (Path.walk (fun (z) { type(Path[.A = B] z z) }) p v) (
+  Path.walk (fun (z) { type(Path[.A = B] z z) }) p (handedBack (Path x x) v)
 ) =
-  Path.here (Path.walk (fun (z) { type(Path[.A = B](z, z)) }) p v)
+  Path.here (Path.walk (fun (z) { type(Path[.A = B] z z) }) p v)
 
 /// The second proof compares transports in a fixed-point path family.
 /// Its two values are one unfolding apart.
@@ -32,10 +31,9 @@ def transportInAFreeFamily(
   B : Type,
   x : B,
   y : B,
-  p : Path(x, y),
-  v : Path(x, x)
-) -> Path[.A = Path[.A = B](y, x)](
-  Path.walk (fun (z) { type(Path[.A = B](z, x)) }) p v,
-  Path.walk (fun (z) { type(Path[.A = B](z, x)) }) p (handedBack (Path x x) v)
+  p : Path x y,
+  v : Path x x
+) -> Path[.A = Path[.A = B] y x] (Path.walk (fun (z) { type(Path[.A = B] z x) }) p v) (
+  Path.walk (fun (z) { type(Path[.A = B] z x) }) p (handedBack (Path x x) v)
 ) =
-  Path.here (Path.walk (fun (z) { type(Path[.A = B](z, x)) }) p v)
+  Path.here (Path.walk (fun (z) { type(Path[.A = B] z x) }) p v)

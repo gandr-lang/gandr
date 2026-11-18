@@ -18,20 +18,18 @@ import "./subst-rename.gandr";
 
 /// Two substitutions at an abstraction are the abstraction of the body
 /// under both lifts, by conversion.
-def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
-  subst (subst (Lam b) s1) s2,
+def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path (subst (subst (Lam b) s1) s2) (
   Lam (subst (subst b (Lift s1)) (Lift s2))
 ) =
   Path.here (Lam (subst (subst b (Lift s1)) (Lift s2)))
 
 /// A lookup under one binder, under a lifted substitution, is the
 /// weakened lookup under it.
-def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path(
-  subst (look m s1 (S Z)) (Lift s2),
+def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path (subst (look m s1 (S Z)) (Lift s2)) (
   subst (wk (look m s1 Z)) (Lift s2)
 ) =
   Path.walk
-    (fun (z) { type(Path[.A = Term](subst (look m s1 (S Z)) (Lift s2), subst z (Lift s2))) })
+    (fun (z) { type(Path[.A = Term] (subst (look m s1 (S Z)) (Lift s2)) (subst z (Lift s2))) })
     (lookWeakens m s1 Z)
     (Path.here (subst (look m s1 (S Z)) (Lift s2)))
 

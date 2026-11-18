@@ -113,16 +113,9 @@ pub def coneComposite2(
 
 /// The 2-chain's pasting context into its composite: Example 1.2's generator
 /// over `x, y, f, z, g`.
-def chainComposite(A : Type) -> (x : A) -> ((y : A) -> (Path[.A = A](
-  x,
-  y
-) -> ((z : A) -> (Path[.A = A](
-  y,
-  z
-) -> Path[.A = A](
-  x,
-  z
-))))) =
+def chainComposite(A : Type) -> (x : A) -> ((y : A) -> (
+  Path[.A = A] x y -> ((z : A) -> (Path[.A = A] y z -> Path[.A = A] x z))
+)) =
   fun (x) {
     fun (y) {
       fun (f) { fun (z) { fun (g) { join A x y z f g } } }
@@ -135,23 +128,20 @@ pub def cylinderFill2(
   A : Type,
   x : A,
   y : A,
-  f : Path[.A = A](x, y),
+  f : Path[.A = A] x y,
   x2 : A,
   y2 : A,
-  f2 : Path[.A = A](x2, y2),
-  xs : Path[.A = A](x, x2),
-  ys : Path[.A = A](y, y2),
-  a : Path[.A = Path[.A = A](x, y2)](Path.step f ys, Path.step xs f2),
+  f2 : Path[.A = A] x2 y2,
+  xs : Path[.A = A] x x2,
+  ys : Path[.A = A] y y2,
+  a : Path[.A = Path[.A = A] x y2] (Path.step f ys) (Path.step xs f2),
   z : A,
-  g : Path[.A = A](y, z),
+  g : Path[.A = A] y z,
   z2 : A,
-  g2 : Path[.A = A](y2, z2),
-  zs : Path[.A = A](z, z2),
-  b : Path[.A = Path[.A = A](y, z2)](Path.step g zs, Path.step ys g2)
-) -> Path[.A = Path[.A = A](x, z2)](
-  Path.step (Path.step f g) zs,
-  Path.step xs (Path.step f2 g2)
-) =
+  g2 : Path[.A = A] y2 z2,
+  zs : Path[.A = A] z z2,
+  b : Path[.A = Path[.A = A] y z2] (Path.step g zs) (Path.step ys g2)
+) -> Path[.A = Path[.A = A] x z2] (Path.step (Path.step f g) zs) (Path.step xs (Path.step f2 g2)) =
   fill[5, 7] (chain 2) (chainComposite A) (xs, ys, a, zs, b)
 
 /// The composite at `n = 2` with its points fixed and its verticals constant,
@@ -161,33 +151,24 @@ pub def cylinderFillAt2(
   x : A,
   y : A,
   z : A,
-  f0 : Path[.A = A](x, y),
-  f1 : Path[.A = A](x, y),
-  a : Path[.A = Path[.A = A](x, y)](f0, f1),
-  g0 : Path[.A = A](y, z),
-  g1 : Path[.A = A](y, z),
-  b : Path[.A = Path[.A = A](y, z)](g0, g1)
-) -> Path[.A = Path[.A = A](x, z)](Path.step f0 g0, Path.step f1 g1) =
+  f0 : Path[.A = A] x y,
+  f1 : Path[.A = A] x y,
+  a : Path[.A = Path[.A = A] x y] f0 f1,
+  g0 : Path[.A = A] y z,
+  g1 : Path[.A = A] y z,
+  b : Path[.A = Path[.A = A] y z] g0 g1
+) -> Path[.A = Path[.A = A] x z] (Path.step f0 g0) (Path.step f1 g1) =
   cylinderFill2 A x y f0 x y f1 (Path.here x) (Path.here y) a z g0 z g1 (Path.here z) b
 
 /// The generator of the step at `n = 3`: the composite at `n = 2`, a function
 /// over `[2](1, 1)`.
-pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path[.A = A](
-  x,
-  y
-)) -> ((f1 : Path[.A = A](
-  x,
-  y
-)) -> (Path[.A = Path[.A = A](x, y)](
-  f0,
-  f1
-) -> ((g0 : Path[.A = A](y, z)) -> ((g1 : Path[.A = A](y, z)) -> (Path[.A = Path[.A = A](y, z)](
-  g0,
-  g1
-) -> Path[.A = Path[.A = A](x, z)](
-  Path.step f0 g0,
-  Path.step f1 g1
-)))))) =
+pub def cylinderFillOver2(A : Type, x : A, y : A, z : A) -> (f0 : Path[.A = A] x y) -> ((
+  f1 : Path[.A = A] x y
+) -> (Path[.A = Path[.A = A] x y] f0 f1 -> ((g0 : Path[.A = A] y z) -> ((g1 : Path[.A = A] y z) -> (
+  Path[.A = Path[.A = A] y z] g0 g1 -> Path[.A = Path[.A = A] x z] (Path.step f0 g0) (
+    Path.step f1 g1
+  )
+))))) =
   fun (f0) {
     fun (f1) {
       fun (a) {
@@ -322,24 +303,24 @@ pub def interchangeRight(
   x : A,
   y : A,
   z : A,
-  f : Path[.A = A](x, y),
-  g : Path[.A = A](x, y),
-  h : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](f, g),
-  ga : Path[.A = Path[.A = A](x, y)](g, h),
-  c : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f c, Path.step h c)](
-  compose[6, 13] (chain 2 (2, 0)) (fa, ga, c),
-  Path.step (compose[4, 9] (chain 2 (1, 0)) (fa, c)) (compose[4, 9] (chain 2 (1, 0)) (ga, c))
-) =
+  f : Path[.A = A] x y,
+  g : Path[.A = A] x y,
+  h : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] f g,
+  ga : Path[.A = Path[.A = A] x y] g h,
+  c : Path[.A = A] y z
+) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step f c) (Path.step h c)] (
+  compose[6, 13] (chain 2 (2, 0)) (fa, ga, c)
+) (Path.step (compose[4, 9] (chain 2 (1, 0)) (fa, c)) (compose[4, 9] (chain 2 (1, 0)) (ga, c))) =
   Path.walk
     ((
-      v : Path[.A = A](x, y),
-      k : Path[.A = Path[.A = A](x, y)](g, v)
-    ) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f c, Path.step v c)](
-      compose[6, 13] (chain 2 (2, 0)) (fa, k, c),
-      Path.step (compose[4, 9] (chain 2 (1, 0)) (fa, c)) (compose[4, 9] (chain 2 (1, 0)) (k, c))
-    ))
+      v : Path[.A = A] x y,
+      k : Path[.A = Path[.A = A] x y] g v
+    ) -> Path[.A = Path[.A = Path[.A = A] x z] (Path.step f c) (Path.step v c)] (compose[6, 13]
+      (chain 2 (2, 0))
+      (fa, k, c)) (Path.step
+      (compose[4, 9] (chain 2 (1, 0)) (fa, c))
+      (compose[4, 9] (chain 2 (1, 0)) (k, c))))
     ga
     (Path.here g)
     (Path.here ga)
@@ -352,24 +333,24 @@ pub def interchangeLeft(
   w : A,
   x : A,
   y : A,
-  c : Path[.A = A](w, x),
-  f : Path[.A = A](x, y),
-  g : Path[.A = A](x, y),
-  h : Path[.A = A](x, y),
-  fa : Path[.A = Path[.A = A](x, y)](f, g),
-  ga : Path[.A = Path[.A = A](x, y)](g, h)
-) -> Path[.A = Path[.A = Path[.A = A](w, y)](Path.step c f, Path.step c h)](
-  compose[6, 13] (chain 2 (0, 2)) (c, fa, ga),
-  Path.step (compose[4, 9] (chain 2 (0, 1)) (c, fa)) (compose[4, 9] (chain 2 (0, 1)) (c, ga))
-) =
+  c : Path[.A = A] w x,
+  f : Path[.A = A] x y,
+  g : Path[.A = A] x y,
+  h : Path[.A = A] x y,
+  fa : Path[.A = Path[.A = A] x y] f g,
+  ga : Path[.A = Path[.A = A] x y] g h
+) -> Path[.A = Path[.A = Path[.A = A] w y] (Path.step c f) (Path.step c h)] (
+  compose[6, 13] (chain 2 (0, 2)) (c, fa, ga)
+) (Path.step (compose[4, 9] (chain 2 (0, 1)) (c, fa)) (compose[4, 9] (chain 2 (0, 1)) (c, ga))) =
   Path.walk
     ((
-      v : Path[.A = A](x, y),
-      k : Path[.A = Path[.A = A](x, y)](g, v)
-    ) -> Path[.A = Path[.A = Path[.A = A](w, y)](Path.step c f, Path.step c v)](
-      compose[6, 13] (chain 2 (0, 2)) (c, fa, k),
-      Path.step (compose[4, 9] (chain 2 (0, 1)) (c, fa)) (compose[4, 9] (chain 2 (0, 1)) (c, k))
-    ))
+      v : Path[.A = A] x y,
+      k : Path[.A = Path[.A = A] x y] g v
+    ) -> Path[.A = Path[.A = Path[.A = A] w y] (Path.step c f) (Path.step c v)] (compose[6, 13]
+      (chain 2 (0, 2))
+      (c, fa, k)) (Path.step
+      (compose[4, 9] (chain 2 (0, 1)) (c, fa))
+      (compose[4, 9] (chain 2 (0, 1)) (c, k))))
     ga
     (Path.here g)
     (Path.here ga)

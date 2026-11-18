@@ -21,9 +21,9 @@ def composeHere(
   x : A,
   y : A,
   z : A,
-  p : Path[.A = A](x, y),
-  q : Path(y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) =
+  p : Path[.A = A] x y,
+  q : Path y z
+) -> Path[.A = Path[.A = A] x z] (Path.step p q) (Path.step p q) =
   Path.here (Path.step p q)
 
 /// The body writes the composite over `along` at the stated lambda.
