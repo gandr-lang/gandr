@@ -959,6 +959,10 @@ impl<'source> FormSplit<'source>
     ///   that equal spellings mold equal units, only molding both runs
     ///   observes.
     ///
+    /// # Cost
+    /// - allocation: the spelling of the window, durable by the identity of the
+    ///   parked unit
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — over edited corpus sources, every run whose identity
     ///   a run of the unedited source carries molds to an equal unit, and the

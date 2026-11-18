@@ -619,6 +619,10 @@ fn captured(
 /// # Errors
 /// [`LedgerFault::Sample`] naming the class.
 ///
+/// # Cost
+/// - allocation: the probe texts, growth within the holes of the grammar's
+///   rules
+///
 /// # Adequacy
 /// - hypothesis: L3 — a lone escape sequence is enclosed; the identifier,
 ///   reached alone, is not.

@@ -2543,6 +2543,9 @@ impl<'pbg> Molder<'pbg>
     ///   before it; one empty run for an empty stream.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the runs, growth within the declarations of `tokens`
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a source of declarations, one decorated by an
     ///   attribute, one a module holding members, splits before each top-level

@@ -600,6 +600,10 @@ fn near_miss(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the mutants and their texts, growth within the tokens of the
+///   exemplar
+///
 /// # Adequacy
 /// - hypothesis: L3 — a definition's keyword, its `=` and its closing `;` are
 ///   each deleted and missed, with the deletion of the last sited from the end

@@ -959,6 +959,10 @@ fn arrow_ahead(
 /// - executable: none — the clause would walk every token twice per call; the
 ///   witness checks each class.
 ///
+/// # Cost
+/// - allocation: the stack of open brackets, growth within the nesting of the
+///   tokens
+///
 /// # Adequacy
 /// - hypothesis: L3 — a line-leading bar, bars on one line in a bar brace, a
 ///   union in parentheses inside one, an or-pattern among a clause's patterns

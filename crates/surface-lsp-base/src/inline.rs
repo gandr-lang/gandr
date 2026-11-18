@@ -1170,6 +1170,10 @@ fn parts(
 ///   — only it, for a word — and the label is not `;`, `,` or a closer.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the tokens of the tile's label and their candidate labels,
+///   growth within the text of the tile
+///
 /// # Adequacy
 /// - hypothesis: L3 — the ranking golden lists the forms the top level and a
 ///   value slot offer; a grammar-internal name such as `line_comment` or

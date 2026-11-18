@@ -717,6 +717,9 @@ fn earlier<'source>(
 /// - panics: none.
 /// - executable: none — the clause restates the search.
 ///
+/// # Cost
+/// - allocation: the members, their keywords and the copies tried, error path
+///
 /// # Adequacy
 /// - hypothesis: L3 — a definition whose `def` is misspelled, or left out at
 ///   the start of the source, reads as one declaration owing its keyword alone,

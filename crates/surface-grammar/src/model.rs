@@ -1989,6 +1989,10 @@ impl Pbg
     ///   input order; the rule names; the adaptation records in rule order.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the grouped forms, the rule names and the adaptation
+    ///   records, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — both the gated build and the thaw assemble here; the
     ///   grouped-form witness observes branch and rule order, and the

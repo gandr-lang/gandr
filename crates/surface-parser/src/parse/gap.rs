@@ -407,6 +407,10 @@ fn class(
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
 ///
+/// # Cost
+/// - allocation: the stack of open groups, the places and their tiles, growth
+///   within the lines and groups of the source
+///
 /// # Adequacy
 /// - hypothesis: L3 — a field left without its type before the next field, a
 ///   field whose `(` the line leaves open, a `(` left open before a block's
@@ -1042,6 +1046,10 @@ enum Opened
 /// - panics: none.
 /// - executable: none — the clause restates the scan.
 ///
+/// # Cost
+/// - allocation: the stack of open groups, growth within the nesting of the
+///   source
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`juxtaposed`].
 /// - witness: `parse::gap::tests::a_head_that_is_no_function_names_what_separates_its_operand_5474`
@@ -1515,6 +1523,9 @@ pub(super) fn gapped<'source>(
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
+///
+/// # Cost
+/// - allocation: the stray positions, the copy and its splices, error path
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a number and a call before a `;` at the top level each

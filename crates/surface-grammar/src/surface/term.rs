@@ -2052,6 +2052,9 @@ fn instantiations(
 ///   their selected precedence bands.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the expression rules and their adaptation records, setup
+///
 /// # Adequacy
 /// - hypothesis: For the built-in band table, L3 grammar identity and corpus
 ///   role observations catch lost or reordered forms, changed provenance and
@@ -2373,6 +2376,9 @@ fn expressions(
 ///   lexical rule of its own for them. The unit is `*{}`, a telescope, so no
 ///   lexical rule reads it.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the lexical rules and their adaptation records, setup
 ///
 /// # Adequacy
 /// - hypothesis: For the built-in band table, L3 grammar identity and corpus
