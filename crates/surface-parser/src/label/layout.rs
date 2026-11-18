@@ -1469,7 +1469,7 @@ mod tests
     }
 
     #[test]
-    fn an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon()
+    fn an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957()
     {
         // #7957: the virtual close of an arm list ends no declaration, so a
         // `def` whose body after `=` is a `match` takes its `;` after it.

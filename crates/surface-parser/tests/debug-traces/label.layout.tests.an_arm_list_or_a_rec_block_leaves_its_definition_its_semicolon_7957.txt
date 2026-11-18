@@ -1,10 +1,10 @@
-test: label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon
+test: label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957
 package: gandr-surface-parser
-command: mise run debug:test gandr-surface-parser label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon --break an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon
+command: mise run debug:test gandr-surface-parser label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957 --break an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957
 
 (lldb) target create "target/debug-trace/debug/build/gandr-surface-parser/ca0e46895a097561/out/gandr_surface_parser-ca0e46895a097561"
 Current executable set to 'target/debug-trace/debug/build/gandr-surface-parser/ca0e46895a097561/out/gandr_surface_parser-ca0e46895a097561' (arm64).
-(lldb) settings set -- target.run-args  "label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon" "--exact" "--nocapture" "--test-threads=1"
+(lldb) settings set -- target.run-args  "label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957" "--exact" "--nocapture" "--test-threads=1"
 (lldb) command source .config/debug/lldbinit
 Executing commands in '.config/debug/lldbinit'.
 (lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
@@ -12,21 +12,21 @@ Executing commands in '.config/debug/lldbinit'.
 (lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
 (lldb) command script import -c rust_formatters.py
 (lldb) settings set target.max-children-count 16
-(lldb) breakpoint set --func-regex an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon
+(lldb) breakpoint set --func-regex an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957
 Breakpoint 1: 3 locations.
 (lldb) breakpoint set --name rust_panic
 Breakpoint 2: where = gandr_surface_parser-ca0e46895a097561`__rustc::rust_panic + 12 at panicking.rs:883:16, address = 0x00000001004e5310
 (lldb) run
 
 running 1 test
-test label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
-Process 31540 launched: 'target/debug-trace/debug/build/gandr-surface-parser/ca0e46895a097561/out/gandr_surface_parser-ca0e46895a097561' (arm64)
-Process 31540 stopped
-* thread #2, name = 'label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_def', stop reason = breakpoint 1.3
-      frame #0: 0x00000001001affc8 gandr_surface_parser-ca0e46895a097561`<gandr_surface_parser::label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+test label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 98983 launched: 'target/debug-trace/debug/build/gandr-surface-parser/ca0e46895a097561/out/gandr_surface_parser-ca0e46895a097561' (arm64)
+Process 98983 stopped
+* thread #2, name = 'label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_def', stop reason = breakpoint 1.2
+      frame #0: 0x00000001001affc8 gandr_surface_parser-ca0e46895a097561`<gandr_surface_parser::label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
 (lldb) bt 24
-* thread #2, name = 'label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_def', stop reason = breakpoint 1.3
-  * frame #0: 0x00000001001affc8 gandr_surface_parser-ca0e46895a097561`<gandr_surface_parser::label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+* thread #2, name = 'label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_def', stop reason = breakpoint 1.2
+  * frame #0: 0x00000001001affc8 gandr_surface_parser-ca0e46895a097561`<gandr_surface_parser::label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
     frame #1: 0x00000001002e8998 gandr_surface_parser-ca0e46895a097561`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
     frame #2: 0x00000001002e8990 gandr_surface_parser-ca0e46895a097561`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18 [opt]
     frame #3: 0x00000001002f3980 gandr_surface_parser-ca0e46895a097561`test::run_test_in_process::{closure#0} at lib.rs:724:74 [opt] [inlined]
@@ -49,7 +49,7 @@ Process 31540 stopped
     frame #20: 0x00000001004be7b8 gandr_surface_parser-ca0e46895a097561`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:127:17 [opt]
     frame #21: 0x0000000188accce4 libsystem_pthread.dylib`_pthread_start + 136
 (lldb) frame variable --depth 3
-(gandr_surface_parser::label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon::{closure_env#0})  = {}
+(gandr_surface_parser::label::layout::tests::an_arm_list_or_a_rec_block_leaves_its_definition_its_semicolon_7957::{closure_env#0})  = {}
 (void)  = <could not get size of type void>
 (lldb) up
 warning: gandr_surface_parser-ca0e46895a097561 was compiled with optimization - stepping may behave oddly; variables may not be available
