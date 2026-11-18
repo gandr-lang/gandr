@@ -1,2 +1,4 @@
-pub def welcome : String = "hi";
-pub def count : Integer = 3;
+pub def welcome : String;
+def welcome = "hi";
+pub def count : Integer;
+def count = 3;

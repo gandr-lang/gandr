@@ -1,6 +1,7 @@
-def act(A : Type, F : A -> A, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](F x, F y) {
-  Path.ap F p
-}
+def act(A : Type, F : A -> A, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](
+  F x,
+  F y
+) = Path.ap F p;
 
 def thenHere(
   A : Type,
@@ -9,9 +10,7 @@ def thenHere(
   z : A,
   p : Path[.A = A](x, y),
   q : Path[.A = A](y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) {
-  Path.here (Path.step p q)
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) = Path.here (Path.step p q);
 
 def composedAtLambda(
   A : Type,
@@ -24,9 +23,7 @@ def composedAtLambda(
 ) -> Path[.A = Path[.A = A](F x, z)](
   Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s,
   Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s
-) {
-  Path.here (Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s)
-}
+) = Path.here (Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s);
 
 def passedAtLambda(
   A : Type,
@@ -39,9 +36,7 @@ def passedAtLambda(
 ) -> Path[.A = Path[.A = A](F x, z)](
   Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s,
   Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s
-) {
-  thenHere A (F x) (F y) z (act A (fun (q : A) { F q } : A -> A) x y r) s
-}
+) = thenHere A (F x) (F y) z (act A (fun (q : A) { F q } : A -> A) x y r) s;
 
 def passedRedex(
   A : Type,
@@ -54,22 +49,18 @@ def passedRedex(
 ) -> Path[.A = Path[.A = A](F x, z)](
   Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s,
   Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s
-) {
-  thenHere
-    A
-    ((fun (q : A) { F q } : A -> A) x)
-    (F y)
-    z
-    (act A (fun (q : A) { F q } : A -> A) x y r)
-    s
-}
+) = thenHere
+  A
+  ((fun (q : A) { F q } : A -> A) x)
+  (F y)
+  z
+  (act A (fun (q : A) { F q } : A -> A) x y r)
+  s;
 
 def across(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
   F x,
   F y
-) {
-  Path.ap F p
-}
+) = Path.ap F p;
 
 def passedComposite(
   A : Type,
@@ -101,18 +92,16 @@ def passedComposite(
       fp
       fa)
     s
-) {
-  thenHere
+) = thenHere
+  (type(Path[.A = A](x, z)))
+  (Path.step fm g)
+  (Path.step fp g)
+  k
+  (across
+    (type(Path[.A = A](x, y)))
     (type(Path[.A = A](x, z)))
-    (Path.step fm g)
-    (Path.step fp g)
-    k
-    (across
-      (type(Path[.A = A](x, y)))
-      (type(Path[.A = A](x, z)))
-      (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
-      fm
-      fp
-      fa)
-    s
-}
+    (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+    fm
+    fp
+    fa)
+  s;

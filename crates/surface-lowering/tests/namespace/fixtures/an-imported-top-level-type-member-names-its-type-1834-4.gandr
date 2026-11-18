@@ -1,3 +1,2 @@
 import "./other.gandr";
-def narrow : Band;
-def narrow = 3;
+def narrow : Band = 3;

@@ -12,12 +12,12 @@ def rec size(e : Expr) -> Integer =
     | Expr.Share(x).left => size[<] x
     | Expr.Share(x).right => size[<] x
 
-def partial(e : Expr) -> -F Integer =
+def partial(e : Expr) -> Integer =
   match e where
     | Expr.Lit(n) => return 1
     | Expr.Share(x).left => return 2
 
-def joint(e : Expr) -> -F Integer =
+def joint(e : Expr) -> Integer =
   match e where
     | Expr.Share(x) => return 1
     | _ => return 0

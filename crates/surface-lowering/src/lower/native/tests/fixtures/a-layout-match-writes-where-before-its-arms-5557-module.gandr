@@ -1,5 +1,5 @@
 data Color : Type where { | Red : Color | Green : Color | Blue : Color }
-def bare(c : Color) -> -F Integer =
+def bare(c : Color) -> Integer =
   match c
     | Red => pure 0
     | _ => pure 1

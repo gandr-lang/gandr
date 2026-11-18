@@ -9,7 +9,7 @@ def laid(t : Two) -> Two =
     | L => R
     | R => L
 
-def braced(t : Two) -> Two {
+def braced(t : Two) -> Two = {
   let u = t;
   match u { | L => R | R => L }
-}
+};

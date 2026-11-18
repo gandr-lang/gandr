@@ -1,3 +1,2 @@
 import "./base.gandr";
-def member : String;
-def member = Cancel.notes;
+def member : String = Cancel.notes;

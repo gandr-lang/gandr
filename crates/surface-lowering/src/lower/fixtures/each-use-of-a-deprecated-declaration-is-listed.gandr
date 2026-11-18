@@ -1,7 +1,8 @@
 @[deprecated(*{since = "0.2", note = "use cube"})]
 def square = 1;
 @[deprecated]
-def old : Integer = 2;
+def old : Integer;
+def old = 2;
 def cube = 3;
 def a = square;
 def b = old;

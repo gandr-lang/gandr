@@ -17,5 +17,5 @@ theory Closed where {
 }
 pub module Open where { def x = 6; }
 module Shut where { def y = 7; }
-pub module Methods where { def width(self : shared Integer) -> Integer { pure self } }
-module Hidden where { def depth(self : shared Integer) -> Integer { pure self } }
+pub module Methods where { def width(self : shared Integer) -> Integer = pure self; }
+module Hidden where { def depth(self : shared Integer) -> Integer = pure self; }

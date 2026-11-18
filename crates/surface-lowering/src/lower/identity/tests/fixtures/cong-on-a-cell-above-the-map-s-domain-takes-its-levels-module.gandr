@@ -18,10 +18,10 @@ def circleId(x : Circle) -> Circle =
 
 def onCell(
   c : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)
-) -> Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) {
-  become Path.ap sphereId c
-}
+) -> Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) = become Path.ap
+  sphereId
+  c;
 
-def onLoop(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {
-  become Path.ap circleId p
-}
+def onLoop(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) = become Path.ap
+  circleId
+  p;

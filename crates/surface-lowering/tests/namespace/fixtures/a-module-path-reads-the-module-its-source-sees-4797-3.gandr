@@ -1,10 +1,13 @@
 import "./shared.gandr";
 module Seat where {
-  def other : Integer = 2;
+  def other : Integer;
+  def other = 2;
 }
 module Quiet where {
-  def loud : Integer = 4;
+  def loud : Integer;
+  def loud = 4;
 }
 module Stage where {
-  def shallow : Integer = 6;
+  def shallow : Integer;
+  def shallow = 6;
 }

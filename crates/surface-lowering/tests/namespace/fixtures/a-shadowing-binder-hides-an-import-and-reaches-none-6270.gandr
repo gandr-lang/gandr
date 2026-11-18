@@ -1,2 +1,2 @@
 import "./base.gandr";
-def hides(one : Integer) -> -F Integer { return one }
+def hides(one : Integer) -> -F Integer = return one;

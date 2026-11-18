@@ -14,12 +14,11 @@ def apart : Path[.A = Expr]((Share (Lit 1)).left, (Share (Lit 1)).right) = Path.
 
 def whole : *{left : Expr, right : Expr} = Share (Lit 1);
 
-def unpacked() -> Expr { match Share (Lit 1) { | *{.left = l, .right = r} => Add l r } }
+def unpacked() -> Expr = match Share (Lit 1) { | *{.left = l, .right = r} => Add l r };
 
-def middle : Expr;
-def middle = (Share (Lit 1)).middle;
+def middle : Expr = (Share (Lit 1)).middle;
 
-def matched(e : Expr) -> -F Integer { match e { | Share(x) => return 0 | _ => return 1 } }
+def matched(e : Expr) -> Integer = match e { | Share(x) => return 0 | _ => return 1 };
 
 def measured(e : Expr) -> Integer =
   match e {
@@ -29,7 +28,7 @@ def measured(e : Expr) -> Integer =
     | Share(x).right => 4
   }
 
-def partial(e : Expr) -> -F Integer =
+def partial(e : Expr) -> Integer =
   match e { | Lit(n) => return n | Add(a, b) => return 2 | Share(x).left => return 3 }
 
 data Tree : Type where {

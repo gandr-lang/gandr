@@ -1,4 +1,4 @@
 data Seq(a : Type) : Type where
   | Nil : Seq a
 
-def s(x : Type) -> Type { Seq x }
+def s(x : Type) -> Type = Seq x;

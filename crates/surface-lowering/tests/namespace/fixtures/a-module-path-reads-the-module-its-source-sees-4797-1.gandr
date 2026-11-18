@@ -1,10 +1,13 @@
 pub module Seat where {
   type Task = Integer;
-  def task : Integer = 1;
+  def task : Integer;
+  def task = 1;
 }
 module Quiet where {
-  def hush : Integer = 3;
+  def hush : Integer;
+  def hush = 3;
 }
 pub module Stage where {
-  def deep : Integer = 5;
+  def deep : Integer;
+  def deep = 5;
 }

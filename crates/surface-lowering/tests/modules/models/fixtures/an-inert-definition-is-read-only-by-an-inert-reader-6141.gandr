@@ -8,15 +8,15 @@ module Hello : Model(Named) where {
   def greeting = "hi";
 }
 @[inert]
-def nameOf(n : Model(Named)) -> String { n.name }
+def nameOf(n : Model Named) -> String = n.name;
 @[inert]
 def helloName = Hello.name;
 @[inert]
 def echoed = helloName;
 @[inert]
-def renamed(n : Model(Named)) -> String { nameOf (n) }
+def renamed(n : Model Named) -> String = nameOf (n);
 def shown = helloName;
-def called(n : Model(Named)) -> String { nameOf (n) }
+def called(n : Model Named) -> String = nameOf (n);
 module Marked where {
   @[inert]
   def kept = "kept";

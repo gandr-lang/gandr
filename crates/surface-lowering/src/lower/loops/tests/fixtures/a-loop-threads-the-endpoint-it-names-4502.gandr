@@ -1,18 +1,16 @@
 def follow(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> [Partial] Unit {
-  loop {
-    offer operator {
-      | report => { let next = recv operator; continue }
-      | retire => { let last = recv operator; close operator; break }
-    }
+}) -> [Partial] Unit = loop {
+  offer operator {
+    | report => { let next = recv operator; continue }
+    | retire => { let last = recv operator; close operator; break }
   }
-}
+};
 def tally(operator : mu open. &{
   report : ?Integer. open,
   retire : ?Integer. end
-}) -> [Partial] Integer {
+}) -> [Partial] Integer = {
   var seen = 0;
   loop {
     offer operator {
@@ -21,4 +19,4 @@ def tally(operator : mu open. &{
     }
   };
   pure seen
-}
+};

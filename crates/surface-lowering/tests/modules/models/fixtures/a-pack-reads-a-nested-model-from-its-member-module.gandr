@@ -7,5 +7,4 @@ theory Faceted where {
 module Facts : Model(Faceted) where {
   module inner : Model(Answering) where { def answer = 41; }
 }
-def packed : Model(Faceted);
-def packed = pack Facts at Model(Faceted);
+def packed : Model Faceted = pack Facts at Model Faceted;

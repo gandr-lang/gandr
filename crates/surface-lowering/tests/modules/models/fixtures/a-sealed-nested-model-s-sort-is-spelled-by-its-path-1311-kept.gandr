@@ -1,2 +1,1 @@
-def kept : Sealed.inner.T;
-def kept = Sealed.inner.zero;
+def kept : Sealed.inner.T = Sealed.inner.zero;

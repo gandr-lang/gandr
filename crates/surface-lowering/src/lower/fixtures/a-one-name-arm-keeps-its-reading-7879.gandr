@@ -1,3 +1,3 @@
-def same(n : Integer) -> -F Integer =
+def same(n : Integer) -> Integer =
   match n where
-    | m => return m
+    | m => m

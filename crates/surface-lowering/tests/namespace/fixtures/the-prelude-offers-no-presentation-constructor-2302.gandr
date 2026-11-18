@@ -4,9 +4,7 @@ data Shape : Type where {
 data Figure : Type where {
   | Round : (r : Integer) --> Figure
 }
-def toFigure(shape : Shape) -> Figure {
-  match shape {
-    | Circle(r) => Round r
-  }
-}
+def toFigure(shape : Shape) -> Figure = match shape {
+  | Circle(r) => Round r
+};
 def redrawn : Flow[.A = Type](Shape, Figure) = Flow.into toFigure;

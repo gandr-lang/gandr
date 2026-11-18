@@ -1,3 +1,2 @@
 import "./wide.gandr";
-def far : Band;
-def far = wide;
+def far : Band = wide;

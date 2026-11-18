@@ -4,4 +4,4 @@ theory Graph where {
   oper loop : (v : V) --> E v v;
 }
 def derived : Model Graph;
-def written : *{v : Type, e : (v, v) -> Type, loop : (x : v) -> e(x, x)};
+def written : *{v : Type, e : +U (v -> v -> -F Type), loop : +U ((x : v) -> -F e(x, x))};

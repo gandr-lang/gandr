@@ -1,6 +1,6 @@
 import "./base.gandr";
 
-def shapeOf(presented : Theory) -> -F Type =
+def shapeOf(presented : Theory) -> Type =
   match presented where
     | Theory.Presents(sorts, opers, rules) => return String
     | _ => return Bool

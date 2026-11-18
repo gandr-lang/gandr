@@ -1,2 +1,1 @@
-def absent : +{ok : Integer};
-def absent = +{.gone = 1};
+def absent : +{ok : Integer} = +{.gone = 1};

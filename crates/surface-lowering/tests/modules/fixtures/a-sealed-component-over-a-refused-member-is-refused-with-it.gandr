@@ -1,4 +1,3 @@
 module M :> *{type T, value : T} where { type T = Missing; def value = 1; }
-def client : M.T;
-def client = M.value;
+def client : M.T = M.value;
 def after = 2;

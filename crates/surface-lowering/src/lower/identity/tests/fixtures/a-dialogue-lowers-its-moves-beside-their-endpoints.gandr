@@ -2,8 +2,6 @@ import std.buffer (Web);
 module Ask where {
   type Asking = !String. end;
 }
-def played : Dialogue(Ask.Asking);
+def played : Dialogue Ask.Asking;
 def played = dialogue (left (sent "yes")) (right (received "yes")) (right closed) (left closed);
-def web() -> Web {
-  become decompose played
-}
+def web() -> Web = become decompose played;

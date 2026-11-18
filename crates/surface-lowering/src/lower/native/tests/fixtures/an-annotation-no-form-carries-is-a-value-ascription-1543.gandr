@@ -1,2 +1,3 @@
 def pair = *{(3 : Integer), 1};
-def signed : Integer = (3 : Integer);
+def signed : Integer;
+def signed = (3 : Integer);

@@ -1,2 +1,2 @@
 import "./base.gandr";
-def kept(p : Point) -> -F Point { p }
+def kept(p : Point) -> -F Point = p;

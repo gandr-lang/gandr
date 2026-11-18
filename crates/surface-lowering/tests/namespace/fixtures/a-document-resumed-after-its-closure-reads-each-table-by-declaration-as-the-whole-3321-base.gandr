@@ -1,16 +1,10 @@
 pub data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat {
-  f x
-}
-def appliedAt[j : Size, k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> Nat {
-  applyAt[.i = k] f x
-}
+pub def applyAt[i : Size](f : Nat[< i] -> Nat, x : Nat[< i]) -> Nat = f x;
+def appliedAt[j : Size, k : Size](f : Nat[< k] -> Nat, x : Nat[< k]) -> Nat = applyAt[.i = k] f x;
 def crossed[s : Region, r : Region](
   k : (() -> Integer) at r,
   j : (() -> Integer) at s
-) -> Integer {
-  force k
-}
+) -> Integer = force k;
 pub theory Counter where {
   sort C : Type;
   oper zero : C;
@@ -20,11 +14,11 @@ pub theory Counter where {
 pub module Up : Model(Counter) where {
   type C = Integer;
   def zero = 0;
-  def incr(c : Integer) -> Integer { c + 1 }
-  def read(c : Integer) -> Integer { c }
+  def incr(c : Integer) -> Integer = c + 1;
+  def read(c : Integer) -> Integer = c;
 }
-pub def stepped[s : Model Counter](c : s.C) -> Integer { s.read (s.incr (c)) }
-def omitted() -> Integer { stepped 4 }
+pub def stepped[s : Model Counter](c : s.C) -> Integer = s.read (s.incr (c));
+def omitted() -> Integer = stepped 4;
 pub theory StatePutLaws where {
   sort S : Type+;
   sort C : Type;
@@ -33,12 +27,10 @@ pub theory StatePutLaws where {
   rule putGet : put s (get (bind t. (k t))) <=> put s (k s);
   rule putPut : put s (put u k) <=> put u k;
 }
-def forgetful() -> Integer {
-  handle st : StatePutLaws with sort S = Integer {
-    st.put 1;
-    st.get ()
-  } with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{} }
-}
+def forgetful() -> Integer = handle st : StatePutLaws with sort S = Integer {
+  st.put 1;
+  st.get ()
+} with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{} };
 data NatAdd : Type where {
   | AddZero : NatAdd
   | AddSucc : (n : NatAdd) --> NatAdd

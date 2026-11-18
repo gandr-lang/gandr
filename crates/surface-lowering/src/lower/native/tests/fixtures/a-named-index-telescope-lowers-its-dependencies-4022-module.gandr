@@ -1,7 +1,7 @@
 data Nat : Type where { | Z : Nat | S : (n : Nat) --> Nat }
 data Vec(a : Type) : Nat -> Type where {
   | Nil : Vec a Z
-  | Cons : (n : Nat, x : a, xs : Vec a n) --> Vec(a, S n)
+  | Cons : (n : Nat, x : a, xs : Vec a n) --> Vec a (S n)
 }
 data Sized(a : Type) : (n : Nat, v : Vec a n) --> Type where {
   | Measured : (n : Nat, v : Vec a n) --> Sized a n v

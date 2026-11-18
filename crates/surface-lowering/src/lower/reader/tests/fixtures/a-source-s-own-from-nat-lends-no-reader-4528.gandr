@@ -3,5 +3,5 @@ theory FromNat where {
   oper fromNat : (n : Integer) --> Carrier;
 }
 module BoolFromNat : Model(FromNat) with sort Carrier = Bool where {
-  def fromNat(n : Integer) -> Bool { true }
+  def fromNat(n : Integer) -> Bool = true;
 }

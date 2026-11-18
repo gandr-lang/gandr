@@ -6,13 +6,11 @@ def answer : Integer = 1;
 module Counting where {
   def two = 2;
 }
-def rec shadowed(n : Nat, m : Nat) -> -F Nat {
-  match m {
-    | Zero => return n
-    | Succ(n) => return n
-  }
-}
-def hides(answer : Integer) -> -F Integer { return answer }
-def opened() -> -F Integer { import Counting; let two = 3; return two }
-def ahead(after : Integer) -> -F Integer { return after }
+def rec shadowed(n : Nat, m : Nat) -> Nat = match m {
+  | Zero => n
+  | Succ(n) => n
+};
+def hides(answer : Integer) -> Integer = answer;
+def opened() -> Integer = { import Counting; let two = 3; two };
+def ahead(after : Integer) -> Integer = after;
 def after : Integer = 4;

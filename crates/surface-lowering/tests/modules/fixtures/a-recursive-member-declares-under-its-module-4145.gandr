@@ -3,11 +3,7 @@ data Nat : Type where {
   | Succ : (n : Nat) --> Nat
 }
 module M where {
-  def rec down(n : Nat) -> Nat {
-    match n { | Zero => Zero | Succ(k) => down[<] k }
-  }
+  def rec down(n : Nat) -> Nat = match n { | Zero => Zero | Succ(k) => down[<] k };
   @[checks]
-  def rec again(n : Nat) -> Nat {
-    match n { | Zero => Zero | Succ(k) => again[<] k }
-  }
+  def rec again(n : Nat) -> Nat = match n { | Zero => Zero | Succ(k) => again[<] k };
 }

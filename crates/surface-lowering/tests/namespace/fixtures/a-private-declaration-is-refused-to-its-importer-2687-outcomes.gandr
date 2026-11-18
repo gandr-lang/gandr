@@ -8,7 +8,7 @@ def j : Integer;
 def j = Shut.y;
 module Closing : Model(Closed) where {
   type Q = Integer;
-  def qt() -> -F Integer { return 0 }
+  def qt() -> -F Integer = return 0;
 }
-def k() -> -F Integer { var s = 1; s.depth () }
+def k() -> -F Integer = { var s = 1; s.depth () };
 def secret = 8;
