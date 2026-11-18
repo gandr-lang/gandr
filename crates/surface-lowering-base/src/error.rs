@@ -521,6 +521,25 @@ pub enum FormFault
     SuppliedTwice,
 }
 
+/// Why a `native` mark declares no row of the native table.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum NativeFault
+{
+    /// The mark's text names no row of the native table.
+    NoRow,
+    /// The marked declaration has a body. The row gives the value.
+    Bodied,
+    /// The marked declaration is in a source that is not a module of `std`.
+    OutsideStd,
+    /// The declared type is not the row's type.
+    TypeDiffers,
+    /// An earlier declaration declares the same row.
+    SecondDeclaration,
+}
+
 impl FormFault
 {
     /// The fault of a path-shaped type under `head` written over three
@@ -946,6 +965,15 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
         /// The retired spelling the name writes.
         form: gandr_surface_grammar::RetiredForm,
+    },
+
+    /// A `native` mark that declares no row of the native table.
+    NativeMark
+    {
+        /// The bytes the mark covers.
+        span: ByteSpan,
+        /// Why the mark declares no row.
+        fault: NativeFault,
     },
 
     /// A documentation link to a name the module does not declare.
@@ -2652,6 +2680,13 @@ impl fmt::Display for LoweringRefusal<'_>
                 "this name is a retired spelling, and `{}` replaces it",
                 form.replaced_by().0
             ),
+            Self::NativeMark { fault, .. } => f.write_str(match fault {
+                NativeFault::NoRow => "the mark names no row of the native table",
+                NativeFault::Bodied => "a native declaration has no body, and the row gives its value",
+                NativeFault::OutsideStd => "only a module of `std` declares a row of the native table",
+                NativeFault::TypeDiffers => "the declared type is not the type of the row",
+                NativeFault::SecondDeclaration => "a row has one declaration, and an earlier one declares it",
+            }),
         }
     }
 }
@@ -2790,6 +2825,7 @@ impl LoweringRefusal<'_>
         match *self {
             Self::UnresolvedName { span, .. }
             | Self::RetiredName { span, .. }
+            | Self::NativeMark { span, .. }
             | Self::UnresolvedDocLink { span, .. }
             | Self::UnresolvedTypeHead { span, .. }
             | Self::DuplicateSignature { span, .. }

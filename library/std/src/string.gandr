@@ -12,9 +12,13 @@
 /// The empty string, the unit of joining.
 pub def empty : String = "";
 
+/// The string `a` followed by the string `b`, as the native table joins them.
+@[native("string.append")]
+pub def append : (a : String, b : String) -> String;
+
 /// The string `a` followed by the string `b`.
 pub def concat(a : String, b : String) -> String =
-  string.append a b
+  append a b
 
 /// Whether `s` is the empty string.
 pub def isEmpty(s : String) -> Bool =

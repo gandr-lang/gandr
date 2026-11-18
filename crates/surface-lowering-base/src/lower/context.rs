@@ -689,6 +689,11 @@ pub struct Context<'run, 'source>
     /// Each derived rule's minted type and proof, by slot: a derived rule
     /// declaration's statement and each lemma its proof rests on.
     pub derivations: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// Each signature that `native` marks, by slot: the row of the native
+    /// table that its text names. A name of the slot lowers as the row.
+    pub natives: BTreeMap<SlotIndex, gandr_core_term::primitive::Primitive>,
+    /// Each `native` signature's declared type and the row's value, by slot.
+    pub natived: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The prelude's `Eq.generic`, once the prelude is declared.
     pub generic: Option<SlotIndex>,
     /// The laws the prelude admits of the host's equalities, by base type and
@@ -1026,6 +1031,8 @@ impl<'run, 'source> Context<'run, 'source>
             nominated_places: BTreeMap::new(),
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),
+            natives: BTreeMap::new(),
+            natived: BTreeMap::new(),
             generic: None,
             hosted: alloc::vec::Vec::new(),
             requested: BTreeMap::new(),

@@ -71,6 +71,7 @@ use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
+use gandr_surface_lowering::NativeFault;
 use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
@@ -278,6 +279,13 @@ fn lowered(
             form.written().0,
             form.replaced_by().0
         ),
+        LoweringRefusal::NativeMark { fault, .. } => f.write_str(match fault {
+            NativeFault::NoRow => "the `native` mark names no row of the native table",
+            NativeFault::Bodied => "a declaration with a `native` mark has no body",
+            NativeFault::OutsideStd => "only a module of `std` writes a `native` mark",
+            NativeFault::TypeDiffers => "the declared type is not the type of the native row",
+            NativeFault::SecondDeclaration => "an earlier declaration declares this native row",
+        }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             write!(
                 f,
