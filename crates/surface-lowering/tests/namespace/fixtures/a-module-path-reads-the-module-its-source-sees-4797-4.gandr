@@ -1,0 +1,4 @@
+import "./base.gandr";
+def read : Seat.Task;
+def read = Seat.task;
+def hushed : Integer = Quiet.hush;

@@ -1,0 +1,26 @@
+/// This source states action through a suspended function.
+///
+/// The suspended function holds nodes that the checker judges.
+/// The action whiskers a path equality through that function.
+///
+/// The editor answers at every node the checker judges.
+/// The function receives those nodes as a call function does.
+///
+/// - see: #3787 — editor entries
+/// - see: #3801 — census path types
+/// - see: #3872 — thunk spelling
+
+/// The suspended function maps a right whisker through `Path.ap`.
+def whiskeredBySuspension(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path[.A = A](x, y),
+  f2 : Path(x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path(y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) =
+  Path.ap
+    (thunk { fun (q : Path[.A = A](x, y)) { Path.step q g } } : Path(x, y) -> Path(x, z))
+    a

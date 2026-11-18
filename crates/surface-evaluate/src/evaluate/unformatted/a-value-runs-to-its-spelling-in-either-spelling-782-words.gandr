@@ -1,0 +1,2 @@
+data Circle : Type where { | Base : Circle | loop : Base <-> Base }
+def once : +U (-F Path[.A = Circle](Base, Base)) ; def once = thunk { loop } ;

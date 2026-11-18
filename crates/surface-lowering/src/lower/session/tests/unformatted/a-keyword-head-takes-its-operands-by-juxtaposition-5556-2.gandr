@@ -1,0 +1,9 @@
+def other = 1 ;
+def tupled(n : Integer) -> -F Unit { let d = fork (s : ?Integer >> end) { let m = recv s; close s }; send(d, n) }
+def short() -> -F Unit { let d = fork (s : ?Integer >> end) { let m = recv s; close s }; send d }
+def long(n : Integer) -> -F Unit { let d = fork (s : ?Integer >> end) { let m = recv s; close s }; send d n n }
+def paired() -> -F Unit { let d = fork (s : end) { close s }; close(d, d) }
+def viewed() -> -F Unit { var c = 0; access c as v { resume(v, 1) } }
+def numbered() -> -F Unit { let d = fork (s : &{ go : end }) { offer s { | go => close s } }; select d 1 }
+def declared() -> -F Unit { send other 1 }
+def grouped() -> -F Unit { close(other) }

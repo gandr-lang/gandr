@@ -1,0 +1,2 @@
+{pair}def ordered(n : Integer) -> Duo {{ &{{.fst => return n, .snd => return "s"}} }}
+def swapped(n : Integer) -> Duo {{ &{{.snd => return "s", .fst => return n}} }}

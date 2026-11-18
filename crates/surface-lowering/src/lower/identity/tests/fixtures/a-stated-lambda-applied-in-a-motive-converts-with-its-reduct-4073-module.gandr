@@ -1,0 +1,118 @@
+def act(A : Type, F : A -> A, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](F x, F y) {
+  Path.ap F p
+}
+
+def thenHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A](x, y),
+  q : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) {
+  Path.here (Path.step p q)
+}
+
+def composedAtLambda(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path[.A = A](x, y),
+  s : Path[.A = A](F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](
+  Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s,
+  Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s
+) {
+  Path.here (Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s)
+}
+
+def passedAtLambda(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path[.A = A](x, y),
+  s : Path[.A = A](F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](
+  Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s,
+  Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s
+) {
+  thenHere A (F x) (F y) z (act A (fun (q : A) { F q } : A -> A) x y r) s
+}
+
+def passedRedex(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  r : Path[.A = A](x, y),
+  s : Path[.A = A](F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](
+  Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s,
+  Path.step (act A (fun (q : A) { F q } : A -> A) x y r) s
+) {
+  thenHere
+    A
+    ((fun (q : A) { F q } : A -> A) x)
+    (F y)
+    z
+    (act A (fun (q : A) { F q } : A -> A) x y r)
+    s
+}
+
+def across(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
+  F x,
+  F y
+) {
+  Path.ap F p
+}
+
+def passedComposite(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path[.A = A](y, z),
+  k : Path[.A = A](x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step fp g, k)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step fm g, k)](
+  Path.step
+    (across
+      (type(Path[.A = A](x, y)))
+      (type(Path[.A = A](x, z)))
+      (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+      fm
+      fp
+      fa)
+    s,
+  Path.step
+    (across
+      (type(Path[.A = A](x, y)))
+      (type(Path[.A = A](x, z)))
+      (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+      fm
+      fp
+      fa)
+    s
+) {
+  thenHere
+    (type(Path[.A = A](x, z)))
+    (Path.step fm g)
+    (Path.step fp g)
+    k
+    (across
+      (type(Path[.A = A](x, y)))
+      (type(Path[.A = A](x, z)))
+      (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+      fm
+      fp
+      fa)
+    s
+}

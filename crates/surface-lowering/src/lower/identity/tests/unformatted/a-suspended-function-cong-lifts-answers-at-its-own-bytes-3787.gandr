@@ -1,0 +1,3 @@
+def whiskered(A : Type, x : A, y : A, z : A, f1 : Path[.A = A](x, y), f2 : Path[.A = A](x, y), a : Path[.A = Path[.A = A](x, y)](f1, f2), g : Path[.A = A](y, z)) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
+  Path.ap (thunk { fun (q : Path[.A = A](x, y)) { Path.step q g } } : Path[.A = A](x, y) -> Path[.A = A](x, z)) a
+}

@@ -1,0 +1,6 @@
+def below() -> Bool { 3 < 4 }
+def atMost() -> Bool { 3 <= 4 }
+def above() -> Bool { "beta" > "alpha" }
+def atLeast() -> Bool { "beta" >= "alpha" }
+def lt(a : Bool) -> Bool { a }
+def own() -> Bool { 4 < 3 }
