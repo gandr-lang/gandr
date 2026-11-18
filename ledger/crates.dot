@@ -159,6 +159,7 @@ digraph crates {
   "core-checker-bridge" -> "kernel-term";
   "core-checker-bridge" -> "theory-deep-inference";
   "core-content" -> "core-term";
+  "core-content" -> "kernel-data";
   "core-content" -> "kernel-strata";
   "core-content" -> "kernel-term";
   "core-content" -> "theory-levitation";
