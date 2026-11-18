@@ -1,9 +1,9 @@
 test: image::each_runs_item_reads_back_and_runs_alike
 package: gandr-runtime-stencils
-command: mise run debug:test gandr-runtime-stencils image::each_runs_item_reads_back_and_runs_alike
+command: mise run debug:test gandr-runtime-stencils image::each_runs_item_reads_back_and_runs_alike --break each_runs_item_reads_back
 
-(lldb) target create "target/debug-trace/debug/build/gandr-runtime-stencils/e2adcd2915a3709c/out/tests-e2adcd2915a3709c"
-Current executable set to 'target/debug-trace/debug/build/gandr-runtime-stencils/e2adcd2915a3709c/out/tests-e2adcd2915a3709c' (x86_64).
+(lldb) target create "target/debug-trace/debug/build/gandr-runtime-stencils/b1cab45b5e96104d/out/tests-b1cab45b5e96104d"
+Current executable set to 'target/debug-trace/debug/build/gandr-runtime-stencils/b1cab45b5e96104d/out/tests-b1cab45b5e96104d' (x86_64).
 (lldb) settings set -- target.run-args  "image::each_runs_item_reads_back_and_runs_alike" "--exact" "--nocapture" "--test-threads=1"
 (lldb) command source .config/debug/lldbinit
 Executing commands in '.config/debug/lldbinit'.
@@ -12,47 +12,47 @@ Executing commands in '.config/debug/lldbinit'.
 (lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
 (lldb) command script import -c rust_formatters.py
 (lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex each_runs_item_reads_back
+Breakpoint 1: 5 locations.
 (lldb) breakpoint set --name rust_panic
-Breakpoint 1: where = tests-e2adcd2915a3709c`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x0000000005515c18
+Breakpoint 2: where = tests-b1cab45b5e96104d`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x00000000056c5d18
 (lldb) run
 
 running 1 test
-test image::each_runs_item_reads_back_and_runs_alike ... 
-thread 'image::each_runs_item_reads_back_and_runs_alike' (1172970) panicked at crates/runtime-stencils/tests/image.rs:233:5:
-assertion `left == right` failed
-  left: (788, 4, {Code: 184, Fold: 7, Perform: 60, Handle: 73, Session: 15})
- right: (783, 4, {Code: 183, Fold: 7, Perform: 60, Handle: 73, Session: 15})
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
-Process 1172526 launched: 'target/debug-trace/debug/build/gandr-runtime-stencils/e2adcd2915a3709c/out/tests-e2adcd2915a3709c' (x86_64)
-Process 1172526 stopped
+test image::each_runs_item_reads_back_and_runs_alike ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 984056 launched: 'target/debug-trace/debug/build/gandr-runtime-stencils/b1cab45b5e96104d/out/tests-b1cab45b5e96104d' (x86_64)
+Process 984056 stopped
 * thread #2, name = 'image::each_run', stop reason = breakpoint 1.1
-       frame #0: 0x000055555aa69c18 tests-e2adcd2915a3709c`__rustc::rust_panic at panicking.rs:883:16
+       frame #0: 0x000055555692c9dc tests-b1cab45b5e96104d`<tests::image::each_runs_item_reads_back_and_runs_alike::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
 (lldb) bt 24
 * thread #2, name = 'image::each_run', stop reason = breakpoint 1.1
-   * frame #0: 0x000055555aa69c18 tests-e2adcd2915a3709c`__rustc::rust_panic at panicking.rs:883:16
-     frame #1: 0x000055555aa87255 tests-e2adcd2915a3709c`std::panicking::panic_with_hook at panicking.rs:836:5
-     frame #2: 0x000055555aa69052 tests-e2adcd2915a3709c`std::panicking::panic_handler::{closure#0} at panicking.rs:685:13
-     frame #3: 0x000055555aa62b09 tests-e2adcd2915a3709c`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
-     frame #4: 0x000055555aa69dcd tests-e2adcd2915a3709c`__rustc::rust_begin_unwind at panicking.rs:676:5
-     frame #5: 0x000055555aaa6dac tests-e2adcd2915a3709c`core::panicking::panic_fmt at panicking.rs:80:14
-     frame #6: 0x000055555aaa6c43 tests-e2adcd2915a3709c`core::panicking::assert_failed_inner at panicking.rs:452:17
-     frame #7: 0x00005555567974a9 tests-e2adcd2915a3709c`core::panicking::assert_failed::<(usize, usize, alloc::collections::btree::map::BTreeMap<tests::image::Kind, usize>), (usize, usize, alloc::collections::btree::map::BTreeMap<tests::image::Kind, usize>)>(kind=Eq, left=(788, 4, {root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:5, alloc:{value:{}}, _marker:{}}), right=(783, 4, {root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:5, alloc:{value:{}}, _marker:{}}), args=None) at panicking.rs:407:5
-     frame #8: 0x00005555568f6baf tests-e2adcd2915a3709c`tests::image::each_runs_item_reads_back_and_runs_alike at image.rs:233:5
-     frame #9: 0x00005555568ef977 tests-e2adcd2915a3709c`tests::image::each_runs_item_reads_back_and_runs_alike::{closure#0}((null)={}) at image.rs:195:46
-     frame #10: 0x0000555556954496 tests-e2adcd2915a3709c`<tests::image::each_runs_item_reads_back_and_runs_alike::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
-     frame #11: 0x000055555697810b tests-e2adcd2915a3709c`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
-     frame #12: 0x0000555556978109 tests-e2adcd2915a3709c`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
-     frame #13: 0x00005555569852e5 tests-e2adcd2915a3709c`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
-     frame #14: 0x00005555569852e0 tests-e2adcd2915a3709c`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
-     frame #15: 0x00005555569852e0 tests-e2adcd2915a3709c`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
-     frame #16: 0x00005555569852cb tests-e2adcd2915a3709c`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
-     frame #17: 0x00005555569852cb tests-e2adcd2915a3709c`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
-     frame #18: 0x00005555569852cb tests-e2adcd2915a3709c`test::run_test_in_process at lib.rs:724:27 [inlined]
-     frame #19: 0x00005555569852b6 tests-e2adcd2915a3709c`test::run_test::{closure#0} at lib.rs:645:43
-     frame #20: 0x000055555697fcd4 tests-e2adcd2915a3709c`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
-     frame #21: 0x000055555697fc59 tests-e2adcd2915a3709c`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
-     frame #22: 0x0000555556988372 tests-e2adcd2915a3709c`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
-     frame #23: 0x0000555556988363 tests-e2adcd2915a3709c`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+   * frame #0: 0x000055555692c9dc tests-b1cab45b5e96104d`<tests::image::each_runs_item_reads_back_and_runs_alike::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #1: 0x0000555556a1322b tests-b1cab45b5e96104d`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #2: 0x0000555556a13229 tests-b1cab45b5e96104d`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #3: 0x0000555556a20405 tests-b1cab45b5e96104d`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #4: 0x0000555556a20400 tests-b1cab45b5e96104d`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #5: 0x0000555556a20400 tests-b1cab45b5e96104d`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #6: 0x0000555556a203eb tests-b1cab45b5e96104d`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #7: 0x0000555556a203eb tests-b1cab45b5e96104d`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #8: 0x0000555556a203eb tests-b1cab45b5e96104d`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #9: 0x0000555556a203d6 tests-b1cab45b5e96104d`test::run_test::{closure#0} at lib.rs:645:43
+     frame #10: 0x0000555556a1adf4 tests-b1cab45b5e96104d`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #11: 0x0000555556a1ad79 tests-b1cab45b5e96104d`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #12: 0x0000555556a23492 tests-b1cab45b5e96104d`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #13: 0x0000555556a23483 tests-b1cab45b5e96104d`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #14: 0x0000555556a23483 tests-b1cab45b5e96104d`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #15: 0x0000555556a23473 tests-b1cab45b5e96104d`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #16: 0x0000555556a23473 tests-b1cab45b5e96104d`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #17: 0x0000555556a23473 tests-b1cab45b5e96104d`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #18: 0x0000555556a23464 tests-b1cab45b5e96104d`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #19: 0x000055555ac3f08f tests-b1cab45b5e96104d`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+     frame #20: 0x000055555ac3f088 tests-b1cab45b5e96104d`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:127:17
+     frame #21: 0x00007ffff7aacef1 libc.so.6`start_thread(arg=<unavailable>) at pthread_create.c:454:8
+     frame #22: 0x00007ffff7b4c05c libc.so.6`__clone3 at clone3.S:78
+(lldb) frame variable --depth 3
+(tests::image::each_runs_item_reads_back_and_runs_alike::{closure_env#0})  = {}
+(void)  = <could not get size of type void>
+(lldb) up
+frame #1: 0x0000555556a1322b tests-b1cab45b5e96104d`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
 (lldb) frame variable --depth 3
 error: no variable information is available in debug info for this compile unit
