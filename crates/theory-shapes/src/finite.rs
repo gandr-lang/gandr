@@ -66,6 +66,9 @@ impl Subshape
     ///   the bound and the duplicate handling.
     /// - witness: `tests::finite::all_small_union_squares`
     /// - witness: `tests::finite::finite_boundaries_are_checked`
+    ///
+    /// # Cost
+    /// - allocation: the shared membership list, setup
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref shape) => shape.ambient() == ambient
@@ -157,6 +160,9 @@ impl Subshape
     ///   partial reversal.
     /// - witness: `tests::finite::all_small_union_squares`
     /// - witness: `tests::finite::finite_boundaries_are_checked`
+    ///
+    /// # Cost
+    /// - allocation: the complement's shared membership list, setup
     #[inline]
     #[must_use]
     #[spec(ensures: |ref ret| ret.membership.len() == self.membership.len()
@@ -193,6 +199,9 @@ impl Subshape
     ///   zero and one separate the carrier check.
     /// - witness: `tests::finite::all_small_union_squares`
     /// - witness: `tests::finite::finite_boundaries_are_checked`
+    ///
+    /// # Cost
+    /// - allocation: the combined shared membership list, setup
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -495,6 +504,10 @@ impl UnionSquare
     ///   one separate the carrier check.
     /// - witness: `tests::finite::all_small_union_squares`
     /// - witness: `tests::finite::finite_boundaries_are_checked`
+    ///
+    /// # Cost
+    /// - allocation: the shared antecedent and consequent, when the caller
+    ///   gives an owned formula, setup
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref square) => square.blocks.len() == left.decisions().len()
