@@ -31,20 +31,20 @@ def clicked (event : Dom.Event) -> [Console] () =
 
 /// A listener on `button` while `wait` runs, removed after it. The checker
 /// inserts the coercion from `Element` to `EventTarget`.
-pub def session (button : Dom.Element, wait : () -> [Dom] ()) -> [Dom] () =
+pub def session(button : Dom.Element, wait : () -> [Dom] ()) -> [Dom] () =
   let listener = Dom.EventTarget.addEventListener button "click" clicked
-  wait()
+  wait ()
   Dom.EventTarget.removeEventListener listener
 
 /// A listener the body never removes. The checker refuses it at the unused
 /// handle.
-pub def leaked (button : Dom.Element) -> [Dom] () =
+pub def leaked(button : Dom.Element) -> [Dom] () =
   let listener = Dom.EventTarget.addEventListener button "click" clicked
   ()
 
 /// A listener the body removes twice. The checker refuses it at the second
 /// use.
-pub def twice (button : Dom.Element) -> [Dom] () =
+pub def twice(button : Dom.Element) -> [Dom] () =
   let listener = Dom.EventTarget.addEventListener button "click" clicked
   Dom.EventTarget.removeEventListener listener
   Dom.EventTarget.removeEventListener listener

@@ -15,7 +15,7 @@ theory TermComposite where
 
   oper comp : (s : Sub d g, t : Sub e d) --> Sub e g;
   oper subTy : (a : Ty g, s : Sub d g) --> Ty d;
-  oper subTm : (t : Tm g a, s : Sub d g) --> Tm(d, subTy(a, s));
+  oper subTm : (t : Tm g a, s : Sub d g) --> Tm d subTy(a, s);
 
   rule tyComp : subTy (subTy a s) t ==> subTy a (comp s t);
   rule tmComp : subTm (subTm t s) u ==> subTm t (comp s u);

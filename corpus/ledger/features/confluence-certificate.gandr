@@ -33,21 +33,20 @@ data NatUnits : Type where {
 
 /// Zero plus zero, where the two unit rules overlap.
 @[runs("Zero")]
-def zero_plus_zero() -> NatUnits { add Zero Zero }
+def zero_plus_zero() -> NatUnits = add Zero Zero;
 
 /// One plus zero, where the right unit overlaps the recursion.
 @[runs("Succ Zero")]
-def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
+def one_plus_zero() -> NatUnits = add (Succ Zero) Zero;
 
 /// Two plus one, by the recursion alone.
 @[runs("Succ (Succ (Succ Zero))")]
-def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
+def two_plus_one_overlapping() -> NatUnits = add (Succ (Succ Zero)) (Succ Zero);
 
 /// A semigroup's one law: associativity overlaps itself at
 /// `mul(mul(mul(a, b), c), d)`, and both ways round reach `mul(a, mul(b,
 /// mul(c, d)))`. The rewrite at the peak matches the rule's `z` against a
 /// subterm holding the peak's own `z`, which stays the peak's.
-@[checks]
 theory Semigroup where
   sort S : Type;
 

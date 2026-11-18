@@ -53,6 +53,6 @@ module Tally :> Counter where
   /// Zero.
   def zero = 0;
   /// One more.
-  def incr(n : Integer) -> Integer { n + 1 }
+  def incr(n : Integer) -> Integer = n + 1;
   /// The count itself.
-  def read(n : Integer) -> Integer { n }
+  def read(n : Integer) -> Integer = n;

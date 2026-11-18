@@ -16,7 +16,6 @@
 //! [Lafont-1990-interaction_nets]: https://doi.org/10.1145/96709.96718 "Lafont, Interaction Nets"
 
 /// A data family whose constructors are written with the circuit arrow.
-@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat

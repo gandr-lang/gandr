@@ -1,8 +1,8 @@
 error[Immobile.Homed]: a thunk crossing to another world reads this declaration away from its home, and its type is not mobile
-   ╭▸ corpus/ledger/diagnostics/Immobile.Homed.gandr:18:33
+   ╭▸ corpus/ledger/diagnostics/Immobile.Homed.gandr:15:33
    │
-17 │ ┌ def homed() -> () -> Integer =
-18 │ │   migrate [seat] { pure thunk { pending () } }
+14 │ ┌ def homed() -> () -> Integer =
+15 │ │   migrate [seat] { pure thunk { pending () } }
    │ │   ┬─────────────────────────────┯━━━━━━──────│
    │ └───│─────────────────────────────│────────────┤
    │     │                             │            checked against `() -> (() -> Integer)`; while checking the body of this thunk

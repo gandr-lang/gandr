@@ -20,7 +20,7 @@ def plugin(grants : Grants) -> [Io] Unit =
 
 /// The host grants the plugin one directory and its log, and keeps the rest.
 def host(root : Cap { read, write }, log : Sink) -> [Io] Unit =
-  let grants : Grants = *{ .fs = root.attenuate ({ read }), .log = log };
+  let grants : Grants = *{.fs = root.attenuate ({ read }), .log = log};
   plugin grants
 
 /// A one-shot token leaves its environment by move: the second use is

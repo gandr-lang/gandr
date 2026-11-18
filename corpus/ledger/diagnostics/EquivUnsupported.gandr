@@ -1,14 +1,11 @@
 /// `EquivUnsupported`: a universe equivalence over a data type that recurs,
 /// which the rule does not decide.
-@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
-@[checks]
-def same(n : Nat) -> -F Nat =
+def same(n : Nat) -> Nat =
   n
 
 @[refuses("EquivUnsupported")]
-def recursive : Path[.A = Type](Nat, Nat);
-def recursive = equiv same same;
+def recursive : Path[.A = Type](Nat, Nat) = equiv same same;

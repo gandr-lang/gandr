@@ -1,7 +1,7 @@
 error[OfferArms]: `offer` must handle every label of its protocol exactly once
   ╭▸ corpus/ledger/diagnostics/OfferArms.gandr:5:58
   │
-4 │ ┌ def seat_arms_one_label_of_two() -> -F Unit =
+4 │ ┌ def seat_arms_one_label_of_two() -> Unit =
 5 │ │   let desk = fork (seat : &{next : end, retire : end}) { offer seat { | next => close seat } };
   │ │   ┬──                                                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ not every offered label once: found `&{next : end, retire : end}`
   │ │   │

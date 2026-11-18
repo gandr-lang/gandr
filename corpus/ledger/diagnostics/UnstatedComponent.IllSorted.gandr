@@ -2,7 +2,6 @@
 /// state: a term whose sort disagrees with the sort its position reads.
 ///
 /// The theory the model derives from.
-@[checks]
 theory T where
   sort Nat : Type;
   sort Bit : Type;

@@ -1,6 +1,5 @@
 /// `literal_pattern`: a literal pattern.
-@[checks]
-def sign(n : Integer) -> -F Integer =
+def sign(n : Integer) -> Integer =
   match n where
-    | 0 => return 0
-    | _ => return 1
+    | 0 => 0
+    | _ => 1

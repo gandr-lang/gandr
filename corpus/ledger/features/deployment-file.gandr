@@ -33,7 +33,7 @@ pub module Site : Model(Site) where
   def secret = "far";
 
 /// The place's model, which a placement holds.
-pub def site : Model(Site) = pack Site at Model(Site);
+pub def site : Model Site = pack Site at Model Site;
 
 /// The program this deployment runs.
 pub module Manifold : Model(Manifold) where
@@ -41,6 +41,6 @@ pub module Manifold : Model(Manifold) where
   def artifact = "../../model/worlds/two-processes.gandr";
 
 /// `far` at the site, as one process.
-pub def placements : List(Placement) = #[
+pub def placements : List Placement = #[
   At "far" site,
 ];

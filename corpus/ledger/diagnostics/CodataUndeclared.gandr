@@ -4,5 +4,5 @@ codata Scaled : Type where
   doubled : Integer;
 
 @[refuses("CodataUndeclared")]
-def read(s : +U Scaled) -> -F Integer =
+def read(s : +U Scaled) -> Integer =
   s.doubled

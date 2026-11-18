@@ -1,5 +1,4 @@
 /// `telescope_pattern`: a telescope pattern.
-@[checks]
-def nothing(t : *{}) -> -F Integer =
+def nothing(t : *{}) -> Integer =
   match t where
-    | *{} => return 0
+    | *{} => 0

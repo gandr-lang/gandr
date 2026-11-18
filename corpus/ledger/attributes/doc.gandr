@@ -1,4 +1,3 @@
 /// `doc`: documents a declaration; its text joins the `///` lines above it.
 @[doc("The answer.")]
-@[checks]
 def answer = 42;

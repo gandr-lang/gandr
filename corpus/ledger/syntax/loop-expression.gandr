@@ -1,7 +1,5 @@
 /// `loop_expression`: a loop.
-@[checks]
-def tick(n : Integer) -> -F Unit =
+def tick(n : Integer) -> Unit =
   *{}
-@[checks]
-def spin(n : Integer) -> -F [Partial] Integer =
+def spin(n : Integer) -> [Partial] Integer =
   loop { tick n; }

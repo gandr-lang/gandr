@@ -19,7 +19,6 @@
 //! [Cockx-2018-elaborating_dependent_copattern_matching]: https://doi.org/10.1145/3236770 "Cockx and Abel, Elaborating dependent (co)pattern matching"
 
 /// The codes of two types.
-@[checks]
 data Code : Type where
   /// The integers.
   | CInt : Code
@@ -27,14 +26,12 @@ data Code : Type where
   | CUnit : Code
 
 /// The type each code decodes to.
-@[checks]
 def decode(c : Code) -> Type =
   match c where
     | CInt => return Integer
     | CUnit => return Unit
 
 /// Values, indexed by the code of their type.
-@[checks]
 data Tagged : Code -> Type where
   /// An integer.
   | AnInt : (i : Integer) --> Tagged CInt
@@ -43,7 +40,6 @@ data Tagged : Code -> Type where
 
 /// A tagged value at its code's decode. Each arm's goal reads its own
 /// constructor's code.
-@[checks]
 def untag(c : Code, v : Tagged c) -> decode(c) =
   match v where
     | AnInt(i) => i

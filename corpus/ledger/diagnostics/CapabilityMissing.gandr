@@ -25,13 +25,11 @@ module Seat :> *{
   def notes = "notes";
 }
 
-@[checks]
 world operator;
 
-@[checks]
 world seat;
 
 @[refuses("CapabilityMissing")]
 @[entry(operator)]
-def unheld() -> -F Seat.Report =
+def unheld() -> Seat.Report =
   migrate [seat] { pure Seat.progress }

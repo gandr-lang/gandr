@@ -5,5 +5,4 @@
 import std.io;
 
 /// A world whose role requires the console.
-@[checks]
 world far requires [std.io.Console.Eff];

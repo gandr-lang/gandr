@@ -1,5 +1,4 @@
 /// `wildcard`: the wildcard pattern, matching anything and binding nothing.
-@[checks]
-def ignore(n : Integer) -> -F Integer =
+def ignore(n : Integer) -> Integer =
   match n where
-    | _ => return 0
+    | _ => 0

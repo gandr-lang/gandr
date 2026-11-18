@@ -2,5 +2,5 @@
 /// a session action names its endpoint and is not a name a fork binds as one
 /// of its ends.
 @[refuses("OutOfFragment.Endpoint")]
-def parameter_as_endpoint(rounds : Integer) -> -F Unit =
+def parameter_as_endpoint(rounds : Integer) -> Unit =
   close rounds

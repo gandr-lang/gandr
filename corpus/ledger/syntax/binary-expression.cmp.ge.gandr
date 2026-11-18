@@ -1,4 +1,3 @@
 /// `binary_expression.cmp.ge`: an at-least comparison.
-@[checks]
-def at_least() -> -F Bool =
-  return 2 >= 1
+def at_least() -> Bool =
+  2 >= 1

@@ -25,14 +25,12 @@ module Seat :> *{
   def notes = "notes";
 }
 
-@[checks]
 world operator;
 
-@[checks]
 world seat;
 
 @[refuses("Elsewhere")]
 @[entry(operator)]
-def readHere(report : Seat.Report at seat) -> -F Seat.Report =
+def readHere(report : Seat.Report at seat) -> Seat.Report =
   let written at seat = report
   pure written

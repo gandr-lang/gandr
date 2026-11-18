@@ -68,4 +68,4 @@ extern Rust from "crate:demo" {
 
 /// The word behind a pointer that may be null, zero otherwise.
 pub def readOrZero(p : Ptr i32) -> i32 =
-  deref_or(p, 0)
+  deref_or (p, 0)

@@ -1,7 +1,7 @@
 error[ContinuationCaptured]: the continuation is used inside a thunk, which may end it other than once
    ╭▸ corpus/ledger/diagnostics/ContinuationCaptured.gandr:29:35
    │
-18 │ ┌  def leaked() -> -F Unit =
+18 │ ┌  def leaked() -> Unit =
 19 │ │┌   handle c : std.process.Exit.Eff {
 20 │ ││     let found = fork (task : Cancel.Join) {
 21 │ ││       send task Cancel.notes;

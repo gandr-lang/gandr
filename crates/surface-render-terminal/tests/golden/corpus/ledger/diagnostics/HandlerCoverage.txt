@@ -1,7 +1,7 @@
 error[HandlerCoverage]: the handler must handle every operation of its interface exactly once
    ╭▸ corpus/ledger/diagnostics/HandlerCoverage.gandr:9:3
    │
- 8 │ ┌  def asked() -> -F Integer =
+ 8 │ ┌  def asked() -> Integer =
  9 │ │┏   handle c : std.process.Exit.Eff {
 10 │ │┃     pure 1
 11 │ │┃   } with {

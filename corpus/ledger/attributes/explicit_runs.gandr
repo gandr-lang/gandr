@@ -1,5 +1,4 @@
 /// `explicit_runs`: asks that every run a declaration infers be written.
 @[explicit_runs]
-@[checks]
-def answer() -> -F Integer =
-  return 42
+def answer() -> Integer =
+  42

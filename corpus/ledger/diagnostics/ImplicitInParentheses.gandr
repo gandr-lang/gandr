@@ -2,9 +2,7 @@
 /// among its parentheses.
 ///
 /// The identity at a type supplied by name.
-@[checks]
-def same[a : Type](x : a) -> -F a { return x }
+def same[a : Type](x : a) -> a = x;
 
 @[refuses("ImplicitInParentheses")]
-def inParentheses : () -> Integer;
-def inParentheses = thunk { same Integer 3 };
+def inParentheses() -> Integer = same Integer 3;

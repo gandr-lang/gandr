@@ -1,4 +1,5 @@
-/// A link from a foreign ABI to gandr's layouts lets a value cross with a proof.
+/// A link from a foreign ABI to gandr's layouts lets a value cross
+/// with a proof.
 ///
 /// A C struct and a gandr record agree only if their bytes agree. The link
 /// states that agreement once, and every crossing reuses it.

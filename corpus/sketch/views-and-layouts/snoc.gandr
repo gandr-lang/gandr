@@ -10,7 +10,8 @@
 /// - see: #4561 — the views and layouts sketch, its rulings in the issue body
 /// - see: corpus/sketch/views-and-layouts/parity.gandr — a view whose evidence is a cover
 
-/// The list built from its end: empty, or an initial list before a last element.
+/// The list built from its end: empty, or an initial list before
+/// a last element.
 pub data SnocList(a : Type) : Type where
   /// The empty list.
   | Lin : SnocList a
@@ -37,10 +38,11 @@ def rec fromSnoc[a : Type](xs : SnocList a) -> List a =
 
 /// The two lists are one type, read from either end. `equiv` decides the
 /// round trips.
-def snocList[a : Type]() -> List a ≃ SnocList a { equiv toSnoc fromSnoc }
+def snocList[a : Type]() -> List a ≃ SnocList a = equiv toSnoc fromSnoc;
 
 /// A list from its end, through its equivalence with the snoc list.
-view Snoc[a : Type] : List a
+view
+Snoc[a : Type] : List a
   | lin
   | snoc(init : List a, last : a)
   with snocList

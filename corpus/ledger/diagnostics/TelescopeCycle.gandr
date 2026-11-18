@@ -1,4 +1,4 @@
 /// `TelescopeCycle`: a function's merged telescope with two parameters each
 /// mentioning the other.
 @[refuses("TelescopeCycle")]
-def tangled[a : b, b : a](x : a) -> -F a { return x }
+def tangled[a : b, b : a](x : a) -> a = return x;

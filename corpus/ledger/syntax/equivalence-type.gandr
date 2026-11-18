@@ -1,8 +1,6 @@
 /// `equivalence_type`: an equivalence type, written with its glyph
 /// and in ASCII.
-@[checks]
-def same(e : Integer ≃ Integer) -> -F Unit =
+def same(e : Integer ≃ Integer) -> Unit =
   pure *{}
-@[checks]
-def sameAscii(e : Integer <~> Integer) -> -F Unit =
+def sameAscii(e : Integer <~> Integer) -> Unit =
   pure *{}

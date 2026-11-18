@@ -1,6 +1,5 @@
 /// `select_expression`: a selection of a label on a session endpoint.
-@[checks]
-def choose() -> -F Unit =
+def choose() -> Unit =
   let desk = fork (seat : &{next : end}) { offer seat { | next => close seat } };
   select desk next
   close desk

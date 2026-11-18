@@ -1,3 +1,2 @@
 /// `number.expression`: a number.
-@[checks]
 def answer = 42;

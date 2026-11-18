@@ -1,8 +1,8 @@
 error[EntryNamed]: this declaration is an entry, which only the host runs; it cannot be named here
-   ╭▸ corpus/ledger/diagnostics/EntryNamed.gandr:42:3
+   ╭▸ corpus/ledger/diagnostics/EntryNamed.gandr:39:3
    │
-41 │ ┌ def relayed() -> -F Seat.Report =
-42 │ │   collect ()
+38 │ ┌ def relayed() -> Seat.Report =
+39 │ │   collect ()
    │ │   ┯━━━━━━──│
    │ └───│────────┤
    │     │        checked against `() -> Seat.Report`; while checking the body of this thunk

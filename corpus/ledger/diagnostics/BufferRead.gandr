@@ -9,7 +9,7 @@ import std.io;
 
 /// Copies a buffer the ring holds live, then frees it.
 @[refuses("BufferRead")]
-def readWhileHeld() -> -F Unit =
+def readWhileHeld() -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
     let copied : Buf = b;

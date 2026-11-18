@@ -4,9 +4,7 @@
 import std.list (List);
 
 /// A step that does nothing with its integer.
-@[checks]
-def tick(n : Integer) -> -F Unit =
+def tick(n : Integer) -> Unit =
   *{}
-@[checks]
-def each(xs : List Integer) -> -F Unit =
+def each(xs : List Integer) -> Unit =
   for x in xs { tick x; }

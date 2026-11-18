@@ -116,7 +116,7 @@ def assocGenerator(A : Type, x : A, y : A, z : A, w : A) -> (f : Path[.A = A](
   Path.step (Path.step f g) h,
   Path.step f (Path.step g h)
 ))) =
-  thunk { fun (f) { thunk { fun (g) { thunk { fun (h) { assoc A x y z w f g h } } } } } }
+  fun (f) { fun (g) { fun (h) { assoc A x y z w f g h } } }
 
 /// The associator's naturality in its first argument as the filler
 /// generator writes it.

@@ -54,4 +54,4 @@ pub module Package : Model(Gandr.Package) where {
 /// The model's lines, written by `std.build`'s inert render.
 @[inert]
 @[runs("\"version = \\\"0.1.0\\\"\\ngandr = \\\">= 0.0\\\"\\nfeatures = \\\"\\\"\\nsystems = \\\"\\\"\\nspelling = \\\"\\\"\\nname = \\\"probe\\\"\\nauthors = \\\"The gandr authors\\\"\\nlicence = \\\"MIT OR Apache-2.0\\\"\\ndocumentation = \\\"https://github.com/gandr-lang/gandr\\\"\\nendpoint = \\\"https://github.com/gandr-lang/gandr\\\"\\nsources = \\\"src\\\"\\n\"")]
-def rendered() -> String { render Package }
+def rendered() -> String = render Package;

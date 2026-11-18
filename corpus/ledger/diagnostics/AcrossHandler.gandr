@@ -6,7 +6,7 @@ import std.process;
 
 /// A `become` inside the subject of a handled scope.
 @[refuses("AcrossHandler")]
-def became() -> -F Integer =
+def became() -> Integer =
   handle c : std.process.Exit.Eff {
     become one ()
   } with {

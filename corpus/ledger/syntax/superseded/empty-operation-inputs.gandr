@@ -2,4 +2,4 @@
 /// `oper c : () --> T`. The constant `oper c : T` states it, and the reader
 /// refuses the empty input list by its name.
 @[refuses("RetiredSpelling.empty_operation_inputs")]
-theory Pointed where { sort M : Type; oper unit : () --> M; }
+theory Pointed where {sort M : Type; oper unit : () --> M;}

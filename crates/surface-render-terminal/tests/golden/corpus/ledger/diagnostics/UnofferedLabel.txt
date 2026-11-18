@@ -1,7 +1,7 @@
 error[UnofferedLabel]: the endpoint's protocol offers no such label here
   ╭▸ corpus/ledger/diagnostics/UnofferedLabel.gandr:6:3
   │
-4 │ ┌ def desk_selects_no_offered_label() -> -F Unit =
+4 │ ┌ def desk_selects_no_offered_label() -> Unit =
 5 │ │   let desk = fork (seat : &{next : end}) { offer seat { | next => close seat } };
   │ │   ┬──
   │ │   │

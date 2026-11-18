@@ -25,18 +25,15 @@ module Seat :> *{
   def notes = "notes";
 }
 
-@[checks]
 world operator;
 
-@[checks]
 world seat;
 
-@[checks]
 @[entry(*{operator, seat})]
-def collect() -> -F Seat.Report =
+def collect() -> Seat.Report =
   migrate [seat] { pure Seat.progress }
 
 @[refuses("UndeclaredWorld")]
 @[entry(*{operator, seat})]
-def toAValue() -> -F Seat.Report =
+def toAValue() -> Seat.Report =
   migrate [collect] { pure Seat.progress }

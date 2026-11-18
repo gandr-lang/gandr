@@ -1,7 +1,7 @@
 error[ContinuationUnspent]: the operation's continuation holds something that must end, so the clause must `resume` it or `abandon` it exactly once
    ╭▸ corpus/ledger/diagnostics/ContinuationUnspent.gandr:29:29
    │
-18 │ ┌  def dropped() -> -F Unit =
+18 │ ┌  def dropped() -> Unit =
 19 │ │┌   handle c : std.process.Exit.Eff {
 20 │ ││     let found = fork (task : Cancel.Join) {
 21 │ ││       send task Cancel.notes;

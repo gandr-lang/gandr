@@ -1,11 +1,11 @@
 error[UncertifiedBudget]: `ua` enumerates catalogues within its budget of shape classes
-   ╭▸ corpus/ledger/diagnostics/UncertifiedBudget.gandr:25:15
+   ╭▸ corpus/ledger/diagnostics/UncertifiedBudget.gandr:22:15
    │
-25 │   def crowded = ua[
+22 │   def crowded = ua[
    │ ┏━━━━━━━━━━━━━━━┛
-26 │ ┃   1,
-27 │ ┃   8
-28 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+23 │ ┃   1,
+24 │ ┃   8
+25 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ a catalogue past the stratum budget
    │
    ├ note: `crowded` is refused with UncertifiedBudget, as its expectation states

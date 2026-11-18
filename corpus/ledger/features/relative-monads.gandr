@@ -31,7 +31,6 @@ import "../../model/data/data-maybe.gandr";
 
 /// The left unit: returning a value to an extension runs its continuation at
 /// that value, a second-order rule over values `V` and computations `C`.
-@[checks]
 theory MonadLeftUnit where
   sort V : Type+;
   sort C : Type;
@@ -42,7 +41,6 @@ theory MonadLeftUnit where
 /// The right unit: extending a computation by the unit is the computation.
 /// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
 /// it at its port of the sort `V`.
-@[checks]
 theory MonadRightUnit where
   sort V : Type+;
   sort C : Type;
@@ -54,7 +52,6 @@ theory MonadRightUnit where
 /// of its own left side and of both unit laws', and its right side
 /// substitutes `k` under `bind x .`: each pair is found by pattern
 /// unification, and its two reducts normalize to one term.
-@[checks]
 theory RelativeMonad where
   sort V : Type+;
   sort C : Type;
@@ -65,13 +62,11 @@ theory RelativeMonad where
   rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
 
 /// The option monad's unit: the value, present.
-@[checks]
-def ret(A : Type, a : A) -> Maybe(A) { Some a }
+def ret(A : Type, a : A) -> Maybe A = Some a;
 
 /// The option monad's extension: run the computation once, first, then pass
 /// a present value to the continuation and stop at an absent one.
-@[checks]
-def ext(A : Type, B : Type, m : () -> Maybe(A), k : A -> Maybe(B)) -> Maybe(B) =
+def ext(A : Type, B : Type, m : () -> Maybe A, k : A -> Maybe B) -> Maybe B =
   let r = force m
   match r where
     | None => None
@@ -91,8 +86,7 @@ def two() -> Integer =
 
 /// Code polymorphic in the carrier: a computation of any family of
 /// computation types, run again.
-@[checks]
-def again(T : Type -> Type[-], m : +U T Integer) -> T Integer { force m }
+def again(T : Type -> Type[-], m : +U T Integer) -> T Integer = force m;
 
 /// The carrier as a theory's sort: a family from the host's types into the
 /// computation types, the shape `T` above takes.
@@ -101,4 +95,4 @@ theory Carrier where
 
 /// The option monad's carrier: a computation returning a `Maybe`.
 module OptionCarrier : Model(Carrier) where
-  type T(a : Type) = -F Maybe(a);
+  type T(a : Type) = -F Maybe a;

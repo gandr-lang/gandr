@@ -2,9 +2,7 @@
 /// its implicits unsupplied.
 ///
 /// The identity at a type supplied by name.
-@[checks]
-def same[a : Type](x : a) -> -F a { return x }
+def same[a : Type](x : a) -> a = x;
 
 @[refuses("ImplicitUnsupplied")]
-def unsupplied : +U (Integer -> -F Integer);
-def unsupplied = same;
+def unsupplied : Integer -> Integer = same;

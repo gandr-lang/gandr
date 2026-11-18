@@ -1,7 +1,7 @@
 error[CapabilityOutsideAuthority]: the capability does not grant this operation
    ╭▸ corpus/ledger/diagnostics/CapabilityOutsideAuthority.gandr:10:3
    │
- 9 │   def save(c : Cap { read }) -> -F [std.fs.Eff] Unit =
+ 9 │   def save(c : Cap { read }) -> [std.fs.Eff] Unit =
    │   │        ─ checked against `Cap {read} -> -F [std.fs.Eff] Unit`; while checking the body of this function; binds c : Cap {read}
    │ ┌─┘
    │ │

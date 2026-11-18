@@ -10,7 +10,7 @@ error[CodataKindNotUniverse]: a codata declaration's kind must be a computation 
 error[CodataUndeclared]: this names no codata declaration
   ╭▸ corpus/ledger/diagnostics/CodataUndeclared.gandr:7:17
   │
-7 │ def read(s : +U Scaled) -> -F Integer =
+7 │ def read(s : +U Scaled) -> Integer =
   │          ┬      ━━━━━━ no codata declaration here
   │          │
   │          formed; while forming the parts of this type

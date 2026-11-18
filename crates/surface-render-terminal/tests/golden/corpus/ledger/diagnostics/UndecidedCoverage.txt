@@ -1,12 +1,12 @@
 error[UndecidedCoverage]: a pattern hole leaves which arm runs undecided
-   ╭▸ corpus/ledger/diagnostics/UndecidedCoverage.gandr:10:3
+   ╭▸ corpus/ledger/diagnostics/UndecidedCoverage.gandr:9:3
    │
- 9 │    def classify(c : Color) -> -F Integer =
+ 8 │    def classify(c : Color) -> Integer =
    │    │            ─ checked against `Color -> -F Integer`; while checking the body of this function; binds c : Color
    │ ┌──┘
    │ │
-10 │ │┏   match c where
-11 │ │┃     | ?branch => 1
+ 9 │ │┏   match c where
+10 │ │┃     | ?branch => 1
    │ │┃                  ╿
    │ └┃──────────────────│
    │  ┗━━━━━━━━━━━━━━━━━━checked against `Color -> Integer`; while checking the body of this thunk

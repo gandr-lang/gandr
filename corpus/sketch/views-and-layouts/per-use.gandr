@@ -39,7 +39,7 @@ def rec scan(xs : Repr Ints tagged, acc : i64) -> i64 =
 
 /// The tagged loop over a list of the default layout, by transport there and
 /// back.
-def sumTagged(xs : Ints) -> i64 { scan (Layout.into tagged xs) 0i64 }
+def sumTagged(xs : Ints) -> i64 = scan (Layout.into tagged xs) 0i64;
 
 /// One, two and three, in the packed layout after the tagged one, along the
 /// composite of the two equivalences.

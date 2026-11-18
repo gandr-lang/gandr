@@ -50,7 +50,7 @@ type Config = *{host : String, port : Integer, tls : Bool} where
 
 /// A configuration on the secure face holds its host alone, and reads its
 /// fixed port back.
-def port_of(c : Config.#{secure ↦ *{.port = 443, .tls = true}}) -> Integer { c.port }
+def port_of(c : Config.#{secure ↦ *{.port = 443, .tls = true}}) -> Integer = c.port;
 
 /// A configuration on the secure port.
 def local : Config = *{.host = "localhost", .port = 443, .tls = true};
@@ -60,7 +60,7 @@ def local : Config = *{.host = "localhost", .port = 443, .tls = true};
 def local_port : Integer = port_of (local);
 
 /// The port of any configuration.
-def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer { c.port }
+def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer = c.port;
 
 /// A configuration on the secure face, by its host alone.
 def secured : Config.#{secure ↦ *{.port = 443, .tls = true}} = *{.host = "localhost"};

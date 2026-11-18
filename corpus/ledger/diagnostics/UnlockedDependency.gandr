@@ -3,9 +3,7 @@
 import circle;
 
 /// A declaration reading nothing through the path stands.
-def origin : Integer;
-def origin = 0;
+def origin : Integer = 0;
 
 @[refuses("UnlockedDependency")]
-def radius : Integer;
-def radius = circle.radius;
+def radius : Integer = circle.radius;

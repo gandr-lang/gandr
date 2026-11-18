@@ -1,7 +1,7 @@
 error[PlaceUnindexed]: an access at a place reads an element at an index; the held value is no list
   ╭▸ corpus/ledger/diagnostics/PlaceUnindexed.gandr:6:3
   │
-4 │ ┌ def unindexed() -> -F Integer =
+4 │ ┌ def unindexed() -> Integer =
 5 │ │   var c = 0
   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 6 │ │   access shared c.#[0] as w { pure w }

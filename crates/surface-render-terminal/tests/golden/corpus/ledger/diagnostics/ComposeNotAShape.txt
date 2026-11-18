@@ -1,29 +1,29 @@
 error[ComposeNotAShape]: `compose` needs a chain within the degree and the bound of its stratum
-   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:28:3
+   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:27:3
    │
-16 │ ┌ def pastBound(
-17 │ │   A : Type,
+15 │ ┌ def pastBound(
+16 │ │   A : Type,
    │ │   ─ checked; while checking the body of this function; binds A : Type
-18 │ │   x : A,
+17 │ │   x : A,
    │ │   ─ checked; while checking the body of this function; binds x : A
-19 │ │   y : A,
+18 │ │   y : A,
    │ │   ─ checked; while checking the body of this function; binds y : A
-20 │ │   z : A,
+19 │ │   z : A,
    │ │   ─ checked; while checking the body of this function; binds z : A
-21 │ │   w : A,
+20 │ │   w : A,
    │ │   ─ checked; while checking the body of this function; binds w : A
-22 │ │   v : A,
+21 │ │   v : A,
    │ │   ─ checked; while checking the body of this function; binds v : A
-23 │ │   p : Path(x, y),
+22 │ │   p : Path(x, y),
    │ │   ─ checked; while checking the body of this function; binds p : Path[.A = A](x, y)
-24 │ │   q : Path(y, z),
+23 │ │   q : Path(y, z),
    │ │   ─ checked against `Path[.A = A](y, z) -> Path[.A = A](z, w) -> Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds q : Path[.A = A](y, z)
-25 │ │   r : Path(z, w),
+24 │ │   r : Path(z, w),
    │ │   ─ checked against `Path[.A = A](z, w) -> Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds r : Path[.A = A](z, w)
-26 │ │   s : Path(w, v)
+25 │ │   s : Path(w, v)
    │ │   ─ checked against `Path[.A = A](w, v) -> -F Path[.A = A](x, v)`; while checking the body of this function; binds s : Path[.A = A](w, v)
-27 │ │ ) -> Path(x, v) =
-28 │ │   compose[5, 7] (chain 4) (p, q, r, s)
+26 │ │ ) -> Path(x, v) =
+27 │ │   compose[5, 7] (chain 4) (p, q, r, s)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│──────────────────────────────────┤
    │     │                                  checked; while checking the body of this thunk
@@ -33,27 +33,27 @@ error[ComposeNotAShape]: `compose` needs a chain within the degree and the bound
    ╰ help: write a stratum of degree at least 2m - 1 and bound at least 2m + 1 for a chain of m cells
 
 error[ComposeNotAShape]: `compose` needs a level-two shape the wreath holds within the degree and the bound of its stratum
-   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:54:3
+   ╭▸ corpus/ledger/diagnostics/ComposeNotAShape.gandr:52:3
    │
-44 │ ┌ def whiskerPastDegree(
-45 │ │   A : Type,
+42 │ ┌ def whiskerPastDegree(
+43 │ │   A : Type,
    │ │   ─ checked; while checking the body of this function; binds A : Type
-46 │ │   x : A,
+44 │ │   x : A,
    │ │   ─ checked; while checking the body of this function; binds x : A
-47 │ │   y : A,
+45 │ │   y : A,
    │ │   ─ checked; while checking the body of this function; binds y : A
-48 │ │   z : A,
+46 │ │   z : A,
    │ │   ─ checked; while checking the body of this function; binds z : A
-49 │ │   fm : Path(x, y),
+47 │ │   fm : Path(x, y),
    │ │   ── checked; while checking the body of this function; binds fm : Path[.A = A](x, y)
-50 │ │   fp : Path(x, y),
+48 │ │   fp : Path(x, y),
    │ │   ── checked; while checking the body of this function; binds fp : Path[.A = A](x, y)
-51 │ │   fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+49 │ │   fa : Path[.A = Path[.A = A](x, y)](fm, fp),
    │ │   ── checked; while checking the body of this function; binds fa : Path[.A = Path[.A = A](x, y)](fm, fp)
-52 │ │   g : Path(y, z)
+50 │ │   g : Path(y, z)
    │ │   ─ checked against `(a : Path[.A = A](y, z)) -> -F Path[.A = Path[.A = A](x, z)](Path.step fm a, Path.step fp a)`; while checking the body of this function; binds g : Path[.A = A](y, z)
-53 │ │ ) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
-54 │ │   compose[3, 9] (chain 2 (1, 0)) (fa, g)
+51 │ │ ) -> Path[.A = Path[.A = A](x, z)](Path.step fm g, Path.step fp g) =
+52 │ │   compose[3, 9] (chain 2 (1, 0)) (fa, g)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│────────────────────────────────────┤
    │     │                                    checked; while checking the body of this thunk

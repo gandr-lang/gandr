@@ -2,7 +2,6 @@
 /// supplied by what names neither a module nor a model implicit.
 ///
 /// A unit: a carrier and a point.
-@[checks]
 theory Pointed where
   sort C : Type;
   oper point : C;
@@ -16,8 +15,7 @@ module Origin : Model(Pointed) where {
 }
 
 /// The point of any pointed model the slot names.
-@[checks]
-def pointOf[s : Model(Pointed)]() -> s.C { s.point }
+def pointOf[s : Model Pointed]() -> s.C = s.point;
 
 @[refuses("ModelImplicitValue")]
-def packed() -> -F Integer { pointOf[.s = pack Origin at Model(Pointed)] () }
+def packed() -> Integer = pointOf[.s = pack Origin at Model Pointed] ();

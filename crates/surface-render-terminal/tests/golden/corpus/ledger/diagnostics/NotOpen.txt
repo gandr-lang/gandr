@@ -1,11 +1,11 @@
 error[NotOpen]: this handle crosses to another world, but the value it holds is not open
-   ╭▸ corpus/ledger/diagnostics/NotOpen.gandr:12:3
+   ╭▸ corpus/ledger/diagnostics/NotOpen.gandr:10:3
    │
-11 │ ┌  def heldThunk() -> -F ((() -> Integer) at seat) =
-12 │ │┏   migrate [seat] {
-13 │ │┃     let later : () -> Integer = thunk { pure 3 };
-14 │ │┃     (hold later)
-15 │ │┃   }
+ 9 │ ┌  def heldThunk() -> -F ((() -> Integer) at seat) =
+10 │ │┏   migrate [seat] {
+11 │ │┃     let later : () -> Integer = thunk { pure 3 };
+12 │ │┃     (hold later)
+13 │ │┃   }
    │ │┃   ╿
    │ └┃───│
    │  ┗━━━checked against `() -> (() -> Integer) at seat`; while checking the body of this thunk

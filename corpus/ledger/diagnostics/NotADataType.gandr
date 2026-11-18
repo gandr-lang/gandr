@@ -4,5 +4,5 @@ data Odd : Integer where
   | Z : Odd
 
 @[refuses("NotADataType")]
-def held(x : Odd) -> -F Integer =
-  return 1
+def held(x : Odd) -> Integer =
+  1

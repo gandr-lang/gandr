@@ -50,7 +50,7 @@ data Either : Type where
 /// Answers `n` whichever side `e` takes. The case reads `Either` through its
 /// constructors, and never the fields it binds.
 @[reads(*{Either, Nat})]
-def side(n : Nat, e : Either) -> -F Nat =
+def side(n : Nat, e : Either) -> Nat =
   match e -> -F Nat where
     | Count(_m) => n
     | Mark(_f) => n
@@ -58,7 +58,7 @@ def side(n : Nat, e : Either) -> -F Nat =
 /// Calls `side` on a flag. It reads its callee and the data
 /// each constructor builds.
 @[reads(*{side, Nat, Flag, Either})]
-def marked() -> -F Nat =
+def marked() -> Nat =
   side (Succ Zero) (Mark On)
 
 /// An integer, which names no item.
@@ -70,5 +70,5 @@ def answer = 42;
 
 /// Returns its parameter. It reads the type `Nat`, and never the bound `x`.
 @[reads(Nat)]
-def closed(x : Nat) -> -F Nat =
-  return x
+def closed(x : Nat) -> Nat =
+  x

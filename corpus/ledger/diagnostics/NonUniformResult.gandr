@@ -2,4 +2,4 @@
 /// of its family.
 @[refuses("NonUniformResult")]
 data Fixed(a : Type) : Type where
-  | Mk : Fixed(Integer)
+  | Mk : Fixed Integer

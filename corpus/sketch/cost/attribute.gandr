@@ -5,7 +5,8 @@
 /// body should change to say what a call costs.
 ///
 /// `@[cost(n)]` charges `n` once for each call, before the body runs. The body
-/// stays as written, and a caller's `measure` clause adds the charge to its own.
+/// stays as written, and a caller's `measure` clause adds the charge
+/// to its own.
 ///
 /// - see: #4569 — the cost sketch, its rulings in the issue body
 /// - see: corpus/sketch/specifications/measures.gandr — sketch 6's `measure` block

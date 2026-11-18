@@ -19,7 +19,7 @@ pub theory Sat where
   /// A set of clauses in conjunctive normal form.
   sort Clauses : Type;
   /// Asks whether a clause set is satisfiable.
-  oper solve : (c : Clauses) --> Outcome(Satisfiable(c));
+  oper solve : (c : Clauses) --> Outcome (Satisfiable c);
 
 /// A SAT query asked as an SMT query: each clause set read as a formula.
 pub def satToSmt : sim(Sat, Smt) = Flow.reduce (fun (c) { Query.sat (Formula.ofClauses c) });

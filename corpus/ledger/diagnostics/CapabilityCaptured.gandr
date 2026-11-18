@@ -26,13 +26,11 @@ module Seat :> *{
   def notes = "notes";
 }
 
-@[checks]
 world operator;
 
-@[checks]
 world seat;
 
 @[refuses("CapabilityCaptured")]
 @[entry(*{operator, seat})]
-def suspended() -> -F (() -> Seat.Report) =
+def suspended() -> () -> Seat.Report =
   pure thunk { migrate [seat] { pure Seat.progress } }

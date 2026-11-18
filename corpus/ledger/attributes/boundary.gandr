@@ -23,7 +23,6 @@ def admitBlock(ss : Signatures, rs : Rows) -> Admission =
   Admitted
 def addRow : Row = Row (Plain U32);
 @[boundary(addRow)]
-@[checks]
 extern "rust" from "adder" as Adder {
   def add(x : u32) -> u32;
 }

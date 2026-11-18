@@ -10,6 +10,4 @@ module MkCounter(S : *{type T, zero : T, next : T -> T}) :> *{
   def step = S.next;
 
 @[refuses("ProjectionFromApplication")]
-def projected : Integer;
-
-def projected = (MkCounter Seed).seed;
+def projected : Integer = (MkCounter Seed).seed;

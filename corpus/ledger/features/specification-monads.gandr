@@ -36,7 +36,6 @@ import "../../model/effects/tree.gandr";
 /// The increment observed: read the counter, store one more, and answer the
 /// unit. A read hands the initial state to what runs after, and a store runs
 /// what follows from the stored value.
-@[checks]
 def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
   handle st : StateLaws with sort S = Integer {
     let n = st.get ();
@@ -70,14 +69,13 @@ def rec wp(
 
 /// The increment's specification: the postcondition at the unit and the
 /// successor of the initial state.
-def incrSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) (s + 1) }
+def incrSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post (*{}) (s + 1);
 
 /// The counter ends at one.
-def isOne(_x : Unit, s : Integer) -> Type { return Path s 1 }
+def isOne(_x : Unit, s : Integer) -> Type = return Path s 1;
 
 /// The increment paired with evidence that its transformer is below its
 /// specification at `isOne`.
-@[checks]
 def incrSpecified : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (s : Integer, incrSpec(isOne, s)) -> wp(m, isOne, s)
@@ -86,7 +84,6 @@ def incrSpecified : *{
 /// The increment paired with evidence at every postcondition: the
 /// specification's call over the successor computed first and the fold's
 /// over the successor held read as one call.
-@[checks]
 def incrSpecifiedEverywhere : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, incrSpec(post, s)) -> wp(m, post, s)
@@ -94,11 +91,10 @@ def incrSpecifiedEverywhere : *{
 
 /// The return specification: the postcondition at the unit and the initial
 /// state.
-def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type { post (*{}) s }
+def retSpec(post : (Unit, Integer) -> Type, s : Integer) -> Type = post (*{}) s;
 
 /// The stopped program paired with evidence below the return specification
 /// at every postcondition.
-@[checks]
 def doneSpecified : *{
   m : Prog (Either StateOp Void) Unit,
   meets : (post : (Unit, Integer) -> Type, s : Integer, retSpec(post, s)) -> wp(m, post, s)

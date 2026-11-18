@@ -2,13 +2,11 @@
 /// data family declares.
 ///
 /// A colour.
-@[checks]
 data Color : Type where
   | Red : Color
   | Green : Color
 
 /// A traffic light's lamp.
-@[checks]
 data Light : Type where
   | Red : Light
   | Amber : Light

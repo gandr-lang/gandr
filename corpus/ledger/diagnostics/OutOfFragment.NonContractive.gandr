@@ -2,6 +2,6 @@
 /// `mu` whose body is a `mu` or a recursion variable, so the protocol recurses
 /// before any action.
 @[refuses("OutOfFragment.NonContractive")]
-def recursion_before_any_action() -> -F Unit =
+def recursion_before_any_action() -> Unit =
   let desk = fork (seat : mu turn. turn) { close seat };
   close desk

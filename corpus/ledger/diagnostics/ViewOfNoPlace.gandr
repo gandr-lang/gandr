@@ -5,10 +5,10 @@ module Sized where {
   /// The width, read from an integer lent for reading: a method
   /// answering no place.
   @[checks]
-  def size(self : shared Integer) -> -F Integer { pure 2 }
+  def size(self : shared Integer) -> Integer = pure 2;
 }
 
 @[refuses("ViewOfNoPlace")]
-def sized() -> -F Integer =
+def sized() -> Integer =
   var n = 3
   (n.size ()) as w { pure w }

@@ -17,7 +17,8 @@ import std.foreign.rust (Rust);
 // The shared specification monad and the place theory folds land in.
 import std.foreign.spec (Spec, Places);
 
-/// THIR's datatype at the crate's pinned toolchain, which the provider answers whole.
+/// THIR's datatype at the crate's pinned toolchain, which the
+/// provider answers whole.
 type Thir = ~rust.thir(crate = "corten", toolchain = "nightly-2026-10-01");
 
 /// The buddy allocator's `pop`, its body a THIR value.

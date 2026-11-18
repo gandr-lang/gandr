@@ -1,8 +1,8 @@
 error[Unlocated]: this stands at the host's own world, where no handle is made or opened: state the declaration's world with `@[ entry(w) ]`
-   ╭▸ corpus/ledger/diagnostics/Unlocated.gandr:36:4
+   ╭▸ corpus/ledger/diagnostics/Unlocated.gandr:34:4
    │
-35 │ ┌ def unplaced() -> -F (Seat.Report at seat) =
-36 │ │   (hold Seat.progress)
+33 │ ┌ def unplaced() -> -F (Seat.Report at seat) =
+34 │ │   (hold Seat.progress)
    │ └────┯━━━━━━━━━━━━━━━━━┘ checked against `() -> Seat.Report at seat`; while checking the body of this thunk
    │      │
    │      a handle made or opened at the host's own world

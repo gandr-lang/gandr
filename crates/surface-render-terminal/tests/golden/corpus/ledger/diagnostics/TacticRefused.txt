@@ -1,8 +1,8 @@
 error[TacticRefused]: the tactic `assumption` reaches a goal whose type no binder in scope has
   ╭▸ corpus/ledger/diagnostics/TacticRefused.gandr:5:33
   │
-5 │ def none(u : Unit) -> Integer { ~assumption }
-  │ ┬────────┬──────────────────────┯━━━━━━━━━━──
+5 │ def none(u : Unit) -> Integer = ~assumption;
+  │ ┬────────┬──────────────────────┯━━━━━━━━━━─
   │ │        │                      │
   │ │        │                      a splice its tactic does not answer
   │ │        checked against `Unit -> -F Integer`; while checking the body of this function; binds u : Unit

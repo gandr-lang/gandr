@@ -74,11 +74,11 @@ theory LetOverlap where
 /// ζ's right side is the instantiation of `t`, which the presentation keeps
 /// as an `Inst` node.
 @[runs("1")]
-def instantiates() -> Integer { match Let {
+def instantiates() -> Integer = match Let {
   | Presents(sorts, opers, rules) => match rules where
     | Rule(name, left, right, rest) => match right where
       | Inst(variable, arguments) => 1
       | _ => 0
     | _ => 0
   | _ => 0
-} }
+};

@@ -18,8 +18,8 @@ import std.quantum (Amplitude, omega, sqrtHalf, times);
 
 /// `ω · ω = i`, at the scale zero.
 @[runs("Amp 0 0 1 0 Whole")]
-def phase() -> Amplitude { times omega omega }
+def phase() -> Amplitude = times omega omega;
 
 /// `(1/√2) · (1/√2) = 1/2`, at the scale one.
 @[runs("Amp 1 0 0 0 (Halved Whole)")]
-def half() -> Amplitude { times sqrtHalf sqrtHalf }
+def half() -> Amplitude = times sqrtHalf sqrtHalf;

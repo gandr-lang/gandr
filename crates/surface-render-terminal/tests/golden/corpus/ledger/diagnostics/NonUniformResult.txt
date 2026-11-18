@@ -1,8 +1,8 @@
 error[NonUniformResult]: this generator's result does not apply its family to the family's parameters, then one term for each index
   ╭▸ corpus/ledger/diagnostics/NonUniformResult.gandr:5:10
   │
-5 │   | Mk : Fixed(Integer)
-  │          ━━━━━━━━━━━━━━ a result off the family's parameters
+5 │   | Mk : Fixed Integer
+  │          ━━━━━━━━━━━━━ a result off the family's parameters
   │
   ├ note: `Fixed` is refused with NonUniformResult, as its expectation states
   ╰ help: declare each parameter a generator instantiates as an index, as in `data Fixed : (a : Type, n : Nat) --> Type[+, 1]`

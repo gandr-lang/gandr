@@ -1,7 +1,8 @@
 /// A two-list queue pays for each reversal from what its pushes saved.
 ///
 /// A push costs one step and saves one more, so its savings pay for the
-/// reversal a pop meets. Each operation then costs a constant, amortised over the run.
+/// reversal a pop meets. Each operation then costs a constant, amortised
+/// over the run.
 ///
 /// `measure { potential Φ }` states a potential over the state. A step's own
 /// cost and the new potential stay within the old potential and the bound.

@@ -16,7 +16,7 @@ import std.async (Await, Poll, Ready, Pending, await);
 
 /// A socket read as readiness: nothing runs until an executor polls it.
 def readiness(socket : Socket, buffer : Bytes) -> Poll Nat =
-  &{ .poll => socket.tryRead buffer }
+  &{.poll => socket.tryRead buffer}
 
 /// A file read as completion: the kernel starts it at once, and the reader
 /// awaits its answer.

@@ -2,7 +2,6 @@
 /// a term relating the results of a many-out operation.
 ///
 /// The theory the model derives from.
-@[checks]
 theory T where
   sort Nat : Type;
   oper pair : (a : Nat, b : Nat) --> (c : Nat, d : Nat);

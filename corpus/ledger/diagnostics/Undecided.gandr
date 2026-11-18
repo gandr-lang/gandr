@@ -5,20 +5,16 @@ theory Magma where
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
 
-@[checks]
-def keep(e : +{Unit}) -> -F +{Unit} =
+def keep(e : +{Unit}) -> +{Unit} =
   e
 
-@[checks]
 def flag() -> &{get : -F Bool} =
   &{.get => true}
 
-@[checks]
 def observed(m : +U &{get : -F Bool}) -> Bool =
   m.get
 
-@[checks]
-def measured(b : Bool) -> -F Bool =
+def measured(b : Bool) -> Bool =
   if observed flag {
     match b where
       | true => +{.1 = *{}}

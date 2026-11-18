@@ -30,19 +30,16 @@ import "../../model/identity/circle-base.gandr";
 import "../../model/identity/circle.gandr";
 
 /// Transport forward along a path between types, the map `idtoequiv` packages.
-@[checks]
 def fwdAlong(a : Type, b : Type, p : Path[.A = Type](a, b), x : a) -> b =
   Path.walk (fun (X) { X }) p x
 
 /// Transport back along a path between types: the map the round trips are
 /// stated over.
-@[checks]
 def bwdAlong(a : Type, b : Type, p : Path[.A = Type](a, b), y : b) -> a =
   Path.walk (fun (X) { X }) (Path.back p) y
 
 /// The transport back written out in a record's field converts, under the
 /// field's binder, with the same transport in the law's type.
-@[checks]
 def oneBack(a : Type, b : Type, p : Path[.A = Type](a, b)) -> *{
   g : b -> a,
   law : (z : b) -> Path[.A = a](g z, Path.walk (fun (X) { X }) (Path.back p) z)
@@ -54,7 +51,6 @@ def oneBack(a : Type, b : Type, p : Path[.A = Type](a, b)) -> *{
 
 /// Back after forward is the identity, by `J` on the path: at reflexivity
 /// both transports compute away.
-@[checks]
 def sectAlong(a : Type, b : Type, p : Path[.A = Type](a, b), x : a) -> Path[.A = a](
   bwdAlong a b p (fwdAlong a b p x),
   x
@@ -70,7 +66,6 @@ def sectAlong(a : Type, b : Type, p : Path[.A = Type](a, b), x : a) -> Path[.A =
     (Path.here x)
 
 /// Forward after back is the identity at every point, by `J` on the path.
-@[checks]
 def retrAll(a : Type, b : Type, p : Path[.A = Type](a, b)) -> (w : b) -> Path[.A = b](
   fwdAlong a b p (bwdAlong a b p w),
   w
@@ -86,7 +81,6 @@ def retrAll(a : Type, b : Type, p : Path[.A = Type](a, b)) -> (w : b) -> Path[.A
     (fun (w) { Path.here w })
 
 /// Forward after back is the identity at `y`.
-@[checks]
 def retrAlong(a : Type, b : Type, p : Path[.A = Type](a, b), y : b) -> Path[.A = b](
   fwdAlong a b p (bwdAlong a b p y),
   y
@@ -98,7 +92,6 @@ def retrAlong(a : Type, b : Type, p : Path[.A = Type](a, b), y : b) -> Path[.A =
 /// `idtoeqv`, cubical's `pathToEquiv`. Both inverses are the transport
 /// written out, which converts under its field's binder with the named map
 /// its law is stated over, and `univalence`'s laws replay over them.
-@[checks]
 def idtoequiv(a : Type, b : Type, p : Path[.A = Type](a, b)) -> a ≃ b =
   *{
     fun (x) { fwdAlong a b p x },
@@ -116,7 +109,6 @@ def idtoequiv(a : Type, b : Type, p : Path[.A = Type](a, b)) -> a ≃ b =
 
 /// A record written out at two variables is a path between them: the record
 /// checks against `a ≃ b`, its laws the evidence.
-@[checks]
 def uaLiteral(
   a : Type,
   b : Type,
@@ -130,13 +122,11 @@ def uaLiteral(
 
 /// The loops at the point are the integers, as types: `winding`'s laws admit
 /// the path between a path type and a presented type.
-@[checks]
 def loopsAreIntegers : Path[.A = Type](Path[.A = Circle](Base, Base), Int) = ua winding;
 
 /// The same path ascribed a type whose right end is left as a wildcard:
 /// `ua(winding)` forces that end to the integers, so the elaborator reads the
 /// equivalence's codomain off the path it makes.
-@[checks]
 def loopsAreTheirWinding : Path[.A = Type](
   Path[.A = Circle](Base, Base),
   Int
@@ -148,7 +138,6 @@ def loopsAreTheirWinding : Path[.A = Type](
 /// Transport along `ua` applies the record's map, by conversion: cubical's
 /// `uaβ`, at two variables, the record written out and checked against the
 /// path `fwdAlong` takes.
-@[checks]
 def uaBeta(
   a : Type,
   b : Type,
@@ -164,11 +153,10 @@ def uaBeta(
 /// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
 /// the record's map at it. The record's laws are carried, never run.
 @[runs("S Z")]
-def uaBetaRun() -> Int { Path.walk (fun (X) { X }) (ua winding) (loop) }
+def uaBetaRun() -> Int = Path.walk (fun (X) { X }) (ua winding) (loop);
 
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.
-@[checks]
 def windingBeta(x : Path[.A = Circle](Base, Base)) -> Path[.A = Int](
   Path.walk (fun (X) { X }) loopsAreIntegers x,
   wind x
@@ -177,4 +165,4 @@ def windingBeta(x : Path[.A = Circle](Base, Base)) -> Path[.A = Int](
 
 /// A loop carried to the integers runs to its winding number.
 @[runs("S Z")]
-def windingRun() -> Int { Path.walk (fun (X) { X }) loopsAreIntegers (loop) }
+def windingRun() -> Int = Path.walk (fun (X) { X }) loopsAreIntegers (loop);

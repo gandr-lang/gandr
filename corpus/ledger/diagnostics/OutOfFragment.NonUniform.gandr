@@ -3,13 +3,12 @@
 /// stands, something other than that parameter.
 ///
 /// The naturals.
-@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat
 
 @[refuses("OutOfFragment.NonUniform")]
-def rec shadowed(n : Nat, m : Nat) -> -F Nat =
+def rec shadowed(n : Nat, m : Nat) -> Nat =
   match m where
     | Zero => return n
     | Succ(n) => shadowed[<] n n

@@ -2,7 +2,8 @@
 /// states its signature.
 ///
 /// A nested type's tail holds pairs of its elements, so each recursive call
-/// runs at a larger type. The checker decides such a call against a stated type,
+/// runs at a larger type. The checker decides such a call against
+/// a stated type,
 /// and no algorithm infers that type.
 ///
 /// The writer states the signature. The recursive call then checks at the

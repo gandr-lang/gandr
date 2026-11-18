@@ -20,9 +20,7 @@
 import std.quantum (Qubit);
 
 /// The identity gate takes its qubit once and returns it.
-@[checks]
 def gate(q : Qubit) ⊸ Qubit = q;
 
 /// A gate applied to the qubit that a gate gives.
-@[checks]
 def twice(q : Qubit) ⊸ Qubit = gate (gate (q));

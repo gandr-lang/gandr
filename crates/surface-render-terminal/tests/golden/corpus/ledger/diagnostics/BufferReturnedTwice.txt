@@ -1,7 +1,7 @@
 error[BufferReturnedTwice]: the buffer is handed back a second time
    ╭▸ corpus/ledger/diagnostics/BufferReturnedTwice.gandr:12:12
    │
- 8 │ ┌  def freedTwice() -> -F Unit =
+ 8 │ ┌  def freedTwice() -> Unit =
  9 │ │┌   handle r : std.io.Ring.Eff {
 10 │ ││     let b = r.alloc 4096;
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf

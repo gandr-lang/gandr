@@ -1,4 +1,3 @@
 /// `binary_expression.and`: a conjunction.
-@[checks]
-def both() -> -F Bool =
-  return true && false
+def both() -> Bool =
+  true && false

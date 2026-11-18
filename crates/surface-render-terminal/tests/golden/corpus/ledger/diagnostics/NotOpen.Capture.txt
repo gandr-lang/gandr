@@ -1,12 +1,12 @@
 error[NotOpen.Capture]: a thunk crossing to another world captures this, but its type is not open
-   ╭▸ corpus/ledger/diagnostics/NotOpen.Capture.gandr:24:23
+   ╭▸ corpus/ledger/diagnostics/NotOpen.Capture.gandr:22:23
    │
-21 │ ┌  def pointing() -> () -> (Seat.Dispatch at seat) =
-22 │ │┌   migrate [seat] {
-23 │ ││     var held : Seat.Dispatch at seat = Seat.task;
-24 │ ││     pure thunk { pure held }
+19 │ ┌  def pointing() -> () -> (Seat.Dispatch at seat) =
+20 │ │┌   migrate [seat] {
+21 │ ││     var held : Seat.Dispatch at seat = Seat.task;
+22 │ ││     pure thunk { pure held }
    │ ││                       ━━━━ a capture whose type holds a former that is not open: found `Seat.Dispatch`
-25 │ ││   }
+23 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked against `() -> (() -> Seat.Dispatch at seat)`; while checking the body of this thunk
