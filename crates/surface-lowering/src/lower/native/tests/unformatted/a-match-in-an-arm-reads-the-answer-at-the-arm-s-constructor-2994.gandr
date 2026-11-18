@@ -1,0 +1,3 @@
+{NAT}def inner(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ | Zero => return Path.here Zero | Succ(m) => match m {{ | Zero => return Path.here (Succ Zero) | Succ(k) => return Path.here (Succ (Succ k)) }} }} }}
+def named(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ | Zero => return Path.here Zero | Succ(m) => match m {{ | Zero => return Path.here n | Succ(k) => return Path.here n }} }} }}
+def deep(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ | Zero => return Path.here Zero | Succ(m) => match m {{ | Zero => return Path.here (Succ Zero) | Succ(k) => match k {{ | Zero => return Path.here (Succ (Succ Zero)) | Succ(j) => return Path.here (Succ (Succ (Succ j))) }} }} }} }}

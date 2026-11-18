@@ -1,0 +1,2 @@
+codata Trio : Type[-] where { a : Integer; b : Integer; c : Integer; }
+def short(n : Integer) -> Trio { &{.a => return n, .b => return n} }

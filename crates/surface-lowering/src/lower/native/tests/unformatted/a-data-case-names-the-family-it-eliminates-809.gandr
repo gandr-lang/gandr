@@ -1,0 +1,3 @@
+{MAYBE}data Inner : Type where {{ | No : Inner | Yes : (n : Integer) --> Inner }}
+def depth(m : Maybe(Inner)) -> -F Integer {{ match m {{ | Some(Yes(n)) => return n | Some(No) => return 0 | None => return 1 }} }}
+def nested(m : Maybe(Inner)) -> -F Integer {{ match m {{ | None => return 1 | Some(i) => match i {{ | No => return 0 | Yes(n) => return n }} }} }}

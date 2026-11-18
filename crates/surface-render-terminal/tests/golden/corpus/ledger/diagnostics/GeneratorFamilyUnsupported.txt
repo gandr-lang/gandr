@@ -1,0 +1,26 @@
+error[GeneratorFamilyUnsupported]: `fill` lifts its generator along paths only
+   ╭▸ corpus/ledger/diagnostics/GeneratorFamilyUnsupported.gandr:34:3
+   │
+26 │ ┌ def alongFlow(
+27 │ │   A : Type,
+   │ │   ─ checked; while checking the body of this function; binds A : Type
+28 │ │   x : A,
+   │ │   ─ checked; while checking the body of this function; binds x : A
+29 │ │   y : A,
+   │ │   ─ checked; while checking the body of this function; binds y : A
+30 │ │   fm : Path(x, y),
+   │ │   ── checked; while checking the body of this function; binds fm : Path[.A = A](x, y)
+31 │ │   fp : Path(x, y),
+   │ │   ── checked; while checking the body of this function; binds fp : Path[.A = A](x, y)
+32 │ │   fa : Flow[.A = Path(x, y)](fm, fp)
+   │ │   ── checked against `Flow[.A = Path[.A = A](x, y)](fm, fp) -> -F Path[.A = Path[.A = A](x, y)](fm, fp)`; while checking the body of this function; binds fa : Flow[.A = Path[.A = A](x, y)](fm, fp)
+33 │ │ ) -> Path[.A = Path[.A = A](x, y)](fm, fp) =
+34 │ │   fill[1, 3] (chain 1) (selfLoop A x y) fa
+   │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┬│
+   │ └───│─────────────────────────────────────│┤
+   │     │                                     │checked; while checking the body of this thunk
+   │     │                                     a cell of a family with no filler yet
+   │     a fill along a family with no filler yet
+   │
+   ├ note: `alongFlow` is refused with GeneratorFamilyUnsupported, as its expectation states
+   ╰ note: tracked by #4093 <https://github.com/gandr-lang/gandr/issues/4093>

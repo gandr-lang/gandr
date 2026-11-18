@@ -1,0 +1,4 @@
+def quit(p : Cap {exit}) -> Integer {
+  p.exit 1 ;
+  pure 0
+}

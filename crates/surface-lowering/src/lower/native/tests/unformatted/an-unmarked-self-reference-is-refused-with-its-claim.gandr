@@ -1,0 +1,2 @@
+{NAT}def rec bare(n : Nat) -> -F Nat {{ match n {{ | Zero => return n | Succ(p) => become bare p }} }}
+def rec shadow(shadow : Nat) -> -F Nat {{ return shadow }}

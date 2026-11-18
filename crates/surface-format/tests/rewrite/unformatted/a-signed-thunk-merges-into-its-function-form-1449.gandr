@@ -1,0 +1,24 @@
+def twice(n : Integer) -> -F Integer { return (n + n) }
+
+/// Becomes a call.
+@[ runs("2") ]
+def becomes : +U (-F Integer) ;
+def becomes = thunk { become twice 1 } ;
+
+def block : () -> Integer ;
+def block = thunk { let m = twice 1 ; return m } ;
+
+def pair : () -> Integer * Integer ;
+def pair = thunk { return *{1, 2} } ;
+
+def commented : () -> Integer ;
+def commented = thunk {
+  // keeper
+  become twice 2
+} ;
+
+def graded : +U[1] (-F Integer) ;
+def graded = thunk[1] { become twice 3 } ;
+
+def value : Integer ;
+def value = 3 ;

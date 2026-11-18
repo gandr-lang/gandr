@@ -1,0 +1,12 @@
+def movedNamed{telescope} -> P(y) {{
+  Path.walk P p v
+}}
+def movedLambda{telescope} -> P(y) {{
+  Path.walk (fun (a) {{ P a }}) p v
+}}
+def statedNamed{telescope} -> Path[.A = P(y)](Path.walk P p v, Path.walk P p v) {{
+  Path.here (Path.walk P p v)
+}}
+def movedLate(A : Type, x : A, y : A, p : Path[.A = A](x, y), P : A -> Type, v : P(x)) -> P(y) {{
+  Path.walk (fun (a) {{ P a }}) p v
+}}
