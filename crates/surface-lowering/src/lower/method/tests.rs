@@ -473,3 +473,57 @@ fn a_view_block_after_no_place_is_refused()
         );
     }
 }
+
+#[test]
+fn a_qualified_call_is_the_dot_call_at_every_mode_7974()
+{
+    let source = format!(
+        include_str!("tests/unformatted/a-qualified-call-is-the-dot-call-at-every-mode-7974.gandr"),
+        COUNTER = COUNTER
+    );
+    let mut arena = CoreArena::new();
+    let source = listing(source.as_str());
+    let module = listed(&source, &mut arena);
+    let read = Vec::from([
+        "hold",
+        "access shared @0",
+        "access shared @0[%0]",
+        "read @0",
+    ]);
+    for (name, lent) in [
+        (
+            "counted",
+            Vec::from([
+                "hold",
+                "access shared @0",
+                "access @0",
+                "resume @0",
+                "consume @0",
+            ]),
+        ),
+        ("head", read.clone()),
+        ("nested", read),
+        (
+            "raised",
+            Vec::from(["hold", "access shared @0", "access @0[%0]", "resume @0"]),
+        ),
+    ] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            forms(&arena, tail),
+            lent,
+            "`{name}` lends its receiver as the dot call of the same method does"
+        );
+    }
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("unheld")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Held,
+                ..
+            }
+        ),
+        "a place of a list no var holds has nothing to lend: {:?}",
+        refusal_of(&module, SurfaceName::from("unheld"))
+    );
+}

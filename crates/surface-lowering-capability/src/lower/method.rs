@@ -27,6 +27,12 @@
 //! arguments read where the call stands, under the view or the taken value
 //! the form binds.
 //!
+//! A qualified call `M.f(s, a)` writes the method's whole path as its head,
+//! `A.B.f` for a nested module. It is the same call as `s.f(a)`: its first
+//! argument is the receiver, and each mode lowers as the table states. So a
+//! call through the module's path never applies the method's lowered function
+//! to its receiver as a plain value.
+//!
 //! # A written-through body returns what it wrote
 //!
 //! A method whose receiver is written through holds the receiver over its
@@ -168,6 +174,133 @@ quenchant_shape::reason_enum! {
             Unheld,
         }
     }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a method head's target writes no module path.
+    pub mod unpathed {
+        /// The target is no chain of names.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The target, or a link of its chain, is a form other than a name
+            /// or a projection of a name.
+            Unnamed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a method call's receiver answers no value by its name.
+    pub mod unreceived {
+        /// The receiver is no name that answers a value.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The receiver is a form other than a bare name.
+            Unnamed,
+            /// The name answers no binder and no declaration, as a module's
+            /// name does.
+            Unresolved,
+        }
+    }
+}
+
+/// A method that a module in scope declares, as [`Capability::methods_named`]
+/// finds it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Candidate<'source>
+{
+    /// The method's slot.
+    slot: SlotIndex,
+    /// The method's receiver mode.
+    mode: ReceiverMode,
+    /// The name of the innermost module that declares the method.
+    module: SurfaceName<'source>,
+    /// The method's whole path: each module's name, then the method's own.
+    path: NamePath,
+}
+
+/// The link a selection or a type path writes: `s.f`, `M.f` or `A.B.f`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Link
+{
+    /// The operand the link selects from.
+    operand: Placed,
+    /// The names after the operand's dot, each with its tile's label, in
+    /// written order: each module's, then the selected one's.
+    names: Vec<(Placed, TileName)>,
+    /// How many of the form's pieces the link takes. A type path's argument
+    /// list starts there.
+    read: usize,
+}
+
+/// The link `pieces` write: an operand, a dot, then names joined by dots.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the operand, each name with its label and the count of pieces
+///   read, for pieces that open with an operand and a dot and then write a
+///   name, an identifier, a type variable or a type identifier, after each dot;
+///   nothing for any other pieces.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a selection, a type path through one module and one
+///   through two.
+/// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
+///
+/// # Cost
+/// - allocation: the names, growth within the link's dots
+fn link(pieces: &[Piece]) -> Maybe<Link, unpathed::Absent>
+{
+    let (
+        Some(&Piece::Operand(operand)),
+        Some(&Piece::Tile {
+            label: TileName::DOT,
+            ..
+        }),
+    ) = (pieces.first(), pieces.get(1))
+    else {
+        return Maybe::Absent(unpathed::Absent::Unnamed);
+    };
+    let mut names = Vec::new();
+    let mut read = 2_usize;
+    loop {
+        let Some(&Piece::Tile { label, at }) = pieces.get(read)
+        else {
+            return Maybe::Absent(unpathed::Absent::Unnamed);
+        };
+        if ![
+            TileName::IDENTIFIER,
+            TileName::TYPE_VARIABLE,
+            TileName::TYPE_IDENTIFIER,
+        ]
+        .contains(&label)
+        {
+            return Maybe::Absent(unpathed::Absent::Unnamed);
+        }
+        names.push((at, label));
+        read = read.saturating_add(1);
+        let Some(&Piece::Tile {
+            label: TileName::DOT,
+            ..
+        }) = pieces.get(read)
+        else {
+            break;
+        };
+        read = read.saturating_add(1);
+    }
+    Maybe::Present(Link {
+        operand,
+        names,
+        read,
+    })
 }
 
 impl<'run, 'source: 'run, F: Families<'run, 'source>> CapabilityRef<'_, F>
@@ -473,7 +606,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a block after a call of a method answering a place,
-    ///   and after one of a method that reads its receiver.
+    ///   in either spelling, and after one of a method that reads its receiver.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_after_no_place_is_refused`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Method(_))))]
@@ -490,13 +623,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         else {
             return Err(refused);
         };
-        let Some((_, Former::Call)) = self.cx().form_at(call)?
-        else {
-            return Err(refused);
-        };
+        // A call's pieces are its head and its list. A type path that writes
+        // its own list, `M.f(s)`, is the head alone.
         let mut called = Pieces::new();
-        read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut called)?;
-        let head = Cursor::new(&called.pieces, call.span);
+        let whole = [Piece::Operand(call)];
+        let head = match self.cx().form_at(call)? {
+            Some((_, Former::Call)) => {
+                read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut called)?;
+                Cursor::new(&called.pieces, call.span)
+            },
+            Some((_, Former::TypePath)) => Cursor::new(&whole, call.span),
+            Some(_) | None => return Err(refused),
+        };
         match self.method_at(site, &head, Some((call.node, &mut cursor)))? {
             Planned(true) => Ok(()),
             Planned(false) => Err(refused),
@@ -515,7 +653,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   answers and whose `f` one module in scope declares as a method stands
     ///   as a computation, planned as the call its receiver mode makes of a
     ///   receiver held in a slot, or of one passed as a value, as the module
-    ///   documentation tabulates; each argument reads as a value under the
+    ///   documentation tabulates; a head `M.f`, or `A.B.f`, whose `M` answers
+    ///   no value and whose whole path names a method a module in scope
+    ///   declares, is planned the same, its first argument the receiver and the
+    ///   rest the method's arguments; each argument reads as a value under the
     ///   binder that call opens, and a view block's body under its view's
     ///   linear binder over the index's; any other call is left unplanned.
     /// - fails: [`LoweringRefusal::AmbiguousMethod`] at `f` for a method more
@@ -537,12 +678,19 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - hypothesis: L3 — a call at each mode, a call on a receiver that is not
     ///   held, an ambiguous method, a forward one and one with an implicit
     ///   telescope; a call of a method answering a place with a block and
-    ///   without one.
+    ///   without one; a qualified call at each mode, on a held receiver and on
+    ///   one no hold holds, with a block and without one.
     /// - witness: `gandr-surface-lowering::lower::method::tests::each_mode_lowers_to_its_access`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_receiver_not_held_is_passed_or_refused`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_receiver_is_a_typed_first_self`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
+    ///
+    /// # Cost
+    /// - allocation: the head's path and the candidates of its name, growth
+    ///   within the methods of that name; a qualified call's peeked argument
+    ///   list, growth within the call's arguments
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Method(_))))]
     fn method_at(
         &mut self,
@@ -556,27 +704,41 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Projection)) = self.cx().form_at(head)?
+        let Some((_, Former::Projection | Former::TypePath)) = self.cx().form_at(head)?
         else {
             return Ok(Planned(false));
         };
         let mut pieces = Pieces::new();
         read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut pieces)?;
-        let &[
-            Piece::Operand(target),
-            Piece::Tile {
-                label: TileName::DOT,
-                ..
-            },
-            Piece::Tile {
-                label: TileName::IDENTIFIER,
-                at: selected,
-            },
-        ] = pieces.pieces.as_slice()
+        // A selection `s.f` and a type path `M.f` or `A.B.f` name a method the
+        // same way. A type path may write the call's list itself, `M.f(s, a)`;
+        // a selection takes its list from the call.
+        let Maybe::Present(Link {
+            operand: target,
+            names,
+            read,
+        }) = link(&pieces.pieces)
         else {
             return Ok(Planned(false));
         };
-        let Some((_, Former::Name)) = self.cx().form_at(target)?
+        let Some(&(selected, label)) = names.last()
+        else {
+            return Ok(Planned(false));
+        };
+        if label == TileName::TYPE_IDENTIFIER {
+            return Ok(Planned(false));
+        }
+        let own = pieces.pieces.get(read ..).unwrap_or_default();
+        let mut listing = if own.is_empty() {
+            ahead.clone()
+        }
+        else if matches!(ahead.peek(), Maybe::Present(_)) {
+            return Ok(Planned(false));
+        }
+        else {
+            Cursor::new(own, head.span)
+        };
+        let Maybe::Present(path) = self.written_path(target, &names)?
         else {
             return Ok(Planned(false));
         };
@@ -586,29 +748,60 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             return Ok(Planned(false));
         };
         let candidates = self.methods_named(method, here)?;
-        let (slot, mode) = match *candidates.as_slice() {
+        let named = matches!(self.cx().form_at(target)?, Some((_, Former::Name)));
+        if candidates.is_empty()
+            || (!named && !candidates.iter().any(|candidate| candidate.path == path))
+        {
+            return Ok(Planned(false));
+        }
+        let frame = self.host().require(site, Produced::Computation)?;
+        // A head whose target answers a value is the dot call `s.f(a)`, which
+        // reads its receiver off the head. Any other head is the qualified
+        // call `M.f(s, a)` of the one method its whole path names, which reads
+        // its receiver as its first argument.
+        let dotted = self.receiver_resolved(target, frame)?;
+        let matching: Vec<&Candidate<'source>> = match dotted {
+            Maybe::Present(_) => candidates.iter().collect(),
+            Maybe::Absent(_) => candidates
+                .iter()
+                .filter(|candidate| candidate.path == path)
+                .collect(),
+        };
+        let (slot, mode) = match *matching.as_slice() {
             [] => return Ok(Planned(false)),
-            [(slot, mode, _)] => (slot, mode),
-            [(_, _, first), (_, _, second), ref rest @ ..] => {
+            [&Candidate { slot, mode, .. }] => (slot, mode),
+            [first, second, ref rest @ ..] => {
                 return Err(LoweringRefusal::AmbiguousMethod {
                     span: selected.span,
                     method,
-                    first,
-                    second,
+                    first: first.module,
+                    second: second.module,
                     more: CandidateCount::from(rest.len()),
                 });
             },
         };
-        let frame = self.host().require(site, Produced::Computation)?;
+        let (at, resolved, skipped) = match dotted {
+            Maybe::Present(resolved) => (target, Maybe::Present(resolved), 0_usize),
+            Maybe::Absent(_) => {
+                let mut peek = listing.clone();
+                let mut listed: Vec<NodeIndex> = Vec::new();
+                arguments(site, &mut peek, &mut listed)?;
+                if !own.is_empty() && matches!(peek.peek(), Maybe::Present(_)) {
+                    return Ok(Planned(false));
+                }
+                let Some(first) = listed
+                    .first()
+                    .and_then(|&node| self.cx().tree.node(node).map(|held| Placed::of(node, held)))
+                else {
+                    return Ok(Planned(false));
+                };
+                (first, self.receiver_resolved(first, frame)?, 1_usize)
+            },
+        };
         let receiver = Site {
-            at: target,
+            at,
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
-        };
-        let receiver_name = self.cx().name_at(target);
-        let resolved = match self.host().resolve_name(receiver, frame, receiver_name)? {
-            Maybe::Present(resolved) => resolved,
-            Maybe::Absent(_) => return Ok(Planned(false)),
         };
         let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
         else {
@@ -626,14 +819,19 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         }
         self.host().phased(site, slot)?;
         self.host().supplied_or_refused(site, constant)?;
-        self.host().resolved(target.span, resolved);
+        if let Maybe::Present(resolved) = resolved {
+            self.host().resolved(receiver.at.span, resolved);
+        }
         self.host().resolved(selected.span, Resolved::Declaration {
             constant,
             declared: Maybe::Absent(crate::resolve::binder_type::Absent::Untyped),
         });
         let held = match resolved {
-            Resolved::Binder(bound) if self.cx().held.contains(&bound.binder) => Some(bound.index),
-            Resolved::Binder(_) | Resolved::Declaration { .. } => None,
+            Maybe::Present(Resolved::Binder(bound)) if self.cx().held.contains(&bound.binder) => {
+                Some(bound.index)
+            },
+            Maybe::Present(Resolved::Binder(_) | Resolved::Declaration { .. })
+            | Maybe::Absent(_) => None,
         };
         let unwritten = || Maybe::Absent(binder_site::Absent::Unwritten);
         if view.is_some() && mode != ReceiverMode::Deduced {
@@ -701,7 +899,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 )
             },
             (ReceiverMode::Shared | ReceiverMode::Consumed, None) => {
-                self.host().read(target.node, Reading::Value(frame));
+                self.host().read(receiver.at.node, Reading::Value(frame));
                 (Receiving::Passed, frame)
             },
             (ReceiverMode::Exclusive | ReceiverMode::Deduced, None) => {
@@ -709,10 +907,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             },
         };
         let start = self.cx().operands.entries().len();
-        arguments(site, &mut ahead, &mut self.cx_mut().operands)?;
+        arguments(site, &mut listing, &mut self.cx_mut().operands)?;
+        let end = self.cx().operands.entries().len();
         let written = Stretch {
-            start,
-            end: self.cx().operands.entries().len(),
+            start: start.saturating_add(skipped).min(end),
+            end,
         };
         for position in written.start .. written.end {
             if let Some(&argument) = self.cx().operands.entries().get(position) {
@@ -728,7 +927,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 receiving,
                 arguments: kept,
                 head: head.node,
-                receiver: target.node,
+                receiver: receiver.at.node,
             }),
         );
 
@@ -1312,8 +1511,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     }
 
     /// Every method named `method` that a module in scope in the source `here`
-    /// declares: its slot, its receiver mode and its module's name, in
-    /// collection order.
+    /// declares: its slot, its receiver mode, its module's name and its whole
+    /// path, in collection order.
     ///
     /// # Specification
     /// - requires: `here` is a source of the unit.
@@ -1337,12 +1536,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_method_of_a_source_not_imported_is_out_of_scope`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(slot, mode, _)| self.cx().collected.receivers.get(&slot) == Some(&mode))))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|candidate| self.cx().collected.receivers.get(&candidate.slot) == Some(&candidate.mode))))]
     fn methods_named(
         &mut self,
         method: SurfaceName<'source>,
         here: SourceIndex,
-    ) -> Result<Vec<(SlotIndex, ReceiverMode, SurfaceName<'source>)>, LoweringRefusal<'source>>
+    ) -> Result<Vec<Candidate<'source>>, LoweringRefusal<'source>>
     {
         let seen = |collected: &crate::module::Collected<'source>, target: SourceIndex, slot| {
             target == here
@@ -1398,7 +1597,12 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 && self.cx().exported.get(&path) == Some(&slot)
                 && let Some(named) = self.cx().collected.structures.get(usize::from(module))
             {
-                found.push((slot, mode, named.name));
+                found.push(Candidate {
+                    slot,
+                    mode,
+                    module: named.name,
+                    path,
+                });
                 if let Some(source) = declared_in {
                     self.cx_mut().collected.reach_source(here, source);
                 }
@@ -1406,6 +1610,119 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         }
 
         Ok(found)
+    }
+
+    /// The whole path a method head writes, `A.B.f`: the names its target's
+    /// chain writes, then `names`, the head's own after its target.
+    ///
+    /// # Specification
+    /// - requires: `target` is a method head's operand and `names` the names
+    ///   the head writes after it, in written order.
+    /// - ensures: the name at the chain's root, each link's names outward, then
+    ///   `names`; nothing for a chain any other form ends, or one a link of
+    ///   which writes an argument list.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk down the
+    ///   chain runs out of allowance; a form's own refusal where its pieces
+    ///   cannot be read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Termination
+    /// Each turn spends one unit of the allowance and steps to the operand of
+    /// the link it read, strictly deeper in a finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a head on a name, on a module's name and on a nested
+    ///   module's path.
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
+    ///
+    /// # Cost
+    /// - allocation: the path's segments and each link's names, growth within
+    ///   the chain's links
+    fn written_path(
+        &mut self,
+        target: Placed,
+        names: &[(Placed, TileName)],
+    ) -> Result<Maybe<NamePath, unpathed::Absent>, LoweringRefusal<'source>>
+    {
+        let mut segments: Vec<Segment> = names
+            .iter()
+            .rev()
+            .map(|&(name, _)| Segment::from(self.cx().name_at(name).as_ref()))
+            .collect();
+        let mut at = target;
+        loop {
+            self.cx_mut().fuel.spend()?;
+            match self.cx().form_at(at)? {
+                Some((_, Former::Name | Former::TypeHead)) => {
+                    segments.push(Segment::from(self.cx().name_at(at).as_ref()));
+                    break;
+                },
+                Some((_, Former::Projection | Former::TypePath)) => {
+                    let mut pieces = Pieces::new();
+                    read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces)?;
+                    let Maybe::Present(Link {
+                        operand: inner,
+                        names: links,
+                        read,
+                    }) = link(&pieces.pieces)
+                    else {
+                        return Ok(Maybe::Absent(unpathed::Absent::Unnamed));
+                    };
+                    if read != pieces.pieces.len() {
+                        return Ok(Maybe::Absent(unpathed::Absent::Unnamed));
+                    }
+                    for &(name, _) in links.iter().rev() {
+                        segments.push(Segment::from(self.cx().name_at(name).as_ref()));
+                    }
+                    at = inner;
+                },
+                Some(_) | None => return Ok(Maybe::Absent(unpathed::Absent::Unnamed)),
+            }
+        }
+        segments.reverse();
+        Ok(Maybe::Present(NamePath::from(segments)))
+    }
+
+    /// What the receiver `at` of a method call answers by its name at
+    /// `frame`: a binder or a declaration.
+    ///
+    /// # Specification
+    /// - requires: `frame` is the frame the call reads its receiver in.
+    /// - ensures: the binder or the declaration a bare name answers; nothing
+    ///   for another form, or for a name that answers neither, as a module's
+    ///   name does.
+    /// - fails: the name's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held name, a module's name and an application.
+    /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
+    fn receiver_resolved(
+        &mut self,
+        at: Placed,
+        frame: Frame,
+    ) -> Result<Maybe<Resolved, unreceived::Absent>, LoweringRefusal<'source>>
+    {
+        let Some((_, Former::Name)) = self.cx().form_at(at)?
+        else {
+            return Ok(Maybe::Absent(unreceived::Absent::Unnamed));
+        };
+        let site = Site {
+            at,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let name = self.cx().name_at(at);
+        Ok(match self.host().resolve_name(site, frame, name)? {
+            Maybe::Present(resolved) => Maybe::Present(resolved),
+            Maybe::Absent(_) => Maybe::Absent(unreceived::Absent::Unresolved),
+        })
     }
 }
 
