@@ -2285,22 +2285,24 @@ mod tests
             }
         };
         let composite = "Path.step loop (Path.here Base)";
-        let ty = format!("Path[.A = Path[.A = Circle](Base, Base)]({composite}, loop)");
+        let ty = format!("Path[.A = Path[.A = Circle] Base Base] ({composite}) loop");
         let named = at(line.saturating_add("def jo".len()));
         assert!(
             named.starts_with(&fenced(SourceText::from(format!("joined : {ty}").as_str()))),
             "the name prints the type as written: {named}"
         );
+        // The written type breaks the composite across a line, so its head
+        // finds it, and the hover writes the composite's type alone: a hover
+        // writes its subject's text only when that text is one line.
         let stated = written
             .get(line ..)
-            .and_then(|rest| rest.find(composite))
+            .and_then(|rest| rest.find("(Path.step"))
+            .map(|at| at.saturating_add(1))
             .expect("the written type states the composite");
         assert_eq!(
             at(line.saturating_add(stated).saturating_add("Path.s".len())),
-            fenced(SourceText::from(
-                format!("{composite} : -F Path[.A = Circle](Base, Base)").as_str()
-            )),
-            "the written composite prints the same text"
+            fenced(SourceText::from("-F Path[.A = Circle] Base Base")),
+            "the written composite prints its type"
         );
     }
 
@@ -2501,7 +2503,7 @@ mod tests
                 "a declaration written with a dependent record",
                 include_str!("hover/unformatted/each-marked-position-hovers-its-answer-2.gandr"),
                 Ok(fenced(SourceText::from(
-                    "ring : *{n : Integer, v : Path[.A = Integer](n, n)}",
+                    "ring : *{n : Integer, v : Path[.A = Integer] n n}",
                 ))),
             ),
             (
@@ -2625,7 +2627,7 @@ mod tests
             marked(SourceText::from(include_str!(
                 "hover/unformatted/a-lambda-in-a-match-arm-names-its-written-binder-4172.gandr"
             ))),
-            Ok(fenced(SourceText::from("(m : b) -> -F Path[.A = b](m, m)")))
+            Ok(fenced(SourceText::from("(m : b) -> -F Path[.A = b] m m")))
         );
     }
 
@@ -2692,7 +2694,7 @@ mod tests
                 "hover/unformatted/the-parentheses-around-an-inverted-letter-answer-the-cons-pattern-408.gandr"
             ))),
             Ok(fenced(SourceText::from(
-                "back(loop) ∷ q : Path[.A = Circle](Base, Base)"
+                "back(loop) ∷ q : Path[.A = Circle] Base Base"
             )))
         );
     }
@@ -2914,14 +2916,14 @@ mod tests
         assert_eq!(
             shown(text, (7.into(), 7.into())),
             Ok(String::from(
-                "```gandr\nrefl : +U ((a : Integer) -> -F Path[.A = Bool](Host.alike a a, true))\n```"
+                "```gandr\nrefl : +U ((a : Integer) -> -F (Path[.A = Bool] (Host.alike a a) true))\n```"
             )),
             "the admitted law"
         );
         assert_eq!(
             shown(text, (3.into(), 7.into())),
             Ok(String::from(
-                "```gandr\nrefl : +U ((a : Carrier) -> -F Path[.A = Bool](alike a a, true))\n```"
+                "```gandr\nrefl : +U ((a : Carrier) -> -F (Path[.A = Bool] (alike a a) true))\n```"
             )),
             "the theory's law"
         );
