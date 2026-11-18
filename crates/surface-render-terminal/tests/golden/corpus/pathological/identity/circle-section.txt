@@ -15,7 +15,7 @@ error[Undecided]: the checker could not decide what this code unfolds to
    │ ││                                                                     │
    │ └│─────────────────────────────────────────────────────────────────────│
    │  └─────────────────────────────────────────────────────────────────────checked against `(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (spin (wind p)) p`; while checking the body of this function; binds forged : (a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (spin (wind a)) a
-   │                                                                        checked against `-F (Path[.A = Path[.A = Circle] Base Base] (spin (wind p)) p)`; while checking the body of this function; binds q : Path[.A = Circle](Base, Base)
+   │                                                                        checked against `-F (Path[.A = Path[.A = Circle] Base Base] (spin (wind p)) p)`; while checking the body of this function; binds q : Path[.A = Circle] Base Base
    │
    ├ note: `forged` is refused with Undecided, as its expectation states
    ╰ help: write code whose unfolding the checker can decide
