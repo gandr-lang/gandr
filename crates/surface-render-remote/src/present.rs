@@ -341,7 +341,7 @@ pub enum HlRole
 {
     /// A language keyword.
     Keyword,
-    /// An operator, of a term or of a shell redirection.
+    /// An operator of a term.
     Operator,
     /// A defined function name.
     FunctionDef,
@@ -363,7 +363,7 @@ pub enum HlRole
     TypeBuiltin,
     /// A type variable.
     TypeVariable,
-    /// A numeric literal, grades and file descriptors included.
+    /// A numeric literal, grades included.
     Number,
     /// A boolean literal.
     Boolean,

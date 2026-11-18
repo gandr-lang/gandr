@@ -15216,12 +15216,9 @@ mod tests
         );
     }
 
-    /// Two faults each refused where it was written, not at the declaration
-    /// after it (#2082). A closer doubled earlier on its line closes the form
-    /// early, and the closer that ends the line stands alone: the line is
-    /// refused once, at the second of the twins. An attribute block with one
-    /// closer too many is refused at that closer, ahead of the declaration
-    /// it decorates.
+    /// A fault refused where it was written, not at the declaration after it
+    /// (#2082). An attribute block with one closer too many is refused at that
+    /// closer, ahead of the declaration it decorates.
     #[test]
     fn a_fault_before_a_declaration_is_refused_where_it_was_written_2082()
     {
@@ -15245,22 +15242,6 @@ mod tests
                 ByteOffset::from(start.saturating_add(1)),
             )
         };
-
-        let shell = include_str!(
-            "module/unformatted/a-fault-before-a-declaration-is-refused-where-it-was-written-2082-shell.gandr"
-        );
-        let refused = refusals(shell);
-        assert!(
-            matches!(
-                refused.as_slice(),
-                [LoweringRefusal::MalformedForm {
-                    span,
-                    fault: FormFault::ExtraClose(ClosingClass::Brace),
-                    ..
-                }] if *span == second(shell, "}}")
-            ),
-            "the line is refused once, at the second of the twins: {refused:?}"
-        );
 
         let attribute = include_str!(
             "module/unformatted/a-fault-before-a-declaration-is-refused-where-it-was-written-2082-attribute.gandr"

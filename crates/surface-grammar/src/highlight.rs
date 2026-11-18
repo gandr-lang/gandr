@@ -133,7 +133,7 @@ use crate::parity::NamedKind;
 /// The tiles that open a bracket: every tile after one, up to its closer,
 /// stands inside it.
 const OPENERS: &[&str] = &[
-    "#!{", "#[", "${", "&{", "(", "*{", "+{", ".#[", ".#{", ".*{", "@![", "@[", "[", "type(", "{",
+    "#[", "${", "&{", "(", "*{", "+{", ".#[", ".#{", ".*{", "@![", "@[", "[", "type(", "{",
 ];
 
 /// The tiles that close the innermost open bracket.
@@ -1048,18 +1048,7 @@ mod tests
         let closes: &[(&str, &[&str])] = &[
             (")", &["(", "type("]),
             ("]", &["#[", ".#[", "@![", "@[", "["]),
-            ("}", &[
-                "#!{",
-                "${",
-                "&{",
-                "*{",
-                "+{",
-                ".#{",
-                ".*{",
-                "command_substitution_start",
-                "{",
-            ]),
-            ("subshell_close", &["subshell_open"]),
+            ("}", &["${", "&{", "*{", "+{", ".#{", ".*{", "{"]),
         ];
         for ((id, def), occurrence) in pbg.iter_molds().zip(&walk) {
             let at = u32::from(id);

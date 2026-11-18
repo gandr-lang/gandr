@@ -233,7 +233,7 @@ pub enum Kind
     /// A group's closing bracket, seen from after the group, and the
     /// group's padding.
     Close(Padding),
-    /// Material laid down as written: a string, a shell block, a hole.
+    /// Material laid down as written: a string or a hole.
     Material,
     /// A comment.
     Comment,

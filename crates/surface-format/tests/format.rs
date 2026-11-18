@@ -732,16 +732,14 @@ fn a_broken_spine_s_head_breaks_a_bracket_past_the_page_5528()
 }
 
 #[test]
-fn strings_shell_blocks_and_holes_are_copied_as_written()
+fn strings_and_holes_are_copied_as_written()
 {
     let grammar = grammar();
-    let source = include_str!(
-        "format/unformatted/strings-shell-blocks-and-holes-are-copied-as-written.gandr"
-    );
+    let source = include_str!("format/unformatted/strings-and-holes-are-copied-as-written.gandr");
     assert_eq!(
         text(&grammar, source, NARROW),
-        "def s = \"a  ${  b }\tc\";\ndef h = #!{\n    printf 'hi'\n};\ndef k = (?hole);\n",
-        "a string's, a shell block's and a hole's bytes are their own"
+        "def s = \"a  ${  b }\tc\";\ndef k = (?hole);\n",
+        "a string's and a hole's bytes are their own"
     );
 }
 

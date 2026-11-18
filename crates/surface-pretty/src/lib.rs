@@ -208,8 +208,8 @@
 //! - each arm that writes a grammar rule names it, `writes(Production("rule"),
 //!   …)`, and the rules named equal the rules the grammar builds, but for those
 //!   the configuration lists as unproduced, each with its reason: the
-//!   declarations, patterns and shell syntax no core node carries, and the
-//!   sugar the lowering elaborates away.
+//!   declarations and patterns no core node carries, and the sugar the lowering
+//!   elaborates away.
 //!
 //! The marker is read only by the lint; at run time `writes` is the identity.
 //!

@@ -89,7 +89,7 @@
 //!
 //! | The hole follows | Category |
 //! |---|---|
-//! | `{`, `;`, `<-`, `=>`, `become`, `#!{` | `computation` |
+//! | `{`, `;`, `<-`, `=>`, `become` | `computation` |
 //! | any other tile or operator: `return`, `pure`, `=`, `(`, `,`, an operator | `value` |
 //!
 //! Every other sort names itself: `type`, `pattern`, `item`, `member`,
@@ -120,7 +120,7 @@
 //!
 //! A form yields a computation when it opens with `return`, `pure`,
 //! `become`, `match`, `if`, `fun`, `force`, `while`, `for`, `loop`, `break`,
-//! `continue`, a block's `{`, `#!{` or `&`, and a value otherwise. A closing
+//! `continue`, a block's `{` or `&`, and a value otherwise. A closing
 //! that differs from a better candidate only by separators, or holds a `,`
 //! right before a closer, is not offered.
 //!
@@ -306,8 +306,8 @@ impl Category
     ///
     /// # Specification
     /// - ensures: for an expression, [`Category::Computation`] after `{`, `;`,
-    ///   `=>`, `become`, `run` or `#!{`, [`Category::Value`] after any other
-    ///   tile, an unknown mold included; every other sort's own category.
+    ///   `=>`, `become` or `run`, [`Category::Value`] after any other tile, an
+    ///   unknown mold included; every other sort's own category.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -327,7 +327,7 @@ impl Category
             Sort::Expression => {
                 let before = grammar.mold(after).map(|def| def.label);
                 match before {
-                    Ok("{" | ";" | "=>" | "become" | "run" | "#!{") => Self::Computation,
+                    Ok("{" | ";" | "=>" | "become" | "run") => Self::Computation,
                     Ok(_) | Err(_) => Self::Value,
                 }
             },
@@ -345,9 +345,9 @@ impl Category
     /// # Specification
     /// - ensures: for an expression, [`Category::Computation`] for the forms
     ///   `return`, `pure`, `become`, `match`, `if`, `fun`, `force`, `while`,
-    ///   `for`, `loop`, `break`, `continue`, a block `{`, a shell block `#!{`
-    ///   and a lazy record `&` open, [`Category::Value`] for every other; every
-    ///   other sort's own category.
+    ///   `for`, `loop`, `break`, `continue`, a block `{` and a lazy record `&`
+    ///   open, [`Category::Value`] for every other; every other sort's own
+    ///   category.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -365,7 +365,7 @@ impl Category
             (
                 Sort::Expression,
                 "return" | "pure" | "become" | "match" | "if" | "fun" | "force" | "while" | "for"
-                | "loop" | "break" | "continue" | "{" | "#!{" | "&",
+                | "loop" | "break" | "continue" | "{" | "&",
             ) => Self::Computation,
             (Sort::Expression, _) => Self::Value,
             (Sort::Pattern, _) => Self::Pattern,
@@ -1197,15 +1197,7 @@ fn typed(tile: TileLabel) -> Spelled
         | Lexeme::Character
         | Lexeme::Quote
         | Lexeme::StringFragment
-        | Lexeme::ShellStringFragment
         | Lexeme::EscapeSequence
-        | Lexeme::ShellWord
-        | Lexeme::EnvAssign
-        | Lexeme::SingleQuotedContent
-        | Lexeme::VariableName
-        | Lexeme::SubshellOpen
-        | Lexeme::SubshellClose
-        | Lexeme::FileDescriptor
         | Lexeme::ArmBar
         | Lexeme::LayoutOpen
         | Lexeme::LayoutSemi

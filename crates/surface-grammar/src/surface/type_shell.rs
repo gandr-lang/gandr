@@ -1159,10 +1159,10 @@ fn tile(label: TileLabel) -> Regex
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
-///   corpus roles catch changed delimiters, alternatives and sort boundaries.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
+/// - hypothesis: For the built-in type forms, L3 grammar identity and corpus
+///   roles catch changed delimiters, alternatives and sort boundaries. The
+///   predicate observes the stated shape; source programs outside the finite
+///   corpus are not exhausted.
 /// - witness: `surface::type_shell::tests::binary_rules_remain_operators_without_repeat_seams`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
@@ -1191,10 +1191,10 @@ fn binary_infix_rule(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
-///   corpus roles catch changed delimiters, alternatives and sort boundaries.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
+/// - hypothesis: For the built-in type forms, L3 grammar identity and corpus
+///   roles catch changed delimiters, alternatives and sort boundaries. The
+///   predicate observes the stated shape; source programs outside the finite
+///   corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.iter().zip(["number","identifier","ω"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
@@ -1216,10 +1216,10 @@ fn grade_shape() -> Regex
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
-///   corpus roles catch changed delimiters, alternatives and sort boundaries.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted. Arbitrary nullable list elements are not
+/// - hypothesis: For the built-in type forms, L3 grammar identity and corpus
+///   roles catch changed delimiters, alternatives and sort boundaries. The
+///   predicate observes the stated shape; source programs outside the finite
+///   corpus are not exhausted. Arbitrary nullable list elements are not
 ///   exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
@@ -1251,10 +1251,10 @@ fn comma1(item: Regex) -> Regex
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
-///   corpus roles catch changed delimiters, alternatives and sort boundaries.
-///   The predicate observes the stated shape; source programs outside the
-///   finite corpus are not exhausted.
+/// - hypothesis: For the built-in type forms, L3 grammar identity and corpus
+///   roles catch changed delimiters, alternatives and sort boundaries. The
+///   predicate observes the stated shape; source programs outside the finite
+///   corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 #[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")))))))]

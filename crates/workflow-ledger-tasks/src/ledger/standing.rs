@@ -12,22 +12,17 @@
 //! | tileless | the grammar | the form holds no tile, so no tree names the rule |
 //! | shadowed | the grammar | an earlier rule of the same sort reads every reading whole, or opens with it and requires nothing after it, and the molder commits that rule |
 //! | captured | the labeler | the form requires one word, which the labeler also offers as a class a one-tile rule of the same sort reads |
-//! | enclosed | a parser probe | the form is one class tile, and no probe text holding its class's sample molds the rule: alone in a slot of its sort, or enclosed in up to two other rules' holes |
+//! | enclosed | a parser probe | the form is one class tile, and no probe text holding its class's sample molds the rule: alone in a slot of its sort, or enclosed in another rule's hole |
 //!
 //! The probe parses each candidate text and asks whether a tile of the rule is
-//! molded. The class's token and its probe text stand in the sort's slot;
-//! each text of one depth then stands in every hole of its sort in every
-//! other rule's shortest reading, which is the next depth, to
-//! [`PROBE_DEPTH`]. A lexical class is the labeler's mode, and a mode one
-//! rule opens can reach a hole another rule nests inside it, so one depth is
-//! not enough: the shell's variable name is reached only inside a string's
-//! interpolation inside a shell block. A context rule is spelled by its
-//! shortest reading: an option or a repetition holding a hole of the probed
-//! sort is taken once, every other is left out; an alternation takes its
-//! first branch holding such a hole, else its shortest; a class tile is its
-//! class's token from [`SAMPLES`]; another hole is a filler of its sort. A
-//! class the table lacks is a fault, never a skip, so a new class names
-//! itself.
+//! molded. The class's token and its probe text stand in the sort's slot, and
+//! then in every hole of its sort in every other rule's shortest reading. A
+//! context rule is spelled by its shortest reading: an option or a repetition
+//! holding a hole of the probed sort is taken once, every other is left out;
+//! an alternation takes its first branch holding such a hole, else its
+//! shortest; a class tile is its class's token from [`SAMPLES`]; another hole
+//! is a filler of its sort. A class the table lacks is a fault, never a skip,
+//! so a new class names itself.
 //!
 //! - Choice: reasons the grammar and the labeler decide wherever they can; the
 //!   probe only for a lone class tile, whose reachability is the labeler's
@@ -94,24 +89,9 @@ const SAMPLES: &[Sample] = &[
         probe: "C",
     },
     Sample {
-        class: "double_string_fragment",
-        token: "s",
-        probe: "s",
-    },
-    Sample {
-        class: "environment_assignment",
-        token: "A=b",
-        probe: "A=b",
-    },
-    Sample {
         class: "escape_sequence",
         token: "\\n",
         probe: "\"\\n\"",
-    },
-    Sample {
-        class: "file_descriptor",
-        token: "2",
-        probe: "2>&1",
     },
     Sample {
         class: "hole_name",
@@ -127,16 +107,6 @@ const SAMPLES: &[Sample] = &[
         class: "number",
         token: "1",
         probe: "1",
-    },
-    Sample {
-        class: "shell_word",
-        token: "w",
-        probe: "w",
-    },
-    Sample {
-        class: "single_quoted_content",
-        token: "s",
-        probe: "s",
     },
     Sample {
         class: "string_fragment",
@@ -157,11 +127,6 @@ const SAMPLES: &[Sample] = &[
         class: "typed_number",
         token: "1i32",
         probe: "1i32",
-    },
-    Sample {
-        class: "variable_name",
-        token: "HOME",
-        probe: "$HOME",
     },
 ];
 
@@ -562,10 +527,10 @@ fn shadowed(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a shell form whose word reads as an identifier is
-///   captured; the reserved `unit`, whose word the labeler reads as itself, is
-///   not; the path type's head, which the molder reads as the path type, is
-///   not.
+/// - hypothesis: L3 — a lone `negation` word, which the labeler also offers as
+///   an identifier, is captured; the reserved `unit`, whose word the labeler
+///   reads as itself, is not; the path type's head, which the molder reads as
+///   the path type, is not.
 /// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 ///
@@ -639,58 +604,15 @@ fn captured(
     Standing::Committed
 }
 
-/// How many rules deep the probe encloses a class's sample: the rule's own
-/// slot, then one enclosing rule, then two. Two reaches a lexical mode one
-/// rule opens and another reads inside, as the shell block's mode reaches an
-/// interpolation inside a string.
-const PROBE_DEPTH: u8 = 2;
-
-/// Whether the labeler emits a token a class tile can take.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Emits
-{
-    /// Some token of the text is offered the class's label.
-    Class,
-    /// None is.
-    Other,
-}
-
-/// Whether labeling `text` offers some token the label `class`.
-///
-/// # Specification
-/// trivial.
-fn emits(
-    text: SourceFragment<'_>,
-    class: TileLabel,
-) -> Emits
-{
-    let whole = <&str>::from(text);
-    let offered = label(text).iter().any(|token| {
-        let span = usize::try_from(token.start)
-            .ok()
-            .zip(usize::try_from(token.end).ok())
-            .and_then(|(start, end)| whole.get(start .. end));
-        span.is_some_and(|spelled| {
-            candidate_labels(token.lexeme, TokenText::from(spelled))
-                .iter()
-                .any(|&candidate| <&str>::from(candidate) == class.0)
-        })
-    });
-    if offered { Emits::Class } else { Emits::Other }
-}
-
 /// [`Internal::Enclosed`] when `rule` is one class tile no probe molds.
 ///
 /// # Specification
 /// - requires: `rule` is a rule of `pbg`.
 /// - ensures: internal exactly when the form is one class tile and no probe
 ///   text holds a tile molded by the rule. The probe texts are the class's
-///   token and its probe text, each in its sort's slot; then each text of one
-///   depth stands in every hole of its sort in every other rule's shortest
-///   reading, in that rule's slot, to [`PROBE_DEPTH`]. Past the first enclosure
-///   a reading is probed only where the labeler offers the class a token it
-///   does not offer in the enclosed text alone: a deeper rule matters only by
-///   the lexical mode it opens.
+///   token and its probe text, each in its sort's slot; then each of them in
+///   every hole of its sort in every other rule's shortest reading, in that
+///   rule's slot.
 /// - fails: a class a probe spells has no sample.
 /// - panics: none.
 ///
@@ -698,10 +620,8 @@ fn emits(
 /// [`LedgerFault::Sample`] naming the class.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a lone escape sequence is enclosed; the shell variable
-///   name, reached two rules deep inside a string's interpolation inside a
-///   shell block, the shell word, reached through the shell block's hole, and
-///   the identifier, reached alone, are not.
+/// - hypothesis: L3 — a lone escape sequence is enclosed; the identifier,
+///   reached alone, is not.
 /// - witness: `ledger::tests::each_unmoldable_form_has_its_derived_reason`
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
@@ -720,39 +640,31 @@ fn enclosed(
         return Ok(Standing::Committed);
     };
     let sample = sample(TileLabel(class))?;
-    let mut frontier: BTreeSet<(Sort, String)> = [sample.token, sample.probe]
+    let alone: BTreeSet<(Sort, String)> = [sample.token, sample.probe]
         .into_iter()
         .map(|text| (rule.sort, text.to_owned()))
         .collect();
-    for depth in 0 ..= PROBE_DEPTH {
-        for &(sort, ref text) in &frontier {
-            if molds(pbg, rule, SourceText::from(slot(sort, text).as_str())) == Probed::Molded {
-                return Ok(Standing::Committed);
+    for &(sort, ref text) in &alone {
+        if molds(pbg, rule, SourceText::from(slot(sort, text).as_str())) == Probed::Molded {
+            return Ok(Standing::Committed);
+        }
+    }
+    let mut enclosing = BTreeSet::new();
+    for &(sort, ref text) in &alone {
+        for context in pbg.rules() {
+            if context.name == rule.name {
+                continue;
+            }
+            let read = reading(context, sort, SourceFragment::from(text.as_str()))?;
+            if read.holds == Holds::Probe {
+                let _new = enclosing.insert((context.sort, read.text));
             }
         }
-        if depth == PROBE_DEPTH {
-            break;
+    }
+    for &(sort, ref text) in &enclosing {
+        if molds(pbg, rule, SourceText::from(slot(sort, text).as_str())) == Probed::Molded {
+            return Ok(Standing::Committed);
         }
-        let mut enclosing = BTreeSet::new();
-        for &(sort, ref text) in &frontier {
-            let enclosed_alone = emits(SourceFragment::from(text.as_str()), TileLabel(only.label));
-            for context in pbg.rules() {
-                if context.name == rule.name {
-                    continue;
-                }
-                let read = reading(context, sort, SourceFragment::from(text.as_str()))?;
-                let opens_mode = depth == 0
-                    || (enclosed_alone == Emits::Other
-                        && emits(
-                            SourceFragment::from(read.text.as_str()),
-                            TileLabel(only.label),
-                        ) == Emits::Class);
-                if read.holds == Holds::Probe && opens_mode {
-                    let _new = enclosing.insert((context.sort, read.text));
-                }
-            }
-        }
-        frontier = enclosing;
     }
     Ok(Standing::Internal(Internal::Enclosed { class }))
 }
@@ -819,8 +731,9 @@ fn slot(
 /// [`LedgerFault::Sample`] naming the class.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the shell block's reading holds the shell word's sample
-///   and molds it.
+/// - hypothesis: L3 — a context's reading holds the probe in each hole of its
+///   sort, in an option once and in the alternation's branch that holds it, and
+///   holds nothing where no hole is of its sort.
 /// - witness: `ledger::tests::every_internal_rule_has_its_derived_reason`
 /// - witness: `ledger::standing::tests::a_reading_holds_the_probe_where_a_hole_of_its_sort_stands`
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |read| read.holds == Holds::Nothing || read.text.contains(<&str>::from(probe))))]
