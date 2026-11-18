@@ -31,7 +31,6 @@
 //! name until it is fresh against the anchor and the other fresh names, so a
 //! cell already apart comes back unchanged.
 
-use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
@@ -460,7 +459,7 @@ pub struct ToyRef<'term>(&'term [ToyHead]);
 /// A toy position: a path of child indices from the root.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct ToyPos(Box<[PositionStep]>);
+pub struct ToyPos(alloc::sync::Arc<[PositionStep]>);
 
 impl ToyPos
 {
@@ -1254,7 +1253,7 @@ impl CellAlphabet for ToyAlphabet
                 queue.push_back((child_path, child));
                 child = cmd.end_of(child);
             }
-            positions.push(ToyPos(path.into_boxed_slice()));
+            positions.push(ToyPos(path.into()));
         }
         positions
     }

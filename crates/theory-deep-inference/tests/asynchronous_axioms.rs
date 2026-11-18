@@ -422,7 +422,7 @@ fn back_chain(
 fn three_paths(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
-) -> Vec<[CellApp<ToyAlphabet>; 3]>
+) -> Vec<[alloc::sync::Arc<CellApp<ToyAlphabet>>; 3]>
 {
     let mut out = Vec::new();
     for first in edges_at(store, peak) {
@@ -430,13 +430,19 @@ fn three_paths(
         else {
             continue;
         };
+        let first = alloc::sync::Arc::new(first);
         for second in edges_at(store, &after_first) {
             let Maybe::Present(after_second) = fire(store, &after_first, &second)
             else {
                 continue;
             };
+            let second = alloc::sync::Arc::new(second);
             for third in edges_at(store, &after_second) {
-                out.push([first.clone(), second.clone(), third]);
+                out.push([
+                    alloc::sync::Arc::clone(&first),
+                    alloc::sync::Arc::clone(&second),
+                    alloc::sync::Arc::new(third),
+                ]);
             }
         }
     }
@@ -740,8 +746,8 @@ fn the_cube_property_holds_for_every_pair_of_three_paths()
     let mut present = 0_usize;
     for forward in &paths {
         for backward in &paths {
-            let forward_ref = (&forward[0], &forward[1], &forward[2]);
-            let backward_ref = (&backward[0], &backward[1], &backward[2]);
+            let forward_ref = (&*forward[0], &*forward[1], &*forward[2]);
+            let backward_ref = (&*backward[0], &*backward[1], &*backward[2]);
             let front = front_chain(&store, &peak, forward_ref, backward_ref);
             let back = back_chain(&store, &peak, forward_ref, backward_ref);
             let expected = if backward.iter().eq(forward.iter().rev()) {

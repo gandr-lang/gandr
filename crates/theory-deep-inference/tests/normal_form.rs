@@ -144,10 +144,9 @@ fn drop_cell() -> Cell<ToyAlphabet>
 #[spec(ensures: |output| usize::from(ToyAlphabet::cmd_size(&output)) == count.0.max(1).saturating_mul(3).saturating_sub(1))]
 fn spine(count: RedexCount) -> Toy
 {
-    let redex = Toy::succ(Toy::zero());
-    let mut term = redex.clone();
+    let mut term = Toy::succ(Toy::zero());
     for _ in 0_usize .. count.0.saturating_sub(1_usize) {
-        term = Toy::add(redex.clone(), term);
+        term = Toy::add(Toy::succ(Toy::zero()), term);
     }
     term
 }
