@@ -251,6 +251,11 @@ struct Link
 /// - hypothesis: L3 — a selection off a value, off a module and off a nested
 ///   module.
 /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(found) => pieces.len() == 3
+        && (found.label == TileName::IDENTIFIER || found.label == TileName::CONSTRUCTOR),
+    Maybe::Absent(_) => true,
+})]
 fn link(pieces: &[Piece]) -> Maybe<Link, unpathed::Absent>
 {
     let &[
@@ -1570,6 +1575,8 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   chain runs out of allowance; a form's own refusal where its pieces
     ///   cannot be read.
     /// - panics: none.
+    /// - executable: none — the path is the walk down the chain itself, so a
+    ///   predicate would walk the chain again and add nothing the walk lacks.
     ///
     /// # Errors
     /// As `fails`.
@@ -1639,6 +1646,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Adequacy
     /// - hypothesis: L3 — a held name, a module's name and an application.
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || matches!(self.cx().form_at(at), Ok(Some((_, Former::Name)))))]
     fn receiver_resolved(
         &mut self,
         at: Placed,
