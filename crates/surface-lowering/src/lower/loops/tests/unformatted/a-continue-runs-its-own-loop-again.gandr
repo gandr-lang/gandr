@@ -1,0 +1,3 @@
+{PRELUDE}def bound(n : Nat) -> -F [Partial] Nat {{ loop {{ let m = tick n ; continue }} }}
+def armed(n : Nat) -> -F [Partial] Nat {{ loop {{ match n {{ | Zero => continue | Succ(p) => {{ let q = tick p ; continue }} }} }} }}
+def nested(n : Nat) -> -F [Partial] Nat {{ loop {{ let m = loop {{ match n {{ | Zero => continue | Succ(p) => break(p) }} }} ; continue }} }}

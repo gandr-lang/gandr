@@ -1,0 +1,2 @@
+import std.io ;
+pub def say(c : Cap {print}) -> -F [std.io.Console.Eff] Unit { c.print "said" }

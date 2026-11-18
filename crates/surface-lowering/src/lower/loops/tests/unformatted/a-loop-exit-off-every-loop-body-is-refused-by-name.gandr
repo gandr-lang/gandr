@@ -1,0 +1,3 @@
+{PRELUDE}def stray(n : Nat) -> -F Nat {{ break(n) }}
+def skip(n : Nat) -> -F Nat {{ continue }}
+def held(n : Nat) -> -F [Partial] Nat {{ loop {{ let t = thunk {{ break(Zero) }} ; continue }} }}

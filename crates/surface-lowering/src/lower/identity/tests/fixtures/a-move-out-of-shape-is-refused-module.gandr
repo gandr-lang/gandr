@@ -1,0 +1,7 @@
+def skipped = recorded (skipped 1);
+def bare = recorded sent;
+def twice = recorded (sent 1 2);
+def called = recorded (selected (f 1));
+def named(receipt : Integer) -> -F Integer {
+  become Flow.ride receipt receipt receipt
+}

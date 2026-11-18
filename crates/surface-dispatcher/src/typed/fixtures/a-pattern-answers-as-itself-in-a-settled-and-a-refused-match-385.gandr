@@ -1,0 +1,35 @@
+data Circle : Type where {
+  | Base : Circle
+  | loop : Base <-> Base
+}
+
+data Int : Type where {
+  | Z : Int
+  | S : (x : Int) --> Int
+  | P : (x : Int) --> Int
+  rule : S (P x) <=> x;
+  rule : P (S x) <=> x;
+}
+
+def tell(p : Path[.A = Circle](Base, Base)) -> -F Integer {
+  match p {
+    | here => return 0
+    | loop ∷ q => return 1
+    | back(loop) ∷ q => return 2
+  }
+}
+
+def rec spin(n : Int) -> -F Path[.A = Circle](Base, Base) {
+  match n {
+    | Z => return Path.here Base
+    | S(x) => { let c = spin[<] x; return loop ∷ c }
+    | P(x) => { let c = spin[<] x; return back (loop) ∷ c }
+  }
+}
+
+def flip(x : Circle) -> -F Circle {
+  match x {
+    | Base => Base
+    | loop => Path.back (loop)
+  }
+}

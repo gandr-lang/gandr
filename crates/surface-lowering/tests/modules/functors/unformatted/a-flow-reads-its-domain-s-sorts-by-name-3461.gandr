@@ -1,0 +1,6 @@
+theory Older where { sort V : Type+ ; sort C : Type ; oper get : (key : V, k : pi+ (v : V). C) --> C ; }
+theory Newer where { sort V : Type+ ; sort C : Type ; oper fetch : (key : V, k : pi+ (v : V). C) --> C ; }
+flow downgrade : Newer ~~> Older where { type V = V ; type C = C ; def get = fetch ; }
+module Echo : Model(Newer) with sort V = String where { type C = String ; def fetch(key : String, k : String -> String) -> String { k key } }
+module Read = downgrade(Echo) ;
+def key : Read.V = "k" ;

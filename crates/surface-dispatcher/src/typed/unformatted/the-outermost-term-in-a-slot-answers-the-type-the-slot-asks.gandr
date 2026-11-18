@@ -1,0 +1,3 @@
+def h(c : Integer) -> -F Integer { return c }
+def g(a : Integer, b : Integer) -> -F Integer { return a + b }
+def main() -> -F Integer { g 2 (h 1) }

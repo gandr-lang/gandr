@@ -1,0 +1,14 @@
+theory Mixed where {
+  sort Ob : Type;
+  sort Pt : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+  oper flip : (x : Ob) --> (y : Pt);
+  oper succ : (x : Ob) --> (y : Ob);
+  oper pred : (x : Ob) --> (y : Ob);
+  oper diag : (f : Hom(c, d)) --> Hom(d, d);
+  oper down : (x : Ob) --> Hom(x, pred(x));
+  oper back : (f : Hom(a, succ(a))) --> (z : Ob);
+  rule mixed : flip (flip x) ==> flip x;
+  rule cyc : back (diag h) ==> back (diag h);
+  rule skew : back (down o) ==> o;
+}
