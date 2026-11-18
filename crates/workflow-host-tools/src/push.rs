@@ -27,6 +27,9 @@ use crate::steps::Run;
 /// configuration names none.
 pub const MISE_DATA: &str = ".local/share/mise";
 
+/// The state directory of a receiver's mise, relative to its home.
+const MISE_STATE: &str = ".local/state/mise";
+
 /// The directory of the markers of the builder's own update, beside the
 /// markers of each receiver.
 const BUILDER: &str = "builder";
@@ -55,9 +58,9 @@ pub enum Pushed
 /// # Specification
 /// - requires: the key of `job` stands under `into`.
 /// - ensures: for a tool, `rsync -a --delete --mkpath` of the key into
-///   `<data>/installs/<install name>/<version>/` on the receiver; for mise, an
-///   `rsync -a` of the key's `bin/mise` to the receiver's mise path, which
-///   rsync replaces whole. Then the marker
+///   `<data>/installs/<install name>/<version>/` on the receiver, then removes
+///   its incomplete install marker. For mise, an `rsync -a` of the key's
+///   `bin/mise` replaces the receiver's mise path whole. Then the marker
 ///   `<into>/.pushed/<host>/<target>.<install name>.<version>` stands, and the
 ///   result is [`Pushed::Pushed`]. A marker that stands runs nothing and gives
 ///   [`Pushed::Standing`]. The key of mise to a receiver with no mise path runs
@@ -70,11 +73,16 @@ pub enum Pushed
 /// # Errors
 /// As `fails` lists.
 ///
+/// # Cost
+/// - allocation: command arguments and marker path, setup
+///
 /// # Adequacy
-/// - hypothesis: L3 — a tool's key and mise's key each give their command line
-///   and their marker; a second push runs nothing; mise's key to a receiver
-///   with no mise path runs nothing; a refused copy leaves no marker.
+/// - hypothesis: L3 — a tool's key removes its receiver's incomplete install
+///   marker after its copy, and mise's key gives its command line and marker. A
+///   second push runs nothing. Mise's key to a receiver with no mise path runs
+///   nothing. A refused copy leaves no marker.
 /// - witness: `push::tests::a_key_goes_into_the_install_directory_once`
+/// - witness: `push::tests::a_pushed_key_clears_its_incomplete_marker_7887`
 /// - witness: `push::tests::the_key_of_mise_replaces_the_receivers_mise`
 /// - witness: `push::tests::a_refused_copy_leaves_no_marker`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. } | HostToolsError::Command { .. })))]
@@ -96,32 +104,42 @@ where
         return Ok(Pushed::Standing);
     }
     let source = key(into, job);
-    let args = if job.key == *MISE {
+    let (args, incomplete) = if job.key == *MISE {
         let Some(mise) = receiver.mise.as_ref()
         else {
             return Ok(Pushed::Skipped);
         };
-        vec![
-            "-a".to_owned(),
-            source.join("bin").join("mise").display().to_string(),
-            format!("{}:{mise}", receiver.host),
-        ]
+        (
+            vec![
+                "-a".to_owned(),
+                source.join("bin").join("mise").display().to_string(),
+                format!("{}:{mise}", receiver.host),
+            ],
+            None,
+        )
     }
     else {
         let data = receiver
             .data
             .as_ref()
             .map_or_else(|| MISE_DATA.to_owned(), ToString::to_string);
-        vec![
-            "-a".to_owned(),
-            "--delete".to_owned(),
-            "--mkpath".to_owned(),
-            format!("{}/", source.display()),
-            format!(
-                "{}:{data}/installs/{}/{}/",
-                receiver.host, job.install_name, job.version
-            ),
-        ]
+        let incomplete = format!(
+            "{MISE_STATE}/incomplete-installs/{}/{}",
+            job.install_name, job.version
+        );
+        (
+            vec![
+                "-a".to_owned(),
+                "--delete".to_owned(),
+                "--mkpath".to_owned(),
+                format!("{}/", source.display()),
+                format!(
+                    "{}:{data}/installs/{}/{}/",
+                    receiver.host, job.install_name, job.version
+                ),
+            ],
+            Some(incomplete),
+        )
     };
     runner.run(&job.key, &Run {
         program: "rsync".to_owned(),
@@ -129,6 +147,19 @@ where
         env: Vec::new(),
         cwd: None,
     })?;
+    if let Some(incomplete) = incomplete {
+        runner.run(&job.key, &Run {
+            program: "ssh".to_owned(),
+            args: vec![
+                receiver.host.to_string(),
+                "rm".to_owned(),
+                "-rf".to_owned(),
+                incomplete,
+            ],
+            env: Vec::new(),
+            cwd: None,
+        })?;
+    }
     mark(&marker)?;
     Ok(Pushed::Pushed)
 }
@@ -390,13 +421,43 @@ mod tests
             push(&tool, &into, &receiver(None), &mut runner),
             Ok(Pushed::Standing)
         );
-        assert_eq!(runner.ran, [format!(
-            "rsync -a --delete --mkpath {}/riscv64gc-unknown-linux-gnu/github-a-tool/1.2.3/ rv:.local/share/mise/installs/github-a-tool/1.2.3/",
-            into.display()
-        )]);
+        assert_eq!(runner.ran, [
+            format!(
+                "rsync -a --delete --mkpath {}/riscv64gc-unknown-linux-gnu/github-a-tool/1.2.3/ rv:.local/share/mise/installs/github-a-tool/1.2.3/",
+                into.display()
+            ),
+            "ssh rv rm -rf .local/state/mise/incomplete-installs/github-a-tool/1.2.3".to_owned(),
+        ]);
         assert!(
             into.join(".pushed/rv/riscv64gc-unknown-linux-gnu.github-a-tool.1.2.3")
                 .is_file()
+        );
+        std::fs::remove_dir_all(&into).unwrap();
+    }
+
+    #[test]
+    fn a_pushed_key_clears_its_incomplete_marker_7887()
+    {
+        let into = scratch();
+        let mut runner = Recording {
+            ran: Vec::new(),
+            fails: false,
+        };
+        assert_eq!(
+            push(
+                &job("github:a/tool".into()),
+                &into,
+                &receiver(None),
+                &mut runner,
+            ),
+            Ok(Pushed::Pushed)
+        );
+        assert_eq!(
+            runner.ran.last(),
+            Some(
+                &"ssh rv rm -rf .local/state/mise/incomplete-installs/github-a-tool/1.2.3"
+                    .to_owned()
+            )
         );
         std::fs::remove_dir_all(&into).unwrap();
     }
