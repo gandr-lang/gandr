@@ -1591,6 +1591,10 @@ where
 /// [`WalkBuildError::ChainLengthExceeded`] past the cap,
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
 ///
+/// # Cost
+/// - allocation: the closure's rows, the queue and the chain of passed links,
+///   growth within the walk spec's chain cap
+///
 /// # Adequacy
 /// - hypothesis: For cyclic paths, terminal roots, converging prefixes and
 ///   tiled interiors, L3 exact row sequences distinguish unsafe global pruning,

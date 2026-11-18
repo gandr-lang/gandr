@@ -203,6 +203,9 @@ impl From<&str> for HoleName
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared spelling, setup
     #[inline]
     fn from(value: &str) -> Self
     {
@@ -216,6 +219,9 @@ impl From<String> for HoleName
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared spelling, setup
     #[inline]
     fn from(value: String) -> Self
     {

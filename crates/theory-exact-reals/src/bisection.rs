@@ -371,6 +371,12 @@ impl Search
     /// # Errors
     /// - [`SuspendReason`]: as [`Self::unit`].
     ///
+    /// # Cost
+    /// - allocation: the piece's ends, once for the step of the bound variable,
+    ///   setup
+    /// - allocation: the steps, their premises and the halves of a split piece,
+    ///   growth within the plan's order
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`Self::unit`].
     /// - witness: `tests::quantifier::quantified_formulas_settle_to_certificates_that_replay`
