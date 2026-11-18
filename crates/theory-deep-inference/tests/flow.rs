@@ -95,8 +95,13 @@ fn index_permutations(flow: &Flow) -> Vec<Vec<FlowVertexIndex>>
         let mut next: Vec<Vec<FlowVertexIndex>> = Vec::new();
         for permutation in &permutations {
             for slot in 0_usize ..= permutation.len() {
-                let mut candidate = permutation.clone();
-                candidate.insert(slot, item);
+                let (before, after) = permutation.split_at(slot);
+                let candidate: Vec<FlowVertexIndex> = before
+                    .iter()
+                    .copied()
+                    .chain([item])
+                    .chain(after.iter().copied())
+                    .collect();
                 next.push(candidate);
             }
         }

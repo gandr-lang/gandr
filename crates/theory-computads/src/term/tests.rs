@@ -122,8 +122,8 @@ fn positions_preserve_prefix_boundaries_and_splice_siblings()
             "the read at {pos:?}"
         );
         assert_eq!(
-            Ok(term.clone()),
-            TermAlphabet::splice_cmd_at(&term, pos, expected),
+            TermAlphabet::splice_cmd_at(&term, pos, expected).as_ref(),
+            Ok(&term),
             "splicing the read back at {pos:?}"
         );
     }

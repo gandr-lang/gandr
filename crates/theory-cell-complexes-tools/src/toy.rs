@@ -31,7 +31,6 @@
 //! name until it is fresh against the anchor and the other fresh names, so a
 //! cell already apart comes back unchanged.
 
-use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
@@ -460,7 +459,7 @@ pub struct ToyRef<'term>(&'term [ToyHead]);
 /// A toy position: a path of child indices from the root.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct ToyPos(Box<[PositionStep]>);
+pub struct ToyPos(alloc::sync::Arc<[PositionStep]>);
 
 impl ToyPos
 {
@@ -1254,7 +1253,7 @@ impl CellAlphabet for ToyAlphabet
                 queue.push_back((child_path, child));
                 child = cmd.end_of(child);
             }
-            positions.push(ToyPos(path.into_boxed_slice()));
+            positions.push(ToyPos(path.into()));
         }
         positions
     }
@@ -1273,6 +1272,9 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared steps of the position, setup
     #[inline]
     fn position_at_path(path: &[PositionStep]) -> Self::Pos
     {
@@ -1358,6 +1360,9 @@ impl CellAlphabet for ToyAlphabet
     ///   exact siblings, and invalid paths refuse. Dropped context, shifted
     ///   bounds and incorrect replacement change the term.
     /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    ///
+    /// # Cost
+    /// - allocation: the nodes of the spliced term, setup
     #[inline]
     #[spec(captures: expected = replacement.clone(), ensures: |output| match output {
         Ok(ref term) => matches!(Self::subterm_cmd_at(term, pos), Maybe::Present(ref found) if found == &expected),

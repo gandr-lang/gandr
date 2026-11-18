@@ -1179,7 +1179,7 @@ fn canonical(
                                     .iter()
                                     .map(|branch| computation(*branch))
                                     .collect(),
-                                arities: arities.clone(),
+                                arities: alloc::sync::Arc::clone(arities),
                                 equations,
                             },
                             Computation::RecordProjection(record, ref label) => {

@@ -559,7 +559,7 @@ fn translate(
                                 }
                                 gandr_kernel_term::FieldCount::from(fields)
                             })
-                            .collect(),
+                            .collect::<Vec<_>>(),
                     ),
                     Computation::SigmaSplit {
                         scrutinee,

@@ -1925,6 +1925,11 @@ impl CellAlphabet for TermAlphabet
     ///   breadth-first position list. Duplicates, omitted nodes and a child
     ///   before its parent change the list.
     /// - witness: `term::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    ///
+    /// # Cost
+    /// - allocation: the position list and the queue of the walk, setup
+    /// - allocation: the path of each position, growth within the nodes of the
+    ///   command
     #[inline]
     #[spec(ensures: |output| output.len() == cmd.0.len() && (cmd.0.is_empty() || output.first().is_some_and(|pos| pos.0.is_empty()))
         && output.iter().enumerate().all(|(index, pos)| !output.iter().take(index).any(|earlier| earlier == pos)
@@ -1941,8 +1946,11 @@ impl CellAlphabet for TermAlphabet
             };
             let mut child = start.next();
             for index in 0 .. head.arity().0 {
-                let mut child_path = path.clone();
-                child_path.push(PositionStep::from(index));
+                let child_path: Vec<PositionStep> = path
+                    .iter()
+                    .copied()
+                    .chain([PositionStep::from(index)])
+                    .collect();
                 queue.push_back((child_path, child));
                 child = cmd.end_of(child);
             }

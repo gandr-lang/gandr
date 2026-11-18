@@ -3875,6 +3875,10 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
     ///   missing children preserve their original identity.
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
     /// - witness: `rewrite::tests::every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does`
+    ///
+    /// # Cost
+    /// - allocation: the copied children of a former where one child changes,
+    ///   durable by the minted computation
     #[spec(
         captures: [ready = self.results.len(), children = self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
@@ -4206,7 +4210,10 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
                     self.arena.computation_data_case_with_equations(
                         rewritten_scrutinee,
                         rewritten_motive,
-                        (changed.unwrap_or_else(|| branches.clone()), arities.clone()),
+                        (
+                            changed.unwrap_or_else(|| branches.clone()),
+                            alloc::sync::Arc::clone(arities),
+                        ),
                         equations,
                     )
                 }

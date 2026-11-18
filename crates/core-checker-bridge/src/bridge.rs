@@ -13214,6 +13214,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::each_effect_former_is_refused_by_name_where_it_stands`
     /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
     /// - witness: `bridge::tests::a_handled_call_folded_at_another_operation_is_the_kernels_refusal_6672`
+    ///
+    /// # Cost
+    /// - allocation: the clause bodies and the branches, fields and parameters
+    ///   of the reduct's case, durable by the minted computation
+    /// - allocation: the effect row and level of each reduced program and the
+    ///   binds that wait, growth within the handled program
     #[spec(ensures: |ret| match ret {
         | Ok(reduct) => self.arena.computation(reduct).is_some(),
         | Err(Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Handle } | Refusal::DanglingNode { node: site }) =>
@@ -13823,6 +13829,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   and one at a smaller row at the end, each cross through their fold and
     ///   the kernel admits them.
     /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    ///
+    /// # Cost
+    /// - allocation: the branches and fields of the folded case and the data
+    ///   types of its domain, durable by the minted computation
     fn fold(
         &mut self,
         (step, inner): (ComputationId, &Programmed),

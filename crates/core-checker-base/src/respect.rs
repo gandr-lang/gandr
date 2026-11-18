@@ -313,9 +313,14 @@ pub fn respected(
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
-                let (branches, arities) = (branches.clone(), arities.clone());
+                let (branches, arities) = (branches.clone(), alloc::sync::Arc::clone(arities));
                 (
-                    arena.computation_data_case(left, motive, branches.clone(), arities.clone()),
+                    arena.computation_data_case(
+                        left,
+                        motive,
+                        branches.clone(),
+                        alloc::sync::Arc::clone(&arities),
+                    ),
                     arena.computation_data_case(right, motive, branches, arities),
                 )
             },

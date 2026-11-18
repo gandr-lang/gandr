@@ -64,7 +64,7 @@ enum Goal
 struct Partial
 {
     /// The value of each variable, by its place.
-    bound: Vec<Option<TermPlace>>,
+    bound: alloc::sync::Arc<[Option<TermPlace>]>,
     /// The pattern nodes left, each with its goal.
     goals: Vec<(TermPlace, Goal)>,
 }
@@ -175,6 +175,13 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the worklist of partial matches and their first bindings,
+    ///   setup
+    /// - allocation: the goals of each branch and a copy of shared bindings at
+    ///   a first bind, growth within the pending matches
+    /// - allocation: the values of each match, durable by `found`
     fn matches_at(
         &self,
         (place, equation): (EquationPlace, Equation),
@@ -183,13 +190,13 @@ where
     ) -> Result<(), EGraphError>
     {
         let mut pending = vec![Partial {
-            bound: vec![None; usize::from(equation.variables)],
+            bound: vec![None; usize::from(equation.variables)].into(),
             goals: vec![(equation.left, Goal::Node(node))],
         }];
         while let Some(mut partial) = pending.pop() {
             let Some((pattern, goal)) = partial.goals.pop()
             else {
-                let values: Option<Vec<TermPlace>> = partial.bound.into_iter().collect();
+                let values: Option<Vec<TermPlace>> = partial.bound.iter().copied().collect();
                 if let Some(values) = values {
                     let _new = found.insert((place, values));
                 }
@@ -202,13 +209,18 @@ where
                         Goal::Node(at) | Goal::Class(at) => at,
                     };
                     let value = self.root(at)?;
-                    match partial.bound.get_mut(usize::from(variable)) {
-                        Some(slot @ &mut None) => {
-                            *slot = Some(value);
+                    let place = usize::from(variable);
+                    match partial.bound.get(place).copied() {
+                        Some(None) => {
+                            if let Some(slot) =
+                                alloc::sync::Arc::make_mut(&mut partial.bound).get_mut(place)
+                            {
+                                *slot = Some(value);
+                            }
                             pending.push(partial);
                         },
-                        Some(&mut Some(bound)) if bound == value => pending.push(partial),
-                        Some(&mut Some(_)) | None => {},
+                        Some(Some(bound)) if bound == value => pending.push(partial),
+                        Some(Some(_)) | None => {},
                     }
                 },
                 TermHead::Op(_) => {
@@ -221,14 +233,20 @@ where
                         if had.head != wanted.head || had.children.len() != wanted.children.len() {
                             continue;
                         }
-                        let mut next = partial.clone();
-                        next.goals.extend(
-                            wanted
-                                .children
-                                .iter()
-                                .zip(&had.children)
-                                .map(|(&pattern, &child)| (pattern, Goal::Class(child))),
-                        );
+                        let next =
+                            Partial {
+                                bound: alloc::sync::Arc::clone(&partial.bound),
+                                goals: partial
+                                    .goals
+                                    .iter()
+                                    .copied()
+                                    .chain(
+                                        wanted.children.iter().zip(&had.children).map(
+                                            |(&pattern, &child)| (pattern, Goal::Class(child)),
+                                        ),
+                                    )
+                                    .collect(),
+                            };
                         pending.push(next);
                     }
                 },

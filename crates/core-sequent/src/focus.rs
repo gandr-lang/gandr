@@ -2391,6 +2391,10 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
     /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
     /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
+    ///
+    /// # Cost
+    /// - allocation: the tasks of each former and the arities of a case task,
+    ///   growth within the task stack
     #[spec(
         captures: [work = self.tasks.len()],
         ensures: |ret| match self.core.computation(id) {
@@ -2459,7 +2463,7 @@ impl<'run> Focusing<'run>
             } => {
                 self.tasks.push(Task::DataCase {
                     branches: NodeCount::from(branches.len()),
-                    arities: alloc::boxed::Box::from(arities.as_slice()),
+                    arities: alloc::boxed::Box::from(&**arities),
                     equations,
                     continuation,
                 });

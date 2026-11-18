@@ -693,6 +693,12 @@ impl Unfocusing<'_>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    ///
+    /// # Cost
+    /// - allocation: the children and the arities of each minted former,
+    ///   durable by the minted node
+    /// - allocation: the stacks of rebuilt values and computations, growth
+    ///   within the focused term
     #[spec(
         requires: match &task {
             | &Task::Reify(source) => self.arena.producer(source).is_none_or(|node| match *node {

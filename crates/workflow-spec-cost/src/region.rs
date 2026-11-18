@@ -57,7 +57,7 @@ impl fmt::Display for Line
 /// enclose it.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ItemName(String);
+pub struct ItemName(alloc::sync::Arc<str>);
 
 impl fmt::Display for ItemName
 {
@@ -118,10 +118,13 @@ impl From<&str> for ItemName
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared name, setup
     #[inline]
     fn from(name: &str) -> Self
     {
-        Self(name.to_owned())
+        Self(name.into())
     }
 }
 
@@ -260,6 +263,12 @@ impl Regions
     ///   attributes beside doc comments; a missed item kind, a wrong last line
     ///   or a lost module prefix changes the asserted regions.
     /// - witness: `region::tests::every_spec_attribute_is_a_region`
+    ///
+    /// # Cost
+    /// - allocation: the regions of the file, the module stack and the
+    ///   worklist, growth within the items of the file
+    /// - allocation: the name of each item, durable by the region that names it
+    /// - allocation: the message of a parse error, error path
     #[spec(ensures: |ref ret| ret.is_err() || self.0.get(path).is_none_or(|regions| regions.is_sorted_by(|left, right| left.last < right.first)))]
     #[inline]
     pub fn insert_source(
@@ -294,12 +303,13 @@ impl Regions
                         .last()
                         .is_some_and(|segment| segment.ident == "spec")
                 });
+                let name: alloc::sync::Arc<str> = name.into();
                 for attr in specs {
                     found.push(Region {
                         file: path.to_path_buf(),
                         first: Line(attr.pound_token.span.start().line),
                         last: Line(attr.bracket_token.span.close().end().line),
-                        item: ItemName(name.clone()),
+                        item: ItemName(alloc::sync::Arc::clone(&name)),
                     });
                 }
             };
@@ -434,6 +444,9 @@ impl Regions
 /// - hypothesis: L3 — an inherent and a trait impl; a swapped type and trait or
 ///   a lost wrapper changes the asserted item names.
 /// - witness: `region::tests::every_spec_attribute_is_a_region`
+///
+/// # Cost
+/// - allocation: the name of the owner, setup
 fn owner_of(block: &syn::ItemImpl) -> ItemName
 {
     let last = |path: &syn::Path| {
@@ -450,10 +463,10 @@ fn owner_of(block: &syn::ItemImpl) -> ItemName
         syn::Type::Path(ref typed) => last(&typed.path),
         _ => "_".to_owned(),
     };
-    ItemName(match block.trait_ {
+    ItemName(alloc::sync::Arc::from(match block.trait_ {
         Some((ref interface, _)) => format!("<{owner} as {}>", last(interface)),
         None => owner,
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -521,7 +534,7 @@ mod inner
             file: Path::new("crates/a/src/lib.rs").to_path_buf(),
             first: Line(first),
             last: Line(last),
-            item: ItemName(item.to_owned()),
+            item: ItemName(item.into()),
         };
         assert_eq!(
             regions.0.get(Path::new("crates/a/src/lib.rs")),
@@ -570,7 +583,7 @@ mod inner
             Maybe::Present(found) => Maybe::Present(found.item.clone()),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
-        let named = |name: &str| Maybe::Present(ItemName(name.to_owned()));
+        let named = |name: &str| Maybe::Present(ItemName(name.into()));
         assert_eq!(find(3), named("free"), "a one-line attribute");
         assert_eq!(find(14), named("Counter::get"), "the `#` line");
         assert_eq!(find(15), named("Counter::get"), "the `]` line");

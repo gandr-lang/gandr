@@ -4037,7 +4037,7 @@ where
                 .iter()
                 .map(|&branch| child(Root::Computation(branch)))
                 .collect(),
-            arities: arities.clone(),
+            arities: arities.to_vec(),
             equations,
         },
         Some(&Computation::RecordProjection(record, ref label)) => {
