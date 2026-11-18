@@ -1083,7 +1083,7 @@ impl Adaptation
 }
 
 /// What a rule whose form opens on its left operand takes there.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub enum LeftOperand
 {
     /// Any whole operand of the rule's operand sort.
@@ -1983,7 +1983,7 @@ impl Pbg
             .iter()
             .flat_map(|rule| rule.adaptations.iter().copied())
             .collect();
-        let automaton = TileAutomaton::derive(&molds);
+        let automaton = TileAutomaton::derive(&molds, &rules);
         let application_in = |sort: Sort| {
             molds
                 .candidates(TileLabel(crate::surface::APPLICATION))
