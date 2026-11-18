@@ -14,6 +14,13 @@
 //! change. The declared type is the row's type, or the mark is refused.
 //!
 //! - see: #7961
+//!
+//! # References
+//!
+//! - `vault:01a1ebc5-2ff2-7833-b871-85901e734925` — anchor: a builtin is a
+//!   declaration of `std` with its type, under `native` and with no body. The
+//!   checker compares the declared type with the row, and only `std` writes the
+//!   mark.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
