@@ -488,32 +488,58 @@ impl Collected<'_>
         )
     }
 
-    /// Record the imports the source holding `at` reaches the interface
+    /// Record the imports the source holding `at` reaches the host interface
     /// `name` through, as a name lookup answered through them is recorded, so
     /// none of them reads as unused (#4523).
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: nothing where the source declares a block of `name`; else the
-    ///   import that [`Self::imported_block`] answers is among the reached
-    ///   imports; else each import of the source that names `name`'s module is,
-    ///   and nothing for an ambient name.
+    /// - ensures: each import of the source that names `name`'s module is among
+    ///   the reached imports; nothing for an ambient name.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — membership is a search of the receiver's set.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an import of `std.io` a row reads the console through
-    ///   is among the reached imports, and an import of `std.fs` is not. An
-    ///   import whose block a row and a perform read is among them too.
+    ///   is among the reached imports, and an import of `std.fs` is not.
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_host_interface_answers_only_where_its_module_is_imported_4523`
+    #[inline]
+    pub fn reach_host(
+        &mut self,
+        at: ByteOffset,
+        name: &EffectName,
+    )
+    {
+        if let Maybe::Present(module) = home(name) {
+            let source = self.unit.source_at(at);
+            let imports = self.home_imports(source, module);
+            self.reached.extend(imports);
+        }
+    }
+
+    /// Record the import through which the source holding `at` reads the
+    /// block `name` of another source, so that import does not read as
+    /// unused.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: nothing where the source declares a block of `name`; else the
+    ///   import that [`Self::imported_block`] answers is among the reached
+    ///   imports; else nothing.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — membership is a search of the receiver's set.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an import whose block a row and a perform read is
+    ///   among the reached imports.
     /// - witness: `gandr-surface-lowering::lower::boundary::tests::an_importer_performs_an_imported_block_s_interface_3138`
     ///
     /// # Cost
-    /// - allocation: the bytes of each reached import, durable by the source
-    /// - allocation: the list of a host module's imports, setup
+    /// - allocation: the bytes of the reached import, durable by the source
     #[inline]
-    pub fn reach_interface(
+    pub fn reach_block(
         &mut self,
         at: ByteOffset,
         name: &EffectName,
@@ -525,11 +551,6 @@ impl Collected<'_>
         }
         if let Maybe::Present((_, import)) = self.imported_block(source, name) {
             let _fresh = self.reached.insert(import);
-            return;
-        }
-        if let Maybe::Present(module) = home(name) {
-            let imports = self.home_imports(source, module);
-            self.reached.extend(imports);
         }
     }
 

@@ -420,10 +420,6 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   sort left unfixed, a name nothing declares and a label written twice
     ///   are each refused at the entry.
     /// - witness: `gandr-surface-lowering::lower::world::tests::a_world_s_requirement_is_a_row_3523`
-    ///
-    /// # Cost
-    /// - allocation: the hosts and the refusals read, setup
-    /// - allocation: the reached imports and the faults, durable by the source
     #[spec(
         captures: before = self.cx().collected.slots.len(),
         ensures: self.cx().collected.slots.len() == before,
@@ -466,7 +462,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         // Each host interface a requirement names reaches the import of its
         // module (#4523).
         for (at, named) in hosts {
-            self.cx_mut().collected.reach_interface(at, &named);
+            self.cx_mut().collected.reach_host(at, &named);
         }
         for (slot, refusal) in refusals {
             let _first = self.cx_mut().faults.entry(slot).or_insert(refusal);

@@ -764,11 +764,6 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   instance takes the theory's capability.
     /// - witness: `gandr-surface-lowering::lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
-    ///
-    /// # Cost
-    /// - allocation: the parameter, its frame and the instance's record,
-    ///   durable by the source
-    /// - allocation: the refusal of a label out of shape, error path
     #[spec(
         captures: before = self.cx().parameters.mark(),
         ensures: |ret| ret.is_err() || self.cx().parameters.mark() == before.next(),
@@ -798,9 +793,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                     arity: crate::resolve::HeadArity::Nullary,
                 });
             }
-            self.cx_mut()
-                .collected
-                .reach_interface(path.start(), &interface);
+            self.cx_mut().collected.reach_host(path.start(), &interface);
         }
         else {
             let mut segments = self.shared().path_segments(path);
@@ -1191,21 +1184,26 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             self.cx_mut().fixed_carriers.push(ty);
         }
         // Each interface the row names reaches the import it is read through:
-        // a host interface its module's, a block of another source the
-        // import that opens it.
+        // a host interface its module's, a block of another source the import
+        // that opens it.
         for interface in row
             .interfaces
             .iter()
             .chain(row.labels.iter().map(|&(_, ref held)| held))
         {
-            let named = match *interface {
-                Interface::Host(ref named) => named,
-                Interface::Foreign(ref foreign) => &foreign.name,
-                Interface::Theory(_) => continue,
-            };
-            self.cx_mut()
-                .collected
-                .reach_interface(site.at.span.start(), named);
+            match *interface {
+                Interface::Host(ref named) => {
+                    self.cx_mut()
+                        .collected
+                        .reach_host(site.at.span.start(), named);
+                },
+                Interface::Foreign(ref foreign) => {
+                    self.cx_mut()
+                        .collected
+                        .reach_block(site.at.span.start(), &foreign.name);
+                },
+                Interface::Theory(_) => {},
+            }
         }
         for &(span, theory) in &row.named {
             self.cx_mut()
@@ -1359,9 +1357,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             return Ok(Planned(false));
         };
         if let Performer::Interface(ref named) = performer {
+            self.cx_mut().collected.reach_host(head.span.start(), named);
             self.cx_mut()
                 .collected
-                .reach_interface(head.span.start(), named);
+                .reach_block(head.span.start(), named);
         }
         let name = self.cx().name_at(selected);
         let operation = OperationName::from(name.as_ref());
@@ -1991,11 +1990,6 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// - witness: `gandr-surface-lowering::lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     /// - witness: `gandr-surface-lowering::lower::capability::tests::a_model_answers_a_theory_s_value_operations_2288`
-    ///
-    /// # Cost
-    /// - allocation: the plan, the binders, the continuations and the reached
-    ///   imports, durable by the source
-    /// - allocation: the refusal of a scope out of shape, error path
     #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&super::Plan::Scope(_))))]
     #[inline]
     pub fn capability_scope(
@@ -2070,7 +2064,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             Interface::Host(ref name) => {
                 self.cx_mut()
                     .collected
-                    .reach_interface(site.at.span.start(), name);
+                    .reach_host(site.at.span.start(), name);
                 let _first = self.cx_mut().answered.insert(held, name.clone());
             },
             Interface::Theory(ref theory) => {
