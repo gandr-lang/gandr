@@ -1,0 +1,90 @@
+//! This source tests conversion of calls nested in path endpoints.
+//!
+//! An outer call waits for its inner call.
+//! Conversion reads the nested calls at their normal form.
+//!
+//! The checker unfolds each call in dependency order.
+//! The kernel replays the same computation.
+//!
+//! - see: #2326 — `bound_is_applied`, `outside_is_inside`
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
+
+// This import supplies free naturals and integers with `up` and `down` steps.
+import "./circle-base.gandr";
+
+/// The `doubleNat` recursion doubles free naturals.
+def rec doubleNat(n : Nat) -> Nat =
+  match n where
+    | Zero => Zero
+    | Succ(p) => Succ (Succ (doubleNat[<] p))
+
+/// The outer `doubleNat` call waits for the inner call.
+/// The checker unfolds the inner call.
+def quadrupled : Path[.A = Nat](
+  doubleNat (doubleNat (Succ Zero)),
+  Succ (Succ (Succ (Succ Zero)))
+) = Path.here (Succ (Succ (Succ (Succ Zero))));
+
+/// The nested call's value is four, not three.
+@[refuses("EndpointMismatch")]
+def miscounted : Path[.A = Nat](
+  doubleNat (doubleNat (Succ Zero)),
+  Succ (Succ (Succ Zero))
+) = Path.here (Succ (Succ (Succ Zero)));
+
+/// The checker reads `up(down(Z))` as `S(P(Z))`.
+/// The rules reduce this form to `Z`.
+def turned_back : Path[.A = Int](up (down Z), Z) = Path.here Z;
+
+/// The checker cancels the nested call at every integer.
+/// The inner call has a variable argument.
+def turn_unturn(n : Int) -> Path[.A = Int](up (down n), n) =
+  Path.here n
+
+/// The checker reads the inner call.
+/// The rules cancel one step.
+@[refuses("EndpointMismatch")]
+def overturned : Path[.A = Int](up (down Z), S Z) = Path.here (S Z);
+
+/// The `bound` function returns a function from a call.
+def bound(k : Integer -> (Integer -> Integer), s : Integer) -> Integer =
+  let f = k s
+  f s
+
+/// The `apply` function calls a function argument.
+def apply(f : Integer -> Integer, x : Integer) -> Integer { f x }
+
+/// The `bound` and `apply` forms give the same result.
+/// Conversion reads each form as a bind over the call.
+def bound_is_applied(
+  k : Integer -> (Integer -> Integer),
+  s : Integer
+) -> Path[.A = Integer](bound k s, apply (k s) s) =
+  Path.here (bound k s)
+
+/// The call function gives a different result at zero.
+@[refuses("EndpointMismatch")]
+def applied_elsewhere(
+  k : Integer -> (Integer -> Integer),
+  s : Integer
+) -> Path[.A = Integer](bound k s, apply (k s) 0) =
+  Path.here (bound k s)
+
+/// The `bound_outside` function binds the call outside its result function.
+def bound_outside(k : Integer -> (Integer -> Integer), s : Integer) -> (Integer -> Integer) =
+  let v = k s
+  fun (_old) { v s }
+
+/// The `bound_inside` function binds the call inside its result function.
+def bound_inside(k : Integer -> (Integer -> Integer), s : Integer) -> (Integer -> Integer) =
+  fun (_old) { let f = k s; f s }
+
+/// The two functions bind the same call at different scopes.
+/// They give the same result under their binder.
+def outside_is_inside(
+  k : Integer -> (Integer -> Integer),
+  s : Integer
+) -> Path[.A = Integer -> Integer](bound_outside k s, bound_inside k s) =
+  Path.here (bound_outside k s)

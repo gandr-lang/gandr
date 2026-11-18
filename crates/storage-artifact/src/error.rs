@@ -1,0 +1,492 @@
+//! Every refusal the artifact layer raises, and the manifest field one names.
+
+use core::error::Error;
+use core::fmt;
+
+use gandr_kernel_term::DecodeError;
+use gandr_kernel_term::FormatVersion;
+use gandr_storage_records::RecordIndex;
+use gandr_storage_records::RecordTreeError;
+
+use crate::record::Naming;
+
+/// The field of a manifest image a refusal names, in image order.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ManifestField
+{
+    /// The domain the image opens with.
+    Domain,
+    /// The manifest layout version.
+    ManifestVersion,
+    /// The kernel format version the records carry.
+    KernelFormat,
+    /// The length prefix of the boundary commitment.
+    CommitmentLength,
+    /// The boundary commitment the length prefix counts.
+    Commitment,
+    /// The record count.
+    RecordCount,
+    /// The root node's identity.
+    RootNode,
+    /// The form of the artifact's names.
+    Naming,
+}
+
+impl fmt::Display for ManifestField
+{
+    /// Writes the refused field.
+    ///
+    /// # Specification
+    /// - requires: nothing; every variant renders.
+    /// - ensures: writes one fixed phrase per variant, no two alike.
+    /// - provides: the field a manifest refusal names.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on all eight fields observes pairwise distinct names
+    ///   and exact first-write refusal. It distinguishes collapsed fields and
+    ///   swallowed errors without pinning diagnostic wording or exercising
+    ///   alternate formatter modes.
+    /// - witness: `error::tests::every_manifest_field_renders_apart`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Domain => "the domain",
+            Self::ManifestVersion => "the manifest version",
+            Self::KernelFormat => "the kernel format version",
+            Self::CommitmentLength => "the boundary commitment's length",
+            Self::Commitment => "the boundary commitment",
+            Self::RecordCount => "the record count",
+            Self::RootNode => "the root node identity",
+            Self::Naming => "the naming",
+        })
+    }
+}
+
+/// Every way the artifact layer refuses an input.
+///
+/// Refusal is the crate's only failure mode: no operation panics, and no
+/// operation repairs a record set, a manifest or a stored tree it was handed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ArtifactError
+{
+    /// The kernel's decoder refused the artifact bytes.
+    Kernel
+    {
+        /// The decoder's refusal.
+        refusal: DecodeError,
+    },
+
+    /// The record plane refused: a tree it would not build, parameters it
+    /// does not implement, or a node a store could not authenticate.
+    Records
+    {
+        /// The record plane's refusal.
+        refusal: RecordTreeError,
+    },
+
+    /// The order holds bytes this build does not read: a head that names no
+    /// form, no whole count or a first key of another width; a chunk that
+    /// does not hold whole places; a chain that comes back to a chunk; or a
+    /// chain whose places differ in number from the head's count.
+    MalformedOrder
+    {
+        /// The first place refused, in artifact order.
+        place: RecordIndex,
+    },
+
+    /// A key of the order's chain names a chunk that the index tree does not
+    /// hold.
+    UnheldRecord
+    {
+        /// The place where that chunk would start, in artifact order.
+        place: RecordIndex,
+    },
+
+    /// A stored chunk of the order that the order's chain does not reach.
+    UnplacedRecord
+    {
+        /// The record's position in key order.
+        position: RecordIndex,
+    },
+
+    /// The names a caller gives differ in number from the places of the set,
+    /// or leave a place without a name.
+    Misnamed
+    {
+        /// The first place without a name, or the first name past the last
+        /// place.
+        place: RecordIndex,
+    },
+
+    /// A manifest image's field holds a value this build does not read: a
+    /// foreign domain, an unknown manifest version, or a naming byte that
+    /// names no form.
+    MalformedManifest
+    {
+        /// The field refused.
+        field: ManifestField,
+    },
+
+    /// A manifest image ended inside a field.
+    TruncatedManifest
+    {
+        /// The field the image ended inside.
+        field: ManifestField,
+    },
+
+    /// A manifest image continued past its last field.
+    TrailingManifestBytes,
+
+    /// A manifest names a kernel format version this build's decoder does not
+    /// read.
+    UnsupportedKernelFormat
+    {
+        /// The version the manifest names.
+        found: FormatVersion,
+    },
+
+    /// A manifest's boundary commitment differs from the one its reader's
+    /// tree parameters commit to.
+    IncompatibleProfile,
+
+    /// The records a stored root reaches do not rebuild the tree the manifest
+    /// names.
+    TreeMismatch,
+
+    /// The manifest names one form of names, and the stored order opens with
+    /// the other.
+    NamingMismatch
+    {
+        /// The form the manifest names.
+        manifest: Naming,
+    },
+
+    /// A stored record sits under a key other than the one its position
+    /// requires: the header first, under the empty key, then the order's head
+    /// under [`ORDER_KEY`](crate::ORDER_KEY), then each chunk of the order
+    /// under a chunk's key. Or a chunk stands out of its occurrence's turn, or
+    /// at a cut where the order's chunker does not cut.
+    MisplacedRecord
+    {
+        /// The record's position: the header zero, the order's head one, and
+        /// each chunk of the order from two.
+        position: RecordIndex,
+    },
+
+    /// A stored record ends where the decoded artifact has no segment
+    /// boundary.
+    SegmentBoundary
+    {
+        /// The record's position in key order.
+        position: RecordIndex,
+    },
+}
+
+impl From<DecodeError> for ArtifactError
+{
+    /// Carries the kernel decoder's refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(refusal: DecodeError) -> Self
+    {
+        Self::Kernel { refusal }
+    }
+}
+
+impl From<RecordTreeError> for ArtifactError
+{
+    /// Carries the record plane's refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(refusal: RecordTreeError) -> Self
+    {
+        Self::Records { refusal }
+    }
+}
+
+impl fmt::Display for ArtifactError
+{
+    /// Writes the refusal and the values it names.
+    ///
+    /// # Specification
+    /// - requires: nothing; every variant renders.
+    /// - ensures: writes one message per variant, each naming the refusal, key,
+    ///   positions, field or version its payload carries, so no two variants
+    ///   render alike.
+    /// - provides: the operator-facing sentence a caller prints, and the
+    ///   [`Error`] rendering the implementation below inherits.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on one representative of all fifteen variants observes
+    ///   complete payload renderings, distinct messages and first-write sink
+    ///   refusal. Indices reach the usize ceiling; the matrix distinguishes
+    ///   lost or narrowed payloads, collapsed variants and swallowed errors. It
+    ///   does not pin prose, exhaust payloads or sample later-write failure.
+    /// - witness: `error::tests::every_refusal_renders_apart`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Kernel { refusal } => write!(f, "the kernel refuses the artifact: {refusal}"),
+            Self::Records { ref refusal } => write!(f, "the record plane refuses: {refusal}"),
+            Self::MalformedOrder { place } => {
+                write!(
+                    f,
+                    "place {place} of the stored order is not a place this build reads"
+                )
+            },
+            Self::UnheldRecord { place } => {
+                write!(
+                    f,
+                    "at place {place}, the order's chain names a chunk the index tree does not hold"
+                )
+            },
+            Self::UnplacedRecord { position } => {
+                write!(
+                    f,
+                    "stored record {position} is a chunk the order's chain does not reach"
+                )
+            },
+            Self::Misnamed { place } => {
+                write!(
+                    f,
+                    "the names a caller gives stop matching the places of the set at place {place}"
+                )
+            },
+            Self::MalformedManifest { field } => {
+                write!(f, "a manifest image holds {field} this build does not read")
+            },
+            Self::TruncatedManifest { field } => {
+                write!(f, "a manifest image ends inside {field}")
+            },
+            Self::TrailingManifestBytes => {
+                f.write_str("a manifest image continues past its naming")
+            },
+            Self::UnsupportedKernelFormat { found } => {
+                write!(
+                    f,
+                    "the manifest names kernel format {found}, which this build does not decode"
+                )
+            },
+            Self::IncompatibleProfile => {
+                f.write_str("the manifest's boundary commitment differs from the reader's")
+            },
+            Self::TreeMismatch => {
+                f.write_str("the stored records do not rebuild the tree the manifest names")
+            },
+            Self::NamingMismatch { manifest } => {
+                write!(
+                    f,
+                    "the manifest names an artifact {}, and its stored order opens with the other form",
+                    match manifest {
+                        Naming::Named => "whose places carry names",
+                        Naming::Bytes => "cut from bytes alone",
+                    }
+                )
+            },
+            Self::MisplacedRecord { position } => {
+                write!(
+                    f,
+                    "stored record {position} is not under the key its position requires"
+                )
+            },
+            Self::SegmentBoundary { position } => {
+                write!(
+                    f,
+                    "stored record {position} ends where the artifact has no segment boundary"
+                )
+            },
+        }
+    }
+}
+
+impl Error for ArtifactError
+{
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::ToString as _;
+
+    use anodized::spec;
+    use gandr_kernel_term::DecodeError;
+    use gandr_kernel_term::FormatVersion;
+    use gandr_storage_records::NodeHash;
+    use gandr_storage_records::RecordIndex;
+    use gandr_storage_records::RecordTreeError;
+
+    use super::ArtifactError;
+    use super::ManifestField;
+    use crate::record::Naming;
+
+    /// A sink that refuses the first formatted write.
+    #[derive(Debug)]
+    struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuses any offered text.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: returns the formatting error.
+        /// - provides: the refusal observer for every display branch.
+        /// - fails: always returns the formatting error.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Always returns the formatting error.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 on every artifact-error variant and manifest field
+        ///   observes exact first-write refusal, distinguishing a sink that
+        ///   accepts text. Later writes are not sampled by this observer.
+        /// - witness: `error::tests::every_refusal_renders_apart`
+        /// - witness: `error::tests::every_manifest_field_renders_apart`
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        fn write_str(
+            &mut self,
+            _s: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    /// Every refusal retains its diagnostic payload and remains
+    /// distinguishable.
+    #[test]
+    fn every_refusal_renders_apart()
+    {
+        let kernel = DecodeError::Truncated;
+        let records = RecordTreeError::UnknownNode {
+            hash: NodeHash::from([0xa7; 32]),
+        };
+        let first = RecordIndex::from(usize::MAX - 1);
+        let second = RecordIndex::from(usize::MAX - 2);
+        let third = RecordIndex::from(usize::MAX - 3);
+        let fourth = RecordIndex::from(usize::MAX - 4);
+        let fifth = RecordIndex::from(usize::MAX - 5);
+        let sixth = RecordIndex::from(usize::MAX - 6);
+        let found = FormatVersion(0x1234);
+        let kernel_text = kernel.to_string();
+        let records_text = records.to_string();
+        let first_text = first.to_string();
+        let second_text = second.to_string();
+        let third_text = third.to_string();
+        let fourth_text = fourth.to_string();
+        let fifth_text = fifth.to_string();
+        let sixth_text = sixth.to_string();
+        let format_text = found.to_string();
+        let malformed_field = ManifestField::Commitment.to_string();
+        let truncated_field = ManifestField::RootNode.to_string();
+        let cases: [(ArtifactError, &[&str]); 15] = [
+            (ArtifactError::Kernel { refusal: kernel }, &[&kernel_text]),
+            (ArtifactError::Records { refusal: records }, &[
+                &records_text,
+            ]),
+            (ArtifactError::MalformedOrder { place: third }, &[
+                &third_text,
+            ]),
+            (ArtifactError::UnheldRecord { place: fourth }, &[
+                &fourth_text,
+            ]),
+            (ArtifactError::UnplacedRecord { position: fifth }, &[
+                &fifth_text,
+            ]),
+            (ArtifactError::Misnamed { place: sixth }, &[&sixth_text]),
+            (
+                ArtifactError::MalformedManifest {
+                    field: ManifestField::Commitment,
+                },
+                &[&malformed_field],
+            ),
+            (
+                ArtifactError::TruncatedManifest {
+                    field: ManifestField::RootNode,
+                },
+                &[&truncated_field],
+            ),
+            (ArtifactError::TrailingManifestBytes, &[]),
+            (ArtifactError::UnsupportedKernelFormat { found }, &[
+                &format_text,
+            ]),
+            (ArtifactError::IncompatibleProfile, &[]),
+            (ArtifactError::TreeMismatch, &[]),
+            (
+                ArtifactError::NamingMismatch {
+                    manifest: Naming::Bytes,
+                },
+                &["bytes alone"],
+            ),
+            (ArtifactError::MisplacedRecord { position: first }, &[
+                &first_text,
+            ]),
+            (ArtifactError::SegmentBoundary { position: second }, &[
+                &second_text,
+            ]),
+        ];
+        let rendered = cases.each_ref().map(|case| case.0.to_string());
+        for (index, (error, payloads)) in cases.into_iter().enumerate() {
+            for payload in payloads {
+                assert!(
+                    rendered[index].contains(payload),
+                    "{error:?} omitted {payload}"
+                );
+            }
+            assert!(!rendered[.. index].contains(&rendered[index]));
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{error}")),
+                Err(core::fmt::Error)
+            );
+        }
+    }
+
+    /// Every manifest field retains its identity without fixing its prose.
+    #[test]
+    fn every_manifest_field_renders_apart()
+    {
+        let fields = [
+            ManifestField::Domain,
+            ManifestField::ManifestVersion,
+            ManifestField::KernelFormat,
+            ManifestField::CommitmentLength,
+            ManifestField::Commitment,
+            ManifestField::RecordCount,
+            ManifestField::RootNode,
+            ManifestField::Naming,
+        ];
+        let rendered = fields.map(|field| field.to_string());
+        for (index, field) in fields.into_iter().enumerate() {
+            assert!(!rendered[.. index].contains(&rendered[index]));
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{field}")),
+                Err(core::fmt::Error)
+            );
+        }
+    }
+}

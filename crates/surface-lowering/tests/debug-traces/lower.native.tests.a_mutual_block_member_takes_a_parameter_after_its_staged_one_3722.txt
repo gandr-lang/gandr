@@ -1,0 +1,35 @@
+test: lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722
+package: gandr-surface-lowering
+command: mise run debug:refusal DescentOnSeveralParameters gandr-surface-lowering lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722
+
+(lldb) target create "target/debug-trace/debug/deps/gandr_surface_lowering-25b2bff7e1b8e468"
+Current executable set to 'target/debug-trace/debug/deps/gandr_surface_lowering-25b2bff7e1b8e468' (x86_64).
+(lldb) settings set -- target.run-args  "lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --file crates/surface-lowering/src/lower/native.rs --line 12747
+Breakpoint 1: where = gandr_surface_lowering-25b2bff7e1b8e468`<gandr_surface_lowering::lower::Lowerer>::claim::{closure#0} + 498 at native.rs:12747:13, address = 0x0000000001c25692
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lowering-25b2bff7e1b8e468`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x0000000002a52ad8
+(lldb) run
+
+running 1 test
+test lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 316528 launched: 'target/debug-trace/debug/deps/gandr_surface_lowering-25b2bff7e1b8e468' (x86_64)
+Process 316528 stopped
+* thread #2, name = 'lower::native::', stop reason = breakpoint 1.1
+       frame #0: 0x0000555557179692 gandr_surface_lowering-25b2bff7e1b8e468`<gandr_surface_lowering::lower::Lowerer>::claim::{closure#0} at native.rs:12747:13
+   12744	                })
+   12745	                .unwrap_or_else(|| SurfaceName::from(""))
+   12746	        };
+-> 12747	        Err(LoweringRefusal::DescentOnSeveralParameters {
+    	            ^
+   12748	            span: site.at.span,
+   12749	            staged: named(staged),
+   12750	            claimed: named(claimed),
+(lldb) bt 24

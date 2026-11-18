@@ -1,0 +1,15 @@
+import "./layout.gandr";
+pub data Code : Type where { | Plain : (s : Scalar) --> Code }
+pub data Coded : Type where {
+  | NoCoded : Coded
+  | Coded : (name : String, c : Code, rest : Coded) --> Coded
+}
+pub data Signature : Type where { | Signature : (params : Coded, result : Code) --> Signature }
+pub data Signatures : Type where {
+  | NoSignature : Signatures
+  | Member : (s : Signature, rest : Signatures) --> Signatures
+}
+pub data Row : Type where { | Row : (result : Code) --> Row }
+pub data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }
+pub data Admission : Type where { | Admitted : Admission }
+pub def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }

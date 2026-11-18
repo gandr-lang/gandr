@@ -1,0 +1,7 @@
+{CIRCLE}def two : Path[.A = Circle](Base, Base);
+def two = Path.walk (fun (a) {{ type(Path[.A = Circle](Base, a)) }}) loop loop;
+
+def undone : Path[.A = Circle](Base, Base);
+def undone = Path.walk (fun (a) {{ type(Path[.A = Circle](a, Base)) }}) (Path.walk (fun (a) {{
+  type(Path[.A = Circle](Base, a))
+}}) loop loop) (Path.here Base);
