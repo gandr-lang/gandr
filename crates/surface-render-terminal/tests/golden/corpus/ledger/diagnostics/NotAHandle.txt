@@ -1,10 +1,10 @@
 error[NotAHandle]: `let x at w` opens a handle at a world, and this value is none
-   ╭▸ corpus/ledger/diagnostics/NotAHandle.gandr:37:3
+   ╭▸ corpus/ledger/diagnostics/NotAHandle.gandr:35:3
    │
-36 │ ┌ def unhandled() -> -F Seat.Report =
-37 │ │   let written at seat = Seat.progress
+34 │ ┌ def unhandled() -> Seat.Report =
+35 │ │   let written at seat = Seat.progress
    │ │   ━━━ not a handle at a world
-38 │ │   pure written
+36 │ │   pure written
    │ └──────────────┘ checked against `() -> Seat.Report`; while checking the body of this thunk
    │
    ├ note: `unhandled` is refused with NotAHandle, as its expectation states

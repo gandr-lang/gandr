@@ -1,7 +1,7 @@
 error[EndpointUsedTwice]: one action names the endpoint twice
   ╭▸ corpus/ledger/diagnostics/EndpointUsedTwice.gandr:4:53
   │
-3 │ ┌ def seat_sent_over_itself() -> -F Unit =
+3 │ ┌ def seat_sent_over_itself() -> Unit =
 4 │ │   let desk = fork (seat : !String. end) { send seat seat; close seat };
   │ │   ┬──                                     ┬─────────┯━━━
   │ │   │                                       │         │

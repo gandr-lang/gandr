@@ -1,11 +1,11 @@
 error[NotInverse]: the `ua` translators are not inverse to each other
-   ╭▸ corpus/ledger/diagnostics/NotInverse.gandr:28:16
+   ╭▸ corpus/ledger/diagnostics/NotInverse.gandr:24:16
    │
-28 │   def lopsided = ua[
+24 │   def lopsided = ua[
    │ ┏━━━━━━━━━━━━━━━━┛
-29 │ ┃   1,
-30 │ ┃   4
-31 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = boolId, .one = keep});
+25 │ ┃   1,
+26 │ ┃   4
+27 │ ┃ ] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = boolId, .one = keep});
    │ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ translators that are not inverse
    │
    ├ note: `lopsided` is refused with NotInverse, as its expectation states

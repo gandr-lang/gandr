@@ -1,7 +1,7 @@
 error[EndpointAsValue]: an endpoint can be used only by a session action
   ╭▸ corpus/ledger/diagnostics/EndpointAsValue.gandr:4:39
   │
-3 │ ┌ def seat_returned() -> -F Unit =
+3 │ ┌ def seat_returned() -> Unit =
 4 │ │   let desk = fork (seat : end) { pure seat };
   │ │   ┬──                            ┬────┯━━━
   │ │   │                              │    │

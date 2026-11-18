@@ -1,7 +1,7 @@
 error[HeldConsumed]: a method whose receiver is `consumed` takes the held value and ends its hold; the value cannot be read, accessed or consumed after that call
    ╭▸ corpus/ledger/diagnostics/HeldConsumed.gandr:18:3
    │
-15 │ ┌ def readAfterTaken() -> -F Integer =
+15 │ ┌ def readAfterTaken() -> Integer =
 16 │ │   var n = 3
    │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 17 │ │   let m = n.take ()

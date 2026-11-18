@@ -1,12 +1,12 @@
 error[StagesDisagree]: the call's arguments stand at stages that no single stage of the callee's stage parameter fits
-   ╭▸ corpus/ledger/diagnostics/StagesDisagree.gandr:18:3
+   ╭▸ corpus/ledger/diagnostics/StagesDisagree.gandr:15:3
    │
-17 │   def suppliedApart[j : Size, k : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> -F Nat =
+14 │   def suppliedApart[j : Size, k : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
    │   │                                     ┬                    ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds x : Nat
    │   │                                     │
    │ ┌─┘                                     checked against `(Nat -> Nat) -> Nat -> -F Nat`; while checking the body of this function; binds f : Nat -> Nat
    │ │
-18 │ │   applyAt[.i = k] f x
+15 │ │   applyAt[.i = k] f x
    │ │   ┯━━━━━━───────────│
    │ └───│─────────────────┤
    │     │                 checked against `(Nat -> Nat, Nat) -> Nat`; while checking the body of this thunk

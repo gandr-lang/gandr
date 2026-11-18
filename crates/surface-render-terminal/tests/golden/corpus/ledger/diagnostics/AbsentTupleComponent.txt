@@ -1,7 +1,7 @@
 error[AbsentTupleComponent]: the tuple has no such component
   ╭▸ corpus/ledger/diagnostics/AbsentTupleComponent.gandr:5:3
   │
-4 │   def none(u : Unit) -> -F Unit =
+4 │   def none(u : Unit) -> Unit =
   │   │        ─ checked against `Unit -> -F Unit`; while checking the body of this function; binds u : Unit
   │ ┌─┘
   │ │

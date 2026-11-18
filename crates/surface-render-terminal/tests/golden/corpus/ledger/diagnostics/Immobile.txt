@@ -1,8 +1,8 @@
 error[Immobile]: this value crosses to another world, but its type is not mobile
-   ╭▸ corpus/ledger/diagnostics/Immobile.gandr:21:3
+   ╭▸ corpus/ledger/diagnostics/Immobile.gandr:19:3
    │
-20 │ ┌ def unmarkedBack() -> Seat.Dispatch =
-21 │ │   migrate [seat] { pure Seat.task }
+18 │ ┌ def unmarkedBack() -> Seat.Dispatch =
+19 │ │   migrate [seat] { pure Seat.task }
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│───────────────────────────────┤
    │     │                               checked against `() -> Seat.Dispatch`; while checking the body of this thunk

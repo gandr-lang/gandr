@@ -1,7 +1,7 @@
 error[HeldCopied]: a value held with `var[1]` is never copied: read it once through an exclusive `access` and write it back with `resume`
   ╭▸ corpus/ledger/diagnostics/HeldCopied.gandr:5:8
   │
-3 │ ┌ def read_held() -> -F Integer =
+3 │ ┌ def read_held() -> Integer =
 4 │ │   var[1] c = 0
   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 5 │ │   pure c

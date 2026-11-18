@@ -1,7 +1,7 @@
 error[HeldKept]: a shared view of this value is kept in a region whose scope is still running; an exclusive `access` waits until that scope ends
   ╭▸ corpus/ledger/diagnostics/HeldKept.gandr:7:3
   │
-4 │ ┌ def writtenWhileKept() -> -F Integer =
+4 │ ┌ def writtenWhileKept() -> Integer =
 5 │ │   var s = 3
   │ │   ─── checked against `-F Integer`; while checking the scope of this hold
 6 │ │   let k : (() -> Integer) at s = access shared s as w { pure thunk { pure w } };

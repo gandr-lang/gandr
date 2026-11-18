@@ -1,7 +1,7 @@
 error[BufferRead]: a buffer can be used only by the `send`, the operation or the resumption that hands it back
    ╭▸ corpus/ledger/diagnostics/BufferRead.gandr:15:24
    │
-12 │ ┌  def readWhileHeld() -> -F Unit =
+12 │ ┌  def readWhileHeld() -> Unit =
 13 │ │┌   handle r : std.io.Ring.Eff {
 14 │ ││     let b = r.alloc 4096;
    │ ││     ─── checked against `-F [std.io.Ring.Eff, r : std.io.Ring.Eff] Unit`; while checking the rest of this receive's block; binds b : Buf

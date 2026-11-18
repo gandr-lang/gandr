@@ -1,7 +1,7 @@
 error[ArmsDisagree]: the arms of this `offer` or case leave the endpoints in different states
   ╭▸ corpus/ledger/diagnostics/ArmsDisagree.gandr:6:51
   │
-4 │ ┌ def seat_arms_leave_it_apart() -> -F Unit =
+4 │ ┌ def seat_arms_leave_it_apart() -> Unit =
 5 │ │   let desk = fork (seat : &{next : end, retire : end}) {
   │ │   ┬──
   │ │   │

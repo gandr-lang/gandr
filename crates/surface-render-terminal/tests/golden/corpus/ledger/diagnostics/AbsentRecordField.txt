@@ -1,7 +1,7 @@
 error[AbsentRecordField]: the record has no such field
   ╭▸ corpus/ledger/diagnostics/AbsentRecordField.gandr:5:3
   │
-4 │   def absent_selected(r : *{n : Integer, s : String}) -> -F Integer =
+4 │   def absent_selected(r : *{n : Integer, s : String}) -> Integer =
   │   │                   ─ checked against `*{n : Integer, s : String} -> -F Integer`; while checking the body of this function; binds r : *{n : Integer, s : String}
   │ ┌─┘
   │ │

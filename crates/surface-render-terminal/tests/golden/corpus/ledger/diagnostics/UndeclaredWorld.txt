@@ -1,8 +1,8 @@
 error[UndeclaredWorld]: this names no world; declare one with `world w ;`
-   ╭▸ corpus/ledger/diagnostics/UndeclaredWorld.gandr:42:3
+   ╭▸ corpus/ledger/diagnostics/UndeclaredWorld.gandr:39:3
    │
-41 │ ┌ def toAValue() -> -F Seat.Report =
-42 │ │   migrate [collect] { pure Seat.progress }
+38 │ ┌ def toAValue() -> Seat.Report =
+39 │ │   migrate [collect] { pure Seat.progress }
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│──────────────────────────────────────┤
    │     │                                      checked against `() -> Seat.Report`; while checking the body of this thunk

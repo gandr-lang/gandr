@@ -1,12 +1,12 @@
 error[OpenSessionPayload]: a session type's payload names a variable bound outside it, which only a run's protocol may
-  ╭▸ corpus/ledger/diagnostics/OpenSessionPayload.gandr:7:60
+  ╭▸ corpus/ledger/diagnostics/OpenSessionPayload.gandr:5:60
   │
-6 │   def open_payload = Path.walk
-  │ ┌────────────────────┘
-7 │ │   (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) })
+4 │   def open_payload : Path[.A = Type](?String. end, ?String. end) = Path.walk
+  │ ┌──────────────────────────────────────────────────────────────────┘
+5 │ │   (fun (X) { type(Path[.A = Type](type(?String. end), type(?X. end))) })
   │ │                                                            ━━━━━━━ a session payload open over a binder
-8 │ │   (Path.here String)
-9 │ │   (Path.here (type(?String. end)));
+6 │ │   (Path.here String)
+7 │ │   (Path.here (type(?String. end)));
   │ └──────────────────────────────────┘ checked against `Path[.A = Type](?String >> end, ?String >> end)`; while forming this type under its binder; binds _ : Type
   │
   ├ note: `open_payload` is refused with OpenSessionPayload, as its expectation states
