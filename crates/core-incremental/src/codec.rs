@@ -1616,6 +1616,9 @@ impl Places<'_>
     /// # Adequacy
     /// - hypothesis: L3 — as [`write_report`].
     /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the support of a judged place, growth within the report
     fn read(
         &self,
         reader: &mut Reader<'_>,
