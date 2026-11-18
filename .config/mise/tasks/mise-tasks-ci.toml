@@ -5850,16 +5850,22 @@ snapshot() {
   pr_reading "$number" \
     | jq -r '[.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing"), .headRefOid, .isDraft] | @tsv'
 }
-# The first failed required check on the head of `$1`, this pull request by
-# default, if any, read off the same reading against the trunk's required
-# contexts (`required.jq`). A cancelled check is red unless its run is on
-# another head than the pull request's, which a push left behind (#7796), or
-# another run of its workflow on the same head was not cancelled
-# (`superseded.jq`, #2829): two pull_request events for one head start two
-# runs in the same second, the concurrency group cancels one, whichever id it
-# carries, and its cancelled checks stay listed until the surviving run's jobs
-# start. A head the CI depth gate stopped is not red (`required_reading`,
-# #5074).
+# This function finds the first failed required check on the head of `$1`. It
+# uses `$number` when `$1` is absent. `required.jq` supplies the required
+# contexts from the trunk.
+#
+# A cancelled check is red unless its run belongs to another head. A push can
+# leave that run behind.
+# - see: #7796
+#
+# A cancelled run on the current head can have a live peer. Two pull request
+# events can start one workflow in the same second. The concurrency group
+# cancels one run. `superseded.jq` accepts the check if a peer exists.
+# A peer can queue, run or complete.
+# - see: #2829
+#
+# `required_reading` ignores a CI depth stop.
+# - see: #5074
 red_check() {
   local view rollup failed red link run superseded head
   view=$(pr_reading "${1:-$number}") || return 1
@@ -5880,7 +5886,7 @@ red_check() {
             runs=$(gh api "repos/$repo/actions/workflows/$workflow/runs?head_sha=$sha&per_page=100" \
               --jq '[.workflow_runs[] | {id, conclusion}]')
           fi
-          jq -c --argjson run "$run" --arg sha "$sha" --arg head "$head" \
+          jq -c --slurpfile run <(printf '%s\n' "$run") --arg sha "$sha" --arg head "$head" \
             -f "$pr_stack_dir/superseded.jq" <<< "$runs"
         done) || superseded=
       if [[ "$superseded" == true ]]; then continue; fi

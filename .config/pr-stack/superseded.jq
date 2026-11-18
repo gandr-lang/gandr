@@ -1,18 +1,21 @@
-# Whether a cancelled run's checks are superseded, as `pr:watch`'s
-# `red_check` reads them. A run on another head than the pull request's
-# reads its checks as no checks of the head: a push moved the head, and the
-# concurrency group cancelled the run of the commit before (#7796). On the
-# head itself, two `pull_request` events start two runs of a workflow in the
-# same second, and the concurrency group cancels one; their ids are not
-# ordered by which one survives. So the cancelled run is superseded when any
-# other run of its workflow on the same head was not cancelled (queued, in
-# progress or completed), whatever its id (#2829).
+# `pr:watch` calls this program for a cancelled run.
 #
-# Input: the workflow's runs on the cancelled run's head, each `{id,
-# conclusion}`, the conclusion null while a run is queued or in progress;
-# none are read for a run on another head.
-# Arguments: `$run`, the cancelled run's id; `$sha`, the head it ran on;
-# `$head`, the pull request's head.
-# Output: `true` when superseded, so its cancelled checks are not red.
+# A run of another head has no relevant check. A push moves the pull request
+# head, then GitHub cancels the old run.
+# - see: #7796
+#
+# Two pull request events can start one workflow on one head in the same
+# second. The concurrency group cancels one run. A peer can queue, run or
+# complete. It supersedes the cancelled run. Run identifiers give no order.
+# - see: #2829
+#
+# Input is the workflow's runs on the cancelled run's head. Each run has `id`
+# and `conclusion`. The conclusion is null for a queued or running run. A
+# different head has no input run.
+#
+# `$run` is a one-item list. The item is the cancelled run's id. `$sha` names
+# its head. `$head` names the pull request's head.
+#
+# The program returns `true` when another run supersedes this run.
 
-$sha != $head or any(.[]; .id != $run and .conclusion != "cancelled")
+$sha != $head or any(.[]; .id != $run[0] and .conclusion != "cancelled")
