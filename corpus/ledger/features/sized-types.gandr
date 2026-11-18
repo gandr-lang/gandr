@@ -35,20 +35,16 @@ import "../../model/data/recursive-lists.gandr";
 
 /// The direct form: a node over a list of nodes, nested through `List`'s
 /// strictly positive parameter.
-@[checks]
 data Bush : Type where
   | Sprout : (kids : List Bush) --> Bush
 
 /// A node without children, written directly.
-@[checks]
 def sprig : Bush = Sprout (Nil : List Bush);
 
 /// A node over two childless nodes, written directly.
-@[checks]
 def shrub : Bush = Sprout (Cons sprig (Cons sprig (Nil : List Bush) : List Bush) : List Bush);
 
 /// A list of numbers, summed.
-@[checks]
 def rec sum(xs : List Nat) -> Nat =
   match xs where
     | Nil => Zero
@@ -57,14 +53,12 @@ def rec sum(xs : List Nat) -> Nat =
 /// The nodes of a bush, its children's measured through `map`: the call
 /// instantiates `map`'s element at the children's stage, below the node's,
 /// so `nodes[<]` takes each child.
-@[checks]
 def rec nodes(t : Bush) -> Nat =
   match t where
     | Sprout(kids) => Succ (sum (map Bush Nat nodes[<] kids))
 
 /// A map over the tree: every node gains a childless node beside its
 /// children, each child grown through `map` at its stage.
-@[checks]
 def rec grow(t : Bush) -> Bush =
   match t where
     | Sprout(kids) => Sprout (Cons sprig (map Bush Bush grow[<] kids) : List Bush)
@@ -111,11 +105,9 @@ rec {
 }
 
 /// A node without children.
-@[checks]
 def leaf : Rose = Node Empty;
 
 /// A node over two leaves.
-@[checks]
 def sapling : Rose = Node (More leaf (More leaf Empty));
 
 /// The sapling's three nodes.

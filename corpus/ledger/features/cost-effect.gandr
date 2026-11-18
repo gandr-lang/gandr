@@ -57,14 +57,14 @@ module Erased : Model(Cost.Eff) with sort N = Nat -> Nat where
   /// The answer itself.
   type C = Integer;
   /// A charge leaves what runs after it as it is.
-  def charge(c : Nat -> Nat, k : Integer) -> Integer { k }
+  def charge(c : Nat -> Nat, k : Integer) -> Integer = k;
   /// No cost.
-  def zero : Nat -> Nat = thunk { fun (n) { pure n } };
+  def zero : Nat -> Nat = fun (n) { pure n };
   /// Two costs, composed.
   def plus(a : Nat -> Nat, b : Nat -> Nat) -> Nat -> Nat =
-    thunk { fun (n) { let m = b n; a m } }
+    fun (n) { let m = b n; a m }
   /// Charging nothing is the identity.
-  def chargeZero(k : Integer) -> Path(charge zero k, k) { Path.here k }
+  def chargeZero(k : Integer) -> Path(charge zero k, k) = Path.here k;
   /// Two charges are one.
   def chargeTwice(a : Nat -> Nat, b : Nat -> Nat, k : Integer) -> Path(
     charge a (charge b k),

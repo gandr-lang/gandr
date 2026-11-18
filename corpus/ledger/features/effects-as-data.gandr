@@ -45,14 +45,14 @@ def rec runState(e : Type, a : Type, p : Prog (Either StateOp e) a, s : Integer)
 
 /// Exceptions answered at the front of the row, the rest of the row
 /// forwarded: a raise ends the program with its code.
-def rec runExn(e : Type, a : Type, p : Prog (Either ExnOp e) a) -> Prog(e, Outcome a) =
+def rec runExn(e : Type, a : Type, p : Prog (Either ExnOp e) a) -> Prog e (Outcome a) =
   match p where
-    | Done(x) => (Done (Returned x) : Prog(e, Outcome a))
+    | Done(x) => (Done (Returned x) : Prog e (Outcome a))
     | Op(o, k) => match o where
-      | Left(Raise(c)) => (Done (Raised c) : Prog(e, Outcome a))
+      | Left(Raise(c)) => (Done (Raised c) : Prog e (Outcome a))
       | Right(other) => (Op other (fun (r) {
         runExn[<] e a (k r)
-      }) : Prog(e, Outcome a))
+      }) : Prog e (Outcome a))
 
 /// A program with nothing left in its row is its result.
 def pureOf(a : Type, p : Prog Void a) -> a =
@@ -90,7 +90,9 @@ def failing : Prog (Either ExnOp Void) Integer = Op
 /// `runExn` at the front of the two-effect row. An applied type cannot yet
 /// stand as a type argument, so the runs below use the handlers at
 /// their instances, written out.
-def rec runExnAt(p : Prog (Either ExnOp (Either StateOp Void)) Integer) -> Prog (Either StateOp Void) (Outcome Integer) =
+def rec runExnAt(p : Prog (Either ExnOp (Either StateOp Void)) Integer) -> Prog (
+  Either StateOp Void
+) (Outcome Integer) =
   match p where
     | Done(x) => (Done (Returned x) : Prog (Either StateOp Void) (Outcome Integer))
     | Op(o, k) => match o where

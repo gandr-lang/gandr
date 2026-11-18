@@ -1,6 +1,5 @@
 /// `send_expression`: a send over a session endpoint.
-@[checks]
-def deliver() -> -F Unit =
+def deliver() -> Unit =
   let desk = fork (seat : ?Integer. end) { let n = recv seat; close seat };
   send desk 1
   close desk

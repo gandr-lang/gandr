@@ -1,4 +1,2 @@
 /// `function_type`: a function type.
-@[checks]
-def twice : Type -> Type;
-def twice = fun (Y) { type(Y * Y) };
+def twice : Type -> Type = fun (Y) { type(Y * Y) };

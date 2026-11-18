@@ -1,6 +1,5 @@
 /// `bind_expression`: an atom abstracted over a rule term, at a port that
 /// abstracts one.
-@[checks]
 theory Restriction where
   sort Name : Atom;
   sort Proc : Type;

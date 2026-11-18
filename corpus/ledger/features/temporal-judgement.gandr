@@ -73,12 +73,10 @@ def retiringLater : Dialogue Seat.SeatEnd = dialogue
 
 /// The two logs are one dialogue: they share every endpoint's moves and
 /// every send's receipt, so the path is reflexivity.
-@[checks]
 def commuted : Path[.A = Dialogue Seat.SeatEnd](retiring, retiringLater) = Path.here retiring;
 
 /// The two logs decompose to one web: a web is read off the dialogue it
 /// decomposes, so the path between the logs' webs is reflexivity too.
-@[checks]
 def sameWeb : Path[.A = Web](decompose retiring, decompose retiringLater) = Path.here
   (decompose retiring);
 

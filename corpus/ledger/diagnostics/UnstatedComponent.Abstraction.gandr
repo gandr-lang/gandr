@@ -2,7 +2,6 @@
 /// state: an operation one of whose ports abstracts an atom.
 ///
 /// Restriction: a fresh name bound over a process.
-@[checks]
 theory Restriction where
   sort Name : Atom;
   sort Proc : Type;

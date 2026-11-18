@@ -4,12 +4,10 @@
 /// - owes: #4093 — the fill over a flow of paths, `alongFlow`
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
-@[checks]
 def selfLoop(A : Type, x : A, y : A) -> (f : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](f, f) =
-  thunk { fun (f) { Path.here f } }
+  fun (f) { Path.here f }
 
 /// The fill over a path of paths, the `Path` instance.
-@[checks]
 def alongPath(
   A : Type,
   x : A,

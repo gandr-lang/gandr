@@ -1,4 +1,2 @@
 /// `lazy_record_expression`: a lazy record: one computation per label.
-@[checks]
-def binary : +U (-F Integer & -F String);
-def binary = &{.0 => 1, .1 => "s"};
+def binary : +U (-F Integer & -F String) = &{.0 => 1, .1 => "s"};

@@ -17,7 +17,7 @@ import std.codec (Format, Codec);
 import std.codec.toml (Toml, Table, Value);
 
 /// A semantic version, as a manifest records it.
-pub type Version = *{ major : Nat, minor : Nat, patch : Nat };
+pub type Version = *{major : Nat, minor : Nat, patch : Nat};
 
 /// The codec between a version and a TOML string, `"1.4.2"`.
 pub def versionToml : Codec Toml Version = *{
@@ -25,7 +25,8 @@ pub def versionToml : Codec Toml Version = *{
   decode = fun (doc) {
     match doc where
       | Value.string(s) => match split s "." where
-        | #[a, b, c] => (zip3 (parseNat a) (parseNat b) (parseNat c)).map (fun (*{x, y, z}) { *{ major = x, minor = y, patch = z } })
+        | #[a, b, c] => (zip3 (parseNat a) (parseNat b) (parseNat c)).map
+          (fun (*{x, y, z}) { *{major = x, minor = y, patch = z} })
         | _ => none
       | _ => none
   },
@@ -36,6 +37,7 @@ pub def versionToml : Codec Toml Version = *{
 pub def versionRoundTrip(v : Version) -> versionToml.decode(versionToml.encode v) == some v =
   versionToml.roundTrip v
 
-/// The text `package.gandr.toml` holds for a version, printed by TOML's printer.
+/// The text `package.gandr.toml` holds for a version, printed
+/// by TOML's printer.
 pub def versionLine(v : Version) -> String =
   Toml.print (Table.of (#[*{"version", versionToml.encode v}]))

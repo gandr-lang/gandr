@@ -1,5 +1,4 @@
 /// `resume_expression`: resuming an accessed cell with a value.
-@[checks]
-def bump() -> -F Unit =
+def bump() -> Unit =
   var c = 0
   access c as v { resume v 1 }

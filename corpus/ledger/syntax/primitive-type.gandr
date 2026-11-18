@@ -1,4 +1,2 @@
 /// `primitive_type`: a primitive type.
-@[checks]
-def answer : Integer;
-def answer = 42;
+def answer : Integer = 42;

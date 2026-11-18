@@ -19,7 +19,7 @@ def step(token : Token) -> [Cost] Node =
   Node.of token
 
 /// Two steps in sequence, whose cost the checker infers as `1 + 1`.
-def twoSteps(a : Token, b : Token) -> [Cost] *{Node, Node} =
+def twoSteps(a : Token, b : Token) -> [Cost] (Node * Node) =
   *{step a, step b}
 
 /// The exported pair parser. Its signature states the inferred composite, and

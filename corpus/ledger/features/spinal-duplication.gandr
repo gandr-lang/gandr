@@ -18,7 +18,7 @@
 /// - owes: #2801
 
 /// The rib, a closed computation that reads no binder of `tagged`.
-def ten() -> Integer { 1 + 2 + 3 + 4 }
+def ten() -> Integer = 1 + 2 + 3 + 4;
 
 /// The abstraction, whose spine is the path to `y` and whose rib is `ten()`.
 def tagged : Integer -> Integer * Integer = fun (y : Integer) { *{y, ten ()} };

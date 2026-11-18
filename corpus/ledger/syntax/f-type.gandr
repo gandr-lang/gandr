@@ -1,4 +1,3 @@
 /// `f_type`: a computation type returning a value type.
-@[checks]
-def answer() -> -F Integer =
-  return 42
+def answer() -> Integer =
+  42

@@ -5,8 +5,7 @@ theory Magma where
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
 
-@[checks]
-def keep(e : +{Unit}) -> -F +{Unit} =
+def keep(e : +{Unit}) -> +{Unit} =
   e
 
 /// A translator declared and never defined, so no element evaluates through it.

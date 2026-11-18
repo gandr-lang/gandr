@@ -8,9 +8,7 @@ rec {
 
   /// A definition between the two families ends the first one's block.
   @[checks]
-  def between(x : Integer) -> -F Integer {
-    return x
-  }
+  def between(x : Integer) -> Integer = x;
 
   @[checks]
   data Back : Type where

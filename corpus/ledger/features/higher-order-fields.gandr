@@ -38,7 +38,7 @@ def rec final(p : Program, s : Integer) -> Integer =
     | Put(t, k) => final[<] k t
 
 /// Answers the state it reads.
-def answered(x : Integer) -> Program { Done x }
+def answered(x : Integer) -> Program = Done x;
 
 /// A store, then a read of it.
 @[runs("5")]

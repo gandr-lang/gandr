@@ -3,15 +3,13 @@
 import "../../model/identity/circle-base.gandr";
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
-@[checks]
 def selfLoop(A : Type, x : A, y : A) -> (f : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](
   f,
   f
 ) =
-  thunk { fun (f) { Path.here f } }
+  fun (f) { Path.here f }
 
 /// The square the generator makes at a path of paths from `loop` to itself.
-@[checks]
 def made(a : Path[.A = Path[.A = Circle](Base, Base)](
   loop,
   loop

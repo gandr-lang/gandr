@@ -6,7 +6,7 @@ import std.io;
 
 /// A buffer allocated and never freed.
 @[refuses("BufferUnreturned")]
-def neverFreed() -> -F Unit =
+def neverFreed() -> Unit =
   handle r : std.io.Ring.Eff {
     let b = r.alloc 4096;
     pure *{}

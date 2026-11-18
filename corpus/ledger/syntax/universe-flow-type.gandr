@@ -4,13 +4,9 @@ module Schema where {
   type Old = String * Integer;
   type New = Integer * String;
   @[checks]
-  def toNew(old : Old) -> -F New =
+  def toNew(old : Old) -> New =
     match old where
       | *{name, age} => *{age, name}
 }
-@[checks]
-def shift : Schema.Old ⇝ Schema.New;
-def shift = Flow.into Schema.toNew;
-@[checks]
-def shiftAscii : Schema.Old ~~> Schema.New;
-def shiftAscii = Flow.into Schema.toNew;
+def shift : Schema.Old ⇝ Schema.New = Flow.into Schema.toNew;
+def shiftAscii : Schema.Old ~~> Schema.New = Flow.into Schema.toNew;

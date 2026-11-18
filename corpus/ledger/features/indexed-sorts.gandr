@@ -15,7 +15,6 @@ import std.list (List);
 
 /// The shape of a category without its laws: a sort of morphisms indexed by
 /// two objects, an identity at each object and composition.
-@[checks]
 theory CatShape where
   sort Ob : Type;
   sort Hom(dom : Ob, cod : Ob) : Type;
@@ -31,7 +30,7 @@ module SetoidCat : Model(CatShape) where {
 
   /// The identity function at a type.
   @[runs("fun (a) { fun (b) { b } }")]
-  def ident(t : Type, x : t) -> t { x }
+  def ident(t : Type, x : t) -> t = x;
 
   /// Composition of two functions, applied.
   @[runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }")]
@@ -48,7 +47,7 @@ module SetoidCat : Model(CatShape) where {
   /// The interface's identity runs to a function that applies `ident`, which
   /// the signature hides, so the run is opaque at the model.
   @[runs("⟨opaque at SetoidCat⟩ : (a : Type) -> (a -> a)")]
-  def id(t : Type) -> t -> t { thunk { ident t } }
+  def id(t : Type) -> t -> t = thunk { ident t };
 
   /// Composition likewise runs through the hidden `compose`.
   @[runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a -> b, b -> c) -> (a -> c)")]
@@ -76,12 +75,11 @@ module Lists : Model(Carrier) where
   type T(a : Type) = List a;
 
   /// The list unchanged.
-  def same(a : Type, x : List a) -> List a { x }
+  def same(a : Type, x : List a) -> List a = x;
 
 /// A client reaches the model's family through the model's name: `Lists.T`
 /// at `Integer` is the list of integers.
-@[checks]
-def kept(xs : Lists.T(Integer)) -> List Integer { xs }
+def kept(xs : Lists.T(Integer)) -> List Integer = xs;
 
 /// A carrier into the computation types: `Type[-]` classifies the sort, so a
 /// model answers it with a family into the computation types.
@@ -110,8 +108,8 @@ module Pointwise : Model(Sections) where
   type Sec(g : Ctx, a : Fam g) = (x : g) -> a(x);
 
   /// The family that is `Unit` at every point.
-  def whole(g : Type) -> g -> Type { fun (_x) { return Unit } }
+  def whole(g : Type) -> g -> Type = fun (_x) { return Unit };
 
 /// A section of a family over the integers gives, at a point, a value of the
 /// type the family names there.
-def readAt(a : Integer -> Type, s : Pointwise.Sec(Integer, a), n : Integer) -> a(n) { s n }
+def readAt(a : Integer -> Type, s : Pointwise.Sec(Integer, a), n : Integer) -> a(n) = s n;

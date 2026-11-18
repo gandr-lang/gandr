@@ -2,6 +2,5 @@
 module Counts where {
   type Count = Integer;
   @[checks]
-  def zero : Count;
-  def zero = 0;
+  def zero : Count = 0;
 }

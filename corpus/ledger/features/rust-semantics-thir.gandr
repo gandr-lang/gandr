@@ -50,12 +50,12 @@ def returnsPast(
 
 /// From the free list of `order`, `pop` answers its head and leaves
 /// the rest free.
-def popSpecified(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> (freeAt(
+def popSpecified(blocks : Vals, heads : Vals, order : Nat, ixs : Ixs) -> freeAt(
   blocks,
   heads,
   order,
   ixs
-)) -> wpMemFn(
+) -> wpMemFn(
   popBody,
   popEnv(order),
   popPost(blocks, heads, order, ixs),

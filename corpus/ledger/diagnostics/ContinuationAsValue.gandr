@@ -14,12 +14,11 @@ module Cancel :> *{
   def notes = "notes";
 }
 
-@[checks]
-def resume_stack(j : Stack (-F Unit) (-F Unit)) -> -F Unit =
+def resume_stack(j : Stack (-F Unit) (-F Unit)) -> Unit =
   j *{}
 
 @[refuses("ContinuationAsValue")]
-def handed() -> -F Unit =
+def handed() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send task Cancel.notes;

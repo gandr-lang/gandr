@@ -38,8 +38,8 @@ data Single : Type where
 /// discharges all three.
 module Omitting : Model(Equivalence) with sort Carrier = Single where
   /// Every two values are alike.
-  def alike(a : Single, b : Single) -> Bool { true }
+  def alike(a : Single, b : Single) -> Bool = true;
 
 /// The discharged law is a component as a written one is: `Omitting.refl` reads
 /// at a value.
-def reflexive(a : Single) -> Path(Omitting.alike a a, true) { Omitting.refl a }
+def reflexive(a : Single) -> Path(Omitting.alike a a, true) = Omitting.refl a;

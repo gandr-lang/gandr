@@ -25,10 +25,8 @@ module Seat :> *{
   def notes = "notes";
 }
 
-@[checks]
 world operator;
 
-@[checks]
 world seat;
 
 @[refuses("Unlocated")]

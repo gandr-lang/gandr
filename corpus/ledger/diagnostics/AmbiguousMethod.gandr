@@ -4,15 +4,15 @@
 /// An integer's width, one way.
 module Wide where {
   @[checks]
-  def width(self : shared Integer) -> -F Integer { pure 1 }
+  def width(self : shared Integer) -> Integer = pure 1;
 }
 
 /// An integer's width, another way.
 module Narrow where {
   @[checks]
-  def width(self : shared Integer) -> -F Integer { pure 0 }
+  def width(self : shared Integer) -> Integer = pure 0;
 }
 
 @[refuses("AmbiguousMethod")]
-def measured(n : Integer) -> -F Integer =
+def measured(n : Integer) -> Integer =
   n.width ()

@@ -2,6 +2,6 @@
 /// A hole leaves which arm runs open, so the case is refused until it is
 /// filled.
 @[refuses("UndecidedCoverage")]
-def classify(n : Integer) -> -F Integer =
+def classify(n : Integer) -> Integer =
   match n where
-    | ?branch => return 1
+    | ?branch => 1

@@ -5,9 +5,9 @@
 module Bumped where {
   /// A write to the integer, which an exclusive receiver lends.
   @[checks]
-  def bump(self : Integer) -> -F Unit { pure *{} }
+  def bump(self : Integer) -> Unit = pure *{};
 }
 
 @[refuses("OutOfFragment.Held")]
-def unheld(n : Integer) -> -F Unit =
+def unheld(n : Integer) -> Unit =
   n.bump ()

@@ -25,14 +25,12 @@ module Seat :> *{
   def notes = "notes";
 }
 
-@[checks]
 world operator;
 
-@[checks]
 world seat;
 
 @[refuses("NotAHandle")]
 @[entry(seat)]
-def unhandled() -> -F Seat.Report =
+def unhandled() -> Seat.Report =
   let written at seat = Seat.progress
   pure written

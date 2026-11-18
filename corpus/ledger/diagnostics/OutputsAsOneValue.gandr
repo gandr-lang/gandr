@@ -1,10 +1,9 @@
 /// `OutputsAsOneValue`: a call that returns several outputs, where the source
 /// reads one value.
-@[checks]
 def sumDiff(m : Integer, n : Integer) -> (s : Integer, d : Integer) =
   (m + n, m - n)
 
 @[refuses("OutputsAsOneValue")]
-def both() -> -F Integer =
+def both() -> Integer =
   let pair = sumDiff 7 2
   return 0

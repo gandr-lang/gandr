@@ -21,7 +21,7 @@ pub module Rotations where
   /// A quarter turn.
   def quarter : Integer = 90;
   /// Two rotations, one after the other.
-  def then(a : Integer, b : Integer) -> Integer { (a + b) % 360 }
+  def then(a : Integer, b : Integer) -> Integer = (a + b) % 360;
 
 /// The same notes as Markdown, a value a site generator reads.
 pub def rotationsPage : Markdown = (literate Markdown).render Rotations;

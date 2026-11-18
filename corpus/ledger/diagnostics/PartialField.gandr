@@ -5,5 +5,5 @@ data Shape : Type where
   | Line : (start : Integer, tag : Integer) --> Shape
 
 @[refuses("PartialField")]
-def startOf(shape : Shape) -> -F Integer =
+def startOf(shape : Shape) -> Integer =
   shape.start

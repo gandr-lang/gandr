@@ -2,7 +2,6 @@
 /// application written with other than its head's explicit count.
 ///
 /// The theory the model derives from.
-@[checks]
 theory T where
   sort Nat : Type;
   oper add : (a : Nat, b : Nat) --> Nat;

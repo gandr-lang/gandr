@@ -16,7 +16,6 @@
 // the unit laws join.
 
 /// A semigroup: one carrier and an associative multiplication.
-@[checks]
 theory Semigroup where
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
@@ -24,7 +23,6 @@ theory Semigroup where
 
 /// A monoid: the semigroup with a two-sided unit. Its rules are the
 /// semigroup's associativity, then the unit laws, and they join.
-@[checks]
 theory Monoid where
   include Semigroup;
   oper one : M;
@@ -32,7 +30,6 @@ theory Monoid where
   rule unitR : mul x one ==> x;
 
 /// The semigroup with a zero that absorbs on the left.
-@[checks]
 theory LeftZero where
   include Semigroup;
   oper zero : M;
@@ -40,7 +37,6 @@ theory LeftZero where
 
 /// Both extensions at once: one carrier, one multiplication, its unit and
 /// its zero.
-@[checks]
 theory UnitAndZero where
   include Monoid;
   include LeftZero;
@@ -60,7 +56,7 @@ module Endo : Model(Monoid) where {
     g (f x)
 
   /// The identity function.
-  def ident(x : Integer) -> Integer { x }
+  def ident(x : Integer) -> Integer = x;
 
   def mul(
     f : Integer -> Integer,

@@ -4,5 +4,4 @@
 import "../attributes/owes.gandr";
 
 @[refuses("UnexportedName")]
-def used : Type;
-def used = code;
+def used : Type = code;

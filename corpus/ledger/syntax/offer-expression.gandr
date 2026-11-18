@@ -1,6 +1,5 @@
 /// `offer_expression`: an offer: a branch per label a peer can select.
-@[checks]
-def serve() -> -F Unit =
+def serve() -> Unit =
   let desk = fork (seat : &{next : end}) { offer seat { | next => close seat } };
   select desk next
   close desk

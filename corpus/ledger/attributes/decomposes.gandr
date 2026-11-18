@@ -12,6 +12,8 @@ module Ask where
 @[decomposes(series
   (event left 0)
   (parallel (event left 1) (series (event right 0) (event right 1))))]
-def asked : Dialogue Ask.Asking;
-
-def asked = dialogue (left (sent "yes")) (right (received "yes")) (left closed) (right closed);
+def asked : Dialogue Ask.Asking = dialogue
+  (left (sent "yes"))
+  (right (received "yes"))
+  (left closed)
+  (right closed);

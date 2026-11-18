@@ -57,8 +57,8 @@ def render (list : Dom.Element, xs : List Entry) -> [Html, Dom] () =
 
 /// The page's start, exported to the host as `start`. A page without the
 /// list, or a body that does not decode, changes nothing.
-pub def start () -> [Html, Dom, Fetch, Async] () =
-  let document = Html.Window.document (Html.window())
+pub def start() -> [Html, Dom, Fetch, Async] () =
+  let document = Html.Window.document (Html.window ())
   match Dom.Document.getElementById document "entries" where
     | None => ()
     | Some list =>

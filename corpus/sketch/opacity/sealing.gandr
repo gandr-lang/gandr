@@ -28,7 +28,7 @@ module Clock :> Model(Counter) where
   def start : Nat = 0;
 
   /// One step, which unfolds to a successor inside the seal.
-  def tick(c : Nat) -> Nat { c + 1 }
+  def tick(c : Nat) -> Nat = c + 1;
 
 /// A client counts two ticks. It holds no unfolding name for `Clock`, so
 /// `Clock.C` stays abstract here.

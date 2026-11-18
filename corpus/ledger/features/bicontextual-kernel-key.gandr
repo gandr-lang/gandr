@@ -36,12 +36,12 @@ data Either : Type where
   | Mark : (f : Flag) --> Either
 
 /// Answers `n` whichever side `e` takes, each branch under the field it binds.
-def side(n : Nat, e : Either) -> -F Nat =
+def side(n : Nat, e : Either) -> Nat =
   match e -> -F Nat where
     | Count(_m) => n
     | Mark(_f) => n
 
 /// The flag side answers the natural `side` takes first.
 @[runs("Succ Zero")]
-def marked() -> -F Nat =
+def marked() -> Nat =
   side (Succ Zero) (Mark On)

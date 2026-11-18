@@ -4,6 +4,6 @@
 ///
 /// - owes: #1501
 @[refuses("OutOfFragment.release_expression")]
-def released(rounds : Integer) -> -F Unit =
+def released(rounds : Integer) -> Unit =
   let seat = release rounds
   return *{}

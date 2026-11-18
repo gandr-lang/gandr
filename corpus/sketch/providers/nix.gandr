@@ -21,7 +21,7 @@ def helloDerivation = ~nix.derivation("hello", revision = "3ec636362e18");
 
 /// The attribute at whatever revision the lock resolved, the pin left to the
 /// lock.
-type HelloLatest = ~nix.attribute("hello");
+type HelloLatest = ~nix.attribute ("hello");
 
 /// Whether `hello` builds on a system, read off its provided platforms.
 def buildsOn(system : String) -> Bool =

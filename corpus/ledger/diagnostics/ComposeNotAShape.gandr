@@ -1,5 +1,4 @@
 /// `ComposeNotAShape`: a composite whose chain is past its stratum's bound.
-@[checks]
 def withinBound(
   A : Type,
   x : A,
@@ -27,7 +26,6 @@ def pastBound(
 ) -> Path(x, v) =
   compose[5, 7] (chain 4) (p, q, r, s)
 
-@[checks]
 def whiskerWithinDegree(
   A : Type,
   x : A,

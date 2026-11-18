@@ -41,7 +41,7 @@ import std.math.path (assoc);
 
 /// One cell, its own reflexivity: the generator over the 1-chain.
 def selfLoop(A : Type, x : A, y : A) -> (f : Path(x, y)) -> Path[.A = Path[.A = A](x, y)](f, f) =
-  thunk { fun (f) { Path.here f } }
+  fun (f) { Path.here f }
 
 /// The 1-chain's cell lifts along `fa`, and its sides compose the generator's
 /// reflexivities with `fa`.
@@ -71,7 +71,7 @@ def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(x, y)) -> ((g : Pa
   y,
   z
 )) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)) =
-  thunk { fun (f) { thunk { fun (g) { Path.here (composite A x y z f g) } } } }
+  fun (f) { fun (g) { Path.here (composite A x y z f g) } }
 
 /// The right whisker of `fa` by `g`: the transport along `fa` the generator
 /// lifts the first cell by.
@@ -165,7 +165,7 @@ def associated(A : Type, x : A, y : A, z : A, w : A) -> (f : Path(x, y)) -> ((g 
   Path.step (Path.step f g) h,
   Path.step f (Path.step g h)
 ))) =
-  thunk { fun (f) { thunk { fun (g) { thunk { fun (h) { assoc A x y z w f g h } } } } } }
+  fun (f) { fun (g) { fun (h) { assoc A x y z w f g h } } }
 
 /// Example 1.3 at `{f, g, h}`: every cell lifts, and the square is the one Catt
 /// answers for `assoc ↑ {f, g, h}`.
@@ -255,14 +255,14 @@ def walkAtHere(
 
 /// Two cells' composite as a curried function: the generator of dimension one
 /// over the 2-chain.
-def composed(A : Type, x : A, y : A, z : A) -> (f : Path(x, y)) -> ((g : Path[.A = A](
+def composed(A : Type, x : A, y : A, z : A) -> Path(x, y) -> (Path[.A = A](
   y,
   z
-)) -> Path[.A = A](
+) -> Path[.A = A](
   x,
   z
 )) =
-  thunk { fun (f) { thunk { fun (g) { composite A x y z f g } } } }
+  fun (f) { fun (g) { composite A x y z f g } }
 
 /// Example 1.1: the composite is natural in its first cell, `(f ∗ g) ↑ {f}`.
 /// Catt answers a path from `Path.step(fm, g)` to `Path.step(fp, g)`, which
@@ -284,17 +284,13 @@ def naturalInFirst(
 def composedOver(A : Type) -> (x : A) -> ((y : A) -> ((f : Path[.A = A](
   x,
   y
-)) -> ((z : A) -> ((g : Path[.A = A](
+)) -> ((z : A) -> (Path[.A = A](
   y,
   z
-)) -> Path[.A = A](x, z))))) =
-  thunk {
-    fun (x) {
-      thunk {
-        fun (y) {
-          thunk { fun (f) { thunk { fun (z) { thunk { fun (g) { composite A x y z f g } } } } } }
-        }
-      }
+) -> Path[.A = A](x, z))))) =
+  fun (x) {
+    fun (y) {
+      fun (f) { fun (z) { fun (g) { composite A x y z f g } } }
     }
   }
 
@@ -333,26 +329,18 @@ def horizontalOver(A : Type, x : A, y : A, z : A) -> (f : Path(x, y)) -> ((p : P
 )) -> ((a : Path[.A = Path[.A = A](x, y)](
   f,
   p
-)) -> ((g : Path[.A = A](y, z)) -> ((q : Path[.A = A](y, z)) -> ((b : Path[.A = Path[.A = A](y, z)](
+)) -> ((g : Path[.A = A](y, z)) -> ((q : Path[.A = A](y, z)) -> (Path[.A = Path[.A = A](y, z)](
   g,
   q
-)) -> Path[.A = Path[.A = A](x, z)](
+) -> Path[.A = Path[.A = A](x, z)](
   Path.step f g,
   Path.step p q
 )))))) =
-  thunk {
-    fun (f) {
-      thunk {
-        fun (p) {
-          thunk {
-            fun (a) {
-              thunk {
-                fun (g) {
-                  thunk { fun (q) { thunk { fun (b) { horizontal A x y z f p a g q b } } } }
-                }
-              }
-            }
-          }
+  fun (f) {
+    fun (p) {
+      fun (a) {
+        fun (g) {
+          fun (q) { fun (b) { horizontal A x y z f p a g q b } }
         }
       }
     }

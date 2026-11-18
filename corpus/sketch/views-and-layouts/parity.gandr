@@ -1,6 +1,7 @@
 /// A natural read as even or odd through a view whose evidence is a cover.
 ///
-/// Halving algorithms take a natural apart by its parity. A view names that split
+/// Halving algorithms take a natural apart by its parity. A view
+/// names that split
 /// once, and every match reads it.
 ///
 /// `Parity` takes a natural apart as twice a half or one more. Its evidence
@@ -11,10 +12,10 @@
 /// - see: corpus/sketch/views-and-layouts/snoc.gandr — a view whose evidence is an equivalence
 
 /// Twice a natural.
-def double(n : Nat) -> Nat { n + n }
+def double(n : Nat) -> Nat = n + n;
 
 /// One more than twice a natural.
-def doubleSucc(n : Nat) -> Nat { double n + 1 }
+def doubleSucc(n : Nat) -> Nat = double n + 1;
 
 /// Every natural is twice a half or one more. The two injections are apart,
 /// and the remainder by two decides which one reaches a natural.

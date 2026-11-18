@@ -59,7 +59,7 @@ pub def total(xs : List Nat) -> Nat =
 
 /// A vector together with its length, written with the dependent pair.
 pub def sized(A : Type) -> Type =
-  (n : Nat) * Vec(A, n)
+  (n : Nat) * Vec (A, n)
 
 /// Two numbers whose sum is ten, written with several binders.
 pub def pairToTen : Type = exists (a : Nat), (b : Nat) . a + b == 10;

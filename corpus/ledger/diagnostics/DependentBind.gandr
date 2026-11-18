@@ -1,11 +1,10 @@
 /// `DependentBind`: a bind whose body synthesises a type naming the
 /// value it binds.
-@[checks]
-def one() -> -F Integer =
+def one() -> Integer =
   pure 1
 
 @[refuses("DependentBind")]
-def bound() -> -F Integer =
+def bound() -> Integer =
   let p = {
     let n = one ();
     pure Path.here n

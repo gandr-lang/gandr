@@ -9,10 +9,8 @@ module Seat :> *{
   def task = "task";
 }
 
-@[checks]
 world operator;
 
-@[checks]
 world seat;
 
 @[refuses("Immobile")]

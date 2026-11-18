@@ -1,4 +1,3 @@
 /// `force_expression`: forcing a thunk.
-@[checks]
-def forced(k : () -> Integer) -> -F Integer =
+def forced(k : () -> Integer) -> Integer =
   force k

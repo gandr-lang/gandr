@@ -31,12 +31,12 @@ pub def _+_(a : Nat, b : Nat) -> Nat =
 /// The natural numbers' multiplication, binding tighter than `+`.
 @[infix(Multiplicative, left]
 pub def _*_(a : Nat, b : Nat) -> Nat =
-  natMul(a, b)
+  natMul (a, b)
 
 /// Whether one natural number is at most another.
 @[infix(Comparison, none)]
 pub def _≤_(a : Nat, b : Nat) -> Bool =
-  natLe(a, b)
+  natLe (a, b)
 
 /// The factorial, written after its argument.
 @[postfix(Multiplicative)]

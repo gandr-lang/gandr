@@ -1,9 +1,7 @@
 /// `NotOpen`: a handle crossing to another world over a thunk reached through a
 /// variable, which carries no image.
-@[checks]
 world operator;
 
-@[checks]
 world seat;
 
 @[refuses("NotOpen")]

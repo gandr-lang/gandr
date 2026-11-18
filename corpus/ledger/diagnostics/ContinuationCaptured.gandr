@@ -15,7 +15,7 @@ module Cancel :> *{
 }
 
 @[refuses("ContinuationCaptured")]
-def leaked() -> -F Unit =
+def leaked() -> Unit =
   handle c : std.process.Exit.Eff {
     let found = fork (task : Cancel.Join) {
       send task Cancel.notes;

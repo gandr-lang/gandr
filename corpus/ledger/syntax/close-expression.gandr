@@ -1,5 +1,4 @@
 /// `close_expression`: closing a session endpoint.
-@[checks]
-def finished() -> -F Unit =
+def finished() -> Unit =
   let desk = fork (seat : end) { close seat };
   close desk

@@ -2,7 +2,6 @@
 /// scope answers at the types its arguments force.
 ///
 /// A unit: a carrier and its one element.
-@[checks]
 theory Pointed where
   sort C : Type;
   oper point : C;
@@ -24,8 +23,7 @@ module One : Model(Pointed) where {
 }
 
 /// The point, over any pointed type the slot names.
-@[checks]
-def pointOf[p : Model Pointed](c : p.C) -> p.C { p.point }
+def pointOf[p : Model Pointed](c : p.C) -> p.C = p.point;
 
 @[refuses("ModelAmbiguous")]
-def ambiguous() -> Integer { pointOf 3 }
+def ambiguous() -> Integer = pointOf 3;

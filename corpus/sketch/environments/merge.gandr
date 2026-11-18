@@ -16,7 +16,8 @@
 /// The defaults every build starts from.
 def defaults : Model(*{ jobs : Nat; profile : Profile }) = *{ .jobs = 4, .profile = Profile.debug };
 
-/// The target a build is for, which the checker types under the defaults it extends.
+/// The target a build is for, which the checker types under the
+/// defaults it extends.
 def target : Model(*{ triple : Triple; features : Features(triple) }) = *{
   .triple = Triple.host (),
   .features = Features.default (Triple.host ())

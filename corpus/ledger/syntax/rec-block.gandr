@@ -1,5 +1,4 @@
 /// `rec_block`: a recursive group: definitions that may name each other.
-@[checks]
 data Nat : Type where
   | Zero : Nat
   | Succ : (n : Nat) --> Nat

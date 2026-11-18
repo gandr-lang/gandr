@@ -1,21 +1,18 @@
 /// `FillUncertified`: a fill at a degree no chain of the catalogue reaches.
 
 /// Two cells' composite, answered by its declared type.
-@[checks]
 def composite(A : Type, x : A, y : A, z : A, f : Path(x, y), g : Path(y, z)) -> Path(x, z) =
   Path.step f g
 
 /// Two cells, the reflexivity of their composite: the generator
 /// over the 2-chain.
-@[checks]
 def selfComposite(A : Type, x : A, y : A, z : A) -> (f : Path(x, y)) -> ((g : Path[.A = A](
   y,
   z
 )) -> Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)) =
-  thunk { fun (f) { thunk { fun (g) { Path.here (composite A x y z f g) } } } }
+  fun (f) { fun (g) { Path.here (composite A x y z f g) } }
 
 /// The right whisker, the transport the generator lifts the first cell by.
-@[checks]
 def whiskered(
   A : Type,
   x : A,
@@ -32,7 +29,6 @@ def whiskered(
     (Path.here (Path.step fm g))
 
 /// The fill at a degree the chains certify.
-@[checks]
 def certified(
   A : Type,
   x : A,

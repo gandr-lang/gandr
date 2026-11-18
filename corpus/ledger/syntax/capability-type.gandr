@@ -1,8 +1,6 @@
 /// `capability_type`: a capability and the operations it grants at the
 /// unrestricted grade, written with its glyph and in ASCII.
-@[checks]
-def peek(c : Cap[ω] { read, write }) -> -F Unit =
+def peek(c : Cap[ω] { read, write }) -> Unit =
   pure *{}
-@[checks]
-def peekAscii(c : Cap[inf] { read, write }) -> -F Unit =
+def peekAscii(c : Cap[inf] { read, write }) -> Unit =
   pure *{}

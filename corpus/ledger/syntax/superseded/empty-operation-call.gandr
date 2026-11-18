@@ -2,4 +2,9 @@
 /// `c ()`. The bare name `c` reads the constant, and the reader refuses the
 /// empty argument by its name.
 @[refuses("RetiredSpelling.empty_operation_call")]
-theory Pointed where { sort M : Type; oper unit : M; oper twice : (x : M) --> M; rule fix : twice (unit ()) ==> unit; }
+theory Pointed where {
+  sort M : Type;
+  oper unit : M;
+  oper twice : (x : M) --> M;
+  rule fix : twice (unit ()) ==> unit;
+}

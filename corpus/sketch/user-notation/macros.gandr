@@ -25,14 +25,14 @@ pub def signature(f : Quote Term) -> [Elab] Quote Type =
 
 /// The quoted code that prints an expression beside its value, for logging.
 pub def show(e : Quote Term) -> [Elab] Quote Term =
-  ^{ debugLine (~(quoteText e)) (~e) }
+  ^ { debugLine (~(quoteText e)) (~e) }
 
 /// The type of the list's head, spelled without naming the element type.
-pub def firstOf(xs : List Nat) -> ~typeof(^{ xs.head }) =
+pub def firstOf(xs : List Nat) -> ~typeof (^ { xs.head }) =
   xs.head
 
 /// A sum that logs its arguments, each line naming the expression it shows.
 pub def logged(a : Nat, b : Nat) -> Nat =
-  ~show (^{ a })
-  ~show (^{ b })
+  ~show (^ { a })
+  ~show (^ { b })
   a + b

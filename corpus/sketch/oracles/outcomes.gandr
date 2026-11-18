@@ -28,7 +28,7 @@ def line(name : String, o : Outcome(Goal)) -> String =
   }
 
 /// Asks the checked solver about every goal and prints one line for each.
-def report(goals : List(*{String, Goal})) -> [Smt, Console] Unit =
+def report(goals : List (String * Goal)) -> [Smt, Console] Unit =
   forEach goals (fun (*{name, g}) {
     let o = checkedZ3.ask (Query.valid g);
     print (line name o)

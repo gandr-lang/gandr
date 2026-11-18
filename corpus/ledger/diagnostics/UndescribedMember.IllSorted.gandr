@@ -15,6 +15,6 @@ theory TermIdentity where
 
   oper id : (g : Con) --> Sub g g;
   oper subTy : (a : Ty g, s : Sub d g) --> Ty d;
-  oper subTm : (t : Tm g a, s : Sub d g) --> Tm(d, subTy(a, s));
+  oper subTm : (t : Tm g a, s : Sub d g) --> Tm d subTy(a, s);
 
   rule tmId : subTm t (id g) ==> t;

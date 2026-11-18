@@ -22,7 +22,7 @@ pub data Queue(a : Type) : Type where
   | Ring : (cells : Ref (Array (Maybe a)), front : Nat, count : Nat) --> Queue a
 
 /// Whether a queue's count fits its buffer and its front lies inside it.
-pub def valid[a : Type](q : Queue a) -> [State(Heap)] Bool =
+pub def valid[a : Type](q : Queue a) -> [State (Heap)] Bool =
   let n = capacity q
   q.count <= n && q.front < n
 

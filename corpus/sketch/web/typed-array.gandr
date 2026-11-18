@@ -28,7 +28,7 @@ import std.buffer (Bytes);
 
 /// The row of `getRandomValues`. It takes a view of `n` `U8` elements and
 /// answers the same view.
-pub def randomRow (n : Nat) -> Row = Row (Arg (View U8 n) NoCode) (View U8 n)
+pub def randomRow(n : Nat) -> Row = Row (Arg (View U8 n) NoCode) (View U8 n)
 
 /// The Web Crypto operation that fills a view with random bytes.
 @[boundary(randomRow)]
@@ -37,6 +37,6 @@ extern JavaScript from "webidl:webcrypto" as Crypto where
   def getRandomValues [n : Nat] (buffer[1] : Bytes n) -> (buffer[1] : Bytes n)
 
 /// A fresh key of 32 random bytes.
-pub def key () -> [Crypto] Bytes 32 =
+pub def key() -> [Crypto] Bytes 32 =
   let buffer = Bytes.zeroed 32
   Crypto.getRandomValues buffer
