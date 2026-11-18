@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `mise run ledger:syntax`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x6dc7d66dff5b0884`
+- Grammar fingerprint: `0x70295d0d7c35ff4d`
 - Rules: 176 — 175 committed, 1 internal
-- Molds: 3153
+- Molds: 3159
 - Attributes: 21
 
 ## Reading a form
@@ -196,7 +196,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`labelled_sum_type`](../corpus/ledger/syntax/labelled-sum-type.gandr) | `+{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `labelled_sum_type` * | admitted | Other |
 | [`lazy_record_type`](../corpus/ledger/syntax/lazy-record-type.gandr) | `&{ ⦅ TYPE ⦅ : TYPE ⦆? ⦅ , TYPE ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? }` | `type.atom` | `lazy_record_type` * | admitted | Other |
 | [`mu_session_type`](../corpus/ledger/syntax/mu-session-type.gandr) | `⦅ rec ‹type_variable› => ‖ mu ‹type_variable› . ⦆ TYPE` | `type.arrow` | `mu_session_type` | admitted | Keyword, TypeVariable, Operator, Other |
-| [`primitive_type`](../corpus/ledger/syntax/primitive-type.gandr) | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void ‖ Buf` | `type.atom` | `primitive_type` | admitted | TypeBuiltin |
+| [`primitive_type`](../corpus/ledger/syntax/primitive-type.gandr) | `Any ‖ Unknown ‖ Never ‖ Boolean ‖ Integer ‖ u32 ‖ u64 ‖ i32 ‖ i64 ‖ u8 ‖ u16 ‖ i8 ‖ i16 ‖ usize ‖ isize ‖ f32 ‖ f64 ‖ Char ‖ String ‖ Symbol ‖ Unit ‖ Void ‖ Buf` | `type.atom` | `primitive_type` | admitted | TypeBuiltin |
 | [`unknown_type`](../corpus/ledger/syntax/unknown-type.gandr) | `?` | `type.atom` | `unknown_type` * | unadmitted | TypeBuiltin |
 | [`type_identifier`](../corpus/ledger/syntax/type-identifier.gandr) | `‹type_identifier›` | `type.atom` | `type_identifier` | admitted | Type |
 | [`type_variable`](../corpus/ledger/syntax/type-variable.gandr) | `‹type_variable›` | `type.atom` | `type_variable` | admitted | TypeVariable |
@@ -445,7 +445,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `labelled_sum_type` | type | 6 | `+{` | — | 4 |
 | `lazy_record_type` | type | 6 | `&{` | — | 4 |
 | `mu_session_type` | type | 6 | `mu` `rec` | — | 0 |
-| `primitive_type` | type | 17 | `Any` `Boolean` `Buf` `Char` `Integer` `Never` `String` `Symbol` `Unit` `Unknown` `Void` `f32` `f64` `i32` `i64` `u32` `u64` | — | 0 |
+| `primitive_type` | type | 23 | `Any` `Boolean` `Buf` `Char` `Integer` `Never` `String` `Symbol` `Unit` `Unknown` `Void` `f32` `f64` `i16` `i32` `i64` `i8` `isize` `u16` `u32` `u64` `u8` `usize` | — | 0 |
 | `unknown_type` | type | 1 | `?` | `receive_session_type` | 0 |
 | `type_identifier` | type | 1 | `type_identifier` | `type_application` | 0 |
 | `type_variable` | type | 1 | `type_variable` | `moded_type`, `type_application` | 0 |
@@ -475,7 +475,7 @@ Where the molder decides a rule's own tokens as it reads them, read off the mold
 | `f_type.row.labelled` | type | 24 | `-F` | `f_type`, `f_type.row` | 12 |
 | `f_type.result.labelled` | type | 23 | `[` | `f_type.result` | 12 |
 
-## Menus — 207 labels
+## Menus — 213 labels
 
 Every label a tile carries, with the molds the molder ranks when it reads the label, the rules they belong to and how many of them can open a form. The largest menu comes first.
 
@@ -642,11 +642,14 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `glob` | 1 | 1 | 1 |
 | `handle` | 1 | 1 | 1 |
 | `hold` | 1 | 1 | 1 |
+| `i16` | 1 | 1 | 1 |
 | `i32` | 1 | 1 | 1 |
 | `i64` | 1 | 1 | 1 |
+| `i8` | 1 | 1 | 1 |
 | `in` | 1 | 1 | 0 |
 | `into` | 1 | 1 | 0 |
 | `is` | 1 | 1 | 0 |
+| `isize` | 1 | 1 | 1 |
 | `loop` | 1 | 1 | 1 |
 | `match` | 1 | 1 | 1 |
 | `migrate` | 1 | 1 | 1 |
@@ -677,10 +680,13 @@ Every label a tile carries, with the molds the molder ranks when it reads the la
 | `theory` | 1 | 1 | 1 |
 | `thunk` | 1 | 1 | 1 |
 | `type(` | 1 | 1 | 1 |
+| `u16` | 1 | 1 | 1 |
 | `u32` | 1 | 1 | 1 |
 | `u64` | 1 | 1 | 1 |
+| `u8` | 1 | 1 | 1 |
 | `under` | 1 | 1 | 0 |
 | `unwind` | 1 | 1 | 0 |
+| `usize` | 1 | 1 | 1 |
 | `while` | 1 | 1 | 1 |
 | `world` | 1 | 1 | 1 |
 | `\|&` | 1 | 1 | 1 |

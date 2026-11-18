@@ -85,14 +85,15 @@ use crate::failure::Failure;
 /// a path between two signatures, `path p : A ≃ B` with its `into` and
 /// `from` bodies (#3487), then by the reader `.#{` that fixes a record type's
 /// fields, `T.#{.l = v}` and `T.#{f ↦ v}` (#6498), then by a definition's
-/// body after `=` (#6318).
-const BUILT_IN_FINGERPRINT: u64 = 0x6dc7_d66d_ff5b_0884;
+/// body after `=` (#6318), then by the six machine width atoms, `u8` to
+/// `isize` (#7960).
+const BUILT_IN_FINGERPRINT: u64 = 0x7029_5d0d_7c35_ff4d;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3153);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3159);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 99;
@@ -221,8 +222,10 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("handle", 1),
     ("hold", 1),
     ("hole_name", 2),
+    ("i16", 1),
     ("i32", 1),
     ("i64", 1),
+    ("i8", 1),
     ("identifier", 433),
     ("if", 16),
     ("import", 17),
@@ -230,6 +233,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("include", 2),
     ("into", 1),
     ("is", 1),
+    ("isize", 1),
     ("law", 3),
     ("let", 16),
     ("loop", 1),
@@ -280,10 +284,13 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("type_identifier", 221),
     ("type_variable", 93),
     ("typed_number", 2),
+    ("u16", 1),
     ("u32", 1),
     ("u64", 1),
+    ("u8", 1),
     ("under", 1),
     ("unwind", 1),
+    ("usize", 1),
     ("var", 16),
     ("variable_name", 5),
     ("via", 3),
