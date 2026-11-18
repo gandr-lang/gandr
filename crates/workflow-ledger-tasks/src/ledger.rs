@@ -2807,7 +2807,7 @@ mod tests
             Some(&serde_json::json!([{
                 "rule": "theory_declaration",
                 "surface": "shape_member",
-                "replaced_by": "boundary",
+                "replaced_by": "boundary B {…}; face f = {…}",
                 "refused": "RetiredSpelling.shape_member",
                 "exemplar": "../corpus/ledger/syntax/superseded/shape-member.gandr",
                 "reason": "the word stays the site's alone",
@@ -2816,7 +2816,7 @@ mod tests
         );
         assert!(
             ledger.markdown().contains(
-                "| `theory_declaration` | `shape_member` | `boundary` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the word stays the site's alone |"
+                "| `theory_declaration` | `shape_member` | `boundary B {…}; face f = {…}` | refused as [`RetiredSpelling.shape_member`](../corpus/ledger/syntax/superseded/shape-member.gandr) | the word stays the site's alone |"
             ),
             "the row links the exemplar under the refusal's name"
         );

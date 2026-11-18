@@ -841,7 +841,7 @@ pub struct OldSpelling(pub &'static str);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RetiredForm
 {
-    /// A theory member written `shape`, which `boundary` replaces.
+    /// A theory member written `shape`, which `boundary` and `face` replace.
     ShapeMember,
     /// The unit value written `unit`, which `*{}` replaces.
     UnitValue,
@@ -923,7 +923,7 @@ impl RetiredForm
     pub const fn replaced_by(self) -> Replacement
     {
         Replacement(match self {
-            Self::ShapeMember => "boundary",
+            Self::ShapeMember => "boundary B {…}; face f = {…}",
             Self::UnitValue => "*{}",
             Self::PositionalPathCarrier => "Path[.A = A](a, b)",
             Self::PositionalBridgeCarrier => "Bridge[.A = A](a, b)",

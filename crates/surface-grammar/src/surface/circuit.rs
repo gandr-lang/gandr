@@ -200,7 +200,7 @@ fn theory_declaration(
     theory.adaptations.push(Adaptation::refused(
         RuleName("theory_declaration"),
         RetiredForm::ShapeMember,
-        AdaptationReason("the member `shape` is refused by name: `boundary` states the carrier of the signature's cells"),
+        AdaptationReason("the member `shape` is refused by name: `boundary` states the carrier of the signature's cells, and `face` names each face of it"),
     ));
     out.push(theory);
 }
