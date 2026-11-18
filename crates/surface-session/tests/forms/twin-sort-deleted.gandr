@@ -14,7 +14,7 @@ theory Ord where
 /// The integers' order.
 module OrdInteger : Model(Ord) with sort Carrier = Integer where
   /// Whether one integer is below another.
-  def lt(a : Integer, b : Integer) -> Bool { int.lt a b }
+  def lt(a : Integer, b : Integer) -> Bool = int.lt a b;
 
 /// One, after a comparison it does not read.
 def one(c : Integer) -> Integer =

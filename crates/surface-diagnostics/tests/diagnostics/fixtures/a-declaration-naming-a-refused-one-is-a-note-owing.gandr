@@ -1,8 +1,6 @@
-def a() -> Integer {
+def a() -> Integer =
   return 1 ~ 2
-}
 
 @[owes(1)]
-def b() -> Integer {
+def b() -> Integer =
   return a ()
-}

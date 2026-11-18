@@ -6,9 +6,8 @@ theory Pointed where {
   sort P : Type;
   oper point : () --> (p : P);
 }
-def applies(link : Theory) -> Integer {
+def applies(link : Theory) -> Integer =
   match link {
     | Theory.App(head, rest) => 1
     | _ => 0
   }
-}

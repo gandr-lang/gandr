@@ -1,5 +1,5 @@
 import std.process;
-def traced() -> Integer {
+def traced() -> Integer = {
   handle c : std.process.Exit.Eff {
     var l = 42;
     let k : (() -> Integer) at l = access shared l as w { pure thunk { pure thunk { pure w } } };
@@ -8,4 +8,4 @@ def traced() -> Integer {
     | pure(x) => pure x
     | oper exit(code, k) => pure 0
   }
-}
+};

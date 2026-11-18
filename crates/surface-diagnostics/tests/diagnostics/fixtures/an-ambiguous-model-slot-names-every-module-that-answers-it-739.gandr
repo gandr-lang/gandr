@@ -3,15 +3,15 @@ theory Tally where {
   oper incr : (c : C) --> C;
   oper read : (c : C) --> Integer;
 }
-def stepped[s : Model Tally](c : s.C) -> Integer { s.read (s.incr c) }
+def stepped[s : Model Tally](c : s.C) -> Integer = s.read (s.incr c);
 module Up : Model(Tally) where {
   type C = Integer;
-  def incr(c : Integer) -> Integer { c + 1 }
-  def read(c : Integer) -> Integer { c }
+  def incr(c : Integer) -> Integer = c + 1;
+  def read(c : Integer) -> Integer = c;
 }
 module Tens : Model(Tally) where {
   type C = Integer;
-  def incr(c : Integer) -> Integer { c + 10 }
-  def read(c : Integer) -> Integer { c }
+  def incr(c : Integer) -> Integer = c + 10;
+  def read(c : Integer) -> Integer = c;
 }
-def twin() -> Integer { stepped 4 }
+def twin() -> Integer = stepped 4;

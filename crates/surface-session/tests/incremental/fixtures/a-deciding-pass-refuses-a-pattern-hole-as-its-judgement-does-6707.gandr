@@ -18,4 +18,4 @@ def weigh(m : Option) -> Integer =
     | Value(?) => 100
     | NoValue => 200
 
-def weighed() -> Integer { weigh NoValue }
+def weighed() -> Integer = weigh NoValue;
