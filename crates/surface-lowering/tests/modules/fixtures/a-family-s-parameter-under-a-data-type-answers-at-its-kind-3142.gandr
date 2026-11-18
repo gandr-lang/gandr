@@ -4,4 +4,4 @@ data Maybe(a : Type) : Type where {
 }
 module Loose where { type R(a : Type) = Maybe(a); }
 type Top(a : Type) = Maybe(a);
-def g(a : Type, m : Maybe(a)) -> Integer { 0 }
+def g(a : Type, m : Maybe(a)) -> Integer = 0;

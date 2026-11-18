@@ -4425,8 +4425,9 @@ mod tests
     /// #7855: a block bound by a `let` records its own span beside the
     /// computation it lowers to. The block `{ pure *{}; }` is the bind of its
     /// one statement, the `pure`, over the unit it returns, and that bind
-    /// carries the origin of its statement, not the block's. A function's
-    /// body records no block.
+    /// carries the origin of its statement, not the block's. The body after
+    /// `=` is a block too, and it records its span beside the bind of its
+    /// `let`, whose first computation is the inner block.
     #[test]
     fn a_block_records_its_span_beside_its_computation_7855()
     {
@@ -4464,8 +4465,24 @@ mod tests
                 (origin.span(), first)
             })
             .collect();
+        let outer_start = written
+            .find("= {")
+            .expect("the body is a block")
+            .saturating_add(2);
+        let outer_end = written
+            .rfind('}')
+            .expect("the body's block closes")
+            .saturating_add(1);
+        let outer = span(ByteOffset::from(outer_start), ByteOffset::from(outer_end));
+        let inner = module
+            .origins()
+            .blocks()
+            .iter()
+            .find(|&&(_, origin)| origin.span() == block)
+            .map(|&(id, _)| id);
         assert!(statement.is_some(), "the `pure` lowers to a return");
-        assert_eq!(recorded, [(block, statement)]);
+        assert!(inner.is_some(), "the inner block records its span");
+        assert_eq!(recorded, [(block, statement), (outer, inner)]);
     }
 
     /// `let` returns a value once and binds it, so the name reads the bind's

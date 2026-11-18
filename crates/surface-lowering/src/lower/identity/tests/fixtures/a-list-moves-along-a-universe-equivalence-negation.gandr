@@ -1,7 +1,6 @@
-def not(b : Bool) -> Bool {
+def not(b : Bool) -> Bool =
   match b {
     | true => +{.1 = *{}}
     | false => +{.0 = *{}}
   }
-}
 def negation : Path[.A = Type](Bool, Bool) = equiv not not;

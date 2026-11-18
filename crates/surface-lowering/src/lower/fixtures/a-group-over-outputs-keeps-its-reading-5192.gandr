@@ -1,2 +1,2 @@
-def d(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
-def second(a : Integer, b : Integer) -> Integer { let (q, r) = d a b; r }
+def d(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n);
+def second(a : Integer, b : Integer) -> Integer = { let (q, r) = d a b; r };
