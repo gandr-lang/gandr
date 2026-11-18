@@ -1,0 +1,4 @@
+import text.greet (greeting);
+def id : Integer -> Integer = ~intro assumption;
+def note = limits.hard.note;
+def welcome = text.greet.greeting;

@@ -1,0 +1,14 @@
+error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of the theory it handles
+   ╭▸ corpus/ledger/diagnostics/HandlerUnlawful.gandr:14:3
+   │
+14 │ ┏   handle st : Stored with sort S = Integer {
+15 │ ┃     st.put 1;
+16 │ ┃     let a = st.get ();
+17 │ ┃     pure a
+   ┆ ┇
+21 │ ┃     | oper put(s, k) => k *{}
+22 │ ┃   }
+   │ ┗━━━┛ not shown to satisfy a law of its theory
+   │
+   ├ note: `forgetful` is refused with HandlerUnlawful, as its expectation states
+   ╰ help: change the handler's clauses so that they satisfy the law

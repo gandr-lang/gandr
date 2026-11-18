@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "comment": "The code spans of a gandr comment. Each span between backquotes takes the inline code style. The selector leaves out a span, so a closing backquote does not open a second span.",
+  "scopeName": "code-span.injection.gandr",
+  "injectionSelector": "L:comment -markup.inline.raw.gandr",
+  "patterns": [
+    {
+      "include": "#code-span"
+    }
+  ],
+  "repository": {
+    "code-span": {
+      "comment": "A span ends at its closing backquote. A span can continue on the next comment line, where the leading slashes stay comment punctuation. A line that is not a comment ends the span.",
+      "name": "markup.inline.raw.gandr",
+      "begin": "`",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.raw.begin.gandr"
+        }
+      },
+      "end": "`|^(?!\\s*//)",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.raw.end.gandr"
+        }
+      },
+      "patterns": [
+        {
+          "match": "^\\s*(//)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.comment.gandr"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

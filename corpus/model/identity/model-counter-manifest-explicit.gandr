@@ -1,0 +1,43 @@
+/// This source writes the explicit forgetting map for models.
+///
+/// The checker allows a manifest model where it requires a theory model.
+/// `forget` restores each named sort at its manifest carrier.
+///
+/// The sugared form leaves that application to the checker.
+/// The explicit forms all evaluate to the same observation.
+///
+/// - see: #2130
+import "./model-counter.gandr";
+import "./model-counter-manifest.gandr";
+
+/// The explicit map restores the `C` sort for `upManifest`.
+@[runs("1"), form(explicit)]
+def observedManifestWritten() -> -F Integer =
+  become observe (forget[sort C = +{Unit, +{Unit, Unit}}](upManifest) at Model Counter)
+
+/// The explicit map restores the `C` sort for `negatedManifest`.
+@[runs("1"), form(explicit)]
+def observedCarriedWritten() -> -F Integer =
+  become observe (forget[sort C = +{Unit, +{Unit, Unit}}](negatedManifest) at Model Counter)
+
+/// The explicit map restores the `R` sort for `upReadings`.
+@[runs("1"), form(explicit)]
+def observedReadingsWritten() -> -F Integer =
+  become observeShown (forget[sort R = Integer](upReadings) at Model ReadCounter)
+
+/// The explicit map restores both sorts in a different order.
+@[runs("1"), form(explicit)]
+def observedBothWritten() -> -F Integer =
+  become observeShown (forget[
+    sort R = Integer,
+    sort C = +{Unit, +{Unit, Unit}}
+  ](upBoth) at Model ReadCounter)
+
+/// The explicit map restores the shared carrier of `b`.
+@[checks, form(explicit)]
+def observeSharedWritten(a : Model Counter, b : Model Counter with sort C = a.C) -> -F Integer =
+  become observe (forget[sort C = a.C](b) at Model Counter)
+
+/// The explicit map reads the twin at the up counter carrier.
+@[runs("1"), form(explicit)]
+def observedSharedUpWritten() -> -F Integer { become observeSharedWritten upModel upManifest }

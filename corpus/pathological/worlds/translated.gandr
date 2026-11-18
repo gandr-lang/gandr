@@ -1,0 +1,70 @@
+// A translation the default policy refuses before any process starts.
+//
+// A translation is code at a site's boundary, so a manifold admits one only
+// by its `translation`. A manifold that states none is `Exact`, and `Exact`
+// admits no translation.
+//
+// This file is a site and a manifold at once. `far` requires the older store
+// under `store` and under `cache`. The site answers `store` via the published
+// flow `downgrade`, and `cache` with a module of the older store. The
+// manifold states no translation, and the check refuses the placement at
+// `store` by name, before it judges the module. The file itself settles, and
+// `gandr check` of it as a deployment refuses the entry.
+//
+// - see: `corpus/model/translations/translated.gandr` — the program, whose
+//   `far` requires the older store
+// - see: `corpus/model/translations/translated.manifold.gandr` — a flow under
+//   `Path`, admitted
+// - see: `crates/surface-driver/tests/cli.rs` — the check refusing it
+
+// The deployment theories.
+import std.manifold (Site, Manifold, Placement, At);
+// The native finite lists.
+import std.list (List);
+// The two versions of the store, and the flow from the newer to the older.
+import "../../model/translations/translated.versions.gandr" (Older, Newer, downgrade);
+
+/// Every key holds its own name, and a write keeps nothing.
+pub module Echo : Model(Newer) with sort V = String where
+  /// A computation answers a string.
+  type C = String;
+  /// Hands the key on.
+  def fetch(key : String, k : String -> String) -> String { k key }
+  /// Drops the write and runs what comes after.
+  def put(key : String, value : String, k : String) -> String { k }
+
+/// Every key holds its own name, and a write keeps nothing, at the older
+/// store.
+pub module Kept : Model(Older) with sort V = String where
+  /// A computation answers a string.
+  type C = String;
+  /// Hands the key on.
+  def get(key : String, k : String -> String) -> String { k key }
+  /// Drops the write and runs what comes after.
+  def put(key : String, value : String, k : String) -> String { k }
+
+/// The site offers the newer store as the older one via a flow, and the
+/// older store as it is.
+pub offers [store = Echo via downgrade, cache = Kept];
+
+/// The site, on a loopback socket.
+pub module Site : Model(Site) where
+  /// The key the hosting process proves.
+  def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
+  /// The socket it binds, where a dialer reaches it.
+  def sockets = "127.0.0.1:7433";
+  /// The name of the key's secret.
+  def secret = "far";
+
+/// The site's model, which a placement holds.
+pub def site : Model Site = pack Site at Model Site;
+
+/// The program this deployment runs.
+pub module Manifold : Model(Manifold) where
+  /// The program whose `far` requires the older store.
+  def artifact = "../../model/translations/translated.gandr";
+
+/// `far` at a site that answers `store` through a translation.
+pub def placements : List Placement = #[
+  At "far" site,
+];

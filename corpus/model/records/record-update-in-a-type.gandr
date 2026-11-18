@@ -1,0 +1,24 @@
+// This source tests record updates inside path types.
+// A record update in a type denotes the record that it builds.
+//
+// Updates at distinct labels commute. An update with the existing value
+// equals its base record.
+//
+// The checker typechecks each path between record forms.
+//
+// - see: `pathological/records/deep-record-update-cost.gandr` — `deep`
+
+/// `corner` holds fields `x` and `y`.
+def corner = *{x = 1, y = 2};
+
+/// `commute` equates updates at `x` and `y` in either order.
+def commute : Path[.A = *{x : Integer, y : Integer}](
+  *{*{corner | x = 9} | y = 3},
+  *{*{corner | y = 3} | x = 9}
+) = Path.here (*{x = 9, y = 3});
+
+/// `unchanged` equates an update with its base record.
+def unchanged : Path[.A = *{x : Integer, y : Integer}](
+  *{corner | x = 1},
+  corner
+) = Path.here corner;

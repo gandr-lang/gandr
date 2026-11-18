@@ -1,0 +1,76 @@
+//! `Empty` has no constructors.
+//!
+//! A match on `Empty` has no arms.
+//! `A -> Empty` denotes not `A`.
+//!
+//! Apart normal forms have no path between them.
+//! A match on either term has no arms.
+//! Rule convergence exposes distinct constructors.
+//!
+//! - see: #534 — `viaLambda`, `viaStated`
+//! - see: #1944 — `viaBare`, `viaBareStated`
+//! - see: #1948 — `viaArgument`, `viaArgumentStated`
+//! - cites: [Coquand-1992-pattern_matching_with_dependent_types]
+//!
+//! [Coquand-1992-pattern_matching_with_dependent_types]: https://wonks.github.io/type-theory-reading-group/papers/proc92-coquand.pdf "Coquand, Pattern matching with dependent types"
+
+// The presented integers.
+import "./data-base.gandr";
+
+/// The type with no element.
+pub data Empty : Type where {}
+
+/// Anything follows from an element of the empty type.
+def absurd(v : Empty) -> Integer =
+  match v {}
+
+/// The answer written on the match itself.
+def stated(v : Empty) -> Integer =
+  match v -> -F Integer {}
+
+/// `viaLambda` matches a lambda binder with no arms.
+/// Its arrow gives the binder type.
+def viaLambda(x : Empty) -> Integer { match x {} }
+
+/// The answer written on a lambda binder's match.
+def viaStated(x : Empty) -> Integer { match x -> -F Integer {} }
+
+/// `viaBare` writes a lambda without its syntax.
+/// The checker inserts its thunk and gives the binder its type.
+def viaBare(x : Empty) -> Integer { match x {} }
+
+/// The answer written on a bare lambda binder's match.
+def viaBareStated(x : Empty) -> Integer { match x -> -F Integer {} }
+
+/// A function of a function on the empty type, applied to its element.
+def applied(f : Empty -> Integer, v : Empty) -> Integer { f v }
+
+/// `viaArgument` passes a lambda as an argument.
+/// The callee parameter gives the binder type.
+def viaArgument(v : Empty) -> Integer { applied (fun (x) { match x {} }) v }
+
+/// The answer written on a passed lambda binder's match.
+def viaArgumentStated(v : Empty) -> Integer =
+  applied (fun (x) { match x -> -F Integer {} }) v
+
+/// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.
+def not_zero(e : Path(S Z, Z)) -> Empty =
+  match e {}
+
+/// One is not two: the normal forms first differ below their shared
+/// successor.
+def one_not_two(e : Path(S Z, S (S Z))) -> Empty =
+  match e {}
+
+/// Minus one is not one, read through the rules: `P(S(P(Z)))` is `P(Z)`.
+def signs(e : Path(P (S (P Z)), S Z)) -> Empty =
+  match e {}
+
+/// A free type: two constructors and no rule.
+data Truth : Type where
+  | False : Truth
+  | True : Truth
+
+/// True is not false: distinct constructors of a free type are apart.
+def true_not_false(e : Path(True, False)) -> Empty =
+  match e {}

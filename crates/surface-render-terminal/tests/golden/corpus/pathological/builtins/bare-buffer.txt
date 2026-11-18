@@ -1,0 +1,17 @@
+error[UnresolvedTypeHead]: no type named `Buf` is written bare
+   ╭▸ corpus/pathological/builtins/bare-buffer.gandr:14:14
+   │
+14 │ def keep(b : Buf) -> Buf { b }
+   │              ━━━ no type head of this name and arity
+   │
+   ├ note: `keep` is refused with UnresolvedTypeHead, as its expectation states
+   ╰ help: write `import std.buffer (Buf);`, the listing of `Buf` from its home
+
+error[UnresolvedTypeHead]: no type named `Web` is written bare
+   ╭▸ corpus/pathological/builtins/bare-buffer.gandr:18:14
+   │
+18 │ def same(w : Web) -> Web { w }
+   │              ━━━ no type head of this name and arity
+   │
+   ├ note: `same` is refused with UnresolvedTypeHead, as its expectation states
+   ╰ help: write `import std.buffer (Web);`, the listing of `Web` from its home

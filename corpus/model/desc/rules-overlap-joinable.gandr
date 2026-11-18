@@ -1,0 +1,46 @@
+//! The checker admits rules that overlap when each critical pair joins.
+//!
+//! Addition has two zero-unit rules. The rules overlap with recursion.
+//!
+//! Each addition pair rewrites to one term.
+//! Associativity overlaps with itself. Its critical pair also joins.
+//!
+//! - see: #654 — `Semigroup`
+//! - cites: [Knuth-1970-simple_word_problems_universal_algebras]
+//! - cites: [Baader-1998-term_rewriting_and_all_that]
+//!
+//! [Knuth-1970-simple_word_problems_universal_algebras]: https://doi.org/10.1016/B978-0-08-012975-4.50028-X "Knuth and Bendix, Simple Word Problems in Universal Algebras"
+//! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
+
+/// Addition has a left and right zero unit.
+@[normalizes("add(Zero, Zero) ~> Zero")]
+data NatUnits : Type where {
+  | Zero : NatUnits
+  | Succ : (n : NatUnits) --> NatUnits
+  oper add : (m : NatUnits, n : NatUnits) --> NatUnits;
+  rule : add Zero n <=> n;
+  rule : add m Zero <=> m;
+  rule : add (Succ m) n <=> Succ (add m n);
+}
+
+/// At zero plus zero, the two unit rules overlap.
+@[runs("Zero")]
+def zero_plus_zero() -> NatUnits { add Zero Zero }
+
+/// At one plus zero, the right unit and recursion overlap.
+@[runs("Succ Zero")]
+def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
+
+/// The recursive rule alone evaluates two plus one.
+@[runs("Succ (Succ (Succ Zero))")]
+def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
+
+/// Associativity overlaps with itself at `mul(mul(mul(a, b), c), d)`, and both
+/// ways round reach `mul(a, mul(b, mul(c, d)))`. The rewrite at the peak
+/// matches the rule's `z` against a subterm that holds the peak's own `z`.
+theory Semigroup where
+  sort S : Type;
+
+  oper mul : (x : S, y : S) --> S;
+
+  rule assoc : mul (mul x y) z <=> mul x (mul y z);

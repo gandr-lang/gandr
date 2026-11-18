@@ -1,0 +1,18 @@
+// A member of a `Model(T)` module whose body is refused is refused once,
+// where it is written: the model's witness of it owes nothing more.
+//
+// - see: #1081 — `flip`
+
+/// A signature with one sort and one operation over it.
+theory Toggle where
+  sort T : Type;
+  oper flip : (t : T) --> T;
+
+/// A model of `Toggle` whose one operation names nothing declared.
+module Bits : Model(Toggle) where {
+  type T = Integer;
+
+  /// Refused where it is written, and not again as its witness.
+  @[refuses("UnresolvedName")]
+  def flip(n : Integer) -> Integer { return missing }
+}

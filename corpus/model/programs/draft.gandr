@@ -1,0 +1,14 @@
+//! `draft` stops a program at an open source hole.
+//!
+//! The run keeps work before its hole.
+//! `gandr run` reports the hole at its line and column, then exits 1.
+//!
+//! The source counts no arguments, then reaches `?rest`.
+//!
+//! - see: entry.gandr — the program entry definition
+
+import "./entry.gandr";
+
+/// `draft` counts no arguments, then reaches the `rest` hole.
+@[runs("reached a hole")]
+def draft() -> Integer { let n = count (#[]); ?rest }

@@ -1,0 +1,3 @@
+{NAT}codata Ones : Type[-] where {{ head : Integer; tail : Ones; }}
+def rec constant() -> -F Nat {{ return Zero }}
+def rec ones() -> Ones {{ &{{ .head => 1, .tail => ones[>] () }} }}

@@ -1,0 +1,60 @@
+def join(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A](x, y),
+  q : Path[.A = A](y, z)
+) -> Path[.A = A](x, z) {
+  Path.step p q
+}
+
+def lemj(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A](x, y),
+  q : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](join A x y z p q, join A x y z p q) {
+  Path.here (join A x y z p q)
+}
+
+def atVariables(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A](x, y),
+  q : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) {
+  lemj A x y z p q
+}
+
+def atComposite(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  p : Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g),
+  q : Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g, Path.step f g)](
+  Path.step p q,
+  Path.step p q
+) {
+  lemj (type(Path[.A = A](x, z))) (Path.step f g) (Path.step f g) (Path.step f g) p q
+}
+
+def atApplication(
+  A : Type,
+  F : A -> A,
+  x : A,
+  y : A,
+  z : A,
+  p : Path[.A = A](F x, F y),
+  q : Path[.A = A](F y, z)
+) -> Path[.A = Path[.A = A](F x, z)](Path.step p q, Path.step p q) {
+  lemj A (F x) (F y) z p q
+}

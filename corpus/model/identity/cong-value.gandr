@@ -1,0 +1,25 @@
+/// This source states action on a path through a constructor.
+///
+/// The action carries an integer path between its wrapped values.
+///
+/// The checker applies `wrap` to each endpoint.
+/// The run checks the carried reflexivity.
+///
+/// - cites: [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]
+///
+/// [Program-2013-homotopy_type_theory_univalent_foundations_mathematics]: https://arxiv.org/abs/1308.0729 "Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
+
+/// A `Box` holds one integer.
+data Box : Type where
+  | Wrap : (n : Integer) --> Box
+
+/// The `wrap` function constructs a box.
+def wrap(x : Integer) -> Box =
+  Wrap x
+
+/// The `cong_wrap` proof carries a path to the two wrapped endpoints.
+def cong_wrap(a : Integer, b : Integer, p : Path(a, b)) -> Path(Wrap a, Wrap b) =
+  Path.ap wrap p
+
+/// The run carries reflexivity at four through the wrapper.
+def wrapped() -> Path(Wrap 4, Wrap 4) { cong_wrap 4 4 (Path.here 4) }

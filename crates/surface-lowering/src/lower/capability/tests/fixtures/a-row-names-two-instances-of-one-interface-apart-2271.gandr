@@ -1,0 +1,3 @@
+def both() -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff] Unit { x.print "x" }
+def twice() -> -F [o : std.io.Console.Eff, o : std.io.Console.Eff] Unit { pure *{} }
+def lost(k : +U (-F [z : std.io.Console.Eff] Unit)) -> -F Unit { pure *{} }

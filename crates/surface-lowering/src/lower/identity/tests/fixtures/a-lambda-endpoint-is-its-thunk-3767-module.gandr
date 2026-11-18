@@ -1,0 +1,4 @@
+def direct : Path[.A = Bool -> Bool](fun (a) { a }, fun (a) { a }) = Path.here (fun (a) { a });
+def result(d : Bool -> Bool) -> Path[.A = Bool -> Bool](fun (a) { d a }, fun (a) { d a }) {
+  Path.here (fun (a) { d a })
+}

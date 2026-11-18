@@ -1,0 +1,2 @@
+{COLOR}def text(s : String) -> -F Integer {{ match s {{ | "a" => return 0 | _ => return 1 }} }}
+def bound(c : Color) -> -F Integer {{ match c {{ | Red | x => return 0 }} }}

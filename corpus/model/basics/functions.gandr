@@ -1,0 +1,41 @@
+// This source shows calls between functions.
+//
+// A function computes over its parameters.
+// One call runs before the next tail call.
+//
+// The lowering puts the continuation after a nested call in one region.
+//
+// - see: #1856 — `chained`
+
+/// One more than its argument.
+def inc(x : Integer) -> Integer =
+  x + 1
+
+/// `inc` twice: the first call runs, the second is the tail call.
+def twice(x : Integer) -> Integer =
+  inc (inc x)
+
+/// This call nests an argument and then makes sixteen calls.
+/// The lowering runs the remainder in one region.
+@[runs("18")]
+def chained() -> Integer =
+  let a = inc (inc 0)
+  let b = inc a
+  let c = inc b
+  let d = inc c
+  let e = inc d
+  let f = inc e
+  let g = inc f
+  let h = inc g
+  let i = inc h
+  let j = inc i
+  let k = inc j
+  let l = inc k
+  let m = inc l
+  let n = inc m
+  let o = inc n
+  inc (inc o)
+
+/// A call of `twice`.
+@[runs("42")]
+def answer() -> Integer { twice 40 }

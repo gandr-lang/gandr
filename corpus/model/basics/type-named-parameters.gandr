@@ -1,0 +1,28 @@
+// This source shows type-named parameters.
+//
+// A function can name a type parameter as `A`.
+// Later types read `A` as that parameter.
+//
+// The parser binds it as it binds every other parameter.
+//
+// - see: #1996
+// - see: #2179 — `idTelescope`
+
+/// The identity at a type passed explicitly, the type named as a type.
+def idAt(A : Type, x : A) -> A { x }
+
+/// `idAt` at `Integer`, handed `3`.
+@[runs("3")]
+def idAtThree() -> Integer { idAt Integer 3 }
+
+/// The first of two values, each of its own type, one parameter named as a
+/// type and one as a value.
+def firstAt(A : Type, b : Type, x : A, y : b) -> A { x }
+
+/// `firstAt` receives two types and one value of each.
+@[runs("5")]
+def firstAtFive() -> Integer { firstAt Integer Unit 5 *{} }
+
+/// `idAt`'s type as a telescope, its binder named as a type: the spelling a
+/// hover gives `idAt`, which reads back as its type.
+def idTelescope : (A : Type, A) -> A = idAt;

@@ -1,0 +1,25 @@
+//! This presentation defines natural-number addition.
+//!
+//! Two rules recurse on the first argument.
+//!
+//! A closed sum normalizes to a numeral.
+//! A run gives that numeral. [Baader-1998-term_rewriting_and_all_that] gives
+//! this example.
+//!
+//! - cites: [Baader-1998-term_rewriting_and_all_that]
+//!
+//! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
+
+/// Natural numbers with addition as an operation.
+@[normalizes("add(Succ(Succ(Zero)), Succ(Zero)) ~> Succ(Succ(Succ(Zero)))")]
+data NatAdd : Type where {
+  | Zero : NatAdd
+  | Succ : (n : NatAdd) --> NatAdd
+  oper add : (m : NatAdd, n : NatAdd) --> NatAdd;
+  rule : add Zero n <=> n;
+  rule : add (Succ m) n <=> Succ (add m n);
+}
+
+/// Two plus one runs to three.
+@[runs("Succ (Succ (Succ Zero))")]
+def two_plus_one() -> NatAdd { add (Succ (Succ Zero)) (Succ Zero) }

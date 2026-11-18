@@ -1,0 +1,19 @@
+//! `reduct` refuses a model outside its included theories.
+//!
+//! A `Monoid` model does not supply `LeftZero`. No map restores the monoid
+//! carrier and restricts it to `LeftZero`. The checker refuses `noZero` as
+//! `TypeMismatch`.
+//!
+//! - see: #2136 — `noZero`
+// The source imports the included theories and their endomorphism models.
+import "../../model/include/monoid.gandr";
+import "../../model/include/reduct.gandr";
+
+/// `absorbs` reads the zero field of a left-zero model.
+def absorbs(z : Model LeftZero) -> Integer =
+  match z where
+    | *{.zero = o} => 0
+
+/// `noZero` tries to read a monoid model as `LeftZero`.
+@[refuses("TypeMismatch")]
+def noZero() -> Integer { absorbs endoManifest }

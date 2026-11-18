@@ -1,0 +1,106 @@
+/// This source compares two allocation orders for one linked arena.
+///
+/// A relabelling connects the id types of the two orders.
+/// It carries each link and label to the other arena.
+///
+/// The checker proves that both arenas and their consumers agree.
+/// A bare id remains valid only in its own arena.
+///
+/// - cites: [Sterling-2023-univalent_reference_types]
+///
+/// [Sterling-2023-univalent_reference_types]: https://doi.org/10.4230/LIPIcs.CSL.2024.19 "Sterling, Gratzer and Birkedal, Towards univalent reference types"
+
+/// The relabelling swaps the first two ids and retains the third id.
+def swapFirstTwo(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) =
+  match i where
+    | +{.0 = u} => +{.1 = +{.0 = u}}
+    | +{.1 = +{.0 = u}} => +{.0 = u}
+    | +{.1 = +{.1 = u}} => +{.1 = +{.1 = u}}
+
+/// The relabelling has itself as its inverse.
+def relabelling : Path[.A = Type](
+  Unit + (Unit + Unit),
+  Unit + (Unit + Unit)
+) = equiv swapFirstTwo swapFirstTwo;
+
+/// The `nextABC` ring allocates `a`, then `b`, then `c`.
+def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { match i {
+  | +{.0 = u} => +{.1 = +{.0 = u}}
+  | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
+  | +{.1 = +{.1 = u}} => +{.0 = u}
+} }
+
+/// The `labelABC` function labels ids in allocation order.
+def labelABC(i : Unit + (Unit + Unit)) -> Integer { match i {
+  | +{.0 = u} => 1
+  | +{.1 = +{.0 = u}} => 2
+  | +{.1 = +{.1 = u}} => 3
+} }
+
+/// The `nextBAC` ring allocates `b`, then `a`, then `c`.
+def nextBAC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { match i {
+  | +{.0 = u} => +{.1 = +{.1 = u}}
+  | +{.1 = +{.0 = u}} => +{.0 = u}
+  | +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
+} }
+
+/// The `labelBAC` function labels ids in allocation order.
+def labelBAC(i : Unit + (Unit + Unit)) -> Integer { match i {
+  | +{.0 = u} => 2
+  | +{.1 = +{.0 = u}} => 1
+  | +{.1 = +{.1 = u}} => 3
+} }
+
+/// The `builtABC` arena starts at `a`.
+def builtABC : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Integer} = *{
+  type(Unit + (Unit + Unit)),
+  *{+{.0 = *{}}, *{nextABC, labelABC}}
+};
+
+/// The `builtBAC` arena starts at `a` after the second allocation.
+def builtBAC : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Integer} = *{
+  type(Unit + (Unit + Unit)),
+  *{+{.1 = +{.0 = *{}}}, *{nextBAC, labelBAC}}
+};
+
+/// Relabelling carries the first link function to the second link function.
+def linksRelabelled : Path(
+  Path.walk (fun (t) { t -> t }) relabelling nextABC,
+  nextBAC
+) = Path.funext (Path.walk (fun (t) { t -> t }) relabelling nextABC) nextBAC;
+
+/// Relabelling carries the first label function to the second label function.
+def labelsRelabelled : Path(
+  Path.walk (fun (t) { t -> Integer }) relabelling labelABC,
+  labelBAC
+) = Path.funext (Path.walk (fun (t) { t -> Integer }) relabelling labelABC) labelBAC;
+
+/// The relabelling proves the two allocation orders make one arena.
+def oneArena : Path(
+  builtABC,
+  builtBAC
+) = *{relabelling, *{Path.here (+{.1 = +{.0 = *{}}}), *{linksRelabelled, labelsRelabelled}}};
+
+/// The `walk` consumer reads the label two links after its start.
+def walk(r : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Integer}) -> Integer =
+  match r where
+    | *{.start = s, .next = n, .label = l} => {
+      let once = n s;
+      l (n once)
+    }
+
+/// The consumer reaches `c` in the first order.
+@[runs("3")]
+def walkedABC() -> Integer { walk builtABC }
+
+/// The consumer reaches `c` in the second order.
+@[runs("3")]
+def walkedBAC() -> Integer { walk builtBAC }
+
+/// The arena path makes both consumer results equal.
+def walkedAlike() -> Path(walk builtABC, walk builtBAC) =
+  Path.ap walk oneArena
+
+/// The checker refuses labels without their allocation relabelling.
+@[refuses("PointwiseDistinct")]
+def labelsUnrelabelled : Path(labelABC, labelBAC) = Path.funext labelABC labelBAC;
