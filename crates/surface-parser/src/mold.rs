@@ -849,11 +849,13 @@ enum CandidateMenu
     Declared,
 }
 
-/// The delta a tied opener's lookahead window must stay below to win.
+/// The delta a lookahead window must not pass to win.
 ///
 /// # Specification
 /// - ensures: `Below` carries the least delta an earlier opener's window
-///   reached; a later opener wins only with a strictly smaller one.
+///   reached; a later opener wins only with a strictly smaller one. `AtMost`
+///   carries the delta of a reading as it stands; a close wins with one no
+///   greater.
 /// - panics: none.
 /// - executable: none — a plain value; [`Molder::mold_window`] carries the
 ///   executable clause.
@@ -864,6 +866,9 @@ enum WindowBound
     Unbounded,
     /// The least delta an earlier opener's window reached.
     Below(Delta),
+    /// The delta of the reading as it stands, which a close keeps on a tie:
+    /// the window stops only past it.
+    AtMost(Delta),
 }
 
 /// Whether a token can stand right after a mold.
@@ -2890,7 +2895,7 @@ impl<'pbg> Molder<'pbg>
         let reading = self.reading;
         let choice = self.choose_stream(state, tokens, index, source);
         Self::push_choice(state, choice, text, reading);
-        let bound = standing.map_or(WindowBound::Unbounded, WindowBound::Below);
+        let bound = standing.map_or(WindowBound::Unbounded, WindowBound::AtMost);
         let end = self.mold_window(state, tokens, next, source, &mark, bound);
         let closed =
             (end == WindowEnd::Molded).then(|| state.completion_delta(state.delta_since(&mark)));
@@ -3058,7 +3063,7 @@ impl<'pbg> Molder<'pbg>
                 state.rollback_to(&mark);
                 let mark = state.mark();
                 state.close_statement(close);
-                let bound = standing.map_or(WindowBound::Unbounded, WindowBound::Below);
+                let bound = standing.map_or(WindowBound::Unbounded, WindowBound::AtMost);
                 let end = self.mold_window(state, tokens, index, source, &mark, bound);
                 let closed = (end == WindowEnd::Molded)
                     .then(|| state.completion_delta(state.delta_since(&mark)));
@@ -5007,7 +5012,7 @@ impl<'pbg> Molder<'pbg>
     ///   stay below leaves the window whole.
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
     /// - witness: `mold::tests::a_dominated_window_stops_before_its_next_token`
-    #[spec(requires: start.0 <= tokens.len(), ensures: |ret| ret == WindowEnd::Molded || matches!(bound, WindowBound::Below(least) if state.delta_since(mark) >= least))]
+    #[spec(requires: start.0 <= tokens.len(), ensures: |ret| ret == WindowEnd::Molded || matches!(bound, WindowBound::Below(least) if state.delta_since(mark) >= least) || matches!(bound, WindowBound::AtMost(most) if state.delta_since(mark) > most))]
     fn mold_window<'src>(
         &mut self,
         state: &mut MeldState<'_>,
@@ -5033,9 +5038,11 @@ impl<'pbg> Molder<'pbg>
                 state.space(SpaceText::from(AsRef::<str>::as_ref(&slice)));
             }
             else {
-                if let WindowBound::Below(least) = bound
-                    && state.delta_since(mark) >= least
-                {
+                if match bound {
+                    WindowBound::Unbounded => false,
+                    WindowBound::Below(least) => state.delta_since(mark) >= least,
+                    WindowBound::AtMost(most) => state.delta_since(mark) > most,
+                } {
                     state.set_reach(reach);
                     return WindowEnd::Dominated;
                 }
