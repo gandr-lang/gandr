@@ -22076,8 +22076,8 @@ pub const fn is_value_form(former: Former) -> ValueForm
     ))
 }
 
-/// Read a number written with an integer width: decimal digits, then `u32`,
-/// `u64`, `i32` or `i64`.
+/// Read a number written with an integer width: decimal digits, then the
+/// name of a width, such as `u8` or `i64`.
 ///
 /// # Specification
 /// - requires: nothing; any text is admissible.
@@ -22089,6 +22089,10 @@ pub const fn is_value_form(former: Former) -> ValueForm
 ///   an `f64` or `f32` one included.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the decimal of the literal in the specification's check,
+///   diagnostic.
+///
 /// # Adequacy
 /// - hypothesis: L3 — each width's literal reads at its extremes and with
 ///   leading zeros; one past each extreme, a fraction and an exponent fall
@@ -22098,15 +22102,15 @@ pub const fn is_value_form(former: Former) -> ValueForm
 #[spec(
     ensures: |ret| {
         let spelled: &str = text.as_ref();
-        match spelled.split_at_checked(spelled.len().saturating_sub(3)) {
-            | Some((digits, suffix)) => match ret {
+        let suffixed = IntegerWidth::ALL.iter().find_map(|&width| spelled.strip_suffix(width.as_ref()).map(|digits| (width, digits)));
+        match suffixed {
+            | Some((width, digits)) => match ret {
                 | Maybe::Present(Literal::Fixed(fixed)) => {
                     let unpadded = digits.trim_start_matches('0');
-                    matches!((fixed.width(), suffix), (IntegerWidth::U32, "u32") | (IntegerWidth::U64, "u64") | (IntegerWidth::I32, "i32") | (IntegerWidth::I64, "i64"))
+                    fixed.width() == width
                         && fixed.to_decimal() == if unpadded.is_empty() { "0" } else { unpadded }
                 },
-                | Maybe::Absent(literal::Absent::OutsideWidth) => matches!(suffix, "u32" | "u64" | "i32" | "i64"),
-                | Maybe::Absent(literal::Absent::Malformed) => !matches!(suffix, "u32" | "u64" | "i32" | "i64"),
+                | Maybe::Absent(literal::Absent::OutsideWidth) => true,
                 | _ => false,
             },
             | None => matches!(ret, Maybe::Absent(literal::Absent::Malformed)),
@@ -22117,26 +22121,18 @@ pub const fn is_value_form(former: Former) -> ValueForm
 pub fn typed_number_literal(text: SourceFragment<'_>) -> Maybe<Literal, literal::Absent>
 {
     let spelled: &str = text.as_ref();
-    let Some((digits, suffix)) = spelled.split_at_checked(spelled.len().saturating_sub(3))
+    let Some((width, digits)) = IntegerWidth::ALL.iter().find_map(|&width| {
+        spelled
+            .strip_suffix(width.as_ref())
+            .map(|digits| (width, digits))
+    })
     else {
         return Maybe::Absent(literal::Absent::Malformed);
     };
-    if !matches!(suffix, "u32" | "u64" | "i32" | "i64") {
-        return Maybe::Absent(literal::Absent::Malformed);
-    }
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Maybe::Absent(literal::Absent::OutsideWidth);
-    }
-    let fixed = match suffix {
-        "u32" => digits.parse::<u32>().map(FixedInteger::U32),
-        "u64" => digits.parse::<u64>().map(FixedInteger::U64),
-        "i32" => digits.parse::<i32>().map(FixedInteger::I32),
-        "i64" => digits.parse::<i64>().map(FixedInteger::I64),
-        _ => return Maybe::Absent(literal::Absent::Malformed),
-    };
-    fixed.map_or(Maybe::Absent(literal::Absent::OutsideWidth), |fixed| {
-        Maybe::Present(Literal::Fixed(fixed))
-    })
+    FixedInteger::from_decimal(width, gandr_kernel_term::DecimalDigits(digits))
+        .map_or(Maybe::Absent(literal::Absent::OutsideWidth), |fixed| {
+            Maybe::Present(Literal::Fixed(fixed))
+        })
 }
 
 /// Whether `text` is a numeric lexeme with a fraction or an exponent.

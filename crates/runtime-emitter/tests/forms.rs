@@ -39,6 +39,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
@@ -373,6 +374,32 @@ fn forms() -> Vec<Form>
                 (root, Vec::new())
             },
             ends: Ends::Shows("⟨1180591620717411303425 |+ ★⟩"),
+        },
+        Form {
+            what: "u8.checked_add 255u8 1u8",
+            build: |core| {
+                let greatest = core.value_literal(Literal::Fixed(FixedInteger::U8(u8::MAX)));
+                let one = core.value_literal(Literal::Fixed(FixedInteger::U8(1)));
+                let root = core.computation_primitive(
+                    prelude(Row("u8.checked_add")),
+                    Arguments::Binary([greatest, one]),
+                );
+                (root, Vec::new())
+            },
+            ends: Ends::Shows("⟨inr(()) |+ ★⟩"),
+        },
+        Form {
+            what: "u8.checked_add 254u8 1u8",
+            build: |core| {
+                let below = core.value_literal(Literal::Fixed(FixedInteger::U8(254)));
+                let one = core.value_literal(Literal::Fixed(FixedInteger::U8(1)));
+                let root = core.computation_primitive(
+                    prelude(Row("u8.checked_add")),
+                    Arguments::Binary([below, one]),
+                );
+                (root, Vec::new())
+            },
+            ends: Ends::Shows("⟨inl(255u8) |+ ★⟩"),
         },
         Form {
             what: "hold x = [1, 2, 3]; access x.#[1] as w { resume w 20 }; consume x",

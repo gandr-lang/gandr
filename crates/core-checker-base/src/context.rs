@@ -283,6 +283,18 @@ struct Atoms
     i32: FormedValueType,
     /// The `i64` width atom.
     i64: FormedValueType,
+    /// The `u8` width atom.
+    u8: FormedValueType,
+    /// The `u16` width atom.
+    u16: FormedValueType,
+    /// The `i8` width atom.
+    i8: FormedValueType,
+    /// The `i16` width atom.
+    i16: FormedValueType,
+    /// The `usize` width atom.
+    usize: FormedValueType,
+    /// The `isize` width atom.
+    isize: FormedValueType,
 }
 
 /// Which atom a leaf rule synthesises.
@@ -866,6 +878,20 @@ impl<'arena> CheckingContext<'arena>
             ),
             i64: FormedValueType::derived(
                 arena.value_type_base(BaseType::Fixed(IntegerWidth::I64)),
+            ),
+            u8: FormedValueType::derived(arena.value_type_base(BaseType::Fixed(IntegerWidth::U8))),
+            u16: FormedValueType::derived(
+                arena.value_type_base(BaseType::Fixed(IntegerWidth::U16)),
+            ),
+            i8: FormedValueType::derived(arena.value_type_base(BaseType::Fixed(IntegerWidth::I8))),
+            i16: FormedValueType::derived(
+                arena.value_type_base(BaseType::Fixed(IntegerWidth::I16)),
+            ),
+            usize: FormedValueType::derived(
+                arena.value_type_base(BaseType::Fixed(IntegerWidth::Usize)),
+            ),
+            isize: FormedValueType::derived(
+                arena.value_type_base(BaseType::Fixed(IntegerWidth::Isize)),
             ),
         };
         Self {
@@ -6696,6 +6722,12 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             Atom::Fixed(IntegerWidth::U64) => self.atoms.u64,
             Atom::Fixed(IntegerWidth::I32) => self.atoms.i32,
             Atom::Fixed(IntegerWidth::I64) => self.atoms.i64,
+            Atom::Fixed(IntegerWidth::U8) => self.atoms.u8,
+            Atom::Fixed(IntegerWidth::U16) => self.atoms.u16,
+            Atom::Fixed(IntegerWidth::I8) => self.atoms.i8,
+            Atom::Fixed(IntegerWidth::I16) => self.atoms.i16,
+            Atom::Fixed(IntegerWidth::Usize) => self.atoms.usize,
+            Atom::Fixed(IntegerWidth::Isize) => self.atoms.isize,
         }
     }
 

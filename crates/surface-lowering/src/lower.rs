@@ -10162,6 +10162,12 @@ mod tests
             ("18446744073709551615u64", FixedInteger::U64(u64::MAX)),
             ("2147483647i32", FixedInteger::I32(i32::MAX)),
             ("9223372036854775807i64", FixedInteger::I64(i64::MAX)),
+            ("255u8", FixedInteger::U8(u8::MAX)),
+            ("65535u16", FixedInteger::U16(u16::MAX)),
+            ("127i8", FixedInteger::I8(i8::MAX)),
+            ("32767i16", FixedInteger::I16(i16::MAX)),
+            ("18446744073709551615usize", FixedInteger::Usize(u64::MAX)),
+            ("9223372036854775807isize", FixedInteger::Isize(i64::MAX)),
         ];
         for (spelled, fixed) in rows {
             assert_eq!(
@@ -10175,12 +10181,15 @@ mod tests
             ("18446744073709551616u64", literal::Absent::OutsideWidth),
             ("2147483648i32", literal::Absent::OutsideWidth),
             ("9223372036854775808i64", literal::Absent::OutsideWidth),
+            ("256u8", literal::Absent::OutsideWidth),
+            ("128i8", literal::Absent::OutsideWidth),
+            ("18446744073709551616usize", literal::Absent::OutsideWidth),
             ("1.5u32", literal::Absent::OutsideWidth),
             ("1e3i64", literal::Absent::OutsideWidth),
             ("u32", literal::Absent::OutsideWidth),
             ("1.5f32", literal::Absent::Malformed),
             ("2f64", literal::Absent::Malformed),
-            ("7u16", literal::Absent::Malformed),
+            ("7u128", literal::Absent::Malformed),
             ("7", literal::Absent::Malformed),
         ];
         for (spelled, reason) in refused {

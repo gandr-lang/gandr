@@ -235,8 +235,11 @@ const KINDS: &[(&str, Standing)] = &[
     ),
     ("Type end", Standing::Owed(0)),
     ("Type f64", Standing::Owed(0)),
+    ("Type i16", Standing::Owed(0)),
     ("Type i32", Standing::Owed(0)),
     ("Type i64", Standing::Owed(0)),
+    ("Type i8", Standing::Owed(0)),
+    ("Type isize", Standing::Owed(0)),
     ("Type mu", Standing::Owed(0)),
     ("Type number", Standing::Owed(0)),
     (
@@ -246,8 +249,11 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type true", Standing::Owed(0)),
     ("Type type_identifier", Standing::Owed(0)),
     ("Type type_variable", Standing::Owed(0)),
+    ("Type u16", Standing::Owed(0)),
     ("Type u32", Standing::Owed(0)),
     ("Type u64", Standing::Owed(0)),
+    ("Type u8", Standing::Owed(0)),
+    ("Type usize", Standing::Owed(0)),
     (
         "Type with",
         Standing::Design("a manifest model type: the model type whose sorts it fixes answers"),

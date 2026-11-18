@@ -43,6 +43,10 @@ pub data Scalar : Type where
   | Flag : Scalar
   /// `&T`, whose null is invalid.
   | Ref : Scalar
+  /// `i8`.
+  | I8 : Scalar
+  /// `i16`.
+  | I16 : Scalar
 
 /// A struct's fields in declaration order.
 pub data Fields : Type where
@@ -152,6 +156,8 @@ def bytes(s : Scalar) -> Integer =
     | I64 => 8
     | Flag => 1
     | Ref => 8
+    | I8 => 1
+    | I16 => 2
 
 /// How many invalid values a scalar has.
 def niche(s : Scalar) -> Integer =
@@ -164,6 +170,8 @@ def niche(s : Scalar) -> Integer =
     | I64 => 0
     | Flag => 254
     | Ref => 1
+    | I8 => 0
+    | I16 => 0
 
 /// The larger of two integers.
 def bigger(a : Integer, b : Integer) -> Integer =

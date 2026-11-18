@@ -469,7 +469,7 @@ pub enum TypeFormer
 /// - hypothesis: L3 — every row has an exact answer, with the other arity and
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 12_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 18_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
@@ -481,6 +481,18 @@ const TYPE_ATOMS: [(&str, TypeAtom); 12_usize] = [
     ("u64", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::U64)),
     ("i32", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I32)),
     ("i64", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I64)),
+    ("u8", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::U8)),
+    ("u16", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::U16)),
+    ("i8", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I8)),
+    ("i16", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I16)),
+    (
+        "usize",
+        TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::Usize),
+    ),
+    (
+        "isize",
+        TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::Isize),
+    ),
     ("Row", TypeAtom::Row),
 ];
 
@@ -584,14 +596,12 @@ const HOMED_ATOMS: [(&str, &str, TypeAtom); 3_usize] = [
 pub fn type_atom(name: SurfaceName<'_>) -> Maybe<TypeAtom, type_head::Absent>
 {
     let spelled: &str = name.as_ref();
-    let found = TYPE_ATOMS
-        .into_iter()
-        .find_map(|(entry, atom)| (entry == spelled).then_some(atom));
-
-    found.map_or(
-        Maybe::Absent(type_head::Absent::Unregistered),
-        Maybe::Present,
-    )
+    for (entry, atom) in TYPE_ATOMS {
+        if entry == spelled {
+            return Maybe::Present(atom);
+        }
+    }
+    Maybe::Absent(type_head::Absent::Unregistered)
 }
 
 /// The type former `name` spells, when the unary table answers it.

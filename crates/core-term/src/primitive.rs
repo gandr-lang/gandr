@@ -20,7 +20,11 @@
 //! | Floating-point arithmetic | `float64.add`, `float64.sub`, `float64.mul`, `float64.div`, `float64.neg`, `float64.exp` | Float64 operands and result |
 //! | Floating-point comparison | `float64.eq`, `float64.ne`, `float64.lt`, `float64.le`, `float64.gt`, `float64.ge` | Float64 operands, boolean result |
 //! | Conversion | `float64.from_integer`, `float64.round` | Integer to Float64, Float64 to Integer |
-//! | Width conversion | `u32.to_integer`, `u64.to_integer`, `i32.to_integer`, `i64.to_integer`, `u32.from_integer`, `u64.from_integer`, `i32.from_integer`, `i64.from_integer` | a width to Integer, Integer to a width |
+//! | Width conversion | `w.to_integer`, `w.from_integer` for each width `w` | a width to Integer, Integer to a width |
+//! | Width arithmetic | `w.wrapping_add`, `w.wrapping_sub`, `w.wrapping_mul`, `w.saturating_add`, `w.saturating_sub`, `w.saturating_mul`, `w.wrapping_div`, `w.wrapping_rem` | width operands and result |
+//! | Width checked arithmetic | `w.checked_add`, `w.checked_sub`, `w.checked_mul`, `w.checked_shl`, `w.checked_shr` | width operands, `w + Unit` result |
+//! | Width bits | `w.and`, `w.or`, `w.xor`, `w.not` | width operands and result |
+//! | Width comparison | `w.eq`, `w.ne`, `w.lt`, `w.le`, `w.gt`, `w.ge` | width operands, boolean result |
 //!
 //! Booleans are `Unit + Unit`, with the left injection true. Division truncates
 //! toward zero; remainder has the dividend's sign. Division and remainder by
@@ -42,6 +46,13 @@
 //! width's two's complement, as Rust's `as` cast between integers does, so
 //! `u32.from_integer(-1)` is the greatest `u32` and `i32.from_integer` of one
 //! past the greatest `i32` is the least.
+//!
+//! The width forms are Rust's operations of the same names on the width's
+//! native type. A `checked_` form answers `w + Unit`: the value on the left,
+//! and the unit on the right where the value lies outside the width. A shift
+//! amount of the bit count or more, or below zero, is absent. `wrapping_div`
+//! and `wrapping_rem` by zero return `PrimitiveError::DivisionByZero`. The
+//! widths `usize` and `isize` hold 64 bits, the word of each target.
 //!
 //! **Choice.** `libm`, with defaults off, supplies `exp` and the rounding: its
 //! soft implementation runs alike on every platform, so a run's floating-point
@@ -202,8 +213,11 @@ pub enum PrimitiveType
     Text,
     /// An IEEE 754 binary64 floating-point number.
     Float64,
-    /// An integer width atom: `u32`, `u64`, `i32` or `i64`.
+    /// An integer width atom, such as `u8` or `i64`.
     Fixed(IntegerWidth),
+    /// The answer of a `checked_` form of a width: the sum of the width and
+    /// `Unit`, the value on the left and the absence on the right.
+    Checked(IntegerWidth),
 }
 
 impl PrimitiveType
@@ -228,6 +242,11 @@ impl PrimitiveType
             Self::Text => arena.value_type_base(BaseType::String),
             Self::Float64 => arena.value_type_base(BaseType::Float64),
             Self::Fixed(width) => arena.value_type_base(BaseType::Fixed(width)),
+            Self::Checked(width) => {
+                let value = arena.value_type_base(BaseType::Fixed(width));
+                let unit = arena.value_type_unit();
+                arena.value_type_sum(&[value, unit])
+            },
         }
     }
 }
@@ -293,6 +312,84 @@ enum Operation
     /// An integer reduced modulo two to the result's width, in that width's
     /// two's complement.
     FromIntegerToWidth,
+    /// An operation on the values of one width.
+    Width(WidthOperation),
+}
+
+/// An operation on the values of one integer width.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum WidthOperation
+{
+    /// An arithmetic operation whose result is reduced modulo two to the
+    /// width's bit count.
+    Wrapping(Arithmetic),
+    /// An arithmetic operation whose result is clamped to the nearest bound of
+    /// the width.
+    Saturating(Arithmetic),
+    /// An arithmetic operation whose result is absent when it lies outside the
+    /// width.
+    Checked(Arithmetic),
+    /// Division that truncates toward zero, modulo the width for the signed
+    /// pair of the least value and minus one. A zero divisor stops the run.
+    Div,
+    /// The remainder of [`Self::Div`], with the dividend's sign. A zero
+    /// divisor stops the run.
+    Rem,
+    /// The bitwise conjunction.
+    And,
+    /// The bitwise disjunction.
+    Or,
+    /// The bitwise exclusive disjunction.
+    Xor,
+    /// The bitwise negation.
+    Not,
+    /// A shift toward the high bits, absent for an amount of the width's bit
+    /// count or more, or below zero.
+    CheckedShl,
+    /// A shift toward the low bits, absent for an amount of the width's bit
+    /// count or more, or below zero. A signed width shifts in its sign.
+    CheckedShr,
+    /// A comparison of two values.
+    Order(Order),
+}
+
+/// The arithmetic of a width form.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Arithmetic
+{
+    /// Addition.
+    Add,
+    /// Subtraction.
+    Sub,
+    /// Multiplication.
+    Mul,
+}
+
+/// A comparison of two values of one width.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Order
+{
+    /// Equality.
+    Eq,
+    /// Inequality.
+    Ne,
+    /// Strictly below.
+    Lt,
+    /// Below or equal.
+    Le,
+    /// Strictly above.
+    Gt,
+    /// Above or equal.
+    Ge,
 }
 
 /// A law the host asserts of a primitive.
@@ -343,8 +440,66 @@ struct Definition
     operation: Operation,
 }
 
+/// One row of the native table, called by its name alone.
+macro_rules! row {
+    ($name:expr, [$($argument:expr),+], $result:expr, $operation:expr) => {
+        Primitive(&Definition {
+            name: $name,
+            operator: Operator::Named,
+            arguments: &[$($argument),+],
+            result: $result,
+            operation: $operation,
+        })
+    };
+}
+
+/// The native table: the base rows, then the conversions of the widths the
+/// base rows do not convert, then the same rows in the same order for each
+/// width. A new row joins at the end, so the place of each row stands.
+macro_rules! prelude {
+    (
+        base: [$($base:expr),+ $(,)?],
+        converted: [$(($converted:ident, $converted_name:literal)),+ $(,)?],
+        widths: [$(($width:ident, $name:literal)),+ $(,)?] $(,)?
+    ) => {
+        [
+        $($base,)+
+        $(
+            row!(concat!($converted_name, ".to_integer"), [PrimitiveType::Fixed(IntegerWidth::$converted)], PrimitiveType::Integer, Operation::ToInteger),
+            row!(concat!($converted_name, ".from_integer"), [PrimitiveType::Integer], PrimitiveType::Fixed(IntegerWidth::$converted), Operation::FromIntegerToWidth),
+        )+
+        $(
+            row!(concat!($name, ".wrapping_add"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Wrapping(Arithmetic::Add))),
+            row!(concat!($name, ".wrapping_sub"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Wrapping(Arithmetic::Sub))),
+            row!(concat!($name, ".wrapping_mul"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Wrapping(Arithmetic::Mul))),
+            row!(concat!($name, ".saturating_add"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Saturating(Arithmetic::Add))),
+            row!(concat!($name, ".saturating_sub"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Saturating(Arithmetic::Sub))),
+            row!(concat!($name, ".saturating_mul"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Saturating(Arithmetic::Mul))),
+            row!(concat!($name, ".checked_add"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Checked(IntegerWidth::$width), Operation::Width(WidthOperation::Checked(Arithmetic::Add))),
+            row!(concat!($name, ".checked_sub"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Checked(IntegerWidth::$width), Operation::Width(WidthOperation::Checked(Arithmetic::Sub))),
+            row!(concat!($name, ".checked_mul"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Checked(IntegerWidth::$width), Operation::Width(WidthOperation::Checked(Arithmetic::Mul))),
+            row!(concat!($name, ".wrapping_div"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Div)),
+            row!(concat!($name, ".wrapping_rem"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Rem)),
+            row!(concat!($name, ".and"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::And)),
+            row!(concat!($name, ".or"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Or)),
+            row!(concat!($name, ".xor"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Xor)),
+            row!(concat!($name, ".not"), [PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Not)),
+            row!(concat!($name, ".checked_shl"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Checked(IntegerWidth::$width), Operation::Width(WidthOperation::CheckedShl)),
+            row!(concat!($name, ".checked_shr"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Checked(IntegerWidth::$width), Operation::Width(WidthOperation::CheckedShr)),
+            row!(concat!($name, ".eq"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Eq))),
+            row!(concat!($name, ".ne"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Ne))),
+            row!(concat!($name, ".lt"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Lt))),
+            row!(concat!($name, ".le"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Le))),
+            row!(concat!($name, ".gt"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Gt))),
+            row!(concat!($name, ".ge"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Ge))),
+        )+
+        ]
+    };
+}
+
 /// The single native prelude table, including its operator spellings.
-pub const PRELUDE: &[Primitive] = &[
+pub const PRELUDE: &[Primitive] = &prelude! {
+    base: [
     Primitive(&Definition {
         name: "prim.id",
         operator: Operator::Named,
@@ -674,7 +829,28 @@ pub const PRELUDE: &[Primitive] = &[
         result: PrimitiveType::Fixed(IntegerWidth::I64),
         operation: Operation::FromIntegerToWidth,
     }),
-];
+    ],
+    converted: [
+        (U8, "u8"),
+        (U16, "u16"),
+        (I8, "i8"),
+        (I16, "i16"),
+        (Usize, "usize"),
+        (Isize, "isize"),
+    ],
+    widths: [
+        (U32, "u32"),
+        (U64, "u64"),
+        (I32, "i32"),
+        (I64, "i64"),
+        (U8, "u8"),
+        (U16, "u16"),
+        (I8, "i8"),
+        (I16, "i16"),
+        (Usize, "usize"),
+        (Isize, "isize"),
+    ],
+};
 
 /// A native scalar supplied to or returned from the table evaluator.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -690,6 +866,38 @@ pub enum Scalar<Integer = IntegerLiteral, Text = StringLiteral>
     Float64(Float64Literal),
     /// A value of an integer width atom.
     Fixed(FixedInteger),
+    /// The answer of a `checked_` form of a width.
+    Checked(CheckedFixed),
+}
+
+/// The answer of a `checked_` form: a value of the width, or its absence.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CheckedFixed
+{
+    /// The value, which lies in its width.
+    Present(FixedInteger),
+    /// No value of the width is the answer.
+    Absent(IntegerWidth),
+}
+
+impl CheckedFixed
+{
+    /// The width this answer is of.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn width(self) -> IntegerWidth
+    {
+        match self {
+            Self::Present(fixed) => fixed.width(),
+            Self::Absent(width) => width,
+        }
+    }
 }
 
 /// Why a native evaluation cannot produce its result.
@@ -834,7 +1042,8 @@ impl Primitive
             | Operation::FromInteger
             | Operation::Round
             | Operation::ToInteger
-            | Operation::FromIntegerToWidth => return None,
+            | Operation::FromIntegerToWidth
+            | Operation::Width(_) => return None,
         };
         (self.0.result == PrimitiveType::Boolean).then_some(LiteralIdentity::new(base, polarity))
     }
@@ -1035,6 +1244,9 @@ impl Primitive
     /// representation failures, and a floating-point number rounded to an
     /// integer that is not finite.
     ///
+    /// # Cost
+    /// - allocation: the answer's integer or text, growth within the operands.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric signed operands, zero divisors, integers
     ///   beyond machine width, every boolean pair, two strings appended in both
@@ -1073,6 +1285,7 @@ impl Primitive
                 Scalar::Text(text) => Scalar::Text(text.clone()),
                 Scalar::Float64(float) => Scalar::Float64(float),
                 Scalar::Fixed(fixed) => Scalar::Fixed(fixed),
+                Scalar::Checked(checked) => Scalar::Checked(checked),
             });
         }
         // Only the `string` rows take text, the classifiers say: a text
@@ -1121,18 +1334,49 @@ impl Primitive
                 | Operation::FromInteger
                 | Operation::Round
                 | Operation::ToInteger
-                | Operation::FromIntegerToWidth => Err(PrimitiveError::ArgumentType),
+                | Operation::FromIntegerToWidth
+                | Operation::Width(_) => Err(PrimitiveError::ArgumentType),
             };
         }
         if let Scalar::Float64(left) = *first {
             return float64(self.0.operation, left, arguments);
         }
-        // Only the `to_integer` rows take a width, and they take it alone.
+        // Only the `to_integer` and width rows take a width. A width row's
+        // second operand is of the first's width, and its one operand stands
+        // in for both.
         if let Scalar::Fixed(fixed) = *first {
-            if self.0.operation != Operation::ToInteger {
-                return Err(PrimitiveError::ArgumentType);
-            }
-            return scalar(&widened(fixed));
+            return match self.0.operation {
+                Operation::ToInteger => scalar(&widened(fixed)),
+                Operation::Width(operation) => {
+                    let right = match arguments.get(1) {
+                        Some(&Scalar::Fixed(right)) => right,
+                        None => fixed,
+                        Some(_) => return Err(PrimitiveError::ArgumentType),
+                    };
+                    width(operation, fixed, right)
+                },
+                Operation::First
+                | Operation::Add
+                | Operation::Sub
+                | Operation::Mul
+                | Operation::Div
+                | Operation::Mod
+                | Operation::Neg
+                | Operation::Eq
+                | Operation::Ne
+                | Operation::Lt
+                | Operation::Le
+                | Operation::Gt
+                | Operation::Ge
+                | Operation::And
+                | Operation::Or
+                | Operation::Not
+                | Operation::Append
+                | Operation::Exp
+                | Operation::FromInteger
+                | Operation::Round
+                | Operation::FromIntegerToWidth => Err(PrimitiveError::ArgumentType),
+            };
         }
         if self.0.operation == Operation::FromIntegerToWidth {
             let PrimitiveType::Fixed(width) = self.0.result
@@ -1175,7 +1419,8 @@ impl Primitive
                 | Operation::FromInteger
                 | Operation::Round
                 | Operation::ToInteger
-                | Operation::FromIntegerToWidth => return Err(PrimitiveError::ArgumentType),
+                | Operation::FromIntegerToWidth
+                | Operation::Width(_) => return Err(PrimitiveError::ArgumentType),
             };
             return Ok(Scalar::Boolean(if answer {
                 Side::Left
@@ -1222,7 +1467,8 @@ impl Primitive
             | Operation::FromInteger
             | Operation::Round
             | Operation::ToInteger
-            | Operation::FromIntegerToWidth => {
+            | Operation::FromIntegerToWidth
+            | Operation::Width(_) => {
                 return Err(PrimitiveError::ArgumentType);
             },
         };
@@ -1282,6 +1528,7 @@ impl<Integer, Text> Scalar<Integer, Text>
             Self::Text(_) => PrimitiveType::Text,
             Self::Float64(_) => PrimitiveType::Float64,
             Self::Fixed(fixed) => PrimitiveType::Fixed(fixed.width()),
+            Self::Checked(checked) => PrimitiveType::Checked(checked.width()),
         }
     }
 }
@@ -1342,6 +1589,7 @@ impl Scalar
             Self::Text(ref text) => Scalar::Text(text),
             Self::Float64(float) => Scalar::Float64(float),
             Self::Fixed(fixed) => Scalar::Fixed(fixed),
+            Self::Checked(checked) => Scalar::Checked(checked),
         }
     }
 
@@ -1365,6 +1613,14 @@ impl Scalar
             Self::Text(text) => arena.value_literal(Literal::Text(text)),
             Self::Float64(float) => arena.value_literal(Literal::Float64(float)),
             Self::Fixed(fixed) => arena.value_literal(Literal::Fixed(fixed)),
+            Self::Checked(CheckedFixed::Present(fixed)) => {
+                let value = arena.value_literal(Literal::Fixed(fixed));
+                arena.value_injection(Summand::from(0_usize), value)
+            },
+            Self::Checked(CheckedFixed::Absent(_)) => {
+                let unit = arena.value_unit();
+                arena.value_injection(Summand::from(1_usize), unit)
+            },
         }
     }
 }
@@ -1413,9 +1669,13 @@ fn widened(fixed: FixedInteger) -> BigInt
 {
     match fixed {
         FixedInteger::U32(value) => BigInt::from(value),
-        FixedInteger::U64(value) => BigInt::from(value),
+        FixedInteger::U64(value) | FixedInteger::Usize(value) => BigInt::from(value),
         FixedInteger::I32(value) => BigInt::from(value),
-        FixedInteger::I64(value) => BigInt::from(value),
+        FixedInteger::I64(value) | FixedInteger::Isize(value) => BigInt::from(value),
+        FixedInteger::U8(value) => BigInt::from(value),
+        FixedInteger::U16(value) => BigInt::from(value),
+        FixedInteger::I8(value) => BigInt::from(value),
+        FixedInteger::I16(value) => BigInt::from(value),
     }
 }
 
@@ -1433,6 +1693,10 @@ fn widened(fixed: FixedInteger) -> BigInt
 /// [`PrimitiveError::InvalidInteger`] for a remainder no width holds, which
 /// the reduction rules out.
 ///
+/// # Cost
+/// - allocation: the modulus and the remainder, growth within the width's bit
+///   count.
+///
 /// # Adequacy
 /// - hypothesis: L3 — negatives, one past each width's greatest value and
 ///   integers beyond machine width each land on their remainder.
@@ -1443,11 +1707,7 @@ fn narrowed(
     width: IntegerWidth,
 ) -> Result<FixedInteger, PrimitiveError>
 {
-    let bits: u32 = match width {
-        IntegerWidth::U32 | IntegerWidth::I32 => 32,
-        IntegerWidth::U64 | IntegerWidth::I64 => 64,
-    };
-    let modulus = BigInt::from(1_u8).shl(bits);
+    let modulus = BigInt::from(1_u8).shl(u32::from(width.bits()));
     // The remainder takes the dividend's sign; one modulus more is the least
     // non-negative one.
     let remainder = value.rem(&modulus);
@@ -1459,6 +1719,109 @@ fn narrowed(
     };
     let pattern = u64::try_from(&remainder).map_err(|_wide| PrimitiveError::InvalidInteger)?;
     FixedInteger::try_from((width, pattern)).map_err(|_wider| PrimitiveError::InvalidInteger)
+}
+
+/// The answer of a width row's `operation` at `left` and `right`, both of one
+/// width. A unary row reads `left` alone.
+///
+/// # Specification
+/// - requires: nothing; operands of two widths are admissible input.
+/// - ensures: Rust's operation of the same name on the width's native type: a
+///   `wrapping_` form modulo two to the bit count, a `saturating_` form clamped
+///   to the nearest bound, a `checked_` form absent where Rust's is `None`, and
+///   a shift absent for an amount that `u32` does not hold.
+/// - fails: [`PrimitiveError::ArgumentType`] for operands of two widths;
+///   [`PrimitiveError::DivisionByZero`] for a zero divisor.
+/// - panics: none.
+///
+/// # Errors
+/// [`PrimitiveError::ArgumentType`] and [`PrimitiveError::DivisionByZero`],
+/// each as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each width's bounds under each form, a zero divisor, the
+///   signed least value over minus one and shifts by the bit count and below
+///   zero distinguish a wrong width, a wrong form and a wrong bound.
+/// - witness: `primitive::tests::each_width_form_answers_at_its_bounds`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |value| matches!(*value, Scalar::Boolean(_)) || matches!(*value, Scalar::Fixed(fixed) if fixed.width() == left.width()) || matches!(*value, Scalar::Checked(checked) if checked.width() == left.width())))]
+fn width(
+    operation: WidthOperation,
+    left: FixedInteger,
+    right: FixedInteger,
+) -> Result<Scalar, PrimitiveError>
+{
+    let boolean = |answer: bool| Scalar::Boolean(if answer { Side::Left } else { Side::Right });
+    // One arm per width: each calls the native operation of its own type.
+    macro_rules! each_width {
+        ($($variant:ident: $native:ty),+) => {
+            match (left, right) {
+                $((FixedInteger::$variant(a), FixedInteger::$variant(b)) => {
+                    const ZERO: $native = 0;
+                    let fixed = |value| Scalar::Fixed(FixedInteger::$variant(value));
+                    let checked = |answer: Option<_>| {
+                        Scalar::Checked(answer.map_or(
+                            CheckedFixed::Absent(IntegerWidth::$variant),
+                            |value| CheckedFixed::Present(FixedInteger::$variant(value)),
+                        ))
+                    };
+                    let amount = u32::try_from(b).ok();
+                    Ok(match operation {
+                        WidthOperation::Wrapping(Arithmetic::Add) => fixed(a.wrapping_add(b)),
+                        WidthOperation::Wrapping(Arithmetic::Sub) => fixed(a.wrapping_sub(b)),
+                        WidthOperation::Wrapping(Arithmetic::Mul) => fixed(a.wrapping_mul(b)),
+                        WidthOperation::Saturating(Arithmetic::Add) => fixed(a.saturating_add(b)),
+                        WidthOperation::Saturating(Arithmetic::Sub) => fixed(a.saturating_sub(b)),
+                        WidthOperation::Saturating(Arithmetic::Mul) => fixed(a.saturating_mul(b)),
+                        WidthOperation::Checked(Arithmetic::Add) => checked(a.checked_add(b)),
+                        WidthOperation::Checked(Arithmetic::Sub) => checked(a.checked_sub(b)),
+                        WidthOperation::Checked(Arithmetic::Mul) => checked(a.checked_mul(b)),
+                        // The one quotient past the width, the least value
+                        // over minus one, wraps to the least value, and its
+                        // remainder is zero.
+                        WidthOperation::Div => fixed(match a.checked_div(b) {
+                            Some(quotient) => quotient,
+                            None if b == ZERO => return Err(PrimitiveError::DivisionByZero),
+                            None => a,
+                        }),
+                        WidthOperation::Rem => fixed(match a.checked_rem(b) {
+                            Some(remainder) => remainder,
+                            None if b == ZERO => return Err(PrimitiveError::DivisionByZero),
+                            None => ZERO,
+                        }),
+                        WidthOperation::And => fixed(a & b),
+                        WidthOperation::Or => fixed(a | b),
+                        WidthOperation::Xor => fixed(a ^ b),
+                        WidthOperation::Not => fixed(!a),
+                        WidthOperation::CheckedShl => {
+                            checked(amount.and_then(|amount| a.checked_shl(amount)))
+                        },
+                        WidthOperation::CheckedShr => {
+                            checked(amount.and_then(|amount| a.checked_shr(amount)))
+                        },
+                        WidthOperation::Order(Order::Eq) => boolean(a == b),
+                        WidthOperation::Order(Order::Ne) => boolean(a != b),
+                        WidthOperation::Order(Order::Lt) => boolean(a < b),
+                        WidthOperation::Order(Order::Le) => boolean(a <= b),
+                        WidthOperation::Order(Order::Gt) => boolean(a > b),
+                        WidthOperation::Order(Order::Ge) => boolean(a >= b),
+                    })
+                },)+
+                _ => Err(PrimitiveError::ArgumentType),
+            }
+        };
+    }
+    each_width!(
+        U32: u32,
+        U64: u64,
+        I32: i32,
+        I64: i64,
+        U8: u8,
+        U16: u16,
+        I8: i8,
+        I16: i16,
+        Usize: u64,
+        Isize: i64
+    )
 }
 
 /// Evaluate a floating-point row whose first operand is `left` and whose
@@ -1477,6 +1840,9 @@ fn narrowed(
 ///
 /// # Errors
 /// [`PrimitiveError::NotFinite`] or [`PrimitiveError::ArgumentType`].
+///
+/// # Cost
+/// - allocation: the decimal of a rounded number, growth within its magnitude.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — sums, quotients by zero, a NaN compared with itself,
@@ -1530,7 +1896,8 @@ fn float64(
         | Operation::Append
         | Operation::FromInteger
         | Operation::ToInteger
-        | Operation::FromIntegerToWidth => {},
+        | Operation::FromIntegerToWidth
+        | Operation::Width(_) => {},
     }
     let Some(&Scalar::Float64(right)) = arguments.get(1)
     else {
@@ -1560,7 +1927,8 @@ fn float64(
         | Operation::FromInteger
         | Operation::Round
         | Operation::ToInteger
-        | Operation::FromIntegerToWidth => return Err(PrimitiveError::ArgumentType),
+        | Operation::FromIntegerToWidth
+        | Operation::Width(_) => return Err(PrimitiveError::ArgumentType),
     };
     Ok(Scalar::Boolean(if answer {
         Side::Left

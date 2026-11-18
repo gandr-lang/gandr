@@ -2745,6 +2745,10 @@ pub enum DeclaredFamily<'module>
 /// - fails: never; a node no type is stated for records nothing.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the families, the contexts and the entries, growth within the
+///   declarations.
+///
 /// # Adequacy
 /// - hypothesis: L3 — a theory's sorts, operations, laws and circuit, a data
 ///   family's operations and rules, and the constructors of a family with a
@@ -2790,6 +2794,18 @@ where
         ("u64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U64)),
         ("i32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I32)),
         ("i64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I64)),
+        ("u8", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U8)),
+        ("u16", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U16)),
+        ("i8", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I8)),
+        ("i16", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I16)),
+        (
+            "usize",
+            BaseType::Fixed(gandr_kernel_term::IntegerWidth::Usize),
+        ),
+        (
+            "isize",
+            BaseType::Fixed(gandr_kernel_term::IntegerWidth::Isize),
+        ),
     ] {
         let ty = typer.arena.value_type_base(atom);
         let _first = families.insert(Name::from(name), (ty, base));

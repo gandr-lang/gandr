@@ -336,11 +336,11 @@ pub fn numeric_literal() -> Literal
     ))
 }
 
-/// A value-type id past the end of any arena holding fewer than sixteen
+/// A value-type id past the end of any arena holding fewer than sixty-four
 /// value types.
 ///
 /// # Specification
-/// - requires: the receiving arena contains at most sixteen value types.
+/// - requires: the receiving arena contains at most sixty-four value types.
 /// - ensures: the returned id does not resolve in that receiving arena.
 /// - panics: none.
 /// - executable: none — the receiving arena is not an argument, and the opaque
@@ -358,7 +358,7 @@ pub fn dangling_value_type() -> ValueTypeId
 {
     let mut scratch = CoreArena::new();
     let mut last = scratch.value_type_unit();
-    for _ in 0_u8 .. 16_u8 {
+    for _ in 0_u8 .. 64_u8 {
         last = scratch.value_type_unit();
     }
     last

@@ -2952,33 +2952,32 @@ fn scan_shell_quoted_value(
     cursor
 }
 
-/// Return the width of a primitive-numeric suffix at `pos` (`u32`, `f64`, …).
+/// The primitive numeric suffixes, each a word of its own.
+const NUMERIC_SUFFIXES: [&[u8]; 12] = [
+    b"u8", b"u16", b"u32", b"u64", b"usize", b"i8", b"i16", b"i32", b"i64", b"isize", b"f32",
+    b"f64",
+];
+
+/// Return the width of a primitive-numeric suffix at `pos` (`u8`, `f64`, …).
 ///
 /// # Specification
-/// - ensures: returns three bytes exactly for a primitive numeric suffix not
-///   followed by a word byte; otherwise none.
+/// - ensures: returns the length of the primitive numeric suffix at `pos` that
+///   no word byte follows; otherwise none.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — all six suffixes at end and before punctuation, every
+/// - hypothesis: L3 — every suffix at end and before punctuation, every
 ///   truncated prefix and an added word byte expose the optional width.
 ///   Omitting a suffix, accepting a partial suffix or ignoring the word
 ///   boundary changes that width.
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[spec(ensures: |ret| ret.map(usize::from) == (bytes.0.get(pos.0 .. pos.0.saturating_add(3)).is_some_and(|word| [b"u32".as_slice(), b"u64".as_slice(), b"i32".as_slice(), b"i64".as_slice(), b"f32".as_slice(), b"f64".as_slice()].contains(&word)) && bytes.0.get(pos.0.saturating_add(3)).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')).then_some(3))]
+#[spec(ensures: |ret| ret.map(usize::from) == NUMERIC_SUFFIXES.iter().find(|&&suffix| bytes.0.get(pos.0 .. pos.0.saturating_add(suffix.len())) == Some(suffix) && bytes.0.get(pos.0.saturating_add(suffix.len())).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')).map(|suffix| suffix.len()))]
 fn suffix_len(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
 ) -> Option<ByteWidth>
 {
-    for suffix in [
-        b"u32".as_slice(),
-        b"u64".as_slice(),
-        b"i32".as_slice(),
-        b"i64".as_slice(),
-        b"f32".as_slice(),
-        b"f64".as_slice(),
-    ] {
+    for suffix in NUMERIC_SUFFIXES {
         let width = ByteWidth::from(suffix.len());
         let end = pos.advance(width);
         if bool::from(bytes.span_matches(pos, end, BytePattern(suffix))) {
@@ -3503,10 +3502,12 @@ mod tests
                 "{source}"
             );
         }
-        for suffix in ["u32", "u64", "i32", "i64", "f32", "f64"] {
+        for suffix in [
+            "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize", "f32", "f64",
+        ] {
             for (tail, expected) in [
-                ("", Some(3_usize)),
-                ("!", Some(3)),
+                ("", Some(suffix.len())),
+                ("!", Some(suffix.len())),
                 ("x", None),
                 ("_", None),
                 ("9", None),

@@ -5394,7 +5394,7 @@ fn build_variable_atom(
     captures: start = reader.position,
     ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
         reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
-            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(3) => ret.as_ref() == Ok(&BaseType::Character), Some(4) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::U32)), Some(5) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::U64)), Some(6) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::I32)), Some(7) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::I64)), Some(8) => ret.as_ref() == Ok(&BaseType::Float64), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(3) => ret.as_ref() == Ok(&BaseType::Character), Some(4) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::U32)), Some(5) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::U64)), Some(6) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::I32)), Some(7) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::I64)), Some(8) => ret.as_ref() == Ok(&BaseType::Float64), Some(9) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::U8)), Some(10) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::U16)), Some(11) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::I8)), Some(12) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::I16)), Some(13) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::Usize)), Some(14) => ret.as_ref() == Ok(&BaseType::Fixed(IntegerWidth::Isize)), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
 )]
 #[inline]
 fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError>
@@ -5410,6 +5410,12 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
         tags::BASE_U64 => Ok(BaseType::Fixed(IntegerWidth::U64)),
         tags::BASE_I32 => Ok(BaseType::Fixed(IntegerWidth::I32)),
         tags::BASE_I64 => Ok(BaseType::Fixed(IntegerWidth::I64)),
+        tags::BASE_U8 => Ok(BaseType::Fixed(IntegerWidth::U8)),
+        tags::BASE_U16 => Ok(BaseType::Fixed(IntegerWidth::U16)),
+        tags::BASE_I8 => Ok(BaseType::Fixed(IntegerWidth::I8)),
+        tags::BASE_I16 => Ok(BaseType::Fixed(IntegerWidth::I16)),
+        tags::BASE_USIZE => Ok(BaseType::Fixed(IntegerWidth::Usize)),
+        tags::BASE_ISIZE => Ok(BaseType::Fixed(IntegerWidth::Isize)),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::BaseType,
             tag: other,
@@ -5574,7 +5580,7 @@ fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
         else { sign == Some(match value.sign() { Sign::NonNegative => 0, Sign::Negative => 1 }) }, Literal::Character(ref value) => { let text = value.to_text();
         kind == Some(3)
             && reader.position.0 == start.0.saturating_add(2).saturating_add(text.len())
-            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Float64(_) => kind == Some(8), Literal::Fixed(fixed) => kind == Some(match fixed.width() { IntegerWidth::U32 => 4, IntegerWidth::U64 => 5, IntegerWidth::I32 => 6, IntegerWidth::I64 => 7 }) } }),
+            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Float64(_) => kind == Some(8), Literal::Fixed(fixed) => kind == Some(match fixed.width() { IntegerWidth::U32 => 4, IntegerWidth::U64 => 5, IntegerWidth::I32 => 6, IntegerWidth::I64 => 7, IntegerWidth::U8 => 9, IntegerWidth::U16 => 10, IntegerWidth::I8 => 11, IntegerWidth::I16 => 12, IntegerWidth::Usize => 13, IntegerWidth::Isize => 14 }) } }),
 )]
 fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 {
@@ -5617,6 +5623,12 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
         tags::LITERAL_U64 => decode_fixed(reader, IntegerWidth::U64),
         tags::LITERAL_I32 => decode_fixed(reader, IntegerWidth::I32),
         tags::LITERAL_I64 => decode_fixed(reader, IntegerWidth::I64),
+        tags::LITERAL_U8 => decode_fixed(reader, IntegerWidth::U8),
+        tags::LITERAL_U16 => decode_fixed(reader, IntegerWidth::U16),
+        tags::LITERAL_I8 => decode_fixed(reader, IntegerWidth::I8),
+        tags::LITERAL_I16 => decode_fixed(reader, IntegerWidth::I16),
+        tags::LITERAL_USIZE => decode_fixed(reader, IntegerWidth::Usize),
+        tags::LITERAL_ISIZE => decode_fixed(reader, IntegerWidth::Isize),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::LiteralKind,
             tag: other,
@@ -6003,6 +6015,12 @@ mod tests
                 6 => Ok(super::BaseType::Fixed(super::IntegerWidth::I32)),
                 7 => Ok(super::BaseType::Fixed(super::IntegerWidth::I64)),
                 8 => Ok(super::BaseType::Float64),
+                9 => Ok(super::BaseType::Fixed(super::IntegerWidth::U8)),
+                10 => Ok(super::BaseType::Fixed(super::IntegerWidth::U16)),
+                11 => Ok(super::BaseType::Fixed(super::IntegerWidth::I8)),
+                12 => Ok(super::BaseType::Fixed(super::IntegerWidth::I16)),
+                13 => Ok(super::BaseType::Fixed(super::IntegerWidth::Usize)),
+                14 => Ok(super::BaseType::Fixed(super::IntegerWidth::Isize)),
                 _ => Err(unknown(super::TagSite::BaseType)),
             };
             assert_eq!(super::decode_base_type(&mut reader), base);
@@ -6075,7 +6093,25 @@ mod tests
                 );
                 assert_eq!(reader.position.0, 2);
             }
-            if byte > 8 {
+            let fixed = match byte {
+                9 => Some(super::FixedInteger::U8(0x55)),
+                10 => Some(super::FixedInteger::U16(0x55)),
+                11 => Some(super::FixedInteger::I8(0x55)),
+                12 => Some(super::FixedInteger::I16(0x55)),
+                13 => Some(super::FixedInteger::Usize(0x55)),
+                14 => Some(super::FixedInteger::Isize(0x55)),
+                _ => None,
+            };
+            if let Some(fixed) = fixed {
+                let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+                assert_eq!(
+                    super::decode_literal(&mut reader),
+                    Ok(super::Literal::Fixed(fixed)),
+                    "a width's kind reads its bit pattern"
+                );
+                assert_eq!(reader.position.0, 2);
+            }
+            if byte > 14 {
                 let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
                 assert_eq!(
                     super::decode_literal(&mut reader),

@@ -649,7 +649,7 @@ fn a_payload_the_codec_does_not_write_refuses_its_constructor()
             0,
         ),
         (&[Open(0x04), Word(0xD800), Close], 0x04, 0),
-        (&[Open(0x06), Word(4), Word(0), Close], 0x06, 0),
+        (&[Open(0x06), Word(10), Word(0), Close], 0x06, 0),
         (&[Open(0x06), Word(0), Word(1 << 32), Close], 0x06, 0),
         (
             &[Open(0x11), Word(2), Bytes(b"b"), Bytes(b"a"), Close],
