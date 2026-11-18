@@ -3,7 +3,7 @@
 # items. `$crate` is the crate's directory under `crates/`. Prints one
 # tab-separated line per entry, sorted by path, then kind:
 #
-#   <crate>  <path>  <kind>  <location>
+#   <crate>  <path>  <kind>  <location>  <stands>
 #
 # - an item: each entry of rustdoc's `paths` table that the crate itself
 #   defines with a module-level kind, by the path it is defined at, so an item
@@ -19,6 +19,9 @@
 #   path, a private one included. A module the table lists is located at its
 #   declaration; a private one at the file of the first entry beneath it;
 # - the crate: the root module, kind `crate`, path empty.
+#
+# `<stands>` is `item` for a module whose entry stands for an item it holds,
+# so the item's row is the module's; it is empty for every other entry.
 #
 # The reading is rustdoc's JSON format 61. Another format stops the program
 # with an error naming it.
@@ -48,12 +51,15 @@ end
      }] as $table
 | ($table | map(select(.kind == "module") | {key: (.segments | join("::")), value: .span}) | from_entries) as $modules
 | [$table[]
-   | select(
-       . as $entry
-       | [first(range($entry.segments | length - 1; 0; -1) as $depth
-           | $modules[$entry.segments[:$depth] | join("::")] // empty)][0] as $holder
-       | $entry.span == null or $holder != $entry.span
-     )
+   | . as $entry
+   | ([first(range($entry.segments | length - 1; 0; -1) as $depth
+         | ($entry.segments[:$depth] | join("::")) as $module
+         | select($modules[$module] != null)
+         | $module)] | first // null) as $holder
+   | $entry + {holder: $holder, folded: ($entry.span != null and $holder != null and $modules[$holder] == $entry.span)}] as $held
+| ([$held[] | select(.folded) | .holder] | unique) as $standing
+| [$held[]
+   | select(.folded | not)
    | {path: (.segments | join("::")), kind, location: location}] as $listed
 | [$listed[]
    | .path
@@ -73,5 +79,5 @@ end
          location: (first($sorted[] | select(.path | startswith($module + "::")) | .location | sub(":[0-9]+$"; "")))
        }]
 | sort_by(.path, .kind)[]
-| [$crate, .path, .kind, .location]
+| [$crate, .path, .kind, .location, (if .kind == "module" and (.path | IN($standing[])) then "item" else "" end)]
 | @tsv

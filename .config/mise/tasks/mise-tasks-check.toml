@@ -2115,7 +2115,9 @@ echo "census check OK: $(jq length .config/census/cases.json) cases give their r
 # a site at the empty module its whole crate. A crate with a row is held to
 # its entries as `purposes:items` reads them: every public item has a row,
 # every row names an entry, a crate row lands with a row for every module, and
-# a module row with the crate row. A crate with no row is not read: it waits
+# a module row with the crate row. A module whose entry stands for an item it
+# holds, as a macro's enum in its module, has its row in every rowed crate.
+# A crate with no row is not read: it waits
 # for its first pass. A gate documents only the rowed crates that its change
 # reaches (#6895): `GATE_SCOPE` excludes each package that the change does
 # not reach. A change of the ledgers, of this check's programs or of the
@@ -2170,7 +2172,7 @@ touch "$fresh/entries.tsv"
 if (( ${#checked[@]} )); then mise run --quiet purposes:items "${checked[@]}" > "$fresh/entries.tsv"; fi
 printf '%s\n' "${checked[@]}" > "$fresh/checked.txt"
 system=$(uname -s | tr '[:upper:]' '[:lower:]')
-sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $fresh/entries.tsv entry" \
+sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT, stands TEXT);' ".import $fresh/entries.tsv entry" \
   'CREATE TABLE checked(crate TEXT);' ".import $fresh/checked.txt checked" \
   'CREATE TABLE host(system TEXT);' "INSERT INTO host VALUES('$system');"
 findings=$(sqlite3 -bail "$db" < .config/purposes/findings.sql)

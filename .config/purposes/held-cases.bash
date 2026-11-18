@@ -12,8 +12,8 @@ failed=0
 row="INSERT INTO purpose VALUES('surface-dispatcher','pool::ring::with_ring','function','Runs a work on the thread''s ring.',NULL,'fits','sound',NULL);"
 other="INSERT INTO purpose VALUES('surface-dispatcher','pool::Pool','struct','Holds the workers.',NULL,'fits','sound',NULL);"
 linux="INSERT INTO held_by VALUES('surface-dispatcher','pool::ring::with_ring','function','linux');"
-pool=$'surface-dispatcher\tpool::Pool\tstruct\tsrc/pool.rs:1'
-ring=$'surface-dispatcher\tpool::ring::with_ring\tfunction\tsrc/pool/ring.rs:44'
+pool=$'surface-dispatcher\tpool::Pool\tstruct\tsrc/pool.rs:1\t'
+ring=$'surface-dispatcher\tpool::ring::with_ring\tfunction\tsrc/pool/ring.rs:44\t'
 none="surface-dispatcher::pool::ring::with_ring (function): a row naming no entry of \`mise run purposes:list surface-dispatcher\`; correct its path or kind, or delete it"
 elsewhere="surface-dispatcher::pool::ring::with_ring (function, src/pool/ring.rs:44): listed on darwin, and its held_by rows name other systems alone; add INSERT INTO held_by VALUES('surface-dispatcher','pool::ring::with_ring','function','darwin'); to ledger/purposes.sql, or delete its held_by rows"
 orphan="surface-dispatcher::pool::ring::with_ring (function): a held_by row for linux with no purpose row; add its purpose row, or delete it"
@@ -31,7 +31,7 @@ findings() {
   } | sqlite3 -bail "$db"
   sqlite3 -bail "$db" < "$root/ledger/concerns.sql"
   printf '%s\n' "$entries" | awk 'NF' > "$scratch/$name.tsv"
-  sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $scratch/$name.tsv entry" \
+  sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT, stands TEXT);' ".import $scratch/$name.tsv entry" \
     'CREATE TABLE checked(crate TEXT);' "INSERT INTO checked VALUES('surface-dispatcher');" \
     'CREATE TABLE host(system TEXT);' "INSERT INTO host VALUES('$system');"
   found=$(sqlite3 -bail "$db" < "$root/.config/purposes/findings.sql")

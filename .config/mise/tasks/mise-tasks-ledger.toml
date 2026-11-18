@@ -168,7 +168,7 @@ if [[ ! -s $fresh/entries.tsv ]]; then
 fi
 db="$fresh/purposes.db"
 sqlite3 -bail "$db" < ledger/purposes.sql
-sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $fresh/entries.tsv entry"
+sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT, stands TEXT);' ".import $fresh/entries.tsv entry"
 sqlite3 -bail -header -separator $'\t' "$db" "
   SELECT e.crate, e.path, e.kind, e.location,
     coalesce(p.purpose, 'no row') AS purpose, p.concerns, p.naming, p.doc, p.finding
