@@ -81,6 +81,7 @@ pub enum Pushed
 ///   marker after its copy, and mise's key gives its command line and marker. A
 ///   second push runs nothing. Mise's key to a receiver with no mise path runs
 ///   nothing. A refused copy leaves no marker.
+/// - witness: `push::tests::a_key_goes_into_the_install_directory_once`
 /// - witness: `push::tests::a_pushed_key_clears_its_incomplete_marker_7887`
 /// - witness: `push::tests::the_key_of_mise_replaces_the_receivers_mise`
 /// - witness: `push::tests::a_refused_copy_leaves_no_marker`
@@ -404,7 +405,7 @@ mod tests
     }
 
     #[test]
-    fn a_pushed_key_clears_its_incomplete_marker_7887()
+    fn a_key_goes_into_the_install_directory_once()
     {
         let into = scratch();
         let tool = job("github:a/tool".into());
@@ -430,6 +431,33 @@ mod tests
         assert!(
             into.join(".pushed/rv/riscv64gc-unknown-linux-gnu.github-a-tool.1.2.3")
                 .is_file()
+        );
+        std::fs::remove_dir_all(&into).unwrap();
+    }
+
+    #[test]
+    fn a_pushed_key_clears_its_incomplete_marker_7887()
+    {
+        let into = scratch();
+        let mut runner = Recording {
+            ran: Vec::new(),
+            fails: false,
+        };
+        assert_eq!(
+            push(
+                &job("github:a/tool".into()),
+                &into,
+                &receiver(None),
+                &mut runner,
+            ),
+            Ok(Pushed::Pushed)
+        );
+        assert_eq!(
+            runner.ran.last(),
+            Some(
+                &"ssh rv rm -rf .local/state/mise/incomplete-installs/github-a-tool/1.2.3"
+                    .to_owned()
+            )
         );
         std::fs::remove_dir_all(&into).unwrap();
     }
