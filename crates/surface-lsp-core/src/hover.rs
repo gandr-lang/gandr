@@ -2190,8 +2190,8 @@ mod tests
             ),
             (
                 "../../corpus/pathological/worlds/rewritten.gandr",
-                "k }",
-                "def put(key : V, value : V, k : C) -> C",
+                "k;",
+                "def put(key : V, value : V, k : C) -> C = k",
             ),
         ] {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(source);

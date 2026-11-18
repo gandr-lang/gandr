@@ -1,9 +1,9 @@
 17:1-17:29 import "./circle-base.ga… ⇒ import "./circle-base.gandr";⏎⏎Reads `<corpus>/corpus/model/identity/circle-base.gandr`.⏎⏎This source supplies the identity subject's shared circle declarations.⏎⏎The declarations provide the circle, its loop words, and⏎their integer model.⏎Winding and spinning follow the HoTT book's § 8.1. The circle follows⏎cubical Agda's `Cubical/HITs/S1/Base.agda`.⏎⏎Each subject source imports these declarations to state its own law.⏎The checker evaluates their rules and path operations.⏎⏎- see: corpus/model/identity/circle.gandr @17:1-17:30
 19:1-19:29 import "./equivalence.ga… ⇒ import "./equivalence.gandr";⏎⏎Reads `<corpus>/corpus/model/identity/equivalence.gandr`. @19:1-19:30
 22:1-22:32 @[runs("loop ∷ Path.here… ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @22:1-23:1
-23:1-23:3 def ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:45
+23:1-23:3 def ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:52
 23:5-23:9 once( ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:5-23:9
-23:10-23:13 ) -> ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:45
+23:10-23:13 ) -> ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:52
 23:15-23:23 Path[.A = ⇒ Path[.A = Circle](Base, Base) : Type @23:15-23:44
 23:25-23:30 Circle ⇒ Circle : Type @23:25-23:31
 23:31-23:32 ]( ⇒ Path[.A = Circle](Base, Base) : Type @23:15-23:44
@@ -11,9 +11,9 @@
 23:37-23:37 , ⇒ Path[.A = Circle](Base, Base) : Type @23:15-23:44
 23:39-23:42 Base ⇒ Base : Circle @23:39-23:43
 23:43-23:43 ) ⇒ Path[.A = Circle](Base, Base) : Type @23:15-23:44
-23:45-23:45 { ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:53
+23:45-23:45 = ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:52
 23:47-23:50 loop ⇒ loop : Path[.A = Circle](Base, Base) @23:47-23:51
-23:52-23:52 } ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:53
+23:51-23:51 ; ⇒ once : () -> Path[.A = Circle](Base, Base)⏎⏎The loop word has one letter before the empty word. @23:1-23:52
 26:1-26:3 def ⇒ unwound : Path[.A = Path[.A = Circle](Base, Base)](Path.back loop,⏎  back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @26:1-29:44
 26:5-26:11 unwound ⇒ unwound : Path[.A = Path[.A = Circle](Base, Base)](Path.back loop,⏎  back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @26:5-26:12
 26:13-26:13 : ⇒ unwound : Path[.A = Path[.A = Circle](Base, Base)](Path.back loop,⏎  back loop ∷ Path.here Base)⏎⏎The inverse loop converts to `back(loop) ∷ Path.here Base`. @26:1-29:44

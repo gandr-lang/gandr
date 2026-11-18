@@ -135,16 +135,16 @@
 45:8-45:8 f ⇒ f : Integer -> Integer @45:8-45:9
 45:10-45:10 x ⇒ x : Integer @45:10-45:11
 45:11-45:11 ) ⇒ -F Integer @45:5-45:12
-48:3-48:5 def ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:37
+48:3-48:5 def ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:41
 48:7-48:12 ident( ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:7-48:12
 48:13-48:13 x ⇒ x : Integer @48:13-48:14
-48:15-48:15 : ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:37
+48:15-48:15 : ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:41
 48:17-48:23 Integer ⇒ Integer : Type @48:17-48:24
-48:24-48:27 ) -> ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:37
+48:24-48:27 ) -> ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:41
 48:29-48:35 Integer ⇒ Integer : Type @48:29-48:36
-48:37-48:37 { ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:42
+48:37-48:37 = ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:41
 48:39-48:39 x ⇒ x : Integer @48:39-48:40
-48:41-48:41 } ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:42
+48:40-48:40 ; ⇒ ident : Integer -> Integer⏎⏎`ident` returns its input. @48:3-48:41
 50:3-50:5 def ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @50:3-53:27
 50:7-50:10 mul( ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @50:7-50:10
 51:5-51:5 f ⇒ f : Integer -> Integer @51:5-51:6
