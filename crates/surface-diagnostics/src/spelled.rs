@@ -1160,31 +1160,29 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
     for declaration in module.declarations() {
         if let Maybe::Present((sort, point, wraps)) = words_point(module, declaration) {
             let family = paths.get(usize::from(sort)).cloned().unwrap_or_default();
-            let (carrier, point) = wrapped(family, point, wraps);
+            let at = wrapped(family, point, wraps);
             if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
-                *slot = path_at(&carrier, &point);
+                *slot = path_at(&at);
             }
         }
     }
     paths
 }
 
-/// The path type over `carrier` from `point` to itself, its endpoints
-/// juxtaposed as the printer writes them: `Path[.A = C] p p`. An endpoint that
-/// writes a space outside its own parentheses, `Path.here Base`, stands in
-/// parentheses, and a name or a call, `Base` or `Pair(Zero, Zero)`, stands
-/// bare.
+/// The path type over the carrier `at.0` from the point `at.1` to itself, its
+/// endpoints juxtaposed as the printer writes them: `Path[.A = C] p p`. An
+/// endpoint that writes a space outside its own parentheses, `Path.here Base`,
+/// stands in parentheses, and a name or a call, `Base` or `Pair(Zero, Zero)`,
+/// stands bare.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Cost
 /// - allocation: the spelled type, growth within the carrier and the point
-fn path_at(
-    carrier: &str,
-    point: &str,
-) -> String
+fn path_at(at: &(String, String)) -> String
 {
+    let (ref carrier, ref point) = *at;
     let mut depth = 0_usize;
     let spaced = point.chars().any(|letter| {
         match letter {
@@ -1231,17 +1229,18 @@ fn wrapped(
     wraps: Reflexivities,
 ) -> (String, String)
 {
-    let (mut carrier, mut point) = (family, point);
+    let mut at = (family, point);
     for _ in 0 .. usize::from(wraps) {
-        carrier = path_at(&carrier, &point);
-        point = if point.contains([' ', '(']) {
+        at.0 = path_at(&at);
+        let point = &at.1;
+        at.1 = if point.contains([' ', '(']) {
             alloc::format!("Path.here ({point})")
         }
         else {
             alloc::format!("Path.here {point}")
         };
     }
-    (carrier, point)
+    at
 }
 
 /// `paths`, each name that the source `reader` writes otherwise written as
