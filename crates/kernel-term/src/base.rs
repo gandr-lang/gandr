@@ -924,7 +924,7 @@ impl FixedInteger
     ///   minimums included, spell as their decimal values.
     /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
     #[spec(
-        ensures: |ret| match ret.strip_prefix('-') { Some(digits) => !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|byte| byte.is_ascii_digit()), None => FixedInteger::from_decimal(self.width(), ret.as_str()) == Ok(*self) },
+        ensures: |ret| ret.strip_prefix('-').map_or_else(|| Self::from_decimal(self.width(), ret.as_str()) == Ok(*self), |digits| !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|byte| byte.is_ascii_digit())),
     )]
     #[inline]
     #[must_use]

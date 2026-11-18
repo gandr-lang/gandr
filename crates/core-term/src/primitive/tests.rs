@@ -585,6 +585,11 @@ fn each_width_form_answers_at_its_bounds()
             Ok(Scalar::Fixed(i8(-128))),
         ),
         (
+            "i8.wrapping_rem",
+            [i8(-128), i8(-1)],
+            Ok(Scalar::Fixed(i8(0))),
+        ),
+        (
             "u8.saturating_add",
             [u8(255), u8(1)],
             Ok(Scalar::Fixed(u8(255))),

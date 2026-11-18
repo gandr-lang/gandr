@@ -453,11 +453,22 @@ macro_rules! row {
     };
 }
 
-/// The rows of the operations of each width, the same rows in the same order
-/// for each width.
-macro_rules! width_rows {
-    ($(($width:ident, $name:literal)),+ $(,)?) => {
-        [$(
+/// The native table: the base rows, then the conversions of the widths the
+/// base rows do not convert, then the same rows in the same order for each
+/// width. A new row joins at the end, so the place of each row stands.
+macro_rules! prelude {
+    (
+        base: [$($base:expr),+ $(,)?],
+        converted: [$(($converted:ident, $converted_name:literal)),+ $(,)?],
+        widths: [$(($width:ident, $name:literal)),+ $(,)?] $(,)?
+    ) => {
+        [
+        $($base,)+
+        $(
+            row!(concat!($converted_name, ".to_integer"), [PrimitiveType::Fixed(IntegerWidth::$converted)], PrimitiveType::Integer, Operation::ToInteger),
+            row!(concat!($converted_name, ".from_integer"), [PrimitiveType::Integer], PrimitiveType::Fixed(IntegerWidth::$converted), Operation::FromIntegerToWidth),
+        )+
+        $(
             row!(concat!($name, ".wrapping_add"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Wrapping(Arithmetic::Add))),
             row!(concat!($name, ".wrapping_sub"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Wrapping(Arithmetic::Sub))),
             row!(concat!($name, ".wrapping_mul"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Fixed(IntegerWidth::$width), Operation::Width(WidthOperation::Wrapping(Arithmetic::Mul))),
@@ -481,83 +492,14 @@ macro_rules! width_rows {
             row!(concat!($name, ".le"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Le))),
             row!(concat!($name, ".gt"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Gt))),
             row!(concat!($name, ".ge"), [PrimitiveType::Fixed(IntegerWidth::$width), PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Boolean, Operation::Width(WidthOperation::Order(Order::Ge))),
-        )+]
+        )+
+        ]
     };
 }
 
-/// The conversions of each width that has no row in [`BASE_ROWS`].
-macro_rules! conversion_rows {
-    ($(($width:ident, $name:literal)),+ $(,)?) => {
-        [$(
-            row!(concat!($name, ".to_integer"), [PrimitiveType::Fixed(IntegerWidth::$width)], PrimitiveType::Integer, Operation::ToInteger),
-            row!(concat!($name, ".from_integer"), [PrimitiveType::Integer], PrimitiveType::Fixed(IntegerWidth::$width), Operation::FromIntegerToWidth),
-        )+]
-    };
-}
-
-/// The rows of each width's operations, after [`BASE_ROWS`] in the table.
-const WIDTH_ROWS: [Primitive; 230] = width_rows!(
-    (U32, "u32"),
-    (U64, "u64"),
-    (I32, "i32"),
-    (I64, "i64"),
-    (U8, "u8"),
-    (U16, "u16"),
-    (I8, "i8"),
-    (I16, "i16"),
-    (Usize, "usize"),
-    (Isize, "isize"),
-);
-
-/// The conversions of the widths that [`BASE_ROWS`] does not convert.
-const CONVERSION_ROWS: [Primitive; 12] = conversion_rows!(
-    (U8, "u8"),
-    (U16, "u16"),
-    (I8, "i8"),
-    (I16, "i16"),
-    (Usize, "usize"),
-    (Isize, "isize"),
-);
-
-/// The rows `a`, then the rows `b`.
-///
-/// # Specification
-/// - requires: `JOINED` is `A + B`; a constant evaluation stops otherwise.
-/// - ensures: the rows of `a` in order, then the rows of `b` in order.
-/// - panics: in constant evaluation alone, when `JOINED` is not `A + B`.
-/// - executable: none — it runs at compile time, where a wrong length stops the
-///   build.
-///
-/// # Adequacy
-/// - hypothesis: L3 — each row of the table keeps its place, so a name finds
-///   its row and an image's ordinal finds the same row.
-/// - witness: `primitive::tests::table_signatures_and_currying_agree`
-const fn joined<const A: usize, const B: usize, const JOINED: usize>(
-    a: [Primitive; A],
-    b: [Primitive; B],
-) -> [Primitive; JOINED]
-{
-    assert!(A + B == JOINED, "the joined table holds both tables");
-    let mut rows = [a[0]; JOINED];
-    let mut at = 0;
-    while at < A {
-        rows[at] = a[at];
-        at += 1;
-    }
-    while at < JOINED {
-        rows[at] = b[at - A];
-        at += 1;
-    }
-    rows
-}
-
-/// The single native prelude table, including its operator spellings. A new
-/// row joins at the end, so the place of each row stands.
-pub const PRELUDE: &[Primitive] =
-    &joined::<59, 230, 289>(joined::<47, 12, 59>(BASE_ROWS, CONVERSION_ROWS), WIDTH_ROWS);
-
-/// The rows that the table held before the widths had their operations.
-const BASE_ROWS: [Primitive; 47] = [
+/// The single native prelude table, including its operator spellings.
+pub const PRELUDE: &[Primitive] = &prelude! {
+    base: [
     Primitive(&Definition {
         name: "prim.id",
         operator: Operator::Named,
@@ -887,7 +829,28 @@ const BASE_ROWS: [Primitive; 47] = [
         result: PrimitiveType::Fixed(IntegerWidth::I64),
         operation: Operation::FromIntegerToWidth,
     }),
-];
+    ],
+    converted: [
+        (U8, "u8"),
+        (U16, "u16"),
+        (I8, "i8"),
+        (I16, "i16"),
+        (Usize, "usize"),
+        (Isize, "isize"),
+    ],
+    widths: [
+        (U32, "u32"),
+        (U64, "u64"),
+        (I32, "i32"),
+        (I64, "i64"),
+        (U8, "u8"),
+        (U16, "u16"),
+        (I8, "i8"),
+        (I16, "i16"),
+        (Usize, "usize"),
+        (Isize, "isize"),
+    ],
+};
 
 /// A native scalar supplied to or returned from the table evaluator.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1773,7 +1736,7 @@ fn narrowed(
 ///   signed least value over minus one and shifts by the bit count and below
 ///   zero distinguish a wrong width, a wrong form and a wrong bound.
 /// - witness: `primitive::tests::each_width_form_answers_at_its_bounds`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |value| matches!(*value, Scalar::Boolean(_)) || match *value { Scalar::Fixed(fixed) => fixed.width() == left.width(), Scalar::Checked(checked) => checked.width() == left.width(), _ => false }))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |value| matches!(*value, Scalar::Boolean(_)) || matches!(*value, Scalar::Fixed(fixed) if fixed.width() == left.width()) || matches!(*value, Scalar::Checked(checked) if checked.width() == left.width())))]
 fn width(
     operation: WidthOperation,
     left: FixedInteger,
@@ -1783,9 +1746,10 @@ fn width(
     let boolean = |answer: bool| Scalar::Boolean(if answer { Side::Left } else { Side::Right });
     // One arm per width: each calls the native operation of its own type.
     macro_rules! each_width {
-        ($($variant:ident),+) => {
+        ($($variant:ident: $native:ty),+) => {
             match (left, right) {
                 $((FixedInteger::$variant(a), FixedInteger::$variant(b)) => {
+                    const ZERO: $native = 0;
                     let fixed = |value| Scalar::Fixed(FixedInteger::$variant(value));
                     let checked = |answer: Option<_>| {
                         Scalar::Checked(answer.map_or(
@@ -1804,16 +1768,19 @@ fn width(
                         WidthOperation::Checked(Arithmetic::Add) => checked(a.checked_add(b)),
                         WidthOperation::Checked(Arithmetic::Sub) => checked(a.checked_sub(b)),
                         WidthOperation::Checked(Arithmetic::Mul) => checked(a.checked_mul(b)),
-                        WidthOperation::Div => fixed(
-                            (b != 0)
-                                .then(|| a.wrapping_div(b))
-                                .ok_or(PrimitiveError::DivisionByZero)?,
-                        ),
-                        WidthOperation::Rem => fixed(
-                            (b != 0)
-                                .then(|| a.wrapping_rem(b))
-                                .ok_or(PrimitiveError::DivisionByZero)?,
-                        ),
+                        // The one quotient past the width, the least value
+                        // over minus one, wraps to the least value, and its
+                        // remainder is zero.
+                        WidthOperation::Div => fixed(match a.checked_div(b) {
+                            Some(quotient) => quotient,
+                            None if b == ZERO => return Err(PrimitiveError::DivisionByZero),
+                            None => a,
+                        }),
+                        WidthOperation::Rem => fixed(match a.checked_rem(b) {
+                            Some(remainder) => remainder,
+                            None if b == ZERO => return Err(PrimitiveError::DivisionByZero),
+                            None => ZERO,
+                        }),
                         WidthOperation::And => fixed(a & b),
                         WidthOperation::Or => fixed(a | b),
                         WidthOperation::Xor => fixed(a ^ b),
@@ -1836,7 +1803,18 @@ fn width(
             }
         };
     }
-    each_width!(U32, U64, I32, I64, U8, U16, I8, I16, Usize, Isize)
+    each_width!(
+        U32: u32,
+        U64: u64,
+        I32: i32,
+        I64: i64,
+        U8: u8,
+        U16: u16,
+        I8: i8,
+        I16: i16,
+        Usize: u64,
+        Isize: i64
+    )
 }
 
 /// Evaluate a floating-point row whose first operand is `left` and whose

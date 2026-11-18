@@ -1,9 +1,9 @@
 /// `sized-integers`: Sized integer arithmetic.
-/// Implemented: each width's `wrapping_`, `saturating_` and `checked_`
-/// arithmetic, its division and remainder, its bitwise forms, its checked
-/// shifts and its comparisons, called by their qualified names.
-/// Not implemented: the machine word and its stencils, the method form, and
-/// the checked division with a named reason.
+/// Implemented: each width has the `wrapping_`, `saturating_` and `checked_`
+/// arithmetic of Rust's integer. Each width also has its division, its
+/// bitwise forms, `checked_shl`, `checked_shr` and its comparisons.
+/// Not implemented: no stencil runs a width form, and no method form calls
+/// one. The `checked_div` with a reason is not in yet.
 ///
 /// - owes: #8002 — the machine word, its stencils and the latency bound
 /// - owes: #8003 — the method form

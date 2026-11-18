@@ -579,19 +579,17 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         origin: Origin,
     ) -> Result<ValueId, LoweringRefusal<'source>>
     {
+        // The target's word is 64 bits, so a word crosses with the layout of a
+        // 64-bit integer of its sign.
         let scalar = match ty.width {
             IntegerWidth::U32 => "U32",
-            IntegerWidth::U64 => "U64",
+            IntegerWidth::U64 | IntegerWidth::Usize => "U64",
             IntegerWidth::I32 => "I32",
-            IntegerWidth::I64 => "I64",
+            IntegerWidth::I64 | IntegerWidth::Isize => "I64",
             IntegerWidth::U8 => "U8",
             IntegerWidth::U16 => "U16",
             IntegerWidth::I8 => "I8",
             IntegerWidth::I16 => "I16",
-            // The target's word is 64 bits, so a word crosses with the layout
-            // of a 64-bit integer of its sign.
-            IntegerWidth::Usize => "U64",
-            IntegerWidth::Isize => "I64",
         };
         let scalar = self.constructed(
             site,

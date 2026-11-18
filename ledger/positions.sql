@@ -135,6 +135,7 @@ INSERT INTO position VALUES('crates/kernel-term/src/arena.rs','TruncationStamp',
 INSERT INTO position VALUES('crates/kernel-term/src/arena.rs','ValueId','','local',NULL,'A node''s id in one arena; each encoding writes the node''s content or its table index.');
 INSERT INTO position VALUES('crates/kernel-term/src/arena.rs','ValueTypeId','','local',NULL,'A node''s id in one arena; each encoding writes the node''s content or its table index.');
 INSERT INTO position VALUES('crates/kernel-term/src/base.rs','Float64Literal','','none',NULL,'The bits of a literal.');
+INSERT INTO position VALUES('crates/kernel-term/src/base.rs','WidthBits','','none',NULL,'The bit count of a width.');
 INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','EntryOffset','','local',NULL,'The offset that a global index reads at in one of the decoder''s vectors.');
 INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','ExpandedWork','','none',NULL,'A count of expanded work.');
 INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','GlobalIndex','kernel-term::encode','kept',NULL,'The artifact''s child reference: twice an entry''s offset from the base of its own segment, or one more than twice an import''s place among the segment''s imports, each import an offset inside the segment that holds the entry, whose place the segment writes as it writes any position.');
