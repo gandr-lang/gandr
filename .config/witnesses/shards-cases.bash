@@ -24,6 +24,33 @@ fail() {
   failed=1
 }
 
+# The rerun task selects the test-holding package of a qualified witness.
+rerun_case() {
+  local selection=target/evidence/selection
+  local result
+  local saved=false
+  if [[ -e $selection ]]; then
+    mv "$selection" "$scratch/selection"
+    saved=true
+  fi
+  mkdir -p "$(dirname "$selection")"
+  cat > "$selection" <<'EOF'
+-p
+gandr-core-checker-base
+-E
+(package(=gandr-core-checker-base) & test(=gandr-core-checker-bridge::bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557))
+EOF
+  if ! result=$(NEXTEST_STATUS_LEVEL=pass mise run --quiet evidence:witnesses 2>&1); then
+    fail "#8010: a qualified witness did not run"
+  elif [[ $result != *an_undecided_pair_crosses_with_its_second_certificate_3557* ]]; then
+    fail "#8010: the qualified witness ran no named test"
+  fi
+  rm -f "$selection"
+  if [[ $saved == true ]]; then
+    mv "$scratch/selection" "$selection"
+  fi
+}
+
 # Each workspace package and its directory below the tree, longest first, so
 # a nested package takes its own files.
 cargo metadata --locked --no-deps --format-version 1 \
@@ -60,6 +87,8 @@ awk '{ sub(/ gandr-surface-lowering-base$/, ""); print }' .github/workflows/land
 got=$(refusals "$scratch/landing-checks.yml")
 [[ $got == *" in lowering names a test of gandr-surface-lowering-base in rest"* ]] \
   || fail "#7089: a lowering shard without gandr-surface-lowering-base gave no refusal: ${got:-none}"
+
+rerun_case
 
 (( failed == 0 )) || exit 1
 echo "witness shards OK: each shard lists the packages whose tests its members' witnesses name, and a shard that leaves one out is refused"

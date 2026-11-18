@@ -377,6 +377,8 @@
       "check:witness-cases": [
         ".cargo/",
         ".config/cases/",
+        ".config/mise/enforcing",
+        ".config/mise/scope",
         ".config/witnesses/",
         ".github/workflows/landing-checks.yml",
         "Cargo.lock",
