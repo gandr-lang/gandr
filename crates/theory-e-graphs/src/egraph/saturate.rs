@@ -175,6 +175,13 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the worklist of partial matches and their first bindings,
+    ///   setup
+    /// - allocation: the goals of each branch and a copy of shared bindings at
+    ///   a first bind, growth within the pending matches
+    /// - allocation: the values of each match, durable by `found`
     fn matches_at(
         &self,
         (place, equation): (EquationPlace, Equation),

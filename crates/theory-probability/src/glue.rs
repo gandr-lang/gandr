@@ -193,6 +193,11 @@ impl<E: Clone + Eq> Family<E>
     ///   separator entry it sums into; the contextual family glues.
     /// - witness: `tests::inference::the_clique_marginals_glue_and_a_changed_weight_is_obstructed`
     /// - witness: `tests::inference::a_contextual_family_glues_and_is_refused_a_joint`
+    ///
+    /// # Cost
+    /// - allocation: the scratch weights of each side, setup
+    /// - allocation: the glued tables and the disagreements, growth within the
+    ///   overlaps
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |gluing| match *gluing { Gluing::Glued(ref tables) => tables.len() == self.overlaps.len(), Gluing::Obstructed(ref differences) => !differences.is_empty() }))]
     #[inline]
     pub fn glue<S>(

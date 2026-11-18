@@ -118,6 +118,9 @@ impl From<&str> for ItemName
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared name, setup
     #[inline]
     fn from(name: &str) -> Self
     {
@@ -260,6 +263,12 @@ impl Regions
     ///   attributes beside doc comments; a missed item kind, a wrong last line
     ///   or a lost module prefix changes the asserted regions.
     /// - witness: `region::tests::every_spec_attribute_is_a_region`
+    ///
+    /// # Cost
+    /// - allocation: the regions of the file, the module stack and the
+    ///   worklist, growth within the items of the file
+    /// - allocation: the name of each item, durable by the region that names it
+    /// - allocation: the message of a parse error, error path
     #[spec(ensures: |ref ret| ret.is_err() || self.0.get(path).is_none_or(|regions| regions.is_sorted_by(|left, right| left.last < right.first)))]
     #[inline]
     pub fn insert_source(
@@ -435,6 +444,9 @@ impl Regions
 /// - hypothesis: L3 — an inherent and a trait impl; a swapped type and trait or
 ///   a lost wrapper changes the asserted item names.
 /// - witness: `region::tests::every_spec_attribute_is_a_region`
+///
+/// # Cost
+/// - allocation: the name of the owner, setup
 fn owner_of(block: &syn::ItemImpl) -> ItemName
 {
     let last = |path: &syn::Path| {

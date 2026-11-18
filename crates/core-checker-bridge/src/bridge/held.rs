@@ -934,6 +934,12 @@ impl Reduct<'_>
     /// - hypothesis: L3 — an arm under a field binder, an arm under none, and
     ///   an arm that reads no slot cross in tag order.
     /// - witness: `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
+    ///
+    /// # Cost
+    /// - allocation: the arms of each rebuilt case and its shared arities,
+    ///   durable by the minted computation
+    /// - allocation: the slots of the frame of an arm, growth within the held
+    ///   cases
     fn arms(
         &mut self,
         frame: &mut Frame,
@@ -979,7 +985,7 @@ impl Reduct<'_>
             else {
                 return Err(dangling);
             };
-            let arities = arities.clone();
+            let arities = alloc::sync::Arc::clone(arities);
             let built = self.arena.computation_data_case_with_equations(
                 pending.scrutinee,
                 motive,

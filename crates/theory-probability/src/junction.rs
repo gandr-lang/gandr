@@ -599,6 +599,11 @@ impl JunctionTree
     ///   sixteen against the sum over its 65 536 assignments.
     /// - witness: `tests::inference::sum_product_gives_the_marginals_of_the_network`
     /// - witness: `tests::inference::a_chain_of_sixteen_marginalises_and_decodes`
+    ///
+    /// # Cost
+    /// - allocation: the tables of the cliques and the messages of the links,
+    ///   setup
+    /// - allocation: the shared edge list of the calibrated family, setup
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |calibrated| calibrated.family.members().len() == self.cliques.len()))]
     #[inline]
     pub fn calibrate<S>(

@@ -9982,6 +9982,11 @@ type Minted = Maybe<ComputationId, lowered::Absent>;
 /// - witness: `gandr-surface-lowering::lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
 /// - witness: `gandr-surface-lowering::lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
 /// - witness: `gandr-surface-lowering::lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+///
+/// # Cost
+/// - allocation: the lowered branches and their arities, durable by the minted
+///   computation
+/// - allocation: the carried values of each branch, growth within the branches
 #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
 fn mint_test(
     test: &Test,
@@ -14998,6 +15003,10 @@ impl<'source> NativeRef<'_, '_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as `Lowerer::data_field`.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    ///
+    /// # Cost
+    /// - allocation: the branches, the arities and the copies of the
+    ///   projection, durable by the minted computation
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(Lowered::Computation(id)) if matches!(sink.arena.computation(id), Some(gandr_core_term::Computation::DataCase { .. }))))]
     #[inline]
     pub fn mint_projected(
@@ -15736,6 +15745,12 @@ impl<'source> NativeRef<'_, '_, 'source>
     /// - hypothesis: L3 — the circle's loop arm follows its point's branch and
     ///   reads `Base`, the value that branch returns, for its answer.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+    ///
+    /// # Cost
+    /// - allocation: the extended branch list and the arities of each loop arm,
+    ///   durable by the minted computation
+    /// - allocation: the rewritten nodes of each arm, growth within the loop
+    ///   arms
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if matches!(sink.arena.computation(id), Some(gandr_core_term::Computation::DataCase { .. }))))]
     fn with_loops(
         &self,
@@ -15757,7 +15772,7 @@ impl<'source> NativeRef<'_, '_, 'source>
         else {
             return unminted;
         };
-        let (branches, constructors) = (branches.clone(), constructors.clone());
+        let (branches, constructors) = (branches.clone(), alloc::sync::Arc::clone(constructors));
         let mut all = branches.clone();
         let mut rewritten = Vec::new();
         for arm in &form.loops {

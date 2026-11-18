@@ -917,6 +917,10 @@ pub fn cong_codomain(
 ///   answers the case at the point. Answering the case where a value is
 ///   returned, or the value of the wrong branch, changes the built term.
 /// - witness: `identity::tests::a_case_answers_at_a_point_by_the_value_its_branch_returns`
+///
+/// # Cost
+/// - allocation: the case's branch list and its shared arities, durable by the
+///   minted computation
 #[spec(ensures: |ret| branches.iter().any(|&branch| matches!(arena.computation(branch), Some(&crate::syntax::Computation::Return(value)) if value == ret))
     || matches!(arena.value(ret), Some(&crate::syntax::Value::Returned(case))
         if matches!(arena.computation(case), Some(&crate::syntax::Computation::DataCase { scrutinee, .. }) if scrutinee == point)))]

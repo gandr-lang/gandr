@@ -1795,6 +1795,10 @@ fn carry(
 /// - witness: `gandr-surface-lowering::lower::exits::tests::an_exit_under_nesting_leaves_its_function`
 /// - witness: `gandr-surface-lowering::lower::access::tests::an_exit_inside_an_access_is_refused`
 /// - witness: `gandr-surface-lowering::lower::session::tests::an_exit_commutes_through_a_fork_s_parent_and_an_offer_s_arms`
+///
+/// # Cost
+/// - allocation: the commuted branches and arms of a rebuilt former, durable by
+///   the minted computation
 #[spec(ensures: |ret| ret == node || sink.arena.computation(ret).is_some())]
 fn rebuild(
     sink: &mut Sink<'_>,
@@ -1904,7 +1908,7 @@ fn rebuild(
         ) if branches.as_slice() != branched => sink.arena.computation_data_case_with_equations(
             scrutinee,
             motive,
-            (branched.to_vec(), arities.clone()),
+            (branched.to_vec(), alloc::sync::Arc::clone(arities)),
             equations,
         ),
         (

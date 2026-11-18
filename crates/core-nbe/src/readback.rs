@@ -2190,6 +2190,12 @@ fn run(
 /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
 /// - witness: `readback::tests::a_stuck_bind_and_case_read_back_their_branches`
 /// - witness: `readback::tests::quoted_formers_preserve_distinct_children_and_targets`
+///
+/// # Cost
+/// - allocation: the children of each read-back former and its shared arities,
+///   durable by the minted node
+/// - allocation: the scratch lists of a quoted or recorded former, growth
+///   within the term read back
 #[spec(
     captures: [entry_fuel = u32::from(machine.fuel), entry_tasks = machine.tasks.len(),
         entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_value_types = machine.value_types.len(), entry_comp_types = machine.comp_types.len()],
@@ -2743,7 +2749,7 @@ fn step(
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
-            let arities = arities.clone();
+            let arities = alloc::sync::Arc::clone(arities);
             let start = machine
                 .comps
                 .len()

@@ -201,6 +201,9 @@ impl Scope
     /// - hypothesis: L2 — scopes given out of order, with a repeat and with an
     ///   arity of zero, against each refusal and the width.
     /// - witness: `tests::inference::a_scope_orders_its_variables_and_refuses_a_repeat`
+    ///
+    /// # Cost
+    /// - allocation: the shared slots of the scope, setup
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |scope| scope.slots.windows(2).all(|pair| pair.first().map(|slot| slot.variable) < pair.get(1).map(|slot| slot.variable))))]
     #[inline]
     pub fn new(mut variables: Vec<(Variable, Arity)>) -> Result<Self, InferenceError>
@@ -337,6 +340,9 @@ impl Scope
     /// - hypothesis: L2 — the overlaps of the cliques of the network and of the
     ///   contextual family are each the shared variables.
     /// - witness: `tests::inference::the_clique_marginals_glue_and_a_changed_weight_is_obstructed`
+    ///
+    /// # Cost
+    /// - allocation: the slots of the meet, setup
     #[spec(ensures: |ref ret| ret.as_ref().ok().is_none_or(|meet| meet.slots.len() <= self.slots.len() && meet.slots.len() <= other.slots.len()))]
     pub(crate) fn meet(
         &self,
@@ -454,6 +460,9 @@ impl Scope
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the steps of the projection, setup
     pub(crate) fn projection(
         &self,
         onto: &Self,

@@ -1272,6 +1272,9 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared steps of the position, setup
     #[inline]
     fn position_at_path(path: &[PositionStep]) -> Self::Pos
     {
@@ -1357,6 +1360,9 @@ impl CellAlphabet for ToyAlphabet
     ///   exact siblings, and invalid paths refuse. Dropped context, shifted
     ///   bounds and incorrect replacement change the term.
     /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    ///
+    /// # Cost
+    /// - allocation: the nodes of the spliced term, setup
     #[inline]
     #[spec(captures: expected = replacement.clone(), ensures: |output| match output {
         Ok(ref term) => matches!(Self::subterm_cmd_at(term, pos), Maybe::Present(ref found) if found == &expected),
