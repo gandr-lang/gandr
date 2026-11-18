@@ -395,7 +395,7 @@ mod tests
         Job {
             key: "github:a/tool".into(),
             version: "1.2.3".into(),
-            target,
+            target: std::sync::Arc::new(target),
             install_name: "github-a-tool".into(),
             recipe,
             needs,

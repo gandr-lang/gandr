@@ -61,7 +61,7 @@ impl Key
     {
         let digest = blake3::hash(finding.sentence.as_bytes()).to_hex();
         Self {
-            path: finding.path.clone(),
+            path: String::from(&*finding.path),
             rule: finding.rule,
             digest: digest.get(.. DIGITS).unwrap_or_default().to_owned(),
         }
@@ -161,7 +161,7 @@ mod tests
     macro_rules! finding {
         ($path:literal, $line:literal, $sentence:literal) => {
             Finding {
-                path: $path.to_owned(),
+                path: $path.into(),
                 line: crate::passage::comments(
                     crate::passage::Text($path),
                     crate::passage::Text(&format!("{}/// x", "\n".repeat($line - 1))),

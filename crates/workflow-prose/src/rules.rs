@@ -8,6 +8,7 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use core::fmt;
 use core::str::FromStr;
 
@@ -311,7 +312,7 @@ impl fmt::Display for Fix
 pub struct Finding
 {
     /// The file.
-    pub path: String,
+    pub path: Arc<str>,
     /// The line its passage starts on.
     pub line: Line,
     /// The rule it breaks.
@@ -961,7 +962,7 @@ pub fn sentences(
     let mut findings = Vec::new();
     let mut found = |rule: Rule, sentence: &str| {
         findings.push(Finding {
-            path: passage.path.clone(),
+            path: passage.path.as_str().into(),
             line: passage.line,
             rule,
             sentence: sentence.to_owned(),
@@ -1024,6 +1025,7 @@ pub fn shaped(
     }
     let mut findings = Vec::new();
     for shape in shapes {
+        let path: Arc<str> = shape.path.as_str().into();
         if let Opened::Run(head) = shape.opened {
             let counted = match head.limits {
                 Limits::None => head.paragraphs == HEAD_PARAGRAPHS,
@@ -1032,7 +1034,7 @@ pub fn shaped(
             };
             if !counted || head.references == References::Broken {
                 findings.push(Finding {
-                    path: shape.path.clone(),
+                    path: Arc::clone(&path),
                     line: head.line,
                     rule: Rule::Head,
                     sentence: "the head is not four paragraphs".to_owned(),
@@ -1040,7 +1042,7 @@ pub fn shaped(
             }
             if let Limits::Misplaced(line) = head.limits {
                 findings.push(Finding {
-                    path: shape.path.clone(),
+                    path: Arc::clone(&path),
                     line,
                     rule: Rule::Head,
                     sentence: "a `Limits:` paragraph stands only after the how paragraph"
@@ -1060,7 +1062,7 @@ pub fn shaped(
             };
             if let Some((line, sentence)) = cited {
                 findings.push(Finding {
-                    path: shape.path.clone(),
+                    path: Arc::clone(&path),
                     line,
                     rule: Rule::Head,
                     sentence: sentence.to_owned(),
@@ -1072,7 +1074,7 @@ pub fn shaped(
                 && words(&readings(Text(&passage.text)), first).0 > WHAT_WORDS
             {
                 findings.push(Finding {
-                    path: shape.path.clone(),
+                    path: Arc::clone(&path),
                     line,
                     rule: Rule::What,
                     sentence: spoken(passage, first),
@@ -1103,7 +1105,7 @@ pub fn shaped(
                 && third.is_some_and(|sentence| opening(sentence) == Opening::Limit);
             if count > ITEM_SENTENCES && !limited {
                 findings.push(Finding {
-                    path: shape.path.clone(),
+                    path: Arc::clone(&path),
                     line: item.line,
                     rule: Rule::Wall,
                     sentence: said,
@@ -1176,7 +1178,7 @@ pub fn procedure(
     let mut findings = Vec::new();
     if golden.placed != Placed::Labelled || !advised {
         findings.push(Finding {
-            path: golden.what.path.clone(),
+            path: golden.what.path.as_str().into(),
             line: golden.what.line,
             rule: Rule::Procedure,
             sentence: golden.what.text.clone(),
@@ -1184,10 +1186,11 @@ pub fn procedure(
     }
     if let Advice::Help(ref advice) = golden.advice {
         let read = readings(Text(&advice.text));
+        let path: Arc<str> = advice.path.as_str().into();
         for sentence in help {
             if instructions(&read, sentence) == Agrees::Agrees {
                 findings.push(Finding {
-                    path: advice.path.clone(),
+                    path: Arc::clone(&path),
                     line: advice.line,
                     rule: Rule::Instructions,
                     sentence: spoken(advice, sentence),

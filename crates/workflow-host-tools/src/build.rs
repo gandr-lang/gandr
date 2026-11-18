@@ -184,7 +184,7 @@ pub fn key(
     job: &Job,
 ) -> PathBuf
 {
-    into.join(&job.target)
+    into.join(&*job.target)
         .join(&job.install_name)
         .join(&job.version)
 }
@@ -246,7 +246,7 @@ where
     }
     let partial = into
         .join(".partial")
-        .join(&job.target)
+        .join(&*job.target)
         .join(&job.install_name)
         .join(&job.version);
     clear(&partial)?;
@@ -357,7 +357,7 @@ pub fn retire(
     job: &Job,
 ) -> Result<Vec<Version>, HostToolsError>
 {
-    let tool = into.join(&job.target).join(&job.install_name);
+    let tool = into.join(&*job.target).join(&job.install_name);
     let mut versions = names(&tool)?
         .into_iter()
         .filter(|name| job.version != *name.as_str())
@@ -629,7 +629,7 @@ mod tests
         Job {
             key: "github:a/tool".into(),
             version: "1.2.3".into(),
-            target: "riscv64gc-unknown-linux-gnu".into(),
+            target: std::sync::Arc::new("riscv64gc-unknown-linux-gnu".into()),
             install_name: "github-a-tool".into(),
             recipe: Recipe::Crate {
                 name: "tool".to_owned(),
