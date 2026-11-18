@@ -81,7 +81,7 @@ pub enum Pushed
 ///   marker after its copy, and mise's key gives its command line and marker. A
 ///   second push runs nothing. Mise's key to a receiver with no mise path runs
 ///   nothing. A refused copy leaves no marker.
-/// - witness: `push::tests::a_key_goes_into_the_install_directory_once`
+/// - witness: `push::tests::a_pushed_key_clears_its_incomplete_marker_7887`
 /// - witness: `push::tests::the_key_of_mise_replaces_the_receivers_mise`
 /// - witness: `push::tests::a_refused_copy_leaves_no_marker`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. } | HostToolsError::Command { .. })))]
@@ -404,7 +404,7 @@ mod tests
     }
 
     #[test]
-    fn a_key_goes_into_the_install_directory_once()
+    fn a_pushed_key_clears_its_incomplete_marker_7887()
     {
         let into = scratch();
         let tool = job("github:a/tool".into());
