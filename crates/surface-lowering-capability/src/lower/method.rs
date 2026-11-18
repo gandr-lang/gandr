@@ -627,7 +627,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   documentation tabulates; a head `M.f`, or `A.B.f`, whose `M` answers
     ///   no value and whose whole path names a method a module in scope
     ///   declares, is planned the same, its first argument the receiver and the
-    ///   rest the method's arguments; each argument reads as a value under the
+    ///   rest the method's arguments, unless that receiver is the view an
+    ///   `access` lends, where the call is the method's own function at the
+    ///   view and is left unplanned; each argument reads as a value under the
     ///   binder that call opens, and a view block's body under its view's
     ///   linear binder over the index's; any other call is left unplanned.
     /// - fails: [`LoweringRefusal::AmbiguousMethod`] at `f` for a method more
@@ -650,13 +652,15 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   held, an ambiguous method, a forward one and one with an implicit
     ///   telescope; a call of a method answering a place with a block and
     ///   without one; a qualified call at each mode, on a held receiver and on
-    ///   one no hold holds, with a block and without one.
+    ///   one no hold holds, with a block and without one; the printing of a dot
+    ///   call, whose access applies the method's function to the lent view.
     /// - witness: `gandr-surface-lowering::lower::method::tests::each_mode_lowers_to_its_access`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_receiver_not_held_is_passed_or_refused`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_receiver_is_a_typed_first_self`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
     /// - witness: `gandr-surface-lowering::lower::method::tests::a_qualified_call_is_the_dot_call_at_every_mode_7974`
+    /// - witness: `gandr-surface-dispatcher::parity::sweeps::the_formatter_spells_each_declaration_as_the_printer_does_755`
     ///
     /// # Cost
     /// - allocation: the head's path and the candidates of its name, growth
@@ -746,7 +750,16 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                 else {
                     return Ok(Planned(false));
                 };
-                (first, self.receiver_resolved(first, frame)?, 1_usize)
+                let resolved = self.receiver_resolved(first, frame)?;
+                // The view an `access` lends is the receiver of the access a
+                // call of the method elaborates to: `M.f(v)` there is the
+                // method's own function at the view, as the elaboration
+                // writes it.
+                if matches!(resolved, Maybe::Present(Resolved::Binder(ref bound)) if self.cx().lent.contains(&bound.binder))
+                {
+                    return Ok(Planned(false));
+                }
+                (first, resolved, 1_usize)
             },
         };
         let receiver = Site {

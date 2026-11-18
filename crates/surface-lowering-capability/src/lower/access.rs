@@ -658,6 +658,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             .cx_mut()
             .scope
             .extend_linear(frame, name, Maybe::Present(viewer.span));
+        let _fresh = self.cx_mut().lent.insert(viewed);
         let body = self.host().block(site, &mut cursor, Frame::Inner(viewed))?;
         let _result = self.cx_mut().results.insert(body.last);
         let mut cursor = Cursor::new(tail, site.at.span);
