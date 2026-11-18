@@ -12,5 +12,5 @@ data Signatures : Type where {
 data Row : Type where { | Row : (result : Code) --> Row }
 data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }
 data Admission : Type where { | Admitted : Admission }
-def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }
+def admitBlock(ss : Signatures, rs : Rows) -> Admission = Admitted;
 def addRow : Row = Row (Plain U32);

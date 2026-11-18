@@ -7,8 +7,8 @@ data One : Type where {
   | Only : One
 }
 module Converts : Model(Same) with sort Carrier = One where {
-  def same(a : One, b : One) -> Bool { true }
+  def same(a : One, b : One) -> Bool = true;
 }
 module Parts : Model(Same) with sort Carrier = One where {
-  def same(a : One, b : One) -> Bool { false }
+  def same(a : One, b : One) -> Bool = false;
 }

@@ -1,9 +1,9 @@
 def later : Integer;
 def copy : Integer = later;
 def suspended : () -> Integer;
-def forced() -> Integer { become force suspended }
+def forced() -> Integer = become force suspended;
 def function : Integer -> Integer;
-def applied() -> Integer { become (force function) 1 }
-def untouched() -> Integer { 3 }
-def holder() -> Integer { become force suspended }
-def kept() -> (() -> Integer) { holder }
+def applied() -> Integer = become (force function) 1;
+def untouched() -> Integer = 3;
+def holder() -> Integer = become force suspended;
+def kept() -> (() -> Integer) = holder;
