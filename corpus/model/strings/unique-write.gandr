@@ -1,0 +1,70 @@
+//! This source models writes under a unique string hold.
+//!
+//! Copy-on-write reads a holder count at each write. A string with one holder
+//! can write without that count. A shared write changes bytes that another
+//! string reads.
+//!
+//! `pushInPlace` writes without the holder count. A grade-one hold certifies
+//! that no copy shares its string. The checker refuses a grade-one copied
+//! string.
+//!
+//! - cites: [Racordon-2022-implementation_strategies_mutable_value_semantics]
+//!
+//! [Racordon-2022-implementation_strategies_mutable_value_semantics]: https://doi.org/10.5381/jot.2022.21.2.a2 "Racordon et al., Implementation strategies for mutable value semantics"
+
+// This source imports declarations for lists, bytes, ownership, locations and
+// writes.
+import "../data/data-base.gandr";
+import "./string-base.gandr";
+import "./nul-terminated.gandr";
+import "./small-string.gandr";
+import "./copy-on-write.gandr";
+
+/// `pushInPlace` appends `b` and skips the holder count.
+/// It writes inline or heap bytes in place.
+pub def pushInPlace(s : Repr, b : Integer) -> Written =
+  match s where
+    | Inline(bs) => push s b
+    | Shared(n, bs) => Written (Shared n (beforeZero bs b)) 0
+
+/// `holders` counts strings that hold a string's bytes.
+/// Inline bytes have one holder.
+def holders(s : Repr) -> Integer =
+  match s where
+    | Inline(bs) => 1
+    | Shared(n, bs) => n
+
+/// `aloneCopies` writes an unshared long string without copying.
+@[runs("0")]
+def aloneCopies() -> [Partial] Integer = { let s = force long; copies (pushInPlace s 33) };
+
+/// `aloneHolders` reports one holder after an unshared write.
+@[runs("1")]
+def aloneHolders() -> [Partial] Integer =
+  let s = force long
+  let w = pushInPlace s 33
+  holders (written w)
+
+/// `sharedHolders` writes a copied string without a holder count.
+/// The original string reads the changed buffer.
+@[runs("2")]
+def sharedHolders() -> [Partial] Integer =
+  let s = force long
+  let c = copy s
+  let w = pushInPlace c 33
+  holders (written w)
+
+/// `heldOnce` writes a grade-one string without a holder count.
+/// The exclusive access copies no buffer.
+@[runs("0")]
+def heldOnce() -> [Partial] Integer =
+  let bs = repeatOnto 97 24 (Nil : List Integer)
+  var[1] s = Shared 1 bs
+  access s as v { let w = pushInPlace v 33; let t = written w; resume v t; copies w }
+
+/// `heldOnceHolders` reports one holder after the grade-one write.
+@[runs("1")]
+def heldOnceHolders() -> [Partial] Integer =
+  let bs = repeatOnto 97 24 (Nil : List Integer)
+  var[1] s = Shared 1 bs
+  access s as v { let w = pushInPlace v 33; let t = written w; resume v t; holders t }

@@ -1,0 +1,4 @@
+import "./left.gandr";
+import "./right.gandr";
+def both : Integer;
+def both = one;

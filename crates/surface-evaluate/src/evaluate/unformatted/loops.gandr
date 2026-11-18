@@ -1,0 +1,13 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+def tick(n : Nat) -> -F Unit { return *{} }
+def spin : +U (-F Nat) ;
+def spin = thunk { loop { tick Zero; } } ;
+def bound : +U (-F [Partial] Nat) ;
+def bound = thunk { loop { let u = tick Zero ; continue } } ;
+def broken : +U (-F Nat) ;
+def broken = thunk { loop { let u = loop { break } ; continue } } ;
+def tested : +U (-F Nat) ;
+def tested = thunk { while 1 > 0 { tick Zero } ; return Zero } ;

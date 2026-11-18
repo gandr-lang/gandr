@@ -1,0 +1,10 @@
+{PROTOCOLS}  def sub : Flow[.A = Type](Old, New);
+  def sub = Flow.sim Old New;
+  def eq : Path[.A = Type](Old, Same);
+  def eq = Path.bisim Old Same;
+  def kept : Flow[.A = Type](Old, Old);
+  def kept = Flow.stay Old;
+  def widened() -> -F Flow[.A = Type](Old, New) {{
+    become Flow.then kept sub
+  }}
+}}
