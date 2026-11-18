@@ -858,7 +858,7 @@ fn a_composite_of_types_sugars_back_803()
           c : Type,
           p : Path[.A = Type](a, b),
           q : Path[.A = Type](b, c)
-        ) -> Path[.A = Path[.A = Type](a, c)](Path.step p q, Path.step p q) = Path.here (Path.step p q);
+        ) -> Path[.A = Path[.A = Type](a, c)] (Path.step p q) (Path.step p q) = Path.here (Path.step p q);
     "#]]
     .assert_eq(formatted.text().as_ref());
 }
@@ -889,8 +889,8 @@ fn the_value_function_alias_is_written_where_the_printer_writes_it()
           | Succ : (n : Nat) --> Nat
         }
 
-        def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) = become Path.walk
-          ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))
+        def kept(a : Nat, b : Nat, q : Path[.A = Nat] a b) -> Path[.A = Nat] b a = become Path.walk
+          ((y : Nat, Path[.A = Nat] a y) -> Path[.A = Nat] y a)
           q
           (Path.here a)
           (Path.here q)
@@ -958,7 +958,7 @@ fn a_thunk_type_a_body_returns_takes_the_alias_838()
 
         def onType(t : Type) -> Type = return (t -> t);
 
-        def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat = become Path.walk
+        def flat(a : Nat, b : Nat, q : Path[.A = Nat] a b, v : Nat) -> Nat = become Path.walk
           (Nat -> Nat)
           q
           v
