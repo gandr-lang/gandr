@@ -1,0 +1,45 @@
+//! A natural-number operation can return quotient and remainder.
+//!
+//! Rules define the operation through a helper that walks the dividend.
+//!
+//! A closed division normalizes to its quotient and remainder.
+//! A call labels each output port. A run can select one output. A pattern can
+//! bind both outputs in a different order.
+//!
+//! - cites: [Baader-1998-term_rewriting_and_all_that]
+//!
+//! [Baader-1998-term_rewriting_and_all_that]: https://doi.org/10.1017/CBO9781139172752 "Baader and Nipkow, Term Rewriting and All That"
+
+/// The naturals with division and remainder, both outputs named.
+@[normalizes("divmod(Succ(Succ(Succ(Succ(Succ(Zero))))), Succ(Succ(Zero))) ~> (Succ(Succ(Zero)), Succ(Zero))")]
+data NatDiv : Type where {
+  | Zero : NatDiv
+  | Succ : (n : NatDiv) --> NatDiv
+  oper walk : (m : NatDiv, g : NatDiv, d : NatDiv, q : NatDiv, r : NatDiv) --> (
+    quot : NatDiv,
+    rem : NatDiv
+  );
+  oper divmod : (m : NatDiv, n : NatDiv) --> (quot : NatDiv, rem : NatDiv);
+  rule : walk Zero g d q r <=> (q, r);
+  rule : walk (Succ m) Zero d q r <=> walk m d d (Succ q) Zero;
+  rule : walk (Succ m) (Succ g) d q r <=> walk m g d q (Succ r);
+  rule : divmod m Zero <=> (Zero, m);
+  rule : divmod m (Succ d) <=> walk m d d Zero Zero;
+}
+
+/// Five by two runs to two remainder one, both outputs bound.
+@[runs("*{Succ (Succ Zero), Succ Zero}")]
+def five_by_two() -> NatDiv * NatDiv =
+  let (quot, rem) = divmod (Succ (Succ (Succ (Succ (Succ Zero))))) (Succ (Succ Zero))
+  *{quot, rem}
+
+/// Five by two's remainder, the output its label selects.
+@[runs("Succ Zero")]
+def five_by_two_rem() -> NatDiv =
+  (divmod (Succ (Succ (Succ (Succ (Succ Zero))))) (Succ (Succ Zero))).rem
+
+/// Five by two's quotient, both outputs bound by their labels in another order.
+@[runs("Succ (Succ Zero)")]
+def five_by_two_quot() -> NatDiv =
+  let (.rem = r, .quot = q) = divmod (Succ (Succ (Succ (Succ (Succ Zero))))) (Succ (Succ Zero))
+  q

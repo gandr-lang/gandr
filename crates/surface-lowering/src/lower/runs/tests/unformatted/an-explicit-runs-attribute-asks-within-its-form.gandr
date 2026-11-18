@@ -1,0 +1,12 @@
+{NAT}@[ explicit_runs ]
+module Asked where {{
+def every(n : Nat) -> -F Nat {{ Succ (twice n) }}
+@[ explicit_runs("effects") ]
+def wider(n : Nat) -> -F Nat {{ Succ (twice (Succ n)) }}
+}}
+@[ explicit_runs("effects") ]
+def effects(n : Nat) -> -F Nat {{ Succ (twice Zero) }}
+def unasked(n : Nat) -> -F Nat {{ Succ (twice (Succ Zero)) }}
+def written(n : Nat) -> -F Nat {{ Succ (run twice (Succ (Succ n))) }}
+@[ explicit_runs("effect") ]
+def misspelled(n : Nat) -> -F Nat {{ Succ (Succ (twice n)) }}

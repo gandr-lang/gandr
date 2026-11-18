@@ -1,0 +1,3 @@
+{STEPPED}theory Lonely where {{ sort L : Type; oper lone : L; }}
+module Lone : Model(Lonely) where {{ type L = Integer; def lone = 0; }}
+def omitted() -> -F Integer {{ stepped 4 }}

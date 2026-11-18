@@ -1,0 +1,2 @@
+{COLOR}def pick(c : Color) -> -F Integer {{ match c {{ | Red => return 0 }} }}
+def sibling = 41 ;

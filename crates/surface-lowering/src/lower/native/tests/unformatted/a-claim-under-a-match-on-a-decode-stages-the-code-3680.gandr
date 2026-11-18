@@ -1,0 +1,4 @@
+{NAT}data Pair(a : Type) : Type where {{ | MkPair : (x : a, y : a) --> Pair(a) }}
+data U : Type where {{ | NatU : U | PairU : (a : U) --> U }}
+def rec el(u : U) -> -F Type {{ match u {{ | NatU => return Nat | PairU(a) => {{ let e = el[<] a; return (Pair e) }} }} }}
+def rec size(c : U, v : el(c)) -> -F Nat {{ match c {{ | NatU => return Zero | PairU(a) => match v {{ | MkPair(x, y) => size[<] a x }} }} }}

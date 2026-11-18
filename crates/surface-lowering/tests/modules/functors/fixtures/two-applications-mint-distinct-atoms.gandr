@@ -1,0 +1,2 @@
+def mixed : A.T;
+def mixed = B.seed;

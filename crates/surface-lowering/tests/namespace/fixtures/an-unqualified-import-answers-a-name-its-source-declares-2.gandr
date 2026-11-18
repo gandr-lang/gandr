@@ -1,0 +1,5 @@
+import "./base.gandr";
+def again : Point;
+def again = one;
+def made : Point;
+def made = One;

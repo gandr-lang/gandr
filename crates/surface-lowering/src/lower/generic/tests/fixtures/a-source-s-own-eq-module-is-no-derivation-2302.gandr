@@ -1,0 +1,2 @@
+module Eq where { def generic(a : Integer) -> Integer { a } }
+def one() -> Integer { Eq.generic 1 }

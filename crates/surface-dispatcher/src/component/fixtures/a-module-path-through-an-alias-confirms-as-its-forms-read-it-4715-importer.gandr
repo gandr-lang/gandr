@@ -1,0 +1,4 @@
+import "path:../dep" as dep;
+import dep.text.greet (greeting);
+def two : Integer;
+def two = greeting;

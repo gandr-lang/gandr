@@ -1,0 +1,66 @@
+/// `Path.ap` as a definition.
+def ap(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = B](
+  F x,
+  F y
+) {
+  Path.ap F p
+}
+/// The 2-path `a` whiskered on the right by `g`.
+def whiskerRight(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
+  ap
+    type(Path[.A = A](x, y))
+    type(Path[.A = A](x, z))
+    (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path[.A = A](x, y) -> Path[.A = A](x, z))
+    f1
+    f2
+    a
+}
+/// The 2-path `Path.here (Path.step f1 g)` along `a`.
+def liftRight(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g) {
+  Path.walk
+    (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step c g)) })
+    a
+    (Path.here (Path.step f1 g))
+}
+/// A lift whiskered by the reflexivity at its end, against the lift.
+def whiskeredByHere(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f1 : Path[.A = A](x, y),
+  f2 : Path[.A = A](x, y),
+  a : Path[.A = Path[.A = A](x, y)](f1, f2),
+  g : Path[.A = A](y, z)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f1 g, Path.step f2 g)](
+  whiskerRight
+    A
+    x
+    z
+    z
+    (Path.step f1 g)
+    (Path.step f2 g)
+    (liftRight A x y z f1 f2 a g)
+    (Path.here z),
+  liftRight A x y z f1 f2 a g
+) {
+  Path.here (liftRight A x y z f1 f2 a g)
+}

@@ -1,0 +1,27 @@
+data S2 : Type where
+  | Base2 : S2
+  | surf : Path.here Base2 <-> Path.here Base2
+
+data Circle : Type where
+  | Base : Circle
+  | loop : Base <-> Base
+
+def sphereId(x : S2) -> S2 =
+  match x where
+    | Base2 => Base2
+    | surf => surf
+
+def circleId(x : Circle) -> Circle =
+  match x where
+    | Base => Base
+    | loop => loop
+
+def onCell(
+  c : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)
+) -> Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) {
+  become Path.ap sphereId c
+}
+
+def onLoop(p : Path[.A = Circle](Base, Base)) -> Path[.A = Circle](Base, Base) {
+  become Path.ap circleId p
+}

@@ -1,0 +1,91 @@
+/// This source states congruence for reflexivity under conversion.
+///
+/// Two reflexivity terms agree when their points convert at every path level.
+/// It is the HoTT book's § 1.12 (`refl`) under judgmental equality.
+/// A parameter does not reduce to a reflexivity term.
+///
+/// The checker converts endpoints by each rule form.
+/// It compares each path at its resolved equality.
+///
+/// Limits: conversion knows no arithmetic law.
+///
+/// - see: #1723 — `peak_is_here`
+/// - see: #2378 — `held_sum`
+/// - see: #2391 — `compared_alike`, `passed_on`
+
+// The integers, presented by their two cancellations.
+import "./circle-base.gandr";
+
+/// A declared reflexivity at two.
+def refl_two : Path[.A = Integer](2, 2) = Path.here 2;
+
+/// The two reflexivities agree because their points convert.
+def two_is_here : Path[.A = Path[.A = Integer](2, 2)](
+  refl_two,
+  Path.here 2
+) = Path.here (Path.here 2);
+
+/// `Path.here(refl_two)` has the same path type.
+def here_two : Path[.A = Path[.A = Integer](2, 2)](refl_two, Path.here 2) = Path.here refl_two;
+
+/// The two points agree one path level higher.
+def here_two_up : Path[.A = Path[.A = Path[.A = Integer](2, 2)](refl_two, Path.here 2)](
+  Path.here refl_two,
+  Path.here (Path.here 2)
+) = Path.here (Path.here refl_two);
+
+/// The peak reflexivity uses the cancellation rule for integers.
+def refl_peak(x : Int) -> Path[.A = Int](S (P (S x)), S x) =
+  Path.here (S x)
+
+/// The peak reflexivity also uses the unreduced endpoint.
+def refl_peak_at(x : Int) -> Path[.A = Int](S (P (S x)), S x) =
+  Path.here (S (P (S x)))
+
+/// The two peak reflexivities agree one level higher.
+def peak_is_here(x : Int) -> Path[.A = Path[.A = Int](S (P (S x)), S x)](
+  refl_peak x,
+  refl_peak_at x
+) =
+  Path.here (refl_peak x)
+
+/// A path parameter does not unfold to `Path.here(2)`.
+@[refuses("EndpointMismatch")]
+def apart(q : Path[.A = Integer](2, 2)) -> Path[.A = Path[.A = Integer](2, 2)](q, Path.here 2) =
+  Path.here q
+
+/// The `as_given` function returns its integer argument.
+def as_given(n : Integer) -> Integer = n;
+
+/// The held sum compares with its own unresolved call.
+def held_sum(x : Integer, y : Integer) -> Path[.A = Integer](as_given (x + y), x + y) =
+  Path.here (x + y)
+
+/// The exchanged sum is a different unresolved call.
+@[refuses("EndpointMismatch")]
+def exchanged_sum(x : Integer, y : Integer) -> Path[.A = Integer](as_given (x + y), y + x) =
+  Path.here (x + y)
+
+/// The comparison model resolves from its operands before the points compare.
+def compared_alike(x : Integer, y : Integer) -> Path[.A = Bool](x == y, x == y) =
+  Path.here (x == y)
+
+/// The exchanged comparison is another resolved call.
+@[refuses("EndpointMismatch")]
+def compared_turned(x : Integer, y : Integer) -> Path[.A = Bool](x == y, y == x) =
+  Path.here (x == y)
+
+/// The returned path converts after each comparison model resolves.
+def passed_on(x : Integer, y : Integer, p : Path[.A = Bool](x == y, x == y)) -> Path[.A = Bool](
+  x == y,
+  x == y
+) =
+  p
+
+/// The exchanged comparison gives a different path type.
+@[refuses("TypeMismatch")]
+def passed_turned(x : Integer, y : Integer, p : Path[.A = Bool](x == y, x == y)) -> Path[.A = Bool](
+  y == x,
+  y == x
+) =
+  p

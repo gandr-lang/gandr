@@ -1,0 +1,3 @@
+{counter}def step(m : {model}, n : {model}) -> -F Integer {{
+  let z = {counted}.zero ; let i = m.incr ; let r = m.read ; r(i(z))
+}}

@@ -1,0 +1,4 @@
+{NAT}def two(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ | Zero => return Path.here Zero | Succ(Zero) => return Path.here (Succ Zero) | Succ(m) => return Path.here (Succ m) }} }}
+def named(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ | Zero => return Path.here n | Succ(Zero) => return Path.here n | Succ(_) => return Path.here n }} }}
+def whole(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ | Zero => return Path.here Zero | m => return Path.here m }} }}
+def unnamed(n : Nat) -> -F Path[.A = Nat](n, n) {{ match n {{ | Zero => return Path.here Zero | Succ(Zero) => return Path.here (Succ Zero) | Succ(Succ(k)) => match k {{ | Zero => return Path.here (Succ (Succ Zero)) | Succ(j) => return Path.here (Succ (Succ (Succ j))) }} }} }}

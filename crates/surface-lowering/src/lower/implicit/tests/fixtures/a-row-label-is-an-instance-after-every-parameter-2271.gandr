@@ -1,0 +1,8 @@
+def both[r : Row](s : String) -> -F [x : std.io.Console.Eff, y : std.io.Console.Eff | r] Unit {
+  y.print s
+}
+def twin[r : Row, q : Region, q1 : Region](
+  s : String,
+  x : Cap { print } at q,
+  y : Cap { print } at q1
+) -> -F [q : std.io.Console.Eff, q1 : std.io.Console.Eff | r] Unit { y.print s }

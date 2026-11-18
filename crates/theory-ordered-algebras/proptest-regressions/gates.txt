@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1c119d7cd3c34c6babe423bdcf37190dd963609092fc4308e81b2e201ccb1f7d # shrinks to steps = [One(Hadamard, QubitIndex(0))]

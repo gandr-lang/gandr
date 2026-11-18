@@ -1,0 +1,17 @@
+//! `module-metadata` puts package data on a declaration as attributes.
+//!
+//! The attributes give a name and version, a dependency and a toolchain bound,
+//! after the manifest format of Cargo. The language registers no package
+//! metadata schema. The source refuses its first unknown attribute.
+//!
+//! The checker reads each attribute block on its declaration. It refuses a
+//! name with no registered schema.
+//!
+//! - see: https://doc.rust-lang.org/cargo/
+
+// A unit value carrying a package's metadata.
+@[refuses("UnknownAttribute")]
+@[package(*{name = "acme/parser", version = "1.4.0"})]
+@[dependency(*{name = "acme/lexer", alias = "lexer", constraint = "^2.1"})]
+@[toolchain(*{gandr = ">=0.9"})]
+def parser_unit = *{};

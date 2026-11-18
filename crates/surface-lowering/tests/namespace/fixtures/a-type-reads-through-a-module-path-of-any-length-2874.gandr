@@ -1,0 +1,8 @@
+import a.b.c;
+import a.b.c.d;
+def three : a.b.c.Token;
+def three = a.b.c.made;
+def four : a.b.c.d.Token;
+def four = a.b.c.d.made;
+def lost : a.b.c.Lost;
+def lost = a.b.c.made;

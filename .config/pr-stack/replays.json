@@ -1,0 +1,22 @@
+[
+  {
+    "name": "#4463: a lower rewritten before it landed squashed leaves its earlier head in the upper, which a rebase replays empty",
+    "lower": "rewritten",
+    "output": "lower (#1)"
+  },
+  {
+    "name": "a lower that landed squashed as it stood leaves its commit in the upper, which a rebase replays empty",
+    "lower": "squashed",
+    "output": "lower (#1)"
+  },
+  {
+    "name": "a lower not yet landed leaves the upper nothing its base carries",
+    "lower": "open",
+    "output": "none"
+  },
+  {
+    "name": "a rebase that conflicts reads nothing: GitHub refuses it itself",
+    "lower": "conflicting",
+    "output": "none"
+  }
+]

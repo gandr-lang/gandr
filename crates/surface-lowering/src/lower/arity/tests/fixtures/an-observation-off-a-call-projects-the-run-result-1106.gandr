@@ -1,0 +1,3 @@
+codata Duo : Type[-] where { a : Integer; b : Integer; }
+def duo() -> Duo { &{.a => 1, .b => 2} }
+def gone() -> -F Integer { (duo ()).z }
