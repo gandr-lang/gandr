@@ -1,12 +1,13 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/identity/here-congruence.gandr:15:81
+   ╭▸ corpus/pathological/identity/here-congruence.gandr:16:3
    │
-15 │ def peak_apart(x : Int) -> Path[.A = Path[.A = Int](S x, S x)](Path.here (S x), Path.here (P x)) =
-   │                ┬                                    ┬──  ┬──                    ━━━━━━━━━━━━━━━ not both endpoints of the path
-   │                │                                    │    │
-   │                │                                    │    an endpoint the point does not convert to
-   │                │                                    an endpoint the point does not convert to
+15 │ def peak_apart(x : Int) -> Path[.A = Path[.A = Int] (S x) (S x)] (Path.here (S x)) (
+   │                ┬                                     ┬──   ─── an endpoint the point does not convert to
+   │                │                                     │
+   │                │                                     an endpoint the point does not convert to
    │                formed; while forming this type under its binder; binds x : Int
+16 │   Path.here (P x)
+   │   ━━━━━━━━━━━━━━━ not both endpoints of the path
    │
    ├ note: `peak_apart` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints

@@ -48,11 +48,11 @@ error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
    │ │   ─ checked; while checking the body of this function; binds t : a -> b
 46 │ │   g : b -> a,
    │ │   ─ checked; while checking the body of this function; binds g : b -> a
-47 │ │   s : (x : a) -> Path[.A = a](g (t x), x),
+47 │ │   s : (x : a) -> Path[.A = a] (g (t x)) x,
    │ │   ─ checked; while checking the body of this function; binds s : (x : a) -> Path[.A = a] (g (t x)) x
 48 │ │   h : b -> a,
    │ │   ─ checked against `(c : b -> a) -> ((d : b) -> Path[.A = b] (t (c d)) d) -> a -> -F b`; while checking the body of this function; binds h : b -> a
-49 │ │   r : (y : b) -> Path[.A = b](t (h y), y),
+49 │ │   r : (y : b) -> Path[.A = b] (t (h y)) y,
    │ │   ─ checked against `((c : b) -> Path[.A = b] (t (h c)) c) -> a -> -F b`; while checking the body of this function; binds r : (c : b) -> Path[.A = b] (t (h c)) c
 50 │ │   x : a
    │ │   ─ checked against `a -> -F b`; while checking the body of this function; binds x : a
@@ -68,18 +68,17 @@ error[ShapeMismatch]: expected a dependent record `#{x : A, y : B(x)}`
    ╰ help: change the term or the type it is checked against, so that the type has the required shape
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/identity/univalence.gandr:62:3
+   ╭▸ corpus/pathological/identity/univalence.gandr:61:3
    │
-58 │   def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)](
+58 │   def uaEtaByConversion(a : Type) -> Path[.A = Path[.A = Type](a, a)] (
    │   │                     ─ checked against `(a : Type) -> -F (Path[.A = Path[.A = Type] a a] (ua (idtoequiv a a (Path.here a))) (Path.here a))`; while checking the body of this function; binds a : Type
    │ ┌─┘
    │ │
-59 │ │   ua (idtoequiv a a (Path.here a)),
+59 │ │   ua (idtoequiv a a (Path.here a))
    │ │   ──────────────────────────────── an endpoint the point does not convert to
-60 │ │   Path.here a
-   │ │   ─────────── an endpoint the point does not convert to
-61 │ │ ) =
-62 │ │   Path.here (Path.here a)
+60 │ │ ) (Path.here a) =
+   │ │    ─────────── an endpoint the point does not convert to
+61 │ │   Path.here (Path.here a)
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━│
    │ └───│─────────────────────┤
    │     │                     checked against `(a : Type) -> Path[.A = Path[.A = Type] a a] (ua (idtoequiv a a (Path.here a))) (Path.here a)`; while checking the body of this thunk
@@ -89,20 +88,20 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[TypeMismatch]: the type of this term does not match the type it is checked against
-   ╭▸ corpus/pathological/identity/univalence.gandr:71:5
+   ╭▸ corpus/pathological/identity/univalence.gandr:70:5
    │
-68 │     def loopsAreUnit : Path[.A = Type](
+67 │     def loopsAreUnit : Path[.A = Type](
    │ ┌──────────────────────┘
-69 │ │     Path[.A = Circle](Base, Base),
-70 │ │     Unit
-71 │ │   ) = (ua winding : Path[.A = Type](
+68 │ │     Path[.A = Circle] Base Base,
+69 │ │     Unit
+70 │ │   ) = (ua winding : Path[.A = Type](
    │ │ ┌─│───╿─────────────┘
    │ │┏│━│━━━┙
    │ └┃│─┤
    │  ┃│ the type it is checked against
-72 │  ┃│   Path[.A = Circle](Base, Base),
-73 │  ┃│   _
-74 │  ┃│ ));
+71 │  ┃│   Path[.A = Circle] Base Base,
+72 │  ┃│   _
+73 │  ┃│ ));
    │  ┗│━│┛ its type does not convert: expected `Path[.A = Type] (Path[.A = Circle] Base Base) Unit`, found `Path[.A = Type] (Path[.A = Circle] Base Base) Int`
    │   └─┤
    │     the type it synthesises
