@@ -1,0 +1,6 @@
+theory StateGetGet where {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S). C) --> C;
+  rule getGet : get (bind s. (get (bind t. (k s t)))) <=> get (bind s. (k s s));
+}

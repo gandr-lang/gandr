@@ -1,0 +1,12 @@
+def plus(
+  /// The first summand.
+  n : Integer,
+  m : Integer
+) -> -F Integer {
+  return n
+}
+def id(
+  k : Integer
+) -> -F Integer {
+  return k
+}

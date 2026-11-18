@@ -1,0 +1,1570 @@
+//! Content-addressed persistence for complete checkpoint sets: a memory
+//! backend and an atomic file backend.
+//!
+//! # Addressed by the program, keyed by the backend
+//!
+//! A checkpoint set is stored under the BLAKE3 address of its program's
+//! canonical bytes and under the identity of the backend artifact that judged
+//! it, so a set is only ever restored for the same program and the same
+//! checker. A restored set is not trusted: the next resume validates every
+//! item of it as it validates an in-memory one.
+//!
+//! # A failed store leaves the store as it was
+//!
+//! Both backends encode completely before they change anything, so an
+//! unsupported form fails a store with nothing written. The file backend
+//! publishes its record through [`crate::record`]: a private temporary it
+//! created exclusively, then one rename. Loading checks the record's frame
+//! and the address before it decodes, and decoding refuses a payload that is
+//! not the canonical spelling of what it parses to.
+//!
+//! A capped level cannot replace a readable record. The file record is the
+//! frame under a key of the address, then the backend; its bytes are the
+//! header this store wrote before the frame moved into the record module. The
+//! store is atomic, not durable: it does not synchronise to the device.
+//! `CheckpointStore` is the seam where the storage value plane takes over from
+//! the file store, persisting checkpoint sets as values with the storage
+//! tier's own integrity and retention.
+//!
+//! # Decisions
+//!
+//! | Decision | Alternatives | Reversal |
+//! | -------- | ------------ | -------- |
+//! | A crate-local canonical binary encoding with a canonicality check | a serialisation framework, which would add a dependency and admit several spellings of one value | the storage tier hosts session checkpoints |
+//! | Check the decoder’s level bound before checkpoint encoding | publish records that cannot reload; unbounded decoding; decode an extra copy before storing | level reconstruction stops requiring one successor per offset and the decoder can safely admit the full range |
+//! | BLAKE3 through the workspace `blake3` entry, the digest the storage tier uses | the storage tier's digest wrapper, which a `core` crate cannot depend on under the layering; a second hash function | the digest moves to a layer below both |
+
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::borrow::Borrow;
+use core::fmt;
+use std::path::Path;
+use std::path::PathBuf;
+
+use anodized::spec;
+use gandr_core_content::codec::Bytes;
+use gandr_core_content::codec::CodecError;
+use gandr_core_content::codec::UnsupportedPersistence;
+use gandr_kernel_strata::LevelOffset;
+use quenchant_shape::shape::Maybe;
+
+use crate::boundary::ItemOrdinal;
+use crate::boundary::RecordCount;
+use crate::checkpoint::Checkpoints;
+use crate::checkpoint::ItemCheckpoint;
+use crate::codec::CheckpointBytes;
+use crate::codec::write_program;
+use crate::content::ItemContent;
+use crate::content::encode_item;
+use crate::record;
+use crate::record::ArtifactBytes;
+use crate::record::Failure;
+use crate::record::Format;
+use crate::record::Length;
+use crate::record::RecordFault;
+use crate::record::RecordName;
+use crate::record::Spelling;
+use crate::record::failure_of;
+use crate::region::Program;
+
+quenchant_shape::reason_enum! {
+    /// Why a store holds no checkpoint set for an address.
+    pub mod stored {
+        /// The reason nothing is loaded.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No record is held at the address.
+            NotStored,
+            /// The record at the address was judged by another backend.
+            OtherBackend,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a restore returned no checkpoint set.
+    pub mod restored {
+        /// The reason nothing is restored.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The address is not the program's.
+            AddressMismatch,
+            /// No record is held at the address.
+            NotStored,
+            /// The record at the address was judged by another backend.
+            OtherBackend,
+        }
+    }
+}
+
+/// The checkpoint record's format.
+const CHECKPOINTS: Format = Format {
+    magic: *b"GCKFILE\0",
+    version: 1,
+    key: KEY_LEN,
+};
+
+/// The byte length of a checkpoint record's key: its address, then its
+/// backend.
+const KEY_LEN: usize = 64;
+
+/// The content address of a program revision: the BLAKE3 digest of its
+/// canonical bytes.
+///
+/// # Specification
+/// - executable: none — the digest does not retain the program whose canonical
+///   bytes it addresses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independently allocated finite programs retain identity;
+///   selected reorderings, renamings and value changes separate addresses. This
+///   is not a collision-freedom proof.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckpointAddress([u8; 32]);
+
+impl CheckpointAddress
+{
+    /// The digest, as lowercase hexadecimal: the record's file name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn to_hex(self) -> String
+    {
+        String::from(blake3::Hash::from_bytes(self.0).to_hex().as_str())
+    }
+}
+
+impl From<CheckpointAddress> for RecordName
+{
+    /// The name of the checkpoint record for `address`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(address: CheckpointAddress) -> Self
+    {
+        Self::of(blake3::Hash::from_bytes(address.0))
+    }
+}
+
+/// The identity of the backend artifact that judged a checkpoint set.
+///
+/// # Specification
+/// - executable: none — the digest does not retain the artifact bytes whose
+///   identity it records.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real backend digests separate restored records; raw
+///   digest extrema exercise the memory key range. Neither witness proves
+///   collision freedom.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BackendArtifact([u8; 32]);
+
+impl From<&[u8]> for BackendArtifact
+{
+    /// The identity of an artifact with these canonical bytes: their BLAKE3
+    /// digest.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: &[u8]) -> Self
+    {
+        Self(*blake3::hash(bytes).as_bytes())
+    }
+}
+
+/// Why a checkpoint store refused or failed.
+///
+/// # Specification
+/// - executable: none — an error value does not retain the failed codec or
+///   filesystem operation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — observed corrupt, noncanonical, oversized-level,
+///   unresolved-node and filesystem cases retain their error class and payload.
+///   Unrepresentable machine-size lengths are outside this finite evidence.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+/// - witness: `persistence::tests::opening_an_existing_file_as_a_directory_fails_without_changing_it`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CheckpointStoreError
+{
+    /// The record cannot be represented: a length passes the format's width.
+    Rejected,
+    /// The checkpoint set holds a form the encoding has no spelling for.
+    UnsupportedPersistence(UnsupportedPersistence),
+    /// The stored bytes are truncated, corrupted, carry trailing bytes, or do
+    /// not match their address.
+    Corrupt,
+    /// A level atom's offset meets the decoder's cap.
+    LevelOffsetTooLarge
+    {
+        /// The offset read.
+        offset: LevelOffset,
+    },
+    /// The payload parses but is not the canonical spelling of its value.
+    NonCanonical,
+    /// The file system failed.
+    Io,
+}
+
+impl From<CodecError> for CheckpointStoreError
+{
+    /// The store's account of a codec failure.
+    ///
+    /// # Specification
+    /// - ensures: the codec failure keeps its class and diagnostic payload in
+    ///   the store error vocabulary.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — malformed, noncanonical, capped and unresolved
+    ///   payloads cross the public persistence boundary with exact errors. The
+    ///   machine-width refusal has no reachable oversized allocation in this
+    ///   corpus.
+    /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+    /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+    /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+    /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+    #[spec(
+        ensures: |ret| match (error, ret) {
+            | (CodecError::Corrupt, Self::Corrupt)
+            | (CodecError::NonCanonical, Self::NonCanonical)
+            | (CodecError::Unrepresentable, Self::Rejected) => true,
+            | (
+                CodecError::LevelOffsetTooLarge { offset },
+                Self::LevelOffsetTooLarge { offset: observed },
+            ) => offset == observed,
+            | (CodecError::Unsupported(form), Self::UnsupportedPersistence(observed)) => {
+                form == observed
+            },
+            | _ => false,
+        },
+    )]
+    #[inline]
+    fn from(error: CodecError) -> Self
+    {
+        match error {
+            CodecError::Corrupt => Self::Corrupt,
+            CodecError::NonCanonical => Self::NonCanonical,
+            CodecError::LevelOffsetTooLarge { offset } => Self::LevelOffsetTooLarge { offset },
+            CodecError::Unsupported(form) => Self::UnsupportedPersistence(form),
+            CodecError::Unrepresentable => Self::Rejected,
+        }
+    }
+}
+
+/// The store's account of a record that could not be framed or published.
+///
+/// # Specification
+/// - ensures: an unrepresentable length is [`CheckpointStoreError::Rejected`],
+///   and a file system failure is [`CheckpointStoreError::Io`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a store whose record path is occupied fails with `Io`. An
+///   unrepresentable length has no reachable allocation here.
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+#[spec(
+    ensures: |ret| match (fault, ret) {
+        | (RecordFault::Unrepresentable, CheckpointStoreError::Rejected)
+        | (RecordFault::Io, CheckpointStoreError::Io) => true,
+        | _ => false,
+    },
+)]
+const fn store_error(fault: RecordFault) -> CheckpointStoreError
+{
+    match fault {
+        RecordFault::Unrepresentable => CheckpointStoreError::Rejected,
+        RecordFault::Io => CheckpointStoreError::Io,
+    }
+}
+
+impl fmt::Display for CheckpointStoreError
+{
+    /// Writes the failure's message.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Rejected => f.write_str("the checkpoint record cannot be represented"),
+            Self::UnsupportedPersistence(form) => write!(f, "cannot persist: {form}"),
+            Self::Corrupt => f.write_str("the checkpoint record is corrupt"),
+            Self::LevelOffsetTooLarge { offset } => {
+                write!(
+                    f,
+                    "a level offset of {} passes the decoder's cap",
+                    u64::from(offset)
+                )
+            },
+            Self::NonCanonical => f.write_str("the checkpoint payload is not canonical"),
+            Self::Io => f.write_str("the checkpoint store's file system failed"),
+        }
+    }
+}
+
+impl core::error::Error for CheckpointStoreError
+{
+}
+
+/// Observes persistence and invalidation without taking part in checking.
+///
+/// # Specification
+/// - executable: none — the trait exposes no notification history or state
+///   observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recording observer sees successful stores and empty
+///   restores; a failed publication sends no stored notification. This does not
+///   certify arbitrary observer implementations or their panic behavior.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+pub trait CheckpointObserver
+{
+    /// A checkpoint set was stored at `address`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn stored(
+        &mut self,
+        _address: CheckpointAddress,
+    )
+    {
+    }
+
+    /// A restore at `address` returned nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn invalidated(
+        &mut self,
+        _address: CheckpointAddress,
+    )
+    {
+    }
+
+    /// A pass starts its first item: each item it then passes runs from the
+    /// previous item's end, or from here.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn opened(&mut self)
+    {
+    }
+
+    /// A pass adopted or judged `item`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn passed(
+        &mut self,
+        _item: &crate::checkpoint::PassedItem<'_>,
+    )
+    {
+    }
+
+    /// The buffer that the pass's runs write their steps into, or why the
+    /// observer lends none. The pass clears the buffer before each item,
+    /// tells [`Self::passed`] the item's steps, and gives the buffer back
+    /// through [`Self::restore`] on each way out of the pass.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn lend(
+        &mut self
+    ) -> Maybe<gandr_core_checker::trace::StepBuffer, gandr_core_checker::trace::untraced::Absent>
+    {
+        Maybe::Absent(gandr_core_checker::trace::untraced::Absent::Unlent)
+    }
+
+    /// The pass gives back `buffer`, which [`Self::lend`] lent it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn restore(
+        &mut self,
+        _buffer: gandr_core_checker::trace::StepBuffer,
+    )
+    {
+    }
+
+    /// Whether the observer holds the trace of the item whose content is
+    /// `key`: a traced pass adopts an item whose trace the observer holds,
+    /// and judges the others, so each item ends with a trace.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "instrument")]
+    #[inline]
+    fn held(
+        &self,
+        _key: crate::ContentKey,
+    ) -> Maybe<(), traceless::Absent>
+    {
+        Maybe::Absent(traceless::Absent::Unkept)
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an observer holds no trace of an item.
+    pub mod traceless {
+        /// The reason no trace is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The observer keeps no trace of the item's content.
+            Unkept,
+        }
+    }
+}
+
+/// Whether a checkpoint store keeps the sets it is handed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Keeping
+{
+    /// It keeps them: a session addresses, encodes and stores each set.
+    Kept,
+    /// It keeps nothing: a session neither addresses nor encodes a set for
+    /// it.
+    Discarded,
+}
+
+/// A persistence boundary for complete checkpoint sets.
+///
+/// # Specification
+/// - executable: none — state, canonical bytes and later operations belong to
+///   implementors, not this declaration.
+///
+/// # Adequacy
+/// - hypothesis: L3 — memory and reopened files return the tested canonical
+///   sets, with backend separation and failure preservation. Capped offsets are
+///   refused before replacing an existing record.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+/// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+pub trait CheckpointStore
+{
+    /// Whether the store keeps the sets it is handed: a session persists a
+    /// set only to a store that keeps it.
+    ///
+    /// # Specification
+    /// trivial.
+    const KEEPING: Keeping = Keeping::Kept;
+
+    /// Load the set stored at `address` by `backend`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the decoded set stored at `address` by `backend`.
+    /// - provides: `stored::Absent` when nothing is stored there, or what is
+    ///   was stored by another backend.
+    /// - fails: when the stored bytes are corrupt or not canonical, or the
+    ///   backing store fails.
+    /// - panics: none.
+    /// - executable: none — the required method has no body or byte-state
+    ///   observer; inspecting storage again would perform another operation.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real memory and file records distinguish matching,
+    ///   absent and other-backend keys; corrupt files fail. These witnesses
+    ///   cover concrete implementations, not every implementation of the trait.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+    /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+    ///
+    /// # Errors
+    /// A typed persistence error naming the failure.
+    fn load(
+        &mut self,
+        address: CheckpointAddress,
+        backend: BackendArtifact,
+    ) -> Result<Maybe<Checkpoints, stored::Absent>, CheckpointStoreError>;
+
+    /// Store `checkpoints` at `address` for `backend`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, in a store that keeps sets ([`Keeping::Kept`]),
+    ///   the new record decodes to `checkpoints` and a later load returns that
+    ///   set absent intervening changes or read failures; a store that keeps
+    ///   nothing holds nothing. On failure the store holds what it held before.
+    /// - fails: unsupported data, capped levels, unrepresentable counts, or a
+    ///   backing-store failure.
+    /// - panics: none.
+    /// - executable: none — the required method has no body or state observer
+    ///   with which to compare the stored bytes or a later load.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — supported sets round-trip; unsupported and capped
+    ///   replacements leave the old record intact. File preservation is
+    ///   observed through both its bytes and a subsequent load.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+    /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+    ///
+    /// # Errors
+    /// A typed persistence error naming the failure.
+    fn store(
+        &mut self,
+        address: CheckpointAddress,
+        backend: BackendArtifact,
+        checkpoints: &Checkpoints,
+    ) -> Result<(), CheckpointStoreError>;
+}
+
+/// A checkpoint store in memory, holding canonical records.
+///
+/// # Specification
+/// - executable: none — canonicality relates each stored byte string to the
+///   encoding operation, not a retained checkpoint value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — checked sets at two budgets occupy distinct backend keys;
+///   replacement preserves neighboring records, and unsupported encoding does
+///   not alter the old record. Capped offsets are refused before publication.
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+/// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MemoryCheckpointStore
+{
+    /// The canonical records, by address and backend.
+    records: BTreeMap<(CheckpointAddress, BackendArtifact), CheckpointBytes>,
+}
+
+impl MemoryCheckpointStore
+{
+    /// How many records the store holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn record_count(&self) -> RecordCount
+    {
+        RecordCount::from(self.records.len())
+    }
+}
+
+impl CheckpointStore for MemoryCheckpointStore
+{
+    /// Decode the record at `address` for `backend`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`CheckpointStore::load`]; a record of another backend at
+    ///   the address answers `OtherBackend`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and occupied address ranges, both digest
+    ///   extrema, two backend records and replacement preserve the selected set
+    ///   and count. The predicate checks selection and error classes without
+    ///   decoding twice.
+    /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body and the check each open the ordered range of one address's records to its first entry, one logarithmic descent"
+        )
+    )]
+    #[spec(
+        captures: [before = self.records.len()],
+        ensures: |ret| {
+            self.records.len() == before
+                && match ret {
+                    | Ok(Maybe::Present(_)) => self.records.contains_key(&(address, backend)),
+                    | Ok(Maybe::Absent(stored::Absent::NotStored)) => self
+                        .records
+                        .range(
+                            (address, BackendArtifact([0; 32]))
+                                ..= (address, BackendArtifact([u8::MAX; 32])),
+                        )
+                        .next()
+                        .is_none(),
+                    | Ok(Maybe::Absent(stored::Absent::OtherBackend)) => {
+                        !self.records.contains_key(&(address, backend))
+                            && self
+                                .records
+                                .range(
+                                    (address, BackendArtifact([0; 32]))
+                                        ..= (address, BackendArtifact([u8::MAX; 32])),
+                                )
+                                .next()
+                                .is_some()
+                    },
+                    | Err(error) => {
+                        self.records.contains_key(&(address, backend))
+                            && matches!(
+                                error,
+                                CheckpointStoreError::Corrupt
+                                    | CheckpointStoreError::NonCanonical
+                                    | CheckpointStoreError::LevelOffsetTooLarge { .. }
+                            )
+                    },
+                }
+        },
+    )]
+    #[inline]
+    fn load(
+        &mut self,
+        address: CheckpointAddress,
+        backend: BackendArtifact,
+    ) -> Result<Maybe<Checkpoints, stored::Absent>, CheckpointStoreError>
+    {
+        if let Some(bytes) = self.records.get(&(address, backend)) {
+            let decoded = crate::codec::decode_checkpoints(Bytes(bytes.as_ref()))?;
+            return Ok(Maybe::Present(decoded));
+        }
+        let elsewhere = self
+            .records
+            .range(
+                (address, BackendArtifact([0; 32])) ..= (address, BackendArtifact([u8::MAX; 32])),
+            )
+            .next()
+            .is_some();
+        Ok(Maybe::Absent(if elsewhere {
+            stored::Absent::OtherBackend
+        }
+        else {
+            stored::Absent::NotStored
+        }))
+    }
+
+    /// Encode, then insert.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`CheckpointStore::store`]; the encoding completes before
+    ///   the map is touched.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct backend keys coexist, replacement preserves
+    ///   neighboring values, and unsupported encoding leaves the old record and
+    ///   count intact. Value preservation is observed by loads, not a cloned
+    ///   pre-state; capped offsets are refused before insertion.
+    /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+    /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+    /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+    ///
+    /// # Cost
+    /// - allocation: the encoded checkpoint set, durable by its address
+    #[spec(
+        captures: [
+            before = self.records.len(),
+            held = self.records.contains_key(&(address, backend)),
+        ],
+        ensures: |ret| match ret {
+            | Ok(()) => {
+                self.records.contains_key(&(address, backend))
+                    && before.checked_add(usize::from(!held)) == Some(self.records.len())
+            },
+            | Err(error) => {
+                self.records.len() == before
+                    && self.records.contains_key(&(address, backend)) == held
+                    && matches!(
+                        error,
+                        CheckpointStoreError::UnsupportedPersistence(_)
+                            | CheckpointStoreError::Rejected
+                            | CheckpointStoreError::LevelOffsetTooLarge { .. }
+                    )
+            },
+        },
+    )]
+    #[inline]
+    fn store(
+        &mut self,
+        address: CheckpointAddress,
+        backend: BackendArtifact,
+        checkpoints: &Checkpoints,
+    ) -> Result<(), CheckpointStoreError>
+    {
+        let bytes = crate::codec::encode_checkpoints(checkpoints)?;
+        let _replaced = self.records.insert((address, backend), bytes);
+        Ok(())
+    }
+}
+
+/// A checkpoint store that keeps nothing.
+///
+/// It suits a session whose checkpoints no later session restores, such as an
+/// editor's open document: a session over it judges and resumes as over a
+/// store that keeps them, and never addresses or encodes a set for it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DiscardingCheckpointStore;
+
+impl CheckpointStore for DiscardingCheckpointStore
+{
+    const KEEPING: Keeping = Keeping::Discarded;
+
+    /// Nothing is stored.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn load(
+        &mut self,
+        _address: CheckpointAddress,
+        _backend: BackendArtifact,
+    ) -> Result<Maybe<Checkpoints, stored::Absent>, CheckpointStoreError>
+    {
+        Ok(Maybe::Absent(stored::Absent::NotStored))
+    }
+
+    /// Hold nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn store(
+        &mut self,
+        _address: CheckpointAddress,
+        _backend: BackendArtifact,
+        _checkpoints: &Checkpoints,
+    ) -> Result<(), CheckpointStoreError>
+    {
+        Ok(())
+    }
+}
+
+/// A checkpoint store in a directory: one file per address, named by the
+/// address's hexadecimal digest.
+///
+/// # Specification
+/// - executable: none — the path does not hold the directory state, record
+///   bytes or results of concurrent filesystem operations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reopened directories preserve ordinary records; failed
+///   publication and four concurrent publishers exercise staging and
+///   replacement. Removal failures and forced random-name collisions are
+///   outside these witnesses.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+/// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileCheckpointStore
+{
+    /// The directory holding the records.
+    root: PathBuf,
+}
+
+impl FileCheckpointStore
+{
+    /// Open or create the record directory at `path`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the directory exists.
+    /// - fails: [`CheckpointStoreError::Io`] when it cannot be created.
+    /// - panics: propagates a panic from the supplied `AsRef` implementation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a real directory is created and reopened; a file at
+    ///   the requested path fails without changing its bytes. The predicate
+    ///   classifies errors without replaying an arbitrary `AsRef`
+    ///   implementation or probing the filesystem after the operation.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `persistence::tests::opening_an_existing_file_as_a_directory_fails_without_changing_it`
+    ///
+    /// # Errors
+    /// [`CheckpointStoreError::Io`] — the directory cannot be created.
+    #[spec(
+        ensures: |ret| matches!(ret, Ok(_) | Err(CheckpointStoreError::Io)),
+    )]
+    #[inline]
+    pub fn open<Location>(path: Location) -> Result<Self, CheckpointStoreError>
+    where
+        Location: AsRef<Path>,
+    {
+        let root = path.as_ref().to_path_buf();
+        std::fs::create_dir_all(&root).map_err(|_error| CheckpointStoreError::Io)?;
+        Ok(Self { root })
+    }
+
+    /// The path of the record for `address`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn record_path(
+        &self,
+        address: CheckpointAddress,
+    ) -> PathBuf
+    {
+        self.root.join(address.to_hex())
+    }
+
+    /// Remove every record another backend judged, keeping `kept`'s.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success every record whose header names a backend other
+    ///   than `kept` is removed, and their count returned; a record of `kept`,
+    ///   a temporary, and a file that is no record — its name is no address's
+    ///   digest, or it does not open with a record's magic and version — are
+    ///   left. A record another process removed first is not counted.
+    /// - fails: [`CheckpointStoreError::Io`] when the directory cannot be
+    ///   listed, or a record cannot be read or removed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointStoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a directory holding a record of the kept backend, one
+    ///   of another and a file that is no record keeps the first and the last.
+    /// - witness: `persistence::tests::pruning_keeps_only_the_kept_backend_s_records_1816`
+    ///
+    /// # Cost
+    /// - allocation: the head of each record, setup
+    #[spec(ensures: |ret| matches!(ret, Ok(_) | Err(CheckpointStoreError::Io)))]
+    #[inline]
+    pub fn prune(
+        &self,
+        kept: BackendArtifact,
+    ) -> Result<RecordCount, CheckpointStoreError>
+    {
+        let entries = std::fs::read_dir(&self.root).map_err(|_error| CheckpointStoreError::Io)?;
+        let mut removed = 0_usize;
+        // The record's head: magic, version, then the address and the backend.
+        let Length(head) = CHECKPOINTS.head();
+        let limit = u64::try_from(head).unwrap_or(u64::MAX);
+        let mut header = Vec::with_capacity(head);
+        for entry in entries {
+            let path = entry.map_err(|_error| CheckpointStoreError::Io)?.path();
+            if path.file_name().map(RecordName::spelling) != Some(Spelling::Record) {
+                continue;
+            }
+            header.clear();
+            let read = std::fs::File::open(&path).and_then(|file| {
+                std::io::Read::read_to_end(&mut std::io::Read::take(file, limit), &mut header)
+            });
+            match read {
+                Ok(_) => {},
+                Err(ref error) if failure_of(error) == Failure::NotFound => continue,
+                Err(_error) => return Err(CheckpointStoreError::Io),
+            }
+            let Maybe::Present(key) = CHECKPOINTS.key(Bytes(&header))
+            else {
+                continue;
+            };
+            if key
+                .0
+                .get(32 ..)
+                .is_none_or(|backend| backend == kept.0.as_slice())
+            {
+                continue;
+            }
+            match std::fs::remove_file(&path) {
+                Ok(()) => removed = removed.saturating_add(1),
+                Err(ref error) if failure_of(error) == Failure::NotFound => {},
+                Err(_error) => return Err(CheckpointStoreError::Io),
+            }
+        }
+        Ok(RecordCount::from(removed))
+    }
+}
+
+impl CheckpointStore for FileCheckpointStore
+{
+    /// Read, check and decode the record at `address`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`CheckpointStore::load`]; a missing file answers
+    ///   `NotStored`, and a record whose header names another backend answers
+    ///   `OtherBackend` after both integrity checking and payload decoding.
+    /// - fails: [`CheckpointStoreError::Io`] for any read error but a missing
+    ///   file; [`CheckpointStoreError::Corrupt`] for a record its frame does
+    ///   not hold whole, or an address that is not the file's; the decoder's
+    ///   errors after those checks.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are the read-error split and each
+    ///   integrity check, separated by a missing record, a directory at the
+    ///   record path, a flipped address byte, a flipped payload byte, a
+    ///   truncated and an extended file, and a well-formed record carrying a
+    ///   noncanonical payload for another backend. Decode failure takes
+    ///   precedence over backend mismatch. Removal races are not simulated.
+    /// - witness: `persistence::tests::file_load_distinguishes_not_found_from_other_read_errors`
+    /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
+    /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+    ///
+    /// # Cost
+    /// - allocation: the record and its decoded set, growth within the record
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                ret,
+                Ok(_)
+                    | Err(CheckpointStoreError::Io
+                        | CheckpointStoreError::Corrupt
+                        | CheckpointStoreError::NonCanonical
+                        | CheckpointStoreError::LevelOffsetTooLarge { .. })
+            )
+        },
+    )]
+    #[inline]
+    fn load(
+        &mut self,
+        address: CheckpointAddress,
+        backend: BackendArtifact,
+    ) -> Result<Maybe<Checkpoints, stored::Absent>, CheckpointStoreError>
+    {
+        let bytes = match std::fs::read(self.record_path(address)) {
+            Ok(bytes) => bytes,
+            Err(ref error) if failure_of(error) == Failure::NotFound => {
+                return Ok(Maybe::Absent(stored::Absent::NotStored));
+            },
+            Err(_error) => return Err(CheckpointStoreError::Io),
+        };
+        let Maybe::Present(framed) = CHECKPOINTS.read(Bytes(&bytes))
+        else {
+            return Err(CheckpointStoreError::Corrupt);
+        };
+        let Some((stored_address, stored_backend)) = framed.key.0.split_first_chunk::<32>()
+        else {
+            return Err(CheckpointStoreError::Corrupt);
+        };
+        if *stored_address != address.0 {
+            return Err(CheckpointStoreError::Corrupt);
+        }
+        let decoded = crate::codec::decode_checkpoints(framed.payload)?;
+        if stored_backend != backend.0.as_slice() {
+            return Ok(Maybe::Absent(stored::Absent::OtherBackend));
+        }
+        Ok(Maybe::Present(decoded))
+    }
+
+    /// Encode, write a private temporary, and publish it with one rename.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`CheckpointStore::store`]; no file that existed before
+    ///   the call is opened, truncated or written. An unpublished temporary
+    ///   receives a best-effort cleanup attempt.
+    /// - fails: the encoding's refusal, before any file is touched;
+    ///   [`CheckpointStoreError::Io`] when the temporary cannot be created or
+    ///   written or the rename fails.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are the staging, the exclusivity of the
+    ///   staging name and the publishing rename, separated by a directory
+    ///   occupying the record path, a squatter at the name a predictable
+    ///   staging scheme would pick, four threads storing one address at once,
+    ///   and an unsupported set stored over a published record. Cleanup
+    ///   succeeds in those writable directories; forced random-name collisions,
+    ///   and cleanup refusal are not proved. Capped offsets leave the old
+    ///   record bytes, decoded set and directory entries unchanged.
+    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+    /// - witness: `persistence::tests::a_store_never_writes_through_a_file_it_did_not_create`
+    /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
+    /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+    /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                ret,
+                Ok(())
+                    | Err(CheckpointStoreError::Io
+                        | CheckpointStoreError::UnsupportedPersistence(_)
+                        | CheckpointStoreError::Rejected
+                        | CheckpointStoreError::LevelOffsetTooLarge { .. })
+            )
+        },
+    )]
+    #[inline]
+    fn store(
+        &mut self,
+        address: CheckpointAddress,
+        backend: BackendArtifact,
+        checkpoints: &Checkpoints,
+    ) -> Result<(), CheckpointStoreError>
+    {
+        let payload = crate::codec::encode_checkpoints(checkpoints)?;
+        let artifact = artifact_bytes(address, backend, Bytes(payload.as_ref()))?;
+        record::publish(&self.root, &RecordName::from(address), &artifact).map_err(store_error)
+    }
+}
+
+/// The checkpoint record of `payload`: the frame under the key of `address`,
+/// then `backend`.
+///
+/// # Specification
+/// - ensures: the record reads back under [`CHECKPOINTS`] as `address`, then
+///   `backend`, and `payload`; its bytes are those the format wrote before the
+///   frame moved into [`crate::record`].
+/// - fails: [`CheckpointStoreError::Rejected`] when the length passes 64 bits.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — file round-trips preserve payloads; address, extent and
+///   digest mutations are refused on load; a record written by hand under the
+///   old header loads. An unrepresentable allocation is unwitnessed.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
+/// - witness: `persistence::tests::a_record_under_the_unmoved_header_loads`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref artifact) => match CHECKPOINTS.read(Bytes(artifact.as_ref())) {
+            | Maybe::Present(framed) => {
+                framed.key.0.get(.. 32) == Some(address.0.as_slice())
+                    && framed.key.0.get(32 ..) == Some(backend.0.as_slice())
+                    && framed.payload.0 == payload.0
+            },
+            | Maybe::Absent(_) => false,
+        },
+        | Err(error) => {
+            error == CheckpointStoreError::Rejected && u64::try_from(payload.0.len()).is_err()
+        },
+    },
+)]
+fn artifact_bytes(
+    address: CheckpointAddress,
+    backend: BackendArtifact,
+    payload: Bytes<'_>,
+) -> Result<ArtifactBytes, CheckpointStoreError>
+{
+    let mut key = [0_u8; KEY_LEN];
+    if let Some((stated_address, stated_backend)) = key.split_first_chunk_mut::<32>() {
+        *stated_address = address.0;
+        stated_backend.copy_from_slice(&backend.0);
+    }
+    CHECKPOINTS
+        .frame(Bytes(&key), Length(payload.0.len()), |out| {
+            out.append(payload);
+        })
+        .map_err(store_error)
+}
+
+/// The contents of every item of `program`, in order.
+///
+/// # Specification
+/// - ensures: one content table per source reference, in source order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independently allocated programs and selected source
+///   reorderings retain the ordered reference census. The predicate does not
+///   repeat arena projection or claim that unresolved children are persistable.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+///
+/// # Cost
+/// - allocation: the content of each item, growth within the program
+#[spec(
+    ensures: |ret| {
+        ret.len() == program.references().len()
+            && ret
+                .iter()
+                .zip(program.references())
+                .all(|(content, reference)| content.reference() == reference)
+    },
+)]
+fn contents_of(program: &Program) -> Vec<ItemContent>
+{
+    (0 .. program.layout().items.len())
+        .map(|index| {
+            encode_item(program.arena(), program.layout(), ItemOrdinal::from(index)).content
+        })
+        .collect()
+}
+
+/// The content address of `program`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the BLAKE3 digest of the program's canonical bytes: its items'
+///   references and contents, in order. Independent construction with the same
+///   items preserves the address; order, item contents and names all contribute
+///   to the digest. Digest inequality is not an injectivity claim.
+/// - fails: [`CheckpointStoreError::UnsupportedPersistence`] naming the first
+///   unresolved id met.
+/// - panics: none.
+///
+/// # Errors
+/// [`CheckpointStoreError::UnsupportedPersistence`] — an item holds an id its
+/// arena does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the content-only inputs and the order,
+///   separated by two independently built programs, a reordering, a changed
+///   value and a renamed key. The executable success facet checks top-level
+///   resolution, not a second encoding or hash; nested unresolved ids have
+///   separate refusal witnesses.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(_) => program.items().iter().all(|item| {
+match *(item.declaration().content()) {
+gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
+        let signature = match *signature {Maybe::Present(id) => program.arena().value_type(id).is_some(),Maybe::Absent(_) => true};
+        let body = match *body {Maybe::Present(id) => program.arena().value(id).is_some(),Maybe::Absent(_) => true};
+        signature && body
+    },
+gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some()
+    && match sealed.interface() { Maybe::Present(interface) => program.arena().value(interface.relation()).is_some() && program.arena().value(interface.reflexivity()).is_some() && match interface.law() { Maybe::Present(law) => program.arena().value(law).is_some(), Maybe::Absent(_) => true }, Maybe::Absent(_) => true },
+gandr_core_checker::DeclarationContent::World(_) => true,
+gandr_core_checker::DeclarationContent::Codata(_) => false,
+}
+        }),
+        | Err(error) => matches!(
+            error,
+            CheckpointStoreError::UnsupportedPersistence(_) | CheckpointStoreError::Rejected
+        ),
+    },
+)]
+#[inline]
+pub fn address_of(program: &Program) -> Result<CheckpointAddress, CheckpointStoreError>
+{
+    address_from(&contents_of(program))
+}
+
+/// The content address of the program whose items' contents are `contents`,
+/// in order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the BLAKE3 digest of the canonical program bytes of `contents`.
+/// - fails: [`CheckpointStoreError::UnsupportedPersistence`] as [`address_of`].
+/// - panics: none.
+/// - executable: none — the digest is the clause; [`address_of`]'s witnesses
+///   hash through this.
+///
+/// # Errors
+/// As [`address_of`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`address_of`].
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+fn address_from<Content>(contents: &[Content]) -> Result<CheckpointAddress, CheckpointStoreError>
+where
+    Content: Borrow<ItemContent>,
+{
+    let mut hasher = blake3::Hasher::new();
+    write_program(&mut hasher, contents)?;
+    Ok(CheckpointAddress(*hasher.finalize().as_bytes()))
+}
+
+/// The canonical bytes of `checkpoints`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the one canonical encoding, which decodes to the supplied set.
+/// - fails: unsupported nodes, capped level offsets or unrepresentable counts.
+/// - panics: none.
+///
+/// # Errors
+/// A typed refusal naming the unsupported, capped or unrepresentable input.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a finite semantic corpus round-trips its supported forms;
+///   one unresolved id of each sort nested inside a resolved item reports its
+///   exact refusal. This does not enumerate all possible programs.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    ensures: |ret| match ret {
+        | Err(CheckpointStoreError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= gandr_core_content::codec::MAX_DECODED_LEVEL_OFFSET
+        },
+        | Ok(_)
+        | Err(CheckpointStoreError::UnsupportedPersistence(_) | CheckpointStoreError::Rejected) => true,
+        | Err(_) => false,
+    },
+)]
+#[inline]
+pub fn encode_checkpoints(
+    checkpoints: &Checkpoints
+) -> Result<CheckpointBytes, CheckpointStoreError>
+{
+    let bytes = crate::codec::encode_checkpoints(checkpoints)?;
+    Ok(bytes)
+}
+
+/// The checkpoint set `bytes` spell.
+///
+/// # Specification
+/// - requires: nothing — any bytes are admissible.
+/// - ensures: the one set whose canonical bytes are exactly `bytes`.
+/// - fails: [`CheckpointStoreError::Corrupt`] for truncated, malformed or
+///   trailing bytes; [`CheckpointStoreError::LevelOffsetTooLarge`] for an
+///   offset at the cap; [`CheckpointStoreError::NonCanonical`] for a payload
+///   that parses but is not canonical.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the structural checks, the cap and the
+///   canonical comparison, separated by a truncated, a corrupted and an
+///   extended encoding, an oversized offset, and three parseable payloads that
+///   are not canonical: a set out of order, a table out of discovery order, and
+///   a table with an unreached entry.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    ensures: |ret| {
+        matches!(
+            ret,
+            Ok(_)
+                | Err(CheckpointStoreError::Corrupt
+                    | CheckpointStoreError::NonCanonical
+                    | CheckpointStoreError::LevelOffsetTooLarge { .. })
+        )
+    },
+)]
+#[inline]
+pub fn decode_checkpoints(bytes: &CheckpointBytes) -> Result<Checkpoints, CheckpointStoreError>
+{
+    let decoded = crate::codec::decode_checkpoints(Bytes(bytes.as_ref()))?;
+    Ok(decoded)
+}
+
+/// Store `checkpoints` for `program` and tell `observer`.
+///
+/// # Specification
+/// - requires: `checkpoints` are `program`'s.
+/// - ensures: on success the set is stored at the program's address, read off
+///   the checkpoints' contents, which are the program's items', and the
+///   observer is told; on failure the observer is told nothing.
+/// - fails: the address's or the store's error.
+/// - panics: propagates a panic from a supplied store or observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real memory and file stores notify after successful
+///   storage; unresolved addressing and failed file publication notify nobody.
+///   The precondition checks reference alignment, not full checkpoint
+///   provenance; the success predicate does not repeat hashing or invoke the
+///   observer.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+///
+/// # Errors
+/// As [`address_of`] and [`CheckpointStore::store`].
+#[spec(
+    requires: checkpoints.items().len() == program.references().len()
+        && checkpoints
+            .items()
+            .iter()
+            .zip(program.references())
+            .all(|(checkpoint, reference)| checkpoint.content().reference() == reference),
+    ensures: |ret| match ret {
+        | Ok(_) => program.items().iter().all(|item| {
+match *(item.declaration().content()) {
+gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
+        let signature = match *signature {Maybe::Present(id) => program.arena().value_type(id).is_some(),Maybe::Absent(_) => true};
+        let body = match *body {Maybe::Present(id) => program.arena().value(id).is_some(),Maybe::Absent(_) => true};
+        signature && body
+    },
+gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some()
+    && match sealed.interface() { Maybe::Present(interface) => program.arena().value(interface.relation()).is_some() && program.arena().value(interface.reflexivity()).is_some() && match interface.law() { Maybe::Present(law) => program.arena().value(law).is_some(), Maybe::Absent(_) => true }, Maybe::Absent(_) => true },
+gandr_core_checker::DeclarationContent::World(_) => true,
+gandr_core_checker::DeclarationContent::Codata(_) => false,
+}
+        }),
+        | Err(_) => true,
+    },
+)]
+#[inline]
+pub fn persist<Store, Observer>(
+    store: &mut Store,
+    program: &Program,
+    backend: BackendArtifact,
+    checkpoints: &Checkpoints,
+    observer: &mut Observer,
+) -> Result<CheckpointAddress, CheckpointStoreError>
+where
+    Store: CheckpointStore,
+    Observer: CheckpointObserver,
+{
+    persist_set(store, backend, checkpoints, observer)
+}
+
+/// Store `checkpoints` at the address their items' contents name, as judged
+/// by `backend`, and tell `observer`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success the set is stored at the address of the program whose
+///   items' contents are the checkpoints', which is returned, and the observer
+///   is told; on failure the observer is told nothing.
+/// - fails: the address's or the store's error.
+/// - panics: propagates a panic from a supplied store or observer.
+/// - executable: none — a generic store and observer expose neither what was
+///   stored nor what they were told, and restating the address rehashes every
+///   content.
+///
+/// # Errors
+/// As [`address_of`] and [`CheckpointStore::store`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`persist`], and a session's held set persisted to a
+///   second store is restored from it for the same program.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+pub fn persist_set<Store, Observer>(
+    store: &mut Store,
+    backend: BackendArtifact,
+    checkpoints: &Checkpoints,
+    observer: &mut Observer,
+) -> Result<CheckpointAddress, CheckpointStoreError>
+where
+    Store: CheckpointStore,
+    Observer: CheckpointObserver,
+{
+    let contents: Vec<&ItemContent> = checkpoints
+        .items()
+        .iter()
+        .map(ItemCheckpoint::content)
+        .collect();
+    let address = address_from(&contents)?;
+    store.store(address, backend, checkpoints)?;
+    observer.stored(address);
+    Ok(address)
+}
+
+/// Restore the set stored for `program` at `address` by `backend`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the stored set when `address` is the program's and a record of
+///   `backend` is held there; the observer is told of every restore that
+///   returns nothing.
+/// - provides: `restored::Absent` naming why nothing was restored.
+/// - fails: the address's or the store's error.
+/// - panics: propagates a panic from a supplied store or observer.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — matching records restore, while missing, other-backend
+///   and other-program requests notify invalidation. The success predicate
+///   checks top-level resolution only; generic store contents and callback
+///   histories are observed by the real-store witnesses, not replayed in a
+///   postcondition.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+///
+/// # Errors
+/// As [`address_of`] and [`CheckpointStore::load`].
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(_) => program.items().iter().all(|item| {
+match *(item.declaration().content()) {
+gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
+        let signature = match *signature {Maybe::Present(id) => program.arena().value_type(id).is_some(),Maybe::Absent(_) => true};
+        let body = match *body {Maybe::Present(id) => program.arena().value(id).is_some(),Maybe::Absent(_) => true};
+        signature && body
+    },
+gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+gandr_core_checker::DeclarationContent::Abstract(sealed) => program.arena().value_type(sealed.kind()).is_some() && program.arena().value_type(sealed.representation()).is_some()
+    && match sealed.interface() { Maybe::Present(interface) => program.arena().value(interface.relation()).is_some() && program.arena().value(interface.reflexivity()).is_some() && match interface.law() { Maybe::Present(law) => program.arena().value(law).is_some(), Maybe::Absent(_) => true }, Maybe::Absent(_) => true },
+gandr_core_checker::DeclarationContent::World(_) => true,
+gandr_core_checker::DeclarationContent::Codata(_) => false,
+}
+        }),
+        | Err(_) => true,
+    },
+)]
+#[inline]
+pub fn restore<Store, Observer>(
+    store: &mut Store,
+    program: &Program,
+    address: CheckpointAddress,
+    backend: BackendArtifact,
+    observer: &mut Observer,
+) -> Result<Maybe<Checkpoints, restored::Absent>, CheckpointStoreError>
+where
+    Store: CheckpointStore,
+    Observer: CheckpointObserver,
+{
+    let own = address_of(program)?;
+    if own != address {
+        observer.invalidated(address);
+        return Ok(Maybe::Absent(restored::Absent::AddressMismatch));
+    }
+    let loaded = store.load(address, backend)?;
+    match loaded {
+        Maybe::Present(checkpoints) => Ok(Maybe::Present(checkpoints)),
+        Maybe::Absent(reason) => {
+            observer.invalidated(address);
+            Ok(Maybe::Absent(match reason {
+                stored::Absent::NotStored => restored::Absent::NotStored,
+                stored::Absent::OtherBackend => restored::Absent::OtherBackend,
+            }))
+        },
+    }
+}
+
+/// What a session's first submission restores its checkpoints from.
+///
+/// The set a store holds for the program it submits, as [`RestoreFrom`] reads
+/// it, or the set an earlier revision of it judged, as a
+/// [`Handed`](crate::session::Handed) holds it. Either is a base the resume
+/// validates item by item, as it does a predecessor's.
+///
+/// # Specification
+/// - executable: none — a trait has no call boundary; [`RestoreFrom`] and
+///   [`Handed`](crate::session::Handed) carry the implementations' clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`RestoreFrom`] and
+///   [`Handed`](crate::session::Handed).
+/// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+/// - witness: `session::tests::a_set_handed_on_resumes_a_later_revision_s_first_submission_2102`
+pub trait Restorer: Send
+{
+    /// The set `program`'s first submission resumes from, or why none is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as the implementation states.
+    /// - fails: as the implementation states.
+    /// - panics: none.
+    /// - executable: none — a trait method has no body to check; each
+    ///   implementation states its own.
+    ///
+    /// # Errors
+    /// As the implementation states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`RestoreFrom`].
+    /// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+    fn restored(
+        &mut self,
+        program: &Program,
+    ) -> Result<Maybe<Checkpoints, restored::Absent>, CheckpointStoreError>;
+}
+
+/// A checkpoint store read for the sets one backend judged: what an editor's
+/// copy restores its first judgement from when the store holds the set a
+/// save persisted of the same text.
+///
+/// # Specification
+/// - executable: none — a pair of a store and a backend has no call boundary;
+///   [`Restorer::restored`] carries the clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a set persisted for a program is restored for an
+///   identical one, and nothing is for another program or another backend.
+/// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoreFrom<Store>
+{
+    /// The store read.
+    store: Store,
+    /// The backend whose sets are restored.
+    backend: BackendArtifact,
+}
+
+impl<Store> RestoreFrom<Store>
+{
+    /// Restore from `store` the sets `backend` judged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        store: Store,
+        backend: BackendArtifact,
+    ) -> Self
+    {
+        Self { store, backend }
+    }
+}
+
+impl<Store> Restorer for RestoreFrom<Store>
+where
+    Store: CheckpointStore + Send,
+{
+    /// Load the set at the program's address, if the backend judged it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the set stored at `program`'s address by the backend;
+    ///   `restored::Absent::NotStored` when none is stored there, and
+    ///   `restored::Absent::OtherBackend` when another backend's is.
+    /// - fails: the address's or the store's error.
+    /// - panics: propagates a panic from the store.
+    /// - executable: none — what a store holds at an address is not observable
+    ///   but by the load the method makes.
+    ///
+    /// # Errors
+    /// As [`address_of`] and [`CheckpointStore::load`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a persisted set restores for an identical program,
+    ///   and a store holding another backend's set at the address restores
+    ///   nothing.
+    /// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+    #[inline]
+    fn restored(
+        &mut self,
+        program: &Program,
+    ) -> Result<Maybe<Checkpoints, restored::Absent>, CheckpointStoreError>
+    {
+        Ok(match self.store.load(address_of(program)?, self.backend)? {
+            Maybe::Present(checkpoints) => Maybe::Present(checkpoints),
+            Maybe::Absent(stored::Absent::NotStored) => Maybe::Absent(restored::Absent::NotStored),
+            Maybe::Absent(stored::Absent::OtherBackend) => {
+                Maybe::Absent(restored::Absent::OtherBackend)
+            },
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests;

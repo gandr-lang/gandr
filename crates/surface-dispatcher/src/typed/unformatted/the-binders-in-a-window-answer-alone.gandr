@@ -1,0 +1,3 @@
+def id : Integer -> Integer ;
+def id = thunk { fun (y) { return y } } ;
+def f(x : Integer) -> -F Integer { return x }

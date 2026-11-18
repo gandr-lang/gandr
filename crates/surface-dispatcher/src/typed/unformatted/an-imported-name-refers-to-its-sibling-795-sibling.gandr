@@ -1,0 +1,5 @@
+pub data Point : Type where {
+  | Here : Point
+}
+pub def here : Point ;
+def here = Here ;

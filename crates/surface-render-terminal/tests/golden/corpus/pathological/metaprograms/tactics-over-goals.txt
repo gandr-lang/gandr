@@ -1,0 +1,48 @@
+error[OutOfFragment.WrongSort]: a splice expression cannot stand where a computation is expected
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:29:3
+   │
+29 │   ~assumption
+   │   ━━━━━━━━━━━ a form of another sort than this position takes
+   │
+   ├ note: `ranSplice` is refused with OutOfFragment.WrongSort, as its expectation states
+   ╰ help: write a computation in this position
+
+error[TacticRefused]: the tactic `assumption` reaches a goal whose type no binder in scope has
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:10:33
+   │
+10 │ def none(u : Unit) -> Integer { ~assumption }
+   │ ┬────────┬──────────────────────┯━━━━━━━━━━──
+   │ │        │                      │
+   │ │        │                      a splice its tactic does not answer
+   │ │        checked against `Unit -> -F Integer`; while checking the body of this function; binds u : Unit
+   │ checked against `Unit -> Integer`; while checking the body of this thunk
+   │
+   ├ note: `none` is refused with TacticRefused, as its expectation states
+   ╰ help: replace the tactic with a proof term
+
+error[TacticRefused]: the tactic `intro(assumption)` introduces a binder where the goal is no function
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:14:22
+   │
+14 │ def flat : Integer = ~intro assumption;
+   │                      ━━━━━━━━━━━━━━━━━ a splice its tactic does not answer
+   │
+   ├ note: `flat` is refused with TacticRefused, as its expectation states
+   ╰ help: replace the tactic with a proof term
+
+error[TacticRefused]: the splice running `assumption` stands where no type is known to check it against; state the type it stands at
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:18:13
+   │
+18 │ def loose = ~assumption;
+   │             ━━━━━━━━━━━ a splice its tactic does not answer
+   │
+   ├ note: `loose` is refused with TacticRefused, as its expectation states
+   ╰ help: replace the tactic with a proof term
+
+error[UnknownTactic]: a splice runs a tactic: `assumption`, or `intro(t)` of a tactic `t`, under fewer than 32 introductions, or `ports e` of a call that returns several outputs
+   ╭▸ corpus/pathological/metaprograms/tactics-over-goals.gandr:23:38
+   │
+23 │ def named(x : Integer) -> Integer { ~x }
+   │                                      ━ a splice of no tactic
+   │
+   ├ note: `named` is refused with UnknownTactic, as its expectation states
+   ╰ help: replace the tactic with a supported tactic

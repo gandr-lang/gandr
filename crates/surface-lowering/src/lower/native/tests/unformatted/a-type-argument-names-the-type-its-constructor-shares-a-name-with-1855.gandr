@@ -1,0 +1,2 @@
+{MAYBE}data Box : Type where {{ | Box : (x : Integer) --> Box }}
+def kept(b : Box) -> -F Maybe(Box) {{ (Some b : Maybe(Box)) }}
