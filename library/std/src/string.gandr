@@ -14,7 +14,7 @@ pub def empty : String = "";
 
 /// The string `a` followed by the string `b`, as the native table joins them.
 @[native("string.append")]
-pub def append : (a : String, b : String) -> String;
+pub def append : (String, String) -> String;
 
 /// The string `a` followed by the string `b`.
 pub def concat(a : String, b : String) -> String =
