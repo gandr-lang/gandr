@@ -1,0 +1,51 @@
+// This source shows operations in a theory model.
+//
+// An operation has the domain and result that its theory states.
+// A parenthesised list in a judgment opens its own port group. So an operation
+// of several inputs is the thunk of curried arrows.
+//
+// The checker reads builtin result types through the theory operation.
+// A model defines each operation as a function.
+//
+// - see: #2917
+
+/// `Counting` states a counter signature.
+theory Counting where
+  sort T : Type;
+  oper zero : T;
+  oper next : T -> T;
+  oper read : T -> Integer;
+
+/// `Counted` models an integer counter.
+module Counted : Model(Counting) where {
+  type T = Integer;
+  /// `zero` gives the counter start.
+  @[runs("0")]
+  def zero = 0;
+  /// `next` adds one.
+  def next(n : Integer) -> Integer = n + 1;
+  /// `read` returns the count.
+  def read(n : Integer) -> Integer = n;
+}
+
+/// `counted_two` reads two counter steps.
+@[runs("2")]
+def counted_two() -> Integer =
+  let one = Counted.next Counted.zero
+  Counted.read (Counted.next one)
+
+/// `Summing` states a curried binary operation.
+theory Summing where
+  sort M : Type;
+  oper zero : M;
+  oper add : +U (M -> M -> -F M);
+
+/// `Summed` models integer addition.
+module Summed : Model(Summing) where {
+  type M = Integer;
+  /// `zero` gives the additive unit.
+  @[runs("0")]
+  def zero = 0;
+  /// `add` adds two integers.
+  def add(x : Integer, y : Integer) -> Integer = x + y;
+}

@@ -1,0 +1,4 @@
+data One : Type where {
+  | Single : One
+}
+def same : Path[.A = Type](One, One) = Path.here One;

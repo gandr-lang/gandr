@@ -1,0 +1,26 @@
+//! `file-base` defines the shared linear file protocol.
+//!
+//! A holder closes one descriptor. A move delegates that duty. The move twins
+//! refuse a repeated move or a post-move close as `UsedAfterClose`. They refuse
+//! an unclosed handle as `LinearResidue`.
+//!
+//! Each moves source imports `File`. It uses `Handle`, `Closer`, `Writer`, and
+//! `line`.
+//!
+//! The protocol follows POSIX `open(2)` and `close(2)`.
+//! A handle is the linear resident of a forked owner.
+//! - cites: [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]
+//!
+//! [Honda-1998-language_primitives_type_discipline_structured_communicationbased_programming]: https://doi.org/10.1007/BFb0053567 "Honda, Vasconcelos and Kubo, Language Primitives and Type Discipline for Structured Communication-Based Programming"
+
+/// `File` defines a handle protocol with a closer, a writer, and a line.
+module File :> *{
+  type Handle = end,
+  type Closer = ?Handle. end,
+  type Writer = ?Handle. !Handle. end,
+  type Line,
+  line : Line
+} where
+  type Line = String;
+  /// `line` is the string that a writer sends.
+  def line = "line";

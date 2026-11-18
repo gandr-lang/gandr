@@ -1,0 +1,9 @@
+def f() -> -F Unit {
+  handle c : std.process.Exit.Eff {
+    let d : Cap { exit } at c = c;
+    c.exit 1
+  } with {
+    | pure(x) => return x
+    | oper exit(code, k) => return *{}
+  }
+}

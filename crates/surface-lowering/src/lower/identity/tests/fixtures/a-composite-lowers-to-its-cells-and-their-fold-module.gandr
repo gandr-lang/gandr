@@ -1,0 +1,21 @@
+def composed(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path[.A = A](x, y),
+  q : Path[.A = A](y, z),
+  r : Path[.A = A](z, w)
+) -> Path[.A = A](x, w) {
+  compose[5, 7] (chain 3) (p, q, r)
+}
+def single(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = A](x, y) {
+  compose[0, 0] (chain 1) p
+}
+def decided(A : Type, x : A) -> Path[.A = Path[.A = A](x, x)](
+  compose[5, 7] (chain 3) (Path.here x, Path.here x, Path.here x),
+  Path.here x
+) {
+  Path.here (Path.here x)
+}

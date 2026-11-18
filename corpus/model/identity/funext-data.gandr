@@ -1,0 +1,62 @@
+/// This source states function extensionality for data types.
+///
+/// Two functions agree when they return the same result for every constructor.
+/// The constructor fields provide fresh arguments for the comparison.
+///
+/// The checker proves each pointwise equality by the data definitions.
+/// `Path.funext` turns those comparisons into function paths.
+///
+/// - see: corpus/model/identity/flow-data.gandr
+import "./flow-data.gandr";
+
+/// The `width` function reads the first shape dimension.
+pub def width(shape : Shape) -> Integer =
+  match shape where
+    | Circle(r) => r
+    | Rect(w, h) => w
+
+/// The `figureWidth` function reads the figure width.
+def figureWidth(figure : Figure) -> Integer =
+  match figure where
+    | Round(r) => r
+    | Box(h, w) => w
+
+/// The `throughFigure` function reads width through the figure translation.
+/// The figure translation swaps the sides.
+def throughFigure(shape : Shape) -> Integer =
+  figureWidth (Shapes.toFigure shape)
+
+/// The `widths` path proves that the two width functions agree.
+def widths : Path(width, throughFigure) = Path.funext width throughFigure;
+
+/// The `drawn` function translates a shape into its figure.
+/// The figure translation swaps the sides.
+def drawn(shape : Shape) -> Figure =
+  match shape where
+    | Circle(r) => Round r
+    | Rect(a, b) => Box b a
+
+/// The `drawings` path proves that the two drawing functions agree.
+def drawings : Path(Shapes.toFigure, drawn) = Path.funext Shapes.toFigure drawn;
+
+/// A `Light` has stop and go values.
+data Light : Type where
+  | Stop : Light
+  | Go : Light
+
+/// The `switch` function changes a light state.
+def switch(light : Light) -> Light =
+  match light where
+    | Stop => Go
+    | Go => Stop
+
+/// The `switchTwice` function applies `switch` two times.
+def switchTwice(light : Light) -> Light =
+  switch (switch light)
+
+/// The `unswitched` function returns its light.
+def unswitched(light : Light) -> Light =
+  light
+
+/// The `switchedTwice` path proves that two switches return the original light.
+def switchedTwice : Path(switchTwice, unswitched) = Path.funext switchTwice unswitched;

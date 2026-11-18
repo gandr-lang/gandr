@@ -1,0 +1,9 @@
+def calledFiber(e : *{
+  cell : Integer -> Integer,
+  fix : Path[.A = Integer](cell 0, 0)
+}) -> Path[.A = *{cell : Integer -> Integer, fix : Path[.A = Integer](cell 0, 0)}](
+  *{e.cell, e.fix},
+  e
+) {
+  Path.here e
+}

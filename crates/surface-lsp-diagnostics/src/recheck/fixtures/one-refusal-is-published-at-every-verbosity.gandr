@@ -1,0 +1,3 @@
+def f(xs : Vec(Integer)) -> -F Integer {
+  return 1
+}

@@ -1,0 +1,6 @@
+data Directed : Type where { | One : Directed | loop : One --> One }
+data Segment : Type where { | Start : Segment | End : Segment | seg : Start <-> End }
+data Ruled : Type where { | Two : Ruled | cell : Two ==> Two }
+data Swapped : Type where { | Five : Swapped | cell : Five <=> Five }
+data Open : Type where { | Three : Open | Next : (x : Open) --> Open | cell : Next x <-> Next x }
+data Indexed(a : Type) : Type where { | Four : Indexed(a) | cell : Four <-> Four }

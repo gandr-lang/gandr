@@ -1,0 +1,2 @@
+pub def welcome : String = "hi";
+pub def count : Integer = 3;

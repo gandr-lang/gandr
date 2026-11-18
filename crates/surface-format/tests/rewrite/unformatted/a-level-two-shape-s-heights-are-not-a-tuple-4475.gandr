@@ -1,0 +1,5 @@
+def w(a : Type, x : a, y : a, z : a, fm : Path[.A = a](x, y), fp : Path[.A = a](x, y), fa : Path[.A = Path[.A = a](x, y)](fm, fp), g : Path[.A = a](y, z)) -> Path[.A = a](x, z) {
+  compose[5, 11] (chain 2 (1, 0)) (fa, g)
+}
+
+def pair = *{1, 0} ;

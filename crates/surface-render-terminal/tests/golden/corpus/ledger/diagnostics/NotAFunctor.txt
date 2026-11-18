@@ -1,0 +1,8 @@
+error[NotAFunctor]: `Plain` is not a functor declared before this binding
+  ╭▸ corpus/ledger/diagnostics/NotAFunctor.gandr:9:18
+  │
+9 │ module Applied = Plain(Plain);
+  │                  ━━━━━ not a functor
+  │
+  ├ note: `Applied` is refused with NotAFunctor, as its expectation states
+  ╰ help: declare `Plain` as a functor before this binding

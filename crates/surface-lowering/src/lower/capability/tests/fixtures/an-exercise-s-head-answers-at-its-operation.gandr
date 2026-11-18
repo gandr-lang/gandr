@@ -1,0 +1,2 @@
+def peek(c : Cap { read }) -> -F [std.fs.Eff] String { c.read "notes" }
+def save(c : Cap { read, write }) -> -F [std.fs.Eff] Unit { c.write "notes" "x" }
