@@ -90,5 +90,19 @@ got=$(
 )
 [[ $got == "2 kept []" ]] || fail "#7978: a refused commit leaves the ledger clean" "$got"
 
+# The message of the stamp keeps the commit rules with a number of seven
+# digits. The hook runs commitlint with the repository's configuration.
+config=$(git -C "$here" rev-parse --show-toplevel)/commitlint.config.mjs
+commitlint=$(cd "$here" && mise which commitlint)
+got=$(
+  setup "$scratch/message"
+  printf '%s\n' '#!/bin/sh' "exec \"$commitlint\" --config \"$config\" --edit \"\$1\"" > .git/hooks/commit-msg
+  chmod +x .git/hooks/commit-msg
+  before=$(git rev-parse HEAD)
+  "$stamp" 1234567 base 2>&1 > /dev/null || true
+  if [[ $(git rev-parse HEAD) != "$before" ]]; then echo committed; fi
+)
+[[ $got == committed ]] || fail "#7995: the message of the stamp keeps the commit rules" "$got"
+
 (( failed == 0 )) || exit 1
-echo "ledger stamp OK: 4 cases stamp, write nothing again, refuse and give the ledger back as recorded"
+echo "ledger stamp OK: 5 cases stamp, write nothing again, refuse, give the ledger back and keep the commit rules as recorded"
