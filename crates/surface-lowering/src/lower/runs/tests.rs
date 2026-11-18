@@ -56,17 +56,17 @@ fn an_explicit_runs_attribute_asks_within_its_form()
     assert_eq!(
         module.inferred_runs(ran(&report)),
         [
-            inferred(at("{ Succ (twice n) }", "twice n"), AskedRuns::Every),
+            inferred(at("= Succ (twice n);", "twice n"), AskedRuns::Every),
             inferred(
-                at("{ Succ (twice (Succ n)) }", "twice (Succ n)"),
+                at("= Succ (twice (Succ n));", "twice (Succ n)"),
                 AskedRuns::Every
             ),
             inferred(
-                at("{ Succ (twice Zero) }", "twice Zero"),
+                at("= Succ (twice Zero);", "twice Zero"),
                 AskedRuns::Effectful
             ),
             inferred(
-                at("{ Succ (twice (Succ Zero)) }", "twice (Succ Zero)"),
+                at("= Succ (twice (Succ Zero));", "twice (Succ Zero)"),
                 AskedRuns::Unasked
             ),
         ],

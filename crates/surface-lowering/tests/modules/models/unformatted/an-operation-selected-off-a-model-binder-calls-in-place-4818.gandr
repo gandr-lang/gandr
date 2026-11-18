@@ -1,3 +1,1 @@
-{counter}def call(m : {model}, n : {model}) -> -F Integer {{
-  {call}
-}}
+{counter}def call(m : {model}, n : {model}) -> -F Integer = {call};

@@ -4,7 +4,5 @@
   def eq = Path.bisim Old Same;
   def kept : Flow[.A = Type](Old, Old);
   def kept = Flow.stay Old;
-  def widened() -> -F Flow[.A = Type](Old, New) {{
-    become Flow.then kept sub
-  }}
+  def widened() -> -F Flow[.A = Type](Old, New) = become Flow.then kept sub;
 }}

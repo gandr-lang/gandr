@@ -8078,7 +8078,7 @@ mod tests
         );
         assert!(
             matches!(refusal_in(&pbg, &tree), LoweringRefusal::UnresolvedName { span, name }
-                if span == crate::fixture::span(ByteOffset::from(35_usize), ByteOffset::from(40_usize))
+                if span == crate::fixture::span(ByteOffset::from(33_usize), ByteOffset::from(38_usize))
                     && name == SurfaceName::from("zebra")),
             "a static bracket closed before the refusal leaves it where it was: {:?}",
             refusal_in(&pbg, &tree)

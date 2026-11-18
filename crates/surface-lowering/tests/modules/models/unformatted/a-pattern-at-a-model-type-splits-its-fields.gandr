@@ -1,11 +1,9 @@
-{COUNTER}def observe(m : Model(Counter)) -> -F Integer {{
-  match m {{
+{COUNTER}def observe(m : Model(Counter)) -> -F Integer = match m {{
     | *{{.start = s, .step = f, .read = r}} => {{
       let once = f s;
       become r once
     }}
-  }}
-}}
+  }};
 def packed : Model(Counter) ;
 def packed = pack Open at Model(Counter) ;
 def observed : () -> Integer ;

@@ -3,14 +3,14 @@ theory ResetCounter where { include Counter; oper reset : (c : C) --> C; }
 module Up : Model(Counter) where {
   type C = Integer;
   def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 1 }
-  def read(c : Integer) -> -F Integer { c }
+  def incr(c : Integer) -> -F Integer = c + 1;
+  def read(c : Integer) -> -F Integer = c;
 }
 module Tens : Model(ResetCounter) where {
   type C = Integer;
   def zero = 0;
-  def incr(c : Integer) -> -F Integer { c + 10 }
-  def read(c : Integer) -> -F Integer { c }
-  def reset(c : Integer) -> -F Integer { 0 }
+  def incr(c : Integer) -> -F Integer = c + 10;
+  def read(c : Integer) -> -F Integer = c;
+  def reset(c : Integer) -> -F Integer = 0;
 }
-def stepped[s : Model(Counter)](c : s.C) -> -F Integer { s.read (s.incr c) }
+def stepped[s : Model(Counter)](c : s.C) -> -F Integer = s.read (s.incr c);

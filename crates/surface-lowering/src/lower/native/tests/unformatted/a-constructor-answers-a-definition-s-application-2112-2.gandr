@@ -1,2 +1,2 @@
 {MAYBE}def opaque : Type -> Type[-] ;
-def some1() -> opaque(Integer) {{ return Some 1 }}
+def some1() -> opaque(Integer) = return Some 1;

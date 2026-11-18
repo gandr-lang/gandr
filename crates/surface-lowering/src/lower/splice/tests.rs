@@ -58,7 +58,7 @@ fn an_operand_writing_no_tactic_is_refused_2762()
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     for (name, operand) in [
-        ("named", String::from("x }")),
+        ("named", String::from("x;")),
         ("pair", String::from("intro assumption assumption")),
         ("other", String::from("apply assumption")),
         ("literal", String::from("3 ;")),
