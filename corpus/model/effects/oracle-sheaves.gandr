@@ -136,8 +136,8 @@ data Sheaf(mode : Type -> Type, x : Type) : Type[+, 1] where
   /// The extension, its agreement and its separation.
   | MkSheaf : (
     extend : (q : Type, mode(q), q -> x) -> x,
-    agrees : (q : Type, d : mode(q), h : q -> x, u : q) -> Path[.A = x](extend q d h, h u),
-    separated : (y : x, z : x, mode(Path[.A = x](y, z))) -> Path[.A = x](y, z)
+    agrees : (q : Type, d : mode(q), h : q -> x, u : q) -> Path[.A = x] (extend q d h) (h u),
+    separated : (y : x, z : x, mode(Path[.A = x] y z)) -> Path[.A = x] y z
   ) --> Sheaf mode x
 
 /// An oracle algebra: a structure map with the two sheaf equations as paths.
@@ -146,15 +146,15 @@ data OracleAlgebra(s : Type, p : +U (s -> -F Type), x : Type) : Type where
   /// The structure map and its two equations.
   | MkAlgebra : (
     ask : (a : s, p(a) -> x) -> x,
-    skip : (a : s, h : p(a) -> x, u : p(a)) -> Path[.A = x](ask a h, h u),
-    sep : (y : x, z : x, a : s, p(a) -> Path[.A = x](y, z)) -> Path[.A = x](y, z)
+    skip : (a : s, h : p(a) -> x, u : p(a)) -> Path[.A = x] (ask a h) (h u),
+    sep : (y : x, z : x, a : s, p(a) -> Path[.A = x] y z) -> Path[.A = x] y z
   ) --> OracleAlgebra s p x
 
 /// Membership: a leaf holds what a tree of the oracle proves equal to it, and
 /// a node holds what each subtree holds. No truncation hides the tree.
 def rec holds(s : Type, p : s -> Type, x : Type, v : x, t : Tree s p x) -> Type =
   match t where
-    | Leaf(y) => return (Tree s p (type(Path[.A = x](v, y))))
+    | Leaf(y) => return (Tree s p (type(Path[.A = x] v y)))
     | Node(a, k) => return ((u : p(a)) -> holds[<](s, p, x, v, k(u)))
 
 /// A tree is equifoliate when its subtrees are, and when all of them hold the
@@ -186,18 +186,12 @@ def leafEqual(
   z : x,
   v : x,
   w : x,
-  mv : Tree s p Path[.A = x](v, z),
-  mw : Tree s p Path[.A = x](w, z)
-) -> Tree s p Path[.A = x](v, w) =
-  bindTree s p (type(Path[.A = x](v, z))) (type(Path[.A = x](v, w))) mv (fun (e1 : Path[.A = x](
-    v,
-    z
-  )) {
-    bindTree s p (type(Path[.A = x](w, z))) (type(Path[.A = x](v, w))) mw (fun (e2 : Path[.A = x](
-      w,
-      z
-    )) {
-      (Leaf (Path.step e1 (Path.back e2)) : Tree s p Path[.A = x](v, w))
+  mv : Tree s p (Path[.A = x] v z),
+  mw : Tree s p (Path[.A = x] w z)
+) -> Tree s p (Path[.A = x] v w) =
+  bindTree s p (type(Path[.A = x] v z)) (type(Path[.A = x] v w)) mv (fun (e1 : Path[.A = x] v z) {
+    bindTree s p (type(Path[.A = x] w z)) (type(Path[.A = x] v w)) mw (fun (e2 : Path[.A = x] w z) {
+      (Leaf (Path.step e1 (Path.back e2)) : Tree s p (Path[.A = x] v w))
     })
   })
 

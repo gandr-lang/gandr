@@ -3,3 +3,7 @@ def listed : Path[.A = Integer](4, 4);
 def bridged : Bridge[.A = Integer] 4 4;
 def called : Bridge[.A = Integer](4, 4);
 def short : Path[.A = Integer] 4;
+def long : Path[.A = Integer] 4 4 4;
+def grouped : Path[.A = Integer] (2 + 2) 4;
+def grouped_listed : Path[.A = Integer](2 + 2, 4);
+def lone : Path;

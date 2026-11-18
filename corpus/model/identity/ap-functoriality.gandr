@@ -10,7 +10,7 @@
 /// - see: corpus/model/identity/transport-dependent.gandr
 
 /// The `actOn` function maps a path through a function.
-def actOn(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path(x, y)) -> Path(F x, F y) =
+def actOn(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path x y) -> Path (F x) (F y) =
   Path.ap F p
 
 /// Action by `G` after `F` equals action by their composite.
@@ -22,15 +22,22 @@ def apComp(
   G : B -> C,
   x : A,
   y : A,
-  p : Path(x, y)
-) -> Path[.A = Path[.A = C](G (F x), G (F y))](
-  actOn B C G (F x) (F y) (actOn A B F x y p),
+  p : Path x y
+) -> Path[.A = Path[.A = C] (G (F x)) (G (F y))] (actOn B C G (F x) (F y) (actOn A B F x y p)) (
   actOn A C (fun (a : A) { G (F a) } : A -> C) x y p
 ) =
-  Path.walk ((v : A, k : Path[.A = A](x, v)) -> Path[.A = Path[.A = C](G (F x), G (F v))](
-    actOn B C G (F x) (F v) (actOn A B F x v k),
-    actOn A C (fun (a : A) { G (F a) } : A -> C) x v k
-  )) p (Path.here x) (Path.here p) (Path.here (Path.here (G (F x))))
+  Path.walk
+    ((v : A, k : Path[.A = A] x v) -> Path[.A = Path[.A = C] (G (F x)) (G (F v))] (actOn
+      B
+      C
+      G
+      (F x)
+      (F v)
+      (actOn A B F x v k)) (actOn A C (fun (a : A) { G (F a) } : A -> C) x v k))
+    p
+    (Path.here x)
+    (Path.here p)
+    (Path.here (Path.here (G (F x))))
 
 /// Two actions by `g` and `h` equal one action by their composite.
 def apThenThen(

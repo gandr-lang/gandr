@@ -33,7 +33,9 @@
 //! pushed tile agrees, its identity, label and same-form neighbours aside:
 //! the kind, the form's sort and precedence, both neighbour flags, the form
 //! membership (first, complete last, required tail), the sort of the next
-//! hole to its right and the shape of both bounds. Pushing either onto one
+//! hole to its right, the shape of both bounds, and what the mold's rule
+//! states of its operands: the sort that it takes by juxtaposition and what
+//! it takes as its left operand. Pushing either onto one
 //! slope flags the same obligations, provided the two are adjacent to the
 //! same open frontiers; a parser that weighs many molds over one slope pushes
 //! one per class and adjacency, and one that weighs what follows them
@@ -91,7 +93,9 @@ use gandr_surface_syntax::MoldId;
 use gandr_theory_graphs::Bound;
 use gandr_theory_graphs::Prec;
 
+use crate::model::LeftOperand;
 use crate::model::PbgError;
+use crate::model::Rule;
 use crate::model::Sort;
 use crate::mold::MoldColumns;
 use crate::mold::MoldDef;
@@ -441,13 +445,20 @@ struct Reading
     hole: Option<Sort>,
     /// The shapes of the mold's left and right bounds.
     bounds: (BoundShape, BoundShape),
+    /// The sort of the operands that the mold's rule takes by juxtaposition,
+    /// where the rule states it. A spine whose head is the form reads its
+    /// next operand in this sort.
+    operands: Option<Sort>,
+    /// What the mold's rule takes as its left operand.
+    left: LeftOperand,
 }
 
 impl Reading
 {
     /// The reading of a mold defined by `def`, whose table columns are
-    /// `columns`; a mold past the table reads as no neighbour, no
-    /// membership, root bounds and no hole.
+    /// `columns` and whose rule is `rule`; a mold past the table reads as no
+    /// neighbour, no membership, root bounds and no hole, and a mold with no
+    /// rule as no stated operands and any left operand.
     ///
     /// # Specification
     /// - requires: `def` is the table's mold the columns were read for.
@@ -455,7 +466,7 @@ impl Reading
     ///   left, for a successor and no predecessor; a mid for a predecessor and
     ///   a successor or a required tail; an end for a predecessor alone;
     ///   otherwise an operand, prefix, postfix or infix by the holes facing it.
-    ///   The other components are the columns' answers.
+    ///   The other components are the columns' and the rule's answers.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -463,18 +474,18 @@ impl Reading
     ///   kind from the public flags and bounds; a swapped flag or side
     ///   misclassifies starts, ends or operators.
     /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
-    #[spec(ensures: |ret| ret.sort == def.sort && ret.prec == def.prec && ret.neighbours == (columns.is_some_and(|held| bool::from(held.predecessor)), columns.is_some_and(|held| bool::from(held.successor))) && (ret.kind == TileKind::Mid) == (ret.neighbours.0 && (ret.neighbours.1 || ret.membership.2)))]
+    #[spec(ensures: |ret| ret.sort == def.sort && ret.prec == def.prec && ret.operands == rule.and_then(Rule::operands) && ret.left == rule.map_or(LeftOperand::Any, Rule::left) && ret.neighbours == (columns.is_some_and(|held| bool::from(held.predecessor)), columns.is_some_and(|held| bool::from(held.successor))) && (ret.kind == TileKind::Mid) == (ret.neighbours.0 && (ret.neighbours.1 || ret.membership.2)))]
     fn of(
         columns: Option<MoldColumns<'_>>,
         def: &MoldDef,
+        rule: Option<&Rule>,
     ) -> Self
     {
         let (left, right) = columns.map_or((Bound::Root, Bound::Root), |held| held.bounds);
         let (left, right) = (BoundShape::of(left), BoundShape::of(right));
-        let flag = |read: fn(MoldColumns<'_>) -> bool| columns.is_some_and(read);
-        let has_pred = flag(|held| bool::from(held.predecessor));
-        let has_succ = flag(|held| bool::from(held.successor));
-        let required_tail = flag(|held| bool::from(held.required_tail));
+        let has_pred = columns.is_some_and(|held| bool::from(held.predecessor));
+        let has_succ = columns.is_some_and(|held| bool::from(held.successor));
+        let required_tail = columns.is_some_and(|held| bool::from(held.required_tail));
         let kind = match (has_pred, has_succ) {
             (false, true) if left == BoundShape::Value => TileKind::AbsorbingStart,
             (false, true) => TileKind::Start,
@@ -500,12 +511,14 @@ impl Reading
             prec: def.prec,
             neighbours: (has_pred, has_succ),
             membership: (
-                flag(|held| bool::from(held.first)),
-                flag(|held| bool::from(held.complete_last)),
+                columns.is_some_and(|held| bool::from(held.first)),
+                columns.is_some_and(|held| bool::from(held.complete_last)),
                 required_tail,
             ),
             hole,
             bounds: (left, right),
+            operands: rule.and_then(Rule::operands),
+            left: rule.map_or(LeftOperand::Any, Rule::left),
         }
     }
 
@@ -558,10 +571,10 @@ pub struct TileAutomaton
 
 impl TileAutomaton
 {
-    /// Derives the tables of `table`.
+    /// Derives the tables of `table`, whose molds' rules are `rules`.
     ///
     /// # Specification
-    /// - requires: `table` is assembled.
+    /// - requires: `table` is assembled from `rules`.
     /// - ensures: one kind and one class per mold; two molds share a class
     ///   exactly when their readings agree, and classes are numbered in order
     ///   of their least mold; each set holds exactly the molds whose reading
@@ -574,8 +587,14 @@ impl TileAutomaton
     ///   reading's components; a dropped component merges molds a parser tells
     ///   apart, and a misplaced bit admits a mold no frontier takes.
     /// - witness: `tests::walk::tile_kinds_observations_and_sets_agree_with_the_table`
+    ///
+    /// # Cost
+    /// - allocation: the kind, class and set tables and the class map, setup
     #[spec(ensures: |ret| ret.kinds.len() == table.len().0 && ret.observations.len() == ret.kinds.len() && ret.sets.len() == SET_COUNT.saturating_mul(ret.width) && ret.width.saturating_mul(WORD_BITS) >= ret.kinds.len())]
-    pub(crate) fn derive(table: &MoldTable) -> Self
+    pub(crate) fn derive(
+        table: &MoldTable,
+        rules: &[Rule],
+    ) -> Self
     {
         let count = table.len().0;
         let width = count.div_ceil(WORD_BITS);
@@ -584,7 +603,7 @@ impl TileAutomaton
         let mut sets = vec![MoldWord(0); SET_COUNT.saturating_mul(width)];
         let mut classes: BTreeMap<Reading, Observation> = BTreeMap::new();
         for (id, def) in table.iter() {
-            let reading = Reading::of(table.columns(id), def);
+            let reading = Reading::of(table.columns(id), def, table.rule_of(rules, id).ok());
             let next = Observation(u32::try_from(classes.len()).unwrap_or(u32::MAX));
             let class = *classes.entry(reading).or_insert(next);
             kinds.push(reading.kind);

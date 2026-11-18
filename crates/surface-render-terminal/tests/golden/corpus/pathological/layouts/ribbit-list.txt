@@ -1,8 +1,8 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/layouts/ribbit-list.gandr:35:24
    │
-32 │    def restored(l : Ints) -> Path(listOf (tagsOf l), l) =
-   │    │            ─ checked against `(a : Ints) -> -F Path[.A = Ints](listOf (tagsOf a), a)`; while checking the body of this function; binds l : Ints
+32 │    def restored(l : Ints) -> Path (listOf (tagsOf l)) l =
+   │    │            ─ checked against `(a : Ints) -> -F (Path[.A = Ints] (listOf (tagsOf a)) a)`; while checking the body of this function; binds l : Ints
    │ ┌──┘
    │ │
 33 │ │┌   match l where
@@ -10,8 +10,8 @@ error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal i
 35 │ ││     | Cons(x, rest) => Path.here (Cons x rest)
    │ ││                        ┯━━━━━━━━━━━━━━━━━━━━━│
    │ └│────────────────────────│─────────────────────│
-   │  └────────────────────────│─────────────────────checked against `(a : Ints) -> Path[.A = Ints](listOf (tagsOf a), a)`; while checking the body of this thunk
-   │                           │                     checked against `-F Path[.A = Ints](listOf (tagsOf l), l)`; while checking the body of this function; binds x : i32, rest : Ints
+   │  └────────────────────────│─────────────────────checked against `(a : Ints) -> Path[.A = Ints] (listOf (tagsOf a)) a`; while checking the body of this thunk
+   │                           │                     checked against `-F (Path[.A = Ints] (listOf (tagsOf l)) l)`; while checking the body of this function; binds x : i32, rest : Ints
    │                           not both endpoints of the path
    │
    ├ note: `restored` is refused with EndpointMismatch, as its expectation states

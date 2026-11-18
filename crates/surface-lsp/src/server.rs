@@ -11061,7 +11061,7 @@ mod tests
             changed("data-maybe.gandr"),
             [
                 "def kept+0:36 `m` variable→parameter",
-                "def kept+0:39 `m` variable→parameter",
+                "def kept+0:38 `m` variable→parameter",
                 "def kept+1:8 `m` variable→parameter",
                 "def kept+2:24 `m` variable→parameter",
                 "def kept+3:27 `m` variable→parameter",
@@ -11188,7 +11188,7 @@ mod tests
                 "def kept+0:4 `kept` function declaration",
                 "def kept+0:9 `m` parameter declaration+value",
                 "def kept+0:36 `m` parameter value",
-                "def kept+0:39 `m` parameter value",
+                "def kept+0:38 `m` parameter value",
                 "def kept+1:8 `m` parameter value",
                 "def kept+2:6 `None` enumMember value",
                 "def kept+2:24 `m` parameter value",
@@ -12592,7 +12592,7 @@ mod tests
             (elim.as_str(), "def involutive("),
             (
                 elim.as_str(),
-                "Path.walk (fun (x) { type(Path[.A = Circle](Base, invLooper x)) })",
+                "(fun (x) { type(Path[.A = Circle] Base (invLooper x)) })",
             ),
         ]
         .map(|(text, held)| {
@@ -12609,9 +12609,9 @@ mod tests
             Some(
                 serde_json::json!({"title": "3 references", "command": "gandr.showReferences",
                 "arguments": [uri("circle-base.gandr"), at(Line::from(flip_at), Character::from(8_u32)), [
-                    location("circle-elim.gandr", involutive_at, 48, 57),
-                    location("circle-elim.gandr", involutive_at, 59, 68),
-                    location("circle-elim.gandr", flipped_at, 52, 61),
+                    location("circle-elim.gandr", involutive_at, 49, 58),
+                    location("circle-elim.gandr", involutive_at, 60, 69),
+                    location("circle-elim.gandr", flipped_at, 42, 51),
                 ]]})
             ),
             "the flip's command shows the importer's three calls of it: twice in \

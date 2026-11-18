@@ -64,22 +64,24 @@ def builtBAC : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Inte
 };
 
 /// Relabelling carries the first link function to the second link function.
-def linksRelabelled : Path(
-  Path.walk (fun (t) { t -> t }) relabelling nextABC,
-  nextBAC
-) = Path.funext (Path.walk (fun (t) { t -> t }) relabelling nextABC) nextBAC;
+def linksRelabelled : Path (Path.walk
+  (fun (t) { t -> t })
+  relabelling
+  nextABC) nextBAC = Path.funext (Path.walk (fun (t) { t -> t }) relabelling nextABC) nextBAC;
 
 /// Relabelling carries the first label function to the second label function.
-def labelsRelabelled : Path(
-  Path.walk (fun (t) { t -> Integer }) relabelling labelABC,
-  labelBAC
-) = Path.funext (Path.walk (fun (t) { t -> Integer }) relabelling labelABC) labelBAC;
+def labelsRelabelled : Path (Path.walk
+  (fun (t) { t -> Integer })
+  relabelling
+  labelABC) labelBAC = Path.funext
+  (Path.walk (fun (t) { t -> Integer }) relabelling labelABC)
+  labelBAC;
 
 /// The relabelling proves the two allocation orders make one arena.
-def oneArena : Path(
-  builtABC,
-  builtBAC
-) = *{relabelling, *{Path.here (+{.1 = +{.0 = *{}}}), *{linksRelabelled, labelsRelabelled}}};
+def oneArena : Path builtABC builtBAC = *{
+  relabelling,
+  *{Path.here (+{.1 = +{.0 = *{}}}), *{linksRelabelled, labelsRelabelled}}
+};
 
 /// The `walk` consumer reads the label two links after its start.
 def walk(r : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Integer}) -> Integer =
@@ -98,9 +100,9 @@ def walkedABC() -> Integer = walk builtABC;
 def walkedBAC() -> Integer = walk builtBAC;
 
 /// The arena path makes both consumer results equal.
-def walkedAlike() -> Path(walk builtABC, walk builtBAC) =
+def walkedAlike() -> Path (walk builtABC) (walk builtBAC) =
   Path.ap walk oneArena
 
 /// The checker refuses labels without their allocation relabelling.
 @[refuses("PointwiseDistinct")]
-def labelsUnrelabelled : Path(labelABC, labelBAC) = Path.funext labelABC labelBAC;
+def labelsUnrelabelled : Path labelABC labelBAC = Path.funext labelABC labelBAC;

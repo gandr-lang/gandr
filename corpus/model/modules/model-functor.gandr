@@ -56,10 +56,7 @@ theory Semi where
 /// `Reassociating` reverses a semigroup associativity path.
 module Reassociating(S : Model(Semi)) where
   /// `reassoc` reads associativity from right to left.
-  def reassoc(x : S.M, y : S.M, z : S.M) -> Path(
-    S.mul x (S.mul y z),
-    S.mul (S.mul x y) z
-  ) =
+  def reassoc(x : S.M, y : S.M, z : S.M) -> Path (S.mul x (S.mul y z)) (S.mul (S.mul x y) z) =
     Path.back (S.assoc x y z)
 
 /// `OnePoint` models a semigroup with one value.
@@ -69,15 +66,12 @@ module OnePoint : Model(Semi) where
   def mul(a : Unit, b : Unit) -> Unit = *{};
 
   /// `assoc` proves associativity by conversion.
-  def assoc(x : Unit, y : Unit, z : Unit) -> Path(
-    mul (mul x y) z,
-    mul x (mul y z)
-  ) =
+  def assoc(x : Unit, y : Unit, z : Unit) -> Path (mul (mul x y) z) (mul x (mul y z)) =
     Path.here (*{})
 
 /// `OnePointReassociated` applies `Reassociating`.
 module OnePointReassociated = Reassociating(OnePoint);
 
 /// `reassociated` gives the reversed law at three units.
-def reassociated() -> Path(*{}, *{}) =
+def reassociated() -> Path *{} *{} =
   OnePointReassociated.reassoc (*{}) (*{}) (*{})

@@ -44,29 +44,29 @@ pub def toPt(x : S2) -> LoopCell =
     | Base2 => Pt
 
 /// Both images of the cell are empty, so the loop moves to itself.
-def flatLoop(x : S2) -> Path[.A = LoopCell](toPt x, toPt x) =
+def flatLoop(x : S2) -> Path[.A = LoopCell] (toPt x) (toPt x) =
   match x where
     | Base2 => lp
 
 /// Reflexivity moves to the 2-cell's inverse, then the 2-cell, which cancel.
-def whiskRefl(x : S2) -> Path[.A = LoopCell](toCell x, toCell x) =
+def whiskRefl(x : S2) -> Path[.A = LoopCell] (toCell x) (toCell x) =
   match x where
     | Base2 => Path.here Pt
 
 /// The loop whiskers the 2-cell at both ends, and the loops act freely.
 @[refuses("LoopNotRespected")]
-def whiskLoop(x : S2) -> Path[.A = LoopCell](toCell x, toCell x) =
+def whiskLoop(x : S2) -> Path[.A = LoopCell] (toCell x) (toCell x) =
   match x where
     | Base2 => lp
 
 /// The loop whiskers the 2-cell at the left end alone.
 @[refuses("LoopNotRespected")]
-def halfLoop(x : S2) -> Path[.A = LoopCell](toCell x, toPt x) =
+def halfLoop(x : S2) -> Path[.A = LoopCell] (toCell x) (toPt x) =
   match x where
     | Base2 => lp
 
 /// Reflexivity moves to the 2-cell's inverse. The case owes an arm there.
 @[refuses("LoopNotRespected")]
-def halfRefl(x : S2) -> Path[.A = LoopCell](toCell x, toPt x) =
+def halfRefl(x : S2) -> Path[.A = LoopCell] (toCell x) (toPt x) =
   match x where
     | Base2 => Path.here Pt

@@ -38,14 +38,14 @@ module Parity : Model(Group) where {
   def inv(x : Bit) -> Bit = x;
   def mul(x : Bit, y : Bit) -> Bit = xor x y;
   @[checks]
-  def unitL(x : Bit) -> Path(mul e x, x) = Path.here x;
+  def unitL(x : Bit) -> Path (mul e x) x = Path.here x;
   @[checks]
-  def unitR(x : Bit) -> Path(mul x e, x) =
+  def unitR(x : Bit) -> Path (mul x e) x =
     match x where
       | Zero => Path.here Zero
       | One => Path.here One
   @[checks]
-  def assoc(x : Bit, y : Bit, z : Bit) -> Path(mul (mul x y) z, mul x (mul y z)) =
+  def assoc(x : Bit, y : Bit, z : Bit) -> Path (mul (mul x y) z) (mul x (mul y z)) =
     match x where
       | Zero => Path.here (xor y z)
       | One => match y where
@@ -54,11 +54,11 @@ module Parity : Model(Group) where {
           | Zero => Path.here Zero
           | One => Path.here One
   @[checks]
-  def invInv(x : Bit) -> Path(inv (inv x), x) = Path.here x;
+  def invInv(x : Bit) -> Path (inv (inv x)) x = Path.here x;
   @[checks]
-  def invE() -> Path(inv e, e) = Path.here Zero;
+  def invE() -> Path (inv e) e = Path.here Zero;
   @[checks]
-  def invL(x : Bit) -> Path(mul (inv x) x, e) =
+  def invL(x : Bit) -> Path (mul (inv x) x) e =
     match x where
       | Zero => Path.here Zero
       | One => Path.here Zero
@@ -68,7 +68,7 @@ module Parity : Model(Group) where {
 def parityGroup : Model Group = pack Parity at Model Group;
 
 /// The derived rule gives a path from one to one.
-def invMulParity() -> Path(One, One) =
+def invMulParity() -> Path One One =
   let law = Group.invMul parityGroup
   law One Zero
 
@@ -76,5 +76,5 @@ def invMulParity() -> Path(One, One) =
 def overDerived(
   M : Bit -> Type,
   v : M One
-) -> Path(Path.walk (fun (b) { M b }) (invMulParity ()) v, v) =
+) -> Path (Path.walk (fun (b) { M b }) (invMulParity ()) v) v =
   Path.here v

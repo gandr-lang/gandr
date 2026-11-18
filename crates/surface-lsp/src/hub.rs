@@ -1258,7 +1258,7 @@ mod tests
                 ),
             ),
             Some(serde_json::json!(format!(
-                "<pre><code>{} : {}[.{} = {} {} {}]({}, {})</code></pre>\n\n<code>{}</code> proves \
+                "<pre><code>{} : {}[.{} = {} {} {}] {} {}</code></pre>\n\n<code>{}</code> proves \
                  that <code>{}</code> and <code>{}</code> agree at every boolean.",
                 coloured("functionDef", "agree"),
                 coloured("typeBuiltin", "Path"),

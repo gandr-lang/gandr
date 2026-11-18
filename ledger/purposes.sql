@@ -3216,6 +3216,7 @@ INSERT INTO purpose VALUES('surface-grammar','model::Adaptation','struct','Holds
 INSERT INTO purpose VALUES('surface-grammar','model::AdaptationReason','struct','Names why a rule''s shape departs from the surface form it realises, so an adaptation record states its cause.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::CandidateCount','struct','Names how many molds one tile label can take, so a parser''s candidate menu is sized.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::LabelText','struct','Names a label as a token spells it, declared or not, so a parser resolves it to the declared tile label.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-grammar','model::LeftOperand','enum','Names what a rule admits as its left operand, any whole operand or a name, so the melder refuses a qualified path over a whole form.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::MoldCount','struct','Names how many molds a grammar declares, so a build reports the table''s size.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::OldSpelling','struct','Names the text that a source writes for an old spelling, so the refusal''s message and the resolver read one string.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-grammar','model::Pbg','struct','Holds the checked precedence-bounded grammar, which exists only once its three build-time gates have passed, so a parser and a highlighter read the molds and the relations it holds.',NULL,'fits','sound',NULL);
@@ -4819,6 +4820,7 @@ INSERT INTO purpose VALUES('surface-parser','meld::SeamBreak','enum','Why a Form
 INSERT INTO purpose VALUES('surface-parser','meld::SeparatorTaken','struct','Whether a separator closes the open declaration as its last tile.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::SlopeHeight','struct','A tile the source left out, written into a copy of the source so the copy molds without a repair, and read back as the close the melder mints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::SpaceText','struct','Define a transparent newtype over borrowed source text.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-parser','meld::SpacedBefore','struct','Names whether a space stands before the upcoming token, so a successor read tells an applied former from a glued call.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::TileText','struct','Define a transparent newtype over borrowed source text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::UnitBase','enum','Where a FormUnit''s slope began.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','meld::UnitSeam','enum','How a FormUnit met the state before it.',NULL,'fits','sound',NULL);

@@ -404,20 +404,13 @@ fn the_path_operations_fold_in_both_forms_5206()
         format!(
             "{CIRCLE}def spin(x : Circle) -> {returner} = x;
 
-def thrice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step loop (Path.step loop loop),
-  Path.here Base
-);
+def thrice : Path[.A = Path[.A = Circle] Base Base]
+  (Path.step loop (Path.step loop loop))
+  (Path.here Base);
 
-def undone : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.back loop,
-  Path.back loop
-);
+def undone : Path[.A = Path[.A = Circle] Base Base] (Path.back loop) (Path.back loop);
 
-def spun : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.ap spin loop,
-  Path.ap spin loop
-);
+def spun : Path[.A = Path[.A = Circle] Base Base] (Path.ap spin loop) (Path.ap spin loop);
 "
         )
     };
@@ -432,6 +425,28 @@ def spun : Path[.A = Path[.A = Circle](Base, Base)](
         assert_eq!(
             spelled(&grammar, source.as_str(), form, Selection::Every),
             *expected,
+            "{form}"
+        );
+    }
+}
+
+/// #5750: a path type's endpoint that is a word, `loop ∷ loop`, binds looser
+/// than an argument. Written juxtaposed, it keeps its parentheses, and the
+/// juxtaposed text reads with the obligations of the call form.
+#[test]
+fn a_word_endpoint_is_juxtaposed_in_its_parentheses_5750()
+{
+    let grammar = grammar();
+    let declaration = |path: &str| format!("{CIRCLE}def twice : {path};\n");
+    for form in [Form::Sugared, Form::Explicit] {
+        assert_eq!(
+            spelled(
+                &grammar,
+                declaration("Path[.A = Path[.A = Circle](Base, Base)](loop ∷ loop, loop)").as_str(),
+                form,
+                Selection::Every
+            ),
+            declaration("Path[.A = Path[.A = Circle] Base Base] (loop ∷ loop) loop"),
             "{form}"
         );
     }
@@ -555,9 +570,9 @@ fn a_derived_operand_of_a_kept_transport_keeps_its_transport()
 {
     let grammar = grammar();
     for body in [
-        "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) (Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p p) p",
-        "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p (Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) \
-         (Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) p p) (Path.here Base))",
+        "Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) (Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) p p) p",
+        "Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) p (Path.walk (fun (a) { type(Path[.A = Circle] a Base) }) \
+         (Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) p p) (Path.here Base))",
     ] {
         let source = format!(
             include_str!(
@@ -799,19 +814,19 @@ fn a_transport_along_no_path_motive_keeps_its_spelling()
         ),
         (
             "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
-            "Path.walk (fun (a) { type(Path[.A = Circle](a, a)) }) loop (Path.here Base)",
+            "Path.walk (fun (a) { type(Path[.A = Circle] a a) }) loop (Path.here Base)",
         ),
         (
             "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
-            "Path.walk (fun (a) { type(Path[.A = Circle](Base, Base)) }) loop (Path.here Base)",
+            "Path.walk (fun (a) { type(Path[.A = Circle] Base Base) }) loop (Path.here Base)",
         ),
         (
             "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
-            "Path.walk (fun (a) { type(Path[.A = Circle](a, Base)) }) loop loop",
+            "Path.walk (fun (a) { type(Path[.A = Circle] a Base) }) loop loop",
         ),
         (
             "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop",
-            "Path.walk (fun (a) { type(Path[.A = Circle](Base, a)) }) loop",
+            "Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) loop",
         ),
     ] {
         let source = format!("{CIRCLE}def m : Integer = {value};\n");
@@ -843,7 +858,7 @@ fn a_composite_of_types_sugars_back_803()
           c : Type,
           p : Path[.A = Type](a, b),
           q : Path[.A = Type](b, c)
-        ) -> Path[.A = Path[.A = Type](a, c)](Path.step p q, Path.step p q) = Path.here (Path.step p q);
+        ) -> Path[.A = Path[.A = Type](a, c)] (Path.step p q) (Path.step p q) = Path.here (Path.step p q);
     "#]]
     .assert_eq(formatted.text().as_ref());
 }
@@ -874,8 +889,8 @@ fn the_value_function_alias_is_written_where_the_printer_writes_it()
           | Succ : (n : Nat) --> Nat
         }
 
-        def kept(a : Nat, b : Nat, q : Path[.A = Nat](a, b)) -> Path[.A = Nat](b, a) = become Path.walk
-          ((y : Nat, Path[.A = Nat](a, y)) -> Path[.A = Nat](y, a))
+        def kept(a : Nat, b : Nat, q : Path[.A = Nat] a b) -> Path[.A = Nat] b a = become Path.walk
+          ((y : Nat, Path[.A = Nat] a y) -> Path[.A = Nat] y a)
           q
           (Path.here a)
           (Path.here q)
@@ -943,7 +958,7 @@ fn a_thunk_type_a_body_returns_takes_the_alias_838()
 
         def onType(t : Type) -> Type = return (t -> t);
 
-        def flat(a : Nat, b : Nat, q : Path[.A = Nat](a, b), v : Nat) -> Nat = become Path.walk
+        def flat(a : Nat, b : Nat, q : Path[.A = Nat] a b, v : Nat) -> Nat = become Path.walk
           (Nat -> Nat)
           q
           v
@@ -1127,16 +1142,15 @@ fn an_importing_source_is_rewritten_beside_its_imports()
     assert_eq!(formatted.withdrawn(), []);
     assert_eq!(
         formatted.into_text(),
-        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step loop loop,
-  Path.here Base
-);
-"
+        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle] Base Base] (Path.step loop loop) (Path.here Base);\n"
     );
     let alone = format_beside(&grammar, &parsed, options, (Beside::Alone, None))
         .unwrap_or_else(|error| panic!("the source formats alone: {error}"));
     assert_eq!(alone.withdrawn(), []);
-    assert_eq!(alone.into_text(), source);
+    assert_eq!(
+        alone.into_text(),
+        "import \"./circle.gandr\";\n\ndef twice : Path[.A = Path[.A = Circle] Base Base]\n  (Path.walk (fun (a) { type(Path[.A = Circle] Base a) }) loop loop)\n  (Path.here Base);\n"
+    );
 }
 
 /// #812: desugaring `stay`'s dependent alias once changed how `stayUp`'s
@@ -1167,7 +1181,7 @@ fn a_rewrite_of_a_dependent_alias_keeps_its_readers_812()
         formatted
             .text()
             .as_ref()
-            .contains("def stay : +U ((a : Nat) -> -F Path[.A = Nat](a, a));"),
+            .contains("def stay : +U ((a : Nat) -> -F Path[.A = Nat] a a);"),
         "{}",
         formatted.text()
     );
@@ -2160,6 +2174,14 @@ fn a_type_application_is_written_juxtaposed_5708()
             Form::Sugared,
             "Pair a plus(Integer)",
         ),
+        ("Path(a, a)", Form::Sugared, "Path a a"),
+        ("Path(a, a)", Form::Explicit, "Path a a"),
+        ("Bridge(a, a)", Form::Sugared, "Bridge a a"),
+        ("Bridge(a, a)", Form::Explicit, "Bridge a a"),
+        ("Path[.A = a](a, a)", Form::Sugared, "Path[.A = a] a a"),
+        ("Path[.A = a](a, a)", Form::Explicit, "Path[.A = a] a a"),
+        ("Bridge[.A = a](a, a)", Form::Sugared, "Bridge[.A = a] a a"),
+        ("Bridge[.A = a](a, a)", Form::Explicit, "Bridge[.A = a] a a"),
         (
             "Pair(Parcel(Integer), Integer)",
             Form::Sugared,

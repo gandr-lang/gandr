@@ -43,7 +43,7 @@ def unaround(c : Circle) -> Circle =
 /// a path from `Loop(spin(wind(x)))` to `Loop(x)`. The machine does not
 /// decide the two path types, and the arm is refused as undecided.
 @[refuses("Undecided")]
-def rec forged(c : Circle) -> Path(spin (wind c), c) =
+def rec forged(c : Circle) -> Path (spin (wind c)) c =
   match c where
     | Base => Path.here Base
     | Loop(x) => forged[<] x

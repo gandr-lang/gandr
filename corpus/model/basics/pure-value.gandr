@@ -34,4 +34,4 @@ def odd : Parity = flip Even;
 def flipped : Parity * Parity = *{flip Even, flip Odd};
 
 /// The definition identified with the constructor its call computes.
-def sameOdd : Path[.A = Parity](odd, Odd) = Path.here Odd;
+def sameOdd : Path[.A = Parity] odd Odd = Path.here Odd;

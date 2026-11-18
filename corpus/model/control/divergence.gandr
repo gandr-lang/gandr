@@ -42,17 +42,20 @@ def rec unused(x : Bool) -> Bool =
 
 /// An unread empty-row call does not change the next computation.
 /// `unreadCall` proves that equality.
-def unreadCall(a : Type, b : Type, f : a -> b, g : a -> b) -> Path[.A = a -> b](
-  fun (x) { let _ = g x; f x },
-  f
-) =
+def unreadCall(a : Type, b : Type, f : a -> b, g : a -> b) -> Path[.A = a -> b] (fun (x) {
+  let _ = g x;
+  f x
+}) f =
   Path.here f
 
 /// `unreadTwice` drops two empty-row calls in sequence.
-def unreadTwice(a : Type, b : Type, f : a -> b, g : a -> b, h : a -> b) -> Path[.A = a -> b](
-  fun (x) { let _ = g x; let _ = h x; f x },
-  f
-) =
+def unreadTwice(
+  a : Type,
+  b : Type,
+  f : a -> b,
+  g : a -> b,
+  h : a -> b
+) -> Path[.A = a -> b] (fun (x) { let _ = g x; let _ = h x; f x }) f =
   Path.here f
 
 /// Applies `h` to `x`.
@@ -61,8 +64,8 @@ def apply(a : Type, b : Type, h : a -> b, x : a) -> b =
 
 /// The kernel replays the discard from its certificate.
 /// It unfolds `apply` after the discard.
-def unreadApplied(a : Type, b : Type, f : a -> b, g : a -> b) -> Path[.A = a -> b](
-  fun (x) { let _ = g x; apply a b f x },
-  f
-) =
+def unreadApplied(a : Type, b : Type, f : a -> b, g : a -> b) -> Path[.A = a -> b] (fun (x) {
+  let _ = g x;
+  apply a b f x
+}) f =
   Path.here f

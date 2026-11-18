@@ -17,7 +17,7 @@ use crate::mold::StepSym;
 
 /// The built-in surface's tables and the digest of their rules.
 pub(super) static BUILT_IN: FrozenTable = FrozenTable {
-    rules: RulesDigest(0x8089_99be_f0d7_704f),
+    rules: RulesDigest(0xc656_48f4_c96d_698b),
     molds: &MOLDS,
     contexts: &CONTEXTS,
     steps: &STEPS,
@@ -2272,7 +2272,7 @@ static MOLDS: [FrozenMold; 3153] = [
     FrozenMold("Type+", 2243, 129, None, 7, &[], 2243),
     FrozenMold("at", 2244, 130, None, 1, &[2245], 2244),
     FrozenMold("identifier", 2245, 130, None, 6, &[], 2245),
-    FrozenMold("Path", 2246, 131, None, 1, &[2247, 2251], 2246),
+    FrozenMold("Path", 2246, 131, None, 7, &[2247, 2251], 2246),
     FrozenMold("(", 2247, 131, Some(ClosingClass::Paren), 0, &[2248], 2247),
     FrozenMold(",", 2248, 131, Some(ClosingClass::Paren), 0, &[2249, 2250], 2248),
     FrozenMold(",", 2249, 131, Some(ClosingClass::Paren), 0, &[2250], 2249),
@@ -2299,7 +2299,7 @@ static MOLDS: [FrozenMold; 3153] = [
     FrozenMold("(", 2270, 131, Some(ClosingClass::Paren), 0, &[2271], 2270),
     FrozenMold(",", 2271, 131, Some(ClosingClass::Paren), 0, &[2272], 2271),
     FrozenMold(")", 2272, 131, Some(ClosingClass::Paren), 6, &[], 2272),
-    FrozenMold("Bridge", 2273, 132, None, 1, &[2274, 2278], 2273),
+    FrozenMold("Bridge", 2273, 132, None, 7, &[2274, 2278], 2273),
     FrozenMold("(", 2274, 132, Some(ClosingClass::Paren), 0, &[2275], 2274),
     FrozenMold(",", 2275, 132, Some(ClosingClass::Paren), 0, &[2276, 2277], 2275),
     FrozenMold(",", 2276, 132, Some(ClosingClass::Paren), 0, &[2277], 2276),

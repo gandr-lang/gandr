@@ -32,7 +32,7 @@ data IntOp : Type where {
 
 /// A rule identifies: `S(P(Z))` and `Z` are one term, so reflexivity proves
 /// the path between them.
-def collapsed : Path(S (P Z), Z) = Path.here Z;
+def collapsed : Path (S (P Z)) Z = Path.here Z;
 
 /// The circle: one point and one invertible cell at it, bound as `loop :
 /// Path[.A = Circle](Base, Base)`. The paths at the point are the words over
@@ -44,15 +44,11 @@ data Circle : Type where
 /// A cell adds paths.
 /// Its rules make `back(loop)` an inverse and reduce cancellation to
 /// the empty word.
-def cancelled : Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step loop (Path.back loop),
-  Path.here Base
-) = Path.here (Path.here Base);
+def cancelled : Path[.A = Path[.A = Circle] Base Base] (Path.step loop (Path.back loop)) (Path.here
+  Base) = Path.here (Path.here Base);
 
 /// A cell is not a rule: no rule identifies the loop with the empty word, so
 /// reflexivity does not prove it.
 @[refuses("EndpointMismatch")]
-def notARule : Path[.A = Path[.A = Circle](Base, Base)](
-  loop,
-  Path.here Base
-) = Path.here (Path.here Base);
+def notARule : Path[.A = Path[.A = Circle] Base Base] loop (Path.here Base) = Path.here
+  (Path.here Base);

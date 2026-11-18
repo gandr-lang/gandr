@@ -1082,6 +1082,18 @@ impl Adaptation
     }
 }
 
+/// What a rule whose form opens on its left operand takes there.
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub enum LeftOperand
+{
+    /// Any whole operand of the rule's operand sort.
+    #[default]
+    Any,
+    /// A name: a lone tile, or the rule's own form over a name, `M.N.T`. A
+    /// whole form over other tiles, as a lone `Path`, is no left operand.
+    Name,
+}
+
 /// One grammar rule: a named form of one sort at one precedence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rule
@@ -1098,6 +1110,12 @@ pub struct Rule
     pub provenance: &'static str,
     /// Adaptation records, audit data only.
     pub adaptations: Vec<Adaptation>,
+    /// The sort of the operands that the rule's form takes by juxtaposition,
+    /// `Path a b`, where the form states it and the head's sort does not
+    /// decide it.
+    pub operands: Option<Sort>,
+    /// What the form takes as its left operand, when it opens on one.
+    pub left: LeftOperand,
 }
 
 impl Rule
@@ -1132,6 +1150,8 @@ impl Rule
             prec,
             regex,
             adaptations: Vec::new(),
+            operands: None,
+            left: LeftOperand::Any,
         }
     }
 
@@ -1156,6 +1176,8 @@ impl Rule
             regex,
             provenance: provenance.0,
             adaptations: Vec::new(),
+            operands: None,
+            left: LeftOperand::Any,
         }
     }
 
@@ -1176,6 +1198,37 @@ impl Rule
         let mut rule = Self::new(name, sort, prec, regex);
         rule.adaptations.push(adaptation);
         rule
+    }
+
+    /// Declares the sort of the operands that the rule's form takes by
+    /// juxtaposition.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_operands(
+        mut self,
+        sort: Sort,
+    ) -> Self
+    {
+        self.operands = Some(sort);
+        self
+    }
+
+    /// Declares what the form takes as its left operand.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn with_left(
+        mut self,
+        left: LeftOperand,
+    ) -> Self
+    {
+        self.left = left;
+        self
     }
 
     /// The rule's identity.
@@ -1242,6 +1295,29 @@ impl Rule
     pub fn adaptations(&self) -> &[Adaptation]
     {
         &self.adaptations
+    }
+
+    /// The sort of the operands that the rule's form takes by juxtaposition,
+    /// where the form states it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn operands(&self) -> Option<Sort>
+    {
+        self.operands
+    }
+
+    /// What the form takes as its left operand, when it opens on one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn left(&self) -> LeftOperand
+    {
+        self.left
     }
 }
 
@@ -1894,6 +1970,10 @@ impl Pbg
     ///   frozen-table witness compares the two assemblies whole.
     /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
     /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    ///
+    /// # Cost
+    /// - allocation: the grouped forms, the rule names, the adaptation records
+    ///   and the tile automaton, setup
     #[spec(captures: count = rules.len(), ensures: |ret| ret.rules.len() == count && ret.rule_names.len() <= count && ret.adaptations.iter().eq(ret.rules.iter().flat_map(|rule| rule.adaptations.iter())))]
     fn assemble(
         dag: PrecDag,
@@ -1907,7 +1987,7 @@ impl Pbg
             .iter()
             .flat_map(|rule| rule.adaptations.iter().copied())
             .collect();
-        let automaton = TileAutomaton::derive(&molds);
+        let automaton = TileAutomaton::derive(&molds, &rules);
         let application_in = |sort: Sort| {
             molds
                 .candidates(TileLabel(crate::surface::APPLICATION))

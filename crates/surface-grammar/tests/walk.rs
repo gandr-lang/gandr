@@ -978,6 +978,7 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Failure
                 StepSym::Sort(sort) => Some(sort),
                 StepSym::Tile(_) => None,
             });
+        let rule = pbg.rule_of(mold)?;
         let reading = (
             kind,
             def.sort,
@@ -986,6 +987,7 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Failure
             (first, bool::from(pbg.mold_is_form_last(mold)), tail),
             hole,
             (shape(left), shape(right)),
+            (rule.operands(), rule.left()),
         );
         let class = pbg.observation(mold)?;
         let next = classes.len();

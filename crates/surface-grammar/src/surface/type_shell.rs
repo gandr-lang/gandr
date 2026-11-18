@@ -48,6 +48,7 @@ use gandr_theory_graphs::Prec;
 
 use crate::Adaptation;
 use crate::AdaptationReason;
+use crate::LeftOperand;
 use crate::PbgError;
 use crate::PrecName;
 use crate::PrecTable;
@@ -483,9 +484,14 @@ fn add_type_rules(
             ]),
         ])
     };
-    // A three-operand list writes the carrier first, `Path(A, a, b)`: the
+    // A path or a bridge states the sort of its endpoints one time: the list
+    // reads it while the list stands, and the juxtaposed endpoints read it,
+    // `Path a b`, so the head decides the sort and no window weighs a type
+    // group against a term group (#5750). `Path` alone is a whole form. A
+    // three-operand list writes the carrier first, `Path(A, a, b)`: the
     // grammar reads it, and the lowering refuses it by name, so the head
     // takes its carrier by name, `Path[.A = A](a, b)`.
+    let endpoint = Sort::Expression;
     for (name, head, retired) in [
         ("path_type", "Path", RetiredForm::PositionalPathCarrier),
         (
@@ -500,22 +506,20 @@ fn add_type_rules(
             type_application,
             Regex::seq([
                 tile(TileLabel(head)),
-                Regex::alt([
+                Regex::optional(Regex::alt([
                     Regex::seq([
                         tile(TileLabel("(")),
-                        Regex::sort(Sort::Expression),
+                        Regex::sort(endpoint),
                         tile(TileLabel(",")),
-                        Regex::sort(Sort::Expression),
-                        Regex::optional(Regex::seq([
-                            tile(TileLabel(",")),
-                            Regex::sort(Sort::Expression),
-                        ])),
+                        Regex::sort(endpoint),
+                        Regex::optional(Regex::seq([tile(TileLabel(",")), Regex::sort(endpoint)])),
                         tile(TileLabel(")")),
                     ]),
                     supplied(Listed::Optionally),
-                ]),
+                ])),
             ]),
-        );
+        )
+        .with_operands(endpoint);
         carried.adaptations.push(Adaptation::refused(
             RuleName(name),
             retired,
@@ -632,40 +636,48 @@ fn add_type_rules(
     // second list applies the call's result once more,
     // `Standard.subTy(a, s)(x)`, and a later `.` selects from an application,
     // which the lowering refuses.
-    rules.push(rule(
-        RuleName("type_path"),
-        ty,
-        type_path,
-        Regex::seq([
-            Regex::sort(ty),
-            tile(TileLabel(".")),
-            Regex::repeat(Regex::seq([
-                tile(TileLabel("type_variable")),
+    //
+    // The left side is a name, as `M` in `M.T` is one: a source declares
+    // it. A whole form over other tiles, as a lone `Path`, is no left side,
+    // so `Path.walk` after a fault reads as a projection and never as a
+    // qualified type that no source can declare (#5750).
+    rules.push(
+        rule(
+            RuleName("type_path"),
+            ty,
+            type_path,
+            Regex::seq([
+                Regex::sort(ty),
                 tile(TileLabel(".")),
-            ])),
-            Regex::alt([
-                Regex::seq([
-                    tile(TileLabel("type_identifier")),
-                    Regex::optional(Regex::seq([
-                        tile(TileLabel("(")),
-                        comma1(Regex::sort(ty)),
-                        tile(TileLabel(")")),
-                    ])),
-                ]),
-                Regex::seq([
+                Regex::repeat(Regex::seq([
                     tile(TileLabel("type_variable")),
-                    tile(TileLabel("(")),
-                    Regex::optional(comma1(Regex::sort(ty))),
-                    tile(TileLabel(")")),
+                    tile(TileLabel(".")),
+                ])),
+                Regex::alt([
+                    Regex::seq([
+                        tile(TileLabel("type_identifier")),
+                        Regex::optional(Regex::seq([
+                            tile(TileLabel("(")),
+                            comma1(Regex::sort(ty)),
+                            tile(TileLabel(")")),
+                        ])),
+                    ]),
+                    Regex::seq([
+                        tile(TileLabel("type_variable")),
+                        tile(TileLabel("(")),
+                        Regex::optional(comma1(Regex::sort(ty))),
+                        tile(TileLabel(")")),
+                    ]),
                 ]),
+                Regex::optional(Regex::seq([
+                    tile(TileLabel("(")),
+                    comma1(Regex::sort(ty)),
+                    tile(TileLabel(")")),
+                ])),
             ]),
-            Regex::optional(Regex::seq([
-                tile(TileLabel("(")),
-                comma1(Regex::sort(ty)),
-                tile(TileLabel(")")),
-            ])),
-        ]),
-    ));
+        )
+        .with_left(LeftOperand::Name),
+    );
     // A type at a stage, `Nat[i]`, or below one, `Nat[< i]`: the stage a
     // declaration's implicit `[i : Size]` binds. Postfix in the path band,
     // so `Nat[< i] -> Nat` and `-F Nat[i]` need no parentheses. The same

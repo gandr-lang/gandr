@@ -3514,8 +3514,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// # Specification
     /// - requires: nothing; a node the tree does not hold has no form.
     /// - ensures: a parenthesised type around one operand read through to the
-    ///   operand; the form's former, first tile and operands, left to right;
-    ///   the unformed absence for a node that is no form.
+    ///   operand; a path or a bridge type that takes its endpoints by
+    ///   juxtaposition, `Path[.A = C] a b`, read as the form `Path[.A = C](a,
+    ///   b)`: the head's former and first tile, the head's operands and then
+    ///   the endpoints; the form's former, first tile and operands, left to
+    ///   right; the unformed absence for a node that is no form.
     /// - provides: the syntactic reading a signature and a field type are read
     ///   by.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
@@ -3530,8 +3533,13 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// operand of the node it read, strictly deeper in a finite tree.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a parenthesised application and a bare head.
+    /// - hypothesis: L3 — a parenthesised application and a bare head; a
+    ///   juxtaposed path type over the words of a circle, matched with no arms.
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
+    /// - witness: `gandr-surface-lowering::lower::native::tests::a_juxtaposed_path_type_states_its_endpoints_5750`
+    ///
+    /// # Cost
+    /// - allocation: the form's operands, growth within the node's operands
     #[spec(captures: before = self.cx().fuel.remaining(), ensures: self.cx().fuel.remaining() <= before)]
     #[inline]
     pub fn unwrapped(
@@ -3563,8 +3571,44 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 Piece::Tile { at, .. } => Some(at),
                 Piece::Operand(_) => None,
             });
+            let lead = scratch.pieces.first().and_then(|piece| match *piece {
+                Piece::Operand(head) => Some(head),
+                Piece::Tile { .. } => None,
+            });
             self.cx_mut().scratch = scratch;
             read?;
+            // The head of a juxtaposed path or bridge type writes the form's
+            // tiles and its carrier, and the spine writes its endpoints
+            // (#5750).
+            if former == Former::TypeApplication
+                && let Some(head) = lead
+                && let Some((_, carried @ (Former::PathType | Former::BridgeType))) =
+                    self.cx().form_at(head)?
+            {
+                let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+                let read = read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut scratch);
+                let mut joined: Vec<NodeIndex> = scratch
+                    .pieces
+                    .iter()
+                    .filter_map(|piece| match *piece {
+                        Piece::Operand(operand) => Some(operand.node),
+                        Piece::Tile { .. } => None,
+                    })
+                    .collect();
+                let keyword = scratch.pieces.iter().find_map(|piece| match *piece {
+                    Piece::Tile { at, .. } => Some(at),
+                    Piece::Operand(_) => None,
+                });
+                self.cx_mut().scratch = scratch;
+                read?;
+                joined.extend(operands.iter().skip(1));
+                return Ok(Maybe::Present(Unwrapped {
+                    node,
+                    former: carried,
+                    keyword,
+                    operands: joined,
+                }));
+            }
             if former == Former::ParenthesizedType
                 && let [inner] = *operands.as_slice()
             {
@@ -4823,11 +4867,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - requires: `stated` is a written type, as `Self::scrutinee_type` reads
     ///   it.
     /// - ensures: read through parentheses, a path type answers
-    ///   [`Stated::Path`]; a type head, bare or applied, naming a data
-    ///   declaration answers that declaration and its position among the
-    ///   collected data forms. Any other stated type answers
-    ///   [`switched::Absent::Otherwise`], and an unstated one
-    ///   [`switched::Absent::Untyped`].
+    ///   [`Stated::Path`], written whole or with its endpoints juxtaposed; a
+    ///   type head, bare or applied, naming a data declaration answers that
+    ///   declaration and its position among the collected data forms. Any other
+    ///   stated type answers [`switched::Absent::Otherwise`], and an unstated
+    ///   one [`switched::Absent::Untyped`].
     /// - fails: the head's own resolution refusals; the allowance, one step per
     ///   form read.
     /// - panics: none.
@@ -4844,6 +4888,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - hypothesis: L3 — as [`Self::empty_case`] and [`Self::data_field`].
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    ///
+    /// # Cost
+    /// - allocation: the read form's operands, growth within the stated type's
+    ///   operands
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |stated| match *stated {
         Maybe::Present(Stated::Family { form, .. }) => form < self.cx().collected.data.len(),
         Maybe::Present(Stated::Path) | Maybe::Absent(_) => true,
@@ -4887,10 +4935,19 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 break Err(refusal);
             }
             if former == Former::TypeApplication {
-                break Ok(scratch.pieces.first().and_then(|piece| match *piece {
-                    Piece::Tile { at: head, .. } => Some(Maybe::Present(head)),
-                    Piece::Operand(_) => None,
-                }));
+                break match scratch.pieces.first() {
+                    Some(&Piece::Tile { at: head, .. }) => Ok(Some(Maybe::Present(head))),
+                    // A path type whose spine writes its endpoints, `Path[.A
+                    // = C] a b` (#5750).
+                    Some(&Piece::Operand(head)) => match self.cx().form_at(head) {
+                        Ok(Some((_, Former::PathType))) => {
+                            Ok(Some(Maybe::Absent(bare::Absent::Parameterised)))
+                        },
+                        Ok(_) => Ok(None),
+                        Err(refusal) => Err(refusal),
+                    },
+                    None => Ok(None),
+                };
             }
             let mut operands = scratch.pieces.iter().filter_map(|piece| match *piece {
                 Piece::Operand(inner) => Some(inner),

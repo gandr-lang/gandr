@@ -1,8 +1,8 @@
 error[UnresolvedName]: `here` is not defined
-  ╭▸ corpus/pathological/identity/bare-operations.gandr:7:29
+  ╭▸ corpus/pathological/identity/bare-operations.gandr:7:27
   │
-7 │ def bareHere : Path(4, 4) = here 4;
-  │                             ━━━━ not found in this scope
+7 │ def bareHere : Path 4 4 = here 4;
+  │                           ━━━━ not found in this scope
   │
   ├ note: `bareHere` is refused with UnresolvedName, as its expectation states
   ╰ help: define `here`, or import the module that exports it

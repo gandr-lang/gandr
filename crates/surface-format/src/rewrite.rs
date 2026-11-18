@@ -17,6 +17,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Spelling as GrammarSpelling;
 use gandr_surface_grammar::UNRESTRICTED;
 use gandr_surface_lowering::Boxed;
@@ -219,7 +220,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 38] = [
+pub const REWRITES: [Rewrite; 42] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -478,6 +479,38 @@ pub const REWRITES: [Rewrite; 38] = [
         mold: MoldName("type_application"),
         from: Spelling("F(a, b)"),
         to: Spelling("F a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("path_type"),
+        from: Spelling("Path(a, b)"),
+        to: Spelling("Path a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("path_type"),
+        from: Spelling("Path(a, b)"),
+        to: Spelling("Path a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Sugar,
+        mold: MoldName("bridge_type"),
+        from: Spelling("Bridge(a, b)"),
+        to: Spelling("Bridge a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::TypeApplication,
+        direction: Direction::Desugar,
+        mold: MoldName("bridge_type"),
+        from: Spelling("Bridge(a, b)"),
+        to: Spelling("Bridge a b"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -764,11 +797,54 @@ impl Band
             | "manifest_sort"
             | "send_session_type"
             | "receive_session_type"
-            | "mu_session_type" => Self::Loose,
+            | "mu_session_type"
+            // A lambda binds loose, as the printer binds it, so a parenthesis
+            // around one as a first argument leads its juxtaposition (#5750).
+            | "lambda_expression" => Self::Loose,
             _ => Self::Atom,
         }
     }
+
+    /// The band a form binds at whose rule, named `name` in the grammar, this
+    /// module reads by no name of its own. An expression binds as an atom
+    /// only when its own tiles close it or it is a postfix form, `f(x)` and
+    /// `r.x`. Every other expression, an operator or a keyword form such as
+    /// `x ∷ w` or `pure x`, binds loose, so an endpoint the path rewrite
+    /// juxtaposes keeps its parentheses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unread(name: RuleName) -> Self
+    {
+        let full = name.0;
+        let base = full.split('.').next().unwrap_or(full);
+        if base.ends_with("_expression") && !EXPRESSION_ATOMS.contains(&base) {
+            Self::Loose
+        }
+        else {
+            Self::Atom
+        }
+    }
 }
+
+/// The expression rules whose forms bind as atoms: the tiles of each close
+/// the form, or the form is a postfix call, index, selection or
+/// instantiation.
+const EXPRESSION_ATOMS: [&str; 13] = [
+    "parenthesized_expression",
+    "record_expression",
+    "labelled_sum_expression",
+    "list_expression",
+    "tuple_expression",
+    "lazy_record_expression",
+    "telescope_expression",
+    "call_expression",
+    "index_expression",
+    "projection_expression",
+    "record_selection_expression",
+    "instantiation_expression",
+    "type_quote_expression",
+];
 
 /// An operand of a form: a tile standing alone, or a nested form.
 #[derive(Clone, Copy, Debug)]
@@ -935,6 +1011,27 @@ fn enclosure(
     }
     else {
         Enclosed::No
+    }
+}
+
+/// The band of a juxtaposition whose head binds at `head` and whose first
+/// argument is `first`: a bridge when the head is a bridge or the first
+/// argument takes parentheses after an atom head, as the printer's `led`
+/// rule binds a former there, so that `-F` encloses it (`-F Var (Extend a
+/// b) c` reads as a call of `Var`); an application otherwise.
+///
+/// # Specification
+/// trivial.
+fn juxtaposition(
+    head: Band,
+    first: Enclosed,
+) -> Band
+{
+    if head == Band::Bridge || (head <= Band::Atom && first == Enclosed::Yes) {
+        Band::Bridge
+    }
+    else {
+        Band::Application
     }
 }
 
@@ -1577,6 +1674,10 @@ impl<'source> Respelling<'_, 'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the node's extent, derivation and spelling, growth within
+    ///   the source
     fn leave(
         &mut self,
         at: NodeIndex,
@@ -1629,7 +1730,18 @@ impl<'source> Respelling<'_, 'source>
                 Changed::Yes => self.parts(at).0,
                 Changed::No => parts,
             };
-            self.kept(rule, &parts, extent, (commented, open))
+            let mut kept = self.kept(rule, &parts, extent, (commented, open));
+            // A rule this module reads by no name binds as the grammar names
+            // it, which only an expression's name loosens.
+            if rule.0.is_empty()
+                && kept.band == Band::Atom
+                && let Some(NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) =
+                    self.tree.node(at).map(gandr_surface_syntax::Node::label)
+                && let Ok(read) = self.grammar.rule_of(mold)
+            {
+                kept.band = Band::unread(read.name());
+            }
+            kept
         };
         let _previous = self.spelled.insert(at, spelled);
     }
@@ -3390,6 +3502,67 @@ impl<'source> Respelling<'_, 'source>
         .then_some(Operation::Action { map, path: along })
     }
 
+    /// Write the supplied path type whose parts are `parts`, `Path(x, y)` or
+    /// `Path[.A = T](x, y)`, as the juxtaposition `Path x y`. Each endpoint is
+    /// an atom or in its parentheses, and the carrier stays in its brackets.
+    /// Nothing is written for a list that holds a comment, or for parts that
+    /// leave a list or a carrier open. The path binds as [`juxtaposition`]
+    /// states, so a kept form and a rewritten one agree.
+    ///
+    /// # Specification
+    /// trivial.
+    fn supplied_path_type(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        let mut opened = false;
+        let mut carrier = false;
+        let mut led: Option<bool> = None;
+        for part in parts {
+            match part.role {
+                Role::Own(text) => match <&str>::from(text) {
+                    "(" if !opened => opened = true,
+                    "," if opened => {},
+                    ")" if opened => opened = false,
+                    "=" => {
+                        out.gap(Spelling(" "));
+                        out.fragment(text);
+                        carrier = true;
+                    },
+                    _ => out.fragment(text),
+                },
+                Role::Operand(child) => {
+                    let operand = self.operand(child);
+                    if opened {
+                        if led.is_none() {
+                            led = Some(operand.enclosed() == Enclosed::Yes);
+                        }
+                        out.glue();
+                        out.place(&operand, Band::Atom);
+                    }
+                    else if carrier {
+                        out.gap(Spelling(" "));
+                        out.place(&operand, Band::Loose);
+                        carrier = false;
+                    }
+                    else {
+                        out.place(&operand, Band::Atom);
+                    }
+                },
+                Role::Comment => return None,
+            }
+        }
+        let led = if led == Some(true) {
+            Enclosed::Yes
+        }
+        else {
+            Enclosed::No
+        };
+        (!opened && !carrier).then_some(juxtaposition(Band::Atom, led))
+    }
+
     /// Write the type application whose parts are `parts` as juxtaposition.
     /// Parenthesize each argument that is no atom.
     /// Do not write a type variable head.
@@ -3417,36 +3590,45 @@ impl<'source> Respelling<'_, 'source>
         }
         let (owns, operands) = split(parts);
         let (&head, rest) = owns.split_first()?;
+        let head_text = <&str>::from(head);
+        let supplied = matches!(head_text, "Path" | "Bridge")
+            && rest.len() == 7_usize
+            && rest
+                .iter()
+                .map(|&own| <&str>::from(own))
+                .eq(["[", ".", "=", "]", "(", ",", ")"]);
         let opens = rest
             .iter()
             .filter(|&&own| <&str>::from(own) == OPEN_PAREN.0)
             .count();
-        if rest.first().map(|&own| <&str>::from(own)) != Some(OPEN_PAREN.0)
+        if (rest.first().map(|&own| <&str>::from(own)) != Some(OPEN_PAREN.0) && !supplied)
             || opens != 1
             || operands.is_empty()
-            || !<&str>::from(head).starts_with(char::is_uppercase)
+            || !head_text.starts_with(char::is_uppercase)
         {
             return None;
+        }
+        if supplied {
+            return self.supplied_path_type(out, parts);
         }
         let operands: Vec<Operand<'source>> = operands
             .into_iter()
             .map(|operand| self.operand(operand))
             .collect();
-        let enclosed = |operand: &Operand<'source>| operand.enclosed() == Enclosed::Yes;
-        let led = operands.first().is_some_and(enclosed);
+        let led = operands.first().map_or(Enclosed::No, Operand::enclosed);
         out.fragment(head);
         for operand in &operands {
-            out.gap(Spelling(" "));
+            out.glue();
             out.place(operand, Band::Atom);
         }
-        Some(if led { Band::Bridge } else { Band::Application })
+        Some(juxtaposition(Band::Atom, led))
     }
 
     /// The band a form of the rule `rule` over `parts` binds at: the rule's
-    /// own band, but a bridge for a type juxtaposition whose first argument
-    /// takes parentheses, `Var (Extend a b) c`, as [`Self::juxtaposed_type`]
-    /// writes it. The juxtaposition nests to the left, so its head is the
-    /// first operand and its first argument the second.
+    /// own band, but [`juxtaposition`]'s for a type juxtaposition, `Var
+    /// (Extend a b) c`, as [`Self::juxtaposed_type`] writes it. The
+    /// juxtaposition nests to the left, so its head is the first operand and
+    /// its first argument the second.
     ///
     /// # Specification
     /// trivial.
@@ -3467,14 +3649,7 @@ impl<'source> Respelling<'_, 'source>
             (Some(head), Some(first)) => {
                 let (head, _) = self.bands(head);
                 let (band, inner) = self.bands(first);
-                if head == Band::Bridge
-                    || (head <= Band::Atom && enclosure(band, inner) == Enclosed::Yes)
-                {
-                    Band::Bridge
-                }
-                else {
-                    Band::Application
-                }
+                juxtaposition(head, enclosure(band, inner))
             },
             (Some(_), None) | (None, _) => Band::Application,
         }
@@ -3608,7 +3783,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 39] = [
+const RULES: [MoldName; 40] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3638,6 +3813,7 @@ const RULES: [MoldName; 39] = [
     MoldName("type_application.juxtaposed"),
     MoldName("forget_model_expression"),
     MoldName("path_type"),
+    MoldName("bridge_type"),
     MoldName("type_quote_expression"),
     MoldName("send_session_type"),
     MoldName("receive_session_type"),
@@ -4058,6 +4234,26 @@ impl<'source> Builder<'source>
         self.gap(Spelling(" "));
         self.token(Spelling(spaced.0.trim()));
         self.gap(Spelling(" "));
+    }
+
+    /// Write the empty tile a type's juxtaposition stands on, after a
+    /// space, as the parser reads it before each operand. The layout reads
+    /// the spine of a respelled type at these tiles, as it reads a written
+    /// one.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: one leaf of the respelled stream, growth within the source
+    fn glue(&mut self)
+    {
+        self.gap(Spelling(" "));
+        let leaf = Leaf {
+            context: Spacing::TypeGlue,
+            ..self.written(SourceFragment::from(""), Material::Token)
+        };
+        self.leaves.push(leaf);
     }
 
     /// Write `comments`, each after the whitespace the source wrote before

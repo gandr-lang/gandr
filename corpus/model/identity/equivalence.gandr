@@ -22,9 +22,9 @@ def leftRetraction(
   g : b -> a,
   h : b -> a,
   y : b,
-  sh : Path(g (t (h y)), h y),
-  ry : Path(t (h y), y)
-) -> Path(t (g y), y) =
+  sh : Path (g (t (h y))) (h y),
+  ry : Path (t (h y)) y
+) -> Path (t (g y)) y =
   Path.step (Path.back (Path.ap t (Path.step (Path.back sh) (Path.ap g ry)))) ry
 
 /// The `equivToIso` function derives a quasi-inverse from a bi-invertible map.
@@ -36,5 +36,5 @@ def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b =
     }
 
 /// The `equivHere` proof checks reflexivity under the bi-invertible map type.
-def equivHere(a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b](e, e) =
+def equivHere(a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b] e e =
   Path.here e

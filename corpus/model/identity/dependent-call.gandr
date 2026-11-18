@@ -15,14 +15,14 @@ import "./circle-base.gandr";
 import "./circle-rotation.gandr";
 
 /// The `loopImage` function maps the circle loop through `f`.
-def loopImage(f : Circle -> Int) -> Path[.A = Int](f Base, f Base) =
+def loopImage(f : Circle -> Int) -> Path[.A = Int] (f Base) (f Base) =
   Path.ap f loop
 
 /// The second `toLoopThroughImage` field reads the first
 /// field through `loopImage`.
 def toLoopThroughImage(f : Circle -> Int) -> *{
   point : Int,
-  around : Path[.A = Int](point, point)
+  around : Path[.A = Int] point point
 } =
   *{f Base, loopImage f}
 
@@ -30,10 +30,10 @@ def toLoopThroughImage(f : Circle -> Int) -> *{
 @[refuses("TypeMismatch")]
 def toOtherLoop(f : Circle -> Int, g : Circle -> Int) -> *{
   point : Int,
-  around : Path[.A = Int](point, point)
+  around : Path[.A = Int] point point
 } =
   *{f Base, loopImage g}
 
 /// The `fromRecord` type reads a record projection through its dependent type.
-def fromRecord(r : *{point : Int, around : Path[.A = Int](point, point)}, c : Circle) -> Int =
+def fromRecord(r : *{point : Int, around : Path[.A = Int] point point}, c : Circle) -> Int =
   fromLoopAt r.point r.around c

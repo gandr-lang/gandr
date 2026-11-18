@@ -76,17 +76,14 @@ pub module Counting : Model(Cost.Eff) with sort N = Nat -> Nat where
   def plus(a : Nat -> Nat, b : Nat -> Nat) -> Nat -> Nat =
     fun (n) { a (b n) }
   /// Charging nothing is the identity, by η.
-  def chargeZero(k : (Nat -> Nat) -> Nat) -> Path[.A = (Nat -> Nat) -> Nat](charge zero k, k) =
+  def chargeZero(k : (Nat -> Nat) -> Nat) -> Path[.A = (Nat -> Nat) -> Nat] (charge zero k) k =
     Path.here k
   /// Two charges are one, by β and the associativity of `run`.
   def chargeTwice(
     a : Nat -> Nat,
     b : Nat -> Nat,
     k : (Nat -> Nat) -> Nat
-  ) -> Path[.A = (Nat -> Nat) -> Nat](
-    charge a (charge b k),
-    charge (plus a b) k
-  ) =
+  ) -> Path[.A = (Nat -> Nat) -> Nat] (charge a (charge b k)) (charge (plus a b) k) =
     Path.here (charge (plus a b) k)
 
 /// What a scope under `Counting` answers once its subject ends: the cost its

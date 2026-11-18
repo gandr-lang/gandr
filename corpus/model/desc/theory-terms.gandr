@@ -32,10 +32,9 @@ theory Mag where
 def neutral : Terms(Mag) = Mag.one;
 
 /// Units cancel in conversion: the terms' identity is the theory's rules.
-def cancelled : Path(
-  Mag.mul (Mag.mul Mag.one (Mag.mul Mag.one Mag.one)) Mag.one,
-  Mag.one
-) = Path.here Mag.one;
+def cancelled : Path (Mag.mul
+  (Mag.mul Mag.one (Mag.mul Mag.one Mag.one))
+  Mag.one) Mag.one = Path.here Mag.one;
 
 /// A term a function builds, which runs to itself.
 @[runs("Mag.mul Mag.one Mag.one")]
@@ -58,7 +57,7 @@ def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
 def tick(n : Ticks) -> Ticks = Tick n;
 
 /// No tick on the right, by induction.
-def rec noTickRight(n : Ticks) -> Path(joinLeft n NoTick, n) =
+def rec noTickRight(n : Ticks) -> Path (joinLeft n NoTick) n =
   match n where
     | NoTick => Path.here NoTick
     | Tick(k) => Path.ap tick (noTickRight[<] k)
@@ -72,9 +71,9 @@ module Counts : Model(Mag) where
   /// The product joins the counts.
   def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y;
   /// The left unit holds by conversion.
-  def unitL(x : Ticks) -> Path(mul one x, x) = Path.here x;
+  def unitL(x : Ticks) -> Path (mul one x) x = Path.here x;
   /// The right unit holds by induction.
-  def unitR(x : Ticks) -> Path(mul x one, x) = noTickRight x;
+  def unitR(x : Ticks) -> Path (mul x one) x = noTickRight x;
 
 /// The fold into the counts, which respects the counts' laws.
 @[respects(*{Counts.unitL, Counts.unitR})]

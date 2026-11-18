@@ -14,7 +14,7 @@
 // - see: #5026 — a hole in a declared type, solved where the type forms
 
 /// Four identified with itself, the carrier supplied by name.
-def namedPath : Path[.A = Integer](4, 4) = Path.here 4;
+def namedPath : Path[.A = Integer] 4 4 = Path.here 4;
 
 /// A point identified with itself, the carrier supplied from `A`.
 def punnedPath(A : Type, x : A) -> Path[.A](x, x) = Path.here x;
@@ -23,10 +23,10 @@ def punnedPath(A : Type, x : A) -> Path[.A](x, x) = Path.here x;
 def universalPath : Path[.A = Type](Unit, Unit) = Path.here Unit;
 
 /// Two equal integers related by their identity, the carrier supplied by name.
-def namedBridge : Bridge[.A = Integer](4, 4) = *{};
+def namedBridge : Bridge[.A = Integer] 4 4 = *{};
 
 /// A bridge that `A` supplies is the bridge whose endpoints fix `A`.
-def punnedBridge(A : Type, x : A, b : Bridge[.A](x, x)) -> Bridge(x, x) = b;
+def punnedBridge(A : Type, x : A, b : Bridge[.A](x, x)) -> Bridge x x = b;
 
 /// The total relation between the unit type and the string type, the
 /// universe supplied by name.

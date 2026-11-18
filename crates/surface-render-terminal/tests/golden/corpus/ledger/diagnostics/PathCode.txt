@@ -6,7 +6,7 @@ error[PathCode]: a universe path needs a quoted, closed, first-order code at eac
 4 │ │   (Path.here (+U (-F Integer)))
   │ │               ━━━━━━━━━━━━━━━ not a quoted closed first-order code
 5 │ │   (Path.here Unit);
-  │ └──────────────────┘ checked against `Path[.A = Type]((() -> Integer) * Unit, (() -> Integer) * Unit)`; while synthesising the first path of this product
+  │ └──────────────────┘ checked against `Path[.A = Type] ((() -> Integer) * Unit) ((() -> Integer) * Unit)`; while synthesising the first path of this product
   │
   ├ note: `thunked` is refused with PathCode, as its expectation states
   ╰ help: use a quoted closed first-order code at each end

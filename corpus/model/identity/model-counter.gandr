@@ -79,19 +79,21 @@ pub def countsNegated : Path[.A = Type](
 ) = equiv negateCount negateCount;
 
 /// The `stepNegated` path maps the up step to the down step.
-def stepNegated : Path(
-  Path.walk (fun (t) { t -> t }) countsNegated Up.incr,
-  Down.incr
-) = Path.funext (Path.walk (fun (t) { t -> t }) countsNegated Up.incr) Down.incr;
+def stepNegated : Path (Path.walk
+  (fun (t) { t -> t })
+  countsNegated
+  Up.incr) Down.incr = Path.funext (Path.walk (fun (t) { t -> t }) countsNegated Up.incr) Down.incr;
 
 /// The `readNegated` path maps the up reading to the down reading.
-def readNegated : Path(
-  Path.walk (fun (t) { t -> Integer }) countsNegated Up.read,
-  Down.read
-) = Path.funext (Path.walk (fun (t) { t -> Integer }) countsNegated Up.read) Down.read;
+def readNegated : Path (Path.walk
+  (fun (t) { t -> Integer })
+  countsNegated
+  Up.read) Down.read = Path.funext
+  (Path.walk (fun (t) { t -> Integer }) countsNegated Up.read)
+  Down.read;
 
 /// The `oneCounter` path relates the packed counter models.
-pub def oneCounter : Path(upModel, downModel) = *{
+pub def oneCounter : Path upModel downModel = *{
   countsNegated,
   *{Path.here (+{.0 = *{}}), *{stepNegated, readNegated}}
 };
@@ -110,5 +112,5 @@ def observedUp() -> Integer = observe upModel;
 def observedDown() -> Integer = observe downModel;
 
 /// The consumer gives equal readings for related models.
-def observedAlike() -> Path(observe upModel, observe downModel) =
+def observedAlike() -> Path (observe upModel) (observe downModel) =
   Path.ap observe oneCounter

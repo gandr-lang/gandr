@@ -40,48 +40,31 @@ pub data Circles : Type where
   | right1 : Wedge1 <-> Wedge1
 
 /// Two 2-cells commute.
-def commuted : Path[.A = Path[.A = Path[.A = Spheres2](Wedge2, Wedge2)](
-  Path.here Wedge2,
-  Path.here Wedge2
-)](
-  left2 ∷ right2 ∷ Path.here (Path.here Wedge2),
-  right2 ∷ left2 ∷ Path.here (Path.here Wedge2)
-) = Path.here (left2 ∷ right2 ∷ Path.here (Path.here Wedge2));
+def commuted : Path[.A = Path[.A = Path[.A = Spheres2] Wedge2 Wedge2] (Path.here Wedge2) (Path.here
+  Wedge2)] (left2 ∷ right2 ∷ Path.here (Path.here Wedge2)) (right2 ∷ left2 ∷ Path.here
+  (Path.here Wedge2)) = Path.here (left2 ∷ right2 ∷ Path.here (Path.here Wedge2));
 
 /// A 2-cell cancels its inverse across the other 2-cell.
-def distant : Path[.A = Path[.A = Path[.A = Spheres2](Wedge2, Wedge2)](
-  Path.here Wedge2,
-  Path.here Wedge2
-)](
-  left2 ∷ right2 ∷ back left2 ∷ Path.here (Path.here Wedge2),
-  right2 ∷ Path.here (Path.here Wedge2)
-) = Path.here (right2 ∷ Path.here (Path.here Wedge2));
+def distant : Path[.A = Path[.A = Path[.A = Spheres2] Wedge2 Wedge2] (Path.here Wedge2) (Path.here
+  Wedge2)] (left2 ∷ right2 ∷ back left2 ∷ Path.here (Path.here Wedge2)) (right2 ∷ Path.here
+  (Path.here Wedge2)) = Path.here (right2 ∷ Path.here (Path.here Wedge2));
 
 /// Two 3-cells commute.
-def commuted3 : Path[.A = Path[.A = Path[.A = Path[.A = Spheres3](Wedge3, Wedge3)](
-  Path.here Wedge3,
-  Path.here Wedge3
-)](
-  Path.here (Path.here Wedge3),
-  Path.here (Path.here Wedge3)
-)](
-  right3 ∷ left3 ∷ Path.here (Path.here (Path.here Wedge3)),
-  left3 ∷ right3 ∷ Path.here (Path.here (Path.here Wedge3))
-) = Path.here (right3 ∷ left3 ∷ Path.here (Path.here (Path.here Wedge3)));
+def commuted3 : Path[.A = Path[.A = Path[.A = Path[.A = Spheres3] Wedge3 Wedge3] (Path.here
+  Wedge3) (Path.here Wedge3)] (Path.here (Path.here Wedge3)) (Path.here
+  (Path.here Wedge3))] (right3 ∷ left3 ∷ Path.here
+  (Path.here (Path.here Wedge3))) (left3 ∷ right3 ∷ Path.here
+  (Path.here (Path.here Wedge3))) = Path.here
+  (right3 ∷ left3 ∷ Path.here (Path.here (Path.here Wedge3)));
 
 /// Two words of 2-cells that differ by a count are apart.
 @[refuses("EndpointMismatch")]
-def countsApart : Path[.A = Path[.A = Path[.A = Spheres2](Wedge2, Wedge2)](
-  Path.here Wedge2,
-  Path.here Wedge2
-)](
-  left2 ∷ left2 ∷ right2 ∷ Path.here (Path.here Wedge2),
-  right2 ∷ left2 ∷ Path.here (Path.here Wedge2)
-) = Path.here (left2 ∷ left2 ∷ right2 ∷ Path.here (Path.here Wedge2));
+def countsApart : Path[.A = Path[.A = Path[.A = Spheres2] Wedge2 Wedge2] (Path.here
+  Wedge2) (Path.here Wedge2)] (left2 ∷ left2 ∷ right2 ∷ Path.here
+  (Path.here Wedge2)) (right2 ∷ left2 ∷ Path.here (Path.here Wedge2)) = Path.here
+  (left2 ∷ left2 ∷ right2 ∷ Path.here (Path.here Wedge2));
 
 /// Two loops do not commute.
 @[refuses("EndpointMismatch")]
-def loopsOrdered : Path[.A = Path[.A = Circles](Wedge1, Wedge1)](
-  left1 ∷ right1 ∷ Path.here Wedge1,
-  right1 ∷ left1 ∷ Path.here Wedge1
-) = Path.here (left1 ∷ right1 ∷ Path.here Wedge1);
+def loopsOrdered : Path[.A = Path[.A = Circles] Wedge1 Wedge1] (left1 ∷ right1 ∷ Path.here
+  Wedge1) (right1 ∷ left1 ∷ Path.here Wedge1) = Path.here (left1 ∷ right1 ∷ Path.here Wedge1);

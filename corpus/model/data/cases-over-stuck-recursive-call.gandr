@@ -51,12 +51,12 @@ def rec look(n : Nat, k : Nat) -> Maybe Nat =
 def wrappedRec(
   a : Nat,
   b : Nat
-) -> Path(outer (first (look a b)), outer (second (look a b))) =
+) -> Path (outer (first (look a b))) (outer (second (look a b))) =
   Path.here (outer (first (look a b)))
 
 /// The outer case meets its twin over one inner case.
 def twinRec(
   a : Nat,
   b : Nat
-) -> Path(outer (first (look a b)), outerTwin (first (look a b))) =
+) -> Path (outer (first (look a b))) (outerTwin (first (look a b))) =
   Path.here (outer (first (look a b)))

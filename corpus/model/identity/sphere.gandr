@@ -30,54 +30,33 @@ pub data S3 : Type where
   | surf3 : Path.here (Path.here Base3) <-> Path.here (Path.here Base3)
 
 /// The 2-cell is a path between reflexivities of the point.
-def surface : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) = surf;
+def surface : Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here Base2) = surf;
 
 /// The 3-cell is a path between reflexivities of the point's reflexivity.
-def volume : Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](Path.here Base3, Path.here Base3)](
-  Path.here (Path.here Base3),
-  Path.here (Path.here Base3)
-) = surf3;
+def volume : Path[.A = Path[.A = Path[.A = S3] Base3 Base3] (Path.here Base3) (Path.here
+  Base3)] (Path.here (Path.here Base3)) (Path.here (Path.here Base3)) = surf3;
 
 /// The cancellation rule reduces the 2-cell and its inverse to the empty word.
-def unsurfaced : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
-  Path.here Base2,
-  Path.here Base2
-)](
-  surf ∷ back surf ∷ Path.here (Path.here Base2),
-  Path.here (Path.here Base2)
-) = Path.here (Path.here (Path.here Base2));
+def unsurfaced : Path[.A = Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here
+  Base2)] (surf ∷ back surf ∷ Path.here (Path.here Base2)) (Path.here (Path.here Base2)) = Path.here
+  (Path.here (Path.here Base2));
 
 /// The inverse and then the 3-cell reduce to the empty word too.
-def cancelled3 : Path[.A = Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](
-  Path.here Base3,
-  Path.here Base3
-)](
-  Path.here (Path.here Base3),
-  Path.here (Path.here Base3)
-)](
-  back surf3 ∷ surf3 ∷ Path.here (Path.here (Path.here Base3)),
-  Path.here (Path.here (Path.here Base3))
-) = Path.here (Path.here (Path.here (Path.here Base3)));
+def cancelled3 : Path[.A = Path[.A = Path[.A = Path[.A = S3] Base3 Base3] (Path.here
+  Base3) (Path.here Base3)] (Path.here (Path.here Base3)) (Path.here
+  (Path.here Base3))] (back surf3 ∷ surf3 ∷ Path.here (Path.here (Path.here Base3))) (Path.here
+  (Path.here (Path.here Base3))) = Path.here (Path.here (Path.here (Path.here Base3)));
 
 /// No rule identifies the 2-cell with the empty word.
 @[refuses("EndpointMismatch")]
-def surfaceFlat : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
-  Path.here Base2,
-  Path.here Base2
-)](
-  surf,
-  Path.here (Path.here Base2)
-) = Path.here (Path.here (Path.here Base2));
+def surfaceFlat : Path[.A = Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here
+  Base2)] surf (Path.here (Path.here Base2)) = Path.here (Path.here (Path.here Base2));
 
 /// Two 2-cells reduce to no shorter word: no rule identifies them.
 @[refuses("EndpointMismatch")]
-def surfDoubled : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
-  Path.here Base2,
-  Path.here Base2
-)](
-  surf ∷ surf ∷ Path.here (Path.here Base2),
-  surf ∷ Path.here (Path.here Base2)
-) = Path.here (surf ∷ surf ∷ Path.here (Path.here Base2));
+def surfDoubled : Path[.A = Path[.A = Path[.A = S2] Base2 Base2] (Path.here Base2) (Path.here
+  Base2)] (surf ∷ surf ∷ Path.here (Path.here Base2)) (surf ∷ Path.here
+  (Path.here Base2)) = Path.here (surf ∷ surf ∷ Path.here (Path.here Base2));
 
 /// A case with no branch at the cell sends the cell to reflexivity.
 def squash(x : S2) -> S2 =

@@ -21,10 +21,10 @@ pub def reflexivity(a : Unit) -> related(a, a) = *{};
 
 /// The transport law contracts each point and its evidence to
 /// a reflexive centre.
-def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path[.A = *{y : Unit, s : related(a, y)}](
-  *{b, r},
-  *{a, reflexivity a}
-) = *{*{}, *{}};
+def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path[.A = *{
+  y : Unit,
+  s : related(a, y)
+}] *{b, r} *{a, reflexivity a} = *{*{}, *{}};
 
 /// The `Point` module seals unit points with `related` as their identity.
 pub module Point :> *{type T, origin : T, other : T} where {
@@ -43,66 +43,51 @@ pub module Point :> *{type T, origin : T, other : T} where {
 }
 
 /// The relation's evidence between two sealed points is a path between them.
-def originOther : Path(Point.origin, Point.other) = *{};
+def originOther : Path Point.origin Point.other = *{};
 
 /// Based path induction carries a fixed element along `originOther`.
-def carriedAlong : Path(
-  Path.walk
-    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Unit)
-    originOther
-    (Path.here Point.origin)
-    (Path.here originOther)
-    (*{}),
-  *{}
-) = Path.here (*{});
+def carriedAlong : Path (Path.walk
+  ((y : Point.T, Path[.A = Point.T] Point.origin y) -> Unit)
+  originOther
+  (Path.here Point.origin)
+  (Path.here originOther)
+  (*{})) *{} = Path.here (*{});
 
 /// Based path induction reverses an origin path through its path family.
 def backToOrigin(
   b : Point.T,
-  q : Path(Point.origin, b)
-) -> Path(b, Point.origin) =
+  q : Path Point.origin b
+) -> Path b Point.origin =
   Path.walk
-    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
+    ((y : Point.T, Path[.A = Point.T] Point.origin y) -> Path[.A = Point.T] y Point.origin)
     q
     (Path.here Point.origin)
     (Path.here q)
     (Path.here Point.origin)
 
 /// Based path induction carries the relation evidence through its path family.
-def backAlong : Path[.A = Path[.A = Point.T](Point.other, Point.origin)](
-  Path.walk
-    ((y : Point.T, Path[.A = Point.T](Point.origin, y)) -> Path[.A = Point.T](y, Point.origin))
-    originOther
-    (Path.here Point.origin)
-    (Path.here originOther)
-    (Path.here Point.origin),
-  *{}
-) = Path.here (*{});
+def backAlong : Path[.A = Path[.A = Point.T] Point.other Point.origin] (Path.walk
+  ((y : Point.T, Path[.A = Point.T] Point.origin y) -> Path[.A = Point.T] y Point.origin)
+  originOther
+  (Path.here Point.origin)
+  (Path.here originOther)
+  (Path.here Point.origin)) *{} = Path.here (*{});
 
 /// Based path induction carries an identity of path evidence through
 /// its path family.
-def overAlong : Path[.A = Path[.A = Path[.A = Point.T](Point.origin, Point.other)](
-  originOther,
+def overAlong : Path[.A = Path[.A = Path[.A = Point.T] Point.origin Point.other] originOther originOther] (Path.walk
+  ((
+    y : Point.T,
+    z : Path[.A = Point.T] Point.origin y
+  ) -> Path[.A = Path[.A = Point.T] Point.origin y] z z)
   originOther
-)](
-  Path.walk
-    ((y : Point.T, z : Path[.A = Point.T](Point.origin, y)) -> Path[.A = Path[.A = Point.T](
-      Point.origin,
-      y
-    )](
-      z,
-      z
-    ))
-    originOther
-    (Path.here Point.origin)
-    (Path.here originOther)
-    (Path.here (Path.here Point.origin)),
-  *{}
-) = Path.here (*{});
+  (Path.here Point.origin)
+  (Path.here originOther)
+  (Path.here (Path.here Point.origin))) *{} = Path.here (*{});
 
 /// The path relation uses identities of the unit type rather than
 /// the unit type.
-pub def pathRelated(a : Unit, b : Unit) -> Type = return type(Path[.A = Unit](a, b));
+pub def pathRelated(a : Unit, b : Unit) -> Type = return type(Path[.A = Unit] a b);
 
 /// Reflexivity relates each point to itself.
 pub def pathReflexivity(a : Unit) -> pathRelated(a, a) = Path.here a;
@@ -112,10 +97,7 @@ pub def pathReflexivity(a : Unit) -> pathRelated(a, a) = Path.here a;
 def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path[.A = *{
   y : Unit,
   s : pathRelated(a, y)
-}](
-  *{b, r},
-  *{a, pathReflexivity a}
-) = *{*{}, *{}};
+}] *{b, r} *{a, pathReflexivity a} = *{*{}, *{}};
 
 /// The `PathPoint` module seals unit points with `pathRelated`
 /// as their identity.
@@ -135,18 +117,15 @@ module PathPoint :> *{type T, origin : T, other : T} where {
 }
 
 /// The path relation gives evidence between the two points.
-def pathOriginOther : Path(PathPoint.origin, PathPoint.other) = *{};
+def pathOriginOther : Path PathPoint.origin PathPoint.other = *{};
 
 /// Based path induction carries the path relation to the unit.
-def pathBack : Path[.A = Path[.A = PathPoint.T](PathPoint.other, PathPoint.origin)](
-  Path.walk
-    ((y : PathPoint.T, Path[.A = PathPoint.T](PathPoint.origin, y)) -> Path[.A = PathPoint.T](
-      y,
-      PathPoint.origin
-    ))
-    pathOriginOther
-    (Path.here PathPoint.origin)
-    (Path.here pathOriginOther)
-    (Path.here PathPoint.origin),
-  *{}
-) = Path.here (*{});
+def pathBack : Path[.A = Path[.A = PathPoint.T] PathPoint.other PathPoint.origin] (Path.walk
+  ((
+    y : PathPoint.T,
+    Path[.A = PathPoint.T] PathPoint.origin y
+  ) -> Path[.A = PathPoint.T] y PathPoint.origin)
+  pathOriginOther
+  (Path.here PathPoint.origin)
+  (Path.here pathOriginOther)
+  (Path.here PathPoint.origin)) *{} = Path.here (*{});

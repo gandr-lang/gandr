@@ -28,10 +28,12 @@ def moved_list(xs : List Bool) -> List Bool =
 def both : List Bool = cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil);
 
 /// The `flipped_beta` path reverses the Boolean order through negation.
-def flipped_beta : Path(
-  Path.walk (fun (X) { List X }) negation (cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil)),
-  cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil)
-) = Path.here (cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil));
+def flipped_beta : Path (Path.walk
+  (fun (X) { List X })
+  negation
+  (cons (+{.0 = *{}}) (cons (+{.1 = *{}}) nil))) (cons
+  (+{.1 = *{}})
+  (cons (+{.0 = *{}}) nil)) = Path.here (cons (+{.1 = *{}}) (cons (+{.0 = *{}}) nil));
 
 /// A run maps `both` through negation at every element.
 @[runs("cons +{.1 = *{}} (cons +{.0 = *{}} nil)")]
@@ -64,7 +66,7 @@ pub def keep(xs : List Bool) -> List Bool =
 def lists : Path[.A = Type](List Bool, List Bool) = equiv keep keep;
 
 /// The `kept_beta` path keeps a list value through the identity.
-def kept_beta : Path(Path.walk (fun (X) { X }) lists both, both) = Path.here both;
+def kept_beta : Path (Path.walk (fun (X) { X }) lists both) both = Path.here both;
 
 /// The `flip_flag` function negates a flag and preserves its list.
 def flip_flag(entry : Bool * List Bool) -> Bool * List Bool =

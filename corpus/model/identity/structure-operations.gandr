@@ -31,29 +31,26 @@ pub def flippedToggle : *{t : Type, start : t, step : t -> t, read : t -> Bool} 
 };
 
 /// Negation carries the step function to itself.
-pub def stepped : Path(
-  Path.walk (fun (t) { t -> t }) negation not,
-  not
-) = Path.funext (Path.walk (fun (t) { t -> t }) negation not) not;
+pub def stepped : Path (Path.walk (fun (t) { t -> t }) negation not) not = Path.funext
+  (Path.walk (fun (t) { t -> t }) negation not)
+  not;
 
 /// Negation carries the reading to the negated reading.
-pub def reread : Path(
-  Path.walk (fun (t) { t -> Bool }) negation same,
-  not
-) = Path.funext (Path.walk (fun (t) { t -> Bool }) negation same) not;
+pub def reread : Path (Path.walk (fun (t) { t -> Bool }) negation same) not = Path.funext
+  (Path.walk (fun (t) { t -> Bool }) negation same)
+  not;
 
 /// Negation carries the plain toggle to the flipped toggle.
-def oneToggle : Path(
-  plainToggle,
-  flippedToggle
-) = *{negation, *{Path.here (+{.1 = *{}}), *{stepped, reread}}};
+def oneToggle : Path plainToggle flippedToggle = *{
+  negation,
+  *{Path.here (+{.1 = *{}}), *{stepped, reread}}
+};
 
 /// Negation does not carry the reading to itself.
 @[refuses("PointwiseDistinct")]
-def unread : Path(
-  Path.walk (fun (t) { t -> Bool }) negation same,
-  same
-) = Path.funext (Path.walk (fun (t) { t -> Bool }) negation same) same;
+def unread : Path (Path.walk (fun (t) { t -> Bool }) negation same) same = Path.funext
+  (Path.walk (fun (t) { t -> Bool }) negation same)
+  same;
 
 /// The `untag` function reads a tagged Boolean.
 def untag(p : Bool * Unit) -> Bool =
@@ -71,7 +68,6 @@ def readTagged(p : Bool * Unit) -> Bool =
   match p { | *{x, u} => x }
 
 /// The kernel rejects the pointwise evidence for the carried tagged reading.
-def untagged : Path(
-  Path.walk (fun (t) { t -> Bool }) tagging readTagged,
-  same
-) = Path.funext (Path.walk (fun (t) { t -> Bool }) tagging readTagged) same;
+def untagged : Path (Path.walk (fun (t) { t -> Bool }) tagging readTagged) same = Path.funext
+  (Path.walk (fun (t) { t -> Bool }) tagging readTagged)
+  same;

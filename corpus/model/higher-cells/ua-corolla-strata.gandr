@@ -22,10 +22,13 @@ def raised = ua[
 
 /// `lifts` transports the binary corolla boolean and carries the degree-two
 /// unit stage.
-def lifts : Path[.A = Unit * (+{Unit} * (Bool * Unit))](
-  Path.walk (fun (X) { X }) raised (*{*{}, *{+{.0 = *{}}, *{+{.0 = *{}}, *{}}}}),
-  *{*{}, *{+{.0 = *{}}, *{+{.1 = *{}}, *{}}}}
-) = Path.here (*{*{}, *{+{.0 = *{}}, *{+{.1 = *{}}, *{}}}});
+def lifts : Path[.A = Unit * (+{Unit} * (Bool * Unit))] (Path.walk
+  (fun (X) { X })
+  raised
+  (*{*{}, *{+{.0 = *{}}, *{+{.0 = *{}}, *{}}}})) *{
+  *{},
+  *{+{.0 = *{}}, *{+{.1 = *{}}, *{}}}
+} = Path.here (*{*{}, *{+{.0 = *{}}, *{+{.1 = *{}}, *{}}}});
 
 /// `six` applies the magma swap at bound and degree six.
 def six = ua[

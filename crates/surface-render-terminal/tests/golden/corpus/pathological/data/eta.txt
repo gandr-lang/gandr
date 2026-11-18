@@ -1,92 +1,91 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/data/eta.gandr:14:3
    │
-13 │   def etaSwapped(e : Integer * Integer) -> Path(*{e.1, e.0}, e) =
-   │   │              ┬                              ┬──────────  ─ an endpoint the point does not convert to
+13 │   def etaSwapped(e : Integer * Integer) -> Path *{e.1, e.0} e =
+   │   │              ┬                              ┬────────── ─ an endpoint the point does not convert to
    │   │              │                              │
    │   │              │                              an endpoint the point does not convert to
-   │ ┌─┘              checked against `(a : Integer * Integer) -> -F Path[.A = Integer * Integer](*{a.1, a.0}, a)`; while checking the body of this function; binds e : Integer * Integer
+   │ ┌─┘              checked against `(a : Integer * Integer) -> -F Path[.A = Integer * Integer] *{a.1, a.0} a`; while checking the body of this function; binds e : Integer * Integer
    │ │
 14 │ │   Path.here e
    │ │   ┯━━━━━━━━━│
    │ └───│─────────┤
-   │     │         checked against `(a : Integer * Integer) -> Path[.A = Integer * Integer](*{a.1, a.0}, a)`; while checking the body of this thunk
+   │     │         checked against `(a : Integer * Integer) -> Path[.A = Integer * Integer] *{a.1, a.0} a`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `etaSwapped` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/data/eta.gandr:22:3
+   ╭▸ corpus/pathological/data/eta.gandr:19:3
    │
-18 │   def etaOther(e : Integer * Integer, d : Integer * Integer) -> Path(
-   │   │            ┬                      ─ checked against `(a : Integer * Integer) -> -F Path[.A = Integer * Integer](*{e.0, e.1}, a)`; while checking the body of this function; binds d : Integer * Integer
-   │   │            │
-   │ ┌─┘            checked; while checking the body of this function; binds e : Integer * Integer
+18 │   def etaOther(e : Integer * Integer, d : Integer * Integer) -> Path *{e.0, e.1} d =
+   │   │            ┬                      ┬                              ┬────────── ─ an endpoint the point does not convert to
+   │   │            │                      │                              │
+   │   │            │                      │                              an endpoint the point does not convert to
+   │   │            │                      checked against `(a : Integer * Integer) -> -F Path[.A = Integer * Integer] *{e.0, e.1} a`; while checking the body of this function; binds d : Integer * Integer
+   │ ┌─┘            checked against `(a : Integer * Integer) -> (b : Integer * Integer) -> -F Path[.A = Integer * Integer] *{a.0, a.1} b`; while checking the body of this function; binds e : Integer * Integer
    │ │
-19 │ │   *{e.0, e.1},
-   │ │   ─────────── an endpoint the point does not convert to
-20 │ │   d
-   │ │   ─ an endpoint the point does not convert to
-21 │ │ ) =
-22 │ │   Path.here e
+19 │ │   Path.here e
    │ │   ┯━━━━━━━━━│
    │ └───│─────────┤
-   │     │         checked against `(a : Integer * Integer, b : Integer * Integer) -> Path[.A = Integer * Integer](*{a.0, a.1}, b)`; while checking the body of this thunk
+   │     │         checked against `(a : Integer * Integer, b : Integer * Integer) -> Path[.A = Integer * Integer] *{a.0, a.1} b`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `etaOther` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/data/eta.gandr:30:3
+   ╭▸ corpus/pathological/data/eta.gandr:27:3
    │
-26 │   def etaCrossed(e : *{l : Integer, r : Integer}) -> Path[.A = *{l : Integer, r : Integer}](
-   │   │              ─ checked; while checking the body of this function; binds e : *{l : Integer, r : Integer}
-   │ ┌─┘
-   │ │
-27 │ │   *{.l = e.r, .r = e.l},
-   │ │   ───────────────────── an endpoint the point does not convert to
-28 │ │   e
-   │ │   ─ an endpoint the point does not convert to
-29 │ │ ) =
-30 │ │   Path.here e
-   │ │   ┯━━━━━━━━━│
-   │ └───│─────────┤
-   │     │         checked; while checking the body of this thunk
-   │     not both endpoints of the path
+23 │    def etaCrossed(e : *{l : Integer, r : Integer}) -> Path[.A = *{l : Integer, r : Integer}] *{
+   │  ┌─│──────────────┬──────────────────────────────────────────────────────────────────────────┘
+   │  │ │              │
+   │ ┌│─┘              checked; while checking the body of this function; binds e : *{l : Integer, r : Integer}
+   │ ││
+24 │ ││   .l = e.r,
+25 │ ││   .r = e.l
+26 │ ││ } e =
+   │ ││ │ ─ an endpoint the point does not convert to
+   │ │└─┤
+   │ │  an endpoint the point does not convert to
+27 │ │    Path.here e
+   │ │    ┯━━━━━━━━━│
+   │ └────│─────────┤
+   │      │         checked against `(e : *{l : Integer, r : Integer}) -> Path[.A = *{l : Integer, r : Integer}] *{.l = e.r, .r = e.l} e`; while checking the body of this thunk
+   │      not both endpoints of the path
    │
    ├ note: `etaCrossed` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
-   ╭▸ corpus/pathological/data/eta.gandr:35:3
+   ╭▸ corpus/pathological/data/eta.gandr:32:3
    │
-34 │   def etaUnitApart(u : Unit, v : Unit) -> Path[.A = Unit](u, v) =
-   │   │                ┬         ┬                            ┬  ─ an endpoint the point does not convert to
+31 │   def etaUnitApart(u : Unit, v : Unit) -> Path[.A = Unit] u v =
+   │   │                ┬         ┬                            ┬ ─ an endpoint the point does not convert to
    │   │                │         │                            │
    │   │                │         │                            an endpoint the point does not convert to
-   │   │                │         checked against `(v : Unit) -> -F Path[.A = Unit](u, v)`; while checking the body of this function; binds v : Unit
-   │ ┌─┘                checked against `(u : Unit) -> (v : Unit) -> -F Path[.A = Unit](u, v)`; while checking the body of this function; binds u : Unit
+   │   │                │         checked against `(v : Unit) -> -F Path[.A = Unit] u v`; while checking the body of this function; binds v : Unit
+   │ ┌─┘                checked against `(u : Unit) -> (v : Unit) -> -F Path[.A = Unit] u v`; while checking the body of this function; binds u : Unit
    │ │
-35 │ │   Path.here u
+32 │ │   Path.here u
    │ │   ┯━━━━━━━━━│
    │ └───│─────────┤
-   │     │         checked against `(u : Unit, v : Unit) -> Path[.A = Unit](u, v)`; while checking the body of this thunk
+   │     │         checked against `(u : Unit, v : Unit) -> Path[.A = Unit] u v`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `etaUnitApart` is refused with EndpointMismatch, as its expectation states
    ╰ help: give `Path.here` a point that both endpoints convert to, or change the endpoints
 
 error[LinearSlotUnconsumed]: the linear parameter is not used, or one branch uses it where another does not
-   ╭▸ corpus/pathological/data/eta.gandr:40:20
+   ╭▸ corpus/pathological/data/eta.gandr:37:20
    │
-40 │   def etaUnitDropped(u : Unit) ⊸ Path[.A = Unit](*{}, u) =
+37 │   def etaUnitDropped(u : Unit) ⊸ Path[.A = Unit] *{} u =
    │   │                  ━ a linear parameter left unused
    │ ┌─┘
    │ │
-41 │ │   Path.here (*{} : Unit)
-   │ └────────────────────────┘ checked against `+U ((u : Unit) ⊸ -F Path[.A = Unit](*{}, u))`; while checking the body of this thunk
+38 │ │   Path.here (*{} : Unit)
+   │ └────────────────────────┘ checked against `+U ((u : Unit) ⊸ -F Path[.A = Unit] *{} u)`; while checking the body of this thunk
    │
    ├ note: `etaUnitDropped` is refused with LinearSlotUnconsumed, as its expectation states
    ╰ help: use the linear parameter exactly once on every path through the body

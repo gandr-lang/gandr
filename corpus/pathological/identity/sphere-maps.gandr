@@ -23,6 +23,6 @@ def flatten(x : S2) -> S2 =
 /// A map with no arm at the cell moves the answer along the cell to the
 /// cell's inverse. The case owes an arm there.
 @[refuses("LoopNotRespected")]
-def flattenRefl(x : S2) -> Path[.A = S2](flatten x, x) =
+def flattenRefl(x : S2) -> Path[.A = S2] (flatten x) x =
   match x where
     | Base2 => Path.here Base2

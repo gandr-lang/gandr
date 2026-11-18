@@ -9245,8 +9245,8 @@ mod tests
 
         let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
         for spelled in [
-            "Path[.A = Integer](e.cell 0, 0)",
-            "-F Path[.A = Integer](e.cell 0, 0)",
+            "Path[.A = Integer] (e.cell 0) 0",
+            "-F (Path[.A = Integer] (e.cell 0) 0)",
         ] {
             let trips: Vec<&RoundTrip> = read
                 .iter()
@@ -9688,7 +9688,7 @@ mod tests
                 Maybe::Absent(reason) => panic!("`{needle}` answers nothing: {reason:?}"),
             }
         };
-        let path = "Path[.A = Circle](Base, Base)";
+        let path = "Path[.A = Circle] Base Base";
         let pattern =
             |written: &str, ty: &str| (String::from(written), Subject::Binder, String::from(ty));
         assert_eq!(
@@ -10004,7 +10004,7 @@ mod tests
             answer(&table, source, SourceText::from("*{y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("*{y : Integer, q : Path[.A = Integer](x, y)}"),
+                ty: String::from("*{y : Integer, q : Path[.A = Integer] x y}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "the inner record answers at the pair's second component, under the `x` the \
@@ -10014,7 +10014,7 @@ mod tests
             answer(&table, source, SourceText::from("*{x, y, q}")),
             Maybe::Present(Answer {
                 subject: Subject::Binder,
-                ty: String::from("*{x : Integer, y : Integer, q : Path[.A = Integer](x, y)}"),
+                ty: String::from("*{x : Integer, y : Integer, q : Path[.A = Integer] x y}"),
                 expected: Maybe::Absent(checked_against::Absent::Agreed),
             }),
             "a record of three answers as itself, its labels as written, not as the pair the \
@@ -10666,7 +10666,7 @@ mod tests
         );
         assert!(
             spelled.iter().any(|entry| entry.ty().as_ref()
-                == "((c : a) -> Path[.A = a](k (t c), c)) * ((c : b) -> Path[.A = b](t (k c), c))"),
+                == "((c : a) -> Path[.A = a] (k (t c)) c) * ((c : b) -> Path[.A = b] (t (k c)) c)"),
             "the remainder after `t` names it: {spelled:#?}"
         );
     }
@@ -10680,12 +10680,12 @@ mod tests
         for (pattern, remainder, reason) in [
             (
                 "| *{.from = k} => k",
-                "((c : a) -> Path[.A = a](k (into c), c)) * ((c : b) -> Path[.A = b](into (k c), c))",
+                "((c : a) -> Path[.A = a] (k (into c)) c) * ((c : b) -> Path[.A = b] (into (k c)) c)",
                 "the omitted forward map answers by its label",
             ),
             (
                 "| *{.from = into} => into",
-                "((c : a) -> Path[.A = a](into (into′ c), c)) * ((c : b) -> Path[.A = b](into′ (into c), c))",
+                "((c : a) -> Path[.A = a] (into (into′ c)) c) * ((c : b) -> Path[.A = b] (into′ (into c)) c)",
                 "the label primed apart from the written `into`",
             ),
         ] {
@@ -10715,7 +10715,7 @@ mod tests
     #[test]
     fn a_dependent_record_spells_its_variables_where_it_stands_1515()
     {
-        let record = "*{ x : b, y : b, p : Path[.A = b](x, y) }";
+        let record = "*{ x : b, y : b, p : Path[.A = b] x y }";
         let source = format!(
             include_str!(
                 "typed/unformatted/a-dependent-record-spells-its-variables-where-it-stands-1515.gandr"
@@ -10786,7 +10786,7 @@ mod tests
         assert!(
             trips
                 .iter()
-                .any(|&(ref spelled, _)| spelled == "(a : Type) -> -F Path[.A = Type](a, a)"),
+                .any(|&(ref spelled, _)| spelled == "(a : Type) -> -F Path[.A = Type] a a"),
             "a law's map spells its call as what it returns: {trips:?}"
         );
         assert!(
@@ -10811,8 +10811,8 @@ mod tests
             .map(|back| (back.spelled, back.trip))
             .collect();
         for spelled in [
-            "(x : Type) -> -F Path[.A = Type](same(same(x)), x)",
-            "*{a : +U (Type -> -F Type), b : (b : Type) -> Path[.A = Type](same(a(b)), b)}",
+            "(x : Type) -> -F Path[.A = Type] same(same(x)) x",
+            "*{a : +U (Type -> -F Type), b : (b : Type) -> Path[.A = Type] same(a(b)) b}",
         ] {
             assert!(
                 trips.iter().any(|&(ref printed, _)| printed == spelled),
@@ -10926,7 +10926,7 @@ mod tests
             .collect();
         assert!(
             trips.iter().any(|&(ref spelled, _)| spelled
-                == "Path[.A = *{x : Integer, y : Integer}](*{.x = 9, .y = 3}, *{.x = 9, .y = 3})"),
+                == "Path[.A = *{x : Integer, y : Integer}] *{.x = 9, .y = 3} *{.x = 9, .y = 3}"),
             "both orders print as the record they build: {trips:?}"
         );
         assert!(
@@ -10951,7 +10951,7 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
-        let record = "*{x : b, y : b, p : Path[.A = b](x, y)}";
+        let record = "*{x : b, y : b, p : Path[.A = b] x y}";
         assert!(
             reads.iter().any(|&(ref spelled, _)| spelled == record),
             "the record prints with its labels: {reads:?}"
@@ -10983,7 +10983,7 @@ mod tests
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for record in [
-            "*{x : b, y : b, z : b, f : Path[.A = b](x, y), g : Path[.A = b](y, z)}",
+            "*{x : b, y : b, z : b, f : Path[.A = b] x y, g : Path[.A = b] y z}",
             "*{n : Integer, a : Type, v : a}",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
@@ -11017,9 +11017,8 @@ mod tests
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for selected in [
-            "(r : *{x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)}) -> Path[.A = A](r.x, \
-             r.z)",
-            "(r : *{x : A, y : A, g : Path[.A = A](x, y)}) -> Path[.A = Path[.A = A](r.x, r.y)](r.g, r.g)",
+            "(r : *{x : A, y : A, z : A, f : Path[.A = A] x y, g : Path[.A = A] y z}) -> Path[.A = A] r.x r.z",
+            "(r : *{x : A, y : A, g : Path[.A = A] x y}) -> Path[.A = Path[.A = A] r.x r.y] r.g r.g",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -11063,9 +11062,9 @@ mod tests
         for (parameter, record) in [
             (
                 "\n  h : ",
-                "*{x : A, y : A, z : A, f : Path[.A = A](x, y), g : Path[.A = A](y, z)}",
+                "*{x : A, y : A, z : A, f : Path[.A = A] x y, g : Path[.A = A] y z}",
             ),
-            ("\n  k : ", "*{x : A, y : A, g : Path[.A = A](x, y)}"),
+            ("\n  k : ", "*{x : A, y : A, g : Path[.A = A] x y}"),
         ] {
             let at = text
                 .find(parameter)
@@ -11113,8 +11112,8 @@ mod tests
             "no site spells a selection by its position: {positional:?}"
         );
         for selected in [
-            "Path[.A = A](r.x, r.y)",
-            "*{z : A, f : Path[.A = A](r.x, r.y), g : Path[.A = A](r.y, z)}",
+            "Path[.A = A] r.x r.y",
+            "*{z : A, f : Path[.A = A] r.x r.y, g : Path[.A = A] r.y z}",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -11144,8 +11143,8 @@ mod tests
         let reads: Vec<super::ReadBack> =
             table(source).read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into());
         for composite in [
-            "Path[.A = Path[.A = A](x, w)](compose[5, 7] (chain 3) (p, q, r), Path.step (Path.step p q) r)",
-            "Path[.A = Path[.A = A](x, y)](compose[0, 0] (chain 1) p, p)",
+            "Path[.A = Path[.A = A] x w] (compose[5, 7] (chain 3) (p, q, r)) (Path.step (Path.step p q) r)",
+            "Path[.A = Path[.A = A] x y] (compose[0, 0] (chain 1) p) p",
         ] {
             let spelling: Vec<&super::ReadBack> = reads
                 .iter()
@@ -11211,10 +11210,17 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
+        let stated = [":", "Path[.A", "=", "A]", "x", "y)", "{"];
         assert!(
-            reads.iter().any(|&(ref spelled, _)| spelled
-                .replace('\n', "")
-                .contains(" : Path[.A = A](x, y)) {")),
+            reads.iter().any(|&(ref spelled, _)| {
+                (0 .. spelled.split_whitespace().count()).any(|start| {
+                    spelled
+                        .split_whitespace()
+                        .skip(start)
+                        .take(stated.len())
+                        .eq(stated)
+                })
+            }),
             "a printed type's lambda states its parameter's written type, wherever the page \
              breaks it: {reads:?}"
         );
@@ -11353,7 +11359,7 @@ mod tests
             .into_iter()
             .map(|back| (back.spelled, back.reprinted))
             .collect();
-        let arrow = "(y : b) -> Path[.A = b](t (h y), y)";
+        let arrow = "(y : b) -> Path[.A = b] (t (h y)) y";
         assert!(
             reads.iter().any(|&(ref spelled, _)| spelled == arrow),
             "the arrow prints with its written binder: {reads:?}"
@@ -11488,13 +11494,13 @@ mod tests
             !wild.is_empty()
                 && wild
                     .iter()
-                    .all(|back| back.spelled == "Path[.A = Integer](4, _)"
+                    .all(|back| back.spelled == "Path[.A = Integer] 4 _"
                         && back.trip == super::RoundTrip::Wildcard),
             "the refused declaration's type writes `_` and is a wildcard's: {wild:?}"
         );
         assert!(
             tame.iter()
-                .any(|back| back.spelled == "Path[.A = Integer](3, 3)"
+                .any(|back| back.spelled == "Path[.A = Integer] 3 3"
                     && back.trip == super::RoundTrip::Equal),
             "the solved one prints its solution: {tame:?}"
         );

@@ -1,15 +1,15 @@
 error[EndpointMismatch]: `Path.here` needs both endpoints of the path to equal its point
    ╭▸ corpus/pathological/data/conversion-budget.gandr:37:3
    │
-36 │   def agree() -> Path(fib (nineteen ()), fibFrom (nineteen ()) Zero (Succ Zero)) =
-   │   │                   ┬────────────────  ────────────────────────────────────── an endpoint the point is not shown to convert to within the conversion's step budget
-   │   │                   │
-   │ ┌─┘                   an endpoint the point is not shown to convert to within the conversion's step budget
+36 │   def agree() -> Path (fib (nineteen ())) (fibFrom (nineteen ()) Zero (Succ Zero)) =
+   │   │                    ┬────────────────   ────────────────────────────────────── an endpoint the point is not shown to convert to within the conversion's step budget
+   │   │                    │
+   │ ┌─┘                    an endpoint the point is not shown to convert to within the conversion's step budget
    │ │
 37 │ │   Path.here (fib (nineteen ()))
    │ │   ┯━━━━━━━━━━━━━━━━━━━━━━━━━━━│
    │ └───│───────────────────────────┤
-   │     │                           checked against `() -> Path[.A = Nat](fib (force nineteen), fibFrom (force nineteen) Zero (Succ Zero))`; while checking the body of this thunk
+   │     │                           checked against `() -> Path[.A = Nat] (fib (force nineteen)) (fibFrom (force nineteen) Zero (Succ Zero))`; while checking the body of this thunk
    │     not both endpoints of the path
    │
    ├ note: `agree` is refused with EndpointMismatch, as its expectation states

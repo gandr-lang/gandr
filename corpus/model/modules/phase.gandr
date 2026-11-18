@@ -44,9 +44,9 @@ def squared : Squared.U = Squared.w;
 /// `Fixed` reads static literals and constructors in type members.
 module Fixed where {
   /// `Three` names a constant path.
-  type Three = Path(3, 3);
+  type Three = Path 3 3;
   /// `Positive` names a plus-sign path.
-  type Positive = Path(Plus, Plus);
+  type Positive = Path Plus Plus;
   /// `three` gives the constant path.
   @[checks]
   def three : Three = Path.here 3;

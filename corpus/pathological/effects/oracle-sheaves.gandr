@@ -39,8 +39,8 @@ def funextAxiom : (
   b : a -> Type,
   f : (x : a) -> b(x),
   g : (x : a) -> b(x),
-  (x : a) -> Path[.A = b(x)](f x, g x)
-) -> Path[.A = (x : a) -> b(x)](f, g);
+  (x : a) -> Path[.A = b(x)] (f x) (g x)
+) -> Path[.A = (x : a) -> b(x)] f g;
 
 /// Function extensionality at two open functions. `Path.funext` decides two
 /// closed functions only.
@@ -48,8 +48,8 @@ def funextAxiom : (
 def openFunext(
   f : Two -> Two,
   g : Two -> Two,
-  h : (x : Two) -> Path[.A = Two](f x, g x)
-) -> Path[.A = Two -> Two](f, g) =
+  h : (x : Two) -> Path[.A = Two] (f x) (g x)
+) -> Path[.A = Two -> Two] f g =
   Path.funext f g
 
 /// A modality at `Type`. Its operations quantify over `Type`, a field above

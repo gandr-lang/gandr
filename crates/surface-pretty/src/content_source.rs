@@ -1426,7 +1426,7 @@ mod tests
                 ContentNode::Quote(NodeIndex::from(5)),
                 ContentNode::Base(BaseType::Integer),
             ]),
-            faithful("Path[.A = List Integer](nil, empty)".into())
+            faithful("Path[.A = List Integer] nil empty".into())
         );
         assert_eq!(
             spelled(&[

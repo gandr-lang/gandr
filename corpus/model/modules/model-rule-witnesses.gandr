@@ -46,7 +46,7 @@ def rec joinRight(m : Ticks, n : Ticks) -> Ticks =
     | Tick(k) => Tick (joinRight[<] m k)
 
 /// `noTickJoinsRight` proves a left unit for `joinRight`.
-def rec noTickJoinsRight(n : Ticks) -> Path(joinRight NoTick n, n) =
+def rec noTickJoinsRight(n : Ticks) -> Path (joinRight NoTick n) n =
   match n where
     | NoTick => Path.here NoTick
     | Tick(k) => Path.ap tick (noTickJoinsRight[<] k)
@@ -63,7 +63,7 @@ module ByLeft : Model(LeftUnit) where
   def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y;
 
   /// `unitL` uses `Path.here`.
-  def unitL(x : Ticks) -> Path(mul e x, x) = Path.here x;
+  def unitL(x : Ticks) -> Path (mul e x) x = Path.here x;
 
 /// `ByRight` proves the rule by induction.
 module ByRight : Model(LeftUnit) where
@@ -77,4 +77,4 @@ module ByRight : Model(LeftUnit) where
   def mul(x : Ticks, y : Ticks) -> Ticks = joinRight x y;
 
   /// `unitL` uses `noTickJoinsRight`.
-  def unitL(x : Ticks) -> Path(mul e x, x) = noTickJoinsRight x;
+  def unitL(x : Ticks) -> Path (mul e x) x = noTickJoinsRight x;

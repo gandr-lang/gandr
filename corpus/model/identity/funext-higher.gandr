@@ -33,26 +33,22 @@ def twice_bound(f : Unit + Unit -> Unit + Unit) -> Unit + Unit =
   c
 
 /// A functional is a path to itself.
-def reflexive : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
-  at_truth,
+def reflexive : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit] at_truth at_truth = Path.funext
   at_truth
-) = Path.funext at_truth at_truth;
+  at_truth;
 
 /// The two functions give equal results at every function.
-def unfolded : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
-  at_truth,
-  through
-) = Path.funext at_truth through;
+def unfolded : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit] at_truth through = Path.funext
+  at_truth
+  through;
 
 /// The two forms for a second call give equal results at every function.
-def nested : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
-  applied_twice,
-  twice_bound
-) = Path.funext applied_twice twice_bound;
+def nested : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit] applied_twice twice_bound = Path.funext
+  applied_twice
+  twice_bound;
 
 /// The calls at truth and falsity give different results for some function.
 @[refuses("PointwiseDistinct")]
-def elsewhere : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit](
-  at_truth,
-  at_falsity
-) = Path.funext at_truth at_falsity;
+def elsewhere : Path[.A = (Unit + Unit -> Unit + Unit) -> Unit + Unit] at_truth at_falsity = Path.funext
+  at_truth
+  at_falsity;

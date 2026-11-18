@@ -17,13 +17,10 @@ def rightNested(
   y : A,
   z : A,
   w : A,
-  f : Path[.A = A](x, y),
-  g : Path[.A = A](y, z),
-  h : Path[.A = A](z, w)
-) -> Path[.A = Path[.A = A](x, w)](
-  Path.step f (Path.step g h),
-  compose[5, 7] (chain 3) (f, g, h)
-) =
+  f : Path[.A = A] x y,
+  g : Path[.A = A] y z,
+  h : Path[.A = A] z w
+) -> Path[.A = Path[.A = A] x w] (Path.step f (Path.step g h)) (compose[5, 7] (chain 3) (f, g, h)) =
   Path.here (Path.step f (Path.step g h))
 
 /// The first path moves along the later composite.
@@ -34,12 +31,11 @@ def laterNested(
   z : A,
   w : A,
   u : A,
-  k : Path[.A = A](x, y),
-  f : Path[.A = A](y, z),
-  g : Path[.A = A](z, w),
-  h : Path[.A = A](w, u)
-) -> Path[.A = Path[.A = A](x, u)](
-  Path.step k (Path.step (Path.step f g) h),
+  k : Path[.A = A] x y,
+  f : Path[.A = A] y z,
+  g : Path[.A = A] z w,
+  h : Path[.A = A] w u
+) -> Path[.A = Path[.A = A] x u] (Path.step k (Path.step (Path.step f g) h)) (
   Path.step (Path.step (Path.step k f) g) h
 ) =
   Path.here (Path.step k (Path.step (Path.step f g) h))
@@ -52,12 +48,11 @@ def pairs(
   z : A,
   w : A,
   u : A,
-  k : Path[.A = A](x, y),
-  f : Path[.A = A](y, z),
-  g : Path[.A = A](z, w),
-  h : Path[.A = A](w, u)
-) -> Path[.A = Path[.A = A](x, u)](
-  Path.step (Path.step k f) (Path.step g h),
+  k : Path[.A = A] x y,
+  f : Path[.A = A] y z,
+  g : Path[.A = A] z w,
+  h : Path[.A = A] w u
+) -> Path[.A = Path[.A = A] x u] (Path.step (Path.step k f) (Path.step g h)) (
   Path.step k (Path.step f (Path.step g h))
 ) =
   Path.here (Path.step (Path.step k f) (Path.step g h))
@@ -68,12 +63,9 @@ def tailComposite(
   y : A,
   z : A,
   w : A,
-  g : Path[.A = A](y, z),
-  h : Path[.A = A](z, w)
-) -> Path[.A = A](
-  y,
-  w
-) =
+  g : Path[.A = A] y z,
+  h : Path[.A = A] z w
+) -> Path[.A = A] y w =
   Path.step g h
 
 /// A call that returns a composite stands as the later path.
@@ -83,11 +75,10 @@ def throughCall(
   y : A,
   z : A,
   w : A,
-  f : Path[.A = A](x, y),
-  g : Path[.A = A](y, z),
-  h : Path[.A = A](z, w)
-) -> Path[.A = Path[.A = A](x, w)](
-  Path.step f (tailComposite A y z w g h),
+  f : Path[.A = A] x y,
+  g : Path[.A = A] y z,
+  h : Path[.A = A] z w
+) -> Path[.A = Path[.A = A] x w] (Path.step f (tailComposite A y z w g h)) (
   Path.step (Path.step f g) h
 ) =
   Path.here (Path.step (Path.step f g) h)
@@ -100,22 +91,20 @@ def transported(
   y : A,
   z : A,
   w : A,
-  f : Path[.A = A](x, y),
-  g : Path[.A = A](y, z),
-  h : Path[.A = A](z, w),
+  f : Path[.A = A] x y,
+  g : Path[.A = A] y z,
+  h : Path[.A = A] z w,
   v : M x
-) -> Path[.A = M w](
-  Path.walk (fun (a) { M a }) (Path.step f (Path.step g h)) v,
+) -> Path[.A = M w] (Path.walk (fun (a) { M a }) (Path.step f (Path.step g h)) v) (
   Path.walk (fun (a) { M a }) h (Path.walk (fun (a) { M a }) g (Path.walk (fun (a) { M a }) f v))
 ) =
   Path.here (Path.walk (fun (a) { M a }) (Path.step f (Path.step g h)) v)
 
 /// A circle loop between two paths nests as every path does.
 def aroundTheLoop(
-  p : Path[.A = Circle](Base, Base),
-  q : Path[.A = Circle](Base, Base)
-) -> Path[.A = Path[.A = Circle](Base, Base)](
-  Path.step p (Path.step loop q),
+  p : Path[.A = Circle] Base Base,
+  q : Path[.A = Circle] Base Base
+) -> Path[.A = Path[.A = Circle] Base Base] (Path.step p (Path.step loop q)) (
   Path.step (Path.step p loop) q
 ) =
   Path.here (Path.step p (Path.step loop q))
@@ -125,8 +114,8 @@ def aroundTheLoop(
 def reordered(
   A : Type,
   x : A,
-  f : Path[.A = A](x, x),
-  g : Path[.A = A](x, x),
-  h : Path[.A = A](x, x)
-) -> Path[.A = Path[.A = A](x, x)](Path.step f (Path.step g h), Path.step (Path.step g f) h) =
+  f : Path[.A = A] x x,
+  g : Path[.A = A] x x,
+  h : Path[.A = A] x x
+) -> Path[.A = Path[.A = A] x x] (Path.step f (Path.step g h)) (Path.step (Path.step g f) h) =
   Path.here (Path.step f (Path.step g h))

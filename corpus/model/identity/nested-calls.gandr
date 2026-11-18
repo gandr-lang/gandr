@@ -22,31 +22,27 @@ def rec doubleNat(n : Nat) -> Nat =
 
 /// The outer `doubleNat` call waits for the inner call.
 /// The checker unfolds the inner call.
-def quadrupled : Path[.A = Nat](
-  doubleNat (doubleNat (Succ Zero)),
-  Succ (Succ (Succ (Succ Zero)))
-) = Path.here (Succ (Succ (Succ (Succ Zero))));
+def quadrupled : Path[.A = Nat] (doubleNat (doubleNat (Succ Zero))) (Succ
+  (Succ (Succ (Succ Zero)))) = Path.here (Succ (Succ (Succ (Succ Zero))));
 
 /// The nested call's value is four, not three.
 @[refuses("EndpointMismatch")]
-def miscounted : Path[.A = Nat](
-  doubleNat (doubleNat (Succ Zero)),
-  Succ (Succ (Succ Zero))
-) = Path.here (Succ (Succ (Succ Zero)));
+def miscounted : Path[.A = Nat] (doubleNat (doubleNat (Succ Zero))) (Succ
+  (Succ (Succ Zero))) = Path.here (Succ (Succ (Succ Zero)));
 
 /// The checker reads `up(down(Z))` as `S(P(Z))`.
 /// The rules reduce this form to `Z`.
-def turned_back : Path[.A = Int](up (down Z), Z) = Path.here Z;
+def turned_back : Path[.A = Int] (up (down Z)) Z = Path.here Z;
 
 /// The checker cancels the nested call at every integer.
 /// The inner call has a variable argument.
-def turn_unturn(n : Int) -> Path[.A = Int](up (down n), n) =
+def turn_unturn(n : Int) -> Path[.A = Int] (up (down n)) n =
   Path.here n
 
 /// The checker reads the inner call.
 /// The rules cancel one step.
 @[refuses("EndpointMismatch")]
-def overturned : Path[.A = Int](up (down Z), S Z) = Path.here (S Z);
+def overturned : Path[.A = Int] (up (down Z)) (S Z) = Path.here (S Z);
 
 /// The `bound` function returns a function from a call.
 def bound(k : Integer -> (Integer -> Integer), s : Integer) -> Integer =
@@ -61,7 +57,7 @@ def apply(f : Integer -> Integer, x : Integer) -> Integer = f x;
 def bound_is_applied(
   k : Integer -> (Integer -> Integer),
   s : Integer
-) -> Path[.A = Integer](bound k s, apply (k s) s) =
+) -> Path[.A = Integer] (bound k s) (apply (k s) s) =
   Path.here (bound k s)
 
 /// The call function gives a different result at zero.
@@ -69,7 +65,7 @@ def bound_is_applied(
 def applied_elsewhere(
   k : Integer -> (Integer -> Integer),
   s : Integer
-) -> Path[.A = Integer](bound k s, apply (k s) 0) =
+) -> Path[.A = Integer] (bound k s) (apply (k s) 0) =
   Path.here (bound k s)
 
 /// The `bound_outside` function binds the call outside its result function.
@@ -86,5 +82,5 @@ def bound_inside(k : Integer -> (Integer -> Integer), s : Integer) -> (Integer -
 def outside_is_inside(
   k : Integer -> (Integer -> Integer),
   s : Integer
-) -> Path[.A = Integer -> Integer](bound_outside k s, bound_inside k s) =
+) -> Path[.A = Integer -> Integer] (bound_outside k s) (bound_inside k s) =
   Path.here (bound_outside k s)

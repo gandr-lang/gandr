@@ -65,7 +65,7 @@ module Bits : Model(Toggle) where {
 
   /// `twice` proves the law by cases.
   @[checks]
-  def twice(b : Bit) -> Path(flip (flip b), b) =
+  def twice(b : Bit) -> Path (flip (flip b)) b =
     match b where
       | Low => Path.here Low
       | High => Path.here High

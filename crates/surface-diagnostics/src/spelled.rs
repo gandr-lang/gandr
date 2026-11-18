@@ -1133,6 +1133,9 @@ fn printed_names(held: &[Vec<Option<String>>]) -> Vec<Vec<Option<Name<'_>>>>
 /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
 /// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
 /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
+///
+/// # Cost
+/// - allocation: each declaration's spelled path, diagnostic
 #[spec(ensures: |ret| module.declarations().iter().all(|declaration|
     ret.get(usize::from(declaration.constant())).is_some()))]
 #[inline]
@@ -1160,13 +1163,44 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
     for declaration in module.declarations() {
         if let Maybe::Present((sort, point, wraps)) = words_point(module, declaration) {
             let family = paths.get(usize::from(sort)).cloned().unwrap_or_default();
-            let (carrier, point) = wrapped(family, point, wraps);
+            let at = wrapped(family, point, wraps);
             if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
-                *slot = alloc::format!("Path[.A = {carrier}]({point}, {point})");
+                *slot = path_at(&at);
             }
         }
     }
     paths
+}
+
+/// The path type over the carrier `at.0` from the point `at.1` to itself, its
+/// endpoints juxtaposed as the printer writes them: `Path[.A = C] p p`. An
+/// endpoint that writes a space outside its own parentheses, `Path.here Base`,
+/// stands in parentheses, and a name or a call, `Base` or `Pair(Zero, Zero)`,
+/// stands bare.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the spelled type, growth within the carrier and the point
+fn path_at(at: &(String, String)) -> String
+{
+    let (ref carrier, ref point) = *at;
+    let mut depth = 0_usize;
+    let spaced = point.chars().any(|letter| {
+        match letter {
+            '(' => depth = depth.saturating_add(1),
+            ')' => depth = depth.saturating_sub(1),
+            _ => {},
+        }
+        letter == ' ' && depth == 0
+    });
+    if spaced {
+        alloc::format!("Path[.A = {carrier}] ({point}) ({point})")
+    }
+    else {
+        alloc::format!("Path[.A = {carrier}] {point} {point}")
+    }
 }
 
 /// The carrier and the point a type of words reads its path at, spelled: the
@@ -1175,8 +1209,8 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `(family, point)` for no wrapping; otherwise `(Path[.A = c](p,
-///   p), Path.here p)` over the pair `(c, p)` for one wrapping fewer, `p` in
+/// - ensures: `(family, point)` for no wrapping; otherwise `(Path[.A = c] p p,
+///   Path.here p)` over the pair `(c, p)` for one wrapping fewer, `p` in
 ///   parentheses unless it is a bare name, as the printer writes an
 ///   application.
 /// - fails: never.
@@ -1191,6 +1225,9 @@ pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
 ///   of its point, which reads back to their certificate and reprints as
 ///   itself.
 /// - witness: `tests::diagnostics::a_higher_cell_s_words_spell_at_the_wrapped_point_6446`
+///
+/// # Cost
+/// - allocation: the carrier and the point at each wrapping, diagnostic
 #[spec(ensures: |ret| ret.1.matches("Path.here").count() >= usize::from(wraps))]
 fn wrapped(
     family: String,
@@ -1198,17 +1235,18 @@ fn wrapped(
     wraps: Reflexivities,
 ) -> (String, String)
 {
-    let (mut carrier, mut point) = (family, point);
+    let mut at = (family, point);
     for _ in 0 .. usize::from(wraps) {
-        carrier = alloc::format!("Path[.A = {carrier}]({point}, {point})");
-        point = if point.contains([' ', '(']) {
+        at.0 = path_at(&at);
+        let point = &at.1;
+        at.1 = if point.contains([' ', '(']) {
             alloc::format!("Path.here ({point})")
         }
         else {
             alloc::format!("Path.here {point}")
         };
     }
-    (carrier, point)
+    at
 }
 
 /// `paths`, each name that the source `reader` writes otherwise written as

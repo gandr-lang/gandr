@@ -50,5 +50,5 @@ def lucasLehmer(p : Nat) -> Bool =
     | Succ(_) => false
 
 /// Thirty-one is a Mersenne prime.
-def thirtyOneIsPrime() -> Path(lucasLehmer (Succ four), true) =
+def thirtyOneIsPrime() -> Path (lucasLehmer (Succ four)) true =
   Path.here true

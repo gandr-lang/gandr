@@ -36,13 +36,13 @@ def encode(a : Answer) -> Bit =
     | Yes => One
 
 /// `encoded` returns the original bit after `decode` and `encode`.
-def encoded(b : Bit) -> Path(encode (decode b), b) =
+def encoded(b : Bit) -> Path (encode (decode b)) b =
   match b where
     | Zero => Path.here Zero
     | One => Path.here One
 
 /// `decoded` returns the original answer after `encode` and `decode`.
-def decoded(a : Answer) -> Path(decode (encode a), a) =
+def decoded(a : Answer) -> Path (decode (encode a)) a =
   match a where
     | No => Path.here No
     | Yes => Path.here Yes
@@ -62,17 +62,16 @@ module Ask where
 def heard : Run Ask.Coded = recorded (received One) closed;
 
 /// `heardDecoded` proves that the transported run receives `Yes`.
-def heardDecoded : Path[.A = Run Ask.Decoded](
-  Path.walk (fun (X) { Run (type(?X. end)) }) codes heard,
-  recorded (received Yes) closed
-) = Path.here (recorded (received Yes) closed);
+def heardDecoded : Path[.A = Run Ask.Decoded] (Path.walk
+  (fun (X) { Run (type(?X. end)) })
+  codes
+  heard) (recorded (received Yes) closed) = Path.here (recorded (received Yes) closed);
 
 /// `heardKept` refuses a transported run that receives `No`.
 @[refuses("EndpointMismatch")]
-def heardKept : Path(
-  Path.walk (fun (X) { Run (type(?X. end)) }) codes heard,
-  recorded (received No) closed
-) = Path.here (recorded (received No) closed);
+def heardKept : Path (Path.walk (fun (X) { Run (type(?X. end)) }) codes heard) (recorded
+  (received No)
+  closed) = Path.here (recorded (received No) closed);
 
 /// `heardRun` returns the transported run.
 def heardRun() -> Run Ask.Decoded =

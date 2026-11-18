@@ -30,16 +30,13 @@ def delayed(a : Integer) -> -F Path[.A = +U (-F Integer)](
 /// The `cong_delay` proof carries an integer path through
 /// the suspended doubling.
 @[checks]
-def cong_delay(a : Integer, b : Integer, p : Path(a, b)) -> -F Path(
-  delay a,
-  delay b
-) =
+def cong_delay(a : Integer, b : Integer, p : Path a b) -> -F (Path (delay a) (delay b)) =
   become Path.walk
-    (fun (c) { type(Path[.A = +U (-F Integer)](delay a, delay c)) })
+    (fun (c) { type(Path[.A = +U (-F Integer)] (delay a) (delay c)) })
     p
     (Path.here (delay a))
 
 /// The run carries reflexivity at four through the suspended doubling.
 @[checks]
-def delayed_four() -> -F Path(delay 4, delay 4) =
+def delayed_four() -> -F (Path (delay 4) (delay 4)) =
   become cong_delay 4 4 (Path.here 4)

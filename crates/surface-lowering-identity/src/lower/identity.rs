@@ -1177,8 +1177,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     /// - fails: [`LoweringRefusal::UnresolvedName`] for a supply naming an
     ///   implicit other than `A`; the retired carrier of [`FormFault::Retired`]
     ///   at the head of a bare form over three operands, its carrier written
-    ///   first; a misplaced-tile or extra-operand fault for a form out of
-    ///   shape; the budget refusal once no hole name is left.
+    ///   first; [`FormFault::MissingOperand`] at the head of a head that stands
+    ///   alone, with no carrier and no endpoint; a misplaced-tile or
+    ///   extra-operand fault for a form out of shape; the budget refusal once
+    ///   no hole name is left.
     /// - panics: none.
     ///
     /// # Errors
@@ -1241,6 +1243,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
         else {
             None
         };
+        // A head that stands alone, `Path` where a type is read, writes no
+        // endpoint (#5750).
+        if let (None, Maybe::Absent(_)) = (supplied, cursor.at(TileName::PAREN_OPEN)) {
+            return Err(site.fault(written, FormFault::MissingOperand));
+        }
         closed(site, cursor, TileName::PAREN_OPEN)?;
         let left = site.one(cursor.operands())?;
         closed(site, cursor, TileName::COMMA)?;
@@ -4476,10 +4483,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
     /// # Specification
     /// - requires: `answer` is a node read where a result is read.
     /// - ensures: the path answer exactly when the walk from `answer` through
-    ///   parenthesised types and one `-F` reaches a path type, and the flow
-    ///   answer when it reaches a flow type supplying its carrier, a type
-    ///   application headed `Flow` at two arguments, or a flow between types
-    ///   written `A ⇝ B`.
+    ///   parenthesised types and one `-F` reaches a path type, written whole or
+    ///   with its endpoints juxtaposed, `Path[.A = C] a b`, and the flow answer
+    ///   when it reaches a flow type supplying its carrier, a type application
+    ///   headed `Flow` at two arguments, or a flow between types written `A ⇝
+    ///   B`.
     /// - provides: the classification-time guarantee that a derived operation's
     ///   answer mints as `F (Path[.A = A](a, b))` or `F (Flow[.A = A](a, b))`.
     /// - fails: the unannotated refusal at `site` when the walk reaches another
@@ -4624,6 +4632,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
                 Piece::Tile { at, .. } => Some(at),
                 Piece::Operand(_) => None,
             });
+            // The head of a juxtaposed path type, `Path[.A = C] a b` (#5750).
+            let lead = scratch.pieces.first().and_then(|piece| match *piece {
+                Piece::Operand(head) => Some(head),
+                Piece::Tile { .. } => None,
+            });
             let flows = scratch.pieces.iter().any(|piece| {
                 matches!(*piece, Piece::Tile { label, .. } if label == TileName::UNIVERSE_FLOW)
             });
@@ -4638,6 +4651,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
                 };
             }
             if applied {
+                if let Some(head) = lead
+                    && let Some((_, Former::PathType)) = self.cx().form_at(head)?
+                {
+                    return Ok(Answered::Path);
+                }
                 let flow = written == 2_usize
                     && keyword.is_some_and(|at| self.cx().name_at(at).as_ref() == FLOW);
                 return if flow {

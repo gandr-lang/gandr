@@ -18,9 +18,9 @@ def stepOmittedAtHere(
   y : A,
   z : A,
   w : A,
-  g : Path(y, z),
-  h : Path[.A = A](z, w)
-) -> Path[.A = Path[.A = A](y, w)](Path.step g h, Path.step g h) =
+  g : Path y z,
+  h : Path[.A = A] z w
+) -> Path[.A = Path[.A = A] y w] (Path.step g h) (Path.step g h) =
   Path.here (Path.step g h)
 
 /// A composite whose first path omits its carrier.
@@ -29,9 +29,9 @@ def stepOmittedFirst(
   y : A,
   z : A,
   w : A,
-  g : Path(y, z),
-  h : Path[.A = A](z, w)
-) -> Path[.A = A](y, w) =
+  g : Path y z,
+  h : Path[.A = A] z w
+) -> Path[.A = A] y w =
   Path.step g h
 
 /// The composite through `stepOmittedFirst`, read as the composite that
@@ -41,7 +41,7 @@ def stepOmittedThrough(
   y : A,
   z : A,
   w : A,
-  g : Path[.A = A](y, z),
-  h : Path[.A = A](z, w)
-) -> Path[.A = Path[.A = A](y, w)](stepOmittedFirst A y z w g h, Path.step g h) =
+  g : Path[.A = A] y z,
+  h : Path[.A = A] z w
+) -> Path[.A = Path[.A = A] y w] (stepOmittedFirst A y z w g h) (Path.step g h) =
   Path.here (stepOmittedFirst A y z w g h)

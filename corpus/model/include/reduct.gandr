@@ -20,10 +20,7 @@ pub def endoMonoid : Model Monoid = pack Endo at Model Monoid;
 def endoSemigroup : Model Semigroup = pack Endo at Model Semigroup;
 
 /// `restricted` compares the named reduct with the packed semigroup model.
-def restricted : Path(
-  endoSemigroup,
-  Monoid.Semigroup endoMonoid
-) = Path.here endoSemigroup;
+def restricted : Path endoSemigroup (Monoid.Semigroup endoMonoid) = Path.here endoSemigroup;
 
 /// `multiplies` reads the multiplication field of a semigroup model.
 pub def multiplies(s : Model Semigroup) -> Integer =

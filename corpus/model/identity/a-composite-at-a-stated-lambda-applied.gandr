@@ -12,7 +12,7 @@
 /// - see: #3920 — repeated stated lambda
 
 /// The `along` function applies `F` to `p`.
-def along(A : Type, F : A -> A, x : A, y : A, p : Path(x, y)) -> Path[.A = A](F x, F y) =
+def along(A : Type, F : A -> A, x : A, y : A, p : Path x y) -> Path[.A = A] (F x) (F y) =
   Path.ap F p
 
 /// The `composeHere` proof is reflexivity at a composite.
@@ -21,9 +21,9 @@ def composeHere(
   x : A,
   y : A,
   z : A,
-  p : Path[.A = A](x, y),
-  q : Path(y, z)
-) -> Path[.A = Path[.A = A](x, z)](Path.step p q, Path.step p q) =
+  p : Path[.A = A] x y,
+  q : Path y z
+) -> Path[.A = Path[.A = A] x z] (Path.step p q) (Path.step p q) =
   Path.here (Path.step p q)
 
 /// The body writes the composite over `along` at the stated lambda.
@@ -33,10 +33,9 @@ def composedAtLambda(
   x : A,
   y : A,
   z : A,
-  r : Path(x, y),
-  s : Path(F y, z)
-) -> Path[.A = Path[.A = A](F x, z)](
-  Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s,
+  r : Path x y,
+  s : Path (F y) z
+) -> Path[.A = Path[.A = A] (F x) z] (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s) (
   Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s
 ) =
   Path.here (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s)
@@ -48,10 +47,9 @@ def passedAtLambda(
   x : A,
   y : A,
   z : A,
-  r : Path(x, y),
-  s : Path(F y, z)
-) -> Path[.A = Path[.A = A](F x, z)](
-  Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s,
+  r : Path x y,
+  s : Path (F y) z
+) -> Path[.A = Path[.A = A] (F x) z] (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s) (
   Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s
 ) =
   composeHere A (F x) (F y) z (along A (fun (q : A) { F q } : A -> A) x y r) s
@@ -63,10 +61,9 @@ def passedRedex(
   x : A,
   y : A,
   z : A,
-  r : Path(x, y),
-  s : Path(F y, z)
-) -> Path[.A = Path[.A = A](F x, z)](
-  Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s,
+  r : Path x y,
+  s : Path (F y) z
+) -> Path[.A = Path[.A = A] (F x) z] (Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s) (
   Path.step (along A (fun (q : A) { F q } : A -> A) x y r) s
 ) =
   composeHere A ((fun (q : A) { F q } : A -> A) x) (F y) z (along A (fun (q : A) {
@@ -74,10 +71,9 @@ def passedRedex(
   } : A -> A) x y r) s
 
 /// The `acrossCarriers` function applies `F` to `p` across two carriers.
-def acrossCarriers(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path(x, y)) -> Path[.A = B](
-  F x,
-  F y
-) =
+def acrossCarriers(A : Type, B : Type, F : A -> B, x : A, y : A, p : Path x y) -> Path[.A = B] (
+  F x
+) (F y) =
   Path.ap F p
 
 /// The body writes the composite over the lambda that composes.

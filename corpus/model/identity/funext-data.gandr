@@ -27,7 +27,7 @@ def throughFigure(shape : Shape) -> Integer =
   figureWidth (Shapes.toFigure shape)
 
 /// The `widths` path proves that the two width functions agree.
-def widths : Path(width, throughFigure) = Path.funext width throughFigure;
+def widths : Path width throughFigure = Path.funext width throughFigure;
 
 /// The `drawn` function translates a shape into its figure.
 /// The figure translation swaps the sides.
@@ -37,7 +37,7 @@ def drawn(shape : Shape) -> Figure =
     | Rect(a, b) => Box b a
 
 /// The `drawings` path proves that the two drawing functions agree.
-def drawings : Path(Shapes.toFigure, drawn) = Path.funext Shapes.toFigure drawn;
+def drawings : Path Shapes.toFigure drawn = Path.funext Shapes.toFigure drawn;
 
 /// A `Light` has stop and go values.
 data Light : Type where
@@ -59,4 +59,4 @@ def unswitched(light : Light) -> Light =
   light
 
 /// The `switchedTwice` path proves that two switches return the original light.
-def switchedTwice : Path(switchTwice, unswitched) = Path.funext switchTwice unswitched;
+def switchedTwice : Path switchTwice unswitched = Path.funext switchTwice unswitched;

@@ -21,7 +21,7 @@
 14:33-14:33 M ⇒ M : Type @14:33-14:34
 14:34-14:34 ; ⇒ oper mul : (x : M, y : M) --> M @14:3-14:35
 15:3-15:6 rule ⇒ rule assoc : mul (mul x y) z ==> mul x (mul y z) @15:3-15:52
-15:8-15:12 assoc ⇒ assoc : (a : M, b : M, c : M) -> Path[.A = M](mul (mul a b) c, mul a (mul b c)) @15:8-15:13
+15:8-15:12 assoc ⇒ assoc : (a : M, b : M, c : M) -> Path[.A = M] (mul (mul a b) c) (mul a (mul b c)) @15:8-15:13
 15:14-15:14 : ⇒ rule assoc : mul (mul x y) z ==> mul x (mul y z) @15:3-15:52
 15:16-15:18 mul ⇒ mul : (M, M) -> M @15:16-15:19
 15:20-15:20 ( ⇒ M @15:16-15:31
@@ -51,7 +51,7 @@
 20:14-20:14 M ⇒ M : Type @20:14-20:15
 20:15-20:15 ; ⇒ oper one : M @20:3-20:16
 21:3-21:6 rule ⇒ rule unitL : mul one x ==> x @21:3-21:32
-21:8-21:12 unitL ⇒ unitL : (a : M) -> Path[.A = M](mul (force one) a, a) @21:8-21:13
+21:8-21:12 unitL ⇒ unitL : (a : M) -> Path[.A = M] (mul (force one) a) a @21:8-21:13
 21:14-21:14 : ⇒ rule unitL : mul one x ==> x @21:3-21:32
 21:16-21:18 mul ⇒ mul : (M, M) -> M @21:16-21:19
 21:20-21:22 one ⇒ one : M @21:20-21:23
@@ -60,7 +60,7 @@
 21:30-21:30 x ⇒ x : M @21:30-21:31
 21:31-21:31 ; ⇒ rule unitL : mul one x ==> x @21:3-21:32
 22:3-22:6 rule ⇒ rule unitR : mul x one ==> x @22:3-22:32
-22:8-22:12 unitR ⇒ unitR : (a : M) -> Path[.A = M](mul a (force one), a) @22:8-22:13
+22:8-22:12 unitR ⇒ unitR : (a : M) -> Path[.A = M] (mul a (force one)) a @22:8-22:13
 22:14-22:14 : ⇒ rule unitR : mul x one ==> x @22:3-22:32
 22:16-22:18 mul ⇒ mul : (M, M) -> M @22:16-22:19
 22:20-22:20 x ⇒ x : M @22:20-22:21
@@ -80,7 +80,7 @@
 27:15-27:15 M ⇒ M : Type @27:15-27:16
 27:16-27:16 ; ⇒ oper zero : M @27:3-27:17
 28:3-28:6 rule ⇒ rule absorb : mul zero x ==> zero @28:3-28:37
-28:8-28:13 absorb ⇒ absorb : (a : M) -> Path[.A = M](mul (force zero) a, force zero) @28:8-28:14
+28:8-28:13 absorb ⇒ absorb : (a : M) -> Path[.A = M] (mul (force zero) a) (force zero) @28:8-28:14
 28:15-28:15 : ⇒ rule absorb : mul zero x ==> zero @28:3-28:37
 28:17-28:19 mul ⇒ mul : (M, M) -> M @28:17-28:20
 28:21-28:24 zero ⇒ zero : M @28:21-28:25
@@ -173,45 +173,45 @@
 56:11-56:11 = ⇒ one : Integer -> Integer @56:3-56:19
 56:13-56:17 ident ⇒ ident : Integer -> Integer @56:13-56:18
 56:18-56:18 ; ⇒ one : Integer -> Integer @56:3-56:19
-59:3-59:5 def ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:47
-59:7-59:12 assoc( ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:7-59:12
+59:3-59:5 def ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:49
+59:7-59:12 assoc( ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:7-59:12
 60:5-60:5 f ⇒ f : Integer -> Integer @60:5-60:6
-60:7-60:7 : ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:47
+60:7-60:7 : ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:49
 60:9-60:15 Integer ⇒ Integer : Type @60:9-60:16
 60:17-60:18 -> ⇒ Integer -> Integer : Type[-] @60:9-60:27
 60:20-60:26 Integer ⇒ Integer : Type @60:20-60:27
-60:27-60:27 , ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:47
+60:27-60:27 , ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:49
 61:5-61:5 g ⇒ g : Integer -> Integer @61:5-61:6
-61:7-61:7 : ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:47
+61:7-61:7 : ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:49
 61:9-61:15 Integer ⇒ Integer : Type @61:9-61:16
 61:17-61:18 -> ⇒ Integer -> Integer : Type[-] @61:9-61:27
 61:20-61:26 Integer ⇒ Integer : Type @61:20-61:27
-61:27-61:27 , ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:47
+61:27-61:27 , ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:49
 62:5-62:5 h ⇒ h : Integer -> Integer @62:5-62:6
-62:7-62:7 : ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:47
+62:7-62:7 : ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:49
 62:9-62:15 Integer ⇒ Integer : Type @62:9-62:16
 62:17-62:18 -> ⇒ Integer -> Integer : Type[-] @62:9-62:27
 62:20-62:26 Integer ⇒ Integer : Type @62:20-62:27
-63:3-63:6 ) -> ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:47
-63:8-63:12 Path( ⇒ Path(mul (mul f g) h, mul f (mul g h)) : Type @63:8-63:46
-63:13-63:15 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @63:13-63:16
-63:17-63:17 ( ⇒ -F (Integer -> Integer) @63:13-63:28
-63:18-63:20 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @63:18-63:21
-63:22-63:22 f ⇒ f : Integer -> Integer @63:22-63:23
-63:24-63:24 g ⇒ g : Integer -> Integer @63:24-63:25
-63:25-63:25 ) ⇒ -F (Integer -> Integer) @63:13-63:28
-63:27-63:27 h ⇒ h : Integer -> Integer @63:27-63:28
-63:28-63:28 , ⇒ Path(mul (mul f g) h, mul f (mul g h)) : Type @63:8-63:46
-63:30-63:32 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @63:30-63:33
-63:34-63:34 f ⇒ f : Integer -> Integer @63:34-63:35
-63:36-63:36 ( ⇒ -F (Integer -> Integer) @63:30-63:45
-63:37-63:39 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @63:37-63:40
-63:41-63:41 g ⇒ g : Integer -> Integer @63:41-63:42
-63:43-63:43 h ⇒ h : Integer -> Integer @63:43-63:44
-63:44-63:44 ) ⇒ -F (Integer -> Integer) @63:30-63:45
-63:45-63:45 ) ⇒ Path(mul (mul f g) h, mul f (mul g h)) : Type @63:8-63:46
-63:47-63:47 = ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer](Endo.mul (Endo.mul a b) c, Endo.mul a (Endo.mul⏎  b c))⏎⏎`assoc` verifies the included associativity law. @59:3-64:60
-64:5-64:15 Path.here ( ⇒ Path.here (thunk { andThen f (thunk { andThen g h }) }) : Path[.A = Integer -> Integer](Endo.mul (Endo.mul f g) h, Endo.mul f (Endo.mul g⏎  h)) @64:5-64:60
+63:3-63:6 ) -> ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:3-63:49
+63:8-63:13 Path ( ⇒ Path (mul (mul f g) h) (mul f (mul g h)) : Type @63:8-63:48
+63:14-63:16 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @63:14-63:17
+63:18-63:18 ( ⇒ -F (Integer -> Integer) @63:14-63:29
+63:19-63:21 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @63:19-63:22
+63:23-63:23 f ⇒ f : Integer -> Integer @63:23-63:24
+63:25-63:25 g ⇒ g : Integer -> Integer @63:25-63:26
+63:26-63:26 ) ⇒ -F (Integer -> Integer) @63:14-63:29
+63:28-63:28 h ⇒ h : Integer -> Integer @63:28-63:29
+63:29-63:31 ) ( ⇒ Path (mul (mul f g) h) (mul f (mul g h)) : Type @63:8-63:48
+63:32-63:34 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @63:32-63:35
+63:36-63:36 f ⇒ f : Integer -> Integer @63:36-63:37
+63:38-63:38 ( ⇒ -F (Integer -> Integer) @63:32-63:47
+63:39-63:41 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @63:39-63:42
+63:43-63:43 g ⇒ g : Integer -> Integer @63:43-63:44
+63:45-63:45 h ⇒ h : Integer -> Integer @63:45-63:46
+63:46-63:46 ) ⇒ -F (Integer -> Integer) @63:32-63:47
+63:47-63:47 ) ⇒ Path (mul (mul f g) h) (mul f (mul g h)) : Type @63:8-63:48
+63:49-63:49 = ⇒ assoc : (a : Integer -> Integer, b : Integer -> Integer, c : Integer -> Integer) ->⏎  Path[.A = Integer -> Integer] (Endo.mul (Endo.mul a b) c) (Endo.mul a⏎  (Endo.mul b c))⏎⏎`assoc` verifies the included associativity law. @59:3-64:60
+64:5-64:15 Path.here ( ⇒ Path.here (thunk { andThen f (thunk { andThen g h }) }) : Path[.A = Integer -> Integer] (Endo.mul (Endo.mul f g) h) (Endo.mul f (Endo.mul⏎  g h)) @64:5-64:60
 64:16-64:22 thunk { ⇒ Integer -> Integer @64:16-64:59
 64:24-64:30 andThen ⇒ andThen : (Integer -> Integer, Integer -> Integer, Integer) -> Integer @64:24-64:31
 64:32-64:32 f ⇒ f : Integer -> Integer @64:32-64:33
@@ -223,70 +223,68 @@
 64:55-64:55 } ⇒ Integer -> Integer @64:35-64:56
 64:56-64:56 ) ⇒ Integer -> -F Integer @64:24-64:57
 64:58-64:58 } ⇒ Integer -> Integer @64:16-64:59
-64:59-64:59 ) ⇒ Path.here (thunk { andThen f (thunk { andThen g h }) }) : Path[.A = Integer -> Integer](Endo.mul (Endo.mul f g) h, Endo.mul f (Endo.mul g⏎  h)) @64:5-64:60
-67:3-67:5 def ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul Endo.one a, a⏎)⏎⏎`unitL` verifies the left unit law. @67:3-70:5
-67:7-67:12 unitL( ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul Endo.one a, a⏎)⏎⏎`unitL` verifies the left unit law. @67:7-67:12
+64:59-64:59 ) ⇒ Path.here (thunk { andThen f (thunk { andThen g h }) }) : Path[.A = Integer -> Integer] (Endo.mul (Endo.mul f g) h) (Endo.mul f (Endo.mul⏎  g h)) @64:5-64:60
+67:3-67:5 def ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul Endo.one a)⏎  a⏎⏎`unitL` verifies the left unit law. @67:3-67:59
+67:7-67:12 unitL( ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul Endo.one a)⏎  a⏎⏎`unitL` verifies the left unit law. @67:7-67:12
 67:13-67:13 f ⇒ f : Integer -> Integer @67:13-67:14
-67:15-67:15 : ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul Endo.one a, a⏎)⏎⏎`unitL` verifies the left unit law. @67:3-70:5
+67:15-67:15 : ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul Endo.one a)⏎  a⏎⏎`unitL` verifies the left unit law. @67:3-67:59
 67:17-67:23 Integer ⇒ Integer : Type @67:17-67:24
 67:25-67:26 -> ⇒ Integer -> Integer : Type[-] @67:17-67:35
 67:28-67:34 Integer ⇒ Integer : Type @67:28-67:35
-67:35-67:38 ) -> ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul Endo.one a, a⏎)⏎⏎`unitL` verifies the left unit law. @67:3-70:5
-67:40-67:44 Path( ⇒ Type @67:40-70:4
-68:5-68:7 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @68:5-68:8
-68:9-68:11 one ⇒ one : Integer -> Integer @68:9-68:12
-68:13-68:13 f ⇒ f : Integer -> Integer @68:13-68:14
-68:14-68:14 , ⇒ Type @67:40-70:4
-69:5-69:5 f ⇒ f : Integer -> Integer @69:5-69:6
-70:3-70:3 ) ⇒ Type @67:40-70:4
-70:5-70:5 = ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul Endo.one a, a⏎)⏎⏎`unitL` verifies the left unit law. @67:3-71:16
-71:5-71:13 Path.here ⇒ Path.here f : Path[.A = Integer -> Integer](Endo.mul Endo.one f, f) @71:5-71:16
-71:15-71:15 f ⇒ f : Integer -> Integer @71:15-71:16
-74:3-74:5 def ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul a Endo.one, a⏎)⏎⏎`unitR` verifies the right unit law. @74:3-77:5
-74:7-74:12 unitR( ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul a Endo.one, a⏎)⏎⏎`unitR` verifies the right unit law. @74:7-74:12
-74:13-74:13 f ⇒ f : Integer -> Integer @74:13-74:14
-74:15-74:15 : ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul a Endo.one, a⏎)⏎⏎`unitR` verifies the right unit law. @74:3-77:5
-74:17-74:23 Integer ⇒ Integer : Type @74:17-74:24
-74:25-74:26 -> ⇒ Integer -> Integer : Type[-] @74:17-74:35
-74:28-74:34 Integer ⇒ Integer : Type @74:28-74:35
-74:35-74:38 ) -> ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul a Endo.one, a⏎)⏎⏎`unitR` verifies the right unit law. @74:3-77:5
-74:40-74:44 Path( ⇒ Type @74:40-77:4
-75:5-75:7 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @75:5-75:8
-75:9-75:9 f ⇒ f : Integer -> Integer @75:9-75:10
-75:11-75:13 one ⇒ one : Integer -> Integer @75:11-75:14
-75:14-75:14 , ⇒ Type @74:40-77:4
-76:5-76:5 f ⇒ f : Integer -> Integer @76:5-76:6
-77:3-77:3 ) ⇒ Type @74:40-77:4
-77:5-77:5 = ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer](Endo.mul a Endo.one, a⏎)⏎⏎`unitR` verifies the right unit law. @74:3-78:16
-78:5-78:13 Path.here ⇒ Path.here f : Path[.A = Integer -> Integer](Endo.mul f Endo.one, f) @78:5-78:16
-78:15-78:15 f ⇒ f : Integer -> Integer @78:15-78:16
-81:1-81:12 @[runs("8")] ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @81:1-82:1
-82:1-82:3 def ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @82:1-82:27
-82:5-82:13 composed( ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @82:5-82:13
-82:14-82:17 ) -> ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @82:1-82:27
-82:19-82:25 Integer ⇒ Integer : Type @82:19-82:26
-82:27-82:27 = ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @82:1-84:6
-83:3-83:5 let ⇒ -F Integer @83:3-83:6
-83:7-83:7 h ⇒ h : Integer -> Integer @83:7-83:8
-83:9-83:9 = ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @82:1-84:6
-83:11-83:15 Endo. ⇒ Endo.mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @83:11-83:19
-83:16-83:18 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @83:16-83:19
-83:20-83:20 ( ⇒ Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 }) : -F (Integer -> Integer) @83:11-83:59
-83:21-83:25 fun ( ⇒ Integer -> -F Integer @83:21-83:38
-83:26-83:26 n ⇒ n : Integer @83:26-83:27
-83:27-83:29 ) { ⇒ Integer -> -F Integer @83:21-83:38
-83:31-83:31 n ⇒ n : Integer @83:31-83:32
-83:33-83:33 + ⇒ -F Integer @83:31-83:36
-83:35-83:35 1 ⇒ Integer @83:35-83:36
-83:37-83:37 } ⇒ Integer -> -F Integer @83:21-83:38
-83:38-83:40 ) ( ⇒ Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 }) : -F (Integer -> Integer) @83:11-83:59
-83:41-83:45 fun ( ⇒ Integer -> -F Integer @83:41-83:58
-83:46-83:46 n ⇒ n : Integer @83:46-83:47
-83:47-83:49 ) { ⇒ Integer -> -F Integer @83:41-83:58
-83:51-83:51 n ⇒ n : Integer @83:51-83:52
-83:53-83:53 * ⇒ -F Integer @83:51-83:56
-83:55-83:55 2 ⇒ Integer @83:55-83:56
-83:57-83:57 } ⇒ Integer -> -F Integer @83:41-83:58
-83:58-83:58 ) ⇒ Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 }) : -F (Integer -> Integer) @83:11-83:59
-84:3-84:3 h ⇒ h : Integer -> Integer @84:3-84:4
-84:5-84:5 3 ⇒ Integer @84:5-84:6
+67:35-67:38 ) -> ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul Endo.one a)⏎  a⏎⏎`unitL` verifies the left unit law. @67:3-67:59
+67:40-67:45 Path ( ⇒ Path (mul one f) f : Type @67:40-67:58
+67:46-67:48 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @67:46-67:49
+67:50-67:52 one ⇒ one : Integer -> Integer @67:50-67:53
+67:54-67:54 f ⇒ f : Integer -> Integer @67:54-67:55
+67:55-67:55 ) ⇒ Path (mul one f) f : Type @67:40-67:58
+67:57-67:57 f ⇒ f : Integer -> Integer @67:57-67:58
+67:59-67:59 = ⇒ unitL : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul Endo.one a)⏎  a⏎⏎`unitL` verifies the left unit law. @67:3-68:16
+68:5-68:13 Path.here ⇒ Path.here f : Path[.A = Integer -> Integer] (Endo.mul Endo.one f) f @68:5-68:16
+68:15-68:15 f ⇒ f : Integer -> Integer @68:15-68:16
+71:3-71:5 def ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul a Endo.one)⏎  a⏎⏎`unitR` verifies the right unit law. @71:3-71:59
+71:7-71:12 unitR( ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul a Endo.one)⏎  a⏎⏎`unitR` verifies the right unit law. @71:7-71:12
+71:13-71:13 f ⇒ f : Integer -> Integer @71:13-71:14
+71:15-71:15 : ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul a Endo.one)⏎  a⏎⏎`unitR` verifies the right unit law. @71:3-71:59
+71:17-71:23 Integer ⇒ Integer : Type @71:17-71:24
+71:25-71:26 -> ⇒ Integer -> Integer : Type[-] @71:17-71:35
+71:28-71:34 Integer ⇒ Integer : Type @71:28-71:35
+71:35-71:38 ) -> ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul a Endo.one)⏎  a⏎⏎`unitR` verifies the right unit law. @71:3-71:59
+71:40-71:45 Path ( ⇒ Path (mul f one) f : Type @71:40-71:58
+71:46-71:48 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @71:46-71:49
+71:50-71:50 f ⇒ f : Integer -> Integer @71:50-71:51
+71:52-71:54 one ⇒ one : Integer -> Integer @71:52-71:55
+71:55-71:55 ) ⇒ Path (mul f one) f : Type @71:40-71:58
+71:57-71:57 f ⇒ f : Integer -> Integer @71:57-71:58
+71:59-71:59 = ⇒ unitR : (a : Integer -> Integer) -> Path[.A = Integer -> Integer] (Endo.mul a Endo.one)⏎  a⏎⏎`unitR` verifies the right unit law. @71:3-72:16
+72:5-72:13 Path.here ⇒ Path.here f : Path[.A = Integer -> Integer] (Endo.mul f Endo.one) f @72:5-72:16
+72:15-72:15 f ⇒ f : Integer -> Integer @72:15-72:16
+75:1-75:12 @[runs("8")] ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @75:1-76:1
+76:1-76:3 def ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @76:1-76:27
+76:5-76:13 composed( ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @76:5-76:13
+76:14-76:17 ) -> ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @76:1-76:27
+76:19-76:25 Integer ⇒ Integer : Type @76:19-76:26
+76:27-76:27 = ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @76:1-78:6
+77:3-77:5 let ⇒ -F Integer @77:3-77:6
+77:7-77:7 h ⇒ h : Integer -> Integer @77:7-77:8
+77:9-77:9 = ⇒ composed : () -> Integer⏎⏎`composed` adds one, then doubles `3`. @76:1-78:6
+77:11-77:15 Endo. ⇒ Endo.mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @77:11-77:19
+77:16-77:18 mul ⇒ mul : (Integer -> Integer, Integer -> Integer) -> (Integer -> Integer) @77:16-77:19
+77:20-77:20 ( ⇒ Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 }) : -F (Integer -> Integer) @77:11-77:59
+77:21-77:25 fun ( ⇒ Integer -> -F Integer @77:21-77:38
+77:26-77:26 n ⇒ n : Integer @77:26-77:27
+77:27-77:29 ) { ⇒ Integer -> -F Integer @77:21-77:38
+77:31-77:31 n ⇒ n : Integer @77:31-77:32
+77:33-77:33 + ⇒ -F Integer @77:31-77:36
+77:35-77:35 1 ⇒ Integer @77:35-77:36
+77:37-77:37 } ⇒ Integer -> -F Integer @77:21-77:38
+77:38-77:40 ) ( ⇒ Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 }) : -F (Integer -> Integer) @77:11-77:59
+77:41-77:45 fun ( ⇒ Integer -> -F Integer @77:41-77:58
+77:46-77:46 n ⇒ n : Integer @77:46-77:47
+77:47-77:49 ) { ⇒ Integer -> -F Integer @77:41-77:58
+77:51-77:51 n ⇒ n : Integer @77:51-77:52
+77:53-77:53 * ⇒ -F Integer @77:51-77:56
+77:55-77:55 2 ⇒ Integer @77:55-77:56
+77:57-77:57 } ⇒ Integer -> -F Integer @77:41-77:58
+77:58-77:58 ) ⇒ Endo.mul (fun (n) { n + 1 }) (fun (n) { n * 2 }) : -F (Integer -> Integer) @77:11-77:59
+78:3-78:3 h ⇒ h : Integer -> Integer @78:3-78:4
+78:5-78:5 3 ⇒ Integer @78:5-78:6
