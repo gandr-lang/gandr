@@ -158,10 +158,11 @@ RUN set -eux; \
 FROM tools
 COPY --from=driver --chown=1000:1000 /opt/ci/.dylint_drivers /opt/ci/.dylint_drivers
 
-# The runner overrides HOME. Explicit homes retain the image's populated
-# tools, while root can write the workspace and runner file-command mounts.
+# The runner and this image use UID 1000. The job steps keep that user, so
+# kache's runtime and cache files belong to the runner after the container
+# exits.
 ENV MISE_DATA_DIR=/opt/ci/.local/share/mise \
     MISE_CACHE_DIR=/opt/ci/.cache/mise \
     DYLINT_DRIVER_PATH=/opt/ci/.dylint_drivers
-USER root
+USER ci
 WORKDIR /opt/ci
