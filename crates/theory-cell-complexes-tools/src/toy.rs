@@ -88,7 +88,7 @@ pub struct ToyAlphabet;
 /// A toy metavariable name.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ToyVar(Box<str>);
+pub struct ToyVar(alloc::sync::Arc<str>);
 
 impl ToyVar
 {
@@ -109,7 +109,7 @@ impl ToyVar
         let mut primed = String::with_capacity(self.0.len().saturating_add(1));
         primed.push_str(&self.0);
         primed.push('\'');
-        Self(primed.into_boxed_str())
+        Self(primed.into())
     }
 }
 
@@ -865,7 +865,7 @@ where
                 continue;
             }
             let fresh = loop {
-                let name = ToyVar(alloc::format!("$g${}", suffix.0).into_boxed_str());
+                let name = ToyVar(alloc::format!("$g${}", suffix.0).into());
                 suffix = suffix.next();
                 if taken.insert(name.clone()) {
                     break name;
@@ -1232,8 +1232,11 @@ impl CellAlphabet for ToyAlphabet
             };
             let mut child = start.next();
             for index in 0 .. head.arity().0 {
-                let mut child_path = path.clone();
-                child_path.push(PositionStep::from(index));
+                let child_path: Vec<PositionStep> = path
+                    .iter()
+                    .copied()
+                    .chain([PositionStep::from(index)])
+                    .collect();
                 queue.push_back((child_path, child));
                 child = cmd.end_of(child);
             }
@@ -1697,8 +1700,8 @@ mod tests
                 ToyAlphabet::subterm_cmd_at(&term, pos)
             );
             assert_eq!(
-                Ok(term.clone()),
-                ToyAlphabet::splice_cmd_at(&term, pos, expected)
+                ToyAlphabet::splice_cmd_at(&term, pos, expected).as_ref(),
+                Ok(&term)
             );
         }
         for (start, end) in [(0, 6), (1, 3), (2, 3), (3, 6), (4, 5), (5, 6), (6, 6)] {
@@ -1988,7 +1991,7 @@ mod tests
         );
         for name in ["", "r'"] {
             let source = Toy::var(name);
-            let expected = Toy::var(ToyVar(alloc::format!("{name}'").into_boxed_str()));
+            let expected = Toy::var(ToyVar(alloc::format!("{name}'").into()));
             assert_eq!(
                 (expected.clone(), expected),
                 ToyAlphabet::rename_apart((&source, &source), (&source, &source))
