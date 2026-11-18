@@ -1,18 +1,17 @@
 error[Undecided]: the checker could not decide what this code unfolds to
    ╭▸ corpus/pathological/identity/circle-section.gandr:48:1
    │
-48 │    def rec forged(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
+48 │    def rec forged(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (
    │    │              ─ checked against `(a : Path[.A = Circle] Base Base) -> -F (Path[.A = Path[.A = Circle] Base Base] (spin (wind a)) a)`; while checking the body of this function; binds p : Path[.A = Circle] Base Base
    │ ┌──┘
    │ │
-49 │ │    spin (wind p),
-50 │ │    p
-51 │ │  ) =
-52 │ │┌   match p where
-53 │ ││     | here => Path.here (Path.here Base)
-54 │ ││     | loop ∷ q => forged[<] q
+49 │ │    spin (wind p)
+50 │ │  ) p =
+51 │ │┌   match p where
+52 │ ││     | here => Path.here (Path.here Base)
+53 │ ││     | loop ∷ q => forged[<] q
    │ ││                   ─────────── checked against `-F (Path[.A = Path[.A = Circle] Base Base] (spin (wind (loop ∷ q))) (loop ∷ q))`; while comparing the type this synthesises with the one it is checked against
-55 │ ││     | back(loop) ∷ q => { let ih = forged[<] q; Path.ap unloopOn ih }
+54 │ ││     | back(loop) ∷ q => { let ih = forged[<] q; Path.ap unloopOn ih }
    │ ││                                                                     │
    │ └│─────────────────────────────────────────────────────────────────────│
    │  └─────────────────────────────────────────────────────────────────────checked against `(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (spin (wind p)) p`; while checking the body of this function; binds forged : (a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] (spin (wind a)) a
@@ -22,19 +21,16 @@ error[Undecided]: the checker could not decide what this code unfolds to
    ╰ help: write code whose unfolding the checker can decide
 
 error[RuleNotRespected]: this case might tell apart terms its datatype's rules identify
-   ╭▸ corpus/pathological/identity/circle-section.gandr:68:3
+   ╭▸ corpus/pathological/identity/circle-section.gandr:64:3
    │
-64 │    def rec rewound(p : Path[.A = Circle](Base, Base)) -> Path[.A = Path[.A = Circle](Base, Base)](
+63 │    def rec rewound(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] p p =
    │    │               ─ checked against `(a : Path[.A = Circle] Base Base) -> -F Path[.A = Path[.A = Circle] Base Base] a a`; while checking the body of this function; binds p : Path[.A = Circle] Base Base
    │ ┌──┘
    │ │
-65 │ │    p,
-66 │ │    p
-67 │ │  ) =
-68 │ │┏   match p where
-69 │ │┃     | here => Path.here (Path.here Base)
-70 │ │┃     | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
-71 │ │┃     | back(loop) ∷ q => Path.here (back loop ∷ q)
+64 │ │┏   match p where
+65 │ │┃     | here => Path.here (Path.here Base)
+66 │ │┃     | loop ∷ q => { let ih = rewound[<] q; Path.ap loopOn ih }
+67 │ │┃     | back(loop) ∷ q => Path.here (back loop ∷ q)
    │ │┃                                                 ╿
    │ └┃─────────────────────────────────────────────────│
    │  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━checked against `(p : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] p p`; while checking the body of this function; binds rewound : (a : Path[.A = Circle] Base Base) -> Path[.A = Path[.A = Circle] Base Base] a a

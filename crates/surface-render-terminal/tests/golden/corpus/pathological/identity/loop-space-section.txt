@@ -1,7 +1,7 @@
 error[Undecided]: the checker could not decide what this code unfolds to
    ╭▸ corpus/pathological/identity/loop-space-section.gandr:46:1
    │
-46 │    def rec forged(c : Circle) -> Path(spin (wind c), c) =
+46 │    def rec forged(c : Circle) -> Path (spin (wind c)) c =
    │    │              ─ checked against `(a : Circle) -> -F (Path[.A = Circle] (spin (wind a)) a)`; while checking the body of this function; binds c : Circle
    │ ┌──┘
    │ │
