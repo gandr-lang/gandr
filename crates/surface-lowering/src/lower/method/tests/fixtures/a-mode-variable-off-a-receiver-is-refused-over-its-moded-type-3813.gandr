@@ -1,0 +1,2 @@
+def nested(xs : List(m Integer)) -> -F Integer { pure 0 }
+def misspelt(x : Type) -> -F Type { return type(x wit) }

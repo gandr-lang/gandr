@@ -1,0 +1,3 @@
+{NAT}def rec varied(n : Nat, m : Nat) -> -F Nat {{ match m {{ | Zero => return n | Succ(p) => become varied[<] p p }} }}
+def rec shadowed(n : Nat, m : Nat) -> -F Nat {{ match m {{ | Zero => return n | Succ(n) => become shadowed[<] n n }} }}
+def rec short(n : Nat, m : Nat) -> -F Nat {{ match m {{ | Zero => return n | Succ(p) => become short[<] p }} }}

@@ -1,0 +1,4 @@
+oper split : (b : Bit)) --> (_ : Bit, _ : Bit) {
+  node : tee(b) --> (_, _);
+}
+def kept = 1 ;

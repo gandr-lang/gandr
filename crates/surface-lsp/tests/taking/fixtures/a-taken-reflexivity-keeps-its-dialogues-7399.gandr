@@ -1,0 +1,19 @@
+/// Decidable equality over a carrier some value may be unequal to itself in:
+/// symmetric.
+pub theory PartialEq where
+  sort Carrier : Type;
+  oper eq : (a : Carrier, b : Carrier) --> Bool;
+  law sym : (a : Carrier, b : Carrier) -> Path[.A = Bool](eq a b, eq b a);
+
+/// Decidable equality over a carrier: a partial equality every value is
+/// equal to itself in.
+pub theory Eq where
+  include PartialEq;
+  law refl : (a : Carrier) -> Path[.A = Bool](eq a a, true);
+
+/// An unread empty-row call does not change the next computation.
+def unreadCall(a : Type, b : Type, f : a -> b, g : a -> b) -> Path[.A = a -> b](
+  fun (x) { let _ = g x; f x },
+  f
+) =
+  Path.here f

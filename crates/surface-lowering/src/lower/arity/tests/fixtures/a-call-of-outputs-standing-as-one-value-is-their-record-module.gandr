@@ -1,0 +1,5 @@
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
+def pair(m : Integer, n : Integer) -> (Integer, Integer) { (m, n) }
+def named(a : Integer) -> Integer { let r = ~ports (divmod a a); r.q }
+def whole(a : Integer) -> Integer { let t = ~ports (pair a a); 0 }
+def hand(a : Integer) -> Integer { let (q, r) = divmod a a; let t = *{q = q, r = r}; t.q }

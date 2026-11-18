@@ -1,0 +1,5 @@
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
+def second(a : Integer, b : Integer) -> Integer { let *{q, r} = divmod a b; r }
+def first(a : Integer, b : Integer) -> Integer { let *{q, r} = divmod a b; q }
+def pair(a : Integer) -> Integer * Integer { *{a, a} }
+def split(a : Integer) -> Integer { let *{x, y} = pair a; y }

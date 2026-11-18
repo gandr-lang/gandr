@@ -1,0 +1,15357 @@
+//! The walk from a source's nodes to one layout document.
+//!
+//! The walk drains an explicit task stack: visiting a node either finishes a
+//! piece at once or schedules its children and the join that combines them,
+//! and a join pops the finished pieces it needs. Nothing recurses, so a deep
+//! type or value costs heap, never native stack.
+//!
+//! Every break point is a choice whose inline branch carries the exact bytes
+//! the one-line spelling carries there, so the flattened image of a document
+//! is its one-line spelling and a wide page selects it unchanged; under width
+//! pressure the same document breaks, a continuation indented two columns.
+//!
+//! Before the walk builds anything, a scan over the same nodes collects the
+//! names the term spells, so a generated binder never reads as a constant or
+//! an abstract type the term mentions. Both passes bound their scheduled
+//! visits, including when the source changes between passes.
+//!
+//! # Products, sums and tuples: braces at every arity, infix from two
+//!
+//! The core's product and sum hold a list of components
+//! ([#134](https://github.com/gandr-lang/gandr/issues/134)), and the explicit
+//! form writes each between its delimiters at any arity from one: `*{A}` and
+//! `*{A, B, C}`, `+{A}` and `+{A, B, C}`, a nested product or sum one
+//! component among them. The 0-ary product is `Unit`, the 0-ary sum `Void`,
+//! and the sum of two units `Bool`, the fixed names the lowering resolves. A
+//! `Former` counts the components rather than holding them, and the printer
+//! asks the source for each one by position (`Source::component`), because
+//! the core's components are value-type ids while its handles are
+//! `CoreNode`s; a component the source does not answer is written `?`. A
+//! tuple is read the same way, `*{a}` and `*{a, b, c}`, the empty tuple
+//! `*{}`; an injection is `+{.i = v}` at its summand's position. A record
+//! type and a record are `*{a : A, b : B}` and `*{.a = v, .b = w}`, in label
+//! order; the empty record, which the surface does not write (`*{}` is the
+//! unit), is `?`. The lazy product is `&{C, D}`, binary as the core holds it.
+//!
+//! The sugared form writes a product or a sum of two components or more
+//! infix, `A * B * C` and `A + B + C`, one flat chain as the lowering reads
+//! an unparenthesized one; a tuple of two or more `(a, b, c)`; the lazy
+//! product `C & D`, right-nested as the grammar associates it. A product or
+//! a sum of one component, an injection and a record keep their braces in
+//! both forms: the surface has no infix spelling for them.
+//!
+//! - **Alternatives.** A former holding its components' handles would need
+//!   every source to keep them as a slice of its own handle type, which the
+//!   core arena does not. The binary sugar alone, in both forms, would leave
+//!   the 1-ary product, an injection past the second summand and a record
+//!   without a spelling.
+//! - **Reversal.** A source whose components are costly to reach one at a time,
+//!   measured, answers them as a slice instead.
+//!
+//! # Native universe paths
+//!
+//! The native presentations are `Path_U(a, b)`, `refl a` and `equiv f g`.
+//! Endpoint and map order is retained. Each is explicitly
+//! `Fidelity::Approximate`: these forms have no surface parser syntax, and an
+//! equivalence’s display does not include its classifier or replay evidence.
+//! The core adapter and checkpoint adapter expose the same value-child
+//! positions. The product of two universe paths, `Path.product p q`, is the
+//! one native former the surface writes: the lowering reads the call back to
+//! the same node, so it is faithful, its components in order and each as
+//! faithful as its own spelling. Its directed twin `Flow.product p q` is the
+//! kernel's own former, written and printed the same way.
+//!
+//! **Choice.** Show the structural constructor instead of an unreadable marker,
+//! while withholding a surface round-trip claim. The printer neither compares
+//! certified maps nor replays transport. **Reversal.** A faithful notation
+//! requires parser and lowering rules that preserve all required information.
+//! `native_paths_preserve_ordered_endpoints_and_maps` checks the order and
+//! approximation boundary through public presentation,
+//! `a_product_of_written_paths_spells_as_written` the product's faithful
+//! spelling and `a_product_of_flows_spells_as_written` its twin's.
+//!
+//! # Element identity
+//!
+//! `Path.here a` is the surface spelling of element identity, and it is
+//! faithful: the grammar parses the call and the lowering mints the witness. It
+//! is not the native `refl`, which stays approximate. The point is the call's
+//! one argument, so a pair reads `Path.here *{2, 2}`. Function extensionality
+//! is `Path.funext f g` and a universe equivalence `equiv f g` by the same
+//! reasoning, their two functions in order; the native certificate a checked
+//! `equiv` erases to prints the same call, approximately, without its evidence.
+//! Univalence at a stratum is `ua[n, k] A B f g`, faithful too: the stratum's
+//! degree and bound in the head, the descriptions by name and the translator
+//! records in label order, as the lowering reads them.
+//!
+//! - **Alternatives.** Writing `?`, the spelling of a node the surface does not
+//!   write, would hide a former the grammar parses.
+//! - **Reversal.** A ruled change to the identity spelling.
+//!
+//! # Native lists
+//!
+//! The native list type is `List(A)`, its empty list `nil` and its cell
+//! `cons h t`, each faithful: the lowering reads the three spellings back to
+//! the same formers. A list is written cell by cell, never as a literal
+//! `[a, b]`, because a cell whose tail is no literal has no literal spelling.
+//!
+//! - **Alternatives.** The literal, which the grammar parses, declined above.
+//! - **Reversal.** A literal spelling for a list whose spine is all cells.
+//!
+//! # Break points
+//!
+//! A break point is a choice between the byte the one-line spelling carries
+//! there and a line break: after an arrow, an infix symbol and a comma, a space
+//! or a break indented two columns; before a bracket's closer, nothing or a
+//! break. The broken branch stands first, matching the layout engine's
+//! left-biased fallback when both alternatives are width-tainted. Each choice
+//! is independent of the others, so the least-cost layout may break inside a
+//! parenthesized operand where that alone fits the page: the narrow page of the
+//! example above breaks inside `+U (a -> -F b)`.
+//!
+//! - **Alternatives.** A group per arrow chain would break all arrows or none,
+//!   outer chains before inner ones. Under the cost order, overflow then line
+//!   count, this can take more lines than a single inner break. Independent
+//!   choices allow that shorter layout.
+//! - **Reversal.** A reader rules that a chain breaks whole; the walk then
+//!   builds chain groups and the goldens move with it.
+//!
+//! The computation width is twice the page, saturating at its maximum. Past it
+//! the engine resolves without its optimality guarantee: a frontier wins over a
+//! tainted promise, and two tainted promises retain the left alternative. At
+//! zero columns, both the inline space and the two-column continuation
+//! indentation exceed the computation width; the broken separator remains the
+//! fallback (`tests::goldens::doubly_tainted_pair_keeps_the_broken_separator`).
+//! A wider computation width admits more memoized states. The choice reverses
+//! when a wider computation width improves a presentation at an acceptable
+//! cost.
+//!
+//! # A body's statements break together
+//!
+//! A body's statements, `let x = c ; rest`, are separated by soft lines that
+//! break with the group around them rather than one choice each: the whole
+//! body, and the body of each lambda, thunk and block `{ … }` within it, is a
+//! group, on one line when it fits and one statement per line otherwise, a
+//! block's statements two columns in and its closer on a line of its own.
+//!
+//! - **Alternatives.** Independent choices, as at the break points above, would
+//!   leave some statements of one body joined and others split, which no
+//!   formatted source writes.
+//! - **Reversal.** A ruled layout for bodies that joins short statements; the
+//!   walk then builds choices per statement and the goldens move with it.
+//!
+//! # Binder names
+//!
+//! The core is nameless, so the binders of dependent arrows, static
+//! abstractions, lambdas and binds are generated: `a` through `z`, then `a1`,
+//! `b1`, and so on, the outermost binder first, skipping every constant or
+//! abstract-type name encountered by the scan. Two binders whose scopes do not
+//! nest, such as a bind inside the computation another bind runs and that
+//! other bind's own, take the same name. A new binder is refused when the
+//! candidate counter cannot advance; cached names remain available. Name
+//! avoidance refers to the scanned view, not an atomic snapshot of a changing
+//! source.
+//!
+//! - **Alternatives.** Printing a de Bruijn index reads as nothing the surface
+//!   parses; reusing a mentioned name would make the codomain ambiguous.
+//! - **Reversal.** The core carries a binder's source name as an origin hint,
+//!   and the printer prints it when no mentioned name collides.
+//!
+//! # Bounds
+//!
+//! Nothing here recurses. Values stop at `DEPTH_LIMIT`, 32 value formers, with
+//! one `<deep>` leaf; static-spine inspection obeys that depth limit too. The
+//! naming scan and scheduled document walk each allow at most 65,536 visits.
+//! The walk has its own budget because a source may change after the scan;
+//! either pass can refuse with `?`, approximate, rather than loop. A late walk
+//! refusal can leave unused documents charged to the builder. A layout ceiling
+//! returns `PresentationError`, never partial output. Witness:
+//! `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`.
+//!
+//! # Session types
+//!
+//! A session type is spelled as the grammar writes it: `!A. S`, `?A. S`,
+//! `+{l : S, …}`, `&{l : S, …}`, `mu t. S` and `end`, each payload type a
+//! child the walk spells and parenthesizes past an atom. The protocol is
+//! spelled from the state the type stands at; a recursion variable whose
+//! binder lies outside that state unfolds once to its binder, so the spelling
+//! is closed and reads back to an equivalent type. Recursion binders are
+//! named `t`, `t1`, … by nesting, apart from the binders of terms.
+//!
+//! - **Alternatives.** Spelling the whole protocol and marking the state would
+//!   print what the endpoint has already passed; `?`, the spelling of a node
+//!   the surface does not write, would hide a type the grammar parses.
+//! - **Reversal.** A ruled spelling for a state, or binder names avoiding the
+//!   names a term mentions as term binders do.
+
+use alloc::borrow::Cow;
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::Sort;
+use gandr_core_term::Zone;
+use gandr_core_term::compose::Pasting;
+use gandr_core_term::effect::capability::Region;
+use gandr_core_term::effect::capability::RegionBinder;
+use gandr_core_term::identity::Relation;
+use gandr_core_term::memory::AccessMode;
+use gandr_core_term::session::ActionKind;
+use gandr_core_term::session::Endpoint;
+use gandr_core_term::session::PayloadSlot;
+use gandr_core_term::session::Protocol;
+use gandr_core_term::session::ProtocolNode;
+use gandr_core_term::session::ProtocolState;
+use gandr_core_term::session::SessionRelation;
+use gandr_core_term::session::WebPiece;
+use gandr_core_term::ua::Stratum;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Sign;
+use gandr_surface_grammar as grammar;
+use gandr_surface_layout::units::NestAmount;
+use quenchant_shape::shape::Maybe;
+
+use crate::DEPTH_LIMIT;
+use crate::Fidelity;
+use crate::Form;
+use crate::Style;
+use crate::ValueDepth;
+use crate::Wildcards;
+use crate::compose::Compose;
+use crate::compose::Doc;
+use crate::compose::Glyphs;
+use crate::error::PresentationError;
+use crate::former::Answered;
+use crate::former::Authority;
+use crate::former::Component;
+use crate::former::Elided;
+use crate::former::Forgotten;
+use crate::former::Former;
+use crate::former::Lift;
+use crate::former::Manifest;
+use crate::former::ModelSlot;
+use crate::former::Name;
+use crate::former::Notation;
+use crate::former::Placement;
+use crate::former::Recursion;
+use crate::former::Recursive;
+use crate::former::Returned;
+use crate::former::Source;
+use crate::former::Unreadable;
+use crate::former::Unspelled;
+
+/// The relation `relation` names, as the grammar's spelling table pairs its
+/// glyph with its ASCII spelling: the equivalence `≃`, the quasi-inverse `≅`
+/// and the flow between types `⇝`, one entry per former.
+///
+/// # Specification
+/// trivial.
+const fn relation_spelled(relation: Relation) -> grammar::Spelled
+{
+    match relation {
+        Relation::Isomorphism => writes(Production("isomorphism_type"), grammar::ISOMORPHISM),
+        Relation::Equivalence => writes(Production("equivalence_type"), grammar::EQUIVALENCE),
+        Relation::Flow => writes(Production("universe_flow_type"), grammar::FLOW),
+    }
+}
+
+/// Why `text`, a name, cannot be written in `spelling`, if it cannot.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Unspelled::Unprintable`] for an empty name and one holding a
+///   line feed, a carriage return or a tab; else [`Unspelled::Primed`] for a
+///   name holding the prime in [`grammar::Spelling::Ascii`]; else none.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an empty name, a primed one in each spelling and a plain
+///   one distinguish the three answers.
+/// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
+/// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
+#[spec(ensures: |ret| {
+    let text: &str = name.as_ref();
+    match ret {
+        Some(Unspelled::Unprintable) => text.is_empty() || text.contains(['\n', '\r', '\t']),
+        Some(Unspelled::Primed) => spelling == grammar::Spelling::Ascii && text.contains(grammar::PRIME.0),
+        Some(_) => false,
+        None => !text.is_empty() && !text.contains(['\n', '\r', '\t'])
+            && (spelling == grammar::Spelling::Unicode || !text.contains(grammar::PRIME.0)),
+    }
+})]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        answer_totality,
+        reason = "a name a line cannot hold, or a primed name in ASCII, has no spelling: each \
+                  caller writes `?` for the reason answered"
+    )
+)]
+fn unwritable(
+    name: Name<'_>,
+    spelling: grammar::Spelling,
+) -> Option<Unspelled>
+{
+    let text: &str = name.as_ref();
+    if text.is_empty() || text.contains(['\n', '\r', '\t']) {
+        Some(Unspelled::Unprintable)
+    }
+    else if spelling == grammar::Spelling::Ascii && text.contains(grammar::PRIME.0) {
+        Some(Unspelled::Primed)
+    }
+    else {
+        None
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a universe has no surface spelling.
+    pub mod universe {
+        /// The reason no spelling is written.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The universe's sort is a parameter, which has no spelling.
+            ParameterSort,
+            /// The level mentions a level variable, which has no spelling.
+            LevelVariable,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a binder has no generated name.
+    pub mod binder {
+        /// The reason no name is generated.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The candidate names ran out.
+            Exhausted,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a scan collected no names.
+    pub mod scan {
+        /// The reason the scan stopped.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The source took more node visits than one presentation makes, or
+            /// a shared type reached more formers than its distinct nodes allow.
+            OverBudget,
+        }
+    }
+}
+
+/// The columns a broken continuation is indented by.
+const CONTINUATION: u32 = 2;
+
+/// The maximum scheduled node visits in either presentation pass.
+///
+/// A well-formed type or value of a size that a reader reads fits many times
+/// over. Two sources reach the bound: a malformed source with a cycle, and a
+/// shared type whose unshared tree is past what a reader reads. The walk
+/// spells each as `?`, and does not spend the time and the bytes of a tree
+/// that nobody reads.
+const VISIT_BUDGET: u32 = 0x0000_0400;
+
+/// The formers one spelling reaches before its sharing is read.
+///
+/// A spelling that reaches no more than this many formers is spelled whatever
+/// it shares, so a small type costs no second scan.
+const SHARED_FLOOR: u32 = 0x0100;
+
+/// The formers a spelling may reach past [`SHARED_FLOOR`] for each distinct
+/// node it holds.
+///
+/// The checker shares the nodes of a type it builds: level `n` of the iterated
+/// pair holds `n + 2` distinct nodes and reaches `2^(n + 1)` formers. A
+/// spelling past this bound is refused by the budget, so each spelling stays
+/// linear in the distinct nodes of its type (#5826).
+const SHARED_FACTOR: u32 = 4;
+
+/// The formers a scan reached that the walk spells, once for each path.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Reached(u32);
+
+/// Whether a spelling's formers stay within the bound its distinct nodes set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Sharing
+{
+    /// The spelling reaches no more formers than the bound.
+    Within,
+    /// The spelling reaches more formers than the bound.
+    Past,
+}
+
+/// An owned spelling computed for one leaf.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Spelled(String);
+
+/// A name generated for a binder the core leaves nameless.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BinderName(String);
+
+/// The position of a candidate binder name in the order names are tried.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Ordinal(u32);
+
+/// How many binders — of dependent arrows, static abstractions, lambdas and
+/// binds — are open at a point of the walk; read as a position, the binder
+/// that many binders in.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct OpenBinders(usize);
+
+/// Which binder [`Walk::bind`] opened, counted in the order the walk opens
+/// them. Each pass of one walk opens the same binders in the same order, so
+/// one count names one binder in every pass.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+struct Opening(u32);
+
+/// A binder's position in the context the root stands under, counted from
+/// the outermost.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ContextPosition(usize);
+
+/// How many arguments one spelled application holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Arity(usize);
+
+/// The sort of node a former is, as far as a position cares.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Kind
+{
+    /// A value type.
+    ValueType,
+    /// A computation type.
+    CompType,
+    /// A value.
+    Value,
+    /// A computation term.
+    Computation,
+    /// No former at all: admitted anywhere, spelled `?`.
+    Unknown,
+}
+
+/// The sort of node `former` is.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the value-type formers answer [`Kind::ValueType`], the
+///   computation-type formers [`Kind::CompType`], the value formers
+///   [`Kind::Value`], the computation formers [`Kind::Computation`], and an
+///   unreadable handle [`Kind::Unknown`].
+/// - provides: the check that a node fills the position it stands in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite golden type and value fixtures observe the
+///   former partition through exact spelling, while misplaced bridges expose
+///   cross-family classifications. Payload values are not classified here.
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
+#[spec(ensures: |ret| match ret {
+    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::QubitType | Former::RowType | Former::WebType | Former::Product(_) | Former::RecordType(_) | Former::Patched(..)
+        | Former::Stack(..) | Former::List(_)
+        | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
+        | Former::Element(_) | Former::Abstract(_) | Former::Member(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
+        | Former::Path { .. } | Former::Bridge { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. } | Former::Staged { .. }),
+    | Kind::CompType => matches!(*former, Former::Returner(_) | Former::Returns(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
+        | Former::With(..) | Former::Pi { .. } | Former::LinearArrow { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
+    | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
+        | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::RecordUpdate(..) | Former::Injection(..) | Former::Thunk(_)
+        | Former::Reify | Former::ListNil | Former::ListCons(..)
+        | Former::Quote(_) | Former::QuoteComputation(_) | Former::Row { .. } | Former::StaticLambda(_) | Former::StaticApplication(..)
+        | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
+        | Former::Ua { .. } | Former::Compose { .. } | Former::Fill { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
+        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Step(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
+    | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::BindAll { .. } | Former::Force(_) | Former::Decompose(_)
+        | Former::Application(..) | Former::Lambda(_) | Former::LinearLambda(_) | Former::Primitive { .. } | Former::Transport(..)
+        | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
+        | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
+        | Former::ListFold { .. } | Former::ListCase { .. } | Former::Perform { .. } | Former::Handle { .. } | Former::Exercise { .. }
+        | Former::Scope { .. } | Former::Resume(..) | Former::Abandon(_) | Former::Reset(_) | Former::Shift(_) | Former::Lazy(..) | Former::Ascription { .. }
+        | Former::Project(..) | Former::Send { .. } | Former::Receive { .. } | Former::Place { .. } | Former::Select { .. } | Former::Offer { .. }
+        | Former::Close(_) | Former::Fork { .. } | Former::Hold { .. } | Former::Access { .. } | Former::ResumeView { .. }
+        | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::WorldHold(_) | Former::Leta { .. } | Former::Migrate { .. }),
+    | Kind::Unknown => matches!(*former, Former::Unreadable(_)),
+})]
+const fn kind<Node>(former: &Former<'_, Node>) -> Kind
+{
+    match *former {
+        Former::Stack(..)
+        | Former::PathUniverse(..)
+        | Former::BaseType(_)
+        | Former::BufferType
+        | Former::QubitType
+        | Former::RowType
+        | Former::WebType
+        | Former::Product(_)
+        | Former::RecordType(_)
+        | Former::Patched(..)
+        | Former::Sum(_)
+        | Former::List(_)
+        | Former::ThunkType(_)
+        | Former::Universe { .. }
+        | Former::Element(_)
+        | Former::Abstract(_)
+        | Former::Member(_)
+        | Former::Session { .. }
+        | Former::StaticPi { .. }
+        | Former::Sigma { .. }
+        | Former::Capability { .. }
+        | Former::Path { .. }
+        | Former::Bridge { .. }
+        | Former::Flow { .. }
+        | Former::Relation { .. }
+        | Former::Model { .. }
+        | Former::Data { .. }
+        | Former::RunType(_)
+        | Former::PrefixType(_)
+        | Former::DialogueType(_)
+        | Former::Located { .. }
+        | Former::Kept { .. }
+        | Former::Staged { .. } => Kind::ValueType,
+        Former::Returner(_)
+        | Former::Returns(_)
+        | Former::With(..)
+        | Former::EffectfulReturner { .. }
+        | Former::Arrow { .. }
+        | Former::Pi { .. }
+        | Former::LinearArrow { .. }
+        | Former::ComputationElement(_)
+        | Former::Codata { .. } => Kind::CompType,
+        Former::PathRefl(_)
+        | Former::PathProduct(..)
+        | Former::PathEquiv(..)
+        | Former::Variable { .. }
+        | Former::Constant(_)
+        | Former::Unit
+        | Former::Literal(_)
+        | Former::Tuple(_)
+        | Former::Record(_)
+        | Former::RecordUpdate(..)
+        | Former::ListNil
+        | Former::ListCons(..)
+        | Former::Injection(..)
+        | Former::Thunk(_)
+        | Former::Reify
+        | Former::Quote(_)
+        | Former::QuoteComputation(_)
+        | Former::Row { .. }
+        | Former::StaticLambda(_)
+        | Former::StaticApplication(..)
+        | Former::Here(_)
+        | Former::Funext(..)
+        | Former::Equiv(..)
+        | Former::Univalence(_)
+        | Former::SessionRelated(..)
+        | Former::Stay(_)
+        | Former::Then(..)
+        | Former::Step(..)
+        | Former::Back(_)
+        | Former::Cong(..)
+        | Former::FlowProduct(..)
+        | Former::Forward(_)
+        | Former::FunctionFlow(..)
+        | Former::Ua { .. }
+        | Former::Compose { .. }
+        | Former::Fill { .. }
+        | Former::Nested(_)
+        | Former::Run(_)
+        | Former::Constructor { .. }
+        | Former::Recorded { .. }
+        | Former::Dialogue { .. }
+        | Former::Web(_)
+        | Former::Annotated { .. }
+        | Former::Returned(_) => Kind::Value,
+        Former::Return(_)
+        | Former::Bind(..)
+        | Former::BindAll { .. }
+        | Former::Force(_)
+        | Former::Decompose(_)
+        | Former::Application(..)
+        | Former::Lambda(_)
+        | Former::LinearLambda(_)
+        | Former::Primitive { .. }
+        | Former::Transport(..)
+        | Former::PathTransport { .. }
+        | Former::Ride { .. }
+        | Former::TelescopeTransport { .. }
+        | Former::Fixpoint(_)
+        | Former::Case { .. }
+        | Former::Split { .. }
+        | Former::DataCase { .. }
+        | Former::RecordProjection(..)
+        | Former::TupleProjection(..)
+        | Former::ListFold { .. }
+        | Former::ListCase { .. }
+        | Former::Perform { .. }
+        | Former::Handle { .. }
+        | Former::Exercise { .. }
+        | Former::Scope { .. }
+        | Former::Resume(..)
+        | Former::Abandon(_)
+        | Former::Reset(_)
+        | Former::Shift(_)
+        | Former::Lazy(..)
+        | Former::Ascription { .. }
+        | Former::Project(..)
+        | Former::Send { .. }
+        | Former::Receive { .. }
+        | Former::Place { .. }
+        | Former::Select { .. }
+        | Former::Offer { .. }
+        | Former::Close(_)
+        | Former::Fork { .. }
+        | Former::Hold { .. }
+        | Former::Access { .. }
+        | Former::ResumeView { .. }
+        | Former::AbortView(_)
+        | Former::ConsumeHeld(_)
+        | Former::WorldHold(_)
+        | Former::Leta { .. }
+        | Former::Migrate { .. } => Kind::Computation,
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                answer_totality,
+                reason = "a node of the honest set carries no sort of its own; the walk writes it \
+                          `?` wherever it stands"
+            )
+        )]
+        Former::Unreadable(_) => Kind::Unknown,
+    }
+}
+
+/// What printing the multiplicity `multiplicity` of a linear arrow leaves
+/// out: nothing for the literal `1`, which the surface leaves implicit, and
+/// [`Elided::Multiplicity`] for any other, which the surface cannot write.
+///
+/// # Specification
+/// trivial.
+pub fn elided_multiplicity<S>(
+    source: &S,
+    multiplicity: S::Node,
+) -> Option<Elided>
+where
+    S: Source + ?Sized,
+{
+    if matches!(
+        source.read(multiplicity),
+        Former::Literal(&Literal::Integer(ref integer))
+            if integer.sign() == Sign::NonNegative && integer.magnitude().as_ref() == "1"
+    ) {
+        None
+    }
+    else {
+        Some(Elided::Multiplicity)
+    }
+}
+
+/// The node sorts a position admits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Admits
+{
+    /// A value type or a computation type.
+    Type,
+    /// A value type.
+    ValueType,
+    /// A computation type.
+    CompType,
+    /// A computation type standing as the thunk type over it, which no node
+    /// holds: a telescope transport's motive, written as that thunk type is.
+    Thunked,
+    /// A value.
+    Value,
+    /// A value whose type its position states: a family's argument, typed by
+    /// the family's parameter, where a parameterised constructor stands bare.
+    Stated,
+    /// A value whose type nothing states: a transport's path and the value it
+    /// moves, which the lowering reads with no type to bind a computation at.
+    Operand,
+    /// A computation, where a path through a body ends or where it goes on.
+    Computation(Tail),
+}
+
+/// Whether a path through a body ends at a computation's position.
+///
+/// A returner where a path ends is written as its value and every other
+/// computation there bare, the exit the lowering infers left out; anywhere
+/// else a returner is `pure v`, since a written `return` there would leave
+/// the body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Tail
+{
+    /// The body ends here: a definition's body, the rest of a bind there, a
+    /// lambda's or a thunk's body.
+    Ends,
+    /// The body ends here, and nothing states its type: a thunk's body below
+    /// a value, as a constructor's field, a lambda's body there.
+    Unstated,
+    /// The body goes on: the computation a bind runs, the function a call
+    /// applies.
+    Continues,
+    /// A loop's pass ends here, where the lowering runs the loop again after
+    /// a computation left bare: a returner is written `break(v)` where the
+    /// loop ends the body and `return v` where a rest follows it, a call
+    /// `become f(a)`, and the loop's own binder forced `continue`.
+    Passes,
+}
+
+/// Whether a thunk's body is spelled or the thunk written opaque, and whether
+/// a parameterised constructor is written against its family.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Bodies
+{
+    /// `<thunk>`: a value presented alone is a normal form, whose thunks are
+    /// closures a reader does not read; its constructors stand bare,
+    /// `Some(1)`, as a run's value is written.
+    Opaque,
+    /// `thunk { c }`: a computation presented is a body a reader reads, and
+    /// so is a definition's value, a thunk a type mentions, a path's
+    /// endpoint, which the author wrote; a parameterised constructor there is
+    /// source that reads back, written against its family, `(MkIx : Ix(3))`,
+    /// or against the type a definition computes for it, except as a
+    /// family's argument, whose parameter states its type, `Vec(MkIx)`.
+    Spelled,
+}
+
+/// How the walk treats a node it reaches.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reach
+{
+    /// The node fits its position: spell its former.
+    Spell,
+    /// The node is a value at the depth limit: write `<deep>`.
+    Deep,
+    /// The node is of a sort its position does not admit: write `?`.
+    Misplaced,
+}
+
+/// How the walk treats a node of `kind` at `depth` in a position admitting
+/// `admits`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Reach::Deep`] for a value position at or past [`DEPTH_LIMIT`];
+///   otherwise [`Reach::Spell`] when the position admits the kind — an unknown
+///   node is admitted everywhere — and [`Reach::Misplaced`] when it does not.
+/// - provides: the one rule both the scan and the walk stop by, so the two
+///   reach the same nodes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — misplaced bridges and deep values observe refusal; the
+///   exact depth boundary with an unknown former separates depth-first
+///   precedence from admission. Arbitrary source behavior is not involved.
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+/// - witness: `walk::tests::depth_boundaries_preserve_precedence_and_saturation`
+#[spec(ensures: |ret| {
+    let valued = matches!(admits, Admits::Value | Admits::Stated | Admits::Operand);
+    let deep = valued && depth.0 >= DEPTH_LIMIT.0;
+    let admitted = matches!((admits, kind), (_, Kind::Unknown)
+        | (Admits::Type, Kind::ValueType | Kind::CompType)
+        | (Admits::ValueType, Kind::ValueType) | (Admits::CompType | Admits::Thunked, Kind::CompType)
+        | (Admits::Value | Admits::Stated | Admits::Operand, Kind::Value) | (Admits::Computation(_), Kind::Computation));
+    (ret == Reach::Deep) == deep && (ret == Reach::Spell) == (!deep && admitted)
+        && (ret == Reach::Misplaced) == (!deep && !admitted)
+})]
+fn reach(
+    admits: Admits,
+    depth: ValueDepth,
+    kind: Kind,
+) -> Reach
+{
+    if matches!(admits, Admits::Value | Admits::Stated | Admits::Operand) && depth >= DEPTH_LIMIT {
+        return Reach::Deep;
+    }
+    match (admits, kind) {
+        (_, Kind::Unknown)
+        | (Admits::Type, Kind::ValueType | Kind::CompType)
+        | (Admits::ValueType, Kind::ValueType)
+        | (Admits::CompType | Admits::Thunked, Kind::CompType)
+        | (Admits::Value | Admits::Stated | Admits::Operand, Kind::Value)
+        | (Admits::Computation(_), Kind::Computation) => Reach::Spell,
+        (Admits::Type, Kind::Value | Kind::Computation)
+        | (Admits::ValueType, Kind::CompType | Kind::Value | Kind::Computation)
+        | (Admits::CompType | Admits::Thunked, Kind::ValueType | Kind::Value | Kind::Computation)
+        | (
+            Admits::Value | Admits::Stated | Admits::Operand,
+            Kind::ValueType | Kind::CompType | Kind::Computation,
+        )
+        | (Admits::Computation(_), Kind::ValueType | Kind::CompType | Kind::Value) => {
+            Reach::Misplaced
+        },
+    }
+}
+
+/// How many binders a child stands under beyond its parent's, and the zone
+/// they open in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Binds
+{
+    /// The zone each binder opens in.
+    pub zone: Zone,
+    /// How many open.
+    pub count: usize,
+}
+
+impl Binds
+{
+    /// No binder.
+    const NONE: Self = Self::intuitionistic(OpenBinders(0_usize));
+    /// One intuitionistic binder.
+    const ONE: Self = Self::intuitionistic(OpenBinders(1_usize));
+
+    /// `count` intuitionistic binders.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn intuitionistic(count: OpenBinders) -> Self
+    {
+        Self {
+            zone: Zone::Intuitionistic,
+            count: count.0,
+        }
+    }
+}
+
+/// The label an entry is written after, which the source answers for the
+/// former `of` holding the entry.
+#[derive(Clone, Copy, Debug)]
+struct Labelled<Node>
+{
+    /// The record, the record type or the injection.
+    of: Node,
+    /// The entry's position; an injection's summand.
+    index: Component,
+    /// What the label is.
+    label: Label,
+}
+
+/// One child a former reads: the node, what its position admits, the
+/// binders it stands under and the label written before it.
+#[derive(Clone, Copy, Debug)]
+pub struct Slot<Node>
+{
+    /// The child; none for a component the source does not answer, spelled
+    /// `?`.
+    pub node: Option<Node>,
+    /// What its position admits.
+    pub admits: Admits,
+    /// The binders it stands under.
+    pub binds: Binds,
+    /// The label written before it, a piece of its own.
+    label: Option<Labelled<Node>>,
+}
+
+impl<Node> Slot<Node>
+{
+    /// `node` at a position admitting `admits`, under `binds`, unlabelled.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn of(
+        node: Node,
+        admits: Admits,
+        binds: Binds,
+    ) -> Self
+    {
+        Self {
+            node: Some(node),
+            admits,
+            binds,
+            label: None,
+        }
+    }
+}
+
+/// One branch of a data case as the printer reads it: its body below the
+/// lambdas binding its constructor's fields and its equations, the
+/// constructor's name, how many fields the body stands under, and where the
+/// name stands to them.
+#[derive(Clone, Copy, Debug)]
+struct Arm<'source, Node>
+{
+    /// The body, or the whole branch when the constructor is unknown; none
+    /// for a branch the source does not answer.
+    body: Option<Node>,
+    /// The constructor's name, when the source knows it and the branch binds
+    /// its fields.
+    name: Option<Name<'source>>,
+    /// How many field binders the body stands under.
+    fields: usize,
+    /// How many equation binders it stands under past them, one per index of
+    /// an indexed family.
+    equations: usize,
+    /// Where the name stands to its field binders: a letter of a word
+    /// before the rest, `loop ∷ p`.
+    placement: Placement,
+    /// Whether the branch eliminates its equation by the case of no
+    /// branches: an arm the source left out, which the lowering prunes and
+    /// the printer does not write.
+    pruned: bool,
+}
+
+/// Branch `index` of the data case `match`.
+///
+/// # Specification
+/// - requires: nothing; a malformed source is admissible.
+/// - ensures: when the source names the constructor and the branch is that many
+///   lambdas deep, then one more per equation of the case, at most
+///   [`DEPTH_LIMIT`], the body below them, the name, the field and equation
+///   counts, and whether the body is the case of no branches on the innermost
+///   equation; otherwise the whole branch, no name, no fields and no equation.
+/// - provides: the one reading of a branch both the child table and the pattern
+///   share, so a pattern names exactly the binders its body opens.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// The loop peels one lambda per field and equation, at most [`DEPTH_LIMIT`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a data case over a nullary and a unary constructor spells
+///   each branch under its pattern, the unary one's field bound; a case on a
+///   vector one long writes its `VCons` arm alone.
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::a_constructor_at_the_depth_limit_binds_every_field`
+/// - witness: `tests::goldens::a_pruned_arm_is_left_unwritten_1314`
+#[spec(ensures: |ret| ret.name.is_some() || (ret.fields == 0_usize && ret.equations == 0_usize && !ret.pruned))]
+fn arm<S>(
+    source: &S,
+    case: S::Node,
+    index: Component,
+) -> Arm<'_, S::Node>
+where
+    S: Source + ?Sized,
+{
+    let branch = source.component(case, index);
+    let unknown = Arm {
+        body: branch,
+        name: None,
+        fields: 0_usize,
+        equations: 0_usize,
+        placement: Placement::Applied,
+        pruned: false,
+    };
+    let (Some(branch), Some((name, fields, placement))) = (branch, source.constructor(case, index))
+    else {
+        return unknown;
+    };
+    let fields = usize::from(fields);
+    let equations = if let Former::DataCase { equations, .. } = source.read(case) {
+        usize::from(equations)
+    }
+    else {
+        0_usize
+    };
+    let binders = fields.saturating_add(equations);
+    if u32::try_from(binders).is_ok_and(|count| count > DEPTH_LIMIT.0) {
+        return unknown;
+    }
+    let mut body = branch;
+    for _ in 0_usize .. binders {
+        let Former::Lambda(inner) = source.read(body)
+        else {
+            return unknown;
+        };
+        body = inner;
+    }
+    // A pruned arm is the case of no branches on one of its equations, the
+    // binders its body stands under innermost.
+    let pruned = equations > 0_usize
+        && matches!(
+            source.read(body),
+            Former::DataCase { arity, scrutinee, .. }
+                if usize::from(arity) == 0_usize
+                    && matches!(
+                        source.read(scrutinee),
+                        Former::Variable { zone: Zone::Intuitionistic, index }
+                            if u32::from(index) < u32::try_from(equations).unwrap_or(u32::MAX)
+                    )
+        );
+    Arm {
+        body: Some(body),
+        name: Some(name),
+        fields,
+        equations,
+        placement,
+        pruned,
+    }
+}
+
+/// The arity of the arms the printer writes of the data case `match` of
+/// `arity` branches: every branch but a pruned one.
+///
+/// # Specification
+/// trivial.
+fn written_arms<S>(
+    source: &S,
+    case: S::Node,
+    arity: crate::former::Arity,
+) -> crate::former::Arity
+where
+    S: Source + ?Sized,
+{
+    crate::former::Arity::from(
+        (0_usize .. usize::from(arity))
+            .filter(|&index| !arm(source, case, Component::from(index)).pruned)
+            .count(),
+    )
+}
+
+/// The children `former` reads at `node`, each with what its position
+/// admits and the binders it stands under, in reading order, in a position
+/// admitting `admits` of a presentation writing its thunks as `bodies` says.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the slots [`slots`] reads, a data case's motive among them where
+///   [`case_motive`] writes it.
+/// - provides: the one table of child positions the scan and the walk share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`slots`].
+/// - witness: `tests::goldens::a_case_nothing_types_writes_its_motive_815`
+#[spec(ensures: |ref ret| if let Former::DataCase { motive, arity, .. } = *former {
+    ret.len() == usize::from(written_arms(source, node, arity)).saturating_add(1_usize).saturating_add(usize::from(case_motive(source, motive, admits) == Motive::Written))
+} else {
+    true
+})]
+pub fn children<S>(
+    source: &S,
+    node: S::Node,
+    former: &Former<'_, S::Node>,
+    admits: Admits,
+    bodies: Bodies,
+) -> Vec<Slot<S::Node>>
+where
+    S: Source + ?Sized,
+{
+    let written = if let Former::DataCase { motive, .. } = *former {
+        case_motive(source, motive, admits)
+    }
+    else {
+        Motive::Left
+    };
+    slots(source, node, former, (admits, bodies), written)
+}
+
+/// The placement a clause minting a buffer opens with, when `node` is that
+/// clause's opening: it splits the clause's payload binder, past the
+/// continuation's, into two and places the second live, as the lowering
+/// writes `oper alloc(n, b, k)`. No other source spells a placement straight
+/// under a split.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the split's body exactly for a split of the intuitionistic
+///   variable at index one into two components whose body places the variable
+///   at index zero; none otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a minting clause writes its three names, and a split of
+///   any other shape is written as the case it is.
+/// - witness: `tests::goldens::a_placed_buffer_is_written_by_its_bind_s_name`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Split { .. }))]
+fn minted<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<S::Node>
+where
+    S: Source + ?Sized,
+{
+    let variable = |node, at: u32| matches!(source.read(node), Former::Variable { zone: Zone::Intuitionistic, index } if u32::from(index) == at);
+    if let Former::Split {
+        scrutinee,
+        arity,
+        body,
+    } = source.read(node)
+        && usize::from(arity) == 2_usize
+        && variable(scrutinee, 1_u32)
+        && matches!(source.read(body), Former::Place { payload, .. } if variable(payload, 0_u32))
+    {
+        Some(body)
+    }
+    else {
+        None
+    }
+}
+
+/// The children `former` reads at `node`, each with what its position
+/// admits and the binders it stands under, in reading order, in a position
+/// admitting `admits` of a presentation writing its thunks as `bodies` says,
+/// a data case writing its motive as `written` says.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an n-ary former's components, answered by the source for `node`,
+///   a recorded run's one value per payload its moves carry and none where they
+///   carry none, a record's and a record type's after their field labels, a
+///   record update's base and then the fields it writes after their labels, and
+///   an injection's body after its summand; type children admit types and term
+///   children terms as the grammar places them, an update's every slot a value,
+///   an ascription's value and type, none for a truth value ascribed `Bool`,
+///   written as its word, and the type alone for a binary natural ascribed
+///   `Nat`, written as its numeral, and a path type's carrier and each endpoint
+///   but one that is a truth value at a `Bool` carrier; a dependent arrow's
+///   codomain, a dependent pair's second factor, a static abstraction's, a
+///   lambda's and a fixpoint's body, a bind's rest, a case's branches, a
+///   transport's motive, a return clause and a stack capture's body stand under
+///   one binder, a split's body under one per component, a data case's branch
+///   under one per field of its constructor, a fold's cell branch and a
+///   handler's operation clauses under two, a scope's subject under the
+///   capability's and a fork's child and parent each under one linear binder, a
+///   hold's scope and an access's body each under one linear binder; the
+///   computation a bind runs, the function an application applies, a
+///   computation where a value is read, an offer's arms and a fork's child
+///   admit computations where the body goes on, a body in braces one where it
+///   ends, a thunk's body below a value and a lambda's body there one whose
+///   type nothing states, and a bind's rest and the branches of a case what its
+///   own position admits; a data case's motive is a type under one binder where
+///   `written` writes it; a thunk's body is a child only where bodies are
+///   spelled, and there a thunk over a lambda standing as a path type's
+///   endpoint or as reflexivity's or a stay's point is its lambda, whose type
+///   nothing states; a family's arguments, a codata family's included, admit
+///   values their parameters state the type of, and a constructor's classifier
+///   is a child only where bodies are spelled and its position states no type;
+///   a model type's children are the carriers of the sorts it fixes, each a
+///   type, none for a bare one; a scope a model answers has its subject and its
+///   manifest's carriers alone, no return or operation clause; every leaf
+///   former has none.
+/// - provides: the one table of child positions the scan and the walk share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite composite grammar fixtures and misplaced bridge
+///   children observe arity, child order, binders and admitted families.
+///   Arbitrary node representations are outside this spelling evidence.
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+/// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+/// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+/// - witness: `tests::goldens::a_recorded_run_without_payloads_spells_its_moves_1871`
+/// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
+///
+/// # Cost
+/// - allocation: the child slots, growth within the former's arity
+#[spec(ensures: |ref ret| match *former {
+    | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::Tuple(arity) | Former::Record(arity) | Former::Primitive { arity, .. } | Former::Recorded { payloads: arity, .. } | Former::Dialogue { payloads: arity, .. } => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::RecordUpdate(_, arity) => ret.len() == usize::from(arity).saturating_add(1_usize)
+        && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::Patched(_, arity) => ret.len() == usize::from(arity).saturating_add(1_usize)
+        && ret.first().is_some_and(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE)
+        && ret.iter().skip(1_usize).all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::Data { arity, .. } | Former::Codata { arity, .. } => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
+    | Former::With(arity) => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::CompType && slot.binds == Binds::NONE),
+    | Former::Returns(arity) => ret.len() == usize::from(arity)
+        && ret.iter().enumerate().all(|(index, slot)| slot.admits == Admits::ValueType && slot.binds == Binds::intuitionistic(OpenBinders(index))),
+    | Former::Lazy(arity) => ret.len() == usize::from(arity)
+        && ret.iter().all(|slot| slot.admits == Admits::Computation(Tail::Continues) && slot.binds == Binds::NONE),
+    | Former::Constructor { arity, classifier, .. } => {
+        let annotated = classifier.is_some() && bodies == Bodies::Spelled && admits != Admits::Stated;
+        ret.len() == usize::from(arity).saturating_add(usize::from(annotated))
+            && ret.iter().take(usize::from(arity)).all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE)
+            && (!annotated || ret.last().is_some_and(|slot| slot.admits == Admits::ValueType))
+    },
+    | Former::Pi { .. } | Former::LinearArrow { .. } | Former::Sigma { .. } | Former::StaticLambda(_) | Former::Lambda(_) | Former::LinearLambda(_) | Former::Bind(..)
+        | Former::Shift(_) | Former::Leta { .. } => ret.last().is_some_and(|slot| slot.binds == Binds::ONE),
+    | Former::Fixpoint(_) => ret.last().is_some_and(|slot| slot.binds.count > 0_usize),
+    | Former::Case { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
+        && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::DataCase { arity, .. } => ret.len() == usize::from(written_arms(source, node, arity)).saturating_add(1_usize).saturating_add(usize::from(written == Motive::Written))
+        && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
+    | Former::Thunk(_) => ret.len() == match bodies { Bodies::Spelled => 1_usize, Bodies::Opaque => 0_usize },
+    | Former::Session { payloads, .. } => ret.len() == usize::from(payloads)
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::Offer { arms, .. } => ret.len() == usize::from(arms)
+        && ret.iter().all(|slot| slot.admits == Admits::Computation(Tail::Continues)),
+    | Former::Fork { .. } => ret.len() == 3_usize
+        && ret.iter().skip(1_usize).all(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize })
+        && ret.get(1_usize).is_some_and(|slot| slot.admits == Admits::Computation(Tail::Continues)),
+    | Former::Hold { .. } => ret.len() == 2_usize
+        && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::Receive { .. } => ret.len() == 1_usize
+        && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::Place { .. } => ret.len() == 2_usize
+        && ret.last().is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize }),
+    | Former::Access { mode, place, .. } => {
+        let indexed = usize::from(matches!(place, gandr_core_term::memory::Place::At { .. }));
+        ret.len() == indexed.saturating_add(match mode { AccessMode::Exclusive { .. } => 2_usize, AccessMode::Shared => 1_usize })
+            && ret.get(indexed).is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize })
+    },
+    | Former::Model { sorts, .. } => ret.len() == sorts.len()
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::EffectfulReturner { tail, manifests, result, .. } => ret.len() == manifests.iter().map(|manifest| manifest.sorts.len()).sum::<usize>().saturating_add(usize::from(tail.is_some())).saturating_add(match result { Returned::One(_) => 1_usize, Returned::Group(arity) => usize::from(arity) })
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType),
+    | Former::Row { tail, .. } => ret.len() == usize::from(tail.is_some())
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::Annotated { value, ty } => ret.len() == match (truth(source, value, ty), natural(source, value, ty)) {
+        (Some(_), _) => 0_usize,
+        (None, Some(_)) => 1_usize,
+        (None, None) => 2_usize,
+    },
+    | Former::BaseType(_) | Former::BufferType | Former::QubitType | Former::RowType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Member(_) | Former::Capability { .. }
+        | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
+        | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::Unreadable(_) => ret.is_empty(),
+    | _ => !ret.is_empty(),
+})]
+fn slots<S>(
+    source: &S,
+    node: S::Node,
+    former: &Former<'_, S::Node>,
+    (admits, bodies): (Admits, Bodies),
+    written: Motive,
+) -> Vec<Slot<S::Node>>
+where
+    S: Source + ?Sized,
+{
+    let value = |node| Slot::of(node, Admits::Value, Binds::NONE);
+    let operand = |node| Slot::of(node, Admits::Operand, Binds::NONE);
+    let value_type = |node| Slot::of(node, Admits::ValueType, Binds::NONE);
+    let comp_type = |node| Slot::of(node, Admits::CompType, Binds::NONE);
+    let continues = |node| Slot::of(node, Admits::Computation(Tail::Continues), Binds::NONE);
+    let ends = |node, binds| Slot::of(node, Admits::Computation(Tail::Ends), binds);
+    // A lambda standing as an endpoint or a point is the thunk the lowering
+    // mints over it (#3767), and a lambda ascribed a type is the thunk the
+    // checker inserts over it (#3872): the thunk is left out where bodies are
+    // spelled.
+    let bare = |node| {
+        if bodies == Bodies::Spelled
+            && let Former::Thunk(body) = source.read(node)
+            && matches!(source.read(body), Former::Lambda(_))
+        {
+            Slot::of(body, Admits::Computation(Tail::Unstated), Binds::NONE)
+        }
+        else {
+            value(node)
+        }
+    };
+    let components =
+        |arity: crate::former::Arity, admits: Admits, binds: Binds, label: Option<Label>| {
+            (0_usize .. usize::from(arity))
+                .map(|index| {
+                    let index = Component::from(index);
+                    Slot {
+                        node: source.component(node, index),
+                        admits,
+                        binds,
+                        label: label.map(|label| Labelled {
+                            of: node,
+                            index,
+                            label,
+                        }),
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+    let clauses = |subject: Slot<S::Node>, on_return, count| {
+        let mut slots = Vec::from([subject, ends(on_return, Binds::ONE)]);
+        slots.extend(components(
+            count,
+            Admits::Computation(Tail::Ends),
+            Binds::intuitionistic(OpenBinders(2_usize)),
+            None,
+        ));
+        slots
+    };
+    match *former {
+        Former::Stack(first, second) => Vec::from([comp_type(first), comp_type(second)]),
+        // A sum or a lazy record the source writes over labels spells each
+        // entry after its label (#4395).
+        Former::With(arity) => components(
+            arity,
+            Admits::CompType,
+            Binds::NONE,
+            entry_labels(source, node),
+        ),
+        // Each result stands under the binders of the results before it, which
+        // it does not read where the former is written.
+        Former::Returns(arity) => (0_usize .. usize::from(arity))
+            .map(|index| Slot {
+                node: source.component(node, Component::from(index)),
+                admits: Admits::ValueType,
+                binds: Binds::intuitionistic(OpenBinders(index)),
+                label: None,
+            })
+            .collect(),
+        Former::Sum(arity) => components(
+            arity,
+            Admits::ValueType,
+            Binds::NONE,
+            entry_labels(source, node),
+        ),
+        Former::Product(arity) => components(arity, Admits::ValueType, Binds::NONE, None),
+        Former::Session { payloads, .. } => {
+            components(payloads, Admits::ValueType, Binds::NONE, None)
+        },
+        Former::RecordType(arity) => {
+            components(arity, Admits::ValueType, Binds::NONE, Some(Label::Field))
+        },
+        Former::Tuple(arity)
+        | Former::Primitive { arity, .. }
+        | Former::Recorded {
+            payloads: arity, ..
+        }
+        | Former::Dialogue {
+            payloads: arity, ..
+        } => components(arity, Admits::Value, Binds::NONE, None),
+        Former::Data { arity, .. } | Former::Codata { arity, .. } => {
+            components(arity, Admits::Stated, Binds::NONE, None)
+        },
+        Former::Constructor {
+            arity, classifier, ..
+        } => {
+            let mut slots = components(arity, Admits::Value, Binds::NONE, None);
+            if let (Some(classifier), Bodies::Spelled) = (classifier, bodies)
+                && admits != Admits::Stated
+            {
+                slots.push(value_type(classifier));
+            }
+            slots
+        },
+        Former::Record(arity) => {
+            components(arity, Admits::Value, Binds::NONE, Some(Label::Assignment))
+        },
+        // The base, then the fields the update writes, each after its label.
+        Former::RecordUpdate(base, arity) => {
+            let mut slots = Vec::from([value(base)]);
+            slots.extend(components(
+                arity,
+                Admits::Value,
+                Binds::NONE,
+                Some(Label::Overwrite),
+            ));
+            slots
+        },
+        // The base, then the values the patch fixes, each after its label.
+        Former::Patched(base, arity) => {
+            let mut slots = Vec::from([value_type(base)]);
+            slots.extend(components(
+                arity,
+                Admits::Value,
+                Binds::NONE,
+                Some(Label::Assignment),
+            ));
+            slots
+        },
+        Former::StaticPi { domain, codomain } => {
+            Vec::from([value_type(domain), value_type(codomain)])
+        },
+        Former::Sigma { first, second } => Vec::from([
+            value_type(first),
+            Slot::of(second, Admits::ValueType, Binds::ONE),
+        ]),
+        Former::Arrow { domain, codomain } => Vec::from([value_type(domain), comp_type(codomain)]),
+        // The map stands as the derived transport's motive holds it, as many
+        // binders deeper as its lift; it names no binder there, so it spells
+        // as written.
+        Former::Cong(map, path, lift) => Vec::from([
+            Slot::of(
+                map,
+                Admits::Value,
+                Binds::intuitionistic(OpenBinders(usize::from(lift))),
+            ),
+            value(path),
+        ]),
+        // The surface writes no multiplicity: the walk notes one other than
+        // `1` as left out, where it joins the arrow.
+        Former::Pi { domain, codomain }
+        | Former::LinearArrow {
+            domain, codomain, ..
+        } => Vec::from([
+            value_type(domain),
+            Slot::of(codomain, Admits::CompType, Binds::ONE),
+        ]),
+        Former::SessionRelated(_, first, second, Some(paths)) => {
+            Vec::from([value(first), value(second), value(paths)])
+        },
+        Former::PathUniverse(first, second)
+        | Former::PathProduct(first, second)
+        | Former::Funext(first, second)
+        | Former::Equiv(first, second)
+        | Former::SessionRelated(_, first, second, None)
+        | Former::Then(first, second)
+        | Former::Step(first, second)
+        | Former::FlowProduct(first, second)
+        | Former::FunctionFlow(first, second)
+        | Former::Ua {
+            forward: first,
+            backward: second,
+            ..
+        }
+        | Former::PathEquiv(first, second)
+        | Former::ListCons(first, second)
+        | Former::StaticApplication(first, second)
+        | Former::Transport(first, second) => Vec::from([value(first), value(second)]),
+        Former::Compose { cells, .. } => components(cells, Admits::Value, Binds::NONE, None),
+        // The generator is a computation the call takes first; the cells
+        // follow it, values as a composite's are.
+        Former::Fill { cells, .. } => {
+            let mut slots = components(
+                crate::former::Arity::from(usize::from(cells).saturating_add(1_usize)),
+                Admits::Value,
+                Binds::NONE,
+                None,
+            );
+            if let Some(generator) = slots.first_mut() {
+                generator.admits = Admits::Computation(Tail::Continues);
+            }
+            slots
+        },
+        Former::Path {
+            carrier,
+            left,
+            right,
+        }
+        | Former::Bridge {
+            carrier,
+            left,
+            right,
+        }
+        | Former::Flow {
+            carrier,
+            left,
+            right,
+        } => carrier
+            .map(value_type)
+            .into_iter()
+            .chain([bare(left), bare(right)])
+            .collect(),
+        Former::Relation {
+            relation: Relation::Flow,
+            left,
+            right,
+        } => Vec::from([bare(left), bare(right)]),
+        Former::Here(child) | Former::Stay(child) => Vec::from([bare(child)]),
+        Former::Relation {
+            relation: Relation::Isomorphism | Relation::Equivalence,
+            left,
+            right,
+        } => Vec::from([value_type(left), value_type(right)]),
+        Former::Model { sorts, .. } => sorts
+            .iter()
+            .map(|&(_, carrier)| value_type(carrier))
+            .collect(),
+        Former::ThunkType(child) | Former::QuoteComputation(child) => Vec::from([comp_type(child)]),
+        // An open row's tail is visited before what follows it: `-F [I | t] A`;
+        // each type a theory's entry fixes a sort to is visited before both,
+        // in row order, `-F [T with sort C = A | t] B`. A group's results
+        // come last, each under the binders of the results before it.
+        Former::EffectfulReturner {
+            result,
+            tail,
+            effects,
+            manifests,
+        } => {
+            let row = manifested(effects, manifests)
+                .into_iter()
+                .flatten()
+                .flat_map(|manifest| manifest.sorts.iter().map(|&(_, carrier)| carrier))
+                .chain(tail)
+                .map(value_type);
+            match result {
+                Returned::One(result) => row.chain([value_type(result)]).collect(),
+                Returned::Group(arity) => row
+                    .chain((0_usize .. usize::from(arity)).map(|index| Slot {
+                        node: source.component(node, Component::from(index)),
+                        admits: Admits::ValueType,
+                        binds: Binds::intuitionistic(OpenBinders(index)),
+                        label: None,
+                    }))
+                    .collect(),
+            }
+        },
+        Former::Row { tail, .. } => tail.into_iter().map(value_type).collect(),
+        Former::List(child)
+        | Former::Returner(child)
+        | Former::Quote(child)
+        | Former::Located { inner: child, .. }
+        | Former::Kept { inner: child, .. }
+        | Former::Staged { inner: child, .. } => Vec::from([value_type(child)]),
+        Former::PathRefl(child)
+        | Former::Element(child)
+        | Former::ComputationElement(child)
+        | Former::Univalence(child)
+        | Former::Back(child)
+        | Former::Forward(child)
+        | Former::RunType(child)
+        | Former::PrefixType(child)
+        | Former::DialogueType(child)
+        | Former::Decompose(child)
+        | Former::Return(child)
+        | Former::Abandon(child)
+        | Former::Force(child)
+        | Former::RecordProjection(child, _)
+        | Former::TupleProjection(child, _)
+        | Former::Perform { payload: child, .. }
+        | Former::Send { payload: child, .. }
+        | Former::ResumeView { value: child, .. }
+        | Former::WorldHold(child) => Vec::from([value(child)]),
+        Former::Injection(summand, child) => Vec::from([Slot {
+            label: Some(Labelled {
+                of: node,
+                index: summand,
+                label: Label::Summand,
+            }),
+            ..value(child)
+        }]),
+        Former::StaticLambda(body) => Vec::from([Slot::of(body, Admits::Value, Binds::ONE)]),
+        Former::Bind(bound, rest) => {
+            Vec::from([continues(bound), Slot::of(rest, admits, Binds::ONE)])
+        },
+        Former::BindAll { bound, arity, body } => Vec::from([
+            continues(bound),
+            Slot::of(body, admits, Binds {
+                zone: Zone::Intuitionistic,
+                count: usize::from(arity),
+            }),
+        ]),
+        // A `for` loop walks its list; its body runs under the loop's binder,
+        // the remaining list's, and the cell's element and tail, of which only
+        // the element is written. What follows the loop is visited before the
+        // body, so the element's name is the one the body's visit leaves open
+        // where the join writes it. A threading loop's passes run as an
+        // unthreaded loop's, under the binders its threading opens; the slots
+        // the first pass takes go unwritten.
+        Former::Application(function, argument) => match looped(source, node, admits) {
+            Some(Looped::For { list, each, rest }) => {
+                let mut slots = Vec::from([value(list)]);
+                if let Some(rest) = rest {
+                    slots.push(Slot::of(
+                        rest,
+                        admits,
+                        Binds::intuitionistic(OpenBinders(2_usize)),
+                    ));
+                }
+                slots.push(Slot::of(
+                    each,
+                    Admits::Computation(Tail::Passes),
+                    Binds::intuitionistic(OpenBinders(4_usize)),
+                ));
+                slots
+            },
+            Some(reading @ (Looped::Loop { .. } | Looped::While { .. })) => {
+                passing(reading, admits)
+            },
+            None => Vec::from([continues(function), value(argument)]),
+        },
+        // A loop's passes run its body, which the loop's binder and, in a
+        // `while`, the test's binders stand over unwritten.
+        Former::Fixpoint(body) => match looped(source, node, admits) {
+            Some(reading @ (Looped::Loop { .. } | Looped::While { .. })) => {
+                passing(reading, admits)
+            },
+            Some(Looped::For { .. }) | None => Vec::from([match admits {
+                Admits::Computation(Tail::Unstated) => Slot::of(body, admits, Binds::ONE),
+                Admits::Computation(Tail::Ends | Tail::Continues | Tail::Passes)
+                | Admits::Type
+                | Admits::ValueType
+                | Admits::CompType
+                | Admits::Thunked
+                | Admits::Value
+                | Admits::Operand
+                | Admits::Stated => ends(body, Binds::ONE),
+            }]),
+        },
+        // A lambda's body below a value states no more than the lambda.
+        // A linear lambda's body stands under the parameter's shadow, as a
+        // lambda's under its binder; the walk opens the linear copy beside it.
+        Former::Lambda(body) | Former::LinearLambda(body) | Former::Shift(body) => {
+            Vec::from([match admits {
+                Admits::Computation(Tail::Unstated) => Slot::of(body, admits, Binds::ONE),
+                Admits::Computation(Tail::Ends | Tail::Continues | Tail::Passes)
+                | Admits::Type
+                | Admits::ValueType
+                | Admits::CompType
+                | Admits::Thunked
+                | Admits::Value
+                | Admits::Operand
+                | Admits::Stated => ends(body, Binds::ONE),
+            }])
+        },
+        // A thunk's body states its type only where the thunk's position
+        // does: a definition's value, a family's argument; below any other
+        // value, as a constructor's field, nothing states it.
+        Former::Thunk(body) => match bodies {
+            Bodies::Spelled if matches!(admits, Admits::Value | Admits::Operand) => {
+                Vec::from([Slot::of(
+                    body,
+                    Admits::Computation(Tail::Unstated),
+                    Binds::NONE,
+                )])
+            },
+            Bodies::Spelled => Vec::from([ends(body, Binds::NONE)]),
+            Bodies::Opaque => Vec::new(),
+        },
+        // A lambda nested where a value is read stands below a value: the
+        // lowering checks it against no type, so its body states no more than
+        // the lambda, as a thunk's body below a value does.
+        Former::Nested(body) if matches!(source.read(body), Former::Lambda(_)) => {
+            Vec::from([Slot::of(
+                body,
+                Admits::Computation(Tail::Unstated),
+                Binds::NONE,
+            )])
+        },
+        Former::Nested(body)
+        | Former::Run(body)
+        | Former::Returned(body)
+        | Former::Project(_, body) => Vec::from([continues(body)]),
+        Former::PathTransport {
+            motive,
+            path,
+            value: transported,
+        }
+        | Former::Ride {
+            motive,
+            flow: path,
+            value: transported,
+        } => Vec::from([
+            Slot::of(motive, Admits::ValueType, Binds::ONE),
+            operand(path),
+            operand(transported),
+        ]),
+        Former::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value: transported,
+        } => Vec::from([
+            Slot::of(motive, Admits::Thunked, Binds::NONE),
+            operand(path),
+            operand(start),
+            operand(over),
+            operand(transported),
+        ]),
+        Former::Case { scrutinee, arity } => {
+            let mut slots = Vec::from([value(scrutinee)]);
+            slots.extend(components(arity, admits, Binds::ONE, None));
+            slots
+        },
+        Former::Split {
+            scrutinee,
+            arity,
+            body,
+        } => Vec::from([
+            value(scrutinee),
+            Slot::of(
+                body,
+                admits,
+                Binds::intuitionistic(OpenBinders(usize::from(arity))),
+            ),
+        ]),
+        Former::DataCase {
+            scrutinee,
+            motive,
+            arity,
+            ..
+        } => {
+            let mut slots = Vec::from([value(scrutinee)]);
+            if written == Motive::Written {
+                slots.push(Slot::of(motive, Admits::CompType, Binds::ONE));
+            }
+            // A pruned arm is not written; every other stands under its
+            // fields and its equations, of which its pattern names the fields.
+            slots.extend((0_usize .. usize::from(arity)).filter_map(|index| {
+                let arm = arm(source, node, Component::from(index));
+                (!arm.pruned).then_some(Slot {
+                    node: arm.body,
+                    admits,
+                    binds: Binds::intuitionistic(OpenBinders(
+                        arm.fields.saturating_add(arm.equations),
+                    )),
+                    label: None,
+                })
+            }));
+            slots
+        },
+        Former::ListFold { list, nil, cons } | Former::ListCase { list, nil, cons } => Vec::from([
+            value(list),
+            Slot::of(nil, admits, Binds::NONE),
+            Slot::of(cons, admits, Binds::intuitionistic(OpenBinders(2_usize))),
+        ]),
+        Former::Handle {
+            subject,
+            on_return,
+            clauses: count,
+        } => clauses(ends(subject, Binds::NONE), on_return, count),
+        // A manifest's carriers are written before the subject but stand
+        // after the clauses, so the subject stays the first child. A scope a
+        // model answers writes no clauses: the lowering derives them.
+        Former::Scope {
+            subject,
+            on_return,
+            clauses: count,
+            sorts,
+            answered,
+            ..
+        } => {
+            let mut slots = match answered {
+                Some(_) => Vec::from([ends(subject, Binds::ONE)]),
+                None => clauses(ends(subject, Binds::ONE), on_return, count),
+            };
+            slots.extend(sorts.iter().map(|&(_, carrier)| value_type(carrier)));
+            slots
+        },
+        Former::Exercise {
+            capability,
+            payload,
+            ..
+        } => Vec::from([value(capability), value(payload)]),
+        Former::Resume(stack, computation) => Vec::from([
+            value(stack),
+            resumed_reply(source, stack, computation).map_or_else(|| continues(computation), value),
+        ]),
+        Former::Reset(body) | Former::Migrate { body, .. } => Vec::from([ends(body, Binds::NONE)]),
+        Former::Leta {
+            value: opened,
+            body,
+            ..
+        } => Vec::from([value(opened), Slot::of(body, admits, Binds::ONE)]),
+        Former::Lazy(arity) => components(
+            arity,
+            Admits::Computation(Tail::Continues),
+            Binds::NONE,
+            None,
+        ),
+        Former::Ascription { body, ty } => {
+            Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
+        },
+        // A truth value is a word, no child written; a binary natural is a
+        // numeral, its type the one child written.
+        Former::Annotated {
+            value: annotated,
+            ty,
+        } => match (truth(source, annotated, ty), natural(source, annotated, ty)) {
+            (Some(_), _) => Vec::new(),
+            (None, Some(_)) => Vec::from([value_type(ty)]),
+            (None, None) => Vec::from([bare(annotated), value_type(ty)]),
+        },
+        // An offer's arm and a fork's child end in a computation the surface
+        // reads only as one, `retire => pure *{}`: no exit is elided there.
+        Former::Offer { arms, .. } => components(
+            arms,
+            Admits::Computation(Tail::Continues),
+            Binds::NONE,
+            None,
+        ),
+        Former::Fork {
+            protocol,
+            child,
+            parent,
+        } => {
+            let linear = Binds {
+                zone: Zone::Linear,
+                count: 1_usize,
+            };
+            Vec::from([
+                value_type(protocol),
+                Slot::of(child, Admits::Computation(Tail::Continues), linear),
+                Slot::of(parent, admits, linear),
+            ])
+        },
+        Former::Hold {
+            value: held, body, ..
+        } => Vec::from([
+            value(held),
+            Slot::of(body, admits, Binds {
+                zone: Zone::Linear,
+                count: 1_usize,
+            }),
+        ]),
+        Former::Place { payload, body } => Vec::from([
+            value(payload),
+            Slot::of(body, admits, Binds {
+                zone: Zone::Linear,
+                count: 1_usize,
+            }),
+        ]),
+        Former::Receive { body, .. } => Vec::from([Slot::of(body, admits, Binds {
+            zone: Zone::Linear,
+            count: 1_usize,
+        })]),
+        Former::Access {
+            place, body, mode, ..
+        } => {
+            let mut slots = Vec::with_capacity(3_usize);
+            if let gandr_core_term::memory::Place::At { index } = place {
+                slots.push(value(index));
+            }
+            slots.push(ends(body, Binds {
+                zone: Zone::Linear,
+                count: 1_usize,
+            }));
+            if let AccessMode::Exclusive { unwind } = mode {
+                slots.push(ends(unwind, Binds::NONE));
+            }
+            slots
+        },
+        Former::BaseType(_)
+        | Former::BufferType
+        | Former::QubitType
+        | Former::RowType
+        | Former::WebType
+        | Former::Web(_)
+        | Former::Universe { .. }
+        | Former::Abstract(_)
+        | Former::Member(_)
+        | Former::Capability { .. }
+        | Former::Variable { .. }
+        | Former::Constant(_)
+        | Former::Unit
+        | Former::ListNil
+        | Former::Literal(_)
+        | Former::Reify
+        | Former::Select { .. }
+        | Former::Close(_)
+        | Former::AbortView(_)
+        | Former::ConsumeHeld(_)
+        | Former::Unreadable(_) => Vec::new(),
+    }
+}
+
+/// The depth a former's children stand at.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one deeper than `depth` below a value former, saturating at the
+///   counter ceiling; `depth` itself below any other former.
+/// - provides: the value-depth count [`DEPTH_LIMIT`] bounds.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the exact cutoff and maximum counter distinguish missed
+///   increments, increments in type positions and wrapping; the deep value
+///   golden observes the resulting presentation boundary.
+/// - witness: `walk::tests::depth_boundaries_preserve_precedence_and_saturation`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+#[spec(ensures: |ret| ret.0 == if kind == Kind::Value { depth.0.saturating_add(1_u32) } else { depth.0 })]
+fn below(
+    depth: ValueDepth,
+    kind: Kind,
+) -> ValueDepth
+{
+    if kind == Kind::Value {
+        depth.deeper()
+    }
+    else {
+        depth
+    }
+}
+
+/// The grammar sort the text at a node is read in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Surface
+{
+    /// As an expression: a definition's body, an argument, a quoted type.
+    Expression,
+    /// As a type: a signature, an annotation, a type application's argument.
+    Type,
+    /// As an expression a type encloses: the head and the arguments of a call
+    /// that stands where a type is read. They are read as expressions, so a
+    /// type argument there is quoted (#1102), but the grammar reads them in
+    /// the type's sort, which writes a call glued: there `f x` reads as the
+    /// moded type `m T`.
+    Enclosed,
+}
+
+/// Whether a checker elaborates the text at a node: whether it inserts the
+/// thunk a computation checked against a thunk type takes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Elaboration
+{
+    /// A checker elaborates it: a definition's body, a computation, and an
+    /// argument either passes.
+    Checked,
+    /// A type reads it, and no checker elaborates anything below it: the
+    /// lowering reads a type's call arguments in the type's telescope, and
+    /// every node under a path's endpoint as the endpoint (#3972).
+    Read,
+}
+
+/// The grammar sort a slot of `former`, spelled in `surface`, is read in.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an expression for a thunk's body, a lambda's body, a static
+///   lambda's body, a transport's and a ride's motive and operands, and the
+///   statements of a nested or returned computation over a bind, which the
+///   grammar reads between their braces or a call's parentheses as an
+///   expression in either sort, so a type argument of a call there is quoted
+///   (#1102, #4508) and a call there is juxtaposed (#5211); a type for a type
+///   slot of a value or a computation that writes itself — an annotation, a
+///   binder's type, a typed bind's result — where the expression grammar embeds
+///   a type; `surface` itself otherwise. A quote, any other nested or returned
+///   computation and an ascription, elided or written as the match that answers
+///   it, write nothing of their own around a slot, so their slot is read as
+///   they are; the endpoints of a path or a bridge type, `Path[.A = A](x, y)`,
+///   are expressions in either sort unless its carrier is a universe, since the
+///   grammar reads a universe's endpoints, codes, as types and any other
+///   carrier's as expressions; any other type former's value slot is read as
+///   the type is, since every type application reads its arguments in the
+///   type's own sort. A computation's slot that takes a computation — an arm, a
+///   bound computation, the rest of a bind — is an expression, since the
+///   lowering reads a computation that a type decodes as a body, where a call
+///   is juxtaposed (#7564). A call reads its own head and arguments as
+///   expressions, which [`Walk::visit`] schedules itself.
+/// - provides: whether a quote in the slot stands where an expression reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a quote as an argument, as a definition's body, as a
+///   static lambda's body, as a decoded code in a type position, as a call's
+///   argument in a thunk a path type's endpoint writes and as a value a block
+///   in a path type's endpoint binds, and a call in a lambda's body as a type's
+///   argument, distinguish the slots an expression reads from those a type
+///   reads.
+/// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
+/// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
+/// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
+/// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
+/// - witness: `tests::goldens::a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211`
+/// - witness: `tests::goldens::a_call_in_an_arm_of_a_decoded_match_is_juxtaposed_7564`
+#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::Lambda(_) | Former::LinearLambda(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
+    || (endpoints_read_as_expressions(source, former) == Endpoints::Expressions && !matches!(admits, Admits::ValueType)) {
+    Surface::Expression
+} else if !matches!(*former,
+    Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
+    && matches!(kind(former), Kind::Value | Kind::Computation)
+    && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
+{
+    Surface::Type
+} else if !matches!(*former,
+    Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
+    && matches!(kind(former), Kind::Computation)
+    && matches!(admits, Admits::Computation(_))
+{
+    Surface::Expression
+} else {
+    surface
+})]
+fn surface_below<S>(
+    source: &S,
+    surface: Surface,
+    former: &Former<'_, S::Node>,
+    admits: Admits,
+) -> Surface
+where
+    S: Source + ?Sized,
+{
+    // A thunk's body, a lambda's body, a static lambda's body and a block's
+    // statements are written between braces, and a transport's motive and
+    // operands between a call's parentheses, which either grammar reads as an
+    // expression.
+    if matches!(
+        *former,
+        Former::Thunk(_)
+            | Former::Lambda(_)
+            | Former::LinearLambda(_)
+            | Former::StaticLambda(_)
+            | Former::PathTransport { .. }
+            | Former::Ride { .. }
+    ) || braced(source, former).is_some()
+    {
+        return Surface::Expression;
+    }
+    // A path type's endpoints are expressions wherever the type stands, but
+    // over a universe: the grammar reads `Path[.A = A](x, y)`'s endpoints so,
+    // its carrier a type, and `Path[.A = Type](A, B)`'s as types.
+    if endpoints_read_as_expressions(source, former) == Endpoints::Expressions
+        && !matches!(admits, Admits::ValueType)
+    {
+        return Surface::Expression;
+    }
+    let writes_nothing = matches!(
+        *former,
+        Former::Quote(_)
+            | Former::QuoteComputation(_)
+            | Former::Nested(_)
+            | Former::Returned(_)
+            | Former::Ascription { .. }
+            | Former::Place { .. }
+    );
+    if writes_nothing || !matches!(kind(former), Kind::Value | Kind::Computation) {
+        return surface;
+    }
+    if matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType) {
+        return Surface::Type;
+    }
+    // A computation that a type decodes reads its own computations as a body
+    // does: the lowering takes a match, a bind or a returner where a type is
+    // read as the decode of the code that it returns, and reads its arms and
+    // its statements in the expression grammar (#7564).
+    if matches!(kind(former), Kind::Computation) && matches!(admits, Admits::Computation(_)) {
+        return Surface::Expression;
+    }
+    surface
+}
+
+/// How the grammar reads a path's or a bridge's endpoints.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Endpoints
+{
+    /// As expressions: a carrier other than a universe, or none written.
+    Expressions,
+    /// As types, or the former is no path and no bridge.
+    Types,
+}
+
+/// Whether `former` is a path or a bridge type whose endpoints the grammar
+/// reads as expressions: one over a carrier other than a universe, or one
+/// whose carrier is left to its endpoints.
+///
+/// # Specification
+/// trivial.
+fn endpoints_read_as_expressions<S>(
+    source: &S,
+    former: &Former<'_, S::Node>,
+) -> Endpoints
+where
+    S: Source + ?Sized,
+{
+    let expressions = matches!(
+        *former,
+        Former::Path { carrier, .. } | Former::Bridge { carrier, .. }
+            if carrier.is_none_or(|carrier| !matches!(source.read(carrier), Former::Universe { .. }))
+    );
+    if expressions {
+        Endpoints::Expressions
+    }
+    else {
+        Endpoints::Types
+    }
+}
+
+/// Whether a type classifies codes as the lowering reads it off its spelling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Classifies
+{
+    /// It classifies codes: a universe, the row kind, or a static arrow whose
+    /// domain and codomain do.
+    Codes,
+    /// It classifies values.
+    Values,
+}
+
+/// Whether the type at `node` classifies codes as the lowering reads it off
+/// its spelling: a universe, the row kind, or a static arrow whose domain and
+/// codomain do. A box written between such types, `Type -> Type`, reads back
+/// as the static Pi, so the box keeps its thunk there.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Classifies::Codes`] for a universe, the row kind and a static
+///   Pi whose domain and codomain classify codes, read at most [`DEPTH_LIMIT`]
+///   nodes; [`Classifies::Values`] for any other node.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — a clause would restate the walk down the operands.
+///
+/// # Termination
+/// Each round reads one node, and the loop stops at [`DEPTH_LIMIT`] rounds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the thunk of an arrow between universes reads back equal,
+///   where the alias `Type -> Type` read back as the static Pi, and the thunk
+///   of an arrow from a universe to a value type prints as the alias.
+/// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
+/// - witness: `tests::goldens::a_box_from_a_type_to_a_value_type_prints_as_the_alias_5203`
+fn classifies_codes<S>(
+    source: &S,
+    node: S::Node,
+) -> Classifies
+where
+    S: Source + ?Sized,
+{
+    // A static Pi's codomain waits in `pending`. The vector allocates only for
+    // a static Pi.
+    let mut pending = Vec::new();
+    let mut next = Some(node);
+    for _ in 0_u32 .. DEPTH_LIMIT.0 {
+        let Some(at) = next.take().or_else(|| pending.pop())
+        else {
+            return Classifies::Codes;
+        };
+        let read = source.read(at);
+        if matches!(read, Former::Universe { .. } | Former::RowType) {
+            continue;
+        }
+        let Former::StaticPi { domain, codomain } = read
+        else {
+            return Classifies::Values;
+        };
+        pending.push(codomain);
+        next = Some(domain);
+    }
+    if next.is_none() && pending.is_empty() {
+        Classifies::Codes
+    }
+    else {
+        Classifies::Values
+    }
+}
+
+/// `written`, a constructor's name, juxtaposed where an expression reads it,
+/// or nothing where it stands as written. The lowering mints a word's inverse
+/// letter and its empty word as the call a pattern and a type read glued,
+/// `back(loop)` and `Path.here(Base)`; an expression reads that call
+/// juxtaposed, `back loop` and `Path.here Base`, an application, its operand
+/// bare when it is one name and parenthesised otherwise, `Path.here (spin
+/// Base)`.
+///
+/// # Specification
+/// trivial.
+fn juxtaposed_name(
+    written: &Written,
+    surface: Surface,
+) -> Option<Written>
+{
+    match surface {
+        Surface::Type | Surface::Enclosed => None,
+        Surface::Expression => match written.0.split_once('(') {
+            Some((head, rest))
+                if !head.is_empty() && !head.ends_with(' ') && rest.ends_with(')') =>
+            {
+                let operand = rest.strip_suffix(')').unwrap_or(rest);
+                let named = !operand.is_empty()
+                    && operand.chars().all(|letter| {
+                        letter.is_alphanumeric() || matches!(letter, '_' | '.' | '\'')
+                    });
+                Some(Written(Cow::Owned(if named {
+                    format!("{head} {operand}")
+                }
+                else {
+                    format!("{head} ({operand})")
+                })))
+            },
+            Some(_) | None => None,
+        },
+    }
+}
+
+/// `written`, a family's name the lowering mints as a call, `Terms(Mag)`,
+/// juxtaposed where a type reads it, `Terms Mag`, or nothing where it stands
+/// as written: an expression, or a name that is no capitalised head over one
+/// name.
+///
+/// # Specification
+/// trivial.
+fn juxtaposed_family(
+    written: &Written,
+    surface: Surface,
+) -> Option<Written>
+{
+    match surface {
+        Surface::Expression => None,
+        Surface::Type | Surface::Enclosed => {
+            let (head, rest) = written.0.split_once('(')?;
+            let operand = rest.strip_suffix(')')?;
+            let named = !operand.is_empty()
+                && operand
+                    .chars()
+                    .all(|letter| letter.is_alphanumeric() || matches!(letter, '_' | '.' | '\''));
+            (head.starts_with(char::is_uppercase) && !head.contains(' ') && named)
+                .then(|| Written(Cow::Owned(format!("{head} {operand}"))))
+        },
+    }
+}
+
+/// Whether a child piece stands inside a quote the type grammar reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Quoted
+{
+    /// It stands right after the text `type(`.
+    Inside,
+    /// It stands anywhere else.
+    Outside,
+}
+
+/// Whether the child piece at `index` of `parts` stands right after the text
+/// `type(`, inside a quote the type grammar reads. The pieces count in
+/// writing order, the last child's piece apart, since it takes the last slot
+/// wherever it is written.
+///
+/// # Specification
+/// trivial.
+fn quoted_piece(
+    parts: &[Part],
+    index: Component,
+) -> Quoted
+{
+    let inside = core::iter::once(None)
+        .chain(parts.iter().map(Some))
+        .zip(parts.iter())
+        .filter(|&(_, part)| matches!(*part, Part::Piece(_) | Part::Spliced(_) | Part::Argument))
+        .nth(usize::from(index))
+        .is_some_and(|(before, _)| matches!(before, Some(Part::Text(text)) if text == "type("));
+    if inside {
+        Quoted::Inside
+    }
+    else {
+        Quoted::Outside
+    }
+}
+
+/// How loosely a spelled piece binds, tightest first.
+///
+/// A piece stands bare in a slot that admits its binding and is parenthesized
+/// in one that admits only tighter pieces. The order is the grammar's: an
+/// atom, then an application, then the bridges and the keyword-led
+/// computations, then a word's cons, then the infix `*`, `+` and `&` the
+/// sugared form writes, then the relations `≃`, `≅` and `⇝` between types,
+/// then `->`, then a bind's statements. Every arity-shaped former is an atom,
+/// its entries between its own delimiters.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Binding
+{
+    /// A qualified name `M.T`: an atom everywhere but a session type's
+    /// payload, where the send's or receive's own `.` would end the payload at
+    /// the path's first `.`, so it is parenthesized there, `!(M.T). S`.
+    Qualified,
+    /// A name, a literal, a universe, a bracketed or braced form, a
+    /// projection.
+    Atom,
+    /// `f a b`, an application: its head an application or an atom, each
+    /// argument an atom, nested to the left.
+    Application,
+    /// `+U C`, `-F A`, `pure v`, `force v`, `run c`, `fun (x) { c }`, the
+    /// static lambda `fun (a) { v }` or `thunk { c }`.
+    Prefix,
+    /// `g ∷ p`, a word's letter before the rest, nested to the right.
+    Cons,
+    /// `A * B`.
+    Product,
+    /// `A + B`.
+    Sum,
+    /// `C & D`.
+    Lazy,
+    /// `A ≃ B`, `A ≅ B` or `A ⇝ B`, nested to the right.
+    Relation,
+    /// `A -> C`, `(x : A) -> C`, or the box `A -> B` between value types.
+    Arrow,
+    /// `let x = c ; rest`, whose rest runs to the end of the block it stands
+    /// in; anywhere else it is a block of its own, `{ … }`.
+    Sequence,
+}
+
+impl Binding
+{
+    /// The loosest piece an argument stands bare in, between commas or a
+    /// bracket's delimiters: anything but a statement, which outside its
+    /// block is a block of its own.
+    const ARGUMENT: Self = Self::Arrow;
+}
+
+/// One finished document and how it binds.
+#[derive(Clone, Copy, Debug)]
+struct Piece
+{
+    /// The document.
+    doc: Doc,
+    /// How loosely it binds.
+    binding: Binding,
+    /// The fields it spells, where it is a link of a dependent record whose
+    /// first field's label it writes as the source does.
+    fields: Option<Fields>,
+}
+
+/// The fields a link of a dependent record spells, `l : A, …` without the
+/// braces. The link around it writes them in its own braces, so the record
+/// prints whole, as its source writes it (#3934).
+#[derive(Clone, Copy, Debug)]
+struct Fields
+{
+    /// The fields' document.
+    doc: Doc,
+    /// Whether a dependent pair is among the links they spell. Braced alone,
+    /// such fields read back as the links again; a run of products alone
+    /// reads back as a record.
+    dependent: bool,
+}
+
+/// The labels the source writes for a link of a dependent record, which the
+/// link's join reads.
+#[derive(Clone, Debug, Default)]
+struct RecordLink
+{
+    /// The label of the field the link holds first: a dependent pair's
+    /// binder, or a product's first component.
+    first: Option<BinderName>,
+    /// The label of its second component: the record's last field, at the
+    /// innermost link alone. Every other link holds the next link there.
+    second: Option<BinderName>,
+}
+
+/// The argument a redex's binder stands for: its piece, and the binders its
+/// spelling named, which occur in the reduct only where the binder does.
+#[derive(Clone, Debug)]
+struct Substituted
+{
+    /// The argument's spelling.
+    piece: Piece,
+    /// The positions of the binders the spelling named.
+    occurring: BTreeSet<OpenBinders>,
+}
+
+/// One run of a session type's spelling: fixed text, or the payload type in a
+/// slot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Segment
+{
+    /// Text, written as it stands.
+    Text(String),
+    /// The payload type in this slot.
+    Payload(PayloadSlot),
+}
+
+/// A pending step of a protocol's spelling.
+#[derive(Clone, Copy, Debug)]
+enum Spelling<'protocol>
+{
+    /// Spell the session type at this state.
+    State(ProtocolState),
+    /// Write fixed text.
+    Text(&'static str),
+    /// Write a branch's label and its colon.
+    Label(&'protocol gandr_kernel_term::FieldLabel),
+    /// Close the innermost recursion binder.
+    Leave,
+}
+
+/// The nesting position of a recursion binder among the binders open around
+/// it, outermost zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Nesting(usize);
+
+impl Nesting
+{
+    /// The binder's name: `t`, then `t1`, `t2`, ….
+    ///
+    /// # Specification
+    /// trivial.
+    fn name(self) -> String
+    {
+        if self.0 == 0_usize {
+            String::from("t")
+        }
+        else {
+            format!("t{}", self.0)
+        }
+    }
+}
+
+/// The spelling of the session type `protocol` stands for at `state`, its
+/// payload types left as slots, how loosely it binds, and whether it reads
+/// every state it reaches.
+///
+/// # Specification
+/// - requires: nothing; a state past the protocol spells `?`.
+/// - ensures: `!` and `?` prefix their payload slot and `. ` their
+///   continuation; a selection is `+{l : S, …}` and an offer `&{l : S, …}` in
+///   label order; `end` is `end`; a `mu` is `mu t. S`, its binder named by its
+///   nesting; a variable is its binder's name, and a variable whose binder
+///   encloses the state rather than the spelling unfolds to that binder, so the
+///   spelling is closed. A selection, an offer and `end` bind as atoms, every
+///   other head as an arrow does.
+/// - provides: the one session-type spelling both sources share, since both
+///   read the same protocol.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` pops one pending step per iteration.
+/// - measure: the protocol's nodes are reached along tree edges, and a variable
+///   unfolds only to a binder no open binder repeats, which a contractive
+///   protocol's finite binders bound.
+/// - input recursion: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recursive protocol with every former spells as the
+///   grammar writes it at its root and at a state inside its recursion.
+/// - witness: `tests::goldens::session_types_spell_their_protocol_and_payloads`
+#[spec(ensures: |ret| ret.0.iter().all(|segment| match *segment {
+    | Segment::Text(ref text) => !text.is_empty(),
+    | Segment::Payload(slot) => protocol.nodes().iter().any(|node| {
+        matches!(*node, ProtocolNode::Send { payload, .. } | ProtocolNode::Receive { payload, .. } if payload == slot)
+    }),
+}) && (protocol.node(state).is_ok() || ret.2 == Fidelity::Approximate) && (ret.1 == Binding::Atom)
+    == matches!(protocol.node(state), Ok(&(ProtocolNode::Select(_) | ProtocolNode::Offer(_) | ProtocolNode::End))))]
+fn protocol_template(
+    protocol: &Protocol,
+    state: ProtocolState,
+) -> (Vec<Segment>, Binding, Fidelity)
+{
+    let mut segments = Vec::new();
+    let mut text = String::new();
+    let mut binders: Vec<ProtocolState> = Vec::new();
+    let mut pending = Vec::from([Spelling::State(state)]);
+    let mut fidelity = Fidelity::Faithful;
+    while let Some(step) = pending.pop() {
+        let at = match step {
+            Spelling::Text(glyphs) => {
+                text.push_str(glyphs);
+                continue;
+            },
+            Spelling::Label(label) => {
+                text.push_str(label.as_ref());
+                text.push_str(" : ");
+                continue;
+            },
+            Spelling::Leave => {
+                let _closed = binders.pop();
+                continue;
+            },
+            Spelling::State(at) => at,
+        };
+        match protocol.node(at) {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a session state its protocol does not hold: a malformed protocol, \
+                              with no session former to spell"
+                )
+            )]
+            Err(_) => {
+                fidelity = Fidelity::Approximate;
+                text.push('?');
+            },
+            Ok(&ProtocolNode::Send { payload, next }) => {
+                text.push('!');
+                segments.push(Segment::Text(core::mem::take(&mut text)));
+                segments.push(Segment::Payload(payload));
+                text.push_str(" >> ");
+                pending.push(Spelling::State(next));
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the receive session type's own `?A >> S`, which \
+                              `receive_session_type` reads: an answer, not a placeholder"
+                )
+            )]
+            Ok(&ProtocolNode::Receive { payload, next }) => {
+                text.push('?');
+                segments.push(Segment::Text(core::mem::take(&mut text)));
+                segments.push(Segment::Payload(payload));
+                text.push_str(" >> ");
+                pending.push(Spelling::State(next));
+            },
+            Ok(&(ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches))) => {
+                text.push_str(match protocol.node(at) {
+                    Ok(&ProtocolNode::Offer(_)) => "&{",
+                    _ => "+{",
+                });
+                pending.push(Spelling::Text("}"));
+                for (position, (label, &target)) in branches.iter().enumerate().rev() {
+                    pending.push(Spelling::State(target));
+                    pending.push(Spelling::Label(label));
+                    if position > 0_usize {
+                        pending.push(Spelling::Text(", "));
+                    }
+                }
+            },
+            Ok(&ProtocolNode::End) => text.push_str("end"),
+            Ok(&ProtocolNode::Mu(body)) => {
+                text.push_str("rec ");
+                text.push_str(&Nesting(binders.len()).name());
+                text.push_str(" => ");
+                binders.push(at);
+                pending.push(Spelling::Leave);
+                pending.push(Spelling::State(body));
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    linear_search_in_loop,
+                    reason = "bounded: `binders` holds the `rec`s open around one session type, \
+                              innermost last"
+                )
+            )]
+            Ok(&ProtocolNode::Recur(binder)) => {
+                match binders.iter().rposition(|&open| open == binder) {
+                    Some(position) => text.push_str(&Nesting(position).name()),
+                    None => pending.push(Spelling::State(binder)),
+                }
+            },
+        }
+    }
+    if !text.is_empty() {
+        segments.push(Segment::Text(text));
+    }
+    let binding = match protocol.node(state) {
+        Ok(&(ProtocolNode::Select(_) | ProtocolNode::Offer(_) | ProtocolNode::End)) => {
+            Binding::Atom
+        },
+        _ => Binding::Arrow,
+    };
+    (segments, binding, fidelity)
+}
+
+/// The fixed name the surface spells the sum `node` by: `Bool` for two
+/// components, each the empty product.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: `Bool` exactly when `node` reads as a sum of two components that
+///   both read as the product of none; none otherwise.
+/// - provides: the one reading of `Bool` the spelling and the quote share, as
+///   the lowering reads the fixed name.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Bool`, a sum of a unit and an integer, and a sum of one
+///   unit spell apart.
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+#[spec(ensures: |ret| ret.is_some() == (matches!(source.read(node), Former::Sum(arity) if usize::from(arity) == 2_usize)
+    && [0_usize, 1_usize].into_iter().all(|index| source.component(node, Component::from(index))
+        .is_some_and(|part| matches!(source.read(part), Former::Product(inner) if usize::from(inner) == 0_usize))))
+    && ret.is_none_or(|name| name.0 == "Bool"))]
+fn named_sum<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Glyphs<'static>>
+where
+    S: Source + ?Sized,
+{
+    let two_units = matches!(source.read(node), Former::Sum(arity) if usize::from(arity) == 2_usize)
+        && [0_usize, 1_usize].into_iter().all(|index| {
+            source
+                .component(node, Component::from(index))
+                .is_some_and(|part| {
+                    matches!(source.read(part), Former::Product(inner) if usize::from(inner) == 0_usize)
+                })
+        });
+    two_units.then_some(Glyphs("Bool"))
+}
+
+/// The label kind a sum's or a lazy product's entries spell under, when the
+/// source writes `node` over labels.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Label::Field`] when `source` answers a label for `node`'s first
+///   entry, and none otherwise.
+/// - provides: the one choice of a labelled spelling the slots and the join
+///   share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sum and a lazy record type written over labels, and
+///   each written at positions, spell apart.
+/// - witness: `tests::goldens::a_sum_and_a_lazy_record_spell_their_written_labels_4395`
+#[spec(ensures: |ret| ret.is_some() == source.label(node, Component::from(0_usize)).is_some() && ret.is_none_or(|label| label == Label::Field))]
+fn entry_labels<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Label>
+where
+    S: Source + ?Sized,
+{
+    source
+        .label(node, Component::from(0_usize))
+        .map(|_| Label::Field)
+}
+
+/// The word the surface writes the injection `value` by where it is ascribed
+/// `ty`: `true` for `Bool`'s first summand and `false` for its second, each
+/// over the empty product, the two injections the lowering reads the words as.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: `true` exactly when `ty` reads as `Bool` and `value` as the
+///   injection of unit at the first summand, `false` at the second; none
+///   otherwise.
+/// - provides: the spelling of an ascribed truth value, which lowers back to
+///   the same injection under the same ascription.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `true` and `false` ascribed `Bool`, unit injected into a
+///   sum of a unit and an integer, and an integer injected into `Bool` spell
+///   apart.
+/// - witness: `tests::goldens::an_ascribed_truth_value_spells_as_its_word_2168`
+#[spec(ensures: |ret| ret.is_none() || (named_sum(source, ty).is_some()
+    && matches!(source.read(value), Former::Injection(summand, body)
+        if usize::from(summand) < 2_usize && matches!(source.read(body), Former::Unit))))]
+fn truth<S>(
+    source: &S,
+    value: S::Node,
+    ty: S::Node,
+) -> Option<Glyphs<'static>>
+where
+    S: Source + ?Sized,
+{
+    let _bool = named_sum(source, ty)?;
+    let Former::Injection(summand, body) = source.read(value)
+    else {
+        return None;
+    };
+    if !matches!(source.read(body), Former::Unit) {
+        return None;
+    }
+    match usize::from(summand) {
+        0_usize => Some(Glyphs("true")),
+        1_usize => Some(Glyphs("false")),
+        _ => None,
+    }
+}
+
+/// The numeral the surface writes the binary natural `value` by where it is
+/// ascribed `ty`: the decimal its digits spell, read off the prelude's
+/// constructors by name — `Nat`'s `Zero` and `Positive` over `Pos`'s `One`,
+/// `Bit0` and `Bit1`, the lowest digit outermost — as the lowering mints a
+/// numeral annotated `(n : Nat)`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the decimal of the natural exactly when `ty` reads as `Nat` at
+///   arity zero and `value` as `Zero`, or as `Positive` over a chain of `Bit0`
+///   and `Bit1` ending in `One`, each at its arity; none otherwise.
+/// - provides: the spelling of an ascribed binary natural, which lowers back to
+///   the same constructor term under the same ascription however many digits it
+///   has.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, five and two to the thirty-first ascribed `Nat`
+///   spell as their numerals; a natural ascribed another family, and a chain
+///   ending in other than `One`, spell as their constructors.
+/// - witness: `tests::goldens::an_ascribed_binary_natural_spells_as_its_numeral_3287`
+#[spec(ensures: |ret| ret.is_none() || (matches!(source.read(ty), Former::Data { name: Some(name), arity }
+    if name.as_ref() == "Nat" && usize::from(arity) == 0_usize)
+    && ret.as_ref().is_some_and(|numeral| !numeral.is_empty() && numeral.bytes().all(|digit| digit.is_ascii_digit()))))]
+fn natural<S>(
+    source: &S,
+    value: S::Node,
+    ty: S::Node,
+) -> Option<String>
+where
+    S: Source + ?Sized,
+{
+    if !matches!(source.read(ty), Former::Data { name: Some(name), arity }
+        if name.as_ref() == "Nat" && usize::from(arity) == 0_usize)
+    {
+        return None;
+    }
+    let constructor = |node: S::Node| {
+        let Former::Constructor {
+            name: Some(name),
+            arity,
+            ..
+        } = source.read(node)
+        else {
+            return None;
+        };
+        Some((name, usize::from(arity)))
+    };
+    let (head, arity) = constructor(value)?;
+    match (head.as_ref(), arity) {
+        ("Zero", 0_usize) => return Some(String::from("0")),
+        ("Positive", 1_usize) => {},
+        _ => return None,
+    }
+    // The binary digits below the leading one, the lowest first.
+    let mut bits = Vec::new();
+    let mut at = source.component(value, Component::from(0_usize))?;
+    loop {
+        let (digit, arity) = constructor(at)?;
+        match (digit.as_ref(), arity) {
+            ("One", 0_usize) => break,
+            ("Bit0", 1_usize) => bits.push(false),
+            ("Bit1", 1_usize) => bits.push(true),
+            _ => return None,
+        }
+        at = source.component(at, Component::from(0_usize))?;
+    }
+    // The decimal digits, the lowest first: the leading one, then each
+    // binary digit from the highest doubled in with its carry.
+    let mut decimal = Vec::from([1_u8]);
+    for &bit in bits.iter().rev() {
+        let mut carry = u8::from(bit);
+        for digit in &mut decimal {
+            let doubled = digit.saturating_mul(2_u8).saturating_add(carry);
+            (*digit, carry) = if doubled >= 10_u8 {
+                (doubled.saturating_sub(10_u8), 1_u8)
+            }
+            else {
+                (doubled, 0_u8)
+            };
+        }
+        if carry != 0_u8 {
+            decimal.push(carry);
+        }
+    }
+    Some(
+        decimal
+            .iter()
+            .rev()
+            .map(|&digit| char::from(b'0'.saturating_add(digit)))
+            .collect(),
+    )
+}
+
+/// The notation a decode of `node` is written in where a type is read: a
+/// positional projection, past the return a computation stands in where a
+/// value is read, which the type grammar has no spelling for.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Notation::Positional`] exactly when `node` reads as a tuple
+///   projection, or as a return whose body does; none otherwise.
+/// - provides: the decode the type grammar writes no spelling of, `m.0` read as
+///   a type.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a decode of a projection is the printer's notation, a
+///   decode of a name is not.
+/// - witness: `tests::goldens::a_positional_projection_the_surface_does_not_read_is_notation`
+#[spec(ensures: |ret| ret.is_some() == matches!(past_return(source, node), Former::TupleProjection(..))
+    && ret.is_none_or(|notation| notation == Notation::Positional))]
+fn positional<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Notation>
+where
+    S: Source + ?Sized,
+{
+    matches!(past_return(source, node), Former::TupleProjection(..)).then_some(Notation::Positional)
+}
+
+/// A resident a call writes as one atom of the instantiation slot, which the
+/// slot reads by position: a numeral or a capitalised name applied to nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Atom;
+
+/// Whether `node`, a resident of a call, is written as an atom the slot reads
+/// by position: a non-negative integer, or the code of `Integer`, `String`,
+/// `Char`, `Unit`, `Void`, or of a type a bare capitalised name spells applied
+/// to nothing.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Atom`] exactly when `node` reads as a non-negative integer
+///   literal, or as the quote of the base type `Integer`, `String` or `Char`,
+///   of the empty product or the empty sum, or of a data family, a member type
+///   or an abstract type of no arguments whose name opens with an uppercase
+///   letter and holds letters, digits and `_` alone; none otherwise.
+/// - provides: the residents a printed call supplies by position.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `7`, `Integer` and `Unit` are atoms; `- 3`, a lowercase
+///   variable and a qualified name are not.
+/// - witness: `tests::goldens::a_call_supplies_its_callee_s_implicits_by_position_6320`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Literal(_) | Former::Quote(_)))]
+fn atom<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Atom>
+where
+    S: Source + ?Sized,
+{
+    let bare = |name: Name<'_>| {
+        let text: &str = name.as_ref();
+        text.chars().next().is_some_and(char::is_uppercase)
+            && text
+                .chars()
+                .all(|letter| letter.is_alphanumeric() || letter == '_')
+    };
+    let code = |quoted: S::Node| {
+        let former = source.read(quoted);
+        matches!(
+            former,
+            Former::BaseType(BaseType::Integer | BaseType::String | BaseType::Character)
+        ) || matches!(former, Former::Product(arity) | Former::Sum(arity) if usize::from(arity) == 0_usize)
+            || matches!(former, Former::Data { name: Some(name), arity } if usize::from(arity) == 0_usize && bare(name))
+            || matches!(former, Former::Member(name) | Former::Abstract(name) if bare(name))
+    };
+    let former = source.read(node);
+    let atomic = matches!(former, Former::Literal(&Literal::Integer(ref integer)) if integer.sign() == Sign::NonNegative)
+        || matches!(former, Former::Quote(quoted) if code(quoted));
+    atomic.then_some(Atom)
+}
+
+/// The labels the source writes for `node`, a link of a dependent record:
+/// its first field's and, at the innermost link, its last field's.
+///
+/// # Specification
+/// trivial.
+fn record_link<S>(
+    source: &S,
+    node: S::Node,
+) -> RecordLink
+where
+    S: Source + ?Sized,
+{
+    let owned = |name: Name<'_>| BinderName(String::from(name.as_ref()));
+    RecordLink {
+        first: source.written_binder(node).map(owned),
+        second: source.second_label(node).map(owned),
+    }
+}
+
+/// The labels of the dependent record the binder `opener` opens over, in
+/// field order: a dependent arrow's domain, or a dependent pair's first
+/// component.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: one label per field, when the type is a chain of dependent pairs
+///   or products each naming its first field ([`record_link`]) and ending at a
+///   link that names its last; none otherwise.
+/// - provides: the record a positional selection off the binder reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a binder over a record of three fields keeps their
+///   labels, and a selection off it is written by them.
+/// - witness: `tests::goldens::a_selection_off_a_dependent_record_spells_its_label_3971`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|labels| labels.len() >= 2_usize))]
+fn record_labels<S>(
+    source: &S,
+    opener: S::Node,
+) -> Option<Vec<BinderName>>
+where
+    S: Source + ?Sized,
+{
+    let record = if let Former::Pi { domain, .. } = source.read(opener) {
+        domain
+    }
+    else if let Former::Sigma { first, .. } = source.read(opener) {
+        first
+    }
+    else {
+        return None;
+    };
+    labels_of(source, record)
+}
+
+/// The path of the module whose members the record `node` of `count`
+/// fields holds, each at its own label.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the path `P` when `count` is at least one and the field at each
+///   label `l` reads as the constant `P.l`, every one under the same `P`;
+///   nothing otherwise.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause reads the source's labels and constants,
+///   which a predicate would read again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model passed whole reads back as its module, and the
+///   body parity holds every other record to its fields.
+/// - witness: `tests::goldens::a_record_of_one_module_s_members_spells_as_the_module_6084`
+fn module_of_fields<S>(
+    source: &S,
+    node: S::Node,
+    arity: crate::former::Arity,
+) -> Option<String>
+where
+    S: Source + ?Sized,
+{
+    let mut path: Option<String> = None;
+    for index in 0_usize .. usize::from(arity) {
+        let at = Component::from(index);
+        let label = source.label(node, at)?;
+        let Former::Constant(name) = source.read(source.component(node, at)?)
+        else {
+            return None;
+        };
+        let prefix = name
+            .as_ref()
+            .strip_suffix(label.as_ref())?
+            .strip_suffix('.')?;
+        match path {
+            None => path = Some(String::from(prefix)),
+            Some(ref held) if held == prefix => {},
+            Some(_) => return None,
+        }
+    }
+    path
+}
+
+/// The witness that a projection reads off a value whose type the source
+/// does not state as a record type, so the surface does not read `r.l` back.
+#[derive(Clone, Copy)]
+struct Unrecorded;
+
+/// Whether a projection off a value of type `ty` is the printer's notation
+/// ([`Notation::Labelled`]): `ty` reads as no record type — no product, no
+/// dependent pair, no labelled record type and no patched one.
+///
+/// # Specification
+/// trivial.
+fn unrecorded<S>(
+    source: &S,
+    ty: S::Node,
+) -> Option<Unrecorded>
+where
+    S: Source + ?Sized,
+{
+    let recorded = matches!(
+        source.read(ty),
+        Former::Product(_) | Former::Sigma { .. } | Former::RecordType(_) | Former::Patched(..)
+    );
+    (!recorded).then_some(Unrecorded)
+}
+
+/// The labels of the dependent record type `record`, in field order.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: one label per field, when `record` is a chain of dependent pairs
+///   or products each naming its first field ([`record_link`]) and ending at a
+///   link that names its last; none otherwise.
+/// - provides: the record a positional selection off a binder of that type
+///   reads, an open binder's or a context binder's.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`record_labels`], and a context binder over a record
+///   keeps its labels as an open one does.
+/// - witness: `tests::goldens::a_selection_off_a_dependent_record_spells_its_label_3971`
+/// - witness: `tests::goldens::a_selection_off_a_context_binder_s_record_spells_its_label_4139`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|labels| labels.len() >= 2_usize))]
+fn labels_of<S>(
+    source: &S,
+    record: S::Node,
+) -> Option<Vec<BinderName>>
+where
+    S: Source + ?Sized,
+{
+    let mut link = record;
+    let mut labels = Vec::new();
+    loop {
+        let next = if let Former::Sigma { second, .. } = source.read(link) {
+            second
+        }
+        else if let Former::Product(arity) = source.read(link)
+            && usize::from(arity) == 2_usize
+        {
+            source.component(link, Component::from(1_usize))?
+        }
+        else {
+            return None;
+        };
+        let RecordLink { first, second } = record_link(source, link);
+        labels.push(first?);
+        if let Some(last) = second {
+            labels.push(last);
+            return Some(labels);
+        }
+        link = next;
+    }
+}
+
+/// The former `node` reads as, past the return a computation stands in where
+/// a value is read.
+///
+/// # Specification
+/// trivial.
+fn past_return<S>(
+    source: &S,
+    node: S::Node,
+) -> Former<'_, S::Node>
+where
+    S: Source + ?Sized,
+{
+    let read = source.read(node);
+    if let Former::Returned(body) = read {
+        source.read(body)
+    }
+    else {
+        read
+    }
+}
+
+/// Whether an expression reads a type written bare where it stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Bare
+{
+    /// It reads, as the code of the type.
+    Reads,
+    /// It does not: a part of it reads as another form or not at all.
+    Unread,
+}
+
+/// The bridges between the sorts, and the keywords that lead a computation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Prefix
+{
+    /// The suspension `+U C`.
+    Thunk,
+    /// The returner `-F A`.
+    Returner,
+    /// A returner where the body goes on, `pure v`.
+    Pure,
+    /// An exit with a value, where a bare returner would run on, `return v`.
+    Return,
+    /// An exit through a call, where a bare call would run on, `become c`.
+    Become,
+    /// A force, `force v`.
+    Force,
+    /// A run where a value is read, `run c`.
+    Run,
+}
+
+/// The delimiters of the arity-shaped formers, one per polarity of the
+/// former.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Brace
+{
+    /// `*{…}`: a product, a tuple, a record type or a record.
+    Star,
+    /// `+{…}`: a sum or an injection.
+    Plus,
+    /// `&{…}`: a lazy product.
+    Ampersand,
+}
+
+impl Brace
+{
+    /// The opening delimiter.
+    ///
+    /// # Specification
+    /// - ensures: `*{` for [`Self::Star`], `+{` for [`Self::Plus`] and `&{` for
+    ///   [`Self::Ampersand`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — products, sums and lazy products in the grammar
+    ///   fixtures distinguish a swapped delimiter.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    #[spec(ensures: |ret| matches!((self, ret.0.as_bytes()),
+        (Self::Star, b"*{") | (Self::Plus, b"+{") | (Self::Ampersand, b"&{")
+    ))]
+    const fn opener(self) -> Glyphs<'static>
+    {
+        match self {
+            Self::Star => Glyphs("*{"),
+            Self::Plus => Glyphs("+{"),
+            Self::Ampersand => Glyphs("&{"),
+        }
+    }
+}
+
+/// What an entry of a braced former is written after.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Label
+{
+    /// A record type's field label: `l : A`.
+    Field,
+    /// A record's field label: `.l = a`.
+    Assignment,
+    /// A record update's field label: `l = a`.
+    Overwrite,
+    /// The summand an injection enters: `.i = v`.
+    Summand,
+}
+
+/// How the entries of a braced former are written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Entries
+{
+    /// By position alone.
+    Positional,
+    /// Each after its label.
+    Labelled(Label),
+}
+
+/// The bracketed value formers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Bracket
+{
+    /// A stack classifier with ordered computation endpoints.
+    Stack,
+    /// The native list former, `List(A)`.
+    List,
+    /// A native path classifier.
+    PathUniverse,
+    /// Element identity, `Path.here a`.
+    Here,
+    /// Function extensionality, `Path.funext f g`.
+    Funext,
+    /// A universe equivalence, `equiv f g`.
+    Equiv,
+    /// Univalence, `ua e`.
+    Univalence,
+    /// Native reflexivity.
+    PathRefl,
+    /// A native equivalence's maps.
+    PathEquiv,
+    /// A native product path.
+    PathProduct,
+    /// A native cell, `cons head tail`.
+    ListCons,
+    /// A session equivalence, `Path.bisim a b`.
+    Bisim,
+    /// A session equivalence with its payload paths, `Path.bisim a b p`.
+    BisimPaid,
+    /// A session simulation, `Flow.sim a b`.
+    Sim,
+    /// Directed reflexivity, `Flow.stay a`.
+    Stay,
+    /// A path's inverse, `Path.back p`.
+    Back,
+    /// A map's action on a path, `Path.ap f p`.
+    Cong,
+    /// The product of two universe flows, `Flow.product p q`.
+    FlowProduct,
+    /// A forward flow, `Flow.into f`.
+    Forward,
+    /// A function flow, `Flow.arrow d c`.
+    Arrow,
+    /// The recorded runs of a session code, `Run(s)`.
+    Run,
+    /// The recorded prefixes of a session code, `Prefix(s)`.
+    Prefix,
+    /// The complete dialogues of a session code, `Dialogue(s)`.
+    Dialogue,
+    /// A dialogue's causal web, `decompose(d)`.
+    Decompose,
+    /// A type quoted where an expression stands, `type(T)`.
+    TypeQuote,
+    /// A loop's end with a value, `break(v)`.
+    Break,
+}
+
+/// How a bracketed former writes its operands after its head.
+#[derive(Clone, Copy, Debug)]
+enum Opener
+{
+    /// The head and `(`: a type former where a type is read, `type(T)` or
+    /// `break(v)`, its operands apart by commas before the closer.
+    Parenthesized(Glyphs<'static>),
+    /// The head alone: a value former the source applies, `Path.here a`, or
+    /// a type former, `List Integer`, its operands juxtaposed.
+    Juxtaposed(Glyphs<'static>),
+}
+
+impl Opener
+{
+    /// A type former's opener in `surface`: its head alone where an
+    /// expression or a type is read, which applies it as it applies any
+    /// function, `List Integer` (#5326), and `opened`, its head and `(`, where
+    /// an expression a type encloses is read.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn applied(
+        surface: Surface,
+        head: Glyphs<'static>,
+        opened: Glyphs<'static>,
+    ) -> Self
+    {
+        match surface {
+            Surface::Expression | Surface::Type => Self::Juxtaposed(head),
+            Surface::Enclosed => Self::Parenthesized(opened),
+        }
+    }
+}
+
+impl Bracket
+{
+    /// The head a bracketed former is spelled with in `surface`, and how its
+    /// operands follow it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `type` and `break` as their head followed by `(`; a type
+    ///   former so where a type is read and as its head alone where an
+    ///   expression is read; every other former as its head alone, its operands
+    ///   juxtaposed; a native equivalence's maps share `equiv` with a universe
+    ///   equivalence, and a paid bisimulation `Path.bisim` with an unpaid one.
+    /// - provides: the opening glyphs of every bracketed former.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the match arm by arm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the prefix type in the type goldens opens with its
+    ///   own head, which an empty or swapped opener does not write, and the
+    ///   value goldens write each value former's head before its operands.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    const fn opener(
+        self,
+        surface: Surface,
+    ) -> Opener
+    {
+        match self {
+            Self::Stack => Opener::applied(surface, Glyphs("Stack"), Glyphs("Stack(")),
+            Self::List => Opener::applied(surface, Glyphs("List"), Glyphs("List(")),
+            Self::PathUniverse => Opener::applied(surface, Glyphs("Path_U"), Glyphs("Path_U(")),
+            Self::Run => Opener::applied(surface, Glyphs("Run"), Glyphs("Run(")),
+            Self::Prefix => Opener::applied(surface, Glyphs("Prefix"), Glyphs("Prefix(")),
+            Self::Dialogue => Opener::applied(surface, Glyphs("Dialogue"), Glyphs("Dialogue(")),
+            Self::TypeQuote => Opener::Parenthesized(Glyphs("type(")),
+            Self::Break => Opener::Parenthesized(Glyphs("break(")),
+            Self::Here => Opener::Juxtaposed(Glyphs("Path.here")),
+            Self::Funext => Opener::Juxtaposed(Glyphs("Path.funext")),
+            Self::Equiv | Self::PathEquiv => Opener::Juxtaposed(Glyphs("equiv")),
+            Self::Univalence => Opener::Juxtaposed(Glyphs("ua")),
+            Self::PathRefl => Opener::Juxtaposed(Glyphs("refl")),
+            Self::PathProduct => Opener::Juxtaposed(Glyphs("Path.product")),
+            Self::ListCons => Opener::Juxtaposed(Glyphs("cons")),
+            Self::Bisim | Self::BisimPaid => Opener::Juxtaposed(Glyphs("Path.bisim")),
+            Self::Sim => Opener::Juxtaposed(Glyphs("Flow.sim")),
+            Self::Stay => Opener::Juxtaposed(Glyphs("Flow.stay")),
+            Self::Back => Opener::Juxtaposed(Glyphs("Path.back")),
+            Self::Cong => Opener::Juxtaposed(Glyphs("Path.ap")),
+            Self::FlowProduct => Opener::Juxtaposed(Glyphs("Flow.product")),
+            Self::Forward => Opener::Juxtaposed(Glyphs("Flow.into")),
+            Self::Arrow => Opener::Juxtaposed(Glyphs("Flow.arrow")),
+            Self::Decompose => Opener::Juxtaposed(Glyphs("decompose")),
+        }
+    }
+
+    /// How many operands a bracketed former takes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: three for a paid bisimulation; two for a stack, a path
+    ///   classifier, an equivalence, a product path, function extensionality, a
+    ///   list cell, a bisimulation, a simulation, a flow product, a congruence
+    ///   and a function flow; one for every other former.
+    /// - provides: the operands a bracket's join takes off the stack.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the match arm by arm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the value and type goldens write every former at its
+    ///   own count; a former that took one operand too few or too many would
+    ///   leave the stack unbalanced.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    const fn operands(self) -> Arity
+    {
+        Arity(match self {
+            Self::BisimPaid => 3_usize,
+            Self::PathUniverse
+            | Self::Stack
+            | Self::PathEquiv
+            | Self::PathProduct
+            | Self::Funext
+            | Self::Equiv
+            | Self::ListCons
+            | Self::Bisim
+            | Self::Sim
+            | Self::FlowProduct
+            | Self::Cong
+            | Self::Arrow => 2_usize,
+            Self::Here
+            | Self::Univalence
+            | Self::PathRefl
+            | Self::List
+            | Self::Stay
+            | Self::Back
+            | Self::Forward
+            | Self::Run
+            | Self::Prefix
+            | Self::Dialogue
+            | Self::Decompose
+            | Self::TypeQuote
+            | Self::Break => 1_usize,
+        })
+    }
+}
+
+/// The infix type formers the sugared form writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Infix
+{
+    /// The eager product `A * B * …`, a chain of one product.
+    Product,
+    /// The sum `A + B + …`, a chain of one sum.
+    Sum,
+    /// The lazy product `C & D & …`, a chain of one lazy product.
+    Lazy,
+}
+
+impl Infix
+{
+    /// The symbol between two operands, after the space before it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn symbol(self) -> Glyphs<'static>
+    {
+        Glyphs(match self {
+            Self::Product => " *",
+            Self::Sum => " +",
+            Self::Lazy => " &",
+        })
+    }
+
+    /// How loosely the spelled chain binds.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn binding(self) -> Binding
+    {
+        match self {
+            Self::Product => Binding::Product,
+            Self::Sum => Binding::Sum,
+            Self::Lazy => Binding::Lazy,
+        }
+    }
+
+    /// The loosest operand of the chain stands bare as: every operand tighter
+    /// than the chain, since the lowering reads an unparenthesized inner chain
+    /// as more components of the outer one.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn operand(self) -> Binding
+    {
+        match self {
+            Self::Product => Binding::Prefix,
+            Self::Sum => Binding::Product,
+            Self::Lazy => Binding::Sum,
+        }
+    }
+}
+
+/// How one join combines the finished pieces below it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Join
+{
+    /// A bridge over one operand.
+    Prefix(Prefix),
+    /// A returner prefixed by its row of interfaces, `-F [I, …] `, the result
+    /// finished just below; over a row open through its tail, `-F [I, … | `,
+    /// the tail below the result, then the close `] `.
+    EffectReturner
+    {
+        /// The row's opening, up to its tail or its closing bracket.
+        head: Doc,
+        /// What follows an open row's tail; none for a closed row.
+        close: Option<Doc>,
+        /// How many results a group returns, listed `(A, B)`; none for one
+        /// result.
+        group: Option<Arity>,
+    },
+    /// A row as a term open through its tail, `[I, … | `, the tail finished
+    /// just below, then the close `]`.
+    OpenRow
+    {
+        /// The row's opening, up to its tail.
+        head: Doc,
+        /// The closing bracket.
+        close: Doc,
+    },
+    /// A braced former over this many entries.
+    Braced
+    {
+        /// Its delimiter.
+        brace: Brace,
+        /// How many entries it holds.
+        arity: Arity,
+        /// Whether each entry is written after a label, finished just below
+        /// it.
+        entries: Entries,
+    },
+    /// A record update over its base and this many labelled fields,
+    /// `*{b | l = a, …}`.
+    Update(Arity),
+    /// A patched type over its base and this many labelled values,
+    /// `B.#{.l = v, …}`.
+    Patch(Arity),
+    /// An infix chain over this many operands, two or more.
+    Infix
+    {
+        /// Its former.
+        infix: Infix,
+        /// How many operands it joins.
+        arity: Arity,
+    },
+    /// The returner of a group of this many results, `-F (A, B)`, `-F ()`.
+    Returns(Arity),
+    /// The box over this many domains and then its codomain: `() -> C`,
+    /// `A -> C`, `(A, B) -> C`, a codomain that is an arrow in parentheses;
+    /// where an occurrence named a dependent arrow's binder, or the bare
+    /// spelling reads as the static Pi because every domain and the codomain
+    /// classify codes, the thunk over the arrows it stands for.
+    ValueFunction(Arity, Dependent, Classifies),
+    /// An arrow over its domain and codomain.
+    Arrow,
+    /// A dependent arrow over its domain and codomain, its binder named by the
+    /// binders open where the join runs; written as the plain arrow when the
+    /// walk spelled every node so far and no occurrence named its binder.
+    Pi,
+    /// A linear arrow over its domain and codomain, its binder named as a
+    /// dependent arrow's is: `(x : A) ⊸ C`, the glyph in the spelling asked.
+    LinearArrow,
+    /// A dependent pair type over its two factors, its first label named as
+    /// a dependent arrow's binder is and its second by the next name; a link
+    /// of a dependent record writes the next link's fields in its braces.
+    Sigma,
+    /// A product a dependent record nests over a field and the fields after
+    /// it, its labels as written: the fields alone where the record spells
+    /// them whole, else the product.
+    RecordProduct,
+    /// A static lambda over its body, `fun (a) { v }`, its binder named as a
+    /// dependent arrow's is; `quoted`, the body in the quote's own spelling,
+    /// `fun (a) { type(T) }`.
+    StaticLambda
+    {
+        /// Whether the body is written `type(T)`.
+        quoted: bool,
+    },
+    /// An operator applied to this many arguments: the spine of static
+    /// applications it was written as, or of a call.
+    Apply(Arity),
+    /// A bind over the computation it runs and the rest, its binder named as
+    /// a dependent arrow's is.
+    Sequence,
+    /// A bind of a call whose binder the rest never reads, its binder
+    /// written `_`: `let _ = f a ; rest`, which runs the call, as a `let`
+    /// naming it would not (#4466).
+    DiscardedSequence,
+    /// A bind of each value a computation of several results returns, over
+    /// the computation and the rest under one binder for each value, named
+    /// as a bind's binder is, the first value first: `let (a, b) = c ;
+    /// rest`.
+    SequenceAll(Arity),
+    /// A typed bind over the computation it ascribes, the value type its
+    /// returner returns, and the rest under the bind's binder, named as a
+    /// dependent arrow's is: `let x : A = c ; rest`.
+    TypedSequence,
+    /// A lambda over its body, its binder named as a dependent arrow's is.
+    Lambda,
+    /// A lambda whose parameter states its type, over the type and its body:
+    /// `fun (x : A) { c }`.
+    TypedLambda,
+    /// A thunk over its body.
+    Thunk,
+    /// A bracketed value former over its items.
+    Bracket(Bracket),
+    /// Univalence at a stratum over its two translator records, after the
+    /// head spelling its stratum and its descriptions, `ua[n, k] A B`.
+    Ua(Doc),
+    /// Unbiased composition at a stratum over its cells, after the head
+    /// spelling its stratum and its shape, `compose[n, k] (chain m)` or
+    /// `compose[n, k] (chain m (a₁, …, aₘ))`: one cell an atom, more as a
+    /// group.
+    Compose(Doc, Arity),
+    /// A filler generator at a stratum over its generator and its cells,
+    /// after the head spelling its stratum and its shape, `fill[n, k] (chain
+    /// m)` or its level-two shape: the generator, then the cells as a
+    /// composite's.
+    Fill(Doc, Arity),
+    /// A session type over its payloads, spelled by the template the visit
+    /// pushed, binding as the template's head does.
+    Session
+    {
+        /// How many payload pieces it takes, in slot order.
+        payloads: Arity,
+        /// How loosely the spelling binds.
+        binding: Binding,
+    },
+    /// A former spelled by the parts the visit pushed, over this many child
+    /// pieces, binding as given.
+    Form
+    {
+        /// How many child pieces its parts take, in reading order.
+        pieces: Arity,
+        /// How loosely the spelling binds.
+        binding: Binding,
+    },
+}
+
+/// The grammar rule a production of the walk writes, named at the arm that
+/// writes it, as the grammar's builders name it.
+///
+/// Every rule the grammar builds is written by some arm or is listed with the
+/// reason no presentation writes it, and every name here is a rule the grammar
+/// builds: the policy library's `mold_coverage` holds the two sets equal at
+/// compile time, reading this constructor's literal at every arm and the
+/// grammar's builder sources (`check:dylint`'s `productions` table). The name
+/// is read there, never at run time.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Production(&'static str);
+
+/// The spelling of an infix operator, `==` for an equality: the text written
+/// between its two operands.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct InfixSpelling(&'static str);
+
+/// The name `source` writes for the head of the homed type former `former`
+/// where it does not write it bare, `std.list.List` for a list type; none
+/// for a source that writes it bare and for every other former.
+///
+/// # Specification
+/// trivial.
+fn homed_head<'source, S>(
+    source: &'source S,
+    former: &Former<'_, S::Node>,
+) -> Option<Name<'source>>
+where
+    S: Source + ?Sized,
+{
+    let bare = if matches!(*former, Former::List(_)) {
+        "List"
+    }
+    else if matches!(*former, Former::RunType(_)) {
+        "Run"
+    }
+    else if matches!(*former, Former::PrefixType(_)) {
+        "Prefix"
+    }
+    else if matches!(*former, Former::DialogueType(_)) {
+        "Dialogue"
+    }
+    else {
+        return None;
+    };
+    source.homed(Name::from(bare))
+}
+
+/// `produced`, the production of `rule`.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn writes<T>(
+    rule: Production,
+    produced: T,
+) -> T
+{
+    let _ = rule;
+    produced
+}
+
+/// How a type former applied to its operands binds in `surface`, the
+/// production `rule` where a type is read: an atom there, its operands between
+/// its own parentheses, and an application where an expression is read.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn type_applied(
+    surface: Surface,
+    rule: Production,
+) -> Binding
+{
+    match surface {
+        Surface::Expression => writes(Production("application_expression"), Binding::Application),
+        Surface::Type | Surface::Enclosed => writes(rule, Binding::Atom),
+    }
+}
+
+/// How a family or a constructor applied to its operands binds in
+/// `surface`, as [`Parts::family`] writes them: an application, `Maybe A` the
+/// juxtaposed `type_application` where a type or an expression a type
+/// encloses is read, whose grammar reads a capitalised head juxtaposed.
+///
+/// # Specification
+/// trivial.
+#[inline]
+const fn family_applied(surface: Surface) -> Binding
+{
+    match surface {
+        Surface::Expression => writes(Production("application_expression"), Binding::Application),
+        Surface::Type | Surface::Enclosed => writes(
+            Production("type_application.juxtaposed"),
+            Binding::Application,
+        ),
+    }
+}
+
+/// Whether a row writes any interface, and any instance by its label.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Listed
+{
+    /// It writes none: an open row is its tail alone.
+    None,
+    /// It writes at least one, each by its name, which a bar sets apart from
+    /// its tail.
+    Some,
+    /// It writes at least one instance by its label, `a : I`, and is the
+    /// labelled row form's.
+    Labelled,
+}
+
+/// The bound call and the rest of `node` when it is a run binding a call, `x
+/// ← f(a); …`: a bind whose bound computation applies a forced value to at
+/// least one argument, written as it runs or as the return of the nested call
+/// a `let` names (#4466).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the bind's bound call and rest exactly when `node` reads as a
+///   bind whose bound is a call ([`call`]), or the return of a nested one;
+///   absent otherwise.
+/// - provides: the runs [`linear_runs`] peels off a block.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`linear_runs`].
+/// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Bind(..)))]
+fn bound_call<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<(S::Node, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    let Former::Bind(bound, rest) = source.read(node)
+    else {
+        return None;
+    };
+    let bound = if let Former::Return(returned) = source.read(bound)
+        && let Former::Nested(nested) = source.read(returned)
+    {
+        nested
+    }
+    else {
+        bound
+    };
+    call(source, bound).map(|bound| (bound, rest))
+}
+
+/// `node` when it is a call: an application whose spine, read down through
+/// every application, ends at a force.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `node` exactly when it reads as an application and the head its
+///   applications lead down to reads as a force; absent otherwise.
+/// - provides: the calls [`bound_call`] and [`nested_call`] find bound.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn reads one application nearer the spine's head, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`bound_call`].
+/// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Application(..)))]
+fn call<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<S::Node>
+where
+    S: Source + ?Sized,
+{
+    let Former::Application(mut head, _) = source.read(node)
+    else {
+        return None;
+    };
+    while let Former::Application(inner, _) = source.read(head) {
+        head = inner;
+    }
+    matches!(source.read(head), Former::Force(_)).then_some(node)
+}
+
+/// The comparison that `node` writes when it is a saturated call of a
+/// constant that a comparison calls: the infix operator, and the two operands
+/// first to last.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the infix operator [`Source::operator`] answers for the head of
+///   `node`'s spine, with the spine's last two arguments, exactly when `node`
+///   reads as an application whose spine ends at a force of such a head and
+///   holds one argument for each component of the head's model slots before the
+///   two; absent otherwise.
+/// - provides: the comparison [`Walk::comparison`] writes for the call.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn reads one application nearer the spine's head, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call of the prelude's `eq` with its model supplied by
+///   one path, a call of its `lt` with its model supplied by components of two
+///   modules, and a call with its model left out each read as the comparison; a
+///   call short of an operand and a call of a constant with no spelling read as
+///   none.
+/// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Application(..)))]
+fn compared<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<(InfixSpelling, [S::Node; 2])>
+where
+    S: Source + ?Sized,
+{
+    let Former::Application(function, second) = source.read(node)
+    else {
+        return None;
+    };
+    let Former::Application(mut head, first) = source.read(function)
+    else {
+        return None;
+    };
+    let mut leading = 0_usize;
+    while let Former::Application(inner, _) = source.read(head) {
+        head = inner;
+        leading = leading.saturating_add(1_usize);
+    }
+    let Former::Force(forced) = source.read(head)
+    else {
+        return None;
+    };
+    let gandr_core_term::primitive::Operator::Infix(spelling) = source.operator(forced)?
+    else {
+        return None;
+    };
+    let components = source
+        .model_slots(forced)
+        .iter()
+        .map(|slot| slot.components.len())
+        .fold(0_usize, usize::saturating_add);
+    (leading == components).then_some((InfixSpelling(spelling), [first, second]))
+}
+
+/// Writes the binary operator `spelling` between its two operands into
+/// `parts`, `a == b`, and answers how the form binds: as the cons of its
+/// operands, by the rule that writes the spelling.
+///
+/// # Specification
+/// trivial.
+fn infix(
+    parts: &mut Parts,
+    InfixSpelling(spelling): InfixSpelling,
+) -> Binding
+{
+    let _ = parts
+        .piece(Binding::Atom)
+        .text(format!(" {spelling} "))
+        .piece(Binding::Atom);
+    match spelling {
+        "+" => writes(Production("binary_expression.add.plus"), Binding::Cons),
+        "-" => writes(Production("binary_expression.add.minus"), Binding::Cons),
+        "*" => writes(Production("binary_expression.mul.times"), Binding::Cons),
+        "==" => writes(Production("binary_expression.cmp.eq"), Binding::Cons),
+        "!=" => writes(Production("binary_expression.cmp.ne"), Binding::Cons),
+        "<" => writes(Production("binary_expression.cmp.lt"), Binding::Cons),
+        "<=" => writes(Production("binary_expression.cmp.le"), Binding::Cons),
+        ">" => writes(Production("binary_expression.cmp.gt"), Binding::Cons),
+        ">=" => writes(Production("binary_expression.cmp.ge"), Binding::Cons),
+        "&&" => writes(Production("binary_expression.and"), Binding::Cons),
+        "||" => writes(Production("binary_expression.or"), Binding::Cons),
+        // The prelude's other infix spellings, should it gain one, name their
+        // rule here.
+        _ => Binding::Cons,
+    }
+}
+
+/// The bound and the rest of `node` when it is a run binding a nested call,
+/// `x ← f(a); …`, or a run binding runs that end in one, `x ← (y ← f(a);
+/// g(y)); …`, as the lowering binds `h(g(f(a)))`: a bind whose bound is a
+/// call, or a bind whose bound and rest are each such, down to calls.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the bind's bound and rest exactly when `node` reads as a bind
+///   whose bound is a call ([`call`]) or reads as binds every bound and last
+///   rest of which is a call; absent otherwise.
+/// - provides: the runs [`Walk::inlined`] spells as the calls they bind.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn reads one node of the bound, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run binding a call and a run binding a run ending in a
+///   call distinguish a nested call from a run kept.
+/// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+/// - witness: `tests::goldens::a_run_bound_by_a_run_in_a_type_prints_nested_3280`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Bind(..)))]
+fn nested_call<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<(S::Node, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    let Former::Bind(bound, rest) = source.read(node)
+    else {
+        return None;
+    };
+    let mut pending = Vec::from([bound]);
+    while let Some(at) = pending.pop() {
+        if let Former::Bind(inner, after) = source.read(at) {
+            pending.push(inner);
+            pending.push(after);
+        }
+        else if call(source, at).is_none() {
+            return None;
+        }
+    }
+    Some((bound, rest))
+}
+
+/// The bind `former` holds when it is a nested or returned computation whose
+/// statements stand where a value is read: one over a bind that
+/// [`nested_call`] does not write as the call it binds. Its slot writes them
+/// as a block, `{ let x = c ; rest }` ([`Walk::bare_up_to`]).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the body exactly when `former` is a nested or returned
+///   computation whose body reads as a bind and [`nested_call`] finds no nested
+///   call there; absent otherwise.
+/// - provides: the expression surface [`surface_below`] reads its statements
+///   in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a returned typed bind in a path type's endpoint and a run
+///   bound by a run in a type distinguish a block from a nested call.
+/// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
+/// - witness: `tests::goldens::a_run_bound_by_a_run_in_a_type_prints_nested_3280`
+#[spec(ensures: |ret| ret.is_none() || matches!(*former, Former::Nested(_) | Former::Returned(_)))]
+fn braced<S>(
+    source: &S,
+    former: &Former<'_, S::Node>,
+) -> Option<S::Node>
+where
+    S: Source + ?Sized,
+{
+    if let Former::Nested(body) | Former::Returned(body) = *former
+        && matches!(source.read(body), Former::Bind(..))
+        && nested_call(source, body).is_none()
+    {
+        Some(body)
+    }
+    else {
+        None
+    }
+}
+
+/// The calls a block's `let` statements bind from `node` on, in order, and
+/// the tail after them, when the statements only sequence the calls: the
+/// sugared form writes each call where its binder is read, `g(f(a))` for
+/// `x ← f(a); g(x)`, as the lowering lists such statements for the
+/// formatter to write away.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the bound calls of the binds [`bound_call`] peels from `node`, at
+///   least one, and the computation after them, exactly when no call reads the
+///   binder of a statement before it and the tail reads every binder as
+///   [`linear_tail`] finds; absent otherwise.
+/// - provides: the runs [`Walk::visit`] writes at their reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn peels one bind off the block, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two runs read once each in order, a run read twice, a run
+///   read out of order, a run read as the tail's whole value and a run whose
+///   call reads the binder before it distinguish a run written away from one
+///   kept.
+/// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|&(ref bounds, _)| !bounds.is_empty()))]
+fn linear_runs<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<(Vec<S::Node>, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    let mut bounds = Vec::new();
+    let mut rest = node;
+    while let Some((bound, next)) = bound_call(source, rest) {
+        if reads_binders(
+            source,
+            bound,
+            Admits::Computation(Tail::Continues),
+            Arity(bounds.len()),
+        ) == Reading::Reads
+        {
+            return None;
+        }
+        bounds.push(bound);
+        rest = next;
+    }
+    let depth = DeBruijnIndex::from(u32::try_from(bounds.len().checked_sub(1_usize)?).ok()?);
+    (linear_tail(source, rest, depth) == Linear::Read).then_some((bounds, rest))
+}
+
+/// Whether a node reads one of the binders a search names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reading
+{
+    /// It reads one, or the search ran past the visit budget.
+    Reads,
+    /// It reads none.
+    Unread,
+}
+
+/// Whether some result of a group reads a result before it. The returner
+/// `-F (A, B)` cannot write such a group, since its results name no binder.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReadsEarlier(pub bool);
+
+/// Whether some result of a group, `results` in order and each read as the
+/// node `node` gives it, reads a result before it.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: whether the result at some position `i` reads one of the `i`
+///   binders the results before it open, as [`reads_binders`] reads it. A group
+///   of fewer than two results reads nothing earlier.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a group of two closed results and one whose second result
+///   reads the first.
+/// - witness: `core_source::tests::a_group_of_outputs_reads_as_its_returner_unless_one_reads_another`
+#[spec(ensures: |ret| !ret.0 || results.len() > 1_usize)]
+pub fn reads_earlier<S, T, F>(
+    source: &S,
+    results: &[T],
+    node: F,
+) -> ReadsEarlier
+where
+    S: Source + ?Sized,
+    T: Copy,
+    F: Fn(T) -> S::Node,
+{
+    ReadsEarlier(results.iter().enumerate().any(|(index, &result)| {
+        reads_binders(source, node(result), Admits::ValueType, Arity(index)) == Reading::Reads
+    }))
+}
+
+/// Whether `root`, in a position admitting `admits`, reads one of the
+/// innermost `binders` intuitionistic binders standing over it.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Reading::Reads`] when a variable under `root`, counted out past
+///   the intuitionistic binders between it and `root`, names one of the
+///   innermost `binders`, or the search takes more than the visit budget;
+///   [`Reading::Unread`] otherwise.
+/// - provides: the reads [`linear_runs`] and [`linear_tail`] refuse.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn takes one visit from the budget.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`linear_runs`].
+/// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+#[spec(ensures: |ret| binders.0 != 0_usize || ret == Reading::Unread)]
+fn reads_binders<S>(
+    source: &S,
+    root: S::Node,
+    admits: Admits,
+    binders: Arity,
+) -> Reading
+where
+    S: Source + ?Sized,
+{
+    if binders.0 == 0_usize {
+        return Reading::Unread;
+    }
+    let mut pending = Vec::from([(root, admits, 0_usize)]);
+    let mut visits = 0_u32;
+    while let Some((node, admits, opened)) = pending.pop() {
+        visits = visits.saturating_add(1_u32);
+        if visits > VISIT_BUDGET {
+            return Reading::Reads;
+        }
+        let former = source.read(node);
+        if let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = former
+            && usize::try_from(u32::from(index))
+                .ok()
+                .and_then(|index| index.checked_sub(opened))
+                .is_some_and(|outside| outside < binders.0)
+        {
+            return Reading::Reads;
+        }
+        pending.extend(
+            children(source, node, &former, admits, Bodies::Spelled)
+                .into_iter()
+                .filter_map(|slot| {
+                    let inside = if slot.binds.zone == Zone::Intuitionistic {
+                        opened.saturating_add(slot.binds.count)
+                    }
+                    else {
+                        opened
+                    };
+                    slot.node.map(|child| (child, slot.admits, inside))
+                }),
+        );
+    }
+    Reading::Unread
+}
+
+/// Whether a block's tail reads its statements' binders as their calls would
+/// stand nested.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Linear
+{
+    /// It reads each once, in the statements' order, before anything else.
+    Read,
+    /// It reads one otherwise, or reads none.
+    Refused,
+}
+
+/// Where a value the tail's walk meets stands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing
+{
+    /// As the whole of a force or a return: a call written there would not be
+    /// a run of it.
+    Whole,
+    /// As an argument or a field.
+    Field,
+}
+
+/// Whether the tail `tail` of a block reads the binders of the statements
+/// before it, the outermost at `depth`, once each, outermost first, where the
+/// checker runs a nested call before anything under a binder: an argument of
+/// a call or a field of a tuple, an injection, a list cell or a constructor,
+/// reached through applications, forces and returns alone, with no nested
+/// run before the last read.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Linear::Read`] exactly when the walk in the checker's order
+///   meets each binder from `depth` down to 0 once, in that order, as an
+///   argument or a field, and nothing else in the tail reads one; a read as a
+///   force's or a return's whole value, a nested run before the last read, and
+///   any other computation refuse, as the lowering's own listing does.
+/// - provides: the tails whose runs [`linear_runs`] writes at their reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn takes one node of the tail, a finite term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`linear_runs`].
+/// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+#[spec(ensures: |ret| ret == Linear::Refused
+    || matches!(source.read(tail), Former::Application(..) | Former::Force(_) | Former::Return(_)))]
+fn linear_tail<S>(
+    source: &S,
+    tail: S::Node,
+    depth: DeBruijnIndex,
+) -> Linear
+where
+    S: Source + ?Sized,
+{
+    let binders =
+        usize::try_from(u32::from(depth)).map_or(usize::MAX, |depth| depth.saturating_add(1_usize));
+    let mut expected = Some(depth);
+    // Each node still to visit, a computation or a value standing as given.
+    let mut pending = Vec::from([(tail, None)]);
+    while let Some((node, standing)) = pending.pop() {
+        let former = source.read(node);
+        match (standing, former) {
+            (None, Former::Application(function, argument)) => {
+                pending.push((argument, Some(Standing::Field)));
+                pending.push((function, None));
+            },
+            (None, Former::Force(value) | Former::Return(value)) => {
+                pending.push((value, Some(Standing::Whole)));
+            },
+            (None, _) => return Linear::Refused,
+            (
+                Some(standing),
+                Former::Variable {
+                    zone: Zone::Intuitionistic,
+                    index,
+                },
+            ) if u32::from(index) <= u32::from(depth) => {
+                if expected != Some(index) || standing == Standing::Whole {
+                    return Linear::Refused;
+                }
+                expected = u32::from(index).checked_sub(1_u32).map(DeBruijnIndex::from);
+            },
+            (Some(_), Former::Nested(run) | Former::Run(run) | Former::Returned(run)) => {
+                if expected.is_some()
+                    || reads_binders(
+                        source,
+                        run,
+                        Admits::Computation(Tail::Continues),
+                        Arity(binders),
+                    ) == Reading::Reads
+                {
+                    return Linear::Refused;
+                }
+            },
+            (Some(_), Former::Tuple(arity)) => {
+                for index in (0_usize .. usize::from(arity)).rev() {
+                    let Some(component) = source.component(node, Component::from(index))
+                    else {
+                        return Linear::Refused;
+                    };
+                    pending.push((component, Some(Standing::Field)));
+                }
+            },
+            (Some(_), Former::Injection(_, injected)) => {
+                pending.push((injected, Some(Standing::Field)));
+            },
+            (Some(_), Former::ListCons(head, rest)) => {
+                pending.push((rest, Some(Standing::Field)));
+                pending.push((head, Some(Standing::Field)));
+            },
+            (
+                Some(_),
+                Former::Constructor {
+                    arity, classifier, ..
+                },
+            ) => {
+                if classifier.is_some_and(|classifier| {
+                    reads_binders(source, classifier, Admits::ValueType, Arity(binders))
+                        == Reading::Reads
+                }) {
+                    return Linear::Refused;
+                }
+                for index in (0_usize .. usize::from(arity)).rev() {
+                    let Some(field) = source.component(node, Component::from(index))
+                    else {
+                        return Linear::Refused;
+                    };
+                    pending.push((field, Some(Standing::Field)));
+                }
+            },
+            (Some(_), _) => {
+                if reads_binders(source, node, Admits::Value, Arity(binders)) == Reading::Reads {
+                    return Linear::Refused;
+                }
+            },
+        }
+    }
+    if expected.is_none() {
+        Linear::Read
+    }
+    else {
+        Linear::Refused
+    }
+}
+
+/// The reply a resumption `resume(k, c)` passes, when it is the call of a
+/// clause's continuation the surface writes, `k(v)`: the lowering reads such
+/// a call as the resumption of `pure v`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `v` exactly when `stack` reads as a variable and `computation` as
+///   `return v`; absent otherwise.
+/// - provides: the resumptions [`children`] and [`Walk::form`] spell as a call
+///   of the continuation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a continuation resumed with a returned value, and one
+///   resumed with a computation that is no return.
+/// - witness: `tests::goldens::a_continuation_is_resumed_by_its_call_941`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(computation), Former::Return(_)))]
+fn resumed_reply<S>(
+    source: &S,
+    stack: S::Node,
+    computation: S::Node,
+) -> Option<S::Node>
+where
+    S: Source + ?Sized,
+{
+    if !matches!(source.read(stack), Former::Variable { .. }) {
+        return None;
+    }
+    if let Former::Return(reply) = source.read(computation) {
+        Some(reply)
+    }
+    else {
+        None
+    }
+}
+
+/// How a fixpoint the walk reaches is written: as the loop it lowered from,
+/// or, where it is no loop's, in the printer's notation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Looped<Node>
+{
+    /// `loop { b }`, its body run on each pass, then the rest its breaks go
+    /// on with, if they go on with one: the commuting puts what follows the
+    /// loop at each break, `split () (); r`.
+    Loop
+    {
+        /// The body, under the loop's binder and those `threads` opens.
+        body: Node,
+        /// What follows the loop, under the loop's binder and as many more
+        /// as the count beside it: those the path from the body to the breaks
+        /// opens.
+        rest: Option<(Node, OpenBinders)>,
+        /// The held slots the loop threads through its passes.
+        threads: Threads<Node>,
+    },
+    /// `while c { t }`, then the rest the loop's break goes on with, if any:
+    /// `fix k. x ← c; case x { inl _ => t, inr _ => split () (); r }`, the
+    /// false branch `return ()` where nothing follows the loop.
+    While
+    {
+        /// The condition, under the loop's binder and those `threads` opens.
+        condition: Node,
+        /// The true branch, under the condition's binders, the test's and the
+        /// branch's.
+        then: Node,
+        /// What follows the loop, under the same binders as `then`.
+        rest: Option<Node>,
+        /// The held slots the loop threads through its passes.
+        threads: Threads<Node>,
+    },
+    /// `for x in l { b }`, then the rest the loop's break goes on with, if
+    /// any: `(fix k. λ r. case r { nil => split () (); rest, cons(x, t) => b
+    /// }) l`, the empty list's branch `return ()` where nothing follows the
+    /// loop.
+    For
+    {
+        /// The list the loop walks, under no binder of its own.
+        list: Node,
+        /// The body, under the loop's binder, the remaining list's, and the
+        /// element and the tail the cell binds.
+        each: Node,
+        /// What follows the loop, under the loop's binder and the remaining
+        /// list's.
+        rest: Option<Node>,
+    },
+}
+
+/// The held slots a `loop` or a `while` threads through its passes
+/// (`gandr_surface_lowering`'s `lower::loops`, loop-carried state).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Threads<Node>
+{
+    /// None: the loop is its fixpoint alone.
+    Unthreaded,
+    /// `count` slots: `(fix k. λ s. var c = s; b) c` for one, and `(fix k. λ
+    /// p. split p (s₁, …, sₙ); var c₁ = s₁; …; var cₙ = sₙ; b) (c₁, …, cₙ)`
+    /// for several, each pass holding the slots again under their own names.
+    Slots
+    {
+        /// How many slots the loop threads.
+        count: usize,
+        /// The slots the first pass takes: the one slot read, or the tuple of
+        /// the slots read, outermost first.
+        first: Node,
+    },
+}
+
+impl<Node> Threads<Node>
+{
+    /// How many binders the threading opens between the loop's own and its
+    /// passes: none unthreaded; the content and its hold for one slot; the
+    /// tuple, its components and their holds for several. The holds open
+    /// last.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn opened(&self) -> OpenBinders
+    {
+        OpenBinders(match *self {
+            Self::Unthreaded => 0_usize,
+            Self::Slots { count: 1_usize, .. } => 2_usize,
+            Self::Slots { count, .. } => count.saturating_mul(2_usize).saturating_add(1_usize),
+        })
+    }
+
+    /// How many of the binders [`Self::opened`] counts hold a slot again.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn held(&self) -> Arity
+    {
+        Arity(match *self {
+            Self::Unthreaded => 0_usize,
+            Self::Slots { count, .. } => count,
+        })
+    }
+}
+
+/// What a loop's break goes on with.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Break<Node>
+{
+    /// Nothing: the loop ends the body, and its break is `return ()`.
+    Ends,
+    /// The rest `r` the lowering put at the break, `split () (); r`.
+    Rest(Node),
+}
+
+impl<Node> Break<Node>
+{
+    /// The rest the break goes on with, if any.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rest(self) -> Option<Node>
+    {
+        match self {
+            Self::Ends => None,
+            Self::Rest(rest) => Some(rest),
+        }
+    }
+}
+
+/// The loop's break `node` is, if it is one: `return ()`, or `split () ();
+/// r`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Break::Ends`] for a return of unit, [`Break::Rest`] for a split
+///   of unit over no binder, carrying its body; none otherwise.
+/// - provides: the branch [`looped`] reads a loop's end by.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `while` and a `for` the body ends with, and each with a
+///   rest following it.
+/// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+/// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Return(_) | Former::Split { .. }))]
+fn broken<S>(
+    source: &S,
+    node: S::Node,
+) -> Option<Break<S::Node>>
+where
+    S: Source + ?Sized,
+{
+    if let Former::Return(value) = source.read(node)
+        && matches!(source.read(value), Former::Unit)
+    {
+        return Some(Break::Ends);
+    }
+    if let Former::Split {
+        scrutinee,
+        arity,
+        body,
+    } = source.read(node)
+        && usize::from(arity) == 0_usize
+        && matches!(source.read(scrutinee), Former::Unit)
+    {
+        return Some(Break::Rest(body));
+    }
+    None
+}
+
+/// What the breaks ending a loop's passes go on with.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Breaks<Node>
+{
+    /// No pass ends in a break that goes on.
+    None,
+    /// Every break that goes on goes on with the one node, under as many
+    /// binders below the pass as the count says.
+    One(Node, OpenBinders),
+    /// Breaks go on with different nodes, or the search met what it does not
+    /// read past: a loop, a linear binder, or more nodes than a walk visits.
+    Apart,
+}
+
+/// What the breaks ending the passes of `pass` go on with: each split of
+/// unit over no binder, `split () (); r`, that a path through `pass` ends in.
+///
+/// The commuting puts what follows a loop at each of its breaks, copied
+/// once per depth it reaches, so the breaks at one depth share one copy.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: following, from `pass` itself, each position a path through a
+///   pass runs on into — a bind's rest, a case's branches, a split's body, a
+///   data case's written arms, a list case's or fold's branches, an opened
+///   value's body and an ascription's body, as [`children`] passes a pass's end
+///   on to them — [`Breaks::One`] when every split of unit over no binder the
+///   paths end in has one body, under one count of the intuitionistic binders
+///   the path opens; [`Breaks::None`] when the paths end in none;
+///   [`Breaks::Apart`] when they end in several bodies or at several counts, or
+///   a path meets a fixpoint, an application of one, a fork, a hold, a
+///   placement or a receive, whose rests stand under a linear binder, or more
+///   than [`VISIT_BUDGET`] nodes.
+/// - provides: the rest [`passes`] reads a `loop`'s off its breaks, and whether
+///   a `while`'s breaks go on with its rest.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `loop` breaking alone and from one arm with a rest
+///   following it, a `while` breaking in its true branch, and a `loop` whose
+///   two breaks go on with different nodes.
+/// - witness: `tests::goldens::a_loop_a_rest_follows_writes_its_breaks_bare_3231`
+///
+/// # Cost
+/// - allocation: the pending nodes, growth within `VISIT_BUDGET`
+#[spec(ensures: |ret| !matches!(broken(source, pass), Some(Break::Rest(_))) || matches!(ret, Breaks::One(_, under) if under.0 == 0_usize))]
+fn breaks<S>(
+    source: &S,
+    pass: S::Node,
+) -> Breaks<S::Node>
+where
+    S: Source + ?Sized,
+{
+    let mut found = Breaks::None;
+    let mut pending = Vec::from([(pass, 0_usize)]);
+    let mut remaining = VISIT_BUDGET;
+    while let Some((node, under)) = pending.pop() {
+        let Some(left) = remaining.checked_sub(1_u32)
+        else {
+            return Breaks::Apart;
+        };
+        remaining = left;
+        if let Some(Break::Rest(rest)) = broken(source, node) {
+            found = match found {
+                Breaks::None => Breaks::One(rest, OpenBinders(under)),
+                Breaks::One(held, at) if held == rest && at.0 == under => found,
+                Breaks::One(..) | Breaks::Apart => return Breaks::Apart,
+            };
+            continue;
+        }
+        let mut deeper = |child: Option<S::Node>, count: usize| {
+            if let Some(child) = child {
+                pending.push((child, under.saturating_add(count)));
+            }
+        };
+        let former = source.read(node);
+        if let Former::Bind(_, rest) | Former::Leta { body: rest, .. } = former {
+            deeper(Some(rest), 1_usize);
+        }
+        else if let Former::Case { arity, .. } = former {
+            for index in 0_usize .. usize::from(arity) {
+                deeper(source.component(node, Component::from(index)), 1_usize);
+            }
+        }
+        else if let Former::Split { arity, body, .. } = former {
+            deeper(Some(body), usize::from(arity));
+        }
+        else if let Former::DataCase { arity, .. } = former {
+            for index in 0_usize .. usize::from(arity) {
+                let arm = arm(source, node, Component::from(index));
+                if !arm.pruned {
+                    deeper(arm.body, arm.fields.saturating_add(arm.equations));
+                }
+            }
+        }
+        else if let Former::ListCase { nil, cons, .. } | Former::ListFold { nil, cons, .. } =
+            former
+        {
+            deeper(Some(nil), 0_usize);
+            deeper(Some(cons), 2_usize);
+        }
+        else if let Former::Ascription { body, .. } = former {
+            deeper(Some(body), 0_usize);
+        }
+        else if let Former::Fixpoint(_)
+        | Former::Fork { .. }
+        | Former::Hold { .. }
+        | Former::Place { .. }
+        | Former::Receive { .. } = former
+        {
+            return Breaks::Apart;
+        }
+        else if let Former::Application(function, _) = former
+            && let Former::Fixpoint(_) = source.read(function)
+        {
+            return Breaks::Apart;
+        }
+    }
+    found
+}
+
+/// The loop the fixpoint `node`, or the application of one, lowered from, in
+/// a position admitting `admits`.
+///
+/// The lowering reads a loop into the fixpoint, `loop { b }` as `fix k. b'`,
+/// `while c { b }` as `fix k. x ← c; case x { inl _ => b', inr _ => return
+/// () }` and `for x in l { b }` as `(fix k. λ r. case r { nil => return (),
+/// cons(x, t) => b' }) l`, and puts what follows the loop at its breaks. A
+/// `loop` or a `while` threading held slots applies its fixpoint to them
+/// ([`Threads::Slots`]). A loop stands only where a path through a body
+/// ends, so a fixpoint anywhere else, and one whose body abstracts but is no
+/// `for` and threads no slot, a local recursive definition's, keeps the
+/// printer's notation.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: none unless `node` is in a position where a body or a pass ends;
+///   for the application of a fixpoint over a lambda, a `for` when the lambda
+///   cases on its bound list and the empty branch is a break, and otherwise a
+///   threading loop when the lambda holds its argument again as [`held_again`]
+///   reads it and the fixpoint is applied to as many slots; for a fixpoint
+///   whose body is no lambda, the loop [`passes`] reads; where a pass ends,
+///   only a loop a rest follows; none otherwise.
+/// - provides: the reading [`slots`], [`Walk::visit`], [`Walk::pass_end`] and
+///   [`Walk::form`] share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `loop`, a `while` and a `for` the body ends with and
+///   each with a rest following it, a `while` threading one slot and one
+///   threading two, a `while` ending another's pass with a rest following it,
+///   and a fixpoint whose body abstracts.
+/// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+/// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
+/// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(node), Former::Fixpoint(_) | Former::Application(..)))]
+fn looped<S>(
+    source: &S,
+    node: S::Node,
+    admits: Admits,
+) -> Option<Looped<S::Node>>
+where
+    S: Source + ?Sized,
+{
+    if !matches!(
+        admits,
+        Admits::Computation(Tail::Ends | Tail::Unstated | Tail::Passes)
+    ) {
+        return None;
+    }
+    // Where a pass ends, the loop's rest goes on with the pass, so a loop
+    // stands there only with a rest to write.
+    let kept = |reading: Looped<S::Node>| match reading {
+        Looped::Loop { rest: Some(_), .. }
+        | Looped::While { rest: Some(_), .. }
+        | Looped::For { rest: Some(_), .. } => Some(reading),
+        Looped::Loop { rest: None, .. }
+        | Looped::While { rest: None, .. }
+        | Looped::For { rest: None, .. } => {
+            (admits != Admits::Computation(Tail::Passes)).then_some(reading)
+        },
+    };
+    if let Former::Application(function, argument) = source.read(node) {
+        let Former::Fixpoint(abstraction) = source.read(function)
+        else {
+            return None;
+        };
+        let Former::Lambda(each) = source.read(abstraction)
+        else {
+            return None;
+        };
+        // A `for`: the lambda cases on the remaining list, the empty list the
+        // loop's break.
+        if let Former::ListCase {
+            list: remaining,
+            nil,
+            cons,
+        } = source.read(each)
+            && matches!(
+                source.read(remaining),
+                Former::Variable { zone: Zone::Intuitionistic, index } if u32::from(index) == 0_u32
+            )
+            && let Some(end) = broken(source, nil)
+        {
+            return kept(Looped::For {
+                list: argument,
+                each: cons,
+                rest: end.rest(),
+            });
+        }
+        // A threading loop: the lambda holds the slots again, and the first
+        // pass takes them, each read as a linear variable.
+        let (Arity(count), under) = held_again(source, each)?;
+        let slot = |node| {
+            matches!(source.read(node), Former::Variable {
+                zone: Zone::Linear,
+                ..
+            })
+        };
+        let first = if count == 1_usize {
+            slot(argument)
+        }
+        else {
+            matches!(source.read(argument), Former::Tuple(arity) if usize::from(arity) == count)
+                && (0_usize .. count).all(|component| {
+                    source
+                        .component(argument, Component::from(component))
+                        .is_some_and(slot)
+                })
+        };
+        if !first {
+            return None;
+        }
+        return kept(passes(source, under, Threads::Slots {
+            count,
+            first: argument,
+        }));
+    }
+    let Former::Fixpoint(body) = source.read(node)
+    else {
+        return None;
+    };
+    if let Former::Lambda(_) = source.read(body) {
+        return None;
+    }
+    kept(passes(source, body, Threads::Unthreaded))
+}
+
+/// The `loop` or the `while` whose passes run `body`, threading `threads`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: a `while` when `body` binds a computation and cases on the bound
+///   value in two branches the second of which is a break; a `loop` over `body`
+///   otherwise, its rest the one its breaks go on with ([`breaks`]) when it
+///   threads no slot, and none otherwise; either carrying `threads`.
+/// - provides: the passes [`looped`] reads under a fixpoint, alone or applied
+///   to the slots it threads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `loop` and a `while`, each alone and threading a slot,
+///   and a `loop` a rest follows.
+/// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+/// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| matches!(ret, Looped::Loop { threads: kept, .. } | Looped::While { threads: kept, .. } if kept.held() == threads.held()))]
+fn passes<S>(
+    source: &S,
+    body: S::Node,
+    threads: Threads<S::Node>,
+) -> Looped<S::Node>
+where
+    S: Source + ?Sized,
+{
+    // A `while`: the body binds the test and cases on it, the false branch
+    // the loop's break.
+    if let Former::Bind(condition, tested) = source.read(body)
+        && let Former::Case { scrutinee, arity } = source.read(tested)
+        && usize::from(arity) == 2_usize
+        && let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = source.read(scrutinee)
+        && u32::from(index) == 0_u32
+        && let (Some(then), Some(otherwise)) = (
+            source.component(tested, Component::from(0_usize)),
+            source.component(tested, Component::from(1_usize)),
+        )
+        && let Some(end) = broken(source, otherwise)
+    {
+        return Looped::While {
+            condition,
+            then,
+            rest: end.rest(),
+            threads,
+        };
+    }
+    // A `loop`: what follows it is put at its breaks. A threading loop's
+    // breaks read the slots held again, so its rest is no rest of the loop.
+    let rest = match (threads, breaks(source, body)) {
+        (Threads::Unthreaded, Breaks::One(rest, under)) => Some((rest, under)),
+        (Threads::Unthreaded, Breaks::None | Breaks::Apart) | (Threads::Slots { .. }, _) => None,
+    };
+    Looped::Loop {
+        body,
+        rest,
+        threads,
+    }
+}
+
+/// How many slots a threading loop's lambda body `each` holds again, and the
+/// passes it runs under them: `var c = s; b` holding its one argument, or
+/// `split p (s₁, …, sₙ); var c₁ = s₁; …; var cₙ = sₙ; b` holding each
+/// component of its argument in order.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: `(1, b)` for a hold at many of the innermost intuitionistic
+///   variable whose body is `b`; `(n, b)` for a split of the innermost
+///   intuitionistic variable into `n ≥ 2` components whose body holds at many
+///   each component, outermost first, the innermost hold's body `b`; none
+///   otherwise.
+/// - provides: the threading [`looped`] reads.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `while` threading one slot and one threading two.
+/// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| ret.is_none_or(|(count, _)| count.0 >= 1_usize))]
+fn held_again<S>(
+    source: &S,
+    each: S::Node,
+) -> Option<(Arity, S::Node)>
+where
+    S: Source + ?Sized,
+{
+    // The body of `node` when it holds at many the intuitionistic variable
+    // `content` binders out.
+    let held = |node, content: usize| {
+        if let Former::Hold {
+            value,
+            body,
+            grade: gandr_core_term::memory::HoldGrade::Many,
+        } = source.read(node)
+            && let Former::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            } = source.read(value)
+            && usize::try_from(u32::from(index)).ok() == Some(content)
+        {
+            Some(body)
+        }
+        else {
+            None
+        }
+    };
+    if let Former::Split {
+        scrutinee,
+        arity,
+        body,
+    } = source.read(each)
+        && usize::from(arity) >= 2_usize
+        && matches!(
+            source.read(scrutinee),
+            Former::Variable { zone: Zone::Intuitionistic, index } if u32::from(index) == 0_u32
+        )
+    {
+        let count = usize::from(arity);
+        let mut under = body;
+        for component in 0_usize .. count {
+            under = held(
+                under,
+                count.saturating_sub(component).saturating_sub(1_usize),
+            )?;
+        }
+        return Some((Arity(count), under));
+    }
+    held(each, 0_usize).map(|under| (Arity(1_usize), under))
+}
+
+/// The slots the `loop` or the `while` `reading` visits in a position
+/// admitting `admits`: the body, or the condition, the true branch and the
+/// rest, each under the loop's binder and those its threading opens
+/// ([`Threads::opened`]), a `while`'s branch and rest under the test's two
+/// more, and a `loop`'s rest under those its breaks stand under.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a `loop`, one pass slot and, where a rest follows, the rest
+///   admitting `admits`; for a `while`, the condition continuing, the true
+///   branch a pass and the rest, where one follows, admitting `admits`; none
+///   for a `for`.
+/// - provides: the slots [`children`] gives a loop, alone or threading.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `loop` and a `while`, each alone and threading a slot,
+///   and a `loop` a rest follows.
+/// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+/// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+#[spec(ensures: |ret| ret.len() <= 3_usize)]
+fn passing<Node>(
+    reading: Looped<Node>,
+    admits: Admits,
+) -> Vec<Slot<Node>>
+{
+    match reading {
+        Looped::Loop {
+            body,
+            rest,
+            threads,
+        } => {
+            let looping = threads.opened().0.saturating_add(1_usize);
+            let mut slots = Vec::from([Slot::of(
+                body,
+                Admits::Computation(Tail::Passes),
+                Binds::intuitionistic(OpenBinders(looping)),
+            )]);
+            if let Some((rest, under)) = rest {
+                slots.push(Slot::of(
+                    rest,
+                    admits,
+                    Binds::intuitionistic(OpenBinders(looping.saturating_add(under.0))),
+                ));
+            }
+            slots
+        },
+        Looped::While {
+            condition,
+            then,
+            rest,
+            threads,
+        } => {
+            let looping = threads.opened().0.saturating_add(1_usize);
+            let tested = Binds::intuitionistic(OpenBinders(looping.saturating_add(2_usize)));
+            let mut slots = Vec::from([
+                Slot::of(
+                    condition,
+                    Admits::Computation(Tail::Continues),
+                    Binds::intuitionistic(OpenBinders(looping)),
+                ),
+                Slot::of(then, Admits::Computation(Tail::Passes), tested),
+            ]);
+            if let Some(rest) = rest {
+                slots.push(Slot::of(rest, admits, tested));
+            }
+            slots
+        },
+        Looped::For { .. } => Vec::new(),
+    }
+}
+
+/// A derived path operation a transport is the derivation of
+/// (`gandr_core_term::identity`), over the nodes its spelling writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Derived<Node>
+{
+    /// `Path.step p q`: `Path.walk (fun (y) { Path[.A = A](a, y) }) q p`.
+    Composite
+    {
+        /// The first path, the transported value.
+        value: Node,
+        /// The second path, along which it moves.
+        path: Node,
+    },
+    /// `Path.back p`: `Path.walk (fun (y) { Path[.A = A](y, a) }) p (Path.here
+    /// a)`.
+    Inverse(Node),
+    /// `Path.ap f p`: `Path.walk (fun (y) { Path[.A = B](f(a), f(y)) }) p
+    /// (Path.here (f a))`, and above the map's domain the same walk with
+    /// `Path.ap` one level below in place of `f`.
+    Congruence
+    {
+        /// The map, as the motive holds it, as many binders deeper as `lift`.
+        map: Node,
+        /// The path it acts on.
+        path: Node,
+        /// How many binders deeper than the action the map stands.
+        lift: Lift,
+    },
+}
+
+/// The derived path operation `body` is the transport of: a path transport
+/// whose motive is `Path[.A = A](a, y)` over its own binder `y` (a composite),
+/// or `Path[.A = A](y, a)` moving reflexivity, `Path.here(a)` or the empty word
+/// at a looped point `a` (an inverse), or `Path[.A = B](f(a), f(y))` moving
+/// `here` (an action on a path), or above the map's domain `Path[.A = B](
+/// Path.ap f a, Path.ap f y)` with the action one level below (an action on a
+/// cell), where every other part of the motive names no `y`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the operation exactly when `body` reads as a path transport whose
+///   motive reads as a path type with one endpoint the intuitionistic variable
+///   of index zero, or for an action the forced map applied to it and returned
+///   and the other endpoint the same map, the same constant or variable,
+///   applied and returned; an inverse moves `here` or a nullary constructor,
+///   the only one a path type at a looped point holds, and an action moves
+///   `here`. Above the map's domain an action's endpoints are each a returned
+///   transport moving `here`, the end's along the variable of index zero, and
+///   their motives' ends read as an action's endpoints one binder deeper, the
+///   map's lift one more per level. The motive's carrier, its other endpoint,
+///   an action's map, and the reflexivity each level's end moves with its
+///   motive's carrier and start, read down through every child [`children`]
+///   lists, name no intuitionistic variable counting out to the motive's
+///   binder; absent otherwise, and absent when that scan reads more than
+///   [`VISIT_BUDGET`] nodes or the levels outnumber them. A composite that
+///   moves `Path.here a` is absent where the motive's other endpoint reads
+///   [`Start::Apart`] from `a`, since `Path.step p q` reads back taking `p`'s
+///   start for it. A well-typed transport of these shapes moves the reflexivity
+///   at the endpoint the derivation would, up to conversion, so the operation
+///   stands for it.
+/// - provides: the shapes `Path.step p q`, `Path.back p` and `Path.ap f p`
+///   derive (`gandr_core_term::identity`), which the sugared form writes as the
+///   lowering reads them back.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Every turn of the climb reads one level deeper and spends one of at most
+/// [`VISIT_BUDGET`] levels; every turn of the scan pops one pending node and
+/// spends one of at most [`VISIT_BUDGET`] visits.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a composite of two loops and a transport whose fixed
+///   endpoint names the motive's binder, an inverse and an action on a loop,
+///   and an action on a 2-cell and a 3-cell; a scan that skipped the endpoints,
+///   read the wrong index or ignored the binder count fails the goldens.
+/// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_as_a_step_754`
+/// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
+/// - witness: `tests::goldens::a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218`
+/// - witness: `tests::goldens::an_action_on_a_cell_is_written_as_derived_6492`
+#[spec(ensures: |ret| ret.is_none() || matches!(source.read(body), Former::PathTransport { .. }))]
+fn derived<S>(
+    source: &S,
+    body: S::Node,
+) -> Option<Derived<S::Node>>
+where
+    S: Source + ?Sized,
+{
+    let Former::PathTransport {
+        motive,
+        path,
+        value,
+    } = source.read(body)
+    else {
+        return None;
+    };
+    let Former::Path {
+        carrier,
+        left,
+        right,
+    } = source.read(motive)
+    else {
+        return None;
+    };
+    let moving = |node: S::Node| {
+        matches!(
+            source.read(node),
+            Former::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            } if u32::from(index) == 0_u32
+        )
+    };
+    let reflexive = matches!(source.read(value), Former::Here(_));
+    // A nullary constructor at `Path[.A = A](a, a)` is the empty word of the
+    // words at a looped point `a`, which an inverse moves there.
+    let empty = matches!(source.read(value), Former::Constructor { arity, .. } if usize::from(arity) == 0_usize);
+    // The map applied and returned, as an action's endpoints are: `f(x)`.
+    let image = |node: S::Node| {
+        if let Former::Returned(applied) = source.read(node)
+            && let Former::Application(forced, argument) = source.read(applied)
+            && let Former::Force(map) = source.read(forced)
+        {
+            Some((map, argument))
+        }
+        else {
+            None
+        }
+    };
+    // The same map, by what it reads as: a constant or a variable.
+    let same = |one: S::Node, other: S::Node| match (source.read(one), source.read(other)) {
+        (Former::Constant(one), Former::Constant(other)) => one == other,
+        (
+            Former::Variable { zone, index },
+            Former::Variable {
+                zone: other_zone,
+                index: other_index,
+            },
+        ) => zone == other_zone && index == other_index,
+        _ => false,
+    };
+    // A moved `here(a)` starts at `a`. The composite reads back taking that
+    // start for the motive's fixed endpoint, so an endpoint written apart from
+    // `a` keeps the transport. A moved path that writes no start keeps the
+    // composite, which reads back taking that path's stated start.
+    let starts = if let Former::Here(point) = source.read(value) {
+        start(source, point, left) == Start::Alike
+    }
+    else {
+        true
+    };
+    // An action reads its map off its motive's endpoints, `f(a)` and `f(y)`
+    // at the map's domain. Above the domain each endpoint is the action one
+    // level below, a transport moving `here`: the start at a point, the end
+    // along `y`. Their motives' ends read the level below, one binder deeper.
+    // What the end's transport moves, and its motive's carrier and start,
+    // must not name `y` either.
+    let climb = |parts: &mut Vec<(S::Node, Admits, usize)>| {
+        let (mut start, mut end) = (left, right);
+        let mut climbed = 0_usize;
+        let bound = usize::try_from(VISIT_BUDGET).unwrap_or(usize::MAX);
+        loop {
+            if let Some((map, argument)) = image(end)
+                && let Some((fixed, _)) = image(start)
+            {
+                return (moving(argument) && same(map, fixed)).then_some((map, climbed));
+            }
+            let (Former::Returned(below_start), Former::Returned(below_end)) =
+                (source.read(start), source.read(end))
+            else {
+                return None;
+            };
+            let (
+                Former::PathTransport {
+                    motive: start_motive,
+                    value: start_value,
+                    ..
+                },
+                Former::PathTransport {
+                    motive: end_motive,
+                    path: along,
+                    value: end_value,
+                },
+            ) = (source.read(below_start), source.read(below_end))
+            else {
+                return None;
+            };
+            let (
+                Former::Path {
+                    right: start_right, ..
+                },
+                Former::Path {
+                    carrier: end_carrier,
+                    left: end_left,
+                    right: end_right,
+                },
+                Former::Here(_),
+                Former::Here(moved),
+            ) = (
+                source.read(start_motive),
+                source.read(end_motive),
+                source.read(start_value),
+                source.read(end_value),
+            )
+            else {
+                return None;
+            };
+            let deeper = climbed
+                .checked_add(1_usize)
+                .filter(|&deeper| deeper < bound)?;
+            if !moving(along) {
+                return None;
+            }
+            parts.push((moved, Admits::Value, climbed));
+            parts.push((end_left, Admits::Value, deeper));
+            parts.extend(end_carrier.map(|ty| (ty, Admits::ValueType, deeper)));
+            (start, end) = (start_right, end_right);
+            climbed = deeper;
+        }
+    };
+    let mut parts = Vec::new();
+    // The parts of the motive that must not name its binder, each with the
+    // binders it stands under inside the motive, and the operation they make.
+    // A carrier the motive omits names nothing.
+    let (operation, apart) = if moving(right) && starts {
+        (Derived::Composite { value, path }, [
+            (left, 0_usize),
+            (left, 0_usize),
+        ])
+    }
+    else if moving(left) && (reflexive || empty) {
+        (Derived::Inverse(path), [(right, 0_usize), (right, 0_usize)])
+    }
+    else if reflexive && let Some((map, climbed)) = climb(&mut parts) {
+        let lift = Lift::from(climbed.saturating_add(1_usize));
+        (Derived::Congruence { map, path, lift }, [
+            (left, 0_usize),
+            (map, climbed),
+        ])
+    }
+    else {
+        return None;
+    };
+    let [(endpoint, endpoint_above), (other, other_above)] = apart;
+    let mut pending = Vec::from([
+        (endpoint, Admits::Value, endpoint_above),
+        (other, Admits::Value, other_above),
+    ]);
+    pending.extend(carrier.map(|ty| (ty, Admits::ValueType, 0_usize)));
+    pending.append(&mut parts);
+    let mut visits = 0_u32;
+    while let Some((node, admits, above)) = pending.pop() {
+        visits = visits
+            .checked_add(1_u32)
+            .filter(|&visits| visits <= VISIT_BUDGET)?;
+        let former = source.read(node);
+        if let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = former
+            && usize::try_from(u32::from(index)).ok()? == above
+        {
+            return None;
+        }
+        for slot in children(source, node, &former, admits, Bodies::Spelled) {
+            let Some(child) = slot.node
+            else {
+                continue;
+            };
+            let deeper = if slot.binds.zone == Zone::Intuitionistic {
+                above.checked_add(slot.binds.count)?
+            }
+            else {
+                above
+            };
+            pending.push((child, slot.admits, deeper));
+        }
+    }
+    Some(operation)
+}
+
+/// How a motive's fixed endpoint reads against the start of the reflexivity
+/// the transport moves.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Start
+{
+    /// Nothing written tells the two apart.
+    Alike,
+    /// The two are written apart, so the composite would read back with
+    /// another start.
+    Apart,
+}
+
+/// How `fixed`, read one intuitionistic binder deeper, reads against `point`:
+/// a motive's fixed endpoint against the start of the reflexivity it moves.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Start::Apart`] exactly when the walk down both nodes in step
+///   meets two formers of different kinds, two different constants, or two
+///   variables that differ once `fixed`'s intuitionistic index counts one
+///   binder more. The walk descends through `here`, a returned value, a forced
+///   thunk and an application. Two formers of one kind it does not descend
+///   through read as alike, as does a walk past [`VISIT_BUDGET`] pairs.
+/// - provides: the cases where the composite `here(a) then q` reads back with
+///   another start than the transport it stands for.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer restates the walk, and only a second walk of
+///   both nodes would check it.
+///
+/// # Termination
+/// Every turn pops one pending pair and spends one of at most
+/// [`VISIT_BUDGET`] visits.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a motive starting at a composite against a moved
+///   reflexivity at a variable, and a moved reflexivity of a reflexivity
+///   against a motive starting at that reflexivity. A walk that read every pair
+///   alike, or missed the binder's shift, fails the census sweep on the
+///   exemplars.
+/// - witness: `tests::goldens::a_transport_whose_motive_starts_elsewhere_is_written_in_full_4218`
+fn start<S>(
+    source: &S,
+    point: S::Node,
+    fixed: S::Node,
+) -> Start
+where
+    S: Source + ?Sized,
+{
+    let mut pending = Vec::from([(point, fixed)]);
+    let mut visits = 0_u32;
+    while let Some((point, fixed)) = pending.pop() {
+        visits = visits.saturating_add(1_u32);
+        if visits > VISIT_BUDGET {
+            return Start::Alike;
+        }
+        match (source.read(point), source.read(fixed)) {
+            (Former::Constant(point), Former::Constant(fixed)) => {
+                if point != fixed {
+                    return Start::Apart;
+                }
+            },
+            (
+                Former::Variable { zone, index },
+                Former::Variable {
+                    zone: fixed_zone,
+                    index: fixed_index,
+                },
+            ) => {
+                let shifted = if zone == Zone::Intuitionistic {
+                    u32::from(index).checked_add(1_u32)
+                }
+                else {
+                    Some(u32::from(index))
+                };
+                if zone != fixed_zone || shifted != Some(u32::from(fixed_index)) {
+                    return Start::Apart;
+                }
+            },
+            (Former::Here(point), Former::Here(fixed))
+            | (Former::Returned(point), Former::Returned(fixed))
+            | (Former::Force(point), Former::Force(fixed)) => pending.push((point, fixed)),
+            (
+                Former::Application(map, argument),
+                Former::Application(fixed_map, fixed_argument),
+            ) => {
+                pending.push((map, fixed_map));
+                pending.push((argument, fixed_argument));
+            },
+            (point, fixed) => {
+                if core::mem::discriminant(&point) != core::mem::discriminant(&fixed) {
+                    return Start::Apart;
+                }
+            },
+        }
+    }
+    Start::Alike
+}
+
+/// The former the walk reads at `node`, in a position admitting `admits`:
+/// the source's, but a returned transport that a derived path operation
+/// builds reads as that operation, `Path.step p q`, `Path.back p` or
+/// `Path.ap f p`, where the position states its type. Both forms read it so:
+/// the printer never unfolds the three operations (#5206).
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: [`Former::Step`], [`Former::Back`] or [`Former::Cong`] over what
+///   [`derived`] answers when `admits` is not [`Admits::Operand`] and `node`
+///   reads as [`Former::Returned`] over a body [`derived`] answers; what
+///   `source` reads at `node` otherwise.
+/// - provides: the one read of each node the walk visits.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each operation's golden in both forms and as a
+///   transport's operand; a read that unfolded the explicit form, a transport
+///   standing as a computation rather than a returned value, or an operation
+///   written where nothing states its type changes a spelling.
+/// - witness: `tests::goldens::a_returned_composite_of_paths_is_written_as_a_step_754`
+/// - witness: `tests::goldens::a_composite_a_transport_moves_stays_explicit_815`
+/// - witness: `tests::goldens::an_inverse_and_an_action_on_a_path_are_written_as_derived_778`
+#[spec(ensures: |ref ret| admits != Admits::Operand
+    || core::mem::discriminant(ret) == core::mem::discriminant(&source.read(node)))]
+fn reading<S>(
+    source: &S,
+    node: S::Node,
+    admits: Admits,
+) -> Former<'_, S::Node>
+where
+    S: Source + ?Sized,
+{
+    let former = source.read(node);
+    if admits != Admits::Operand
+        && let Former::Returned(body) = former
+        && let Some(operation) = derived(source, body)
+    {
+        return match operation {
+            Derived::Composite { value, path } => Former::Step(value, path),
+            Derived::Inverse(path) => Former::Back(path),
+            Derived::Congruence { map, path, lift } => Former::Cong(map, path, lift),
+        };
+    }
+    former
+}
+
+/// A name as a former spelled by parts writes it: the name itself, or `?`.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Written(Cow<'static, str>);
+
+impl From<Written> for Cow<'static, str>
+{
+    /// The text written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(written: Written) -> Self
+    {
+        written.0
+    }
+}
+
+/// One run of a former's spelling by parts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Part
+{
+    /// Text, written as it stands.
+    Text(Cow<'static, str>),
+    /// The name of the declaration `.1`, written as it stands.
+    Named(Cow<'static, str>, ConstantIndex),
+    /// The next child's piece, bare when it binds at most this loosely, a
+    /// block when it is a bind's statements, parenthesized otherwise.
+    Piece(Binding),
+    /// The last child's piece, written as [`Part::Piece`] writes the next:
+    /// a child visited after the rest, so the binders it opens are the ones
+    /// the join names, though it is written before them.
+    Last(Binding),
+    /// The next child's piece, an argument of a family a type reads applied:
+    /// after a space, bare when it binds at most as an atom.
+    Argument,
+    /// The next child's piece, a text literal written inside the string
+    /// around it: the piece is taken and this, its escaped content, written
+    /// in its place.
+    Spliced(String),
+    /// The name of the binder at this offset among those the former's
+    /// children open.
+    Binder(usize),
+    /// The linear variable at this index, by its binder's name.
+    Endpoint(DeBruijnIndex),
+    /// A space, or a line break indented two columns.
+    Space,
+    /// Nothing, or a line break.
+    Tight,
+    /// A line break that breaks with the block around it.
+    Line,
+    /// The parts so far are a block's head, ending with its opening brace.
+    Open,
+    /// The block opened last ends: its body two columns in, the brace
+    /// closing it on a line of its own.
+    Close,
+}
+
+/// The parts of one former's spelling as they are built, and how many child
+/// pieces they take.
+#[derive(Debug, Default)]
+struct Parts
+{
+    /// The parts, in writing order.
+    parts: Vec<Part>,
+    /// How many of them are child pieces.
+    pieces: usize,
+}
+
+impl Parts
+{
+    /// Appends `part`; a child piece is counted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn part(
+        &mut self,
+        part: Part,
+    ) -> &mut Self
+    {
+        if matches!(
+            part,
+            Part::Piece(_) | Part::Last(_) | Part::Spliced(_) | Part::Argument
+        ) {
+            self.pieces = self.pieces.saturating_add(1_usize);
+        }
+        self.parts.push(part);
+        self
+    }
+
+    /// Appends fixed or computed text.
+    ///
+    /// # Specification
+    /// trivial.
+    fn text(
+        &mut self,
+        text: impl Into<Cow<'static, str>>,
+    ) -> &mut Self
+    {
+        self.part(Part::Text(text.into()))
+    }
+
+    /// Appends `text`, the name of the declaration `constant`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named(
+        &mut self,
+        text: impl Into<Cow<'static, str>>,
+        constant: ConstantIndex,
+    ) -> &mut Self
+    {
+        self.part(Part::Named(text.into(), constant))
+    }
+
+    /// Appends the next child's piece, bare up to `loosest`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn piece(
+        &mut self,
+        loosest: Binding,
+    ) -> &mut Self
+    {
+        self.part(Part::Piece(loosest))
+    }
+
+    /// Appends the next child's piece as `content`, the escaped content of
+    /// the text literal it is.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spliced(
+        &mut self,
+        content: String,
+    ) -> &mut Self
+    {
+        self.part(Part::Spliced(content))
+    }
+
+    /// Appends a soft line before every arm of a block but the first, `index`
+    /// counting the arms, then the bar that leads each arm, `| `.
+    ///
+    /// # Specification
+    /// trivial.
+    fn barred(
+        &mut self,
+        index: Component,
+    ) -> &mut Self
+    {
+        if usize::from(index) > 0_usize {
+            let _ = self.part(Part::Line);
+        }
+        self.text("| ")
+    }
+
+    /// Appends the names of the first `count` binders the children open,
+    /// separated by `, `.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binders(
+        &mut self,
+        count: Arity,
+    ) -> &mut Self
+    {
+        for offset in 0_usize .. count.0 {
+            if offset > 0_usize {
+                let _ = self.text(", ");
+            }
+            let _ = self.part(Part::Binder(offset));
+        }
+        self
+    }
+
+    /// Appends a call's `count` arguments between parentheses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn arguments(
+        &mut self,
+        count: Arity,
+    ) -> &mut Self
+    {
+        let _ = self.text("(");
+        for index in 0_usize .. count.0 {
+            if index > 0_usize {
+                let _ = self.text(",").part(Part::Space);
+            }
+            let _ = self.piece(Binding::ARGUMENT);
+        }
+        self.part(Part::Tight).text(")")
+    }
+
+    /// Appends a call's `count` arguments juxtaposed, each after a space, an
+    /// atom or parenthesized; a call of none applies its head to the empty
+    /// group, ` ()`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn juxtaposed(
+        &mut self,
+        count: Arity,
+    ) -> &mut Self
+    {
+        if count.0 == 0_usize {
+            return self.text(" ()");
+        }
+        for _ in 0_usize .. count.0 {
+            let _ = self.part(Part::Space).piece(Binding::Atom);
+        }
+        self
+    }
+
+    /// Appends a type former's `count` operands as `surface` reads them:
+    /// juxtaposed where an expression is read, which applies the former as it
+    /// applies any function, and between parentheses where a type is read.
+    ///
+    /// # Specification
+    /// trivial.
+    fn applied(
+        &mut self,
+        count: Arity,
+        surface: Surface,
+    ) -> &mut Self
+    {
+        match surface {
+            Surface::Expression => self.juxtaposed(count),
+            Surface::Type | Surface::Enclosed => self.arguments(count),
+        }
+    }
+
+    /// Appends a family's or a constructor's `count` operands as `surface`
+    /// reads them: juxtaposed, as the type grammar reads `Maybe A` (#5326)
+    /// and an expression a type encloses reads `Tag Zero b`. The type
+    /// grammar reads a capitalised head juxtaposed, though it reads a glued
+    /// `f x` as the moded type `m T`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn family(
+        &mut self,
+        count: Arity,
+        surface: Surface,
+    ) -> &mut Self
+    {
+        match surface {
+            Surface::Expression => self.juxtaposed(count),
+            Surface::Type | Surface::Enclosed if count.0 == 0_usize => self.juxtaposed(count),
+            Surface::Type | Surface::Enclosed => {
+                for _ in 0_usize .. count.0 {
+                    let _ = self.part(Part::Argument);
+                }
+                self
+            },
+        }
+    }
+
+    /// Appends a block over the next child's piece: the parts so far its
+    /// head, ending with its opening brace.
+    ///
+    /// # Specification
+    /// trivial.
+    fn body(&mut self) -> &mut Self
+    {
+        self.part(Part::Open)
+            .piece(Binding::Sequence)
+            .part(Part::Close)
+    }
+}
+
+/// The codomain of a value-function alias, as [`Walk::alias`] found it.
+#[derive(Clone, Copy, Debug)]
+enum Codomain<Node>
+{
+    /// The value type the chain's returner returns.
+    Result(Node),
+    /// A static redex whose reduct is the returner.
+    Reduct(Node),
+}
+
+/// One arrow of a value-function alias's chain, as [`Walk::alias`] found it.
+#[derive(Clone, Copy, Debug)]
+struct Link<Node>
+{
+    /// The arrow's domain.
+    domain: Node,
+    /// The arrow itself where it is dependent, which opens a binder over the
+    /// arrows after it and may write that binder's name.
+    opener: Option<Node>,
+}
+
+/// The arrows of a value-function alias's chain that are dependent, one bit
+/// per arrow from the outermost: each opens a binder over the arrows after
+/// it, and the chain is written as the alias only where no occurrence names
+/// one (#736).
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Dependent(u64);
+
+/// A value-function alias as [`Walk::alias`] found it: its arrows, outermost
+/// first, which of them are dependent, its codomain, and whether its bare
+/// spelling reads as the static Pi, every domain and the codomain classifying
+/// codes.
+type AliasChain<Node> = (Vec<Link<Node>>, Dependent, Codomain<Node>, Classifies);
+
+/// How a static redex's reduct is spelled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReductAs
+{
+    /// As the term it is.
+    Term,
+    /// As the value type it returns, the codomain of an alias.
+    Result,
+}
+
+/// A binder a loop's spelling leaves unwritten.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LoopBinder
+{
+    /// The loop's own, the thunk a pass forces to run the next: forced at the
+    /// end of a pass it is written `continue`. A rest follows the loop when
+    /// `rest` holds, so a returner ending a pass is an exit, `return v`, and
+    /// otherwise the loop's end, `break(v)`; where `breaks` holds too, a
+    /// split of unit ending a pass goes on with that rest, a bare `break`.
+    Own
+    {
+        /// Whether a rest follows the loop.
+        rest: bool,
+        /// Whether every split of unit ending a pass goes on with the rest.
+        breaks: bool,
+    },
+    /// A `for` loop's remaining tail, which a pass hands the loop's own
+    /// binder to run the next: `(force k) t` is `continue`.
+    Tail,
+    /// One a `while` loop's test binds, a `for` loop's remaining list, or the
+    /// content a threading loop's pass takes.
+    Hidden,
+}
+
+/// A slot a threading loop holds again in each pass, written under the name
+/// of the slot held around the loop it carries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Carried
+{
+    /// The position of the slot held around the loop, whose name the hold
+    /// takes; none where the slot the first pass takes is no open binder.
+    of: Option<OpenBinders>,
+    /// How many slots a pass hands on, on the first slot's hold in a pass;
+    /// none on every other.
+    passing: Option<usize>,
+}
+
+/// What a pass hands the loop's own binder to run the next.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Pass
+{
+    /// Nothing: the pass forces it, `(force k)`.
+    Nothing,
+    /// A `for` loop's remaining tail, at this position: `(force k) t`.
+    Tail(OpenBinders),
+    /// The slots a threading loop's pass holds again, `count` of them from
+    /// the position of the first: `(force k) c`, `(force k) (c₁, …, cₙ)`.
+    Slots
+    {
+        /// The position of the first slot's hold.
+        first: OpenBinders,
+        /// How many slots.
+        count: usize,
+    },
+}
+
+/// A loop the walk is inside.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Looping
+{
+    /// The position of the loop's own binder.
+    own: OpenBinders,
+    /// Whether a rest follows the loop.
+    rest: bool,
+    /// Whether every split of unit ending a pass goes on with the rest, so
+    /// is written as a bare `break`.
+    breaks: bool,
+    /// What a pass hands the loop's own binder.
+    pass: Pass,
+}
+
+/// How a computation ending a loop's pass is written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PassEnd
+{
+    /// The loop's own binder forced, `continue`.
+    Continue,
+    /// A split of unit going on with the loop's rest, a bare `break`.
+    Break,
+    /// As an exit, or as a former the path runs on through.
+    Written,
+    /// Not at all: a computation left bare there runs the loop again.
+    Unwritten,
+}
+
+/// What a call writes for an implicit it supplies by name: the argument,
+/// walked, or the path a model implicit's components are supplied by.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+enum Resident<Node>
+{
+    /// The argument, walked where it stands.
+    Node(Node),
+    /// The path, written as it reads: `M` in `f[.s = M]`.
+    Path(String),
+}
+
+/// One unit of the walk's pending work.
+#[derive(Clone, Copy, Debug)]
+enum Task<Node>
+{
+    /// Spell one node in a position admitting `admits`.
+    Visit
+    {
+        /// The node.
+        node: Node,
+        /// What the position admits.
+        admits: Admits,
+        /// How many value formers enclose the node.
+        depth: ValueDepth,
+    },
+    /// Spell a computation a run binds where the run is written away: the
+    /// nested call it is when it is runs binding calls ([`nested_call`]),
+    /// `g(f(a))` for `y ← f(a); g(y)`, as [`Task::Visit`] spells it where a
+    /// computation goes on otherwise.
+    Inline
+    {
+        /// The bound computation.
+        node: Node,
+        /// How many value formers enclose the node.
+        depth: ValueDepth,
+    },
+    /// Spell the value type a computation type returns, as the codomain of a
+    /// value-function alias: the returner's result, read on through the
+    /// static redexes, decodes and quotes [`Walk::alias`] read through to it.
+    Returned
+    {
+        /// The computation type.
+        node: Node,
+        /// How many value formers enclose the node.
+        depth: ValueDepth,
+    },
+    /// Open a binder in a zone, of the former whose child follows: the former
+    /// itself when it opens that one binder, whose name the source may write.
+    Bind(Zone, Option<Node>),
+    /// Open a binder in a zone named as the intuitionistic binder `index`
+    /// counts out to is, an open binder or one of the context: a placement's
+    /// linear binder, which takes the name of the binder holding what it
+    /// places, a buffer or a parameter's endpoint. A payload no variable
+    /// names leaves the binder unnamed.
+    Rebind(Zone, Option<DeBruijnIndex>),
+    /// Open the binder that names a region — a capability scope's capability
+    /// or a hold's held name — as [`Task::Bind`] does, its region the
+    /// innermost the walk is inside.
+    BindScope(Zone, Option<Node>),
+    /// Open a binder a loop's spelling does not write, as [`Task::Bind`]
+    /// does: the loop's own, which a `continue` forces, or one its test
+    /// binds.
+    BindLoop(Zone, LoopBinder),
+    /// Open the linear binder a threading loop's pass holds a slot again
+    /// under, as [`Task::BindScope`] does, named as the slot it carries.
+    BindCarried(Carried),
+    /// Enter (`true`) or leave (`false`) a handler's subject, where an exit
+    /// leaves the handler.
+    Handled(bool),
+    /// Enter (`true`) or leave (`false`) the body a reset delimits, where a
+    /// `return` a handler's subject writes is a shift.
+    Unwound(bool),
+    /// Close the innermost binder.
+    Unbind,
+    /// Set the occurrences named so far aside, so the argument visited next
+    /// collects its own: the binder a redex opens for it credits them only
+    /// where the reduct reads the binder.
+    Hold,
+    /// Open one binder per finished piece of the top this many, the deepest
+    /// outermost, each standing for its piece: the binders of a static redex's
+    /// abstraction, bound to the arguments it is applied to.
+    Substitute(Arity),
+    /// Spell a component the source did not answer, as `?`.
+    Missing,
+    /// Spell the context binder at this position, outermost first: a uniform
+    /// parameter a recursive definition's call passes as itself.
+    Context(ContextPosition),
+    /// Spell the label an entry is written after.
+    Label(Labelled<Node>),
+    /// Combine finished pieces.
+    Join(Join),
+    /// Read the nodes visited next in this grammar sort.
+    Surface(Surface),
+    /// Read the nodes visited next under this elaboration.
+    Elaboration(Elaboration),
+}
+
+/// What a walk produced.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Walked
+{
+    /// The document of the root, and whether it says the whole of it.
+    Built
+    {
+        /// The root's document.
+        doc: Doc,
+        /// Whether every node was spelled in full.
+        fidelity: Fidelity,
+        /// Why each `?` the document holds was written.
+        unspelled: BTreeSet<Unspelled>,
+        /// Whether the document writes a wildcard.
+        wildcards: Wildcards,
+    },
+    /// The source took more visits than one presentation makes, or a shared
+    /// type reached more formers than its distinct nodes allow.
+    OverBudget,
+}
+
+/// The names generated binders take, by position.
+///
+/// The names are `a`, `b`, …, `z`, then `a1`, `b1`, …, skipping every name a
+/// node of the term already spells, so a binder never reads as a constant or
+/// an abstract type the term mentions.
+#[derive(Debug)]
+struct Binders<'names>
+{
+    /// The names the term's constants and abstract types spell.
+    mentioned: BTreeSet<Name<'names>>,
+    /// The names generated so far, outermost binder first.
+    generated: Vec<BinderName>,
+    /// The next candidate to consider.
+    next: Ordinal,
+}
+
+impl<'names> Binders<'names>
+{
+    /// Binders that avoid every name in `mentioned`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn new(mentioned: BTreeSet<Name<'names>>) -> Self
+    {
+        Self {
+            mentioned,
+            generated: Vec::new(),
+            next: Ordinal(0_u32),
+        }
+    }
+
+    /// The name of the binder at `position`, outermost first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: cached positions borrow their stored names; distinct
+    ///   positions answer distinct names; no answer is a mentioned name.
+    /// - provides: the binder of a dependent arrow, a static abstraction, a
+    ///   lambda or a bind, and the occurrences that name it.
+    /// - fails: [`binder::Absent::Exhausted`] when the candidate counter cannot
+    ///   advance, before issuing its maximum ordinal; cached names still
+    ///   resolve.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested arrows and a mentioned first name distinguish
+    ///   capture and reordered generation. A counter at its maximum exposes the
+    ///   refusal boundary and verifies that cached positions remain available;
+    ///   the intervening billions of candidates are not allocated.
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
+    /// - witness: `walk::tests::binder_exhaustion_preserves_existing_names`
+    #[spec(
+        captures: [cached = self.generated.get(position.0).map(|name| name.0.as_ptr())],
+        ensures: |ret| match ret {
+            | Maybe::Present(name) => cached.is_none_or(|held| core::ptr::eq(held, name.0.as_ptr()))
+                && name.0.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+                && name.0.get(1..).is_some_and(|round| round.is_empty()
+                    || round.parse::<u32>().is_ok_and(|value| value > 0_u32)),
+            | Maybe::Absent(_) => cached.is_none(),
+        },
+    )]
+    fn name_at(
+        &mut self,
+        position: OpenBinders,
+    ) -> Maybe<&BinderName, binder::Absent>
+    {
+        while self.generated.len() <= position.0 {
+            let Maybe::Present(name) = candidate(self.next)
+            else {
+                return Maybe::Absent(binder::Absent::Exhausted);
+            };
+            let Some(next) = self.next.0.checked_add(1_u32)
+            else {
+                return Maybe::Absent(binder::Absent::Exhausted);
+            };
+            self.next = Ordinal(next);
+            if !self.mentioned.contains(name.0.as_str()) {
+                self.generated.push(name);
+            }
+        }
+        self.generated
+            .get(position.0)
+            .map_or(Maybe::Absent(binder::Absent::Exhausted), Maybe::Present)
+    }
+}
+
+/// The candidate binder name at `ordinal`: a letter, then the round after the
+/// first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `a` through `z` for the first twenty-six ordinals, then the
+///   letters again followed by their round; distinct ordinals answer distinct
+///   names.
+/// - provides: the candidates [`Binders::name_at`] filters.
+/// - fails: never on a representable ordinal.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — alphabet endpoints, two round transitions and the maximum
+///   ordinal distinguish off-by-one letters, missing suffixes and overflow. The
+///   remaining ordinal interval is not enumerated.
+/// - witness: `walk::tests::candidate_names_cross_rounds_without_losing_the_last_ordinal`
+/// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
+#[spec(ensures: |ref ret| match *ret {
+    | Maybe::Present(ref name) => {
+        let letter = name.0.as_bytes().first().copied().and_then(|byte| byte.checked_sub(b'a'));
+        let round = name.0.get(1..).and_then(|text| if text.is_empty() { Some(0_u32) } else { text.parse::<u32>().ok() });
+        letter.is_some_and(|offset| offset < 26_u8)
+            && round.and_then(|value| value.checked_mul(26_u32))
+                .and_then(|base| base.checked_add(u32::from(letter?))) == Some(ordinal.0)
+    },
+    | Maybe::Absent(_) => false,
+})]
+fn candidate(ordinal: Ordinal) -> Maybe<BinderName, binder::Absent>
+{
+    let letters = 26_u32;
+    let (Some(offset), Some(round)) = (
+        ordinal.0.checked_rem(letters),
+        ordinal.0.checked_div(letters),
+    )
+    else {
+        return Maybe::Absent(binder::Absent::Exhausted);
+    };
+    let Some(letter) = u8::try_from(offset)
+        .ok()
+        .and_then(|offset| b'a'.checked_add(offset))
+    else {
+        return Maybe::Absent(binder::Absent::Exhausted);
+    };
+    let letter = char::from(letter);
+    Maybe::Present(BinderName(if round == 0_u32 {
+        String::from(letter)
+    }
+    else {
+        format!("{letter}{round}")
+    }))
+}
+
+/// Each node read from `root` in a position admitting `admits`, its thunks
+/// read as `bodies` says, handed to `visit` with its former in the walk's
+/// order.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: `visit` reads each node the walk spells from `root` beside its
+///   former, once per path reaching it, at most the visit budget of them;
+///   absent when the scan takes more than that budget.
+/// - provides: the one traversal [`mentioned`], [`sharing`] and [`regioned`]
+///   read.
+/// - fails: never; an over-long scan is an absence.
+/// - panics: none.
+/// - executable: none — the answer is what `visit` reads; a clause restating it
+///   would run the scan again.
+/// - intension: the walk's traversal on an explicit stack, stopped by [`reach`]
+///   and descending by [`children`] exactly as the walk does.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`mentioned`] and [`regioned`].
+/// - witness: `walk::tests::the_name_scan_visits_exactly_its_budget`
+/// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+fn scanned<'source, S, Visit>(
+    source: &'source S,
+    root: S::Node,
+    admits: Admits,
+    bodies: Bodies,
+    mut visit: Visit,
+) -> Maybe<(), scan::Absent>
+where
+    S: Source + ?Sized,
+    Visit: FnMut(S::Node, Former<'source, S::Node>),
+{
+    let mut pending = Vec::from([(root, admits, ValueDepth::ROOT)]);
+    let mut visits = 0_u32;
+    while let Some((node, admits, depth)) = pending.pop() {
+        visits = visits.saturating_add(1_u32);
+        if visits > VISIT_BUDGET {
+            return Maybe::Absent(scan::Absent::OverBudget);
+        }
+        let former = source.read(node);
+        let kind = kind(&former);
+        if reach(admits, depth, kind) != Reach::Spell {
+            continue;
+        }
+        visit(node, former);
+        let below = below(depth, kind);
+        for slot in children(source, node, &former, admits, bodies)
+            .into_iter()
+            .rev()
+        {
+            if let Some(child) = slot.node {
+                pending.push((child, slot.admits, below));
+            }
+        }
+    }
+    Maybe::Present(())
+}
+
+/// Whether the spelling of `root`, which reaches `reached` formers, stays
+/// within the bound its distinct nodes set.
+///
+/// # Specification
+/// - requires: `reached` is what [`mentioned`] counts for `root`, `admits` and
+///   `bodies`.
+/// - ensures: [`Sharing::Within`] when `reached` is at most [`SHARED_FLOOR`],
+///   or at most [`SHARED_FLOOR`] more than [`SHARED_FACTOR`] times the distinct
+///   nodes the scan reads; [`Sharing::Past`] otherwise, and when the scan
+///   passes the visit budget.
+/// - provides: the bound that keeps a spelling linear in the distinct nodes of
+///   its type.
+/// - fails: never.
+/// - panics: none.
+/// - intension: no second scan below the floor; past it, one scan, one sort and
+///   one allocation of `reached` nodes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a level of the iterated pair within the floor spells
+///   whole, and the next level, past the bound of its distinct nodes, spells
+///   `?`.
+/// - witness: `tests::goldens::a_shared_type_past_its_distinct_nodes_spells_unknown_5826`
+#[spec(ensures: |ret| reached.0 > SHARED_FLOOR || ret == Sharing::Within)]
+fn sharing<S>(
+    source: &S,
+    root: S::Node,
+    (admits, bodies): (Admits, Bodies),
+    reached: Reached,
+) -> Sharing
+where
+    S: Source + ?Sized,
+{
+    if reached.0 <= SHARED_FLOOR {
+        return Sharing::Within;
+    }
+    let mut nodes = Vec::with_capacity(usize::try_from(reached.0).unwrap_or_default());
+    if scanned(source, root, admits, bodies, |node, _| nodes.push(node))
+        == Maybe::Absent(scan::Absent::OverBudget)
+    {
+        return Sharing::Past;
+    }
+    nodes.sort_unstable();
+    nodes.dedup();
+    let bound = u32::try_from(nodes.len())
+        .unwrap_or(u32::MAX)
+        .saturating_mul(SHARED_FACTOR)
+        .saturating_add(SHARED_FLOOR);
+    if reached.0 > bound {
+        Sharing::Past
+    }
+    else {
+        Sharing::Within
+    }
+}
+
+/// Every constant or abstract-type name encountered under `root`, including
+/// malformed names that the spelling pass will replace with `?`.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the names encountered from `root` in a position admitting
+///   `admits`, its thunks read as `bodies` says, at most one distinct name per
+///   allowed visit, beside the formers the scan reached; absent when that scan
+///   takes more than the visit budget.
+/// - provides: the names binders must avoid, and the bound on the walk.
+/// - fails: never; an over-long scan is an absence.
+/// - panics: none.
+/// - intension: the scan of [`scanned`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stable cyclic source refuses, and a binder skips an
+///   encountered name. The retained scan-to-walk mutation fixture bounds only
+///   subsequent traversal, not name consistency for changing sources.
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
+/// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+/// - witness: `walk::tests::the_name_scan_visits_exactly_its_budget`
+#[spec(ensures: |ref ret| match *ret {
+    Maybe::Present((ref names, reached)) => u32::try_from(names.len()).is_ok_and(|count| count <= VISIT_BUDGET) && reached.0 <= VISIT_BUDGET,
+    Maybe::Absent(scan::Absent::OverBudget) => true,
+})]
+fn mentioned<S>(
+    source: &S,
+    root: S::Node,
+    admits: Admits,
+    bodies: Bodies,
+) -> Maybe<(BTreeSet<Name<'_>>, Reached), scan::Absent>
+where
+    S: Source + ?Sized,
+{
+    let mut names = BTreeSet::new();
+    let mut reached = Reached(0_u32);
+    let scan = scanned(source, root, admits, bodies, |_, former| {
+        reached = Reached(reached.0.saturating_add(1_u32));
+        if let Former::Abstract(name)
+        | Former::Member(name)
+        | Former::Constant(name)
+        | Former::Data {
+            name: Some(name), ..
+        }
+        | Former::Codata {
+            name: Some(name), ..
+        }
+        | Former::Constructor {
+            name: Some(name), ..
+        }
+        | Former::Primitive { name, .. } = former
+        {
+            let _fresh = names.insert(name);
+        }
+    });
+    match scan {
+        Maybe::Present(()) => Maybe::Present((names, reached)),
+        Maybe::Absent(absent) => Maybe::Absent(absent),
+    }
+}
+
+/// Each instance `effects` holds, in row order, beside the entry over a
+/// theory `manifests` records for it: the one naming its theory at its region.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one answer per instance of `effects`, in the order
+///   [`Authority::interfaces`] lists them, the first manifest naming the
+///   instance's interface at its region, none where no manifest does.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a row over a theory fixed at a sort beside a host
+///   interface finds the manifest at the theory and none at the interface.
+/// - witness: `tests::goldens::a_row_over_a_theory_spells_its_manifest_3230`
+#[spec(ensures: |ret| ret.len() == effects.interfaces().len())]
+fn manifested<'manifest, Node>(
+    effects: &dyn Authority,
+    manifests: &'manifest [Manifest<'manifest, Node>],
+) -> Vec<Option<&'manifest Manifest<'manifest, Node>>>
+{
+    effects
+        .interfaces()
+        .iter()
+        .map(|&(interface, region)| {
+            manifests.iter().find(|manifest| {
+                manifest.theory.as_ref() == interface.as_ref() && manifest.region == region
+            })
+        })
+        .collect()
+}
+
+/// The region binders a definition over `roots` abstracts: every ordinal up to
+/// the greatest a kept type or a capability under them lives at.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: the binders at ordinals zero through the greatest ordinal of a
+///   region binder that a kept type's, a capability's or a row's instance's
+///   region is, under any root scanned at its [`Admits`] with its thunks
+///   spelled, in order; none where no region is a binder. Absent when a scan
+///   takes more than the visit budget.
+/// - provides: the region binders a definition's header writes, every ordinal
+///   below the greatest included, so the header reads back at the ordinals the
+///   type uses.
+/// - fails: never; an over-long scan is an absence.
+/// - panics: none.
+/// - intension: the scan of [`scanned`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition kept at its one region binder writes it, one
+///   kept at none writes none, and one whose row names an instance at a binder
+///   writes that binder.
+/// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
+/// - witness: `tests::goldens::a_row_writes_each_instance_by_its_label_2271`
+#[spec(ensures: |ref ret| match *ret {
+    Maybe::Present(ref binders) => binders.last().is_none_or(|&last| usize::try_from(u32::from(last)).ok().and_then(|ordinal| ordinal.checked_add(1_usize)) == Some(binders.len())),
+    Maybe::Absent(scan::Absent::OverBudget) => true,
+})]
+pub fn regioned<S>(
+    source: &S,
+    roots: &[(S::Node, Admits)],
+) -> Maybe<Vec<RegionBinder>, scan::Absent>
+where
+    S: Source + ?Sized,
+{
+    let mut greatest: Option<RegionBinder> = None;
+    for &(root, admits) in roots {
+        let visited = scanned(source, root, admits, Bodies::Spelled, |_, former| {
+            if let Former::Kept {
+                region: Region::Bound(binder),
+                ..
+            }
+            | Former::Capability {
+                region: Region::Bound(binder),
+                ..
+            } = former
+            {
+                greatest = greatest.max(Some(binder));
+            }
+            else if let Former::Row { effects, .. } | Former::EffectfulReturner { effects, .. } =
+                former
+            {
+                for (_, region) in effects.interfaces() {
+                    if let Region::Bound(binder) = region {
+                        greatest = greatest.max(Some(binder));
+                    }
+                }
+            }
+        });
+        if let Maybe::Absent(absent) = visited {
+            return Maybe::Absent(absent);
+        }
+    }
+    Maybe::Present(greatest.map_or_else(Vec::new, |greatest| {
+        (0_u32 ..= u32::from(greatest))
+            .map(RegionBinder::from)
+            .collect()
+    }))
+}
+
+/// The names of binders opened above every one of `roots`, one per entry of
+/// `preferred`, outermost first: each entry's name when no root mentions it,
+/// it is not `taken` and no earlier binder took it, otherwise the next
+/// generated name that is none of these.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: one distinct name per entry of `preferred`, none mentioned by a
+///   root, each scanned at the position admitting its [`Admits`] with its
+///   thunks spelled, and none `taken`; a preferred name where it is such a
+///   name, otherwise the candidates in their order. Absent when a scan takes
+///   more than the visit budget or the candidates run out.
+/// - provides: the parameters a recursive definition's header binds, which the
+///   binders its body opens avoid as they avoid a context name.
+/// - fails: never; an over-long scan or exhausted candidates is an absence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a header over a body that mentions the first candidate
+///   names its parameter past it, a preferred name the body mentions is passed
+///   over, and two parameters take distinct names; other mutations of the scan
+///   are those of [`mentioned`].
+/// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
+/// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|names| names.len() == preferred.len()
+    && names.iter().all(|name| !taken.contains(&Name::from(name.as_str())))
+    && names.iter().enumerate().all(|(at, name)| names.get(.. at).is_some_and(|before| !before.contains(name)))))]
+pub fn parameters<S>(
+    source: &S,
+    roots: &[(S::Node, Admits)],
+    taken: &[Name<'_>],
+    preferred: &[Option<Name<'_>>],
+) -> Option<Vec<String>>
+where
+    S: Source + ?Sized,
+{
+    let mut names = BTreeSet::new();
+    for &(root, admits) in roots {
+        match mentioned(source, root, admits, Bodies::Spelled) {
+            Maybe::Present((found, _)) => names.extend(found),
+            Maybe::Absent(scan::Absent::OverBudget) => return None,
+        }
+    }
+    names.extend(taken.iter().copied());
+    let free = |name: &str, chosen: &[String]| {
+        !names.contains(&Name::from(name)) && !chosen.iter().any(|held| held == name)
+    };
+    let mut chosen: Vec<String> = Vec::with_capacity(preferred.len());
+    let mut next = Ordinal(0_u32);
+    for &wanted in preferred {
+        if let Some(name) = wanted
+            && free(name.as_ref(), &chosen)
+        {
+            chosen.push(String::from(name.as_ref()));
+            continue;
+        }
+        loop {
+            let Maybe::Present(name) = candidate(next)
+            else {
+                return None;
+            };
+            next = Ordinal(next.0.checked_add(1_u32)?);
+            if free(name.0.as_str(), &chosen) {
+                chosen.push(name.0);
+                break;
+            }
+        }
+    }
+    Some(chosen)
+}
+
+/// Whether a case writes its type, `match n -> C { … }`: a data case its
+/// motive, and a sum case, a split or a list case the answer it is ascribed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Motive
+{
+    /// `match n -> C { … }`: nothing else states the case's type, or the case
+    /// is ascribed it.
+    Written,
+    /// `match n { … }`: its position states the type, or the motive names
+    /// the scrutinee its binder stands for, which no written motive can.
+    Left,
+}
+
+/// Whether a data case at a position admitting `admits` writes its motive
+/// `motive`.
+///
+/// # Specification
+/// - requires: `motive` is a data case's motive in `source`.
+/// - ensures: [`Motive::Written`] where nothing states the case's type — the
+///   computation a bind runs or a call applies, a body whose type nothing
+///   states — and no variable in the motive names its own binder;
+///   [`Motive::Left`] otherwise, and where the scan takes more than the visit
+///   budget.
+/// - provides: the one decision a case's slots and its spelling share.
+/// - fails: never.
+/// - panics: none.
+/// - intension: the scan [`mentioned`] makes, counting the intuitionistic
+///   binders each slot opens.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a case a bind runs, one in a constructor's thunk and one
+///   ending a definition's body observe the motive written, written and left.
+/// - witness: `tests::goldens::a_case_nothing_types_writes_its_motive_815`
+#[spec(ensures: |ret| ret == Motive::Left || matches!(admits, Admits::Computation(Tail::Continues | Tail::Unstated)))]
+fn case_motive<S>(
+    source: &S,
+    motive: S::Node,
+    admits: Admits,
+) -> Motive
+where
+    S: Source + ?Sized,
+{
+    if !matches!(
+        admits,
+        Admits::Computation(Tail::Continues | Tail::Unstated)
+    ) {
+        return Motive::Left;
+    }
+    let mut pending = Vec::from([(motive, Admits::CompType, ValueDepth::ROOT, 0_usize)]);
+    let mut visits = 0_u32;
+    while let Some((node, admits, depth, opened)) = pending.pop() {
+        visits = visits.saturating_add(1_u32);
+        if visits > VISIT_BUDGET {
+            return Motive::Left;
+        }
+        let former = source.read(node);
+        let kind = kind(&former);
+        if reach(admits, depth, kind) != Reach::Spell {
+            continue;
+        }
+        if let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = former
+            && usize::try_from(u32::from(index)).ok() == Some(opened)
+        {
+            return Motive::Left;
+        }
+        let below = below(depth, kind);
+        // A case inside the motive is scanned with its own motive, so a
+        // mention there counts whether or not that motive is written.
+        let read = slots(
+            source,
+            node,
+            &former,
+            (admits, Bodies::Spelled),
+            Motive::Written,
+        );
+        for slot in read {
+            if let Some(child) = slot.node {
+                let opened = if slot.binds.zone == Zone::Intuitionistic {
+                    opened.saturating_add(slot.binds.count)
+                }
+                else {
+                    opened
+                };
+                pending.push((child, slot.admits, below, opened));
+            }
+        }
+    }
+    Motive::Written
+}
+
+/// The surface spelling of the universe of `sort` at `level`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Type` for the value universe at level zero, `Type[-]` for the
+///   computation universe there, `Type[+, l]` and `Type[-, l]` at a constant
+///   level `l` above zero; absent for a parameter sort or a level that mentions
+///   a variable.
+/// - provides: the universe spellings the grammar writes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both ground sorts at zero and positive levels, a
+///   parameter sort and a variable level distinguish polarity, lost levels and
+///   unsupported forms. The fixtures do not enumerate large constants.
+/// - witness: `tests::goldens::universes_spell_their_sort_and_level`
+#[spec(ensures: |ref ret| match (sort, ret) {
+    | (Sort::Parameter(_), &Maybe::Absent(universe::Absent::ParameterSort)) => true,
+    | (Sort::Ground(_), &Maybe::Absent(universe::Absent::LevelVariable)) => level.atoms().next().is_some(),
+    | (Sort::Ground(ground), &Maybe::Present(ref text)) => {
+        let constant = u64::from(level.constant_part());
+        level.atoms().next().is_none() && if constant == 0_u64 {
+            text.0 == match ground { GroundSort::Value => "Type", GroundSort::Computation => "Type[-]" }
+        } else {
+            text.0.strip_prefix(match ground { GroundSort::Value => "Type[+, ", GroundSort::Computation => "Type[-, " })
+                .and_then(|tail| tail.strip_suffix(']')).and_then(|digits| digits.parse::<u64>().ok()) == Some(constant)
+        }
+    },
+    | _ => false,
+})]
+fn universe(
+    sort: Sort,
+    level: &Level,
+) -> Maybe<Spelled, universe::Absent>
+{
+    let Sort::Ground(ground) = sort
+    else {
+        return Maybe::Absent(universe::Absent::ParameterSort);
+    };
+    if level.atoms().next().is_some() {
+        return Maybe::Absent(universe::Absent::LevelVariable);
+    }
+    let constant = u64::from(level.constant_part());
+    Maybe::Present(Spelled(match (ground, constant) {
+        (GroundSort::Value, 0_u64) => String::from("Type"),
+        (GroundSort::Computation, 0_u64) => String::from("Type[-]"),
+        (GroundSort::Value, _) => format!("Type[+, {constant}]"),
+        (GroundSort::Computation, _) => format!("Type[-, {constant}]"),
+    }))
+}
+
+/// The pasting a composite names, as the source writes it: `(chain m)` at
+/// level one, or `(chain m (a₁, …, aₘ))` at level two. Past level two the
+/// source has no spelling, so the printer writes its notation
+/// `(tree l [[[]], [[]]])`: the level, then the tree as nested brackets.
+///
+/// # Specification
+/// trivial.
+fn spelled(pasting: Pasting) -> Spelled
+{
+    let (level, tree) = match pasting.form() {
+        gandr_core_term::compose::Form::Chain(cells) => {
+            return Spelled(alloc::format!("(chain {})", usize::from(cells)));
+        },
+        gandr_core_term::compose::Form::Columns(tree) => {
+            let columns: Vec<String> = tree
+                .columns()
+                .map(|height| alloc::format!("{}", usize::from(height)))
+                .collect();
+            return Spelled(alloc::format!(
+                "(chain {} ({}))",
+                columns.len(),
+                columns.join(", ")
+            ));
+        },
+        gandr_core_term::compose::Form::Tree { level, tree } => (level, tree),
+    };
+    let mut text = alloc::format!("(tree {} [", usize::from(level));
+    let mut after_sibling = false;
+    for step in tree.walk() {
+        match step {
+            gandr_core_term::compose::Step::Down => {
+                if after_sibling {
+                    text.push_str(", ");
+                }
+                text.push('[');
+                after_sibling = false;
+            },
+            gandr_core_term::compose::Step::Up => {
+                text.push(']');
+                after_sibling = true;
+            },
+        }
+    }
+    text.push_str("])");
+    Spelled(text)
+}
+
+/// The inside of a string literal holding `text`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a backslash, a double quote, a line feed, a tab, a carriage
+///   return and a nul are written as the escapes the lowering decodes, a `$`
+///   before a `{` as `\$`, so it opens no interpolation, and every other
+///   character as itself.
+/// - provides: one escaping for a whole literal and for the text an
+///   interpolated string holds between its interpolations.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the escaped-control string and the interpolated strings
+///   read back as the literal and the appends they were printed from.
+/// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+/// - witness: `tests::goldens::an_append_is_written_as_the_interpolated_string_that_lowers_to_it`
+#[spec(ensures: |ref ret| !ret.0.contains(['\r', '\n', '\t', '\0']))]
+fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
+{
+    let content: &str = text.as_ref();
+    // Room for the quotes a whole literal adds around it.
+    let mut spelled = String::with_capacity(content.len().saturating_add(2_usize));
+    let mut characters = content.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '\\' => spelled.push_str("\\\\"),
+            '"' => spelled.push_str("\\\""),
+            '\n' => spelled.push_str("\\n"),
+            '\t' => spelled.push_str("\\t"),
+            '\r' => spelled.push_str("\\r"),
+            '\0' => spelled.push_str("\\0"),
+            '$' if characters.peek() == Some(&'{') => spelled.push_str("\\$"),
+            other => spelled.push(other),
+        }
+    }
+    Spelled(spelled)
+}
+
+/// The surface spelling of a literal.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: an integer as its sign and digits; a string between double quotes
+///   with its content as [`interior`] writes it; a numeric literal as its sign,
+///   its digits, and its fraction after a point when it has one; a character
+///   between single quotes, a backslash, a single quote, a line feed, a tab, a
+///   carriage return and a nul as the escape the lowering decodes and every
+///   other scalar as itself; a floating-point literal as its shortest
+///   round-tripping decimal and the `f64` suffix that types it; a width literal
+///   as its decimal value, signed when negative, and its width's suffix.
+/// - provides: the one spelling of every literal, which holds no line break, so
+///   a literal never splits across lines.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite escaped-control string, signed integer and
+///   numeric fixtures observe delimiters, sign, digits and fractional parts.
+///   Arbitrary Unicode strings and all magnitudes are not enumerated. The
+///   character fixtures cover each escape, a double quote and a multibyte
+///   scalar; the width fixtures cover each width and a negative value.
+/// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+/// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `tests::goldens::a_character_spells_as_the_literal_it_lowers_from`
+/// - witness: `tests::goldens::a_width_literal_spells_with_its_suffix`
+#[spec(ensures: |ref ret| !ret.0.contains(['\r', '\n', '\t', '\0']) && match *literal {
+    | Literal::Integer(ref integer) => {
+        let digits = match integer.sign() {
+            Sign::Negative => ret.0.strip_prefix('-'),
+            Sign::NonNegative => Some(ret.0.as_str()),
+        };
+        digits == Some(integer.magnitude().as_ref())
+    },
+    | Literal::Numeric(ref numeric) => {
+        let digits = match numeric.sign() {
+            Sign::Negative => ret.0.strip_prefix('-'),
+            Sign::NonNegative => Some(ret.0.as_str()),
+        };
+        let fraction: &str = numeric.fraction().as_ref();
+        if fraction.is_empty() { digits == Some(numeric.integer_part().as_ref()) }
+        else { digits.and_then(|text| text.split_once('.')) == Some((numeric.integer_part().as_ref(), fraction)) }
+    },
+    | Literal::Float64(float) => ret.0.ends_with("f64")
+        && (f64::from(float).is_nan() || ret.0.trim_end_matches("f64").parse::<f64>().ok() == Some(f64::from(float))),
+    | Literal::Text(_) => ret.0.len() >= 2_usize && ret.0.starts_with('"') && ret.0.ends_with('"'),
+    | Literal::Character(_) => ret.0.len() >= 3_usize && ret.0.starts_with('\'') && ret.0.ends_with('\''),
+    | Literal::Fixed(fixed) => ret.0.strip_prefix(fixed.to_decimal().as_str()) == Some(fixed.width().as_ref()),
+})]
+fn literal(literal: &Literal) -> Spelled
+{
+    let sign = |sign: Sign| match sign {
+        Sign::Negative => "-",
+        Sign::NonNegative => "",
+    };
+    Spelled(match *literal {
+        Literal::Integer(ref integer) => {
+            format!("{}{}", sign(integer.sign()), integer.magnitude().as_ref())
+        },
+        Literal::Text(ref text) => {
+            let Spelled(mut spelled) = interior(text);
+            spelled.insert(0_usize, '"');
+            spelled.push('"');
+            spelled
+        },
+        Literal::Numeric(ref numeric) => {
+            let fraction: &str = numeric.fraction().as_ref();
+            let whole = format!(
+                "{}{}",
+                sign(numeric.sign()),
+                numeric.integer_part().as_ref()
+            );
+            if fraction.is_empty() {
+                whole
+            }
+            else {
+                format!("{whole}.{fraction}")
+            }
+        },
+        Literal::Character(character) => {
+            let escape = match char::from(character) {
+                '\\' => "\\\\",
+                '\'' => "\\'",
+                '\n' => "\\n",
+                '\t' => "\\t",
+                '\r' => "\\r",
+                '\0' => "\\0",
+                other => return Spelled(format!("'{other}'")),
+            };
+            format!("'{escape}'")
+        },
+        Literal::Float64(float) => format!("{}f64", f64::from(float)),
+        Literal::Fixed(fixed) => {
+            let width = fixed.width();
+            let suffix: &str = width.as_ref();
+            format!("{}{suffix}", fixed.to_decimal())
+        },
+    })
+}
+
+/// A causal web's modular decomposition as the surface writes it.
+///
+/// `series`, `parallel` and `prime` applied to their factors, and a leaf
+/// `event left 0` naming a move by its endpoint and its position in that
+/// endpoint's order, each factor an operand in parentheses: `series (event
+/// left 0) (parallel (event left 1) (event right 0))`. This is how a web
+/// value prints, and how a traced run's channel spells the web its play
+/// decomposes to.
+///
+/// # Specification
+/// - requires: nothing; a node owed more factors than the pieces hold is closed
+///   where the pieces end.
+/// - ensures: one application per piece in preorder, each factor of a node
+///   after one space and between parentheses, the outermost piece bare; one
+///   line.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the series-parallel and the prime web of the goldens
+///   observe nesting, operands and leaves; a dropped parenthesis or a swapped
+///   endpoint changes the text.
+/// - witness: `tests::goldens::a_dialogue_and_its_web_spell_as_the_surface_writes_them`
+#[spec(ensures: |ret| !ret.contains('\n')
+    && ret.matches('(').count() == ret.matches(')').count()
+    && ret.matches("event ").count() == pieces.iter().filter(|piece| matches!(**piece, WebPiece::Event { .. })).count())]
+#[inline]
+#[must_use]
+pub fn web_spelled(pieces: &[WebPiece]) -> String
+{
+    alloc::string::ToString::to_string(&WebSpelling(pieces))
+}
+
+/// A causal web's pieces, written as [`web_spelled`] spells them.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct WebSpelling<'pieces>(&'pieces [WebPiece]);
+
+impl core::fmt::Display for WebSpelling<'_>
+{
+    /// Write each piece in preorder, each factor of a node as an operand in
+    /// parentheses.
+    ///
+    /// # Specification
+    /// - ensures: as [`web_spelled`].
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — Formatter exposes neither its sink's accepted bytes
+    ///   nor a query for a failed write; [`web_spelled`] states the text.
+    ///
+    /// # Errors
+    /// Returns the formatter's error when its sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`web_spelled`].
+    /// - witness: `tests::goldens::a_dialogue_and_its_web_spell_as_the_surface_writes_them`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        // Each open node's factors still owed, and whether it is itself a
+        // factor, written in parentheses.
+        let mut open: Vec<(usize, Wrapped)> = Vec::new();
+        for &piece in self.0 {
+            let wrapped = if open.is_empty() {
+                Wrapped::No
+            }
+            else {
+                f.write_str(" (")?;
+                Wrapped::Yes
+            };
+            let owed = match piece {
+                WebPiece::Event { endpoint, index } => {
+                    let side = match endpoint {
+                        Endpoint::Left => "left",
+                        Endpoint::Right => "right",
+                    };
+                    write!(f, "event {side} {index}")?;
+                    0_usize
+                },
+                WebPiece::Series(factors) => {
+                    f.write_str("series")?;
+                    factors
+                },
+                WebPiece::Parallel(factors) => {
+                    f.write_str("parallel")?;
+                    factors
+                },
+                WebPiece::Prime(factors) => {
+                    f.write_str("prime")?;
+                    factors
+                },
+            };
+            if owed > 0_usize {
+                open.push((owed, wrapped));
+                continue;
+            }
+            if wrapped == Wrapped::Yes {
+                f.write_str(")")?;
+            }
+            // The piece is whole: each node it completes closes in turn.
+            while let Some(&mut (ref mut left, _)) = open.last_mut() {
+                *left = left.saturating_sub(1_usize);
+                if *left > 0_usize {
+                    break;
+                }
+                if let Some((_, Wrapped::Yes)) = open.pop() {
+                    f.write_str(")")?;
+                }
+            }
+        }
+        for (_, wrapped) in open.into_iter().rev() {
+            if wrapped == Wrapped::Yes {
+                f.write_str(")")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Whether a web piece is a factor of the node above it, written as an
+/// operand in parentheses.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Wrapped
+{
+    /// It is the outermost piece, written bare.
+    No,
+    /// It is a factor, written in parentheses.
+    Yes,
+}
+
+/// What the walk knows of the binders [`Walk::bind`] opens, so that a binder
+/// the spelling leaves out holds off no name inside its scope.
+///
+/// The walk names a binder when it opens it. It decides whether to write the
+/// binder of a dependent arrow or of a dependent pair only at the join, once it
+/// met every occurrence (#736). A binder that the join leaves out has a name
+/// all the same, and each name that opens inside its scope passes over that
+/// name. The lowering reads the spelling back with no binder there, so a
+/// reprint names the binders inside one name earlier (#5402). So a pass that
+/// leaves out a binder whose name another name passed over gives that binder
+/// to the next pass, and the next pass reserves no name for it.
+#[derive(Debug, Default)]
+struct Openings
+{
+    /// How many binders the pass opened.
+    count: Opening,
+    /// The binder [`Walk::bind`] opened at each position.
+    open: BTreeMap<OpenBinders, Opened>,
+    /// The binders an earlier pass left out after a name inside their scope
+    /// passed over theirs. Their names hold off no name.
+    unreserved: BTreeSet<Opening>,
+    /// The binders this pass left out after a name inside their scope passed
+    /// over theirs.
+    left_out: BTreeSet<Opening>,
+}
+
+/// A binder [`Walk::bind`] opened.
+#[derive(Clone, Copy, Debug)]
+struct Opened
+{
+    /// Which binder it is.
+    opening: Opening,
+    /// Whether a name inside its scope passed over its name.
+    passed: bool,
+}
+
+impl Openings
+{
+    /// The openings of a pass that reserves no name for the binders
+    /// `unreserved`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(unreserved: BTreeSet<Opening>) -> Self
+    {
+        Self {
+            unreserved,
+            ..Self::default()
+        }
+    }
+
+    /// Note the binder that [`Walk::bind`] opens at `position` now.
+    ///
+    /// # Specification
+    /// trivial.
+    fn open(
+        &mut self,
+        position: OpenBinders,
+    )
+    {
+        let opened = Opened {
+            opening: self.count,
+            passed: false,
+        };
+        let _earlier = self.open.insert(position, opened);
+        self.count = Opening(self.count.0.saturating_add(1_u32));
+    }
+
+    /// Forget the binder at `position`: a binder that [`Walk::bind`] does not
+    /// open takes the position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn close(
+        &mut self,
+        position: OpenBinders,
+    )
+    {
+        let _closed = self.open.remove(&position);
+    }
+
+    /// Note that a name inside the scope of the binder at `position` passed
+    /// over that binder's name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pass_over(
+        &mut self,
+        position: OpenBinders,
+    )
+    {
+        if let Some(opened) = self.open.get_mut(&position) {
+            opened.passed = true;
+        }
+    }
+
+    /// Note that the spelling leaves out the binder at `position`. When a
+    /// name inside its scope passed over its name, the next pass reserves no
+    /// name for it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn leave_out(
+        &mut self,
+        position: OpenBinders,
+    )
+    {
+        if let Some(opened) = self.open.get(&position)
+            && opened.passed
+        {
+            let _fresh = self.left_out.insert(opened.opening);
+        }
+    }
+}
+
+/// The position below `end` whose binder holds `name` and holds it off a name
+/// inside its scope, when there is one. Each binder holds its name so, except
+/// one that an earlier pass left out.
+///
+/// # Specification
+/// trivial.
+fn holder(
+    names: &[Option<BinderName>],
+    openings: &Openings,
+    end: OpenBinders,
+    name: Name<'_>,
+) -> Option<OpenBinders>
+{
+    let text: &str = name.as_ref();
+    let unreserved = |position: &OpenBinders| {
+        openings
+            .open
+            .get(position)
+            .is_some_and(|opened| openings.unreserved.contains(&opened.opening))
+    };
+    names
+        .get(.. end.0)
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .map(|(at, held)| (OpenBinders(at), held))
+        .find(|&(ref position, held)| {
+            held.as_ref().is_some_and(|held| held.0 == text)
+                && (openings.unreserved.is_empty() || !unreserved(position))
+        })
+        .map(|(position, _)| position)
+}
+
+/// The walk's state: the builder it writes into, the finished pieces, the
+/// open binders and what it has had to approximate.
+struct Walk<'walk, 'names>
+{
+    /// The composer every leaf and join is written into.
+    builder: &'walk mut dyn Compose,
+    /// Finished pieces, innermost last.
+    pieces: Vec<Piece>,
+    /// The binder names by position.
+    binders: Binders<'names>,
+    /// The name each binder position took when a binder last opened there:
+    /// the one the source writes, when it captures no other, else the first
+    /// generated name no binder around it holds; none for a redex's binder,
+    /// which spells as its argument, and once the names ran out.
+    names: Vec<Option<BinderName>>,
+    /// The zone of each open binder, outermost first; a binder's position
+    /// among them names it.
+    opened: Vec<Zone>,
+    /// The positions of the open binders that name a region, a capability
+    /// scope's or a hold's, outermost first: the regions the walk is inside,
+    /// after the ones the source's roots stand in.
+    scopes: Vec<usize>,
+    /// The positions whose binder an occurrence named since it last opened:
+    /// a dependent arrow whose binder no occurrence names is spelled as the
+    /// plain arrow.
+    occurring: BTreeSet<OpenBinders>,
+    /// The binders [`Walk::bind`] opened, and the ones whose names hold off no
+    /// name.
+    openings: Openings,
+    /// The positions of the binders a loop's spelling leaves unwritten: an
+    /// occurrence of one names nothing the text binds.
+    hidden: BTreeSet<OpenBinders>,
+    /// The loops the walk is inside, the innermost last.
+    loops: Vec<Looping>,
+    /// How many handler subjects the walk is inside.
+    subjects: usize,
+    /// How many bodies a reset delimits the walk is inside.
+    unwinds: usize,
+    /// The occurrences set aside by each [`Task::Hold`] whose argument has not
+    /// yet been bound, the outermost first.
+    held: Vec<BTreeSet<OpenBinders>>,
+    /// The arguments the binders of a static redex stand for, by the binder's
+    /// position among the open ones: a redex is written as its reduct, each
+    /// occurrence of such a binder as the argument's piece.
+    substituted: BTreeMap<OpenBinders, Substituted>,
+    /// The names of the intuitionistic binders the root stands under,
+    /// outermost first.
+    context: &'names [Option<Name<'names>>],
+    /// The binder of `context` that is a recursive definition's own, and the
+    /// claim its calls write.
+    recursive: Option<Recursive>,
+    /// Whether every node so far was spelled in full.
+    fidelity: Fidelity,
+    /// Why each `?` written so far was written.
+    unspelled: BTreeSet<Unspelled>,
+    /// Whether a wildcard was written so far.
+    wildcards: Wildcards,
+    /// How the presentation writes its thunks.
+    bodies: Bodies,
+    /// The spellings of the session types whose payloads are being walked,
+    /// innermost last; each join takes its own.
+    protocols: Vec<Vec<Segment>>,
+    /// The labels each link of a dependent record whose children are being
+    /// walked is written with, innermost last; each join takes its own.
+    links: Vec<RecordLink>,
+    /// The labels of each open binder whose type is a dependent record, in
+    /// field order, by the binder's position: a positional selection off it
+    /// is written by the label of the field it reads (#3971).
+    records: BTreeMap<OpenBinders, Vec<BinderName>>,
+    /// The open binders whose opener states a type that is no record type: a
+    /// projection off one is the printer's notation ([`Notation::Labelled`]).
+    unrecorded: BTreeSet<OpenBinders>,
+    /// The fields the join being closed spells, which its piece takes.
+    fields: Option<Fields>,
+    /// The parts of the formers spelled by parts whose children are being
+    /// walked, innermost last; each join takes its own.
+    forms: Vec<Vec<Part>>,
+    /// Whether the sugar the grammar parses is written where it fits.
+    form: Form,
+    /// Whether the next visit is the value whose reduct's call was just
+    /// opened around it, which the walk then reads as the value itself.
+    crossed: bool,
+    /// Which glyphs the walk writes where a construct has two spellings.
+    spelling: grammar::Spelling,
+    /// The node reads the walk may still make: one per visit, and one per
+    /// link the alias's look-ahead reads.
+    remaining: u32,
+    /// The grammar sort the node visited now is read in.
+    surface: Surface,
+    /// Whether a checker elaborates the node visited now. A call reads its
+    /// arguments as expressions in a type, yet no checker elaborates them.
+    elaboration: Elaboration,
+}
+
+impl Walk<'_, '_>
+{
+    /// Pushes `?` for a node the walk cannot spell, and records why.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::approximate`] over `?`; `reason` is among the
+    ///   reasons recorded.
+    /// - provides: every `?` the walk writes.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — misplaced, unreadable and unbound nodes each spell
+    ///   `?` under their own reason.
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    #[spec(ensures: |ref ret| self.unspelled.contains(&reason) && self.fidelity == Fidelity::Approximate
+        && matches!(*ret, Ok(()) | Err(PresentationError::Build(_))))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "the one writer of the printer's `?`: each caller states the reason it \
+                      records under its own expectation"
+        )
+    )]
+    fn unspell(
+        &mut self,
+        reason: Unspelled,
+    ) -> Result<(), PresentationError>
+    {
+        self.approximate(Glyphs("?"), reason)
+    }
+
+    /// A text leaf.
+    ///
+    /// # Specification
+    /// - requires: `glyphs` holds no line feed, carriage return or tab.
+    /// - ensures: one text node holding exactly `glyphs`.
+    /// - provides: every leaf of the document.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact literal spellings expose corrupted leaf text; a
+    ///   zero text-byte budget exposes swallowed build refusals. Other meters
+    ///   and allocation failures are outside these fixtures.
+    /// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+    /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
+    #[spec(
+        requires: !glyphs.0.contains(['\r', '\n', '\t']),
+        ensures: |ref ret| match *ret {
+            | Ok(doc) => glyphs.0.is_empty() || doc != Doc::EMPTY,
+            | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn leaf(
+        &mut self,
+        glyphs: Glyphs<'_>,
+    ) -> Result<Doc, PresentationError>
+    {
+        self.builder.text(glyphs)
+    }
+
+    /// A former written at a stratum: its head `keyword[n, k] operands`, a
+    /// text leaf `join` takes. The stratum's two numerals are the
+    /// instantiation's type residents, each a numeral where a type is read.
+    ///
+    /// # Specification
+    /// - requires: `keyword` and `operands` hold no line feed, carriage return
+    ///   or tab.
+    /// - ensures: `join` takes one text leaf holding exactly `keyword[n, k]
+    ///   operands`, `n` the stratum's degree and `k` its bound.
+    /// - provides: the heads of `ua`, `compose` and `fill`.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each former's golden spells its degree, its bound and
+    ///   its operands apart, so a swapped numeral, a lost operand or a wrong
+    ///   keyword changes its text.
+    /// - witness: `tests::goldens::univalence_spells_its_stratum_and_descriptions`
+    /// - witness: `tests::goldens::a_composite_spells_its_stratum_chain_and_cells_3957`
+    /// - witness: `tests::goldens::a_fill_spells_its_stratum_chain_generator_and_cells_4075`
+    #[spec(
+        requires: !keyword.0.contains(['\r', '\n', '\t']),
+        ensures: |ref ret| matches!(*ret, Ok(_) | Err(PresentationError::Build(_))),
+    )]
+    fn at_stratum(
+        &mut self,
+        keyword: Glyphs<'_>,
+        stratum: Stratum,
+        operands: core::fmt::Arguments<'_>,
+        join: impl FnOnce(Doc) -> Join,
+    ) -> Result<Join, PresentationError>
+    {
+        let head = format!(
+            "{}[{}, {}] {operands}",
+            keyword.0,
+            usize::from(stratum.degree),
+            usize::from(stratum.bound),
+        );
+        let head = self.leaf(Glyphs(&head))?;
+        Ok(writes(
+            Production("instantiation_expression"),
+            writes(
+                Production("instantiation.type"),
+                writes(
+                    Production("number.type"),
+                    writes(Production("application_expression"), join(head)),
+                ),
+            ),
+        ))
+    }
+
+    /// How a path, a bridge or a homed type former applied to its operands
+    /// binds on the walk's surface, as [`type_applied`] states, noting the
+    /// juxtaposed form such a type inside an expression takes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`type_applied`]'s binding for the walk's surface and `rule`;
+    ///   on the expression surface where `admits` reads a type,
+    ///   `Notation::TypeApplication` is among the notes, since no spelling of
+    ///   the type reads back there until #5750 and #5753. A value the
+    ///   expression grammar reads, `pure (Vec MkIx)`, takes no note.
+    /// - provides: the one way these formers choose their applied binding.
+    /// - panics: none.
+    /// - executable: none — the binding is `type_applied`'s, and the note is
+    ///   one call.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `endForced`'s ascription to `Path(3, _)` inside an
+    ///   expression is held by the body parity sweep, and `pure (Vec MkIx)`
+    ///   stays faithful.
+    /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a path, a bridge or a homed type former inside an expression reads back \
+                      in no spelling until #5750 and #5753: written in the printer's notation"
+        )
+    )]
+    fn applied_type(
+        &mut self,
+        rule: Production,
+        admits: Admits,
+    ) -> Binding
+    {
+        if self.surface == Surface::Expression
+            && matches!(
+                admits,
+                Admits::Type | Admits::ValueType | Admits::CompType | Admits::Thunked
+            )
+        {
+            self.note(Unspelled::Notation(Notation::TypeApplication));
+        }
+        type_applied(self.surface, rule)
+    }
+
+    /// Pushes a finished atom holding `glyphs`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::leaf`].
+    /// - ensures: one atom piece on the finished stack.
+    /// - provides: every leaf former's piece.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaf spellings and a zero text-byte budget
+    ///   distinguish a missing atom, phantom pieces on failure and a wrong
+    ///   failure phase.
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
+    #[spec(
+        requires: !glyphs.0.contains(['\r', '\n', '\t']),
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| match *ret {
+            | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
+                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
+            | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
+            | Err(_) => false,
+        },
+    )]
+    fn atom(
+        &mut self,
+        glyphs: Glyphs<'_>,
+    ) -> Result<(), PresentationError>
+    {
+        let doc = self.leaf(glyphs)?;
+        self.pieces.push(Piece {
+            doc,
+            binding: Binding::Atom,
+            fields: None,
+        });
+        Ok(())
+    }
+
+    /// Pushes an atom that stands for more than it says, marks the
+    /// presentation approximate and records why.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::leaf`].
+    /// - ensures: one atom piece holding `glyphs`; the fidelity is approximate
+    ///   from here on and `reason` is among the reasons recorded.
+    /// - provides: `?`, `<thunk>`, `<stack>` and `<deep>`.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — deep, opaque and unreadable nodes expose omitted
+    ///   approximation under their reason; a refused atom exposes a fidelity
+    ///   reset on failure. Unrepresented allocator failures are outside this
+    ///   evidence.
+    /// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
+    #[spec(
+        requires: !glyphs.0.contains(['\r', '\n', '\t']),
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.fidelity == Fidelity::Approximate && self.unspelled.contains(&reason)
+            && match *ret {
+            | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
+                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
+            | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
+            | Err(_) => false,
+        },
+    )]
+    fn approximate(
+        &mut self,
+        glyphs: Glyphs<'_>,
+        reason: Unspelled,
+    ) -> Result<(), PresentationError>
+    {
+        self.note(reason);
+        self.atom(glyphs)
+    }
+
+    /// Marks the presentation approximate and records why: the walk writes a
+    /// former in its own notation, or leaves part of a node out.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the fidelity is approximate from here on and `reason` is
+    ///   among the reasons recorded.
+    /// - provides: every approximation the walk makes, so none goes unnamed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each former the walk writes in its own notation
+    ///   records the notation it wrote.
+    /// - witness: `tests::goldens::an_approximate_printing_names_its_reason_820`
+    #[spec(ensures: self.fidelity == Fidelity::Approximate && self.unspelled.contains(&reason))]
+    fn note(
+        &mut self,
+        reason: Unspelled,
+    )
+    {
+        self.fidelity = Fidelity::Approximate;
+        let _fresh = self.unspelled.insert(reason);
+    }
+
+    /// The pasting a composite names, as [`spelled`] writes it, noting the
+    /// printer's notation for a pasting past level two.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a pasting past level two has no surface syntax: written in the printer's \
+                      notation"
+        )
+    )]
+    fn pasting(
+        &mut self,
+        pasting: Pasting,
+    ) -> Spelled
+    {
+        if matches!(pasting.form(), gandr_core_term::compose::Form::Tree { .. }) {
+            self.note(Unspelled::Notation(Notation::Tree));
+        }
+        spelled(pasting)
+    }
+
+    /// Pushes a name, or `?` for a name the walk's spelling cannot write.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an atom holding the name, written as the name of `declared`
+    ///   when one is given; `?`, approximate, for an empty name, one holding a
+    ///   line feed, a carriage return or a tab, and in ASCII one holding the
+    ///   prime.
+    /// - provides: the spelling of constants, abstract types and bound
+    ///   variables.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary names, a literal question mark, empty names
+    ///   and each forbidden control distinguish content from approximation; a
+    ///   primed name in each spelling distinguishes the ASCII refusal. Other
+    ///   Unicode names are outside these finite fixtures. A declared name is
+    ///   listed at the bytes it stands at, a bound one is not.
+    /// - witness: `tests::goldens::fidelity_follows_nodes_not_the_characters_of_a_name`
+    /// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
+    /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    #[spec(
+        captures: [entry = self.pieces.len(), fidelity = self.fidelity],
+        ensures: |ref ret| {
+            let text: &str = name.as_ref();
+            self.fidelity == if unwritable(name, self.spelling).is_some() { Fidelity::Approximate } else { fidelity }
+                && match *ret {
+                    | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
+                    && self.pieces.last().is_some_and(|piece| piece.binding == if text.contains('.') { Binding::Qualified } else { Binding::Atom }),
+                    | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
+                    | Err(_) => false,
+                }
+        },
+    )]
+    fn name(
+        &mut self,
+        name: Name<'_>,
+        declared: Option<ConstantIndex>,
+    ) -> Result<(), PresentationError>
+    {
+        let text: &str = name.as_ref();
+        if let Some(reason) = unwritable(name, self.spelling) {
+            return self.unspell(reason);
+        }
+        let doc = match declared {
+            Some(constant) => self.builder.named(Glyphs(text), constant)?,
+            None => self.leaf(Glyphs(text))?,
+        };
+        self.pieces.push(Piece {
+            doc,
+            binding: if text.contains('.') {
+                Binding::Qualified
+            }
+            else {
+                Binding::Atom
+            },
+            fields: None,
+        });
+        Ok(())
+    }
+
+    /// Schedules the forgetting map `forgotten` written around the value the
+    /// caller's next visit spells: `forget[sort C = A, …](m) at Model T`,
+    /// each sort the map puts back at its carrier's type, then the model.
+    ///
+    /// # Specification
+    /// - requires: the caller pushes the model's visit after this, so the model
+    ///   is visited first and its piece stands below the carriers'.
+    /// - ensures: one join over the model's piece and one carrier piece per
+    ///   sort, its parts pushed, and each carrier's type visited after the
+    ///   model, in the theory's order.
+    /// - provides: the explicit form's forgetting map at a crossed value.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the parts and the scheduled visits are read by the
+    ///   join, which the witness exercises whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a crossed argument spells as the map's form, each
+    ///   sort at its carrier, and a second sort after the first.
+    /// - witness: `tests::goldens::a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130`
+    fn forget<Node>(
+        &mut self,
+        forgotten: Forgotten<'_, Node>,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<Node>>,
+    ) where
+        Node: Copy,
+    {
+        let mut parts = Parts::default();
+        let _ = parts.text("forget[");
+        for (index, &(sort, _)) in forgotten.sorts.iter().enumerate() {
+            if index > 0_usize {
+                let _ = parts.text(", ");
+            }
+            let _ = writes(
+                Production("manifest_sort"),
+                parts
+                    .text(format!("sort {} = ", sort.as_ref()))
+                    .part(Part::Last(Binding::Arrow)),
+            );
+        }
+        let (theory, constant) = forgotten.theory;
+        let _ = parts
+            .text("](")
+            .piece(Binding::Arrow)
+            .text(") at Model ")
+            .named(String::from(theory.as_ref()), constant);
+        let pieces = Arity(parts.pieces);
+        self.forms.push(parts.parts);
+        tasks.push(Task::Join(writes(
+            Production("forget_model_expression"),
+            Join::Form {
+                pieces,
+                binding: Binding::Prefix,
+            },
+        )));
+        for &(_, carrier) in forgotten.sorts.iter().rev() {
+            tasks.push(Task::Visit {
+                node: carrier,
+                admits: Admits::ValueType,
+                depth,
+            });
+        }
+    }
+
+    /// Pushes the label an entry of a braced former is written after: `l : `
+    /// before a record type's field, `.l = ` before a record's, `l = ` before
+    /// a field a record update writes, `.i = ` before an injection's body.
+    ///
+    /// # Specification
+    /// - requires: nothing; a source may answer no label.
+    /// - ensures: one atom piece: the field label the source answers for `of`
+    ///   at `index`, or the summand `index` in decimal, then its separator; `?`
+    ///   in place of a label the source does not answer, a line cannot hold or,
+    ///   primed, ASCII cannot write, which makes the presentation approximate.
+    /// - provides: the labelled entries of records, updates and injections.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — record types and records of two fields, injections
+    ///   into the first and the third summand, and a table record that answers
+    ///   no label distinguish a swapped label, a wrong separator and a missing
+    ///   label claimed faithful.
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::n_ary_tuples_and_injections_spell_between_their_braces`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    #[spec(
+        captures: [entry = self.pieces.len(), fidelity = self.fidelity],
+        ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
+            && match *ret {
+                | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
+                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
+                | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
+                | Err(_) => false,
+            },
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a label the source does not answer, a malformed source, or a line or the \
+                      spelling cannot hold has no spelling"
+        )
+    )]
+    fn label<S>(
+        &mut self,
+        source: &S,
+        of: S::Node,
+        index: Component,
+        label: Label,
+    ) -> Result<(), PresentationError>
+    where
+        S: Source + ?Sized,
+    {
+        let spelled = match label {
+            Label::Summand => format!(".{} = ", usize::from(index)),
+            Label::Field | Label::Assignment | Label::Overwrite => {
+                let held = source.label(of, index);
+                let mut text: &str = held.as_ref().map_or("", AsRef::as_ref);
+                if let Some(reason) = unwritable(Name::from(text), self.spelling) {
+                    self.fidelity = Fidelity::Approximate;
+                    let _fresh = self.unspelled.insert(if text.is_empty() {
+                        Unspelled::Missing
+                    }
+                    else {
+                        reason
+                    });
+                    text = "?";
+                }
+                match label {
+                    Label::Field => format!("{text} : "),
+                    Label::Overwrite => format!("{text} = "),
+                    Label::Assignment | Label::Summand => format!(".{text} = "),
+                }
+            },
+        };
+        self.atom(Glyphs(spelled.as_str()))
+    }
+
+    /// A leaf naming the variable `index` binders out in `zone`: the open
+    /// binder it counts to, else the context binder past them, else `?`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name of the open binder of `zone` that `index` counts out
+    ///   to from the occurrence; past every open binder of the zone, an
+    ///   intuitionistic variable reads as the context binder it counts out to,
+    ///   innermost last, a recursive definition's own written with its claim,
+    ///   `name[<]` or `name[>]`; `?`, approximate and recorded unbound, for a
+    ///   linear variable past every open binder, one past the context, and a
+    ///   context binder the source cannot name, recorded primed for a context
+    ///   binder whose prime ASCII cannot write, and recorded exhausted when the
+    ///   generated names ran out.
+    /// - provides: the spelling of a bound variable and of an endpoint.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested binders distinguish reversed de Bruijn order
+    ///   and capture; a free variable reads its context binder's name and one
+    ///   past the context exposes a fabricated name. The fixtures do not open
+    ///   enough binders to exhaust the candidate counter.
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::a_binder_skips_the_names_the_type_mentions`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    #[spec(
+        captures: [entry = self.pieces.len(), fidelity = self.fidelity],
+        ensures: |ref ret| self.pieces.len() == entry
+            && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
+            && matches!(*ret, Ok(_) | Err(PresentationError::Build(_))),
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a variable past every open binder and the context, or a binder the \
+                      generated names ran out for, names no binder to spell"
+        )
+    )]
+    fn variable_leaf(
+        &mut self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Result<Doc, PresentationError>
+    {
+        let spelled = if let Some(position) = self.opened_at(zone, index) {
+            let _fresh = self.occurring.insert(position);
+            if self.hidden.contains(&position) {
+                self.note(Unspelled::Notation(Notation::Fixpoint));
+            }
+            match self.names.get(position.0) {
+                Some(&Some(ref name)) => Ok(name.0.clone()),
+                Some(&None) | None => Err(Unspelled::Exhausted),
+            }
+        }
+        else {
+            let position = self.context_position(zone, index);
+            match position.and_then(|at| self.context.get(at.0).copied().flatten()) {
+                Some(name) => match (unwritable(name, self.spelling), self.recursive) {
+                    // A recursive definition's call of itself writes its
+                    // claim.
+                    (None, Some(recursive))
+                        if position == Some(ContextPosition(usize::from(recursive.uniform))) =>
+                    {
+                        Ok(format!("{}{}", name.as_ref(), match recursive.claim {
+                            Recursion::Descends => "[<]",
+                            Recursion::Productive => "[>]",
+                        }))
+                    },
+                    (None, _) => Ok(String::from(name.as_ref())),
+                    (Some(Unspelled::Primed), _) => Err(Unspelled::Primed),
+                    (Some(_), _) => Err(Unspelled::Unbound),
+                },
+                None => Err(Unspelled::Unbound),
+            }
+        };
+        match spelled {
+            Ok(name) => self.leaf(Glyphs(name.as_str())),
+            Err(reason) => {
+                self.fidelity = Fidelity::Approximate;
+                let _fresh = self.unspelled.insert(reason);
+                self.leaf(Glyphs("?"))
+            },
+        }
+    }
+
+    /// Pushes the name the variable `index` binders out in `zone` reads as.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one piece: an atom holding [`Self::variable_leaf`]'s leaf,
+    ///   or, while a static redex substitutes arguments, the substituted
+    ///   argument's piece with its own binding.
+    /// - provides: the spelling of a bound variable.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::variable_leaf`].
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    #[spec(
+        captures: [entry = self.pieces.len(), fidelity = self.fidelity],
+        ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
+            && match *ret {
+                | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
+                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom || !self.substituted.is_empty()),
+                | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
+                | Err(_) => false,
+            },
+    )]
+    fn variable(
+        &mut self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Result<(), PresentationError>
+    {
+        if let Some(position) = self.opened_at(zone, index)
+            && let Some(argument) = self.substituted.get(&position)
+        {
+            self.pieces.push(argument.piece);
+            self.occurring.extend(argument.occurring.iter().copied());
+            return Ok(());
+        }
+        let doc = self.variable_leaf(zone, index)?;
+        self.pieces.push(Piece {
+            doc,
+            binding: Binding::Atom,
+            fields: None,
+        });
+        Ok(())
+    }
+
+    /// The name the variable `index` binders out in `zone` reads as where
+    /// the walk stands, when it has one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written_variable(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Option<String>
+    {
+        if let Some(position) = self.opened_at(zone, index) {
+            return self
+                .names
+                .get(position.0)?
+                .as_ref()
+                .map(|name| name.0.clone());
+        }
+        let position = self.context_position(zone, index)?;
+        self.context
+            .get(position.0)
+            .copied()
+            .flatten()
+            .map(|name| String::from(name.as_ref()))
+    }
+
+    /// The binder and the label a positional selection `node` reads by, when
+    /// it selects one field of a dependent record an open binder or a binder
+    /// of the context holds: `((r.1).1).0` reads the third field, `z` of
+    /// `*{x, y, z, f, g}`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the variable's node and the field's label when `node`
+    ///   projects an open binder that keeps a record's labels and no argument
+    ///   stands for, or a context binder whose type [`Source::context_types`]
+    ///   states as a dependent record, along `.1` to a field before the last
+    ///   and then `.0`, or along `.1` to the last; none for any other
+    ///   projection, a link of the record among them.
+    /// - provides: the label a selection off a dependent record is written by,
+    ///   which the surface reads back where a position would not.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a selection of the first, a middle and the last field
+    ///   each spell by their label, off an open binder and off a typed context
+    ///   binder; an untyped context binder keeps the position.
+    /// - witness: `tests::goldens::a_selection_off_a_dependent_record_spells_its_label_3971`
+    /// - witness: `tests::goldens::a_selection_off_a_context_binder_s_record_spells_its_label_4139`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|selected| matches!(source.read(node), Former::TupleProjection(..)) && !selected.1.is_empty()))]
+    fn selected<S>(
+        &self,
+        source: &S,
+        node: S::Node,
+    ) -> Option<(S::Node, String)>
+    where
+        S: Source + ?Sized,
+    {
+        // The projections, the outermost first.
+        let mut components = Vec::new();
+        let mut at = node;
+        let (zone, index) = loop {
+            if let Former::TupleProjection(target, component) = past_return(source, at) {
+                components.push(usize::from(component));
+                at = target;
+            }
+            else if let Former::Variable { zone, index } = past_return(source, at) {
+                break (zone, index);
+            }
+            else {
+                return None;
+            }
+        };
+        let owned;
+        let labels = if let Some(position) = self.opened_at(zone, index) {
+            if self.substituted.contains_key(&position) {
+                return None;
+            }
+            self.records.get(&position)?
+        }
+        else {
+            // A binder of the context the root stands under: its record is
+            // the type the source states for it.
+            let position = self.context_position(zone, index)?;
+            let record = source.context_types().get(position.0).copied().flatten()?;
+            owned = labels_of(source, record)?;
+            &owned
+        };
+        let last = labels.len().checked_sub(1_usize)?;
+        let (&outer, inner) = components.split_first()?;
+        if inner.iter().any(|&component| component != 1_usize) {
+            return None;
+        }
+        let field = match outer {
+            0_usize if inner.len() < last => inner.len(),
+            1_usize if inner.len().saturating_add(1_usize) == last => last,
+            _ => return None,
+        };
+        labels.get(field).map(|label| (at, label.0.clone()))
+    }
+
+    /// The path a call supplies the model implicit `slot` by, given the
+    /// arguments it passes for its components.
+    ///
+    /// # Specification
+    /// - requires: `supplied` holds one argument per component of `slot`, in
+    ///   signature order.
+    /// - ensures: the path `P` when the argument for each component `x` that is
+    ///   no sort reads as `P.x`, a constant of that name or a variable the walk
+    ///   names so, every one under the same `P` and at least one such
+    ///   component; nothing otherwise. A sort's argument is the type the model
+    ///   defines it as, which no path names, and is not read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's members and a model implicit's own
+    ///   components each read as their path; a member of another module among
+    ///   them reads as none.
+    /// - witness: `tests::goldens::a_call_supplies_a_model_implicit_by_its_path_2364`
+    #[spec(requires: supplied.len() == slot.components.len())]
+    fn supply_path<S>(
+        &self,
+        source: &S,
+        slot: &ModelSlot<'_, S::Node>,
+        supplied: &[S::Node],
+    ) -> Option<String>
+    where
+        S: Source + ?Sized,
+    {
+        let mut path: Option<String> = None;
+        for (&(component, sort), &node) in slot.components.iter().zip(supplied) {
+            if sort {
+                continue;
+            }
+            let read = source.read(node);
+            let written = if let Former::Constant(name) = read {
+                String::from(name.as_ref())
+            }
+            else if let Former::Variable { zone, index } = read {
+                self.written_variable(zone, index)?
+            }
+            else {
+                return None;
+            };
+            let prefix = written
+                .strip_suffix(component.as_ref())?
+                .strip_suffix('.')?;
+            match path {
+                None => path = Some(String::from(prefix)),
+                Some(ref held) if held == prefix => {},
+                Some(_) => return None,
+            }
+        }
+        path
+    }
+
+    /// Whether a projection off `target` is the printer's notation
+    /// ([`Notation::Labelled`]): the source states the binder's type as no
+    /// record type, or does not state it.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: [`Unrecorded`] exactly when `target`, past a return, reads as
+    ///   a variable whose open binder [`Self::unrecorded`] holds, or as a
+    ///   variable no open binder holds whose context binder
+    ///   [`Source::context_types`] states no type for, or a type that
+    ///   [`unrecorded`] answers; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause reads the source's stated types, which a
+    ///   predicate would read again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a projection off a parameter of a computed type is
+    ///   held as notation, and one off a parameter of a record type reads back.
+    /// - witness: `tests::goldens::a_labelled_selection_off_a_binder_of_no_record_type_is_notation_6084`
+    fn unrecorded_binder<S>(
+        &self,
+        source: &S,
+        target: S::Node,
+    ) -> Option<Unrecorded>
+    where
+        S: Source + ?Sized,
+    {
+        let Former::Variable { zone, index } = past_return(source, target)
+        else {
+            return None;
+        };
+        if let Some(position) = self.opened_at(zone, index) {
+            return self.unrecorded.contains(&position).then_some(Unrecorded);
+        }
+        let position = self.context_position(zone, index)?;
+        source
+            .context_types()
+            .get(position.0)
+            .copied()
+            .flatten()
+            .map_or(Some(Unrecorded), |stated| unrecorded(source, stated))
+    }
+
+    /// The position among the open binders of the one of `zone` that `index`
+    /// counts out to, if one is open.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opened_at(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Option<OpenBinders>
+    {
+        let mut remaining = usize::try_from(u32::from(index)).unwrap_or(usize::MAX);
+        for (position, &open) in self.opened.iter().enumerate().rev() {
+            if open != zone {
+                continue;
+            }
+            if remaining == 0_usize {
+                return Some(OpenBinders(position));
+            }
+            remaining = remaining.saturating_sub(1_usize);
+        }
+        None
+    }
+
+    /// How `former`, ending a loop's pass, is written.
+    ///
+    /// The loop's own binder forced is `continue`, and so is the loop's own
+    /// binder applied to what a pass hands on: in a `for` loop the remaining
+    /// tail, and in a threading loop the slots it holds again. A split of unit
+    /// going on with the loop's rest is a bare `break`. A returner is
+    /// written `break(v)` where the loop ends the body and `return v` where a
+    /// rest follows it, a call `become c`, and a bind or a case runs the path
+    /// on into its rest or its branches. An exit written in a handler's
+    /// subject leaves the handler, not the body the loop stands in, so there
+    /// only `break(v)` and `continue` are written.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`PassEnd::Continue`] exactly for a force of an
+    ///   intuitionistic variable whose open binder is the innermost loop's own
+    ///   where its pass hands on nothing ([`Pass::Nothing`]), and for the
+    ///   application of such a force to what the innermost loop's pass hands
+    ///   on: the variable whose open binder is a `for` loop's tail, the linear
+    ///   variable whose open binder holds a threading loop's one slot, or the
+    ///   tuple of the linear variables whose open binders hold its slots, in
+    ///   order; [`PassEnd::Break`] for a split of unit over no binder where the
+    ///   innermost loop's breaks go on with its rest ([`LoopBinder::Own`]);
+    ///   [`PassEnd::Written`] for a loop [`looped`] reads there, a bind, a case
+    ///   of any kind, a returner ending a loop no rest follows, inside a
+    ///   handler subject of a body a reset delimits a shift over a returner,
+    ///   and outside every handler subject a returner and any other call;
+    ///   [`PassEnd::Unwritten`] otherwise.
+    /// - provides: the formers a pass's end writes, the rest noted as the
+    ///   fixpoint's notation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pass ending in `continue` in a `loop`, a `for` and
+    ///   a `while` threading one slot and two, `break(v)`, `return v`, a bare
+    ///   `break` a rest follows and `become c`, one naming the loop's binder,
+    ///   one ending in another loop whose rest continues the first, and a
+    ///   `return` leaving a handler.
+    /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_return_leaving_a_handler_prints_as_written_941`
+    /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+    #[spec(ensures: |ret| (ret != PassEnd::Continue && ret != PassEnd::Break) || !self.loops.is_empty())]
+    fn pass_end<S>(
+        &self,
+        source: &S,
+        node: S::Node,
+        former: &Former<'_, S::Node>,
+    ) -> PassEnd
+    where
+        S: Source + ?Sized,
+    {
+        // A loop ending a pass is written, its rest ending the pass in turn.
+        if looped(source, node, Admits::Computation(Tail::Passes)).is_some() {
+            return PassEnd::Written;
+        }
+        let outside = self.subjects == 0_usize;
+        let innermost = self.loops.last().copied();
+        let rest = innermost.is_some_and(|looping| looping.rest);
+        if innermost.is_some_and(|looping| looping.breaks)
+            && let Some(Break::Rest(_)) = broken(source, node)
+        {
+            return PassEnd::Break;
+        }
+        // Whether `node` reads as the variable in `zone` whose open binder is
+        // at `position`.
+        let names = |node, zone: Zone, position: OpenBinders| {
+            if let Former::Variable { zone: read, index } = source.read(node) {
+                read == zone && self.opened_at(zone, index) == Some(position)
+            }
+            else {
+                false
+            }
+        };
+        let own = innermost.map(|looping| looping.own);
+        let pass = innermost.map_or(Pass::Nothing, |looping| looping.pass);
+        let forces_own = |forced| own.is_some_and(|own| names(forced, Zone::Intuitionistic, own));
+        let written = if let Former::Force(forced) = *former {
+            if pass == Pass::Nothing && forces_own(forced) {
+                return PassEnd::Continue;
+            }
+            false
+        }
+        else if let Former::Return(_) = *former {
+            outside || !rest
+        }
+        else if let Former::Shift(returned) = *former {
+            // A `return` a handled subject writes in the body a reset
+            // delimits leaves the handler and the loop alike.
+            self.unwinds > 0_usize
+                && self.subjects > 0_usize
+                && matches!(source.read(returned), Former::Return(_))
+        }
+        else if let Former::Application(function, argument) = *former {
+            let handed = match pass {
+                Pass::Nothing => false,
+                Pass::Tail(tail) => names(argument, Zone::Intuitionistic, tail),
+                Pass::Slots {
+                    first,
+                    count: 1_usize,
+                } => names(argument, Zone::Linear, first),
+                Pass::Slots { first, count } => {
+                    matches!(source.read(argument), Former::Tuple(arity) if usize::from(arity) == count)
+                        && (0_usize .. count).all(|component| {
+                            source
+                                .component(argument, Component::from(component))
+                                .is_some_and(|slot| {
+                                    names(
+                                        slot,
+                                        Zone::Linear,
+                                        OpenBinders(first.0.saturating_add(component)),
+                                    )
+                                })
+                        })
+                },
+            };
+            if handed
+                && let Former::Force(forced) = source.read(function)
+                && forces_own(forced)
+            {
+                return PassEnd::Continue;
+            }
+            outside
+        }
+        else {
+            matches!(
+                *former,
+                Former::Bind(..)
+                    | Former::Case { .. }
+                    | Former::DataCase { .. }
+                    | Former::Split { .. }
+                    | Former::ListCase { .. }
+            )
+        };
+        if written {
+            PassEnd::Written
+        }
+        else {
+            PassEnd::Unwritten
+        }
+    }
+
+    /// The position in the context, outermost first, of the binder an
+    /// intuitionistic variable `index` binders out counts out to past every
+    /// open binder of its zone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: none for a variable an open binder of `zone` takes, for a
+    ///   linear variable and for one past the context; otherwise the position
+    ///   of the context binder it names, counted from the outermost.
+    /// - provides: the context binder a variable reads as, and whether it is a
+    ///   recursive definition's own.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::variable_leaf`]: a free variable reads its
+    ///   context binder's name and one past the context reads none.
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    #[spec(ensures: |ret| ret.is_none_or(|at| at.0 < self.context.len()))]
+    fn context_position(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Option<ContextPosition>
+    {
+        if zone != Zone::Intuitionistic || self.opened_at(zone, index).is_some() {
+            return None;
+        }
+        let open = self.opened.iter().filter(|&&open| open == zone).count();
+        let remaining = usize::try_from(u32::from(index))
+            .unwrap_or(usize::MAX)
+            .saturating_sub(open);
+        let position = self
+            .context
+            .len()
+            .checked_sub(remaining)?
+            .checked_sub(1_usize)?;
+        Some(ContextPosition(position))
+    }
+
+    /// How many uniform parameters a call headed by `head` passes as
+    /// themselves before its own arguments.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the recursive definition's [`Recursive::uniform`] when the
+    ///   walk presents its body and `head` forces an intuitionistic variable
+    ///   naming the context binder at that position, its own; zero otherwise.
+    /// - provides: the leading arguments a call of the definition writes, which
+    ///   the lowering reads as the parameters bound outside its fixpoint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of the definition under one and two uniform
+    ///   parameters, and a call of a uniform parameter itself, distinguish the
+    ///   definition's own binder from the binders before it.
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    #[spec(ensures: |ret| ret.0 == 0_usize
+        || self.recursive.is_some_and(|recursive| usize::from(recursive.uniform) == ret.0))]
+    fn uniform<S>(
+        &self,
+        source: &S,
+        head: S::Node,
+    ) -> Arity
+    where
+        S: Source + ?Sized,
+    {
+        let Some(recursive) = self.recursive
+        else {
+            return Arity(0_usize);
+        };
+        let Former::Force(forced) = source.read(head)
+        else {
+            return Arity(0_usize);
+        };
+        let own = usize::from(recursive.uniform);
+        if self.binder_of(source, forced) == Some(ContextPosition(own)) {
+            Arity(own)
+        }
+        else {
+            Arity(0_usize)
+        }
+    }
+
+    /// The context binder `node` reads as, when it is a variable naming one.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: [`Self::context_position`] of the variable `node` reads as;
+    ///   none for any other node.
+    /// - provides: the head of a call of a recursive definition, and an
+    ///   argument the call passes as the parameter itself.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::uniform`].
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    /// - witness: `tests::goldens::a_recursive_call_omits_the_instance_it_passes_as_itself_4102`
+    #[spec(ensures: |ret| ret.is_none_or(|at| at.0 < self.context.len()))]
+    fn binder_of<S>(
+        &self,
+        source: &S,
+        node: S::Node,
+    ) -> Option<ContextPosition>
+    where
+        S: Source + ?Sized,
+    {
+        let Former::Variable { zone, index } = source.read(node)
+        else {
+            return None;
+        };
+        self.context_position(zone, index)
+    }
+
+    /// Pushes the name of the context binder at `position`, outermost first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one atom piece: the binder's name as [`Self::name`] writes
+    ///   it, or `?`, approximate and recorded unbound, for a position past the
+    ///   context and a binder the source cannot name.
+    /// - provides: a uniform parameter a recursive definition's call passes as
+    ///   itself.
+    /// - fails: as [`Self::name`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::name`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::uniform`].
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| ret.is_err() || entry.checked_add(1_usize) == Some(self.pieces.len()),
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a position past the context, or a binder the source cannot name, names \
+                      no binder to spell"
+        )
+    )]
+    fn context_binder(
+        &mut self,
+        position: ContextPosition,
+    ) -> Result<(), PresentationError>
+    {
+        match self.context.get(position.0).copied().flatten() {
+            Some(name) => self.name(name, None),
+            None => self.unspell(Unspelled::Unbound),
+        }
+    }
+
+    /// Opens one binder for each of the top `arity` pieces, the deepest
+    /// outermost, each standing for its piece and carrying the occurrences its
+    /// spelling named, which the [`Task::Hold`] before each argument set apart.
+    ///
+    /// # Specification
+    /// - requires: nothing; a stack holding fewer pieces, or fewer held sets
+    ///   than the arguments and the occurrences around them, is reported as
+    ///   unbalanced.
+    /// - ensures: the pieces removed, `arity` intuitionistic binders opened,
+    ///   and each opened binder's position mapped to its piece and to the
+    ///   occurrences its argument named; the occurrences around the arguments
+    ///   restored, so an argument's occurrences count only where the reduct
+    ///   reads its binder (#736).
+    /// - provides: the binders a redex's reduct is walked under.
+    /// - fails: as [`Self::take`], and [`PresentationError::Unbalanced`] for a
+    ///   missing held set.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a redex of one and of two arguments, each argument
+    ///   occurring in the reduct, observe the order the binders open in; a
+    ///   called literal that drops its argument and one that returns it
+    ///   separate a binder named by the dropped argument from one the reduct
+    ///   names.
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
+    #[spec(
+        captures: [opened = self.opened.len()],
+        ensures: |ref ret| ret.is_err() || self.opened.len() == opened.saturating_add(arity.0),
+    )]
+    fn substitute(
+        &mut self,
+        arity: Arity,
+    ) -> Result<(), PresentationError>
+    {
+        let arguments = self.take(arity)?;
+        // The last argument's occurrences are the current set; each earlier
+        // one's was set aside by the hold before the argument after it, and
+        // the occurrences around them all by the first hold.
+        let mut named = Vec::with_capacity(arguments.len());
+        named.push(core::mem::take(&mut self.occurring));
+        for _ in 1_usize .. arguments.len() {
+            named.push(self.held.pop().ok_or(PresentationError::Unbalanced)?);
+        }
+        self.occurring = self.held.pop().ok_or(PresentationError::Unbalanced)?;
+        for (piece, occurring) in arguments.into_iter().zip(named.into_iter().rev()) {
+            let position = self.opened.len();
+            let _fresh = self
+                .substituted
+                .insert(OpenBinders(position), Substituted { piece, occurring });
+            let _named = self.occurring.remove(&OpenBinders(position));
+            self.openings.close(OpenBinders(position));
+            if self.names.len() <= position {
+                self.names.resize(position.saturating_add(1_usize), None);
+            }
+            if let Some(slot) = self.names.get_mut(position) {
+                *slot = None;
+            }
+            self.opened.push(Zone::Intuitionistic);
+        }
+        Ok(())
+    }
+
+    /// The finished piece on top of the stack.
+    ///
+    /// # Specification
+    /// - requires: nothing; an empty stack is reported as unbalanced.
+    /// - ensures: the top piece, removed.
+    /// - provides: every join's operands.
+    /// - fails: an empty stack, which the walk's own scheduling excludes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Unbalanced`] on an empty stack.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite composite spellings expose reordered operands;
+    ///   an incomplete join and an empty stack expose a swallowed underflow.
+    /// - witness: `tests::goldens::pair_of_injections_pins_sum_notation`
+    /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
+    #[spec(
+        captures: [entry = self.pieces.len(), top = self.pieces.last().copied()],
+        ensures: |ref ret| match *ret {
+            | Ok(piece) => top.is_some_and(|held| held.doc == piece.doc && held.binding == piece.binding)
+                && self.pieces.len().checked_add(1_usize) == Some(entry),
+            | Err(PresentationError::Unbalanced) => entry == 0_usize && self.pieces.is_empty(),
+            | Err(_) => false,
+        },
+    )]
+    fn pop(&mut self) -> Result<Piece, PresentationError>
+    {
+        self.pieces.pop().ok_or(PresentationError::Unbalanced)
+    }
+
+    /// The top `arity` finished pieces, in the order they were finished.
+    ///
+    /// # Specification
+    /// - requires: nothing; a stack holding fewer is reported as unbalanced.
+    /// - ensures: the top `arity` pieces, removed, the deepest first.
+    /// - provides: the operands of a join over a counted list.
+    /// - fails: a stack holding fewer than `arity`, which the walk's own
+    ///   scheduling excludes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Unbalanced`] on a stack holding fewer than
+    /// `arity`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sugared goldens' chains and tuples of two and
+    ///   three expose reordered operands.
+    /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| match *ret {
+            | Ok(ref taken) => taken.len() == arity.0 && self.pieces.len().checked_add(arity.0) == Some(entry),
+            | Err(PresentationError::Unbalanced) => entry < arity.0,
+            | Err(_) => false,
+        },
+    )]
+    fn take(
+        &mut self,
+        arity: Arity,
+    ) -> Result<Vec<Piece>, PresentationError>
+    {
+        let start = self
+            .pieces
+            .len()
+            .checked_sub(arity.0)
+            .ok_or(PresentationError::Unbalanced)?;
+        Ok(self.pieces.split_off(start))
+    }
+
+    /// The arrows and the codomain of the value-function alias the thunk type
+    /// over `body` may be: `body` a chain of arrows, none or more, ending in a
+    /// pure returner.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the arrows from `body` down, outermost first, each with its
+    ///   domain and, for a dependent arrow, the arrow itself, marked in the
+    ///   dependent set; and the codomain: the value type the returner they end
+    ///   in returns, or, when the chain reaches its returner through a static
+    ///   redex — an abstraction applied to as many arguments as it binds, which
+    ///   prints as its reduct — the redex, whose reduct holds no further arrow.
+    ///   A decode and a quote are read through, as they print. Whether a
+    ///   dependent arrow's binder occurs is known only once the walk spelled
+    ///   the arrows after it, so the join decides between the alias and the
+    ///   thunk (#736). None when a link is anything else — an effectful
+    ///   returner, an arrow under a redex, a dependent arrow past the
+    ///   sixty-fourth link, a missing or misplaced node — when every link is no
+    ///   dependent arrow, every domain classifies codes and so does the
+    ///   codomain, which the lowering reads written as `A -> B` as the static
+    ///   Pi, or the walk's remaining visits run out first. Every link read is
+    ///   one visit spent.
+    /// - provides: the shape `+U (A1 -> … -> An -> -F C)` the alias `(A1, …,
+    ///   An) => C` stands for, which the lowering reads back to the same type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each round reads one link and spends one remaining visit, and the loop
+    /// stops when none is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sugared goldens spell the alias at no, one and
+    ///   two domains, over a domain and a codomain that are themselves aliases,
+    ///   over a codomain a static redex returns, and keep the thunk over a
+    ///   dependent arrow whose binder occurs; a dependent arrow whose binder
+    ///   only a dropped argument names takes the alias; a source that becomes a
+    ///   cycle of thunks over returners after its scan stays within the walk's
+    ///   reads.
+    /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `tests::goldens::a_box_over_a_type_keeps_its_thunk_4853`
+    /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
+    /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+    ///
+    /// # Cost
+    /// - allocation: the chain's links, growth within the walk's remaining
+    ///   visits
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ret| self.remaining <= entry
+            && ret.as_ref().is_none_or(|found| u32::try_from(found.0.len()).is_ok_and(|links| links < entry)),
+    )]
+    fn alias<S>(
+        &mut self,
+        source: &S,
+        body: S::Node,
+    ) -> Option<AliasChain<S::Node>>
+    where
+        S: Source + ?Sized,
+    {
+        let mut links = Vec::new();
+        let mut dependent = Dependent(0_u64);
+        let mut link = body;
+        // The first redex the chain entered, whose reduct the codomain is.
+        let mut entered = None;
+        while let Some(left) = self.remaining.checked_sub(1_u32) {
+            self.remaining = left;
+            match source.read(link) {
+                Former::Arrow { domain, codomain } => {
+                    if entered.is_some() {
+                        return None;
+                    }
+                    links.push(Link {
+                        domain,
+                        opener: None,
+                    });
+                    link = codomain;
+                },
+                Former::Pi { domain, codomain } => {
+                    if entered.is_some() {
+                        return None;
+                    }
+                    let bit = 1_u64.checked_shl(u32::try_from(links.len()).ok()?)?;
+                    dependent = Dependent(dependent.0 | bit);
+                    links.push(Link {
+                        domain,
+                        opener: Some(link),
+                    });
+                    link = codomain;
+                },
+                Former::Returner(result) => {
+                    // The bare spelling `(A1, …, An) -> C` reads as the static
+                    // Pi when every domain and the codomain classify codes. A
+                    // reduct's spelling is not read here, so it counts as one
+                    // that classifies codes, and the box keeps its thunk. A
+                    // chain with no arrow reads no operand.
+                    let first = if !links.is_empty()
+                        && (entered.is_some()
+                            || classifies_codes(source, result) == Classifies::Codes)
+                        && links
+                            .iter()
+                            .all(|link| classifies_codes(source, link.domain) == Classifies::Codes)
+                    {
+                        Classifies::Codes
+                    }
+                    else {
+                        Classifies::Values
+                    };
+                    let kinded = first == Classifies::Codes
+                        && links.iter().all(|link| link.opener.is_none());
+                    if kinded {
+                        return None;
+                    }
+                    return Some((
+                        links,
+                        dependent,
+                        entered.map_or(Codomain::Result(result), Codomain::Reduct),
+                        first,
+                    ));
+                },
+                // A decode and a quote print as the node they hold, so the
+                // chain reads on through them as the spelling does.
+                Former::ComputationElement(child) | Former::QuoteComputation(child) => {
+                    link = child;
+                },
+                // A redex prints as its reduct: the abstraction's body once
+                // every binder it opens takes an argument.
+                Former::StaticApplication(mut operator, _) => {
+                    let mut arguments = 1_usize;
+                    while let Former::StaticApplication(inner, _) = source.read(operator) {
+                        self.remaining = self.remaining.checked_sub(1_u32)?;
+                        arguments = arguments.saturating_add(1_usize);
+                        operator = inner;
+                    }
+                    for _ in 0_usize .. arguments {
+                        self.remaining = self.remaining.checked_sub(1_u32)?;
+                        let Former::StaticLambda(reduct) = source.read(operator)
+                        else {
+                            return None;
+                        };
+                        operator = reduct;
+                    }
+                    entered = entered.or(Some(link));
+                    link = operator;
+                },
+                Former::Reify
+                | Former::Stack(..)
+                | Former::With(..)
+                | Former::Returns(_)
+                | Former::ListNil
+                | Former::ListCons(..)
+                | Former::PathUniverse(..)
+                | Former::PathRefl(_)
+                | Former::PathEquiv(..)
+                | Former::PathProduct(..)
+                | Former::BaseType(_)
+                | Former::BufferType
+                | Former::QubitType
+                | Former::RowType
+                | Former::Row { .. }
+                | Former::Product(_)
+                | Former::Sum(_)
+                | Former::RecordType(_)
+                | Former::Patched(..)
+                | Former::ThunkType(_)
+                | Former::Universe { .. }
+                | Former::Element(_)
+                | Former::Abstract(_)
+                | Former::Member(_)
+                | Former::StaticPi { .. }
+                | Former::Sigma { .. }
+                | Former::Capability { .. }
+                | Former::Session { .. }
+                | Former::EffectfulReturner { .. }
+                | Former::List(_)
+                | Former::Variable { .. }
+                | Former::Constant(_)
+                | Former::Unit
+                | Former::Literal(_)
+                | Former::Tuple(_)
+                | Former::Record(_)
+                | Former::RecordUpdate(..)
+                | Former::Injection(..)
+                | Former::Thunk(_)
+                | Former::Quote(_)
+                | Former::StaticLambda(_)
+                | Former::Here(_)
+                | Former::Funext(..)
+                | Former::Equiv(..)
+                | Former::Univalence(_)
+                | Former::SessionRelated(..)
+                | Former::Stay(_)
+                | Former::Then(..)
+                | Former::Step(..)
+                | Former::Back(_)
+                | Former::Cong(..)
+                | Former::FlowProduct(..)
+                | Former::Forward(_)
+                | Former::FunctionFlow(..)
+                | Former::RunType(_)
+                | Former::PrefixType(_)
+                | Former::DialogueType(_)
+                | Former::WebType
+                | Former::Dialogue { .. }
+                | Former::Web(_)
+                | Former::Decompose(_)
+                | Former::Return(_)
+                | Former::Bind(..)
+                | Former::BindAll { .. }
+                | Former::Force(_)
+                | Former::Application(..)
+                | Former::Lambda(_)
+                | Former::LinearLambda(_)
+                // The box `(A1, …, An) -> C` is a thunked chain of plain and
+                // dependent arrows; a linear arrow in the chain has no box.
+                | Former::LinearArrow { .. }
+                | Former::Nested(_)
+                | Former::Run(_)
+                | Former::Ua { .. }
+                | Former::Compose { .. }
+                | Former::Fill { .. }
+                | Former::Path { .. }
+                | Former::Bridge { .. }
+                | Former::Data { .. }
+                | Former::Codata { .. }
+                | Former::Constructor { .. }
+                | Former::Flow { .. }
+                | Former::Relation { .. }
+                | Former::Model { .. }
+                | Former::Recorded { .. }
+                | Former::Returned(_)
+                | Former::Primitive { .. }
+                | Former::Transport(..)
+                | Former::PathTransport { .. }
+                | Former::TelescopeTransport { .. }
+                | Former::Ride { .. }
+                | Former::Fixpoint(_)
+                | Former::Case { .. }
+                | Former::Split { .. }
+                | Former::DataCase { .. }
+                | Former::RecordProjection(..)
+                | Former::TupleProjection(..)
+                | Former::ListFold { .. }
+                | Former::ListCase { .. }
+                | Former::Perform { .. }
+                | Former::Handle { .. }
+                | Former::Exercise { .. }
+                | Former::Scope { .. }
+                | Former::Resume(..)
+                | Former::Abandon(_)
+                | Former::Reset(_)
+                | Former::Shift(_)
+                | Former::Lazy(..)
+                | Former::Ascription { .. }
+                | Former::Annotated { .. }
+                | Former::Project(..)
+                | Former::Send { .. }
+                | Former::Receive { .. }
+                | Former::Place { .. }
+                | Former::Select { .. }
+                | Former::Offer { .. }
+                | Former::Close(_)
+                | Former::Fork { .. }
+                | Former::Hold { .. }
+                | Former::Access { .. }
+                | Former::ResumeView { .. }
+                | Former::AbortView(_)
+                | Former::ConsumeHeld(_)
+                | Former::Located { .. }
+                | Former::Kept { .. }
+                | Former::Staged { .. }
+                | Former::WorldHold(_)
+                | Former::Leta { .. }
+                | Former::Migrate { .. }
+                | Former::Unreadable(_) => return None,
+            }
+        }
+        None
+    }
+
+    /// Push the tasks that write `chain`, the arrows and the codomain
+    /// [`Walk::alias`] read, as the box `(A1, …, An) -> C`:
+    /// the join, an unbind for each dependent arrow, the codomain, then each
+    /// domain under the binders before it, so the domains are visited first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn aliased<N>(
+        (links, dependent, codomain, first): AliasChain<N>,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<N>>,
+    )
+    {
+        tasks.push(Task::Join(writes(
+            Production("function_type"),
+            writes(
+                Production("parenthesized_type"),
+                Join::ValueFunction(Arity(links.len()), dependent, first),
+            ),
+        )));
+        for _ in 0_u32 .. dependent.0.count_ones() {
+            tasks.push(Task::Unbind);
+        }
+        tasks.push(match codomain {
+            Codomain::Result(node) => Task::Visit {
+                node,
+                admits: Admits::ValueType,
+                depth,
+            },
+            Codomain::Reduct(node) => Task::Returned { node, depth },
+        });
+        for link in links.into_iter().rev() {
+            if link.opener.is_some() {
+                tasks.push(Task::Bind(Binds::ONE.zone, link.opener));
+            }
+            tasks.push(Task::Visit {
+                node: link.domain,
+                admits: Admits::ValueType,
+                depth,
+            });
+        }
+    }
+
+    /// The dependent box, `(a : A, B) -> C`, over its spelled
+    /// domains and codomain: the spelling of an alias chain where an
+    /// occurrence named a dependent arrow's binder, the grammar's sugar for
+    /// `+U ((a : A) -> B -> -F C)`.
+    ///
+    /// # Specification
+    /// - requires: `domains` are the chain's arrows' domains, outermost first,
+    ///   `dependent` marks the dependent ones, and their binders, closed, sat
+    ///   from the open count up, one per dependent arrow in order; `first`
+    ///   tells whether the bare spelling reads as the static Pi.
+    /// - ensures: the domains between parentheses, separated by commas, each
+    ///   written as the walk writes its arrow alone: a dependent domain as `a :
+    ///   A`, named by its binder, where an occurrence named it, the walk
+    ///   approximated, or it is the first and the bare spelling reads as the
+    ///   static Pi; bare otherwise; then `->` and the codomain.
+    /// - provides: the alias join's dependent spelling, which decides only once
+    ///   every occurrence was met.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sugared golden writes the alias over a dependent
+    ///   arrow its codomain names, a chain mixing a named and a bare domain
+    ///   reads back to the thunk it stands for, and the #736 golden names a
+    ///   binder the reduct reads.
+    /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
+    /// - witness: `tests::goldens::a_dependent_alias_names_each_binder_its_codomain_reads_800`
+    /// - witness: `tests::goldens::a_binder_only_a_dropped_argument_names_is_unnamed_736`
+    #[spec(ensures: |ref ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(_, binding)| binding == Binding::Arrow))]
+    fn dependent_alias(
+        &mut self,
+        domains: &[Piece],
+        dependent: Dependent,
+        first: Classifies,
+        codomain: Piece,
+    ) -> Result<(Doc, Binding), PresentationError>
+    {
+        let open = self.opened.len();
+        let mut binders = usize::try_from(dependent.0.count_ones())
+            .ok()
+            .ok_or(PresentationError::Unbalanced)?;
+        let mut entries = Vec::with_capacity(domains.len());
+        for (at, &domain) in domains.iter().enumerate().rev() {
+            let bit = u32::try_from(at)
+                .ok()
+                .and_then(|at| 1_u64.checked_shl(at))
+                .unwrap_or(0_u64);
+            let named = if dependent.0 & bit == 0_u64 {
+                None
+            }
+            else {
+                binders = binders.saturating_sub(1_usize);
+                let position = OpenBinders(open.saturating_add(binders));
+                // A bare spelling whose domains and codomain classify codes,
+                // `(Type) -> Type`, reads as the static Pi. The first binder
+                // keeps its name there.
+                let spelled = self.fidelity != Fidelity::Faithful
+                    || self.occurring.contains(&position)
+                    || (at == 0_usize && first == Classifies::Codes);
+                if !spelled {
+                    self.openings.leave_out(position);
+                }
+                spelled.then_some(OpenBinders(binders))
+            };
+            let doc = if let Some(offset) = named {
+                let binder = self.binder(offset)?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                self.builder.concat_all(&[binder, colon, domain.doc])?
+            }
+            else {
+                domain.doc
+            };
+            entries.push(Piece {
+                doc,
+                binding: domain.binding,
+                fields: None,
+            });
+        }
+        entries.reverse();
+        let domain = self.listed(&entries)?;
+        let arrow = self.leaf(Glyphs(" ->"))?;
+        let head = self.builder.concat(domain, arrow)?;
+        let head = self.space_or_break(head)?;
+        let codomain = self.bare_up_to(codomain, Binding::Relation)?;
+        Ok((self.builder.concat(head, codomain)?, Binding::Arrow))
+    }
+
+    /// The computation and the value type of the typed bind whose bound
+    /// computation is `bound`, when it is one: `bound` the ascription of a
+    /// computation to a returner `-F A`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the ascribed computation and `A` when `bound` reads as an
+    ///   ascription to a pure returner; none when any link is anything else or
+    ///   the walk's remaining visits run out first. Every link read is one
+    ///   visit spent, so a recognised bind spends exactly two.
+    /// - provides: the shape the lowering gives `let x : A = c ; rest`, which
+    ///   the printer spells back as written.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lowered typed bind spells as its source, and an
+    ///   ascription outside that shape stands as its body.
+    /// - witness: `tests::goldens::a_typed_bind_spells_as_written`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ref ret| self.remaining <= entry
+            && (ret.is_none() || self.remaining.checked_add(2_u32) == Some(entry)),
+    )]
+    fn typed_bind<S>(
+        &mut self,
+        source: &S,
+        bound: S::Node,
+    ) -> Option<(S::Node, S::Node)>
+    where
+        S: Source + ?Sized,
+    {
+        let mut read = |node| {
+            self.remaining = self.remaining.checked_sub(1_u32)?;
+            Some(source.read(node))
+        };
+        let Former::Ascription { body, ty } = read(bound)?
+        else {
+            return None;
+        };
+        let Former::Returner(result) = read(ty)?
+        else {
+            return None;
+        };
+        Some((body, result))
+    }
+
+    /// The value and the value type of the annotated return `node` is, when
+    /// it is one: `node` the ascription of a return of a value to a returner
+    /// `-F A`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: the returned value and `A` when `node` reads as an ascription
+    ///   to a pure returner of a return; none when any link is anything else or
+    ///   the walk's remaining visits run out first. Every link read is one
+    ///   visit spent, so a recognised return spends exactly three.
+    /// - provides: the shape the lowering gives `return (v : A)`, `pure (v :
+    ///   A)` and a tail `(v : A)`, which the printer spells back as written.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an annotated return at a body's end and one under a
+    ///   `pure` each spell as written.
+    /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ref ret| self.remaining <= entry
+            && (ret.is_none() || self.remaining.checked_add(3_u32) == Some(entry)),
+    )]
+    fn ascribed_return<S>(
+        &mut self,
+        source: &S,
+        node: S::Node,
+    ) -> Option<(S::Node, S::Node)>
+    where
+        S: Source + ?Sized,
+    {
+        let (body, result) = self.typed_bind(source, node)?;
+        self.remaining = self.remaining.checked_sub(1_u32)?;
+        let Former::Return(value) = source.read(body)
+        else {
+            return None;
+        };
+        Some((value, result))
+    }
+
+    /// The stated type and the body of the lambda whose body is `body`, when
+    /// its parameter states its type: `body` the bind of the parameter
+    /// returned and ascribed the returner `-F A`, `(return #0 : -F A) to _.
+    /// rest`, whose `rest` never reads the bind's binder.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: `A` and `rest` when `body` reads as that bind and `rest`
+    ///   reads the lambda's binder alone; none when any link is anything else,
+    ///   when `rest` reads the bind's binder, or when the walk's remaining
+    ///   visits run out first. Every link read is one visit spent, so a
+    ///   recognised parameter spends exactly five.
+    /// - provides: the shape the lowering gives `fun (x : A) { rest }`, which
+    ///   the printer spells back as written (#3943).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda stating its parameter's type, one whose bind
+    ///   holds another value and one whose body reads the bind's binder
+    ///   distinguish the stated parameter from a statement the body writes.
+    /// - witness: `tests::goldens::a_stated_parameter_spells_as_written_3943`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ref ret| self.remaining <= entry
+            && (ret.is_none() || self.remaining.checked_add(5_u32) == Some(entry)),
+    )]
+    fn stated_parameter<S>(
+        &mut self,
+        source: &S,
+        body: S::Node,
+        admits: Admits,
+    ) -> Option<(S::Node, S::Node)>
+    where
+        S: Source + ?Sized,
+    {
+        self.remaining = self.remaining.checked_sub(1_u32)?;
+        let Former::Bind(bound, rest) = source.read(body)
+        else {
+            return None;
+        };
+        let (value, stated) = self.ascribed_return(source, bound)?;
+        self.remaining = self.remaining.checked_sub(1_u32)?;
+        let Former::Variable {
+            zone: Zone::Intuitionistic,
+            index,
+        } = source.read(value)
+        else {
+            return None;
+        };
+        (u32::from(index) == 0_u32
+            && reads_binders(source, rest, admits, Arity(1_usize)) == Reading::Unread)
+            .then_some((stated, rest))
+    }
+
+    /// The former of the eliminator `body`, when an ascription over it writes
+    /// its answer: a sum case, a split or a list case.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: `body`'s former when it reads as a sum case, a split or a
+    ///   list case; none when it reads as anything else or the walk's remaining
+    ///   visits run out first. The read is one visit spent.
+    /// - provides: the shape the lowering gives a match or a conditional that
+    ///   writes its answer, `match s -> C { … }` and `if c -> C { … }`, which
+    ///   the printer spells back with that answer.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ascribed sum case, split and list case each spell
+    ///   with their answer, and an ascription over any other computation stands
+    ///   as its body.
+    /// - witness: `tests::goldens::an_ascribed_case_writes_its_answer_2089`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ref ret| self.remaining <= entry
+            && (ret.is_none() || self.remaining.checked_add(1_u32) == Some(entry)),
+    )]
+    fn answered_case<'source, S>(
+        &mut self,
+        source: &'source S,
+        body: S::Node,
+    ) -> Option<Former<'source, S::Node>>
+    where
+        S: Source + ?Sized,
+    {
+        self.remaining = self.remaining.checked_sub(1_u32)?;
+        let former = source.read(body);
+        matches!(
+            former,
+            Former::Case { .. } | Former::Split { .. } | Former::ListCase { .. }
+        )
+        .then_some(former)
+    }
+
+    /// Whether `node` is written with a head no expression reads as the type:
+    /// a session type standing at a receive `?A. S`, a selection `+{…}` or an
+    /// offer `&{…}`; a sum or a lazy product, written between braces or, in
+    /// the sugared form, as a chain an expression reads as arithmetic; a
+    /// labelled record type `*{a : A}` or a telescope type `*{a : A, b : B}`,
+    /// whose entries an expression does not read; a model type, `Model(T)` or
+    /// `Model(T) with sort C = A`, which no expression reads; a product
+    /// written as such a chain, `A * B`; or a path-shaped type that supplies
+    /// its carrier by name, `Path[.A = Integer](a, b)`, whose bracket an
+    /// expression reads as an instantiation.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: true exactly when `node` reads as a session type whose
+    ///   state's own node is a receive, a selection or an offer; as a sum of
+    ///   one or more components that is not `Bool`; as a lazy product or a
+    ///   labelled record type of one or more components; as a telescope type;
+    ///   as a model type; in the sugared `form`, as a product of two or more
+    ///   components; or as a path, bridge or flow type whose carrier the source
+    ///   wrote.
+    /// - provides: the heads [`Self::unread_as_expression`] looks for.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a braced sum, `Bool` and a base type quoted as
+    ///   values, in both forms, distinguish the braced spellings from the bare
+    ///   ones; a product, a sum and a lazy product chain quoted alone and as an
+    ///   argument distinguish the sugared chains from the explicit braces an
+    ///   expression reads; a path type quoted over a written carrier and over
+    ///   an omitted one distinguish the supplied form from the bare call.
+    /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
+    /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
+    /// - witness: `tests::goldens::a_quoted_record_type_is_quoted_1459`
+    /// - witness: `tests::goldens::a_quoted_telescope_type_is_quoted_1514`
+    /// - witness: `tests::goldens::a_model_type_spells_as_written_2246`
+    /// - witness: `tests::goldens::a_path_type_over_a_family_application_is_quoted_3279`
+    #[spec(ensures: |ret| (ret == Bare::Unread) == match source.read(node) {
+        | Former::Session { protocol, state, .. } => matches!(
+            protocol.node(state),
+            Ok(&(ProtocolNode::Receive { .. } | ProtocolNode::Select(_) | ProtocolNode::Offer(_)))
+        ),
+        | Former::Sum(arity) => usize::from(arity) >= 1_usize && named_sum(source, node).is_none(),
+        | Former::With(arity) | Former::RecordType(arity) => usize::from(arity) >= 1_usize,
+        | Former::Sigma { .. } | Former::Model { .. } => true,
+        | Former::Product(arity) => form == Form::Sugared && usize::from(arity) >= 2_usize,
+        | Former::Path { carrier, .. } | Former::Bridge { carrier, .. } | Former::Flow { carrier, .. } => carrier.is_some(),
+        | _ => false,
+    })]
+    fn unread_head<S>(
+        source: &S,
+        node: S::Node,
+        form: Form,
+    ) -> Bare
+    where
+        S: Source + ?Sized,
+    {
+        let former = source.read(node);
+        let unread = if let Former::Session {
+            protocol, state, ..
+        } = former
+        {
+            matches!(
+                protocol.node(state),
+                Ok(&(ProtocolNode::Receive { .. }
+                    | ProtocolNode::Select(_)
+                    | ProtocolNode::Offer(_)))
+            )
+        }
+        // Braced, no expression reads the head; chained, an expression reads
+        // `+` and `&` as operators over the components.
+        else if let Former::Sum(arity) = former {
+            usize::from(arity) >= 1_usize && named_sum(source, node).is_none()
+        }
+        else if let Former::With(arity) | Former::RecordType(arity) = former {
+            usize::from(arity) >= 1_usize
+        }
+        // A telescope type is written between a record type's braces, which an
+        // expression reads as a pack.
+        else if let Former::Sigma { .. } = former {
+            true
+        }
+        // A model type is written as no expression reads it, its theory's
+        // name applied and its sorts after `with`.
+        else if let Former::Model { .. } = former {
+            true
+        }
+        // `*{A, B}` reads as the product's code, `A * B` as the product of two
+        // codes.
+        else if let Former::Product(arity) = former {
+            form == Form::Sugared && usize::from(arity) >= 2_usize
+        }
+        // An expression reads `Path(x, y)` as a call, but not the carrier a
+        // path-shaped type supplies by name, `Path[.A = A](x, y)`: there it
+        // reads the bracket as an instantiation, whose names are lowercase.
+        else if let Former::Path { carrier, .. }
+        | Former::Bridge { carrier, .. }
+        | Former::Flow { carrier, .. } = former
+        {
+            carrier.is_some()
+        }
+        else {
+            false
+        };
+        if unread { Bare::Unread } else { Bare::Reads }
+    }
+
+    /// Whether the type `quoted`, written bare where an expression is read,
+    /// holds a part no expression reads: its own head or the head of a type
+    /// among its parts, which an expression reads as its own parts — `*{Unit,
+    /// +{Unit}}` does not read where `*{Unit, Integer}` does.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: [`Bare::Unread`] when [`Self::unread_head`] says so of
+    ///   `quoted` or of a node reached from it through type slots alone,
+    ///   visited within the walk's remaining visits, and, in the explicit
+    ///   `form`, when such a node is a product with a component that a decode
+    ///   of a value fills, other than a binder a static redex substitutes; a
+    ///   value slot is not entered, since a quote there is written by its own
+    ///   visit. Every node read is one visit spent; none left, the scan stops
+    ///   and answers [`Bare::Reads`].
+    /// - provides: the quotes the walk writes `type(T)`, which the lowering
+    ///   reads back to the same code; every other quote stands bare.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each round reads one node and spends one remaining visit, and the loop
+    /// stops when none is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a braced sum quoted alone, as an argument and as a
+    ///   product's component, against a product of base types and a sum chain,
+    ///   distinguish a scan that stops at the head from one that enters the
+    ///   parts.
+    /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
+    /// - witness: `tests::goldens::a_quoted_product_of_values_keeps_its_quote_5060`
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    #[spec(
+        captures: [entry = self.remaining, head = Self::unread_head(source, quoted, form)],
+        ensures: |ret| self.remaining <= entry && (entry == 0_u32 || head == Bare::Reads || ret == Bare::Unread),
+    )]
+    fn unread_as_expression<S>(
+        &mut self,
+        source: &S,
+        quoted: S::Node,
+        form: Form,
+    ) -> Bare
+    where
+        S: Source + ?Sized,
+    {
+        let mut pending = Vec::from([quoted]);
+        while let Some(node) = pending.pop() {
+            let Some(left) = self.remaining.checked_sub(1_u32)
+            else {
+                return Bare::Reads;
+            };
+            self.remaining = left;
+            if Self::unread_head(source, node, form) == Bare::Unread {
+                return Bare::Unread;
+            }
+            let former = source.read(node);
+            // An expression reads `*{a, b}` as the tuple of the values `a` and
+            // `b`, so a component a decode of a value fills, a variable or a
+            // call, keeps the explicit product's quote (#5060). A binder a
+            // static redex substitutes is written as its argument, a code an
+            // expression reads as the type.
+            if form == Form::Explicit
+                && let Former::Product(arity) = former
+                && (0_usize .. usize::from(arity)).any(|index| {
+                    source
+                        .component(node, Component::from(index))
+                        .is_some_and(|part| {
+                            matches!(
+                                source.read(part),
+                                Former::Element(value) if !matches!(
+                                    source.read(value),
+                                    Former::Variable { zone, index }
+                                        if self.opened_at(zone, index).is_some_and(|position| self.substituted.contains_key(&position))
+                                )
+                            )
+                        })
+                })
+            {
+                return Bare::Unread;
+            }
+            pending.extend(
+                children(source, node, &former, Admits::ValueType, self.bodies)
+                    .into_iter()
+                    .filter(|slot| {
+                        matches!(
+                            slot.admits,
+                            Admits::Type | Admits::ValueType | Admits::CompType
+                        )
+                    })
+                    .filter_map(|slot| slot.node),
+            );
+        }
+        Bare::Reads
+    }
+
+    /// `(a, b, …)`: `items` between parentheses, each bare, a break after
+    /// each comma and before the closer.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the opener, the items' documents separated by a comma and a
+    ///   space or a break, then nothing or a break, then the closer.
+    /// - provides: the tuple and the alias's domain list.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the sugared goldens' tuples and domain lists at the
+    ///   wide and the narrow page expose a lost separator or closer.
+    /// - witness: `tests::goldens::the_sugared_form_writes_every_sugar_its_shape_admits`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(_) | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn listed(
+        &mut self,
+        items: &[Piece],
+    ) -> Result<Doc, PresentationError>
+    {
+        let opener = self.leaf(Glyphs("("))?;
+        let mut docs = Vec::from([opener]);
+        for (position, item) in items.iter().enumerate() {
+            if position > 0_usize {
+                let comma = self.leaf(Glyphs(","))?;
+                docs.push(self.space_or_break(comma)?);
+            }
+            docs.push(self.bare_up_to(*item, Binding::ARGUMENT)?);
+        }
+        let inner = self.builder.concat_all(&docs)?;
+        let inner = self.none_or_break(inner)?;
+        let close = self.leaf(Glyphs(")"))?;
+        self.builder.concat(inner, close)
+    }
+
+    /// `head a b …`: `head`, then each of `operands` in order, each an atom
+    /// or parenthesized, apart by a space or a break.
+    ///
+    /// # Specification
+    /// - requires: `head` is a document that binds at most as an application.
+    /// - ensures: `head`, then for each operand a space or a break and the
+    ///   operand bare up to [`Binding::Atom`]; `head ()`, the head applied to
+    ///   the empty group, when `operands` is empty.
+    /// - provides: the juxtaposed application of a call, of a built-in former
+    ///   and of a former written at a stratum.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — calls of one and of several arguments, an argument
+    ///   that is itself a call, and the built-in formers' goldens expose a lost
+    ///   space, reordered operands and a missing parenthesis.
+    /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
+    /// - witness: `tests::goldens::univalence_spells_its_stratum_and_descriptions`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(_) | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn juxtaposed(
+        &mut self,
+        head: Doc,
+        operands: Vec<Piece>,
+    ) -> Result<Doc, PresentationError>
+    {
+        if operands.is_empty() {
+            let empty = self.leaf(Glyphs(" ()"))?;
+            return self.builder.concat(head, empty);
+        }
+        let mut call = head;
+        for operand in operands {
+            let operand = self.bare_up_to(operand, Binding::Atom)?;
+            let apart = self.space_or_break(call)?;
+            call = self.builder.concat(apart, operand)?;
+        }
+        Ok(call)
+    }
+
+    /// `piece` bare when it binds at most as loosely as `loosest`, a block
+    /// `{ … }` when it is a bind's statements, and parenthesized otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the piece's document bare when its binding is at most
+    ///   `loosest`; between braces, as [`Self::block`] lays them out, when it
+    ///   is a [`Binding::Sequence`] the slot does not admit, since no slot
+    ///   reads statements between parentheses; else between parentheses.
+    /// - provides: the one rule of every slot for a piece looser than it
+    ///   admits, a statement outside its block among them.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — bridge and arrow fixtures distinguish wrong
+    ///   precedence and missing parentheses; a bind run by a bind, a returner
+    ///   at a call's head and a call's argument over statements distinguish a
+    ///   block from parentheses and from a bare operand. The finite grammar
+    ///   cases do not exhaust all possible composite trees.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_block_body_holds_its_sequence_bare`
+    /// - witness: `tests::goldens::a_statement_outside_its_block_is_a_block_3972`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(doc) => (doc == piece.doc) == (piece.binding <= loosest),
+            | Err(PresentationError::Build(_)) => piece.binding > loosest,
+            | Err(_) => false,
+        },
+    )]
+    fn bare_up_to(
+        &mut self,
+        piece: Piece,
+        loosest: Binding,
+    ) -> Result<Doc, PresentationError>
+    {
+        if piece.binding <= loosest {
+            return Ok(piece.doc);
+        }
+        if piece.binding == Binding::Sequence {
+            let open = self.leaf(Glyphs("{"))?;
+            return self.block(open, piece.doc);
+        }
+        self.parenthesized(piece.doc)
+    }
+
+    /// `doc` between parentheses.
+    ///
+    /// # Specification
+    /// trivial.
+    fn parenthesized(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let open = self.leaf(Glyphs("("))?;
+        let close = self.leaf(Glyphs(")"))?;
+        self.builder.concat_all(&[open, doc, close])
+    }
+
+    /// `head` then a space, or a line break indented two columns.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the inline branch is exactly one space; the broken branch
+    ///   starts the continuation two columns in and is the left alternative,
+    ///   retained when both alternatives are width-tainted.
+    /// - provides: the break after an arrow and a comma.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — narrow and wide continuations and a zero-column pair
+    ///   distinguish missing spaces, wrong indentation and reversed
+    ///   width-tainted alternatives. Other widths are not enumerated.
+    /// - witness: `tests::goldens::arrow_chain_breaks_before_each_continuation`
+    /// - witness: `tests::goldens::doubly_tainted_pair_keeps_the_broken_separator`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(doc) => doc != head,
+            | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn space_or_break(
+        &mut self,
+        head: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let space = self.leaf(Glyphs(" "))?;
+        let line = Doc::HARD_LINE;
+        let indented = self.builder.nest(NestAmount::from(CONTINUATION), line)?;
+        let choice = self.builder.choice(indented, space)?;
+        self.builder.concat(head, choice)
+    }
+
+    /// `head` then nothing, or a line break.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the inline branch is empty; the broken branch puts the closer
+    ///   on its own line and is the left alternative, retained when both
+    ///   alternatives are width-tainted. A composer that settles the choice as
+    ///   it composes answers `head` itself for the inline branch.
+    /// - provides: the break before a bracket's closer.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — narrow and wide brackets and the zero-column pair
+    ///   distinguish a misplaced closer, a spurious flat space and reversed
+    ///   width-tainted alternatives; other widths are not enumerated.
+    /// - witness: `tests::goldens::pair_of_injections_pins_sum_notation`
+    /// - witness: `tests::goldens::record_value_breaks_fields_at_the_narrow_page`
+    /// - witness: `tests::goldens::doubly_tainted_pair_keeps_the_broken_separator`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(_) | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn none_or_break(
+        &mut self,
+        head: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let none = Doc::EMPTY;
+        let line = Doc::HARD_LINE;
+        let choice = self.builder.choice(line, none)?;
+        self.builder.concat(head, choice)
+    }
+
+    /// `head`, then the cells of a composite or a fill: one cell an atom or
+    /// parenthesized, more as a group.
+    ///
+    /// # Specification
+    /// - requires: `cells` are the cell pieces, in vertex order.
+    /// - ensures: the head and the cells apart by a space or a break; one cell
+    ///   bare up to [`Binding::Atom`], more between one pair of parentheses.
+    /// - fails: the builder's refusal, a cell too loose for an argument among
+    ///   them.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain of three cells and one of one cell, after a
+    ///   composite's head and a fill's.
+    /// - witness: `tests::goldens::a_composite_spells_its_stratum_chain_and_cells_3957`
+    /// - witness: `tests::goldens::a_fill_spells_its_stratum_chain_generator_and_cells_4075`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(_) | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn composite_cells(
+        &mut self,
+        head: Doc,
+        mut cells: Vec<Piece>,
+    ) -> Result<Doc, PresentationError>
+    {
+        let diagram = if cells.len() == 1_usize
+            && let Some(cell) = cells.pop()
+        {
+            self.bare_up_to(cell, Binding::Atom)?
+        }
+        else {
+            self.listed(&cells)?
+        };
+        let head = self.space_or_break(head)?;
+        self.builder.concat(head, diagram)
+    }
+
+    /// `head`, `body` and a closing brace, as one group: on one line, a space
+    /// inside each brace, or `body` on its own lines two columns in and the
+    /// brace on a line of its own. `body` is aligned at the column it starts
+    /// at: a line it breaks on the brace's own line starts at its first
+    /// token's column, where the layout begins the brace's next item, or past
+    /// it under a nest, where the layout reads the item on.
+    ///
+    /// # Specification
+    /// - requires: `head` ends with its opening brace.
+    /// - ensures: a group whose flat branch is `head body }` with one space
+    ///   either side of `body` and whose broken branch breaks after `head`,
+    ///   indents `body` two columns and puts the closer on its own line; every
+    ///   soft line inside `body` breaks with the group unless a group of its
+    ///   own holds it, and indents from the column `body` starts at.
+    /// - provides: the layout of a lambda's, a thunk's and a bound block's
+    ///   body.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda over a bind at the wide page and at a page
+    ///   it overflows distinguishes a missing indent, a closer left inline and
+    ///   a statement separator that breaks apart from its block.
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    #[spec(
+        captures: [entry = self.pieces.len()],
+        ensures: |ref ret| self.pieces.len() == entry && match *ret {
+            | Ok(doc) => doc != head && doc != body,
+            | Err(PresentationError::Build(_)) => true,
+            | Err(_) => false,
+        },
+    )]
+    fn block(
+        &mut self,
+        head: Doc,
+        body: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let line = Doc::LINE;
+        let body = self.builder.align(body)?;
+        let inner = self.builder.concat(line, body)?;
+        let inner = self.builder.nest(NestAmount::from(CONTINUATION), inner)?;
+        let close = self.leaf(Glyphs("}"))?;
+        let doc = self.builder.concat_all(&[head, inner, line, close])?;
+        self.builder.group(doc)
+    }
+
+    /// Spells one node, or schedules its children and their join.
+    ///
+    /// # Specification
+    /// - requires: `tasks` is the walk's stack, and `former` is what `source`
+    ///   reads at `node`.
+    /// - ensures: a value at the depth limit finishes as `<deep>`; a node of a
+    ///   sort its position does not admit and an unreadable node finish as `?`;
+    ///   a thunk finishes as `<thunk>` where bodies are opaque, and a family's
+    ///   argument over a function is its lambda where they are spelled; a leaf
+    ///   former finishes as its spelling, the 0-ary product as `Unit`, the
+    ///   0-ary sum as `Void` and the sum of two 0-ary products as `Bool`; a
+    ///   composite former pushes its join below its children's visits, each
+    ///   label scheduled just before its entry and each child between the
+    ///   opening and the closing of the binders it stands under; a former
+    ///   spelled by parts pushes its parts as [`Self::form`] builds them, a
+    ///   `for` loop's application and a threading loop's among them, and so
+    ///   does a return ascribed its returner where no pass ends, over its value
+    ///   and type, and a sum case, a split or a list case ascribed its answer,
+    ///   over the eliminator's slots with the answer after the scrutinee; any
+    ///   other ascription outside a typed bind pushes its body's visit alone,
+    ///   noted as elided; a static application schedules its spine as
+    ///   [`Self::spine`] does; a call of a constant that a comparison calls,
+    ///   saturated as [`compared`] reads it and ending no loop's pass,
+    ///   schedules its comparison as [`Self::comparison`] does; and any other
+    ///   application schedules its call as [`Self::call`] does, under `become`
+    ///   where it ends a loop's pass; a nested computation or a returned value
+    ///   over a bind binding no call is the block of its statements, `{ let x =
+    ///   c ; rest }`, as [`Self::form`] writes it; a decode, a quote, a
+    ///   returner where the body ends, any other nested computation or returned
+    ///   value and a reset where a body ends push their child's visit alone, so
+    ///   the child's piece is theirs, the reset's child inside the body it
+    ///   delimits; there, in a handler's subject, a shift over a returner where
+    ///   a body or a pass ends is `return v`, the stack's binder unwritten; the
+    ///   loop's own binder forced at the end of a pass, or applied to what the
+    ///   pass hands on, finishes as `continue`, a returner ending a pass is
+    ///   `break(v)` or `return v` and a loop ending a pass is written with its
+    ///   rest, as [`Self::pass_end`] reads them, and a computation the end of a
+    ///   pass cannot write is noted as the fixpoint's notation; a returner
+    ///   anywhere else is `pure v` and a run `run c`; a force where a type is
+    ///   read is the call of no arguments `f()` (#5213); a projection out of a
+    ///   forced variable naming a context binder is the observation `a.i`, the
+    ///   binder's name its one piece; a decode of a positional projection,
+    ///   which the type grammar writes no spelling of, is noted as the
+    ///   printer's notation, and so is a row as a term, written as the bracket
+    ///   of its interfaces that the surface reads as a list where a term
+    ///   stands, its tail after a bar when it is open.
+    /// - provides: one step of the walk.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete grammar fixtures, nested binders and deep or
+    ///   misplaced nodes distinguish missing work, reversed children, binder
+    ///   scope leakage and lost approximation. Mutable-source fixtures bound
+    ///   traversal but do not prove name consistency across mutations.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+    /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+    /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
+    /// - witness: `tests::goldens::a_returner_lists_each_interface_of_its_row_between_commas`
+    /// - witness: `tests::goldens::a_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_for_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+    /// - witness: `tests::goldens::a_return_leaving_a_handler_prints_as_written_941`
+    /// - witness: `tests::goldens::an_observation_of_a_parameter_prints_by_position_941`
+    /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
+    /// - witness: `tests::goldens::a_positional_projection_the_surface_does_not_read_is_notation`
+    /// - witness: `tests::goldens::a_family_argument_leaves_its_function_s_thunk_out_5408`
+    /// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+    ///
+    /// # Cost
+    /// - allocation: the node's pieces and tasks, growth within the walk's
+    ///   remaining visits
+    #[spec(
+        captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.opened.len(), fidelity = self.fidelity],
+        ensures: |ref ret| self.opened.len() == opened
+            && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
+            && match *ret {
+                | Ok(()) => (entry.checked_add(1_usize) == Some(self.pieces.len()) && tasks.len() == pending)
+                    || (self.pieces.len() == entry && tasks.len() > pending),
+                | Err(PresentationError::Build(_)) => self.pieces.len() == entry && tasks.len() == pending,
+                | Err(_) => false,
+            },
+    )]
+    fn visit<S>(
+        &mut self,
+        source: &S,
+        node: S::Node,
+        former: Former<'_, S::Node>,
+        admits: Admits,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) -> Result<(), PresentationError>
+    where
+        S: Source + ?Sized,
+    {
+        let kind = kind(&former);
+        match reach(admits, depth, kind) {
+            Reach::Spell => {},
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a node past the depth limit is left out, written `<deep>`"
+                )
+            )]
+            Reach::Deep => {
+                return self.approximate(Glyphs("<deep>"), Unspelled::Elided(Elided::Deep));
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a node of a sort its position does not admit: no spelling is both \
+                              the node and what the position reads"
+                )
+            )]
+            Reach::Misplaced => return self.unspell(Unspelled::Misplaced),
+        }
+        // The end of a loop's pass is written as an exit, a `continue`, a
+        // bare `break`, or a former the path runs on through; anything else
+        // there the surface cannot write, since a computation left bare runs
+        // the loop again.
+        let pass = (admits == Admits::Computation(Tail::Passes))
+            .then(|| self.pass_end(source, node, &former));
+        if pass == Some(PassEnd::Continue) {
+            return writes(
+                Production("continue_expression"),
+                self.atom(Glyphs("continue")),
+            );
+        }
+        if pass == Some(PassEnd::Break) {
+            return writes(Production("break_expression"), self.atom(Glyphs("break")));
+        }
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                answer_totality,
+                reason = "a pass ending in a computation the surface cannot write there keeps \
+                          the fixpoint's notation"
+            )
+        )]
+        let admits = if pass == Some(PassEnd::Unwritten) {
+            self.note(Unspelled::Notation(Notation::Fixpoint));
+            Admits::Computation(Tail::Ends)
+        }
+        else {
+            admits
+        };
+        // The slots a former read whole in a shape of its own stands over, in
+        // place of its child table's.
+        let mut shaped = None;
+        let join = match former {
+            // A telescope transport's motive stands where an expression is
+            // read, written as the thunk type over it: the alias over one
+            // domain or more, and over none the thunk itself, `+U (-F C)`, as
+            // a quoted thunk type is.
+            _ if admits == Admits::Thunked => {
+                if self.form == Form::Sugared
+                    && let Some(chain) = self.alias(source, node)
+                    && !chain.0.is_empty()
+                {
+                    Self::aliased(chain, depth, tasks);
+                    return Ok(());
+                }
+                shaped = Some(Vec::from([Slot::of(node, Admits::CompType, Binds::NONE)]));
+                Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
+            },
+            Former::BaseType(BaseType::Integer) => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Integer")));
+            },
+            Former::BaseType(BaseType::String) => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("String")));
+            },
+            Former::BaseType(BaseType::Character) => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Char")));
+            },
+            Former::BaseType(BaseType::Float64) => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("f64")));
+            },
+            Former::BaseType(BaseType::Fixed(width)) => {
+                return writes(
+                    Production("primitive_type"),
+                    self.atom(Glyphs(width.as_ref())),
+                );
+            },
+            Former::BufferType => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Buf")));
+            },
+            Former::QubitType => {
+                return writes(Production("type_identifier"), self.atom(Glyphs("Qubit")));
+            },
+            Former::WebType => {
+                return writes(Production("type_identifier"), self.atom(Glyphs("Web")));
+            },
+            Former::RowType => {
+                return writes(Production("type_identifier"), self.atom(Glyphs("Row")));
+            },
+            // A row as a term has no syntax of its own: it is written as the
+            // list reader of names, `#[ … ]`, its tail after a bar when it is
+            // open.
+            Former::Row { effects, tail } => {
+                #[cfg_attr(
+                    dylint_lib = "quenchant_dylints",
+                    expect(
+                        answer_totality,
+                        reason = "a row as a term: the surface reads the bracket of names as a \
+                                  list where a term stands, and as a row only after `-F`"
+                    )
+                )]
+                self.note(Unspelled::Notation(Notation::Row));
+                let mut written = String::from("#[");
+                let listed = self.list_interfaces(source, effects, &mut written);
+                if tail.is_none() {
+                    written.push(']');
+                    return writes(Production("list_expression"), self.atom(Glyphs(&written)));
+                }
+                if listed != Listed::None {
+                    written.push_str(" | ");
+                }
+                let head = self.leaf(Glyphs(&written))?;
+                let close = self.leaf(Glyphs("]"))?;
+                Some(writes(Production("list_expression"), Join::OpenRow {
+                    head,
+                    close,
+                }))
+            },
+            Former::Product(arity) if usize::from(arity) == 0 => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Unit")));
+            },
+            Former::Sum(arity) if usize::from(arity) == 0 => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("Void")));
+            },
+            // `Bool` is the sum of two units, a fixed name as the lowering
+            // reads it.
+            Former::Sum(arity)
+                if usize::from(arity) == 2
+                    && let Some(name) = named_sum(source, node) =>
+            {
+                return writes(Production("type_identifier"), self.atom(name));
+            },
+            // `true` and `false`, each ascribed `Bool`, as the lowering mints
+            // the words (#3350). A type reads the same words as its Type-sort
+            // booleans (#5390).
+            Former::Annotated { value, ty } if let Some(word) = truth(source, value, ty) => {
+                return writes(
+                    Production("boolean.expression"),
+                    writes(Production("boolean.type"), self.atom(word)),
+                );
+            },
+            // A record of one module's members, each at its own label, is the
+            // module passed whole: the core holds a model argument as its
+            // fields, and the source writes the module, `toolchain Package`.
+            Former::Record(arity) if let Some(path) = module_of_fields(source, node, arity) => {
+                return writes(
+                    Production("identifier.expression"),
+                    writes(
+                        Production("constructor.expression"),
+                        writes(
+                            Production("projection_expression"),
+                            self.atom(Glyphs(&path)),
+                        ),
+                    ),
+                );
+            },
+            Former::Unit => {
+                return writes(Production("telescope_expression"), self.atom(Glyphs("*{}")));
+            },
+            Former::ListNil => {
+                return writes(
+                    Production("identifier.expression"),
+                    self.atom(Glyphs("nil")),
+                );
+            },
+            // A name is written as it stands, a qualified one as its path.
+            Former::Abstract(name) | Former::Member(name) => {
+                return writes(
+                    Production("type_identifier"),
+                    writes(
+                        Production("type_path"),
+                        self.name(name, source.declaration(node)),
+                    ),
+                );
+            },
+            Former::Constant(name) => {
+                return writes(
+                    Production("identifier.expression"),
+                    writes(
+                        Production("constructor.expression"),
+                        writes(
+                            Production("projection_expression"),
+                            self.name(name, source.declaration(node)),
+                        ),
+                    ),
+                );
+            },
+            Former::Literal(value) => {
+                let spelled = literal(value);
+                let production = match *value {
+                    Literal::Integer(_) | Literal::Numeric(_) => Production("number.expression"),
+                    Literal::Text(_) => Production("string.expression"),
+                    Literal::Character(_) => Production("character"),
+                    Literal::Float64(_) | Literal::Fixed(_) => {
+                        Production("typed_number.expression")
+                    },
+                };
+                // A negative number is `- 1`: a glued `-1` is one run, a
+                // name. The minus binds as a prefix does, so an operand
+                // writes it in parentheses, `f (- 1)`.
+                if let Some(magnitude) = spelled.0.strip_prefix('-')
+                    && matches!(*value, Literal::Integer(_) | Literal::Numeric(_))
+                {
+                    let written = format!("- {magnitude}");
+                    return writes(
+                        Production("unary_expression"),
+                        self.leaf(Glyphs(written.as_str())).map(|doc| {
+                            self.pieces.push(Piece {
+                                doc,
+                                binding: Binding::Prefix,
+                                fields: None,
+                            });
+                        }),
+                    );
+                }
+                let atom = self.atom(Glyphs(spelled.0.as_str()));
+                // A text literal has the same spelling in a term and in a
+                // type, so the one atom writes both rules.
+                return match *value {
+                    Literal::Text(_) => writes(production, writes(Production("string.type"), atom)),
+                    Literal::Integer(_)
+                    | Literal::Numeric(_)
+                    | Literal::Character(_)
+                    | Literal::Float64(_)
+                    | Literal::Fixed(_) => writes(production, atom),
+                };
+            },
+            Former::Capability {
+                authority,
+                grade,
+                region,
+            } => {
+                let mut spelled = alloc::string::String::from("Cap");
+                if grade == gandr_core_term::effect::capability::CapabilityGrade::Consumable {
+                    spelled.push_str("[1]");
+                }
+                spelled.push_str(" {");
+                spelled.push_str(&authority.granted().join(", "));
+                spelled.push('}');
+                return match region {
+                    gandr_core_term::effect::capability::Region::Held => writes(
+                        Production("capability_type"),
+                        self.atom(Glyphs(spelled.as_str())),
+                    ),
+                    // A scoped capability names the scope whose region it
+                    // lives in, `Cap {…} at c`; past the scopes the source
+                    // names, and at a definition's region binder, whose name
+                    // the core keeps no record of, its region goes unwritten.
+                    gandr_core_term::effect::capability::Region::Scoped(_)
+                    | gandr_core_term::effect::capability::Region::Bound(_) => {
+                        let named = self.region(source, region).filter(|name| {
+                            !name.0.is_empty() && !name.0.contains(char::is_whitespace)
+                        });
+                        match named {
+                            Some(name) => {
+                                spelled.push_str(" at ");
+                                spelled.push_str(&name.0);
+                                writes(
+                                    Production("at_type"),
+                                    writes(
+                                        Production("capability_type"),
+                                        self.atom(Glyphs(spelled.as_str())),
+                                    ),
+                                )
+                            },
+                            #[cfg_attr(
+                                dylint_lib = "quenchant_dylints",
+                                expect(
+                                    answer_totality,
+                                    reason = "a region past the scopes the source names has no \
+                                              name to write after `at`"
+                                )
+                            )]
+                            None => self.approximate(
+                                Glyphs(spelled.as_str()),
+                                Unspelled::Elided(Elided::Region),
+                            ),
+                        }
+                    },
+                };
+            },
+            Former::Universe { sort, level } => {
+                return match universe(sort, level) {
+                    Maybe::Present(spelled) => writes(
+                        Production("universe_type"),
+                        self.atom(Glyphs(spelled.0.as_str())),
+                    ),
+                    #[cfg_attr(
+                        dylint_lib = "quenchant_dylints",
+                        expect(
+                            answer_totality,
+                            reason = "a universe over a sort parameter or at a level mentioning a \
+                                      variable, which the surface's universe atom, a sort and a \
+                                      numeral level, cannot write"
+                        )
+                    )]
+                    Maybe::Absent(_) => self.unspell(Unspelled::Universe),
+                };
+            },
+            // A variable reads as the name of its binder, in a type as a type
+            // variable.
+            Former::Variable { zone, index } => {
+                return writes(
+                    Production("identifier.expression"),
+                    writes(Production("type_variable"), self.variable(zone, index)),
+                );
+            },
+            // A family's argument over a function is the thunk the lowering
+            // mints over a lambda a type reads (#3697): the thunk is left out
+            // where bodies are spelled, as a call's argument there leaves it
+            // out (#5408). The parameter states the lambda's type, as it
+            // states the thunk's. The slots keep the thunk, so a scan still
+            // reaches the thunk's node.
+            Former::Thunk(body)
+                if self.bodies == Bodies::Spelled
+                    && admits == Admits::Stated
+                    && matches!(source.read(body), Former::Lambda(_)) =>
+            {
+                tasks.push(Task::Visit {
+                    node: body,
+                    admits: Admits::Computation(Tail::Ends),
+                    depth: below(depth, kind),
+                });
+                return Ok(());
+            },
+            Former::Thunk(_) => match self.bodies {
+                #[cfg_attr(
+                    dylint_lib = "quenchant_dylints",
+                    expect(
+                        answer_totality,
+                        reason = "a thunk presented with its body opaque is written `<thunk>`"
+                    )
+                )]
+                Bodies::Opaque => {
+                    return self.approximate(Glyphs("<thunk>"), Unspelled::Elided(Elided::Thunk));
+                },
+                Bodies::Spelled => Some(writes(Production("thunk_expression"), Join::Thunk)),
+            },
+            Former::Run(_) => Some(writes(
+                Production("run_expression"),
+                Join::Prefix(Prefix::Run),
+            )),
+            // A reset where a body ends is the lowering's delimiter for the
+            // `return`s the handled subjects in that body write: the body is
+            // written bare, its pieces the reset's.
+            Former::Reset(body)
+                if matches!(admits, Admits::Computation(Tail::Ends | Tail::Unstated)) =>
+            {
+                tasks.push(Task::Unwound(false));
+                tasks.push(Task::Visit {
+                    node: body,
+                    admits,
+                    depth: below(depth, kind),
+                });
+                tasks.push(Task::Unwound(true));
+                return Ok(());
+            },
+            // A `return` a handled subject writes, inside the body a reset
+            // delimits, is a shift that never resumes the stack it captures:
+            // `return v`, the stack's binder unwritten.
+            Former::Shift(returned)
+                if self.unwinds > 0_usize
+                    && self.subjects > 0_usize
+                    && matches!(
+                        admits,
+                        Admits::Computation(Tail::Ends | Tail::Unstated | Tail::Passes)
+                    )
+                    && let Former::Return(value) = source.read(returned) =>
+            {
+                tasks.push(Task::Join(writes(
+                    Production("return_expression"),
+                    Join::Prefix(Prefix::Return),
+                )));
+                tasks.push(Task::Unbind);
+                tasks.push(Task::Visit {
+                    node: value,
+                    admits: Admits::Value,
+                    depth: below(depth, kind),
+                });
+                tasks.push(Task::BindLoop(Zone::Intuitionistic, LoopBinder::Hidden));
+                return Ok(());
+            },
+            // A projection out of a forced parameter of the definition the
+            // walk presents whole is the observation `a.i` it lowered from:
+            // the parameter's binder states its thunked lazy product or codata
+            // type, which reads the position.
+            Former::Project(side, observed)
+                if let Former::Force(thunk) = source.read(observed)
+                    && let Former::Variable { zone, index } = source.read(thunk)
+                    && let Some(position) = self.context_position(zone, index) =>
+            {
+                let mut parts = Parts::default();
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(format!(".{}", usize::from(side)));
+                self.forms.push(parts.parts);
+                tasks.push(Task::Join(writes(
+                    Production("projection_expression"),
+                    Join::Form {
+                        pieces: Arity(1_usize),
+                        binding: Binding::Atom,
+                    },
+                )));
+                tasks.push(Task::Context(position));
+                return Ok(());
+            },
+            // A positional selection of one field of a dependent record a
+            // binder holds is written by the field's label, `r.z`: the
+            // surface reads no position off a dependent record (#3971).
+            Former::TupleProjection(..)
+                if let Some((root, label)) = self.selected(source, node) =>
+            {
+                shaped = Some(Vec::from([Slot::of(root, Admits::Value, Binds::NONE)]));
+                let labelled = Former::RecordProjection(root, Name::from(label.as_str()));
+                Some(self.form(source, node, &labelled, admits))
+            },
+            // A clause minting a buffer opens by splitting its payload binder
+            // into the payload and the mint and placing the mint: the clause
+            // writes both names, `oper alloc(n, b, k)`, so the split has no
+            // spelling of its own.
+            Former::Split { body, .. } if minted(source, node).is_some() => {
+                shaped = Some(Vec::from([Slot::of(
+                    body,
+                    admits,
+                    Binds::intuitionistic(OpenBinders(2_usize)),
+                )]));
+                None
+            },
+            Former::Path { .. }
+            | Former::Bridge { .. }
+            | Former::Flow { .. }
+            | Former::Relation { .. }
+            | Former::Model { .. }
+            | Former::Data { .. }
+            | Former::Codata { .. }
+            | Former::Constructor { .. }
+            | Former::Recorded { .. }
+            | Former::Dialogue { .. }
+            | Former::Web(_)
+            | Former::Primitive { .. }
+            | Former::Transport(..)
+            | Former::PathTransport { .. }
+            | Former::Ride { .. }
+            | Former::TelescopeTransport { .. }
+            | Former::Fixpoint(_)
+            | Former::Case { .. }
+            | Former::Split { .. }
+            | Former::DataCase { .. }
+            | Former::RecordProjection(..)
+            | Former::TupleProjection(..)
+            | Former::ListFold { .. }
+            | Former::ListCase { .. }
+            | Former::Perform { .. }
+            | Former::Handle { .. }
+            | Former::Exercise { .. }
+            | Former::Scope { .. }
+            | Former::Resume(..)
+            | Former::Abandon(_)
+            | Former::Reset(_)
+            | Former::Shift(_)
+            | Former::Lazy(..)
+            | Former::Annotated { .. }
+            | Former::Then(..)
+            | Former::Step(..)
+            | Former::Project(..)
+            | Former::Send { .. }
+            | Former::Receive { .. }
+            | Former::Select { .. }
+            | Former::Offer { .. }
+            | Former::Close(_)
+            | Former::Fork { .. }
+            | Former::Hold { .. }
+            | Former::Access { .. }
+            | Former::ResumeView { .. }
+            | Former::AbortView(_)
+            | Former::ConsumeHeld(_)
+            | Former::Located { .. }
+            | Former::Kept { .. }
+            | Former::Staged { .. }
+            | Former::WorldHold(_)
+            | Former::Leta { .. }
+            | Former::Migrate { .. } => Some(self.form(source, node, &former, admits)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a reified stack has no surface spelling: written `<stack>`"
+                )
+            )]
+            Former::Reify => {
+                return self.approximate(Glyphs("<stack>"), Unspelled::Elided(Elided::Stack));
+            },
+            Former::Stack(..) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::Stack),
+            )),
+            Former::With(arity) if let Some(label) = entry_labels(source, node) => {
+                Some(writes(Production("lazy_record_type"), Join::Braced {
+                    brace: Brace::Ampersand,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Labelled(label),
+                }))
+            },
+            Former::With(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(writes(Production("lazy_product_type"), Join::Infix {
+                    infix: Infix::Lazy,
+                    arity: Arity(usize::from(arity)),
+                }))
+            },
+            Former::With(arity) => Some(writes(Production("lazy_record_type"), Join::Braced {
+                brace: Brace::Ampersand,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Positional,
+            })),
+            Former::Session {
+                protocol,
+                state,
+                payloads,
+            } => {
+                let (template, binding, fidelity) = protocol_template(protocol, state);
+                if fidelity == Fidelity::Approximate {
+                    self.fidelity = Fidelity::Approximate;
+                    #[cfg_attr(
+                        dylint_lib = "quenchant_dylints",
+                        expect(
+                            answer_totality,
+                            reason = "a session type at a state its protocol does not hold: a \
+                                      malformed protocol"
+                        )
+                    )]
+                    let _fresh = self.unspelled.insert(Unspelled::Protocol);
+                }
+                self.protocols.push(template);
+                // The protocol's template writes each session former.
+                let join = Join::Session {
+                    payloads: Arity(usize::from(payloads)),
+                    binding,
+                };
+                let join = writes(Production("send_session_type"), join);
+                let join = writes(Production("receive_session_type"), join);
+                let join = writes(Production("end_session_type"), join);
+                let join = writes(Production("mu_session_type"), join);
+                Some(join)
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the numeric base atom: the type of a numeric literal, which the \
+                              surface grammar has no name for"
+                )
+            )]
+            Former::BaseType(BaseType::Numeric) => {
+                return self.unspell(Unspelled::Unreadable(Unreadable::NumericAtom));
+            },
+            // The unknown type, where a type is read, is the grammar's
+            // `unknown_type` atom `?`; the lowering admits no unknown type, so
+            // the spelling stays approximate.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the unknown type a hole or a mark synthesises: written as the \
+                              grammar's `unknown_type`, which the lowering does not admit"
+                )
+            )]
+            Former::Unreadable(Unreadable::UnknownType)
+                if matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType) =>
+            {
+                return writes(
+                    Production("unknown_type"),
+                    self.unspell(Unspelled::Unreadable(Unreadable::UnknownType)),
+                );
+            },
+            // A hole is the term the author has not written; where a term is
+            // read its `?` is the grammar's hole, and it reads back as the same
+            // hole: a hole is named by its place among its source's holes, which
+            // a printing in its declaration's place keeps.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a hole, a term the author has not written: the walk writes it as \
+                              the grammar's hole `?`"
+                )
+            )]
+            Former::Unreadable(Unreadable::Hole) => {
+                return writes(Production("hole"), self.atom(Glyphs("?")));
+            },
+            // A wildcard is a term the elaborator was asked to find; its `_`
+            // reads back as a wildcard at the same place, which the checker
+            // answers alike, so it is written as the text wrote it, and the
+            // presentation says it writes one.
+            Former::Unreadable(Unreadable::Wildcard) => {
+                self.wildcards = Wildcards::Written;
+                return writes(Production("wildcard.expression"), self.atom(Glyphs("_")));
+            },
+            // A splice its tactic has not filled reads back as the same splice
+            // at the same place: its `~` and the tactic its name carries.
+            Former::Unreadable(Unreadable::Splice(tactic)) => {
+                let spelled = format!("~{tactic}");
+                return writes(
+                    Production("splice_expression"),
+                    self.atom(Glyphs(spelled.as_str())),
+                );
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the honest set's other members, a dangling handle, an unnamed \
+                              reference, a mark, a lift, a world's capability and the unknown \
+                              type where a term is read, have no surface spelling"
+                )
+            )]
+            Former::Unreadable(reason) => return self.unspell(Unspelled::Unreadable(reason)),
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the universe path has no surface syntax: written in the printer's \
+                              notation"
+                )
+            )]
+            Former::PathUniverse(..) => {
+                self.note(Unspelled::Notation(Notation::PathUniverse));
+                Some(writes(
+                    Production("type_application"),
+                    Join::Bracket(Bracket::PathUniverse),
+                ))
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a universe path's reflexivity has no surface syntax: written in \
+                              the printer's notation"
+                )
+            )]
+            Former::PathRefl(_) => {
+                self.note(Unspelled::Notation(Notation::PathRefl));
+                Some(writes(
+                    Production("application_expression"),
+                    Join::Bracket(Bracket::PathRefl),
+                ))
+            },
+            Former::Here(_) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Here),
+            )),
+            Former::Funext(..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Funext),
+            )),
+            Former::Equiv(..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Equiv),
+            )),
+            Former::Univalence(_) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Univalence),
+            )),
+            Former::SessionRelated(SessionRelation::Equivalence, _, _, Some(_)) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::BisimPaid),
+            )),
+            Former::SessionRelated(SessionRelation::Equivalence, ..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Bisim),
+            )),
+            Former::SessionRelated(SessionRelation::Subtyping, ..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Sim),
+            )),
+            Former::Stay(_) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Stay),
+            )),
+            Former::FlowProduct(..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::FlowProduct),
+            )),
+            Former::Back(_) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Back),
+            )),
+            Former::Cong(..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Cong),
+            )),
+            Former::Forward(_) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Forward),
+            )),
+            Former::FunctionFlow(..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Arrow),
+            )),
+            // A homed type former its source writes through its home's path
+            // rather than bare, `std.list.List(A)` or `l.List(A)`, is written
+            // by parts after that path.
+            Former::List(_)
+            | Former::RunType(_)
+            | Former::PrefixType(_)
+            | Former::DialogueType(_)
+                if homed_head(source, &former).is_some() =>
+            {
+                Some(self.form(source, node, &former, admits))
+            },
+            Former::RunType(_) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::Run),
+            )),
+            Former::DialogueType(_) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::Dialogue),
+            )),
+            Former::Decompose(_) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::Decompose),
+            )),
+            Former::PrefixType(_) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::Prefix),
+            )),
+            Former::Ua {
+                stratum,
+                source: from,
+                target: to,
+                ..
+            } => Some(self.at_stratum(
+                Glyphs("ua"),
+                stratum,
+                format_args!("{} {}", from.as_ref(), to.as_ref()),
+                Join::Ua,
+            )?),
+            Former::Compose { composite, cells } => {
+                let pasting = self.pasting(composite.pasting);
+                Some(self.at_stratum(
+                    Glyphs("compose"),
+                    composite.stratum,
+                    format_args!("{}", pasting.0),
+                    |head| Join::Compose(head, Arity(usize::from(cells))),
+                )?)
+            },
+            Former::Fill { composite, cells } => {
+                let pasting = self.pasting(composite.pasting);
+                Some(self.at_stratum(
+                    Glyphs("fill"),
+                    composite.stratum,
+                    format_args!("{}", pasting.0),
+                    |head| Join::Fill(head, Arity(usize::from(cells))),
+                )?)
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the path out of an equivalence has no surface syntax: written in \
+                              the printer's notation"
+                )
+            )]
+            Former::PathEquiv(..) => {
+                self.note(Unspelled::Notation(Notation::PathEquiv));
+                Some(writes(
+                    Production("application_expression"),
+                    Join::Bracket(Bracket::PathEquiv),
+                ))
+            },
+            Former::PathProduct(..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::PathProduct),
+            )),
+            // A product a dependent record nests, whose first field's label
+            // the source writes, is a link of that record (#3934).
+            Former::Product(arity)
+                if usize::from(arity) == 2_usize && source.written_binder(node).is_some() =>
+            {
+                self.links.push(record_link(source, node));
+                Some(writes(Production("telescope_type"), Join::RecordProduct))
+            },
+            Former::Product(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(writes(Production("product_type"), Join::Infix {
+                    infix: Infix::Product,
+                    arity: Arity(usize::from(arity)),
+                }))
+            },
+            Former::Sum(arity) if let Some(label) = entry_labels(source, node) => {
+                Some(writes(Production("labelled_sum_type"), Join::Braced {
+                    brace: Brace::Plus,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Labelled(label),
+                }))
+            },
+            Former::Sum(arity) if self.form == Form::Sugared && usize::from(arity) >= 2 => {
+                Some(writes(Production("sum_type"), Join::Infix {
+                    infix: Infix::Sum,
+                    arity: Arity(usize::from(arity)),
+                }))
+            },
+            Former::Product(arity) => Some(writes(Production("telescope_type"), Join::Braced {
+                brace: Brace::Star,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Positional,
+            })),
+            Former::Tuple(arity) => {
+                Some(writes(Production("telescope_expression"), Join::Braced {
+                    brace: Brace::Star,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Positional,
+                }))
+            },
+            Former::Sum(arity) => Some(writes(Production("labelled_sum_type"), Join::Braced {
+                brace: Brace::Plus,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Positional,
+            })),
+            Former::RecordType(arity) => Some(writes(Production("telescope_type"), Join::Braced {
+                brace: Brace::Star,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Labelled(Label::Field),
+            })),
+            Former::Patched(_, arity) => Some(writes(
+                Production("extension_type"),
+                Join::Patch(Arity(usize::from(arity))),
+            )),
+            Former::List(_) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::List),
+            )),
+            Former::ThunkType(body) => {
+                if self.form == Form::Sugared
+                    && let Some(chain) = self.alias(source, body)
+                {
+                    Self::aliased(chain, depth, tasks);
+                    return Ok(());
+                }
+                Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
+            },
+            Former::Returner(_) => {
+                Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner)))
+            },
+            // A group of outputs is written after the returner it is,
+            // `-F (A, B)`.
+            Former::Returns(arity) => Some(writes(
+                Production("f_type"),
+                writes(
+                    Production("parenthesized_type"),
+                    Join::Returns(Arity(usize::from(arity))),
+                ),
+            )),
+            // An open row sets its tail apart from the interfaces it writes,
+            // `-F [I | t] A`, and one writing none is its tail alone,
+            // `-F [t] A`; a row naming an instance by its label is the
+            // labelled form's.
+            // A row an entry of which fixes a theory's sorts writes each type
+            // it fixes as a piece of its own, `-F [T with sort C = A] B`.
+            Former::EffectfulReturner { manifests, .. }
+                if manifests.iter().any(|manifest| !manifest.sorts.is_empty()) =>
+            {
+                Some(self.form(source, node, &former, admits))
+            },
+            Former::EffectfulReturner {
+                effects,
+                tail,
+                result,
+                ..
+            } => {
+                let mut annotation = String::from("-F [");
+                let listed = self.list_interfaces(source, effects, &mut annotation);
+                match (tail, listed) {
+                    (None, Listed::Some | Listed::Labelled | Listed::None) => {
+                        annotation.push_str("] ");
+                    },
+                    (Some(_), Listed::Some | Listed::Labelled) => annotation.push_str(" | "),
+                    (Some(_), Listed::None) => {},
+                }
+                let head = self.leaf(Glyphs(&annotation))?;
+                let close = tail.map(|_| self.leaf(Glyphs("] "))).transpose()?;
+                // A group of outputs is written after the row, `-F [E] (A, B)`.
+                let group = match result {
+                    Returned::One(_) => None,
+                    Returned::Group(arity) => Some(Arity(usize::from(arity))),
+                };
+                let join = Join::EffectReturner { head, close, group };
+                let join = if group.is_some() {
+                    writes(Production("parenthesized_type"), join)
+                }
+                else {
+                    join
+                };
+                Some(match listed {
+                    Listed::Labelled => writes(Production("f_type.row.labelled"), join),
+                    Listed::None | Listed::Some => writes(Production("f_type.row"), join),
+                })
+            },
+            Former::Arrow { .. } | Former::StaticPi { .. } => {
+                Some(writes(Production("function_type"), Join::Arrow))
+            },
+            // A dependent arrow names its binder in a parenthesized domain,
+            // `(x : A) -> C`.
+            Former::Pi { .. } => Some(writes(
+                Production("function_type"),
+                writes(Production("parenthesized_type"), Join::Pi),
+            )),
+            // A linear arrow names its binder in a parenthesized domain,
+            // `(x : A) ⊸ C`. The surface writes no multiplicity, so one other
+            // than `1` is left out and the printing is approximate.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a multiplicity other than one has no surface spelling: the arrow \
+                              is written `⊸`, its multiplicity left out"
+                )
+            )]
+            Former::LinearArrow { multiplicity, .. } => {
+                if let Some(elided) = elided_multiplicity(source, multiplicity) {
+                    self.note(Unspelled::Elided(elided));
+                }
+                Some(writes(
+                    Production("linear_function_type"),
+                    writes(Production("parenthesized_type"), Join::LinearArrow),
+                ))
+            },
+            Former::Sigma { .. } => {
+                self.links.push(record_link(source, node));
+                Some(writes(Production("telescope_type"), Join::Sigma))
+            },
+            // A static lambda's body is read as an expression between its
+            // braces: a type no expression reads there in the sugared form,
+            // or a product whose braces would open the block, is written in
+            // the quote's own spelling. The decision reads the sugared form in
+            // either form, so a body moved between the forms keeps its quote
+            // (#4508).
+            Former::StaticLambda(body) => {
+                let held = if let Former::Quote(held) = source.read(body) {
+                    Some((held, Admits::ValueType))
+                }
+                else if let Former::QuoteComputation(held) = source.read(body) {
+                    Some((held, Admits::CompType))
+                }
+                else {
+                    None
+                };
+                let quoted = if let Some((held, admits)) = held
+                    && (matches!(source.read(held), Former::Product(arity) if usize::from(arity) >= 1_usize)
+                        || self.unread_as_expression(source, held, Form::Sugared) == Bare::Unread)
+                {
+                    shaped = Some(Vec::from([Slot::of(held, admits, Binds::ONE)]));
+                    true
+                }
+                else {
+                    false
+                };
+                Some(writes(
+                    Production("lambda_expression"),
+                    Join::StaticLambda { quoted },
+                ))
+            },
+            Former::Record(arity) => {
+                Some(writes(Production("telescope_expression"), Join::Braced {
+                    brace: Brace::Star,
+                    arity: Arity(usize::from(arity)),
+                    entries: Entries::Labelled(Label::Assignment),
+                }))
+            },
+            Former::RecordUpdate(_, arity) => Some(writes(
+                Production("telescope_expression"),
+                Join::Update(Arity(usize::from(arity))),
+            )),
+            Former::ListCons(..) => Some(writes(
+                Production("application_expression"),
+                Join::Bracket(Bracket::ListCons),
+            )),
+            Former::Injection(..) => Some(writes(
+                Production("labelled_sum_expression"),
+                Join::Braced {
+                    brace: Brace::Plus,
+                    arity: Arity(1_usize),
+                    entries: Entries::Labelled(Label::Summand),
+                },
+            )),
+            Former::StaticApplication(operator, argument) => {
+                Self::spine(source, operator, argument, depth, ReductAs::Term, tasks);
+                return writes(Production("type_application"), Ok(()));
+            },
+            // A `for` loop's application, and a threading loop's, is the
+            // loop, spelled by parts.
+            Former::Application(..) if looped(source, node, admits).is_some() => {
+                Some(self.form(source, node, &former, admits))
+            },
+            Former::Application(function, argument) => {
+                if admits == Admits::Computation(Tail::Passes) {
+                    tasks.push(Task::Join(writes(
+                        Production("become_expression"),
+                        Join::Prefix(Prefix::Become),
+                    )));
+                }
+                else if let Some((spelling, operands)) = compared(source, node) {
+                    self.comparison(spelling, operands, depth, tasks);
+                    return Ok(());
+                }
+                self.call(source, function, argument, depth, tasks);
+                return writes(Production("application_expression"), Ok(()));
+            },
+            // A body that ends answering a type's code keeps its `pure`: the
+            // lowering reads a type at a body's end only as a returned value.
+            // So does one that ends answering a `run`: a bare `run e` at a
+            // body's end is the run's own computation. And so does one that
+            // ends answering a nested computation, `pure pure v`: the lowering
+            // keeps the `return` of a computation written, and the nested one
+            // bare would be the body's own end.
+            Former::Return(returned) => match admits {
+                Admits::Computation(Tail::Passes) => {
+                    Some(if self.loops.last().is_some_and(|looping| looping.rest) {
+                        writes(
+                            Production("return_expression"),
+                            Join::Prefix(Prefix::Return),
+                        )
+                    }
+                    else {
+                        writes(
+                            Production("break_value_expression"),
+                            Join::Bracket(Bracket::Break),
+                        )
+                    })
+                },
+                Admits::Computation(Tail::Ends | Tail::Unstated)
+                    if !matches!(
+                        source.read(returned),
+                        Former::Quote(_)
+                            | Former::QuoteComputation(_)
+                            | Former::Run(_)
+                            | Former::Nested(_)
+                    ) =>
+                {
+                    None
+                },
+                Admits::Computation(Tail::Ends | Tail::Continues | Tail::Unstated)
+                | Admits::Type
+                | Admits::ValueType
+                | Admits::CompType
+                | Admits::Thunked
+                | Admits::Value
+                | Admits::Stated
+                | Admits::Operand => Some(writes(
+                    Production("pure_expression"),
+                    Join::Prefix(Prefix::Pure),
+                )),
+            },
+            // A call of no arguments where a type is read writes its empty
+            // list, `empty()`: there `force empty` reads as no type, and the
+            // head reads as an expression the type encloses (#5213).
+            Former::Force(forced) if self.surface == Surface::Type => {
+                tasks.push(Task::Surface(self.surface));
+                tasks.push(Task::Join(Join::Apply(Arity(0_usize))));
+                tasks.push(Task::Visit {
+                    node: forced,
+                    admits: Admits::Value,
+                    depth,
+                });
+                tasks.push(Task::Surface(Surface::Enclosed));
+                return writes(Production("application_expression"), Ok(()));
+            },
+            Former::Force(_) => Some(writes(
+                Production("force_expression"),
+                Join::Prefix(Prefix::Force),
+            )),
+            // A block's `let` statements that only sequence calls, read once
+            // each in order, are written at their reads in the sugared form,
+            // as the formatter writes them (#1416), a match's branch's among
+            // them.
+            Former::Bind(..)
+                if self.form == Form::Sugared
+                    && self.surface == Surface::Expression
+                    && self.bodies == Bodies::Spelled
+                    && let Some((bounds, rest)) = linear_runs(source, node) =>
+            {
+                Self::read_at_binders(&bounds, rest, admits, below(depth, kind), tasks);
+                return writes(Production("application_expression"), Ok(()));
+            },
+            Former::Bind(bound, rest)
+                if let Some((ascribed, result)) = self.typed_bind(source, bound) =>
+            {
+                shaped = Some(Vec::from([
+                    Slot::of(ascribed, Admits::Computation(Tail::Continues), Binds::NONE),
+                    Slot::of(result, Admits::ValueType, Binds::NONE),
+                    Slot::of(rest, admits, Binds::ONE),
+                ]));
+                Some(writes(Production("block"), Join::TypedSequence))
+            },
+            // A `let` of a call nests it in a return, which the checker runs or
+            // suspends (#4466). It spells as written, the call itself the
+            // bound computation: `let x = f(a) ;`.
+            Former::Bind(bound, rest)
+                if let Former::Return(returned) = source.read(bound)
+                    && let Former::Nested(nested) = source.read(returned)
+                    && matches!(
+                        source.read(nested),
+                        Former::Application(..) | Former::Force(_)
+                    ) =>
+            {
+                shaped = Some(Vec::from([
+                    Slot::of(nested, Admits::Computation(Tail::Continues), Binds::NONE),
+                    Slot::of(rest, admits, Binds::ONE),
+                ]));
+                Some(writes(Production("block"), Join::Sequence))
+            },
+            // A `let` of an annotated value returns the ascription, and spells
+            // its annotation after the binder: `let x : A = v ;`.
+            Former::Bind(bound, rest)
+                if let Former::Return(returned) = source.read(bound)
+                    && let Former::Annotated { value, ty } = source.read(returned) =>
+            {
+                shaped = Some(Vec::from([
+                    Slot::of(value, Admits::Value, Binds::NONE),
+                    Slot::of(ty, Admits::ValueType, Binds::NONE),
+                    Slot::of(rest, admits, Binds::ONE),
+                ]));
+                Some(writes(Production("block"), Join::TypedSequence))
+            },
+            // A call bound and never read runs where it stands, and a `let`
+            // naming it would read it as a nested call: its binder is written
+            // `_`.
+            Former::Bind(bound, rest)
+                if matches!(
+                    source.read(bound),
+                    Former::Application(..) | Former::Force(_)
+                ) && reads_binders(source, rest, admits, Arity(1_usize)) == Reading::Unread =>
+            {
+                Some(writes(Production("block"), Join::DiscardedSequence))
+            },
+            Former::Bind(..) => Some(writes(Production("block"), Join::Sequence)),
+            Former::BindAll { arity, .. } => Some(writes(
+                Production("block"),
+                Join::SequenceAll(Arity(usize::from(arity))),
+            )),
+            // A placement has no spelling of its own: the bind before it
+            // writes `let b = c.alloc(n) ;`, and the placement stands as the
+            // rest of the block, under the buffer's linear binder, which takes
+            // the bind's name.
+            Former::Place { body, .. } => {
+                shaped = Some(Vec::from([Slot::of(body, admits, Binds {
+                    zone: Zone::Linear,
+                    count: 1_usize,
+                })]));
+                None
+            },
+            // A sum case, a split or a list case ascribed its answer is the
+            // match that writes it, `match s -> C { … }`: its slots are the
+            // eliminator's, the answer after the scrutinee.
+            Former::Ascription { body, ty }
+                if let Some(eliminator) = self.answered_case(source, body) =>
+            {
+                let mut read = children(source, body, &eliminator, admits, self.bodies);
+                read.insert(1_usize, Slot::of(ty, Admits::CompType, Binds::NONE));
+                shaped = Some(read);
+                Some(self.form(source, node, &former, admits))
+            },
+            // A returned value ascribed its returner, `(return v : -F T)`, is
+            // the annotated value the source wrote, `(v : T)`, under the
+            // return its position writes. Any other ascription outside a
+            // typed bind has no spelling of its own: it stands as its body,
+            // its type unwritten.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "the surface writes an ascription only on a match, in a typed bind \
+                              and over a returned value: elsewhere it stands as its body"
+                )
+            )]
+            Former::Ascription { body, .. } => match self.ascribed_return(source, node) {
+                Some((value, result)) if admits != Admits::Computation(Tail::Passes) => {
+                    shaped = Some(Vec::from([
+                        Slot::of(value, Admits::Value, Binds::NONE),
+                        Slot::of(result, Admits::ValueType, Binds::NONE),
+                    ]));
+                    Some(self.form(source, node, &former, admits))
+                },
+                Some(_) | None => {
+                    self.note(Unspelled::Elided(Elided::Ascription));
+                    shaped = Some(Vec::from([Slot::of(body, admits, Binds::NONE)]));
+                    None
+                },
+            },
+            // A lambda whose parameter states its type is the bind the
+            // lowering holds the argument to that type by, `(return #0 :
+            // -F A) to _. rest`: it is written `fun (x : A) { rest }`, the
+            // bind's binder unwritten, as a resumed shift's is (#3943).
+            Former::Lambda(body)
+                if let Some((stated, rest)) = self.stated_parameter(source, body, admits) =>
+            {
+                let inner = children(source, node, &former, admits, self.bodies)
+                    .first()
+                    .map_or(admits, |slot| slot.admits);
+                let depth = below(depth, kind);
+                tasks.push(Task::Join(Join::TypedLambda));
+                tasks.push(Task::Unbind);
+                tasks.push(Task::Unbind);
+                tasks.push(Task::Visit {
+                    node: rest,
+                    admits: inner,
+                    depth,
+                });
+                tasks.push(Task::BindLoop(Zone::Intuitionistic, LoopBinder::Hidden));
+                // A binder's type is read as a type, where no checker
+                // elaborates.
+                tasks.push(Task::Elaboration(self.elaboration));
+                tasks.push(Task::Surface(self.surface));
+                tasks.push(Task::Visit {
+                    node: stated,
+                    admits: Admits::ValueType,
+                    depth,
+                });
+                tasks.push(Task::Surface(Surface::Type));
+                tasks.push(Task::Elaboration(Elaboration::Read));
+                tasks.push(Task::Bind(Zone::Intuitionistic, Some(node)));
+                return writes(Production("lambda_expression"), Ok(()));
+            },
+            // A linear lambda is written as a lambda: the linear arrow it
+            // checks against tells the two apart.
+            Former::Lambda(_) | Former::LinearLambda(_) => {
+                Some(writes(Production("lambda_expression"), Join::Lambda))
+            },
+            // A composite read where a value is read is the return of its
+            // node, the shape `compose[n, k](…)` lowers to there: it is
+            // written as the form, under no `pure`.
+            Former::Returned(body)
+                if let Former::Return(composite) = source.read(body)
+                    && matches!(source.read(composite), Former::Compose { .. }) =>
+            {
+                shaped = Some(Vec::from([Slot::of(composite, admits, Binds::NONE)]));
+                None
+            },
+            // A nested call the lowering bound by a run, `x ← f(a); g(x)`,
+            // spells as the call it was written as, `g(f(a))`: a type has no
+            // run to read back (#676).
+            Former::Nested(body) | Former::Returned(body)
+                if nested_call(source, body).is_some() =>
+            {
+                Self::inlined(source, body, below(depth, kind), tasks);
+                return writes(Production("application_expression"), Ok(()));
+            },
+            // A quoted type whose head no expression reads, standing where an
+            // expression is read, is written in the quote's own spelling,
+            // `type(T)`; every other one stands bare, as the lowering quotes a
+            // type written where a value is read, and a type position reads
+            // the type itself.
+            Former::Quote(quoted) | Former::QuoteComputation(quoted)
+                if matches!(self.surface, Surface::Expression | Surface::Enclosed)
+                    && self.unread_as_expression(source, quoted, self.form) == Bare::Unread =>
+            {
+                Some(writes(
+                    Production("type_quote_expression"),
+                    Join::Bracket(Bracket::TypeQuote),
+                ))
+            },
+            // A quoted type stands where an expression is read, which takes
+            // every alias but the one over no domain: a group followed by
+            // `->` reads as the box's domain list, `(c : U) -> el c`, and
+            // `() -> C` as an expression. That one is written as the thunk it
+            // stands for, `+U (-F C)`.
+            Former::Quote(quoted)
+                if self.form == Form::Sugared
+                    && let Former::ThunkType(body) = source.read(quoted)
+                    && self
+                        .alias(source, body)
+                        .is_none_or(|(links, ..)| links.is_empty()) =>
+            {
+                shaped = Some(Vec::from([Slot::of(body, Admits::CompType, Binds::NONE)]));
+                Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
+            },
+            // A decode of a positional projection stands where a type is read,
+            // which the type grammar writes only as a path of names: `m.0`
+            // there is the printer's notation.
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a decode of a positional projection has no type syntax: written in \
+                              the printer's notation"
+                )
+            )]
+            Former::Element(code) if let Some(notation) = positional(source, code) => {
+                self.note(Unspelled::Notation(notation));
+                None
+            },
+            // A computation where a value is read stands bare, its run left
+            // to the checker, and so does the computation a returned value
+            // stands for; its piece, as a decode's and a quote's, is the
+            // node's.
+            Former::Element(_)
+            | Former::ComputationElement(_)
+            | Former::Quote(_)
+            | Former::QuoteComputation(_)
+            | Former::Nested(_)
+            | Former::Returned(_) => None,
+        };
+        if let Some(join) = join {
+            tasks.push(Task::Join(join));
+        }
+        let below = below(depth, kind);
+        let slots = match shaped {
+            Some(slots) => slots,
+            None => children(source, node, &former, admits, self.bodies),
+        };
+        let looping = if matches!(former, Former::Fixpoint(_) | Former::Application(..)) {
+            looped(source, node, admits)
+        }
+        else {
+            None
+        };
+        let rest = matches!(
+            looping,
+            Some(
+                Looped::Loop { rest: Some(_), .. }
+                    | Looped::While { rest: Some(_), .. }
+                    | Looped::For { rest: Some(_), .. }
+            )
+        );
+        // Whether every split of unit ending a pass is a break going on with
+        // the rest: a `loop`'s rest is read off them; a `while`'s true branch
+        // stands at its exit's depth, so a break there shares the exit's copy.
+        let breaking = match looping {
+            Some(Looped::Loop { rest, .. }) => rest.is_some(),
+            Some(Looped::While {
+                then,
+                rest: Some(rest),
+                threads: Threads::Unthreaded,
+                ..
+            }) => match breaks(source, then) {
+                Breaks::None => true,
+                Breaks::One(held, under) => held == rest && under.0 == 0_usize,
+                Breaks::Apart => false,
+            },
+            Some(Looped::While { .. } | Looped::For { .. }) | None => false,
+        };
+        let threads = match looping {
+            Some(Looped::Loop { threads, .. } | Looped::While { threads, .. }) => threads,
+            Some(Looped::For { .. }) | None => Threads::Unthreaded,
+        };
+        // The slots held around a threading loop, by the positions of their
+        // open binders, outermost first: each pass holds them again under
+        // their names.
+        let carried: Vec<Option<OpenBinders>> = match threads {
+            Threads::Slots { count, first } => (0_usize .. count)
+                .map(|component| {
+                    let slot = if count == 1_usize {
+                        Some(first)
+                    }
+                    else {
+                        source.component(first, Component::from(component))
+                    };
+                    match slot.map(|slot| source.read(slot)) {
+                        Some(Former::Variable {
+                            zone: Zone::Linear,
+                            index,
+                        }) => self.opened_at(Zone::Linear, index),
+                        Some(_) | None => None,
+                    }
+                })
+                .collect(),
+            Threads::Unthreaded => Vec::new(),
+        };
+        // A pass's binders open the loop's own, the content the threading
+        // takes, and then the holds.
+        let content = threads.opened().0.saturating_sub(threads.held().0);
+        // The slot a loop's pass runs in: a `loop`'s body, a `while`'s true
+        // branch, a `for` loop's body after its list and rest. A rest that
+        // ends another loop's pass admits a pass's end too, but runs none of
+        // this loop's.
+        let pass_slot = match looping {
+            Some(Looped::Loop { .. }) => Some(0_usize),
+            Some(Looped::While { .. } | Looped::For { rest: None, .. }) => Some(1_usize),
+            Some(Looped::For { rest: Some(_), .. }) => Some(2_usize),
+            None => None,
+        };
+        for (index, slot) in slots.into_iter().enumerate().rev() {
+            // A handler's subject, its first slot, is where an exit leaves
+            // the handler.
+            let subject =
+                index == 0_usize && matches!(former, Former::Handle { .. } | Former::Scope { .. });
+            if subject {
+                tasks.push(Task::Handled(false));
+            }
+            // A linear lambda's body stands under its linear copy too, which
+            // closes first.
+            let copies = usize::from(matches!(former, Former::LinearLambda(_)));
+            for _ in 0_usize .. slot.binds.count.saturating_add(copies) {
+                tasks.push(Task::Unbind);
+            }
+            // A quote written in its own spelling, `type(T)`, holds its type in
+            // the type grammar, whatever sort the quote stands in: a quote's
+            // own, a static lambda's quoted body, and a piece a former's parts
+            // write inside `type(`, as a transport's quoted motive.
+            let quoted = matches!(
+                join,
+                Some(Join::Bracket(Bracket::TypeQuote) | Join::StaticLambda { quoted: true })
+            ) || (matches!(join, Some(Join::Form { .. }))
+                && self.forms.last().is_some_and(|parts| {
+                    quoted_piece(parts, Component::from(index)) == Quoted::Inside
+                }));
+            let surface = if quoted {
+                Surface::Type
+            }
+            else {
+                surface_below(source, self.surface, &former, slot.admits)
+            };
+            // Below a type no checker elaborates, whatever sort a slot is
+            // spelled in there.
+            let elaboration = match surface {
+                Surface::Type => Elaboration::Read,
+                Surface::Expression | Surface::Enclosed => self.elaboration,
+            };
+            if elaboration != self.elaboration {
+                tasks.push(Task::Elaboration(self.elaboration));
+            }
+            if surface != self.surface {
+                tasks.push(Task::Surface(self.surface));
+            }
+            tasks.push(slot.node.map_or(Task::Missing, |child| Task::Visit {
+                node: child,
+                admits: slot.admits,
+                depth: below,
+            }));
+            if surface != self.surface {
+                tasks.push(Task::Surface(surface));
+            }
+            if elaboration != self.elaboration {
+                tasks.push(Task::Elaboration(elaboration));
+            }
+            let opener = (slot.binds.count == 1_usize).then_some(node);
+            // A capability scope's subject, its first slot, and a hold's scope,
+            // its second, stand in the region the scope or the hold opens.
+            let scoped = (index == 0_usize && matches!(former, Former::Scope { .. }))
+                || (index == 1_usize && matches!(former, Former::Hold { .. }));
+            for binder in 0_usize .. slot.binds.count {
+                // Binders open outermost first, so the last pushed is the
+                // slot's outermost: in a pass, the loop's own.
+                let depth = slot
+                    .binds
+                    .count
+                    .saturating_sub(binder)
+                    .saturating_sub(1_usize);
+                let passes = pass_slot == Some(index);
+                let unwritten = if !passes {
+                    looping.map(|_| LoopBinder::Hidden)
+                }
+                else if depth == 0_usize {
+                    looping.map(|_| LoopBinder::Own {
+                        rest,
+                        breaks: breaking,
+                    })
+                }
+                else if let Some(Looped::For { .. }) = looping {
+                    // A `for` loop's body: the loop's own, the remaining
+                    // list, the element it writes, and the tail.
+                    match depth {
+                        1_usize => Some(LoopBinder::Hidden),
+                        2_usize => None,
+                        _ => Some(LoopBinder::Tail),
+                    }
+                }
+                else {
+                    looping.map(|_| LoopBinder::Hidden)
+                };
+                // The slot a threading loop's binder at this depth holds
+                // again, counted from the outermost.
+                let holding = depth
+                    .checked_sub(content.saturating_add(1_usize))
+                    .filter(|&held| held < threads.held().0);
+                // The linear copy of a linear lambda's parameter opens inside
+                // its shadow, named as the shadow is.
+                if copies > 0_usize {
+                    tasks.push(Task::Rebind(Zone::Linear, Some(DeBruijnIndex::from(0_u32))));
+                }
+                tasks.push(if scoped {
+                    Task::BindScope(slot.binds.zone, opener)
+                }
+                else if let Some(held) = holding {
+                    Task::BindCarried(Carried {
+                        of: carried.get(held).copied().flatten(),
+                        passing: (passes && held == 0_usize).then_some(threads.held().0),
+                    })
+                }
+                else if let Some(unwritten) = unwritten {
+                    Task::BindLoop(slot.binds.zone, unwritten)
+                }
+                else if let Former::Place { payload, .. } = former {
+                    let named = if let Former::Variable {
+                        zone: Zone::Intuitionistic,
+                        index,
+                    } = source.read(payload)
+                    {
+                        Some(index)
+                    }
+                    else {
+                        None
+                    };
+                    Task::Rebind(slot.binds.zone, named)
+                }
+                else {
+                    Task::Bind(slot.binds.zone, opener)
+                });
+            }
+            if subject {
+                tasks.push(Task::Handled(true));
+            }
+            if let Some(label) = slot.label {
+                tasks.push(Task::Label(label));
+            }
+        }
+        Ok(())
+    }
+
+    /// Schedules a static application and the applications under its
+    /// operator as one application, `f a1 … an`, or, where the operator is
+    /// a static abstraction, as the redex's reduct.
+    ///
+    /// # Specification
+    /// - requires: the application at `depth` applies `operator` to `argument`,
+    ///   and `tasks` is the walk's stack.
+    /// - ensures: the operator is read down through every static application it
+    ///   is, each argument scheduled at the depth the scan reaches it at, until
+    ///   an operator that is no application or one at the depth limit. An
+    ///   operator that is a static abstraction consumes the first arguments,
+    ///   one per binder of its chain: those arguments are visited first, then
+    ///   their binders opened standing for them, the abstraction's body walked
+    ///   under them and the binders closed; any arguments left apply to that
+    ///   reduct as below. Otherwise the operator is scheduled as itself; the
+    ///   join over the operator and the arguments, left to right, is pushed
+    ///   below their visits, the operator visited first. Read as
+    ///   [`ReductAs::Result`], a reduct with no argument left is scheduled as
+    ///   the value type it returns, the codomain of an alias.
+    /// - provides: the one spelling the surface writes a spine in, which a join
+    ///   over one application at a time could not give.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn of the scan deepens the depth it reads at by one, and the
+    /// loop stops at [`DEPTH_LIMIT`]; every turn of the abstraction's peel
+    /// consumes one argument, and stops when they are spent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one- and three-argument spines observe argument order
+    ///   and operator parentheses; the exact depth cutoff observes an unpeeled
+    ///   operator scheduled before its argument; a redex of one and of two
+    ///   arguments, and one whose abstraction is applied past its chain,
+    ///   observe the reduct and the arguments left. Longer stable spines and
+    ///   arbitrary changing sources are not enumerated.
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    /// - witness: `walk::tests::spine_schedules_operator_first_at_the_depth_limit`
+    #[spec(
+        captures: [entry = tasks.len()],
+        ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
+            let substituted = scheduled.iter().find_map(|task| if let Task::Substitute(Arity(count)) = *task { Some(count) } else { None });
+            if let Some(count) = substituted {
+                count > 0_usize
+                    && scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == count
+            }
+            else {
+                let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
+                else { return false; };
+                arity > 0_usize && u32::try_from(arity).is_ok_and(|count| count <= DEPTH_LIMIT.0.max(1_u32))
+                    && arity.checked_add(1_usize) == Some(visits.len())
+                    && visits.iter().all(|task| matches!(*task,
+                        Task::Visit { admits: Admits::Value, depth: at, .. }
+                            if at.0 >= depth.0.saturating_add(1_u32)
+                                && at.0 <= DEPTH_LIMIT.0.max(depth.0.saturating_add(1_u32))))
+            }
+        }),
+    )]
+    fn spine<S>(
+        source: &S,
+        operator: S::Node,
+        argument: S::Node,
+        depth: ValueDepth,
+        reduct_as: ReductAs,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let mut level = below(depth, Kind::Value);
+        let mut arguments = Vec::from([(argument, level)]);
+        let mut operator = operator;
+        while level < DEPTH_LIMIT {
+            let Former::StaticApplication(inner, next) = source.read(operator)
+            else {
+                break;
+            };
+            level = level.deeper();
+            arguments.push((next, level));
+            operator = inner;
+        }
+        // The arguments in the order they are applied, the first outermost.
+        arguments.reverse();
+        let mut consumed = 0_usize;
+        while consumed < arguments.len() {
+            let Former::StaticLambda(body) = source.read(operator)
+            else {
+                break;
+            };
+            operator = body;
+            consumed = consumed.saturating_add(1_usize);
+        }
+        let left = arguments.split_off(consumed);
+        if !left.is_empty() {
+            tasks.push(Task::Join(Join::Apply(Arity(left.len()))));
+        }
+        for &(node, at) in left.iter().rev() {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::Value,
+                depth: at,
+            });
+        }
+        for _ in 0_usize .. consumed {
+            tasks.push(Task::Unbind);
+        }
+        tasks.push(if reduct_as == ReductAs::Result && left.is_empty() {
+            Task::Returned {
+                node: operator,
+                depth: level,
+            }
+        }
+        else {
+            Task::Visit {
+                node: operator,
+                admits: Admits::Value,
+                depth: level,
+            }
+        });
+        if consumed > 0_usize {
+            tasks.push(Task::Substitute(Arity(consumed)));
+        }
+        for &(node, at) in arguments.iter().rev() {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::Value,
+                depth: at,
+            });
+            tasks.push(Task::Hold);
+        }
+    }
+
+    /// Schedules the value type the computation type `node` returns, the
+    /// codomain of a value-function alias.
+    ///
+    /// # Specification
+    /// - requires: `node` is a codomain [`Self::alias`] found as a reduct, and
+    ///   `tasks` is the walk's stack.
+    /// - ensures: a returner's result scheduled as a value type at `depth`; a
+    ///   decode's and a quote's child scheduled the same way again; a static
+    ///   redex scheduled by [`Self::spine`] with its reduct read as its result;
+    ///   any other node, which [`Self::alias`] does not answer with, scheduled
+    ///   as the computation type it is.
+    /// - provides: the reduct half of the alias's codomain, under the binders
+    ///   the redex's spine opens for its arguments.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk over an arrow into a static redex of a
+    ///   returner spells as the alias over the reduct's result.
+    /// - witness: `tests::goldens::a_static_redex_prints_as_its_reduct_401`
+    #[spec(captures: [entry = tasks.len()], ensures: tasks.len() > entry)]
+    fn returned<S>(
+        source: &S,
+        node: S::Node,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let former = source.read(node);
+        if let Former::Returner(result) = former {
+            tasks.push(Task::Visit {
+                node: result,
+                admits: Admits::ValueType,
+                depth,
+            });
+        }
+        else if let Former::ComputationElement(child) | Former::QuoteComputation(child) = former {
+            tasks.push(Task::Returned { node: child, depth });
+        }
+        else if let Former::StaticApplication(operator, argument) = former {
+            Self::spine(source, operator, argument, depth, ReductAs::Result, tasks);
+        }
+        else {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::CompType,
+                depth,
+            });
+        }
+    }
+
+    /// Schedules an application and the applications under its function as
+    /// one call, `f a1 … an`, or, where the function is a function literal
+    /// whose body returns, as the value the call returns.
+    ///
+    /// # Specification
+    /// - requires: the application at `depth` applies `function` to `argument`,
+    ///   and `tasks` is the walk's stack.
+    /// - ensures: the function is read down through every application it is, at
+    ///   most [`DEPTH_LIMIT`] arguments in all, each argument scheduled as a
+    ///   value at `depth` but a hole the call nominated for an implicit it
+    ///   omits, which the source wrote nothing for, or as its body where the
+    ///   walk leaves its thunk out ([`Self::inserted`]); a force at the head of
+    ///   the spine is scheduled as the value it forces, the bridge the lowering
+    ///   writes before a value it calls, and any other head as a computation
+    ///   where the body goes on; the join over the head and the arguments, left
+    ///   to right, is pushed below their visits, the head visited first. Where
+    ///   the head forces a recursive definition's own binder, each uniform
+    ///   parameter ([`Self::uniform`]) is scheduled as its context binder
+    ///   between the head and the first argument, outermost first, and the join
+    ///   counts them among the arguments. A call standing where a type is read
+    ///   has the walk's surface set to [`Surface::Enclosed`] over its head and
+    ///   its arguments and restored past its join, since a call reads them as
+    ///   expressions wherever it stands: a type argument there is quoted
+    ///   (#1102), and the join writes the call glued, `f(a, b)`, as the type's
+    ///   sort reads it. Where the head forces a constant whose telescope
+    ///   ([`Source::implicits`]) names an implicit at the place of an argument
+    ///   the call writes, and the spine is read whole, the join is instead the
+    ///   form `f[.x = a, …](b, …)`: the head, then each such argument after its
+    ///   implicit's name in the telescope's order, then the rest in place, each
+    ///   visited in that order. A forced function literal — a thunk, or a
+    ///   computation nested where a value is read, which a force decides as a
+    ///   thunk — of at least as many abstractions as the call has arguments,
+    ///   whose body then returns, is scheduled instead as the value it returns,
+    ///   and one whose body is itself a call of a forced head as that call,
+    ///   under one binder per argument standing for the argument, the first
+    ///   outermost: the type grammar has no call of a literal, and the reading
+    ///   back compares such a call as what it returns (#675).
+    /// - provides: the one spelling the surface writes a call in.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn adds one argument, and the loop stops at [`DEPTH_LIMIT`]
+    /// arguments.
+    ///
+    /// # Cost
+    /// - allocation: the arguments, the residents and the written block's
+    ///   index, growth within the call's spine.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a forced constant on two arguments and a
+    ///   call whose head is a returner observe argument order, the elided force
+    ///   and the head's parentheses; a call of a literal identity and of a
+    ///   literal projection on two arguments observe the reduct and the binder
+    ///   each argument stands for, and a literal whose body does more than
+    ///   return stays a call; a recursive definition's call under one and two
+    ///   uniform parameters observes them passed first, in order; a call
+    ///   omitting an implicit, and one omitting its every argument, write only
+    ///   what the source wrote, and a call holding a wildcard writes its `_`; a
+    ///   call a path type's endpoint writes quotes its type argument; a call of
+    ///   a function whose implicit's type names the explicit parameter before
+    ///   it writes the implicit as a resident and the explicit one in place.
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
+    /// - witness: `tests::goldens::a_called_function_literal_prints_as_what_it_returns_675`
+    /// - witness: `tests::goldens::a_called_nested_literal_prints_as_what_it_returns_2325`
+    /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
+    /// - witness: `tests::goldens::a_call_leaves_out_the_implicits_it_omits_1216`
+    /// - witness: `tests::goldens::a_call_writes_the_wildcards_it_holds_528`
+    /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
+    /// - witness: `tests::goldens::a_call_supplies_its_callee_s_implicits_by_name_2267`
+    #[spec(
+        captures: [entry = tasks.len(), surface = self.surface],
+        ensures: |()| tasks.get(entry..).is_some_and(|all| {
+            let substituted = all.iter().find_map(|task| if let Task::Substitute(Arity(count)) = *task { Some(count) } else { None });
+            if let Some(count) = substituted {
+                return count > 0_usize
+                    && all.iter().filter(|task| matches!(**task, Task::Unbind)).count() == count
+                    && all.iter().filter(|task| matches!(**task, Task::Hold)).count() == count
+                    && count.checked_mul(3_usize).and_then(|every| every.checked_add(2_usize)) == Some(all.len());
+            }
+            let scheduled = if surface != Surface::Type {
+                all
+            } else if matches!(all.first(), Some(&Task::Surface(restored)) if restored == surface)
+                && matches!(all.last(), Some(&Task::Surface(Surface::Enclosed)))
+            {
+                all.get(1_usize .. all.len().saturating_sub(1_usize)).unwrap_or_default()
+            } else {
+                return false;
+            };
+            let Some((&Task::Join(join), visits)) = scheduled.split_first()
+            else { return false; };
+            let joined = if let Join::Apply(Arity(arity)) = join {
+                arity.checked_add(1_usize)
+            } else if let Join::Form { pieces: Arity(pieces), binding: Binding::Application } = join {
+                Some(pieces)
+            } else {
+                None
+            };
+            joined == Some(visits.len())
+                && visits.split_last().is_some_and(|(head, arguments)| {
+                    let passed = arguments.iter().filter(|task| matches!(**task, Task::Visit { .. })).count();
+                    matches!(*head, Task::Visit { admits: Admits::Value | Admits::Computation(Tail::Continues), depth: at, .. } if at == depth)
+                        && u32::try_from(passed).is_ok_and(|count| count <= DEPTH_LIMIT.0)
+                        && arguments.iter().all(|task| matches!(*task, Task::Context(_))
+                            || matches!(*task, Task::Visit { admits: Admits::Value | Admits::Computation(Tail::Unstated), depth: at, .. } if at == depth))
+                })
+        }),
+    )]
+    fn call<S>(
+        &mut self,
+        source: &S,
+        function: S::Node,
+        argument: S::Node,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let limit = usize::try_from(u32::from(DEPTH_LIMIT)).unwrap_or(usize::MAX);
+        let mut arguments = Vec::from([argument]);
+        let mut head = function;
+        while arguments.len() < limit {
+            let Former::Application(inner, next) = source.read(head)
+            else {
+                break;
+            };
+            arguments.push(next);
+            head = inner;
+        }
+        if let Former::Force(thunk) = source.read(head)
+            && let Former::Thunk(body) | Former::Nested(body) = source.read(thunk)
+        {
+            let mut reduct = body;
+            let mut consumed = 0_usize;
+            while consumed < arguments.len() {
+                let Former::Lambda(inner) = source.read(reduct)
+                else {
+                    break;
+                };
+                reduct = inner;
+                consumed = consumed.saturating_add(1_usize);
+            }
+            let mut callee = reduct;
+            let mut calls = false;
+            while let Former::Application(inner, _) = source.read(callee) {
+                callee = inner;
+                calls = true;
+            }
+            let reduced = if let Former::Return(result) = source.read(reduct) {
+                Some((result, Admits::Value))
+            }
+            else if calls && let Former::Force(_) = source.read(callee) {
+                Some((reduct, Admits::Computation(Tail::Continues)))
+            }
+            else {
+                None
+            };
+            if consumed == arguments.len()
+                && let Some((result, admits)) = reduced
+            {
+                for _ in 0_usize .. consumed {
+                    tasks.push(Task::Unbind);
+                }
+                tasks.push(Task::Visit {
+                    node: result,
+                    admits,
+                    depth,
+                });
+                tasks.push(Task::Substitute(Arity(consumed)));
+                for node in arguments {
+                    tasks.push(Task::Visit {
+                        node,
+                        admits: Admits::Value,
+                        depth,
+                    });
+                    tasks.push(Task::Hold);
+                }
+                return;
+            }
+        }
+        // A recursive definition's call of itself passes each uniform
+        // parameter as itself, ahead of the arguments its fixpoint takes.
+        let Arity(uniform) = self.uniform(source, head);
+        let mut passed_uniform: Vec<ContextPosition> =
+            (0_usize .. uniform).map(ContextPosition).collect();
+        // It passes each implicit and instance as the definition's own, and
+        // omits them: a descent that writes one argument per explicit
+        // parameter has the lowering pass the function's own for each it
+        // leaves out before the fixpoint, and the one in scope past it. It
+        // omits them all or none.
+        let itself = self.recursive.is_some_and(|recursive| {
+            matches!(source.read(head), Former::Force(forced)
+                if self.binder_of(source, forced) == Some(ContextPosition(usize::from(recursive.uniform))))
+        });
+        if itself {
+            let telescope = source.recursive_telescope();
+            let named = |at: usize| telescope.get(at).is_some_and(Option::is_some);
+            let count = arguments.len();
+            // `arguments` holds the spine's last argument first. The spine's
+            // argument at `at` is the parameter past the uniform ones at
+            // `at`, its binder one past it, behind the definition's own.
+            let passed: Vec<Option<bool>> = (0_usize .. count)
+                .zip(&arguments)
+                .map(|(place, &node)| {
+                    let at =
+                        uniform.checked_add(count.checked_sub(place)?.checked_sub(1_usize)?)?;
+                    named(at).then_some(())?;
+                    Some(
+                        self.binder_of(source, node)
+                            == Some(ContextPosition(at.checked_add(1_usize)?)),
+                    )
+                })
+                .collect();
+            if ((0_usize .. uniform).any(named) || passed.iter().any(Option::is_some))
+                && !passed.contains(&Some(false))
+            {
+                arguments = arguments
+                    .into_iter()
+                    .zip(passed)
+                    .filter_map(|(node, own)| own.is_none().then_some(node))
+                    .collect();
+                passed_uniform.retain(|&ContextPosition(at)| !named(at));
+            }
+        }
+        // A callee whose telescope names an implicit at an argument's place
+        // takes that argument by name, `f[.x = a](b)`, where the spine is read
+        // whole: the core applies every argument in place, and the
+        // parentheses admit only the explicit ones. A model implicit's
+        // components are supplied by the one path each reads under, `f[.s =
+        // M]`. The atoms that fill the first entries of the callee's written
+        // block are supplied by position, `f[T](b)`.
+        let whole = !matches!(source.read(head), Former::Application(..));
+        let (telescope, slots, block) = if uniform == 0_usize
+            && whole
+            && let Former::Force(thunk) = source.read(head)
+        {
+            (
+                source.implicits(thunk),
+                source.model_slots(thunk),
+                source.written_implicits(thunk),
+            )
+        }
+        else {
+            (&[][..], &[][..], &[][..])
+        };
+        // A hole the call nominated for an implicit it omits is what the
+        // source left out: the call writes nothing there. A wildcard is what
+        // the source wrote, and stays among the arguments as its `_`.
+        let omitted =
+            |node: S::Node| matches!(source.read(node), Former::Unreadable(Unreadable::Omitted));
+        let mut residents: Vec<(Name<'_>, Resident<S::Node>)> = Vec::new();
+        if !telescope.is_empty() || !slots.is_empty() {
+            // `arguments` holds the spine's last argument first.
+            let spine: Vec<S::Node> = arguments.iter().rev().copied().collect();
+            let mut placed = Vec::with_capacity(spine.len());
+            let starting: BTreeMap<usize, &ModelSlot<'_, S::Node>> =
+                slots.iter().map(|slot| (slot.at, slot)).collect();
+            let mut position = 0_usize;
+            while let Some(&node) = spine.get(position) {
+                let supplied = starting.get(&position).and_then(|&slot| {
+                    let past = position.checked_add(slot.components.len())?;
+                    Some((slot, spine.get(position .. past)?, past))
+                });
+                if let Some((slot, supplied, past)) = supplied {
+                    if !supplied.iter().all(|&held| omitted(held)) {
+                        if let Some(path) = self.supply_path(source, slot, supplied) {
+                            residents.push((slot.name, Resident::Path(path)));
+                        }
+                        else {
+                            #[cfg_attr(
+                                dylint_lib = "quenchant_dylints",
+                                expect(
+                                    answer_totality,
+                                    reason = "components no one path names: the call writes them \
+                                              in place, which re-lowers as no supply"
+                                )
+                            )]
+                            self.note(Unspelled::Notation(Notation::Supply));
+                            placed.extend_from_slice(supplied);
+                        }
+                    }
+                    position = past;
+                    continue;
+                }
+                match telescope.get(position).copied().flatten() {
+                    Some(name) => residents.push((name, Resident::Node(node))),
+                    None => placed.push(node),
+                }
+                position = position.saturating_add(1_usize);
+            }
+            placed.reverse();
+            arguments = placed;
+        }
+        arguments.retain(|&node| !omitted(node));
+        residents.retain(|&(_, ref resident)| match *resident {
+            Resident::Node(node) => !omitted(node),
+            Resident::Path(_) => true,
+        });
+        // The positional run: each entry of the written block in turn, while
+        // the call supplies it by an atom, moved ahead of the named ones. An
+        // entry the call omits, supplies by any other value or by a path ends
+        // the run, so no `_` is written.
+        let positional = if block.is_empty() || residents.is_empty() {
+            0_usize
+        }
+        else {
+            let entries: BTreeMap<&str, usize> = block
+                .iter()
+                .enumerate()
+                .map(|(index, written)| (written.as_ref(), index))
+                .collect();
+            let mut atomic = alloc::vec![false; block.len()];
+            for &(name, ref resident) in &residents {
+                if let (Some(&index), &Resident::Node(node)) =
+                    (entries.get(name.as_ref()), resident)
+                    && atom(source, node).is_some()
+                    && let Some(slot) = atomic.get_mut(index)
+                {
+                    *slot = true;
+                }
+            }
+            let run = atomic.iter().take_while(|&&held| held).count();
+            // A stable sort: the run's entries lead in block order, and the
+            // rest keep their order behind them.
+            residents.sort_by_key(|&(name, _)| {
+                entries
+                    .get(name.as_ref())
+                    .copied()
+                    .filter(|&index| index < run)
+                    .unwrap_or(run)
+            });
+            run
+        };
+        // A call reads its head and its arguments as expressions wherever it
+        // stands: where a type is read, the walk reads them as expressions the
+        // type encloses and returns to the type past the call's join.
+        let switched = self.surface == Surface::Type;
+        if switched {
+            tasks.push(Task::Surface(self.surface));
+        }
+        if residents.is_empty() {
+            tasks.push(Task::Join(Join::Apply(Arity(
+                arguments.len().saturating_add(passed_uniform.len()),
+            ))));
+        }
+        else {
+            let mut parts = Parts::default();
+            let _ = parts.piece(Binding::Atom).text("[");
+            for (index, &(name, ref resident)) in residents.iter().enumerate() {
+                if index > 0_usize {
+                    let _ = parts.text(",").part(Part::Space);
+                }
+                match *resident {
+                    Resident::Node(_) if index < positional => {
+                        let _ = parts.piece(Binding::ARGUMENT);
+                    },
+                    Resident::Node(_) => {
+                        let _ = parts
+                            .text(format!(".{} = ", name.as_ref()))
+                            .piece(Binding::ARGUMENT);
+                    },
+                    Resident::Path(ref path) => {
+                        let _ = parts.text(format!(".{} = {path}", name.as_ref()));
+                    },
+                }
+            }
+            let _ = parts
+                .text("]")
+                .applied(Arity(arguments.len()), self.surface);
+            let pieces = Arity(parts.pieces);
+            self.forms.push(parts.parts);
+            tasks.push(Task::Join(writes(
+                Production("instantiation_expression"),
+                Join::Form {
+                    pieces,
+                    binding: Binding::Application,
+                },
+            )));
+        }
+        for node in arguments {
+            tasks.push(self.inserted(source, node).map_or(
+                Task::Visit {
+                    node,
+                    admits: Admits::Value,
+                    depth,
+                },
+                |body| Task::Visit {
+                    node: body,
+                    admits: Admits::Computation(Tail::Unstated),
+                    depth,
+                },
+            ));
+        }
+        for &(_, ref resident) in residents.iter().rev() {
+            if let Resident::Node(node) = *resident {
+                tasks.push(Task::Visit {
+                    node,
+                    admits: Admits::Value,
+                    depth,
+                });
+            }
+        }
+        for &position in passed_uniform.iter().rev() {
+            tasks.push(Task::Context(position));
+        }
+        tasks.push(if let Former::Force(thunk) = source.read(head) {
+            Task::Visit {
+                node: thunk,
+                admits: Admits::Value,
+                depth,
+            }
+        }
+        else {
+            Task::Visit {
+                node: head,
+                admits: Admits::Computation(Tail::Continues),
+                depth,
+            }
+        });
+        if switched {
+            tasks.push(Task::Surface(Surface::Enclosed));
+        }
+    }
+
+    /// Schedules the comparison `operator` of `operands`, first to last,
+    /// that a call of a constant a comparison calls writes: `a == b` for the
+    /// prelude's `eq` on `a` and `b`. The model stays unwritten, as the source
+    /// leaves it, so the comparison reads back as the call. Where a type is
+    /// read, the operands read as expressions the type encloses, as a call's
+    /// arguments read.
+    ///
+    /// # Specification
+    /// - requires: `operator` and `operands` are as [`compared`] reads them.
+    /// - ensures: the form `a ⊙ b` pushed onto the forms, then its join and one
+    ///   visit for each operand, the first visited first; where a type is read,
+    ///   the operands' surface is the enclosed one, and the type's surface
+    ///   comes back past the join.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`compared`].
+    /// - witness: `tests::goldens::a_comparison_through_a_model_is_written_as_its_operator_6229`
+    #[spec(
+        captures: [entry = tasks.len(), forms = self.forms.len()],
+        ensures: self.forms.len() == forms.saturating_add(1_usize)
+            && tasks.len() >= entry.saturating_add(3_usize),
+    )]
+    fn comparison<N>(
+        &mut self,
+        operator: InfixSpelling,
+        [first, second]: [N; 2],
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<N>>,
+    )
+    {
+        let switched = self.surface == Surface::Type;
+        if switched {
+            tasks.push(Task::Surface(self.surface));
+        }
+        let mut parts = Parts::default();
+        let binding = infix(&mut parts, operator);
+        let pieces = Arity(parts.pieces);
+        self.forms.push(parts.parts);
+        tasks.push(Task::Join(Join::Form { pieces, binding }));
+        for node in [second, first] {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::Value,
+                depth,
+            });
+        }
+        if switched {
+            tasks.push(Task::Surface(Surface::Enclosed));
+        }
+    }
+
+    /// The body of the thunk at `node` where the walk leaves the thunk for the
+    /// checker to insert, `f(g(x))` for `f(thunk { g(x) })`: the checker
+    /// inserts one where it checks a computation against a thunk type, a
+    /// definition's body against its signature and an argument against its
+    /// parameter, and a value of a thunk type standing there is the thunk it
+    /// inserts. Either form leaves it out, as either leaves out the exit the
+    /// lowering infers: the formatter writes neither back. No checker
+    /// elaborates below a type, even where a call there reads its arguments
+    /// as expressions, so such a thunk is kept there. A function needs no
+    /// checker: the lowering thunks a function written as a value wherever it
+    /// stands, so its thunk is left out below a type as well.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the body when thunks are spelled and `node` reads as a thunk
+    ///   of a function, or, where a checker elaborates
+    ///   ([`Elaboration::Checked`]), as a thunk whose body is one expression
+    ///   the checker wraps — a call, a forced value or a lazy record; `None`
+    ///   otherwise, a thunk of a returned value, of a bind's statements or of
+    ///   anything else among them, and a thunk of a call, a forced value or a
+    ///   lazy record anywhere below a type.
+    /// - provides: the thunks the walk leaves out, as the formatter's
+    ///   `inserted-thunk` rewrite leaves them out.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call's thunk argument over a call and over a
+    ///   returned value, and a definition's thunk over a function and over a
+    ///   statement block, distinguish a thunk left out from one kept; a call's
+    ///   thunk argument over a function and over a call, where a type is read,
+    ///   distinguish the function's thunk left out from the call's kept; a
+    ///   call's thunk argument over a call, in a call a type writes and in a
+    ///   thunk a path type's endpoint writes, distinguish the mark from the
+    ///   sort the argument is spelled in.
+    /// - witness: `tests::goldens::a_thunk_the_checker_inserts_is_left_out_1457`
+    /// - witness: `tests::goldens::a_function_argument_leaves_its_thunk_out_where_a_type_is_read_3933`
+    /// - witness: `tests::goldens::no_thunk_is_left_out_below_a_type_3972`
+    #[spec(ensures: |ref ret| ret.is_none()
+        || (self.bodies == Bodies::Spelled
+            && (self.elaboration == Elaboration::Checked
+                || matches!(*ret, Some(body) if matches!(source.read(body), Former::Lambda(_))))))]
+    fn inserted<S>(
+        &self,
+        source: &S,
+        node: S::Node,
+    ) -> Option<S::Node>
+    where
+        S: Source + ?Sized,
+    {
+        if self.bodies != Bodies::Spelled {
+            return None;
+        }
+        let Former::Thunk(body) = source.read(node)
+        else {
+            return None;
+        };
+        let function = matches!(source.read(body), Former::Lambda(_));
+        let wrapped = matches!(
+            source.read(body),
+            Former::Application(..) | Former::Force(_) | Former::Lazy(_)
+        );
+        (function || (wrapped && self.elaboration == Elaboration::Checked)).then_some(body)
+    }
+
+    /// Schedules a computation whose runs bind calls as its last step with
+    /// each run's binder standing for the call it binds, `g(f(a))` for `x ←
+    /// f(a); g(x)`.
+    ///
+    /// # Specification
+    /// - requires: `body` is the computation a nested or returned value at
+    ///   `depth` stands for, and `tasks` is the walk's stack.
+    /// - ensures: every leading run binding a nested call ([`nested_call`]) is
+    ///   peeled; each bound is scheduled as a computation where the body goes
+    ///   on, in order, each followed by one binder standing for it; the rest is
+    ///   scheduled under them all, and every binder is closed after it.
+    /// - provides: the nested call a type writes, which the lowering commutes
+    ///   into runs and the type grammar cannot read back as runs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn peels one bind off the computation, a finite term.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one run and two runs, the second's call naming the
+    ///   first's binder, observe each call standing for its binder in order.
+    /// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+    /// - witness: `tests::goldens::a_run_bound_by_a_run_in_a_type_prints_nested_3280`
+    #[spec(
+        captures: [entry = tasks.len()],
+        ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
+            let substitutes = scheduled.iter().filter(|task| matches!(**task, Task::Substitute(Arity(1_usize)))).count();
+            substitutes > 0_usize
+                && scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == substitutes
+                && scheduled.iter().filter(|task| matches!(**task, Task::Hold)).count() == substitutes
+                && substitutes.checked_mul(4_usize).and_then(|all| all.checked_add(1_usize)) == Some(scheduled.len())
+        }),
+    )]
+    fn inlined<S>(
+        source: &S,
+        body: S::Node,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let mut bounds = Vec::new();
+        let mut rest = body;
+        while let Some((bound, next)) = nested_call(source, rest) {
+            bounds.push(bound);
+            rest = next;
+        }
+        Self::read_at_binders(
+            &bounds,
+            rest,
+            Admits::Computation(Tail::Continues),
+            depth,
+            tasks,
+        );
+    }
+
+    /// Schedules `rest`, in a position admitting `admits`, under one binder
+    /// per call of `bounds`, outermost first, each standing for its call.
+    ///
+    /// # Specification
+    /// - requires: `rest` stands under one binder per entry of `bounds`, the
+    ///   last innermost, and `tasks` is the walk's stack.
+    /// - ensures: each bound is scheduled where the body goes on, in order, as
+    ///   [`Task::Inline`] spells it, each followed by one binder standing for
+    ///   it; the rest is scheduled under them all at `admits`, and every binder
+    ///   is closed after it.
+    /// - provides: the calls [`Self::inlined`] and a block's linear runs write
+    ///   where their binders are read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::inlined`] and [`linear_runs`].
+    /// - witness: `tests::goldens::a_run_bound_call_in_a_type_prints_nested_676`
+    /// - witness: `tests::goldens::a_run_only_sequencing_a_call_is_written_at_its_read_1416`
+    #[spec(
+        captures: [entry = tasks.len()],
+        ensures: |()| tasks.len().checked_sub(entry) == bounds.len().checked_mul(4_usize).and_then(|all| all.checked_add(1_usize))
+            && tasks.get(entry..).is_some_and(|scheduled| scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == bounds.len()),
+    )]
+    fn read_at_binders<Node>(
+        bounds: &[Node],
+        rest: Node,
+        admits: Admits,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<Node>>,
+    ) where
+        Node: Copy,
+    {
+        tasks.extend(bounds.iter().map(|_| Task::Unbind));
+        tasks.push(Task::Visit {
+            node: rest,
+            admits,
+            depth,
+        });
+        for &bound in bounds.iter().rev() {
+            tasks.push(Task::Substitute(Arity(1_usize)));
+            tasks.push(Task::Inline { node: bound, depth });
+            tasks.push(Task::Hold);
+        }
+    }
+
+    /// A leaf naming the binder at `offset` among those the join at hand's
+    /// children open, `?` and approximate when the names ran out.
+    ///
+    /// # Specification
+    /// - requires: the open count is the join's own, its children's binders
+    ///   closed, so position `open + offset` names the binder.
+    /// - ensures: the name the binder took when it opened ([`Self::bind`]) is a
+    ///   leaf, and a position no binder opened — the last label of a dependent
+    ///   record — takes the first generated name no binder below it holds; a
+    ///   binder that took none, or no generated name left, yields `?` and marks
+    ///   the presentation approximate without adding a piece.
+    /// - fails: the builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested dependent arrows and static abstractions
+    ///   observe the chosen binder and scope, and a split's two binders their
+    ///   order. The binder cache witness covers counter exhaustion separately;
+    ///   layout refusal at this exact join is outside the finite spelling
+    ///   fixtures.
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::an_arrow_binder_spells_as_the_source_names_it`
+    #[spec(
+        captures: [entry = self.pieces.len(), fidelity = self.fidelity,
+            unnamed = matches!(self.names.get(self.opened.len().saturating_add(offset.0)), Some(&None))],
+        ensures: |ref ret| self.pieces.len() == entry
+            && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
+            && (!unnamed || self.fidelity == Fidelity::Approximate)
+            && match *ret {
+                | Ok(doc) => doc != Doc::EMPTY,
+                | Err(PresentationError::Build(_)) => true,
+                | Err(_) => false,
+            },
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a binder the generated names ran out for has no name to write"
+        )
+    )]
+    fn binder(
+        &mut self,
+        offset: OpenBinders,
+    ) -> Result<Doc, PresentationError>
+    {
+        let position = self.opened.len().saturating_add(offset.0);
+        let name = match self.names.get(position) {
+            Some(&Some(ref name)) => Some(name.clone()),
+            Some(&None) => None,
+            None => self.fresh(offset),
+        };
+        if let Some(name) = name {
+            self.leaf(Glyphs(name.0.as_str()))
+        }
+        else {
+            self.fidelity = Fidelity::Approximate;
+            let _fresh = self.unspelled.insert(Unspelled::Exhausted);
+            self.leaf(Glyphs("?"))
+        }
+    }
+
+    /// The generated name ([`Binders::name_at`]) of the binder `offset` past
+    /// the innermost open binder: the first no binder below it holds, past
+    /// one more for each binder between it and the last named one, which
+    /// takes the earlier ones in order; none once the names ran out. A binder
+    /// an earlier pass left out holds no name ([`holder`]), and
+    /// each binder whose name the choice passes over is noted
+    /// ([`Openings::pass_over`]).
+    ///
+    /// # Specification
+    /// trivial.
+    fn fresh(
+        &mut self,
+        offset: OpenBinders,
+    ) -> Option<BinderName>
+    {
+        let position = self.opened.len().saturating_add(offset.0);
+        let end = position.min(self.names.len());
+        let mut unnamed = position.saturating_sub(self.names.len());
+        for at in 0_usize .. {
+            let Maybe::Present(name) = self.binders.name_at(OpenBinders(at))
+            else {
+                return None;
+            };
+            let candidate = Name::from(name.0.as_str());
+            if let Some(held) = holder(&self.names, &self.openings, OpenBinders(end), candidate) {
+                self.openings.pass_over(held);
+            }
+            else if let Some(left) = unnamed.checked_sub(1_usize) {
+                unnamed = left;
+            }
+            else {
+                return Some(name.clone());
+            }
+        }
+        None
+    }
+
+    /// A label `written` a link of a dependent record writes, whose join is
+    /// being closed, where it labels freely: a name the walk's spelling
+    /// writes, the term mentions nowhere else, and no binder around the link
+    /// holds, nor the name at the position past them, a pair's own binder,
+    /// as [`Self::bind`] reads a written binder; none otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn free_label(
+        &self,
+        written: Option<BinderName>,
+    ) -> Option<BinderName>
+    {
+        let end = self
+            .opened
+            .len()
+            .saturating_add(1_usize)
+            .min(self.names.len());
+        let held = self.names.get(.. end).unwrap_or_default();
+        written.filter(|name| {
+            unwritable(Name::from(name.0.as_str()), self.spelling).is_none()
+                && !self.binders.mentioned.contains(name.0.as_str())
+                && !held.iter().flatten().any(|other| other.0 == name.0)
+        })
+    }
+
+    /// The product of `first` and `second`: `A * B` sugared, each operand
+    /// tighter than the chain, and `*{A, B}` explicit.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    fn pair_product(
+        &mut self,
+        first: Piece,
+        second: Piece,
+    ) -> Result<(Doc, Binding), PresentationError>
+    {
+        if self.form == Form::Sugared {
+            let first = self.bare_up_to(first, Infix::Product.operand())?;
+            let second = self.bare_up_to(second, Infix::Product.operand())?;
+            let symbol = self.leaf(Infix::Product.symbol())?;
+            let head = self.builder.concat(first, symbol)?;
+            let head = self.space_or_break(head)?;
+            Ok((self.builder.concat(head, second)?, Infix::Product.binding()))
+        }
+        else {
+            let opener = self.leaf(Brace::Star.opener())?;
+            let comma = self.leaf(Glyphs(","))?;
+            let comma = self.space_or_break(comma)?;
+            let inner = self
+                .builder
+                .concat_all(&[opener, first.doc, comma, second.doc])?;
+            let inner = self.none_or_break(inner)?;
+            let close = self.leaf(Glyphs("}"))?;
+            Ok((self.builder.concat(inner, close)?, Binding::Atom))
+        }
+    }
+
+    /// A dependent record's `fields` in its braces, `*{l : A, …}`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Build`] when the builder refuses.
+    fn braced_fields(
+        &mut self,
+        fields: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let open = self.leaf(Brace::Star.opener())?;
+        let inner = self.builder.concat(open, fields)?;
+        let inner = self.none_or_break(inner)?;
+        let close = self.leaf(Glyphs("}"))?;
+        self.builder.concat(inner, close)
+    }
+
+    /// Open a binder in `zone`, named as the source writes it for `opener`
+    /// where that name captures nothing, and by the first generated name no
+    /// binder around it holds otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one binder more is open, in `zone`; its position takes the
+    ///   name `opener`'s source writes ([`Source::written_binder`]) when it is
+    ///   a name the walk's spelling writes, the term mentions nowhere else and
+    ///   no open binder holds, else the first generated name
+    ///   ([`Binders::name_at`]) no open binder holds, else none. A binder an
+    ///   earlier pass left out holds no name ([`holder`]). With no written
+    ///   names and no binder left out, the binder at position `p` takes the
+    ///   `p`-th generated name, as it always did. Each open binder whose name
+    ///   the choice passes over is noted ([`Openings::pass_over`]). A binder
+    ///   whose type is a dependent record keeps its fields' labels
+    ///   ([`record_labels`]) at its position.
+    /// - provides: the name each occurrence of the binder and its former's join
+    ///   read, and the labels a selection off it is written by.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declared type spells its parameters' names; a
+    ///   written name a constant of the type holds, or an outer binder's, falls
+    ///   back to a generated one; generated names skip a written name an outer
+    ///   binder took; a primed name in ASCII falls back to a generated one.
+    /// - witness: `tests::goldens::an_arrow_binder_spells_as_the_source_names_it`
+    /// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
+    #[spec(
+        captures: [opened = self.opened.len()],
+        ensures: self.opened.len() == opened.saturating_add(1_usize)
+            && self.names.len() > opened,
+    )]
+    fn bind<S>(
+        &mut self,
+        source: &S,
+        zone: Zone,
+        opener: Option<S::Node>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let position = self.opened.len();
+        self.names.truncate(position);
+        let written = opener
+            .and_then(|node| source.written_binder(node))
+            .and_then(|name| {
+                let text: &str = name.as_ref();
+                if unwritable(name, self.spelling).is_some()
+                    || self.binders.mentioned.contains(text)
+                {
+                    return None;
+                }
+                if let Some(held) = holder(&self.names, &self.openings, OpenBinders(position), name)
+                {
+                    self.openings.pass_over(held);
+                    return None;
+                }
+                Some(BinderName(String::from(text)))
+            });
+        let name = written.or_else(|| self.fresh(OpenBinders(0)));
+        self.names.resize(position, None);
+        self.names.push(name);
+        let _named = self.occurring.remove(&OpenBinders(position));
+        self.openings.open(OpenBinders(position));
+        if let Some(labels) = opener.and_then(|node| record_labels(source, node)) {
+            let _fresh = self.records.insert(OpenBinders(position), labels);
+        }
+        let _stale = self.unrecorded.remove(&OpenBinders(position));
+        if let Some(node) = opener
+            && let Former::Pi { domain, .. } = source.read(node)
+            && unrecorded(source, domain).is_some()
+        {
+            let _fresh = self.unrecorded.insert(OpenBinders(position));
+        }
+        self.opened.push(zone);
+    }
+
+    /// Open the linear binder a threading loop's pass holds a slot again
+    /// under, named as the slot held around the loop it carries, so the
+    /// passes read and write the slot by its own name; its region the
+    /// innermost the walk is inside, as a hold's. On the first slot's hold in
+    /// a pass, the innermost loop's pass hands on the slots held from here.
+    ///
+    /// # Specification
+    /// - requires: the binders opened since the slot `carried.of` names are the
+    ///   loop's own, the content the threading takes and the holds before this
+    ///   one, none of which takes that slot's name.
+    /// - ensures: one linear binder more is open, named as the open binder at
+    ///   `carried.of`; where that position names nothing, named as
+    ///   [`Self::bind`] names a binder of no opener, and the printing noted as
+    ///   the fixpoint's notation. A region opens at it; with `carried.passing`,
+    ///   the innermost loop's pass hands on that many slots from it
+    ///   ([`Pass::Slots`]).
+    /// - provides: the name each occurrence of the slot inside the loop reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `while` threading one slot and one threading two
+    ///   read each slot by its name.
+    /// - witness: `tests::goldens::a_threading_loop_prints_as_the_loop_it_lowered_from_941`
+    #[spec(
+        captures: [opened = self.opened.len()],
+        ensures: self.opened.len() == opened.saturating_add(1_usize)
+            && self.names.len() > opened,
+    )]
+    fn bind_carried<S>(
+        &mut self,
+        source: &S,
+        carried: Carried,
+    ) where
+        S: Source + ?Sized,
+    {
+        let position = self.opened.len();
+        if let Some(name) = carried
+            .of
+            .and_then(|of| self.names.get(of.0).cloned().flatten())
+        {
+            self.names.truncate(position);
+            self.names.resize(position, None);
+            self.names.push(Some(name));
+            let _named = self.occurring.remove(&OpenBinders(position));
+            self.openings.close(OpenBinders(position));
+            self.opened.push(Zone::Linear);
+        }
+        else {
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a slot held around a threading loop that no open binder names \
+                              leaves its hold no name to take, so the loop keeps the \
+                              fixpoint's notation"
+                )
+            )]
+            self.note(Unspelled::Notation(Notation::Fixpoint));
+            self.bind(source, Zone::Linear, None);
+        }
+        self.scopes.push(position);
+        if let Some(count) = carried.passing
+            && let Some(looping) = self.loops.last_mut()
+        {
+            looping.pass = Pass::Slots {
+                first: OpenBinders(position),
+                count,
+            };
+        }
+    }
+
+    /// Open a binder in `zone` named as the intuitionistic binder `payload`
+    /// counts out to is: an open binder, or past them one of the context.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one binder more is open, in `zone`, holding the name of the
+    ///   binder `payload` counts out to, or none when `payload` is absent,
+    ///   counts past the context or names a binder that took none.
+    /// - provides: a placement's linear binder, named as the bind, the split or
+    ///   the parameter holding what it places is, which no occurrence reads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a placed buffer is written by its bind's name, a
+    ///   minting clause's mint by its own and a placed parameter by the
+    ///   parameter's, so each reads back to itself.
+    /// - witness: `tests::goldens::a_placed_buffer_is_written_by_its_bind_s_name`
+    /// - witness: `tests::goldens::a_placed_endpoint_is_written_by_its_parameter_s_name_1862`
+    #[spec(
+        captures: [opened = self.opened.len()],
+        ensures: self.opened.len() == opened.saturating_add(1_usize)
+            && self.names.len() > opened,
+    )]
+    fn rebind(
+        &mut self,
+        zone: Zone,
+        payload: Option<DeBruijnIndex>,
+    )
+    {
+        let position = self.opened.len();
+        self.names.truncate(position);
+        let name = payload.and_then(|index| match self.opened_at(Zone::Intuitionistic, index) {
+            Some(OpenBinders(open)) => self.names.get(open).cloned().flatten(),
+            None => self
+                .context_position(Zone::Intuitionistic, index)
+                .and_then(|ContextPosition(at)| self.context.get(at).copied().flatten())
+                .map(|name| BinderName(String::from(name.as_ref()))),
+        });
+        self.names.resize(position, None);
+        self.names.push(name);
+        let _named = self.occurring.remove(&OpenBinders(position));
+        self.openings.close(OpenBinders(position));
+        self.opened.push(zone);
+    }
+
+    /// The name of the capability scope or hold whose region is `region`,
+    /// counted from the outermost: the regions the source's roots stand in
+    /// first, then the ones the walk is inside; or of the definition's region
+    /// binder `region` is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name the source writes for an ambient region or a region
+    ///   binder, or the name the walk gave the binder of a scope or hold it is
+    ///   inside; none for the held region, for depth zero, for a depth past
+    ///   every region open around the node, for a binder past the ones the
+    ///   source names, and for a region whose binder took no name.
+    /// - provides: the region a capability type's and a kept type's `at` names.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ambient scope, a scope the walk enters and a hold
+    ///   it enters each name the region they open, counted on from the ambient
+    ///   ones; a region past them goes unnamed; a definition's region binder is
+    ///   named by its ordinal.
+    /// - witness: `tests::goldens::a_scoped_capability_names_its_scope_400`
+    /// - witness: `tests::goldens::a_kept_value_names_the_scope_it_is_kept_in`
+    /// - witness: `tests::goldens::a_kept_value_names_the_hold_it_is_kept_in`
+    /// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
+    #[spec(ensures: |ret| matches!(region, Region::Scoped(depth) if u32::from(depth) != 0_u32) || matches!(region, Region::Bound(_)) || ret.is_none())]
+    fn region<S>(
+        &self,
+        source: &S,
+        region: Region,
+    ) -> Option<BinderName>
+    where
+        S: Source + ?Sized,
+    {
+        let depth = match region {
+            Region::Scoped(depth) => depth,
+            Region::Bound(binder) => {
+                let named = *source
+                    .region_binders()
+                    .get(usize::try_from(u32::from(binder)).ok()?)?;
+                return named.map(|name| BinderName(String::from(name.as_ref())));
+            },
+            Region::Held => return None,
+        };
+        let at = usize::try_from(u32::from(depth))
+            .ok()?
+            .checked_sub(1_usize)?;
+        let ambient = source.regions();
+        if let Some(named) = ambient.get(at) {
+            return named.map(|name| BinderName(String::from(name.as_ref())));
+        }
+        let position = *self.scopes.get(at.checked_sub(ambient.len())?)?;
+        self.names.get(position)?.clone()
+    }
+
+    /// Append the interfaces `effects` holds to `text`, comma-separated in
+    /// row order, as a row writes them: an interface's default by its name,
+    /// `I`, and an instance by its label, `a : I`.
+    ///
+    /// # Specification
+    /// - ensures: [`Listed::Labelled`] exactly when `effects` holds an instance
+    ///   apart from its interface's default, else [`Listed::Some`] exactly when
+    ///   it holds an interface; an instance whose region has no name to write
+    ///   is labelled `?`, the presentation approximate.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the loop.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open row writing one interface and one writing
+    ///   none distinguish the bar after the interfaces from its absence; a row
+    ///   of two instances of one interface writes both labels.
+    /// - witness: `tests::goldens::an_open_row_writes_its_tail_after_its_interfaces_2270`
+    /// - witness: `tests::goldens::a_row_writes_each_instance_by_its_label_2271`
+    fn list_interfaces<S>(
+        &mut self,
+        source: &S,
+        effects: &dyn Authority,
+        text: &mut String,
+    ) -> Listed
+    where
+        S: Source + ?Sized,
+    {
+        let interfaces = effects.interfaces();
+        let mut listed = if interfaces.is_empty() {
+            Listed::None
+        }
+        else {
+            Listed::Some
+        };
+        for (index, &(ref interface, region)) in interfaces.iter().enumerate() {
+            if index != 0 {
+                text.push_str(", ");
+            }
+            if region != Region::Held {
+                listed = Listed::Labelled;
+                text.push_str(&self.instance_label(source, region));
+                text.push_str(" : ");
+            }
+            text.push_str(interface.as_ref());
+        }
+        listed
+    }
+
+    /// The label a row writes before the instance at `region`: the name of
+    /// the scope or the region binder it lives in, or `?` for a region with
+    /// no name to write, the presentation approximate.
+    ///
+    /// # Specification
+    /// - ensures: the region's name where it has one holding no whitespace; `?`
+    ///   otherwise, the region's elision noted.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the choice.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::list_interfaces`].
+    /// - witness: `tests::goldens::a_row_writes_each_instance_by_its_label_2271`
+    fn instance_label<S>(
+        &mut self,
+        source: &S,
+        region: Region,
+    ) -> String
+    where
+        S: Source + ?Sized,
+    {
+        let named = self
+            .region(source, region)
+            .filter(|name| !name.0.is_empty() && !name.0.contains(char::is_whitespace));
+        #[cfg_attr(
+            dylint_lib = "quenchant_dylints",
+            expect(
+                answer_totality,
+                reason = "an instance at a region past the scopes the source names has no label \
+                          to write before its interface"
+            )
+        )]
+        named.map_or_else(
+            || {
+                self.note(Unspelled::Elided(Elided::Region));
+                String::from("?")
+            },
+            |name| name.0,
+        )
+    }
+
+    /// `name` as a part's text, or `?` for a name a line or the walk's
+    /// spelling cannot hold or the source does not answer, recorded as the
+    /// reason it is unwritable or as `missing`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name itself when it is non-empty, holds no line feed,
+    ///   carriage return or tab and, in ASCII, no prime; `?` otherwise, the
+    ///   presentation approximate and the reason recorded.
+    /// - provides: every name a former spelled by parts writes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler's clause names and a data case's
+    ///   constructors spell as written; an unnamed constructor spells `?`; a
+    ///   primed constructor in ASCII spells `?`.
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_primed_name_has_no_ascii_spelling_782`
+    /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
+    #[spec(ensures: |ref ret| !ret.0.contains(['\n', '\r', '\t']) && !ret.0.is_empty())]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a name the source does not hold or a line or the spelling cannot hold has \
+                      no spelling: the caller states which"
+        )
+    )]
+    fn spelled(
+        &mut self,
+        name: Option<Name<'_>>,
+        missing: Unspelled,
+    ) -> Written
+    {
+        let reason = match name {
+            Some(name) => match unwritable(name, self.spelling) {
+                None => return Written(Cow::Owned(String::from(name.as_ref()))),
+                Some(reason) => reason,
+            },
+            None => missing,
+        };
+        self.fidelity = Fidelity::Approximate;
+        let _fresh = self.unspelled.insert(reason);
+        Written(Cow::Borrowed("?"))
+    }
+
+    /// Pushes the parts `former`, a former spelled by parts, is written in,
+    /// and answers the join that writes them.
+    ///
+    /// # Specification
+    /// - requires: `former` is what `source` reads at `node`, a former
+    ///   [`children`] answers child slots for at a position admitting `admits`.
+    /// - ensures: one more parts list, whose pieces are the former's children
+    ///   in reading order: `Path[.A = A](x, y)`; a family or a constructor as
+    ///   its name, applied to its components when it has any, a parameterised
+    ///   constructor written against its family as [`children`] reads its
+    ///   classifier; a primitive as a call of its name, an operation performed
+    ///   as the call `I.op v` through its interface's name, but a string append
+    ///   as the interpolated string `"…${ v }…"` that lowers to it; `Path.walk
+    ///   …` over its motive — `fun (a) { M }`, or `+U M` for a telescope — and
+    ///   operands; `v.l` and `v.i`; `match v { … }` with one arm per branch but
+    ///   a pruned one, its pattern `+{.i = a}`, `*{a, b}` or a constructor's
+    ///   applied to its field binders, its equations unwritten, `?` for a
+    ///   constructor the source cannot name; `handle { c } with { pure(x) => r,
+    ///   oper op(p, k) => b }`, the scope's head `handle c : I`, over a theory
+    ///   `handle c : T with sort C = A …` with the sorts its manifest fixes, in
+    ///   the order written, its pieces the scope's last, and a scope a model
+    ///   answers `{ c } with N`, or `{ c }` for the one in scope, in place of
+    ///   its clauses; a returner whose row's theory entries fix sorts, `-F [a :
+    ///   T with sort C = A, I | t] B`, each fixed type a piece, then the tail's
+    ///   and the result's; `c.op(v)`; `send e v`, `recv e`, `select e l`,
+    ///   `offer e { l => c }`, `close e` and `let a = fork (a : S) { t } ; u`,
+    ///   each endpoint named by its binder; a resumption of a continuation
+    ///   binder with a returned value as the continuation's call, `k(v)`; a
+    ///   return ascribed its returner as the annotated value `(v : T)`, under a
+    ///   `pure` unless a body ends there, its two pieces the value and the type
+    ///   the visit shaped; a value ascription as `(v : T)`, its two pieces the
+    ///   value and the type, but a binary natural ascribed `Nat` as its
+    ///   numeral, `(5 : Nat)`, its one piece the type; a truth value ascribed
+    ///   `Bool` the visit writes as its word; a homed type former whose source
+    ///   records a name for its head as that name applied to its one piece,
+    ///   `std.list.List(A)`. The forms the grammar does not write — native
+    ///   transport, a fixpoint `rec f { c }`, a fold, any other resumption
+    ///   `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c,
+    ///   …}` and its observation `c.0`, and a positional projection off
+    ///   anything but a name, `(v.1).0` — make the presentation approximate,
+    ///   and so does a nested computation or a returned value, which the visit
+    ///   leaves for its slot to brace.
+    /// - provides: the spelling of every former without a join of its own.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the computation golden reads every computation
+    ///   former, the type golden a path and a family, the value golden a
+    ///   constructor; a swapped part or a lost binder changes the golden.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_parameterised_constructor_is_written_against_its_family_where_source_reads_it`
+    /// - witness: `tests::goldens::a_prelude_operator_is_written_as_its_operator`
+    /// - witness: `tests::goldens::an_annotated_return_spells_as_written_1107`
+    /// - witness: `tests::goldens::a_homed_former_spells_as_its_reader_reads_it_4835`
+    ///
+    /// # Cost
+    /// - allocation: the form's parts and their text, growth within the
+    ///   former's pieces
+    #[spec(
+        captures: [forms = self.forms.len()],
+        ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
+            && matches!(ret, Join::Form { pieces: Arity(count), .. }
+                if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_) | Part::Last(_) | Part::Spliced(_) | Part::Argument)).count() == count)),
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a label, a name or an operation the source does not answer, a malformed \
+                      source, has no spelling: `spelled` writes `?` under the reason each call \
+                      names; a former the grammar has no syntax for is written in the printer's \
+                      notation, under that reason"
+        )
+    )]
+    fn form<S>(
+        &mut self,
+        source: &S,
+        node: S::Node,
+        former: &Former<'_, S::Node>,
+        admits: Admits,
+    ) -> Join
+    where
+        S: Source + ?Sized,
+    {
+        let mut parts = Parts::default();
+        let clauses = |walk: &mut Self, parts: &mut Parts, count: crate::former::Arity| {
+            let _ = parts
+                .text(" with {")
+                .part(Part::Open)
+                .barred(Component::from(0_usize))
+                .text("pure(")
+                .part(Part::Binder(0_usize))
+                .text(") => ")
+                .piece(Binding::Arrow);
+            for index in 0_usize .. usize::from(count) {
+                let label = source.label(node, Component::from(index));
+                let name = walk.spelled(label, Unspelled::Missing);
+                let _ = parts
+                    .barred(Component::from(index.saturating_add(1_usize)))
+                    .text("oper ")
+                    .text(name)
+                    .text("(");
+                // A minting clause's split opens the payload and the mint
+                // past the pair and the continuation.
+                let _ = if source
+                    .component(node, Component::from(index))
+                    .is_some_and(|body| minted(source, body).is_some())
+                {
+                    parts
+                        .part(Part::Binder(2_usize))
+                        .text(", ")
+                        .part(Part::Binder(3_usize))
+                        .text(", ")
+                        .part(Part::Binder(1_usize))
+                }
+                else {
+                    parts
+                        .part(Part::Binder(0_usize))
+                        .text(", ")
+                        .part(Part::Binder(1_usize))
+                };
+                let _ = parts.text(") => ").piece(Binding::Arrow);
+            }
+            let _ = parts.part(Part::Close);
+        };
+        // `Path[.A = Bool](alike(a, a), true)`: the carrier is the head's
+        // implicit `A`, supplied by name, and the two endpoints follow. An
+        // endpoint the source wrote as a word holds the word ascribed `Bool`,
+        // which spells as the word.
+        let supplied = |parts: &mut Parts, head: &str| {
+            let _ = parts
+                .text(format!("{head}[.A = "))
+                .piece(Binding::ARGUMENT)
+                .text("](")
+                .piece(Binding::ARGUMENT)
+                .text(",")
+                .part(Part::Space)
+                .piece(Binding::ARGUMENT)
+                .part(Part::Tight)
+                .text(")");
+        };
+        let binding = match *former {
+            // `Path(x, y)` and `Bridge(x, y)`: a carrier the source omitted
+            // reads back as nothing, and each spells through its own
+            // production, its endpoints terms. Neither reads back juxtaposed
+            // in a type until #5750, so a type keeps the call form, and an
+            // expression keeps the printer's notation. A flow is a type
+            // application, juxtaposed as a family's, `Flow x y`.
+            Former::Path { carrier: None, .. } => {
+                let _ = parts.text("Path").applied(Arity(2_usize), self.surface);
+                self.applied_type(Production("path_type"), admits)
+            },
+            Former::Bridge { carrier: None, .. } => {
+                let _ = parts.text("Bridge").applied(Arity(2_usize), self.surface);
+                self.applied_type(Production("bridge_type"), admits)
+            },
+            Former::Flow { carrier: None, .. } => {
+                let _ = parts.text("Flow").family(Arity(2_usize), self.surface);
+                family_applied(self.surface)
+            },
+            Former::Path {
+                carrier: Some(_), ..
+            } => {
+                supplied(&mut parts, "Path");
+                writes(Production("path_type"), Binding::Atom)
+            },
+            Former::Bridge {
+                carrier: Some(_), ..
+            } => {
+                supplied(&mut parts, "Bridge");
+                writes(Production("bridge_type"), Binding::Atom)
+            },
+            Former::Flow {
+                carrier: Some(_), ..
+            } => {
+                supplied(&mut parts, "Flow");
+                writes(Production("flow_type"), Binding::Atom)
+            },
+            Former::Relation { relation, .. } => {
+                let spelled = relation_spelled(relation);
+                match (self.spelling, spelled.ascii) {
+                    (grammar::Spelling::Ascii, grammar::Ascii::Head(head)) => {
+                        let _ = parts.text(head.0).family(Arity(2_usize), self.surface);
+                        family_applied(self.surface)
+                    },
+                    (grammar::Spelling::Unicode, _)
+                    | (grammar::Spelling::Ascii, grammar::Ascii::Token(_)) => {
+                        let _ = parts
+                            .piece(Binding::Lazy)
+                            .text(" ")
+                            .text(spelled.written(self.spelling).0)
+                            .part(Part::Space)
+                            .piece(Binding::Relation);
+                        Binding::Relation
+                    },
+                }
+            },
+            Former::Model { theory, sorts } => {
+                let _ = parts.text(format!("Model {}", theory.as_ref()));
+                for &(sort, _) in sorts {
+                    let _ = writes(
+                        Production("manifest_sort"),
+                        parts
+                            .part(Part::Space)
+                            .text(format!("with sort {} = ", sort.as_ref()))
+                            .piece(Binding::Sum),
+                    );
+                }
+                if sorts.is_empty() {
+                    writes(
+                        Production("type_application.juxtaposed"),
+                        Binding::Application,
+                    )
+                }
+                else {
+                    writes(Production("manifest_type"), Binding::Relation)
+                }
+            },
+            Former::Recorded { moves, .. } | Former::Dialogue { moves, .. } => {
+                let head = if matches!(*former, Former::Dialogue { .. }) {
+                    "dialogue"
+                }
+                else {
+                    "recorded"
+                };
+                let _ = parts.text(head);
+                let steps = moves.moves();
+                if steps.is_empty() {
+                    let _ = parts.text(" ()");
+                }
+                for step in steps {
+                    let _ = parts.part(Part::Space).text("(");
+                    let _ = match step.endpoint {
+                        Some(Endpoint::Left) => parts.text("left ("),
+                        Some(Endpoint::Right) => parts.text("right ("),
+                        None => &mut parts,
+                    };
+                    let _ = match step.action {
+                        ActionKind::Send => parts.text("sent ").piece(Binding::Atom),
+                        ActionKind::Receive => parts.text("received ").piece(Binding::Atom),
+                        ActionKind::Select => {
+                            let label = self.spelled(step.label, Unspelled::Missing);
+                            parts.text("selected ").text(label)
+                        },
+                        ActionKind::Offer => {
+                            let label = self.spelled(step.label, Unspelled::Missing);
+                            parts.text("offered ").text(label)
+                        },
+                        ActionKind::Close => parts.text("closed"),
+                    };
+                    if step.endpoint.is_some() {
+                        let _ = parts.text(")");
+                    }
+                    let _ = parts.text(")");
+                }
+                writes(Production("application_expression"), Binding::Application)
+            },
+            Former::Web(pieces) => {
+                let _ = parts.text(web_spelled(pieces));
+                writes(Production("application_expression"), Binding::Atom)
+            },
+            Former::Constructor {
+                name,
+                placement: Placement::Consed,
+                ..
+            } => {
+                let spelled = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let name = juxtaposed_name(&spelled, self.surface).unwrap_or(spelled);
+                let _ = parts
+                    .text(name)
+                    .text(" ")
+                    .text(grammar::CONS.written(self.spelling).0)
+                    .text(" ")
+                    .piece(Binding::Cons);
+                writes(Production("binary_expression.cons"), Binding::Cons)
+            },
+            Former::Data { name, arity } | Former::Codata { name, arity } => {
+                let declared = name
+                    .filter(|&written| unwritable(written, self.spelling).is_none())
+                    .and_then(|_| source.declaration(node));
+                let name = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let count = Arity(usize::from(arity));
+                // A family the lowering names as a call, a theory's terms
+                // `Terms(Mag)`, is written as the application it names.
+                let minted = (count.0 == 0_usize)
+                    .then(|| juxtaposed_family(&name, self.surface))
+                    .flatten();
+                let applies = minted.is_some();
+                let name = minted.unwrap_or(name);
+                let _ = match declared {
+                    Some(constant) => parts.named(name, constant),
+                    None => parts.text(name),
+                };
+                if applies {
+                    family_applied(self.surface)
+                }
+                else if count.0 == 0_usize {
+                    writes(Production("type_identifier"), Binding::Atom)
+                }
+                else {
+                    let _ = parts.family(count, self.surface);
+                    family_applied(self.surface)
+                }
+            },
+            Former::Constructor {
+                name,
+                arity,
+                placement: Placement::Applied,
+                classifier,
+            } => {
+                // Where the spelling is source a reader reads back, a
+                // parameterised constructor is written against its
+                // classifier, `(MkIx : Ix 3)`, its family's application or a
+                // type a definition computes, which its lowering needs,
+                // unless its position states its type. A constructor a type
+                // states is written juxtaposed, `Succ n`, as a family is.
+                let annotated = classifier.is_some()
+                    && self.bodies == Bodies::Spelled
+                    && admits != Admits::Stated;
+                let spelled = self.spelled(name, Unspelled::Unreadable(Unreadable::Unnamed));
+                let called = juxtaposed_name(&spelled, self.surface);
+                // A name written as a call is an application, as one applied
+                // to its components is.
+                let calls = usize::from(arity) > 0_usize || called.is_some();
+                let name = called.unwrap_or(spelled);
+                let count = Arity(usize::from(arity));
+                if annotated {
+                    let _ = parts.text("(");
+                }
+                let _ = parts.text(name);
+                if count.0 > 0_usize {
+                    let _ = parts.family(count, self.surface);
+                }
+                if annotated {
+                    let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
+                }
+                let applied = match (calls, annotated) {
+                    (true, true) => writes(Production("application_expression"), Binding::Atom),
+                    (true, false) if count.0 > 0_usize => family_applied(self.surface),
+                    (true, false) => type_applied(self.surface, Production("type_application")),
+                    (false, _) => writes(Production("constructor.expression"), Binding::Atom),
+                };
+                if annotated {
+                    writes(Production("parenthesized_expression"), applied)
+                }
+                else {
+                    applied
+                }
+            },
+            Former::Primitive { name, arity }
+                if name.as_ref() == "string.append" && usize::from(arity) == 2_usize =>
+            {
+                // An append is written as the interpolated string the lowering
+                // folds into it, which reads back as this very call: a text
+                // operand stands inside the quotes, every other operand in an
+                // interpolation. A text right of text, or an empty one on the
+                // right, would merge or vanish on the way back, so it stays
+                // interpolated.
+                let text = |at: usize| {
+                    let operand = source.component(node, Component::from(at))?;
+                    let Former::Literal(&Literal::Text(ref text)) = source.read(operand)
+                    else {
+                        return None;
+                    };
+                    let content: &str = text.as_ref();
+                    let empty = content.is_empty();
+                    Some((interior(text).0, empty))
+                };
+                let left = text(0_usize);
+                let right = text(1_usize).filter(|&(_, empty)| left.is_none() && !empty);
+                let _ = parts.text("\"");
+                for operand in [left, right] {
+                    let _ = match operand {
+                        Some((spliced, _)) => parts.spliced(spliced),
+                        None => parts.text("${ ").piece(Binding::Sequence).text(" }"),
+                    };
+                }
+                let _ = parts.text("\"");
+                writes(Production("string.expression"), Binding::Atom)
+            },
+            Former::Primitive { name, arity } => {
+                // A primitive the surface writes as an operator is written so:
+                // its call by name reads back as a call of the prelude
+                // constant, not as the primitive itself.
+                let operator = gandr_core_term::primitive::PRELUDE
+                    .iter()
+                    .find(|primitive| <&'static str>::from(primitive.name()) == name.as_ref())
+                    .map(|primitive| primitive.operator());
+                match (operator, usize::from(arity)) {
+                    (Some(gandr_core_term::primitive::Operator::Infix(spelling)), 2_usize) => {
+                        infix(&mut parts, InfixSpelling(spelling))
+                    },
+                    (Some(gandr_core_term::primitive::Operator::Prefix(spelling)), 1_usize) => {
+                        // A literal operand is parenthesized: `-(-1)`, never
+                        // `--1`.
+                        let literal = source
+                            .component(node, Component::from(0_usize))
+                            .is_some_and(|operand| {
+                                matches!(source.read(operand), Former::Literal(_))
+                            });
+                        let _ = parts.text(spelling).piece(if literal {
+                            Binding::Qualified
+                        }
+                        else {
+                            Binding::Atom
+                        });
+                        writes(Production("unary_expression"), Binding::Prefix)
+                    },
+                    (
+                        Some(
+                            gandr_core_term::primitive::Operator::Infix(_)
+                            | gandr_core_term::primitive::Operator::Prefix(_)
+                            | gandr_core_term::primitive::Operator::Named,
+                        )
+                        | None,
+                        _,
+                    ) => {
+                        let name =
+                            self.spelled(Some(Name::from(name.as_ref())), Unspelled::Missing);
+                        let _ = parts.text(name).juxtaposed(Arity(usize::from(arity)));
+                        writes(Production("application_expression"), Binding::Application)
+                    },
+                }
+            },
+            Former::Perform {
+                interface,
+                operation,
+                ..
+            } => {
+                let interface = self.spelled(Some(interface), Unspelled::Missing);
+                let operation = self.spelled(Some(operation), Unspelled::Missing);
+                let _ = parts
+                    .text(interface)
+                    .text(".")
+                    .text(operation)
+                    .juxtaposed(Arity(1_usize));
+                writes(
+                    Production("projection_expression"),
+                    writes(Production("application_expression"), Binding::Application),
+                )
+            },
+            Former::Transport(..) => {
+                self.note(Unspelled::Notation(Notation::Transport));
+                let _ = parts.text("Path.walk").juxtaposed(Arity(2_usize));
+                writes(Production("application_expression"), Binding::Application)
+            },
+            Former::Resume(stack, computation) => {
+                if resumed_reply(source, stack, computation).is_some() {
+                    let _ = parts.piece(Binding::Application).juxtaposed(Arity(1_usize));
+                    writes(Production("application_expression"), Binding::Application)
+                }
+                else {
+                    self.note(Unspelled::Notation(Notation::Resume));
+                    let _ = parts.text("resume").juxtaposed(Arity(2_usize));
+                    writes(Production("resume_expression"), Binding::Prefix)
+                }
+            },
+            Former::Abandon(_) => {
+                let _ = parts.text("abandon").juxtaposed(Arity(1_usize));
+                writes(Production("application_expression"), Binding::Application)
+            },
+            // The motive is a static lambda, its body read in the expression
+            // grammar between the braces: a type no expression reads there,
+            // or a product whose braces would open the block, is written in
+            // the quote's own spelling, `type(T)` (#4508).
+            Former::PathTransport { motive, .. } | Former::Ride { motive, .. } => {
+                let lead = if matches!(*former, Former::Ride { .. }) {
+                    "Flow.ride (fun ("
+                }
+                else {
+                    "Path.walk (fun ("
+                };
+                let quoted = matches!(source.read(motive), Former::Product(arity) if usize::from(arity) >= 1_usize)
+                    || self.unread_as_expression(source, motive, Form::Sugared) == Bare::Unread;
+                let opened = parts
+                    .text(lead)
+                    .part(Part::Binder(0_usize))
+                    .text(") {")
+                    .part(Part::Space);
+                let closed = if quoted {
+                    opened.text("type(").piece(Binding::ARGUMENT).text(")")
+                }
+                else {
+                    opened.piece(Binding::Arrow)
+                };
+                let _ = closed
+                    .part(Part::Space)
+                    .text("})")
+                    .juxtaposed(Arity(2_usize));
+                writes(Production("application_expression"), Binding::Application)
+            },
+            Former::TelescopeTransport { .. } => {
+                let _ = parts.text("Path.walk").juxtaposed(Arity(5_usize));
+                writes(Production("application_expression"), Binding::Application)
+            },
+            // A loop, from its fixpoint or, threading slots or walking a
+            // list, from the fixpoint's application.
+            Former::Fixpoint(_) | Former::Application(..)
+                if let Some(reading) = looped(source, node, admits) =>
+            {
+                match reading {
+                    Looped::Loop { rest, .. } => {
+                        let _ = parts.text("loop {").body();
+                        if rest.is_some() {
+                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            writes(Production("block"), Binding::Sequence)
+                        }
+                        else {
+                            writes(Production("loop_expression"), Binding::Prefix)
+                        }
+                    },
+                    Looped::While { rest, .. } => {
+                        let _ = parts.text("while ").piece(Binding::Arrow).text(" {").body();
+                        if rest.is_some() {
+                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            writes(Production("block"), Binding::Sequence)
+                        }
+                        else {
+                            writes(Production("while_expression"), Binding::Prefix)
+                        }
+                    },
+                    // `for x in l { b }`: the element the body's binders name
+                    // third, after the loop's own and the remaining list's;
+                    // the body is visited last, so it is the last piece.
+                    Looped::For { rest, .. } => {
+                        let _ = parts
+                            .text("for ")
+                            .part(Part::Binder(2_usize))
+                            .text(" in ")
+                            .piece(Binding::Arrow)
+                            .text(" {")
+                            .part(Part::Open)
+                            .part(Part::Last(Binding::Sequence))
+                            .part(Part::Close);
+                        if rest.is_some() {
+                            let _ = parts.text(" ;").part(Part::Line).piece(Binding::Sequence);
+                            writes(Production("block"), Binding::Sequence)
+                        }
+                        else {
+                            writes(Production("for_expression"), Binding::Prefix)
+                        }
+                    },
+                }
+            },
+            Former::Fixpoint(_) => {
+                self.note(Unspelled::Notation(Notation::Fixpoint));
+                let _ = parts
+                    .text("rec ")
+                    .part(Part::Binder(0_usize))
+                    .text(" {")
+                    .body();
+                Binding::Prefix
+            },
+            Former::Reset(_) => {
+                self.note(Unspelled::Notation(Notation::Reset));
+                let _ = parts.text("reset {").body();
+                Binding::Prefix
+            },
+            Former::Shift(_) => {
+                self.note(Unspelled::Notation(Notation::Shift));
+                let _ = parts
+                    .text("shift ")
+                    .part(Part::Binder(0_usize))
+                    .text(" {")
+                    .body();
+                Binding::Prefix
+            },
+            Former::Case { .. } | Former::Split { .. } | Former::ListCase { .. } => self
+                .eliminator(&mut parts, former, Motive::Left)
+                .unwrap_or(Binding::Prefix),
+            Former::DataCase { motive, arity, .. } => {
+                let _ = parts.text("match ").piece(Binding::Prefix);
+                if case_motive(source, motive, admits) == Motive::Written {
+                    let _ = parts.text(" -> ").piece(Binding::Prefix);
+                }
+                let _ = parts.text(" {").part(Part::Open);
+                let mut shown = 0_usize;
+                for index in 0_usize .. usize::from(arity) {
+                    let arm = arm(source, node, Component::from(index));
+                    if arm.pruned {
+                        continue;
+                    }
+                    let name = self.spelled(arm.name, Unspelled::Unreadable(Unreadable::Unnamed));
+                    let _ = parts.barred(Component::from(shown)).text(name);
+                    shown = shown.saturating_add(1_usize);
+                    if arm.placement == Placement::Consed {
+                        let _ = parts
+                            .text(" ")
+                            .text(grammar::CONS.written(self.spelling).0)
+                            .text(" ")
+                            .binders(Arity(arm.fields));
+                    }
+                    else if arm.fields > 0_usize {
+                        let _ = parts.text("(").binders(Arity(arm.fields)).text(")");
+                    }
+                    let _ = parts.text(" => ").piece(Binding::Arrow);
+                }
+                let _ = parts.part(Part::Close);
+                // An arm's pattern is its constructor, applied to its field
+                // binders when it has fields, or a letter of a word before
+                // the rest of the word.
+                writes(
+                    Production("match_expression"),
+                    writes(
+                        Production("constructor_pattern"),
+                        writes(Production("cons_pattern"), Binding::Prefix),
+                    ),
+                )
+            },
+            Former::RecordProjection(target, label) => {
+                // A projection off a parameter whose stated type is no record
+                // type is the printer's notation: the surface reads `r.l` only
+                // off a value whose type it states as a record.
+                if self.unrecorded_binder(source, target).is_some() {
+                    self.note(Unspelled::Notation(Notation::Labelled));
+                }
+                let label = self.spelled(Some(label), Unspelled::Missing);
+                let _ = parts.piece(Binding::Atom).text(".").text(label);
+                writes(Production("projection_expression"), Binding::Atom)
+            },
+            Former::TupleProjection(target, index) => {
+                let read = past_return(source, target);
+                // A positional projection off another is parenthesized,
+                // `(p.1).0`: unparenthesized, `1.0` would read as a number.
+                // One off anything but a name is the printer's notation: the
+                // checker synthesises no type for its target where the
+                // surface reads it.
+                if !matches!(read, Former::Variable { .. } | Former::Constant(_)) {
+                    self.note(Unspelled::Notation(Notation::Positional));
+                }
+                let loosest = if matches!(read, Former::TupleProjection(..)) {
+                    Binding::Qualified
+                }
+                else {
+                    Binding::Atom
+                };
+                let _ = parts
+                    .piece(loosest)
+                    .text(format!(".{}", usize::from(index)));
+                writes(Production("projection_expression"), Binding::Atom)
+            },
+            Former::Project(side, _) => {
+                self.note(Unspelled::Notation(Notation::Projection));
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(format!(".{}", usize::from(side)));
+                writes(Production("projection_expression"), Binding::Atom)
+            },
+            Former::ListFold { .. } => {
+                self.note(Unspelled::Notation(Notation::ListFold));
+                let _ = parts
+                    .text("fold ")
+                    .piece(Binding::Prefix)
+                    .text(" {")
+                    .part(Part::Open)
+                    .text("nil => ")
+                    .piece(Binding::Arrow)
+                    .text(",")
+                    .part(Part::Line)
+                    .text("cons(")
+                    .binders(Arity(2_usize))
+                    .text(") => ")
+                    .piece(Binding::Arrow)
+                    .part(Part::Close);
+                Binding::Prefix
+            },
+            // A row whose theory entries fix sorts writes each after its
+            // entry's name, `-F [st : T with sort C = A, I | t] B`, as the
+            // lowering reads a row entry's manifest back.
+            Former::EffectfulReturner {
+                effects,
+                tail,
+                manifests,
+                result,
+            } => {
+                let _ = parts.text("-F [");
+                let mut labelled = false;
+                let entries = effects.interfaces();
+                for (index, (&(interface, region), manifest)) in entries
+                    .iter()
+                    .zip(manifested(effects, manifests))
+                    .enumerate()
+                {
+                    if index != 0 {
+                        let _ = parts.text(", ");
+                    }
+                    if region != Region::Held {
+                        labelled = true;
+                        let label = self.instance_label(source, region);
+                        let _ = parts.text(label).text(" : ");
+                    }
+                    let _ = parts.text(String::from(interface.as_ref()));
+                    for &(sort, _) in manifest.map_or(&[][..], |manifest| manifest.sorts.as_slice())
+                    {
+                        let _ = parts
+                            .text(format!(" with sort {} = ", sort.as_ref()))
+                            .piece(Binding::Sum);
+                    }
+                }
+                if tail.is_some() {
+                    let _ = parts.text(" | ").piece(Binding::Atom);
+                }
+                let _ = parts.text("] ");
+                let _ = match result {
+                    Returned::One(_) => parts.piece(Binding::Atom),
+                    Returned::Group(arity) => parts.arguments(Arity(usize::from(arity))),
+                };
+                if labelled {
+                    writes(Production("f_type.row.labelled"), Binding::Prefix)
+                }
+                else {
+                    writes(Production("f_type.row"), Binding::Prefix)
+                }
+            },
+            Former::Handle { clauses: count, .. } => {
+                let _ = parts.text("handle {").body();
+                clauses(self, &mut parts, count);
+                writes(Production("handle_expression"), Binding::Prefix)
+            },
+            Former::Scope {
+                interface,
+                clauses: count,
+                sorts,
+                answered,
+                ..
+            } => {
+                let interface = self.spelled(Some(interface), Unspelled::Missing);
+                let _ = parts
+                    .text("handle ")
+                    .part(Part::Binder(0_usize))
+                    .text(" : ")
+                    .text(interface);
+                for &(sort, _) in sorts {
+                    let _ = writes(
+                        Production("manifest_sort"),
+                        parts
+                            .part(Part::Space)
+                            .text(format!("with sort {} = ", sort.as_ref()))
+                            .part(Part::Last(Binding::Sum)),
+                    );
+                }
+                let _ = parts.text(" {").body();
+                match answered {
+                    Some(Answered::Named(model)) => {
+                        let model = self.spelled(Some(model), Unspelled::Missing);
+                        let _ = parts.text(" with ").text(model);
+                    },
+                    Some(Answered::InScope) => {},
+                    None => clauses(self, &mut parts, count),
+                }
+                writes(Production("handle_expression"), Binding::Prefix)
+            },
+            Former::Exercise { operation, .. } => {
+                let operation = self.spelled(Some(operation), Unspelled::Missing);
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(".")
+                    .text(operation)
+                    .juxtaposed(Arity(1_usize));
+                writes(
+                    Production("projection_expression"),
+                    writes(Production("application_expression"), Binding::Application),
+                )
+            },
+            // A lazy product is the positional copattern block, which the
+            // lowering reads back as the lazy product of its clauses.
+            Former::Lazy(arity) => {
+                let _ = parts.text("&{");
+                for index in 0_usize .. usize::from(arity) {
+                    if index > 0_usize {
+                        let _ = parts.text(",").part(Part::Space);
+                    }
+                    let _ = parts
+                        .text(alloc::format!(".{index} => "))
+                        .piece(Binding::Arrow);
+                }
+                let _ = parts.part(Part::Tight).text("}");
+                writes(Production("lazy_record_expression"), Binding::Atom)
+            },
+            // A flow composite is the call `Flow.then f g`, and a path
+            // composite the sugared form reads off its transport (#754) the
+            // call `Path.step p q`: each operation under its former.
+            Former::Then(..) | Former::Step(..) => {
+                let head = if matches!(*former, Former::Then(..)) {
+                    "Flow.then"
+                }
+                else {
+                    "Path.step"
+                };
+                let _ = parts.text(head).juxtaposed(Arity(2_usize));
+                writes(Production("application_expression"), Binding::Application)
+            },
+            Former::Send { endpoint, .. } => {
+                let _ = parts
+                    .text("send ")
+                    .part(Part::Endpoint(endpoint))
+                    .juxtaposed(Arity(1_usize));
+                writes(Production("send_expression"), Binding::Prefix)
+            },
+            Former::Close(endpoint) => {
+                let _ = parts.text("close ").part(Part::Endpoint(endpoint));
+                writes(Production("close_expression"), Binding::Prefix)
+            },
+            Former::Select { endpoint, label } => {
+                let label = self.spelled(Some(label), Unspelled::Missing);
+                let _ = parts
+                    .text("select ")
+                    .part(Part::Endpoint(endpoint))
+                    .part(Part::Space)
+                    .text(label);
+                writes(Production("select_expression"), Binding::Prefix)
+            },
+            Former::Offer { endpoint, arms } => {
+                let _ = parts
+                    .text("offer ")
+                    .part(Part::Endpoint(endpoint))
+                    .text(" {")
+                    .part(Part::Open);
+                for index in 0_usize .. usize::from(arms) {
+                    let label = source.label(node, Component::from(index));
+                    let name = self.spelled(label, Unspelled::Missing);
+                    let _ = parts
+                        .barred(Component::from(index))
+                        .text(name)
+                        .text(" => ")
+                        .piece(Binding::Arrow);
+                }
+                let _ = parts.part(Part::Close);
+                writes(Production("offer_expression"), Binding::Prefix)
+            },
+            Former::Fork { .. } => {
+                let _ = parts
+                    .text("let ")
+                    .part(Part::Binder(0_usize))
+                    .text(" = fork (")
+                    .part(Part::Binder(0_usize))
+                    .text(" : ")
+                    .piece(Binding::Arrow)
+                    .text(") {")
+                    .body()
+                    .text(" ;")
+                    .part(Part::Line)
+                    .piece(Binding::Sequence);
+                writes(Production("fork_expression"), Binding::Sequence)
+            },
+            Former::Hold { grade, .. } => {
+                let _ = parts
+                    .text(match grade {
+                        gandr_core_term::memory::HoldGrade::Many => "var ",
+                        gandr_core_term::memory::HoldGrade::One => "var[1] ",
+                    })
+                    .part(Part::Binder(0_usize))
+                    .text(" = ")
+                    .piece(Binding::Arrow)
+                    .text(" ;")
+                    .part(Part::Line)
+                    .piece(Binding::Sequence);
+                writes(Production("block"), Binding::Sequence)
+            },
+            Former::Receive { endpoint, .. } => {
+                let _ = parts
+                    .text("let ")
+                    .part(Part::Binder(0_usize))
+                    .text(" = recv ")
+                    .part(Part::Endpoint(endpoint))
+                    .text(" ;")
+                    .part(Part::Line)
+                    .piece(Binding::Sequence);
+                writes(Production("recv_expression"), Binding::Sequence)
+            },
+            Former::Access {
+                held, place, mode, ..
+            } => {
+                let _ = parts.text(match mode {
+                    AccessMode::Exclusive { .. } => "access ",
+                    AccessMode::Shared => "access shared ",
+                });
+                let _ = parts.part(Part::Endpoint(held));
+                if let gandr_core_term::memory::Place::At { .. } = place {
+                    let _ = parts.text(".#[").piece(Binding::Arrow).text("]");
+                }
+                let _ = parts
+                    .text(" as ")
+                    .part(Part::Binder(0_usize))
+                    .text(" {")
+                    .body();
+                if let AccessMode::Exclusive { .. } = mode {
+                    let _ = parts.text(" unwind {").body();
+                }
+                writes(Production("access_expression"), Binding::Prefix)
+            },
+            Former::ResumeView { view, .. } => {
+                let _ = parts
+                    .text("resume ")
+                    .part(Part::Endpoint(view))
+                    .juxtaposed(Arity(1_usize));
+                writes(Production("resume_expression"), Binding::Prefix)
+            },
+            Former::AbortView(view) => {
+                let _ = parts.text("abort ").part(Part::Endpoint(view));
+                writes(Production("abort_expression"), Binding::Prefix)
+            },
+            Former::ConsumeHeld(held) => {
+                self.note(Unspelled::Notation(Notation::Consume));
+                let _ = parts
+                    .text("consume")
+                    .part(Part::Space)
+                    .part(Part::Endpoint(held));
+                writes(Production("application_expression"), Binding::Application)
+            },
+            // `A at w` binds as loosely as a word's cons, so a bridge over it
+            // parenthesizes it and it parenthesizes any operand but an atom.
+            Former::Located { world, .. } => {
+                let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
+                let _ = parts.piece(Binding::Atom).text(" at ").text(world);
+                writes(Production("at_type"), Binding::Cons)
+            },
+            // `A at c` names the capability scope whose region the value is
+            // kept in, or the definition's region binder, and binds as
+            // `A at w` does.
+            Former::Kept { region, .. } => {
+                let named = self.region(source, region);
+                let scope = self.spelled(
+                    named.as_ref().map(|name| Name::from(name.0.as_str())),
+                    Unspelled::Elided(Elided::Region),
+                );
+                let _ = parts.piece(Binding::Atom).text(" at ").text(scope);
+                writes(Production("at_type"), Binding::Cons)
+            },
+            // `Nat[i]` at the definition's stage binder `i`, and `Nat[< i]`
+            // one step below it: a postfix bracket in the path band, so the
+            // refined type is an atom.
+            Former::Staged { stage, reach, .. } => {
+                let opener = match reach {
+                    gandr_kernel_term::StageReach::At => "[",
+                    gandr_kernel_term::StageReach::Below(_) => "[< ",
+                };
+                let _ = parts
+                    .piece(Binding::Atom)
+                    .text(format!("{opener}{}]", stage.as_ref()));
+                writes(Production("staged_type"), Binding::Atom)
+            },
+            Former::WorldHold(_) => {
+                // Parenthesized, as the surface writes it.
+                let _ = parts.text("(hold ").piece(Binding::Prefix).text(")");
+                writes(
+                    Production("parenthesized_expression"),
+                    writes(Production("hold_expression"), Binding::Atom),
+                )
+            },
+            Former::Leta { world, .. } => {
+                let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
+                let _ = parts
+                    .text("let ")
+                    .part(Part::Binder(0_usize))
+                    .text(" at ")
+                    .text(world)
+                    .text(" = ")
+                    .piece(Binding::Arrow)
+                    .text(" ;")
+                    .part(Part::Line)
+                    .piece(Binding::Sequence);
+                writes(Production("block"), Binding::Sequence)
+            },
+            Former::Migrate { world, .. } => {
+                let world = self.spelled(world, Unspelled::Unreadable(Unreadable::Unnamed));
+                let _ = parts.text("migrate [").text(world).text("] {").body();
+                writes(Production("migrate_expression"), Binding::Prefix)
+            },
+            // A sum case, a split or a list case ascribed its answer, `match s
+            // -> C { … }`; otherwise `(return v : -F T)`, its value and type
+            // shaped by the visit: bare where a body ends, which takes the
+            // return, and under a `pure` anywhere else.
+            Former::Ascription { body, .. } => {
+                let answered = source.read(body);
+                self.eliminator(&mut parts, &answered, Motive::Written)
+                    .unwrap_or_else(|| {
+                        let returned =
+                            !matches!(admits, Admits::Computation(Tail::Ends | Tail::Unstated));
+                        if returned {
+                            let _ = parts.text("pure ");
+                        }
+                        let _ = parts
+                            .text("(")
+                            .piece(Binding::Arrow)
+                            .text(" : ")
+                            .piece(Binding::Arrow)
+                            .text(")");
+                        if returned {
+                            writes(Production("pure_expression"), Binding::Prefix)
+                        }
+                        else {
+                            writes(Production("parenthesized_expression"), Binding::Atom)
+                        }
+                    })
+            },
+            // `(v : T)`, the annotation the source wrote; a binary natural
+            // ascribed `Nat` is its numeral, `(5 : Nat)`, its one piece the
+            // type. An ascribed truth value is its word, written as an atom.
+            Former::Annotated { value, ty } => {
+                let _ = match natural(source, value, ty) {
+                    Some(numeral) => parts.text("(").text(numeral),
+                    None => parts.text("(").piece(Binding::Arrow),
+                };
+                let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
+                writes(Production("parenthesized_expression"), Binding::Atom)
+            },
+            // A homed type former written through its home's path, then its one
+            // argument juxtaposed, `std.list.List A`.
+            Former::List(_)
+            | Former::RunType(_)
+            | Former::PrefixType(_)
+            | Former::DialogueType(_)
+                if let Some(head) = homed_head(source, former) =>
+            {
+                let _ = parts
+                    .text(String::from(head.as_ref()))
+                    .family(Arity(1_usize), self.surface);
+                family_applied(self.surface)
+            },
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "never reached: `visit` writes these formers itself, and only \
+                              formers spelled by parts come here"
+                )
+            )]
+            Former::Reify
+            | Former::Stack(..)
+            | Former::With(..)
+            | Former::Returns(_)
+            | Former::Place { .. }
+            | Former::ListNil
+            | Former::ListCons(..)
+            | Former::PathUniverse(..)
+            | Former::PathRefl(_)
+            | Former::PathEquiv(..)
+            | Former::PathProduct(..)
+            | Former::BaseType(_)
+            | Former::BufferType
+            | Former::QubitType
+            | Former::RowType
+            | Former::Row { .. }
+            | Former::Product(_)
+            | Former::Sum(_)
+            | Former::RecordType(_)
+            | Former::Patched(..)
+            | Former::ThunkType(_)
+            | Former::Universe { .. }
+            | Former::Element(_)
+            | Former::Abstract(_)
+            | Former::Member(_)
+            | Former::StaticPi { .. }
+            | Former::Sigma { .. }
+            | Former::Capability { .. }
+            | Former::Session { .. }
+            | Former::Returner(_)
+            | Former::Arrow { .. }
+            | Former::Pi { .. }
+            | Former::LinearArrow { .. }
+            | Former::ComputationElement(_)
+            | Former::List(_)
+            | Former::Variable { .. }
+            | Former::Constant(_)
+            | Former::Unit
+            | Former::Literal(_)
+            | Former::Tuple(_)
+            | Former::Record(_)
+            | Former::RecordUpdate(..)
+            | Former::Injection(..)
+            | Former::Thunk(_)
+            | Former::Quote(_)
+            | Former::QuoteComputation(_)
+            | Former::StaticLambda(_)
+            | Former::StaticApplication(..)
+            | Former::Here(_)
+            | Former::Funext(..)
+            | Former::Equiv(..)
+            | Former::Univalence(_)
+            | Former::SessionRelated(..)
+            | Former::Stay(_)
+            | Former::Back(_)
+            | Former::Cong(..)
+            | Former::FlowProduct(..)
+            | Former::Forward(_)
+            | Former::FunctionFlow(..)
+            | Former::RunType(_)
+            | Former::PrefixType(_)
+            | Former::DialogueType(_)
+            | Former::WebType
+            | Former::Decompose(_)
+            | Former::Return(_)
+            | Former::Bind(..)
+            | Former::BindAll { .. }
+            | Former::Force(_)
+            | Former::Application(..)
+            | Former::Lambda(_)
+            | Former::LinearLambda(_)
+            | Former::Run(_)
+            | Former::Ua { .. }
+            | Former::Compose { .. }
+            | Former::Fill { .. }
+            | Former::Nested(_)
+            | Former::Returned(_)
+            | Former::Unreadable(_) => {
+                self.fidelity = Fidelity::Approximate;
+                let _fresh = self.unspelled.insert(Unspelled::Misplaced);
+                let _ = parts.text("?");
+                Binding::Atom
+            },
+        };
+        let pieces = Arity(parts.pieces);
+        self.forms.push(parts.parts);
+        Join::Form { pieces, binding }
+    }
+
+    /// The parts of the eliminator `former`, written with its answer when
+    /// `answer` is [`Motive::Written`]: `match s -> C { … }`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `former` may be any former.
+    /// - ensures: for a sum case `match v { | +{.i = a} => c … }`, one arm per
+    ///   branch; for a split `match v { | *{a, b} => c }`, or `match v { | *{}
+    ///   => c }` binding nothing; for a list case `match l { | nil => … |
+    ///   cons(x, t) => … }`, noted as the printer's notation; each with ` -> `
+    ///   and the answer's piece after the scrutinee's when the answer is
+    ///   written. None for any other former, `parts` unchanged.
+    /// - provides: the one spelling an eliminator and its ascription to its
+    ///   answer share.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sum case, a split and a list case each spell with
+    ///   their answer when ascribed it and without it otherwise.
+    /// - witness: `tests::goldens::an_ascribed_case_writes_its_answer_2089`
+    #[spec(ensures: |ret| ret.is_some() == matches!(*former, Former::Case { .. } | Former::Split { .. } | Former::ListCase { .. }))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a list case has no syntax the grammar admits: it is written in the \
+                      printer's notation, noted as such"
+        )
+    )]
+    fn eliminator<N>(
+        &mut self,
+        parts: &mut Parts,
+        former: &Former<'_, N>,
+        answer: Motive,
+    ) -> Option<Binding>
+    {
+        let head = |parts: &mut Parts| {
+            let _ = parts.text("match ").piece(Binding::Prefix);
+            if answer == Motive::Written {
+                let _ = parts.text(" -> ").piece(Binding::Prefix);
+            }
+            let _ = parts.text(" {").part(Part::Open);
+        };
+        if let Former::Case { arity, .. } = *former {
+            head(parts);
+            for index in 0_usize .. usize::from(arity) {
+                let _ = parts
+                    .barred(Component::from(index))
+                    .text(format!("+{{.{index} = "))
+                    .part(Part::Binder(0_usize))
+                    .text("} => ")
+                    .piece(Binding::Arrow);
+            }
+            let _ = parts.part(Part::Close);
+            return Some(writes(
+                Production("match_expression"),
+                writes(
+                    Production("labelled_sum_pattern"),
+                    writes(Production("identifier.pattern"), Binding::Prefix),
+                ),
+            ));
+        }
+        if let Former::Split { arity, .. } = *former {
+            head(parts);
+            let _ = parts.barred(Component::from(0_usize));
+            let pattern = if usize::from(arity) == 0_usize {
+                let _ = parts.text("*{}");
+                writes(Production("telescope_pattern"), Binding::Atom)
+            }
+            else {
+                let _ = parts
+                    .text("*{")
+                    .binders(Arity(usize::from(arity)))
+                    .text("}");
+                writes(
+                    Production("telescope_pattern"),
+                    writes(Production("identifier.pattern"), Binding::Prefix),
+                )
+            };
+            let _ = parts.text(" => ").piece(Binding::Arrow).part(Part::Close);
+            return Some(writes(Production("match_expression"), pattern));
+        }
+        let Former::ListCase { .. } = *former
+        else {
+            return None;
+        };
+        self.note(Unspelled::Notation(Notation::ListCase));
+        head(parts);
+        let _ = parts
+            .barred(Component::from(0_usize))
+            .text("nil => ")
+            .piece(Binding::Arrow)
+            .barred(Component::from(1_usize))
+            .text("cons(")
+            .binders(Arity(2_usize))
+            .text(") => ")
+            .piece(Binding::Arrow)
+            .part(Part::Close);
+        Some(Binding::Prefix)
+    }
+
+    /// Combines the finished pieces a join takes into one.
+    ///
+    /// # Specification
+    /// - requires: available operands are the top finished pieces in operand
+    ///   order, last on top; application arity comes from a bounded spine.
+    /// - ensures: `+U C`, `-F A`, `pure v`, `force v` and `run c` with the
+    ///   operand parenthesized unless it is an atom; `*{…}`, `+{…}` and `&{…}`
+    ///   around their entries, each bare and after its label when it has one;
+    ///   `A -> C` with the domain bare up to a bridge and the codomain bare, a
+    ///   break after the arrow; `(x : A) -> C` naming the binder by the binders
+    ///   open outside it, a break after the arrow; `*{x : A, y : B}` naming its
+    ///   first label so and its second by the next name, a break after the
+    ///   comma; `f a1 … an` with the operator parenthesized unless it is an
+    ///   atom or an application, each argument unless it is an atom, a block
+    ///   when it is a bind; every list with a break after each comma and before
+    ///   the closer; `let x = c ; rest` naming its binder so, the bound
+    ///   computation a block when it is itself a bind, a soft line after the
+    ///   semicolon; `fun (x) { c }` and the static lambda `fun (a) { v }`
+    ///   naming their binder so, and `thunk { c }`, each a block.
+    /// - provides: every composite spelling.
+    /// - fails: a missing operand, which the walk's scheduling excludes, or the
+    ///   builder's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`PresentationError::Unbalanced`] for a missing operand and
+    /// [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Termination
+    /// An application's loops run once per argument its arity counts.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite narrow and wide grammar fixtures distinguish
+    ///   wrong operators, parentheses, child order and binder scopes. An
+    ///   incomplete join exposes missing-operand refusal; arbitrary trees and
+    ///   every builder limit are not enumerated.
+    /// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `tests::goldens::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `tests::goldens::pair_of_injections_pins_sum_notation`
+    /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `tests::goldens::a_dependent_arrow_ignoring_its_binder_spells_as_the_arrow_398`
+    /// - witness: `tests::goldens::a_dependent_pair_ignoring_its_binder_spells_as_the_product_771`
+    ///
+    /// # Cost
+    /// - allocation: the operands the join takes, growth within its arity
+    /// - allocation: the document the builder lays, growth within the join's
+    ///   pieces
+    #[spec(
+        captures: [entry = self.pieces.len(), taken = match join {
+            Join::Prefix(_) | Join::OpenRow { .. } | Join::StaticLambda { .. } | Join::Lambda | Join::Thunk
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
+            Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
+                | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Returns(Arity(count)) | Join::Compose(_, Arity(count)) => Some(count),
+            Join::Fill(_, Arity(cells)) => cells.checked_add(1_usize),
+            Join::ValueFunction(Arity(domains), ..) => domains.checked_add(1_usize),
+            Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
+            Join::Update(Arity(count)) | Join::Patch(Arity(count)) => {
+                let taken = count.checked_mul(2_usize)?;
+                taken.checked_add(1_usize)
+            },
+            Join::Arrow | Join::Pi | Join::LinearArrow | Join::Sigma | Join::RecordProduct | Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedLambda | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::EffectReturner { ref close, group, .. } => group.map_or(1_usize, |Arity(results)| results).checked_add(usize::from(close.is_some())),
+            Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
+            Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
+        }],
+        ensures: |ref ret| match *ret {
+            | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
+                && self.pieces.last().is_some_and(|piece| piece.binding == match join {
+                    Join::Prefix(_) | Join::EffectReturner { .. } | Join::Returns(_) | Join::Lambda | Join::TypedLambda | Join::StaticLambda { .. } | Join::Thunk => Binding::Prefix,
+                    // The join writes a box whose bare spelling reads as the
+                    // static Pi as its thunk where it names no binder.
+                    Join::ValueFunction(_, _, Classifies::Codes) if piece.binding == Binding::Prefix => Binding::Prefix,
+                    Join::Arrow | Join::Pi | Join::LinearArrow | Join::ValueFunction(..) => Binding::Arrow,
+                    // A dependent pair naming no binder is the product it
+                    // reads as.
+                    Join::Sigma if piece.binding == Binding::Product => Binding::Product,
+                    // A record's product link is braced where its fields hold
+                    // a dependent pair, and the product otherwise. A family a
+                    // type reads applied is its call form, an atom, where a
+                    // juxtaposition would read as a call.
+                    Join::RecordProduct | Join::Form { .. } if piece.binding == Binding::Atom => Binding::Atom,
+                    Join::RecordProduct => Infix::Product.binding(),
+                    Join::Sequence | Join::DiscardedSequence | Join::SequenceAll(_) | Join::TypedSequence => Binding::Sequence,
+                    Join::Infix { infix, .. } => infix.binding(),
+                    Join::Bracket(bracket) => match bracket.opener(self.surface) { Opener::Parenthesized(_) => Binding::Atom, Opener::Juxtaposed(_) => Binding::Application },
+                    // The join juxtaposes an application where an expression
+                    // reads it, and glues it, an atom, where a type reads it.
+                    Join::Apply(_) if self.surface != Surface::Expression => Binding::Atom,
+                    Join::Apply(_) | Join::Ua(_) | Join::Compose(..) | Join::Fill(..) => Binding::Application,
+                    Join::Braced { .. } | Join::Update(_) | Join::Patch(_) | Join::Sigma | Join::OpenRow { .. } => Binding::Atom,
+                    // A family whose first argument takes parentheses binds
+                    // as a prefix, so a returner encloses it.
+                    Join::Form { binding: Binding::Application, .. } if piece.binding == Binding::Prefix => Binding::Prefix,
+                    Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
+                }),
+            | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
+            | Err(PresentationError::Render(_)) => false,
+        },
+    )]
+    fn join(
+        &mut self,
+        join: Join,
+    ) -> Result<(), PresentationError>
+    {
+        let (doc, binding) = match join {
+            Join::EffectReturner { head, close, group } => {
+                let operand = match group {
+                    None => {
+                        let operand = self.pop()?;
+                        self.bare_up_to(operand, Binding::Atom)?
+                    },
+                    Some(arity) => {
+                        let results = self.take(arity)?;
+                        self.listed(&results)?
+                    },
+                };
+                let doc = match close {
+                    None => self.builder.concat(head, operand)?,
+                    Some(close) => {
+                        let tail = self.pop()?;
+                        let tail = self.bare_up_to(tail, Binding::Atom)?;
+                        self.builder.concat_all(&[head, tail, close, operand])?
+                    },
+                };
+                (doc, Binding::Prefix)
+            },
+            Join::OpenRow { head, close } => {
+                let tail = self.pop()?;
+                let tail = self.bare_up_to(tail, Binding::Atom)?;
+                (
+                    self.builder.concat_all(&[head, tail, close])?,
+                    Binding::Atom,
+                )
+            },
+            Join::Session {
+                payloads: Arity(count),
+                binding,
+            } => {
+                let mut popped = Vec::with_capacity(count);
+                for _ in 0_usize .. count {
+                    popped.push(self.pop()?);
+                }
+                let mut payloads = Vec::with_capacity(count);
+                for piece in popped.into_iter().rev() {
+                    payloads.push(if piece.binding == Binding::Qualified {
+                        self.parenthesized(piece.doc)?
+                    }
+                    else {
+                        self.bare_up_to(piece, Binding::Atom)?
+                    });
+                }
+                let template = self.protocols.pop().ok_or(PresentationError::Unbalanced)?;
+                let mut items = Vec::with_capacity(template.len());
+                for segment in &template {
+                    items.push(match *segment {
+                        Segment::Text(ref text) => self.leaf(Glyphs(text))?,
+                        Segment::Payload(slot) => payloads
+                            .get(usize::from(slot))
+                            .copied()
+                            .ok_or(PresentationError::Unbalanced)?,
+                    });
+                }
+                (self.builder.concat_all(&items)?, binding)
+            },
+            Join::Prefix(prefix) => {
+                let operand = self.pop()?;
+                // The type grammar reads `-F Maybe A` as `-F (Maybe A)`, and
+                // `+U Maybe A` as a misplaced tile: a returner takes an
+                // application, and every other prefix an atom.
+                let loosest = match prefix {
+                    Prefix::Returner => Binding::Application,
+                    Prefix::Thunk
+                    | Prefix::Pure
+                    | Prefix::Return
+                    | Prefix::Become
+                    | Prefix::Force
+                    | Prefix::Run => Binding::Atom,
+                };
+                let operand = self.bare_up_to(operand, loosest)?;
+                let head = self.leaf(match prefix {
+                    Prefix::Thunk => Glyphs("+U "),
+                    Prefix::Returner => Glyphs("-F "),
+                    Prefix::Pure => Glyphs("pure "),
+                    Prefix::Return => Glyphs("return "),
+                    Prefix::Become => Glyphs("become "),
+                    Prefix::Force => Glyphs("force "),
+                    Prefix::Run => Glyphs("run "),
+                })?;
+                (self.builder.concat(head, operand)?, Binding::Prefix)
+            },
+            Join::Braced {
+                brace,
+                arity: Arity(count),
+                entries,
+            } => {
+                let per_entry = match entries {
+                    Entries::Positional => 1_usize,
+                    Entries::Labelled(_) => 2_usize,
+                };
+                let taken = count
+                    .checked_mul(per_entry)
+                    .ok_or(PresentationError::Unbalanced)?;
+                let mut popped = Vec::with_capacity(taken);
+                for _ in 0_usize .. taken {
+                    popped.push(self.pop()?);
+                }
+                let opener = self.leaf(brace.opener())?;
+                let mut items = Vec::from([opener]);
+                for (position, entry) in popped.rchunks(per_entry).enumerate() {
+                    if position > 0_usize {
+                        let comma = self.leaf(Glyphs(","))?;
+                        items.push(self.space_or_break(comma)?);
+                    }
+                    for &piece in entry.iter().rev() {
+                        items.push(self.bare_up_to(piece, Binding::ARGUMENT)?);
+                    }
+                }
+                let inner = self.builder.concat_all(&items)?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs("}"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
+            },
+            Join::Update(Arity(count)) => {
+                let taken = count
+                    .checked_mul(2_usize)
+                    .ok_or(PresentationError::Unbalanced)?;
+                let mut popped = Vec::with_capacity(taken);
+                for _ in 0_usize .. taken {
+                    popped.push(self.pop()?);
+                }
+                let base = self.pop()?;
+                let opener = self.leaf(Brace::Star.opener())?;
+                let bar = self.leaf(Glyphs(" |"))?;
+                let head = self.builder.concat_all(&[opener, base.doc, bar])?;
+                let mut items = Vec::from([self.space_or_break(head)?]);
+                for (position, entry) in popped.rchunks(2_usize).enumerate() {
+                    if position > 0_usize {
+                        let comma = self.leaf(Glyphs(","))?;
+                        items.push(self.space_or_break(comma)?);
+                    }
+                    items.extend(entry.iter().rev().map(|piece| piece.doc));
+                }
+                let inner = self.builder.concat_all(&items)?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs("}"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
+            },
+            Join::Patch(Arity(count)) => {
+                let taken = count
+                    .checked_mul(2_usize)
+                    .ok_or(PresentationError::Unbalanced)?;
+                let mut popped = Vec::with_capacity(taken);
+                for _ in 0_usize .. taken {
+                    popped.push(self.pop()?);
+                }
+                let base = self.pop()?;
+                let base = self.bare_up_to(base, Binding::Atom)?;
+                let opener = self.leaf(Glyphs(".#{"))?;
+                let mut items = Vec::from([base, opener]);
+                for (position, entry) in popped.rchunks(2_usize).enumerate() {
+                    if position > 0_usize {
+                        let comma = self.leaf(Glyphs(","))?;
+                        items.push(self.space_or_break(comma)?);
+                    }
+                    for &piece in entry.iter().rev() {
+                        items.push(self.bare_up_to(piece, Binding::ARGUMENT)?);
+                    }
+                }
+                let inner = self.builder.concat_all(&items)?;
+                let close = self.leaf(Glyphs("}"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
+            },
+            Join::Infix { infix, arity } => {
+                let mut joined = None;
+                for operand in self.take(arity)? {
+                    let operand = self.bare_up_to(operand, infix.operand())?;
+                    joined = Some(match joined {
+                        None => operand,
+                        Some(head) => {
+                            let symbol = self.leaf(infix.symbol())?;
+                            let head = self.builder.concat(head, symbol)?;
+                            let head = self.space_or_break(head)?;
+                            self.builder.concat(head, operand)?
+                        },
+                    });
+                }
+                (
+                    joined.ok_or(PresentationError::Unbalanced)?,
+                    infix.binding(),
+                )
+            },
+            Join::Returns(arity) => {
+                let results = self.take(arity)?;
+                let group = self.listed(&results)?;
+                let head = self.leaf(Glyphs("-F "))?;
+                (self.builder.concat(head, group)?, Binding::Prefix)
+            },
+            Join::ValueFunction(arity, dependent, first) => {
+                let codomain = self.pop()?;
+                let domains = self.take(arity)?;
+                let open = self.opened.len();
+                let binders = usize::try_from(dependent.0.count_ones())
+                    .ok()
+                    .ok_or(PresentationError::Unbalanced)?;
+                let named = (open .. open.saturating_add(binders))
+                    .any(|position| self.occurring.contains(&OpenBinders(position)));
+                let spelled = binders > 0_usize && (named || self.fidelity != Fidelity::Faithful);
+                if !spelled {
+                    for position in open .. open.saturating_add(binders) {
+                        self.openings.leave_out(OpenBinders(position));
+                    }
+                }
+                if spelled {
+                    self.dependent_alias(&domains, dependent, first, codomain)?
+                }
+                else if first == Classifies::Codes {
+                    // The box `Type -> Type` reads as the static Pi. A binder
+                    // that nothing names reads back as the plain arrow. The
+                    // join writes a box whose domains and codomain classify
+                    // codes as its thunk, `+U (Type -> -F Type)`.
+                    let returned = self.bare_up_to(codomain, Binding::Atom)?;
+                    let returner = self.leaf(Glyphs("-F "))?;
+                    let mut chain = self.builder.concat(returner, returned)?;
+                    for &domain in domains.iter().rev() {
+                        let domain = self.bare_up_to(domain, Binding::Lazy)?;
+                        let arrow = self.leaf(Glyphs(" ->"))?;
+                        let head = self.builder.concat(domain, arrow)?;
+                        let head = self.space_or_break(head)?;
+                        chain = self.builder.concat(head, chain)?;
+                    }
+                    let inner = self.bare_up_to(
+                        Piece {
+                            doc: chain,
+                            binding: Binding::Arrow,
+                            fields: None,
+                        },
+                        Binding::Atom,
+                    )?;
+                    let thunk = self.leaf(Glyphs("+U "))?;
+                    (self.builder.concat(thunk, inner)?, Binding::Prefix)
+                }
+                else {
+                    let domain = match *domains.as_slice() {
+                        [] => self.leaf(Glyphs("()"))?,
+                        [only] => self.bare_up_to(only, Binding::Lazy)?,
+                        _ => self.listed(&domains)?,
+                    };
+                    let arrow = self.leaf(Glyphs(" ->"))?;
+                    let head = self.builder.concat(domain, arrow)?;
+                    let head = self.space_or_break(head)?;
+                    let codomain = self.bare_up_to(codomain, Binding::Relation)?;
+                    (self.builder.concat(head, codomain)?, Binding::Arrow)
+                }
+            },
+            Join::Arrow => {
+                let codomain = self.pop()?;
+                let domain = self.pop()?;
+                let domain = self.bare_up_to(domain, Binding::Lazy)?;
+                let arrow = self.leaf(Glyphs(" ->"))?;
+                let head = self.builder.concat(domain, arrow)?;
+                let head = self.space_or_break(head)?;
+                (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            // The surface reads `(x : A) -> C` as the plain arrow where `C`
+            // does not name `x`, so a dependent arrow whose codomain names
+            // no binder — a decode substituting a constant family — has no
+            // spelling of its own and is written as the arrow it reads as.
+            // A walk that spelled every node so far met every occurrence.
+            Join::Pi
+                if self.fidelity == Fidelity::Faithful
+                    && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
+            {
+                self.openings.leave_out(OpenBinders(self.opened.len()));
+                let codomain = self.pop()?;
+                let domain = self.pop()?;
+                let domain = self.bare_up_to(domain, Binding::Lazy)?;
+                let arrow = self.leaf(Glyphs(" ->"))?;
+                let head = self.builder.concat(domain, arrow)?;
+                let head = self.space_or_break(head)?;
+                (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            Join::Pi => {
+                let codomain = self.pop()?;
+                let domain = self.pop()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let open = self.leaf(Glyphs("("))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let arrow = self.leaf(Glyphs(") ->"))?;
+                let head = self
+                    .builder
+                    .concat_all(&[open, binder, colon, domain.doc, arrow])?;
+                let head = self.space_or_break(head)?;
+                (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            Join::LinearArrow => {
+                let codomain = self.pop()?;
+                let domain = self.pop()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let open = self.leaf(Glyphs("("))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let close = self.leaf(Glyphs(") "))?;
+                let arrow = self.leaf(Glyphs(grammar::LINEAR_ARROW.written(self.spelling).0))?;
+                let head = self
+                    .builder
+                    .concat_all(&[open, binder, colon, domain.doc, close, arrow])?;
+                let head = self.space_or_break(head)?;
+                (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            // The surface reads a record whose later field names no earlier
+            // one as a record of labels, not as a pair, so a dependent pair
+            // whose second factor names no binder — a decode the family
+            // reduces away (#771) — is written as the product it reads as:
+            // `A * B` sugared, each operand tighter than the chain, and
+            // `*{A, B}` explicit.
+            Join::Sigma
+                if self.fidelity == Fidelity::Faithful
+                    && !self.occurring.contains(&OpenBinders(self.opened.len())) =>
+            {
+                self.openings.leave_out(OpenBinders(self.opened.len()));
+                let _link = self.links.pop();
+                let second = self.pop()?;
+                let first = self.pop()?;
+                self.pair_product(first, second)?
+            },
+            Join::Sigma => {
+                let link = self.links.pop().unwrap_or_default();
+                let second = self.pop()?;
+                let first = self.pop()?;
+                // The binder spelled as the source writes it: a link around
+                // the pair then writes the pair's fields among its own.
+                let as_written = link.first.as_ref().is_some_and(|written| {
+                    matches!(self.names.get(self.opened.len()), Some(&Some(ref name)) if name == written)
+                });
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let comma = self.leaf(Glyphs(","))?;
+                let head = self
+                    .builder
+                    .concat_all(&[binder, colon, first.doc, comma])?;
+                let head = self.space_or_break(head)?;
+                let rest = match second.fields {
+                    // A link whose second component is the record's next link
+                    // writes that link's fields after its own (#3934).
+                    Some(fields) if link.first.is_some() && link.second.is_none() => fields.doc,
+                    Some(_) | None => {
+                        let label = if let Some(name) = self.free_label(link.second) {
+                            self.leaf(Glyphs(name.0.as_str()))?
+                        }
+                        else {
+                            // Unrecorded, the label is the first generated
+                            // name no binder around the pair, nor the pair's
+                            // own, holds: the position past the pair's binder
+                            // opens none, so what a binder inside the pair last
+                            // left there names nothing here (#3278).
+                            self.names
+                                .truncate(self.opened.len().saturating_add(1_usize));
+                            self.binder(OpenBinders(1_usize))?
+                        };
+                        let colon = self.leaf(Glyphs(" : "))?;
+                        self.builder.concat_all(&[label, colon, second.doc])?
+                    },
+                };
+                let fields = self.builder.concat(head, rest)?;
+                let doc = self.braced_fields(fields)?;
+                if as_written {
+                    self.fields = Some(Fields {
+                        doc: fields,
+                        dependent: true,
+                    });
+                }
+                (doc, Binding::Atom)
+            },
+            Join::RecordProduct => {
+                let link = self.links.pop().unwrap_or_default();
+                let second = self.pop()?;
+                let first = self.pop()?;
+                let rest = match second.fields {
+                    Some(fields) if link.second.is_none() => Some(fields),
+                    Some(_) | None => match self.free_label(link.second) {
+                        Some(name) => {
+                            let label = self.leaf(Glyphs(name.0.as_str()))?;
+                            let colon = self.leaf(Glyphs(" : "))?;
+                            Some(Fields {
+                                doc: self.builder.concat_all(&[label, colon, second.doc])?,
+                                dependent: false,
+                            })
+                        },
+                        None => None,
+                    },
+                };
+                let fields = match (self.free_label(link.first), rest) {
+                    (Some(name), Some(rest)) => {
+                        let label = self.leaf(Glyphs(name.0.as_str()))?;
+                        let colon = self.leaf(Glyphs(" : "))?;
+                        let comma = self.leaf(Glyphs(","))?;
+                        let head = self.builder.concat_all(&[label, colon, first.doc, comma])?;
+                        let head = self.space_or_break(head)?;
+                        Some(Fields {
+                            doc: self.builder.concat(head, rest.doc)?,
+                            dependent: rest.dependent,
+                        })
+                    },
+                    (Some(_) | None, _) => None,
+                };
+                // Fields holding a dependent pair read back braced as the
+                // links they spell; a product of fields alone braced would read
+                // back as a record, so it is written as the product.
+                let spelled = match fields {
+                    Some(fields) if fields.dependent => {
+                        (self.braced_fields(fields.doc)?, Binding::Atom)
+                    },
+                    Some(_) | None => self.pair_product(first, second)?,
+                };
+                self.fields = fields;
+                spelled
+            },
+            Join::StaticLambda { .. } | Join::Lambda => {
+                let body = self.pop()?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let open = self.leaf(Glyphs("fun ("))?;
+                let close = self.leaf(Glyphs(") {"))?;
+                let head = self.builder.concat_all(&[open, binder, close])?;
+                let body = if matches!(join, Join::StaticLambda { quoted: true }) {
+                    let quote = self.leaf(Glyphs("type("))?;
+                    let shut = self.leaf(Glyphs(")"))?;
+                    self.builder.concat_all(&[quote, body.doc, shut])?
+                }
+                else {
+                    body.doc
+                };
+                let block = if matches!(join, Join::StaticLambda { .. }) {
+                    let close = self.leaf(Glyphs("}"))?;
+                    self.builder.concat_all(&[head, body, close])?
+                }
+                else {
+                    self.block(head, body)?
+                };
+                (block, Binding::Prefix)
+            },
+            Join::Sequence | Join::DiscardedSequence => {
+                let rest = self.pop()?;
+                let bound = self.pop()?;
+                let bound = self.bare_up_to(bound, Binding::Arrow)?;
+                let binder = if join == Join::DiscardedSequence {
+                    self.leaf(Glyphs("_"))?
+                }
+                else {
+                    self.binder(OpenBinders(0_usize))?
+                };
+                let lead = self.leaf(Glyphs("let "))?;
+                let equals = self.leaf(Glyphs(" = "))?;
+                let semicolon = self.leaf(Glyphs(" ;"))?;
+                let line = Doc::LINE;
+                (
+                    self.builder
+                        .concat_all(&[lead, binder, equals, bound, semicolon, line, rest.doc])?,
+                    Binding::Sequence,
+                )
+            },
+            Join::SequenceAll(Arity(count)) => {
+                let rest = self.pop()?;
+                let bound = self.pop()?;
+                let bound = self.bare_up_to(bound, Binding::Arrow)?;
+                let mut items = Vec::from([self.leaf(Glyphs("let ("))?]);
+                for position in 0_usize .. count {
+                    if position > 0_usize {
+                        items.push(self.leaf(Glyphs(", "))?);
+                    }
+                    // The walk closes the body's binders before this join,
+                    // the first value's binder nearest.
+                    items.push(self.binder(OpenBinders(position))?);
+                }
+                items.push(self.leaf(Glyphs(") = "))?);
+                items.push(bound);
+                items.push(self.leaf(Glyphs(" ;"))?);
+                items.push(Doc::LINE);
+                items.push(rest.doc);
+                (self.builder.concat_all(&items)?, Binding::Sequence)
+            },
+            Join::TypedSequence => {
+                let rest = self.pop()?;
+                let result = self.pop()?;
+                let bound = self.pop()?;
+                let bound = self.bare_up_to(bound, Binding::Arrow)?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let lead = self.leaf(Glyphs("let "))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let equals = self.leaf(Glyphs(" = "))?;
+                let semicolon = self.leaf(Glyphs(" ;"))?;
+                let line = Doc::LINE;
+                (
+                    self.builder.concat_all(&[
+                        lead, binder, colon, result.doc, equals, bound, semicolon, line, rest.doc,
+                    ])?,
+                    Binding::Sequence,
+                )
+            },
+            Join::TypedLambda => {
+                let body = self.pop()?;
+                let stated = self.pop()?;
+                let stated = self.bare_up_to(stated, Binding::ARGUMENT)?;
+                let binder = self.binder(OpenBinders(0_usize))?;
+                let open = self.leaf(Glyphs("fun ("))?;
+                let colon = self.leaf(Glyphs(" : "))?;
+                let close = self.leaf(Glyphs(") {"))?;
+                let head = self
+                    .builder
+                    .concat_all(&[open, binder, colon, stated, close])?;
+                (self.block(head, body.doc)?, Binding::Prefix)
+            },
+            Join::Thunk => {
+                let body = self.pop()?;
+                let head = self.leaf(Glyphs("thunk {"))?;
+                (self.block(head, body.doc)?, Binding::Prefix)
+            },
+            Join::Apply(Arity(count)) => {
+                let arguments = self.take(Arity(count))?;
+                let operator = self.pop()?;
+                // Where a type's sort reads the application, it is written
+                // glued: there `f x` reads as the moded type `m T`.
+                if self.surface == Surface::Expression {
+                    let operator = self.bare_up_to(operator, Binding::Application)?;
+                    (self.juxtaposed(operator, arguments)?, Binding::Application)
+                }
+                else {
+                    let operator = self.bare_up_to(operator, Binding::Atom)?;
+                    let listed = self.listed(&arguments)?;
+                    (self.builder.concat(operator, listed)?, Binding::Atom)
+                }
+            },
+            Join::Bracket(bracket) => {
+                let operands = self.take(bracket.operands())?;
+                match bracket.opener(self.surface) {
+                    Opener::Parenthesized(opener) => {
+                        let mut inner = self.leaf(opener)?;
+                        for (position, operand) in operands.into_iter().enumerate() {
+                            if position > 0_usize {
+                                let comma = self.leaf(Glyphs(","))?;
+                                let comma = self.space_or_break(comma)?;
+                                inner = self.builder.concat(inner, comma)?;
+                            }
+                            let operand = self.bare_up_to(operand, Binding::ARGUMENT)?;
+                            inner = self.builder.concat(inner, operand)?;
+                        }
+                        let inner = self.none_or_break(inner)?;
+                        let close = self.leaf(Glyphs(")"))?;
+                        (self.builder.concat(inner, close)?, Binding::Atom)
+                    },
+                    Opener::Juxtaposed(head) => {
+                        let head = self.leaf(head)?;
+                        (self.juxtaposed(head, operands)?, Binding::Application)
+                    },
+                }
+            },
+            Join::Ua(head) => {
+                let maps = self.take(Arity(2_usize))?;
+                (self.juxtaposed(head, maps)?, Binding::Application)
+            },
+            Join::Compose(head, cells) => {
+                let taken = self.take(cells)?;
+                (self.composite_cells(head, taken)?, Binding::Application)
+            },
+            Join::Fill(head, Arity(cells)) => {
+                let mut taken = self.take(Arity(cells.saturating_add(1_usize)))?;
+                let rest = taken.split_off(1_usize.min(taken.len()));
+                let head = self.juxtaposed(head, taken)?;
+                (self.composite_cells(head, rest)?, Binding::Application)
+            },
+            Join::Form {
+                pieces: Arity(count),
+                binding,
+            } => {
+                let parts = self.forms.pop().ok_or(PresentationError::Unbalanced)?;
+                // The last child's piece is on top: a `Last` part takes it,
+                // and the rest are written in order.
+                let lasts = parts
+                    .iter()
+                    .filter(|part| matches!(**part, Part::Last(_)))
+                    .count();
+                let mut last = Vec::with_capacity(lasts);
+                for _ in 0_usize .. lasts {
+                    last.push(self.pop()?);
+                }
+                let mut children = Vec::with_capacity(count.saturating_sub(lasts));
+                for _ in lasts .. count {
+                    children.push(self.pop()?);
+                }
+                // A family whose first argument takes parentheses binds as a
+                // prefix: the type grammar reads `-F Var (Extend a b) c` as
+                // the call `Var(Extend a b)` applied to `c`.
+                let consumed = parts.iter().filter(|part| {
+                    matches!(**part, Part::Piece(_) | Part::Spliced(_) | Part::Argument)
+                });
+                let mut arguments = 0_usize;
+                let mut led = false;
+                for (part, piece) in consumed.zip(children.iter().rev()) {
+                    if matches!(*part, Part::Argument) {
+                        let enclosed = piece.binding > Binding::Atom;
+                        led = led || (arguments == 0_usize && enclosed);
+                        arguments = arguments.saturating_add(1_usize);
+                    }
+                }
+                let binding = if led && binding == Binding::Application {
+                    Binding::Prefix
+                }
+                else {
+                    binding
+                };
+                let mut current = Vec::new();
+                let mut heads = Vec::new();
+                for part in parts {
+                    match part {
+                        Part::Text(text) => current.push(self.leaf(Glyphs(text.as_ref()))?),
+                        Part::Named(text, constant) => {
+                            current.push(self.builder.named(Glyphs(text.as_ref()), constant)?);
+                        },
+                        Part::Piece(loosest) => {
+                            let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
+                            current.push(self.bare_up_to(piece, loosest)?);
+                        },
+                        Part::Spliced(content) => {
+                            let _literal = children.pop().ok_or(PresentationError::Unbalanced)?;
+                            if !content.is_empty() {
+                                current.push(self.leaf(Glyphs(content.as_str()))?);
+                            }
+                        },
+                        Part::Last(loosest) => {
+                            let piece = last.pop().ok_or(PresentationError::Unbalanced)?;
+                            current.push(self.bare_up_to(piece, loosest)?);
+                        },
+                        Part::Argument => {
+                            let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
+                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
+                            current.push(self.space_or_break(head)?);
+                            current.push(self.bare_up_to(piece, Binding::Atom)?);
+                        },
+                        Part::Binder(offset) => current.push(self.binder(OpenBinders(offset))?),
+                        Part::Endpoint(index) => {
+                            current.push(self.variable_leaf(Zone::Linear, index)?);
+                        },
+                        Part::Space => {
+                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
+                            current.push(self.space_or_break(head)?);
+                        },
+                        Part::Tight => {
+                            let head = self.builder.concat_all(&core::mem::take(&mut current))?;
+                            current.push(self.none_or_break(head)?);
+                        },
+                        Part::Line => current.push(Doc::LINE),
+                        Part::Open => heads.push(core::mem::take(&mut current)),
+                        Part::Close => {
+                            let body = self.builder.concat_all(&core::mem::take(&mut current))?;
+                            let head = heads.pop().ok_or(PresentationError::Unbalanced)?;
+                            let head = self.builder.concat_all(&head)?;
+                            current.push(self.block(head, body)?);
+                        },
+                    }
+                }
+                if !heads.is_empty() || !children.is_empty() {
+                    return Err(PresentationError::Unbalanced);
+                }
+                (self.builder.concat_all(&current)?, binding)
+            },
+        };
+        let fields = self.fields.take();
+        self.pieces.push(Piece {
+            doc,
+            binding,
+            fields,
+        });
+        Ok(())
+    }
+}
+
+/// The document of the node `root` of `source`, in a position admitting
+/// `admits`, its thunks written as `bodies` says.
+///
+/// # Specification
+/// - requires: `builder` is the builder the document is rendered from.
+/// - ensures: the root's document and whether every node was spelled in full;
+///   [`Walked::OverBudget`] when the scan or a pass exhausts its
+///   scheduled-visit budget, or the spelling reaches more formers than its
+///   distinct nodes allow ([`sharing`]). A scan refusal builds nothing; a walk
+///   refusal may leave partial documents in the builder when the source changes
+///   after the scan. A computation's document is one group, so its statements
+///   break together. A binder the spelling leaves out moves no name inside its
+///   scope: the document names each binder as it names it where no binder is
+///   left out ([`Openings`]).
+/// - provides: the document [`crate::present_type`], [`crate::present_value`],
+///   [`crate::present_definition`] and [`crate::present_computation`] lay out.
+/// - fails: the builder's refusal, or bookkeeping the walk's scheduling
+///   excludes.
+/// - panics: none.
+/// - intension: one scan and one pass, each on an explicit stack, never
+///   recursion; linear in the nodes reached. One pass more for each pass that
+///   leaves out a binder whose name a name inside its scope passed over, and
+///   each of those reserves no name for more binders than the pass before.
+///
+/// # Errors
+/// Returns [`PresentationError::Build`] when the builder refuses and
+/// [`PresentationError::Unbalanced`] when the walk ends with other than one
+/// finished piece.
+///
+/// # Termination
+/// A pass that ends with [`Passed::Again`] hands on at least one binder more
+/// than it was given. A pass opens at most one binder for each visit of its
+/// budget, so the passes end.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite golden fixtures expose wrong constructors,
+///   breaks and depth cutoffs. A scanned leaf that becomes a cycle exposes a
+///   missing second-pass budget through the read count and approximation. A
+///   dependent arrow and a dependent pair whose binder nothing names, over a
+///   lambda, expose a binder left out that still holds its name. Other
+///   mutations of a source during presentation are not enumerated.
+/// - witness: `tests::goldens::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `tests::goldens::beyond_the_depth_limit_renders_deep`
+/// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
+/// - witness: `tests::goldens::a_binder_the_print_leaves_out_moves_no_name_5402`
+/// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+#[spec(ensures: |ref ret| match *ret {
+    | Ok(Walked::Built { doc, .. }) => doc != Doc::EMPTY,
+    | Ok(Walked::OverBudget) | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => true,
+    | Err(PresentationError::Render(_)) => false,
+})]
+pub fn walk<S>(
+    source: &S,
+    root: S::Node,
+    (admits, bodies): (Admits, Bodies),
+    style: Style,
+    builder: &mut dyn Compose,
+) -> Result<Walked, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    let Maybe::Present((mut mentioned, reached)) = mentioned(source, root, admits, bodies)
+    else {
+        return Ok(Walked::OverBudget);
+    };
+    if sharing(source, root, (admits, bodies), reached) == Sharing::Past {
+        return Ok(Walked::OverBudget);
+    }
+    mentioned.extend(source.context().iter().flatten().copied());
+    mentioned.extend(source.regions().iter().flatten().copied());
+    mentioned.extend(source.region_binders().iter().flatten().copied());
+    let mut binders = Binders::new(mentioned);
+    let mut unreserved = BTreeSet::new();
+    loop {
+        let openings = Openings::new(unreserved);
+        match pass(
+            source,
+            root,
+            (admits, bodies),
+            style,
+            &mut *builder,
+            (binders, openings),
+        )? {
+            Passed::Done(walked) => return Ok(walked),
+            Passed::Again(named, more) => {
+                binders = named;
+                unreserved = more;
+            },
+        }
+    }
+}
+
+/// How one pass of [`walk`] ends.
+enum Passed<'names>
+{
+    /// The walk's result.
+    Done(Walked),
+    /// The pass left out a binder whose name a name inside its scope passed
+    /// over: the names generated so far, and the binders the next pass
+    /// reserves no name for.
+    Again(Binders<'names>, BTreeSet<Opening>),
+}
+
+/// One pass of [`walk`] over the node `root` of `source`, naming binders from
+/// `binders` and reserving no name for the binders `openings` holds
+/// unreserved.
+///
+/// # Specification
+/// - requires: `binders` avoid every name the term mentions, as [`walk`] reads
+///   them.
+/// - ensures: [`Passed::Done`] with the root's document, as [`walk`] states it,
+///   when the pass leaves out no binder whose name a name inside its scope
+///   passed over; [`Passed::Again`] with the given binders and those it left so
+///   otherwise.
+/// - provides: each pass [`walk`] makes.
+/// - fails: as [`walk`].
+/// - panics: none.
+/// - intension: one walk on an explicit stack, never recursion; linear in the
+///   nodes reached.
+///
+/// # Errors
+/// As [`walk`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`walk`].
+/// - witness: `tests::goldens::a_binder_the_print_leaves_out_moves_no_name_5402`
+/// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+#[spec(ensures: |ref ret| match *ret {
+    | Ok(Passed::Done(Walked::Built { doc, .. })) => doc != Doc::EMPTY,
+    | Ok(Passed::Done(Walked::OverBudget) | Passed::Again(..))
+    | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => true,
+    | Err(PresentationError::Render(_)) => false,
+})]
+fn pass<'names, S>(
+    source: &'names S,
+    root: S::Node,
+    (admits, bodies): (Admits, Bodies),
+    style: Style,
+    builder: &mut dyn Compose,
+    (binders, openings): (Binders<'names>, Openings),
+) -> Result<Passed<'names>, PresentationError>
+where
+    S: Source + ?Sized,
+{
+    let context = source.context();
+    let mut walk = Walk {
+        builder,
+        pieces: Vec::new(),
+        binders,
+        names: Vec::new(),
+        opened: Vec::new(),
+        scopes: Vec::new(),
+        occurring: BTreeSet::new(),
+        openings,
+        hidden: BTreeSet::new(),
+        loops: Vec::new(),
+        subjects: 0_usize,
+        unwinds: 0_usize,
+        held: Vec::new(),
+        substituted: BTreeMap::new(),
+        context,
+        recursive: source.recursive(),
+        fidelity: Fidelity::Faithful,
+        unspelled: BTreeSet::new(),
+        wildcards: Wildcards::Unwritten,
+        bodies,
+        protocols: Vec::new(),
+        links: Vec::new(),
+        records: BTreeMap::new(),
+        unrecorded: BTreeSet::new(),
+        fields: None,
+        forms: Vec::new(),
+        form: style.form,
+        crossed: false,
+        spelling: style.spelling,
+        remaining: VISIT_BUDGET,
+        surface: match admits {
+            Admits::Type | Admits::ValueType | Admits::CompType => Surface::Type,
+            Admits::Thunked
+            | Admits::Value
+            | Admits::Stated
+            | Admits::Operand
+            | Admits::Computation(_) => Surface::Expression,
+        },
+        elaboration: match admits {
+            Admits::Type | Admits::ValueType | Admits::CompType => Elaboration::Read,
+            Admits::Thunked
+            | Admits::Value
+            | Admits::Stated
+            | Admits::Operand
+            | Admits::Computation(_) => Elaboration::Checked,
+        },
+    };
+    // A definition's body checked against its signature's thunk type is the
+    // thunk the checker inserts, left out.
+    let inserted = match admits {
+        Admits::Stated => walk.inserted(source, root),
+        Admits::Type
+        | Admits::ValueType
+        | Admits::CompType
+        | Admits::Thunked
+        | Admits::Value
+        | Admits::Operand
+        | Admits::Computation(_) => None,
+    };
+    let mut tasks = Vec::from([inserted.map_or(
+        Task::Visit {
+            node: root,
+            admits,
+            depth: ValueDepth::ROOT,
+        },
+        |body| Task::Visit {
+            node: body,
+            admits: Admits::Computation(Tail::Ends),
+            depth: ValueDepth::ROOT,
+        },
+    )]);
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Visit {
+                node,
+                admits,
+                depth,
+            } => {
+                let Some(left) = walk.remaining.checked_sub(1_u32)
+                else {
+                    return Ok(Passed::Done(Walked::OverBudget));
+                };
+                walk.remaining = left;
+                // The explicit form writes the forgetting map or the reduct the
+                // checker applies to a value as its form or call around the
+                // value, and a written map's call as the map's form; the
+                // sugared form writes a written map's call the checker would
+                // apply as its model.
+                let crossed = core::mem::take(&mut walk.crossed);
+                let node = match walk.form {
+                    Form::Explicit => {
+                        if !crossed && let Some(forgotten) = source.forgotten(node) {
+                            walk.crossed = true;
+                            walk.forget(forgotten, depth, &mut tasks);
+                            tasks.push(Task::Visit {
+                                node,
+                                admits,
+                                depth,
+                            });
+                            continue;
+                        }
+                        if !crossed && let Some((reduct, constant)) = source.reduct(node) {
+                            walk.name(reduct, Some(constant))?;
+                            walk.crossed = true;
+                            tasks.push(Task::Join(Join::Apply(Arity(1_usize))));
+                            tasks.push(Task::Visit {
+                                node,
+                                admits,
+                                depth,
+                            });
+                            continue;
+                        }
+                        if let Some(call) = source.forget_call(node) {
+                            let forgotten = Forgotten {
+                                theory: call.theory,
+                                sorts: &call.sorts,
+                            };
+                            walk.forget(forgotten, depth, &mut tasks);
+                            tasks.push(Task::Visit {
+                                node: call.model,
+                                admits,
+                                depth,
+                            });
+                            continue;
+                        }
+                        node
+                    },
+                    Form::Sugared => source.implied(node).unwrap_or(node),
+                };
+                walk.visit(
+                    source,
+                    node,
+                    reading(source, node, admits),
+                    admits,
+                    depth,
+                    &mut tasks,
+                )?;
+            },
+            // A bound that is itself runs binding calls is written as the
+            // nested call it binds, `h(g(f(a)))` for `x ← (y ← f(a); g(y));
+            // h(x)`: no run is read back where a nested call is written (#3280).
+            Task::Inline { node, depth } => {
+                if nested_call(source, node).is_some() {
+                    Walk::inlined(source, node, depth, &mut tasks);
+                }
+                else {
+                    tasks.push(Task::Visit {
+                        node,
+                        admits: Admits::Computation(Tail::Continues),
+                        depth,
+                    });
+                }
+            },
+            Task::Returned { node, depth } => {
+                let Some(left) = walk.remaining.checked_sub(1_u32)
+                else {
+                    return Ok(Passed::Done(Walked::OverBudget));
+                };
+                walk.remaining = left;
+                Walk::returned(source, node, depth, &mut tasks);
+            },
+            Task::Bind(zone, opener) => walk.bind(source, zone, opener),
+            Task::BindLoop(zone, binder) => {
+                walk.bind(source, zone, None);
+                let position = OpenBinders(walk.opened.len().saturating_sub(1_usize));
+                let _fresh = walk.hidden.insert(position);
+                match binder {
+                    LoopBinder::Own { rest, breaks } => walk.loops.push(Looping {
+                        own: position,
+                        rest,
+                        breaks,
+                        pass: Pass::Nothing,
+                    }),
+                    LoopBinder::Tail => {
+                        if let Some(looping) = walk.loops.last_mut() {
+                            looping.pass = Pass::Tail(position);
+                        }
+                    },
+                    LoopBinder::Hidden => {},
+                }
+            },
+            Task::BindCarried(carried) => walk.bind_carried(source, carried),
+            Task::Handled(entered) => {
+                walk.subjects = if entered {
+                    walk.subjects.saturating_add(1_usize)
+                }
+                else {
+                    walk.subjects.saturating_sub(1_usize)
+                };
+            },
+            Task::Unwound(entered) => {
+                walk.unwinds = if entered {
+                    walk.unwinds.saturating_add(1_usize)
+                }
+                else {
+                    walk.unwinds.saturating_sub(1_usize)
+                };
+            },
+            Task::Rebind(zone, payload) => walk.rebind(zone, payload),
+            Task::BindScope(zone, opener) => {
+                walk.bind(source, zone, opener);
+                walk.scopes.push(walk.opened.len().saturating_sub(1_usize));
+            },
+            Task::Unbind => {
+                let _closed = walk.opened.pop();
+                if walk
+                    .scopes
+                    .last()
+                    .is_some_and(|&scope| scope >= walk.opened.len())
+                {
+                    let _left = walk.scopes.pop();
+                }
+                let _argument = walk.substituted.remove(&OpenBinders(walk.opened.len()));
+                let _shown = walk.hidden.remove(&OpenBinders(walk.opened.len()));
+                let _record = walk.records.remove(&OpenBinders(walk.opened.len()));
+                if walk
+                    .loops
+                    .last()
+                    .is_some_and(|looping| looping.own.0 >= walk.opened.len())
+                {
+                    let _left = walk.loops.pop();
+                }
+            },
+            Task::Hold => walk.held.push(core::mem::take(&mut walk.occurring)),
+            Task::Substitute(arity) => walk.substitute(arity)?,
+            #[cfg_attr(
+                dylint_lib = "quenchant_dylints",
+                expect(
+                    answer_totality,
+                    reason = "a component the source does not answer: a malformed source, with no \
+                              node to spell"
+                )
+            )]
+            Task::Missing => walk.unspell(Unspelled::Missing)?,
+            Task::Context(position) => walk.context_binder(position)?,
+            Task::Label(Labelled { of, index, label }) => walk.label(source, of, index, label)?,
+            Task::Join(join) => walk.join(join)?,
+            Task::Surface(surface) => walk.surface = surface,
+            Task::Elaboration(elaboration) => walk.elaboration = elaboration,
+        }
+    }
+    let root = walk.pop()?;
+    if !walk.pieces.is_empty() {
+        return Err(PresentationError::Unbalanced);
+    }
+    if !walk.openings.left_out.is_empty() {
+        let Openings {
+            mut unreserved,
+            mut left_out,
+            ..
+        } = walk.openings;
+        unreserved.append(&mut left_out);
+        return Ok(Passed::Again(walk.binders, unreserved));
+    }
+    // A body's statements break together: on one line when the whole body
+    // fits, one statement per line otherwise.
+    let doc = match admits {
+        Admits::Computation(_) => walk.builder.group(root.doc)?,
+        Admits::Type
+        | Admits::ValueType
+        | Admits::CompType
+        | Admits::Thunked
+        | Admits::Value
+        | Admits::Stated
+        | Admits::Operand => root.doc,
+    };
+    Ok(Passed::Done(Walked::Built {
+        doc,
+        fidelity: walk.fidelity,
+        unspelled: walk.unspelled,
+        wildcards: walk.wildcards,
+    }))
+}
+
+#[cfg(test)]
+mod tests
+{
+    use core::cell::Cell;
+
+    use anodized::spec;
+    use gandr_surface_layout::units::PageWidth;
+
+    use super::Component;
+    use super::Fidelity;
+    use super::Former;
+    use super::Source;
+    use super::VISIT_BUDGET;
+
+    /// The root handle of a deliberately changing source.
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct ChangingNode;
+
+    /// A leaf during the scan and an alternating type cycle during the walk.
+    #[repr(transparent)]
+    struct ChangingSource
+    {
+        /// Reads already performed, including the initial naming scan.
+        reads: Cell<u32>,
+    }
+
+    impl Source for ChangingSource
+    {
+        type Node = ChangingNode;
+
+        /// Returns a finite changing source without hanging a failing witness.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: the read count advances once, saturating; the first read
+        ///   is a unit type, later reads alternate the two type bridges until
+        ///   the finite cutoff, after which the handle is unreadable.
+        /// - provides: a between-pass change that invalidates the scan's bound.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — the public presentation observes approximation
+        ///   and a bounded read count when a scanned leaf becomes a cycle. A
+        ///   missing walk budget overruns that count; other source mutations
+        ///   are outside this fixture, whose own cutoff keeps the failure
+        ///   finite.
+        /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
+        #[spec(
+            captures: [entry = self.reads.get()],
+            ensures: |ret| self.reads.get() == entry.saturating_add(1_u32)
+                && (matches!(ret, Former::Product(arity) if usize::from(arity) == 0)
+                    || matches!(ret, Former::ThunkType(_) | Former::Returner(_) | Former::Unreadable(_))),
+        )]
+        fn read(
+            &self,
+            _node: ChangingNode,
+        ) -> Former<'_, ChangingNode>
+        {
+            let entry = self.reads.get();
+            self.reads.set(entry.saturating_add(1_u32));
+            if entry == 0_u32 {
+                Former::Product(crate::former::Arity::from(0_usize))
+            }
+            else if entry >= VISIT_BUDGET.saturating_add(4_u32) {
+                Former::Unreadable(crate::former::Unreadable::Dangling)
+            }
+            else if entry & 1_u32 == 1_u32 {
+                Former::ThunkType(ChangingNode)
+            }
+            else {
+                Former::Returner(ChangingNode)
+            }
+        }
+
+        /// No component: the fixture's only n-ary reading is the unit.
+        ///
+        /// # Specification
+        /// trivial.
+        fn component(
+            &self,
+            _node: ChangingNode,
+            _index: Component,
+        ) -> Option<ChangingNode>
+        {
+            None
+        }
+
+        /// No label: the fixture holds no record.
+        ///
+        /// # Specification
+        /// trivial.
+        fn label(
+            &self,
+            _node: ChangingNode,
+            _index: Component,
+        ) -> Option<super::Name<'_>>
+        {
+            None
+        }
+    }
+
+    /// A source cannot bypass the traversal budget by changing after its scan.
+    #[test]
+    fn changing_source_is_still_bounded_by_the_walk_budget()
+    {
+        let source = ChangingSource {
+            reads: Cell::new(0_u32),
+        };
+        let result = crate::present_type(
+            &source,
+            ChangingNode,
+            PageWidth::from(80_u32),
+            crate::Form::Sugared.into(),
+        );
+        assert!(
+            source.reads.get() <= VISIT_BUDGET.saturating_add(1_u32),
+            "read count escaped the scan plus walk bound: {}",
+            source.reads.get()
+        );
+        let presentation = result.expect("the visit budget refuses before layout construction");
+        assert_eq!(presentation.as_ref(), "?");
+        assert_eq!(presentation.fidelity(), Fidelity::Approximate);
+    }
+
+    /// Depth refusal precedes even an unknown kind and only values deepen.
+    #[test]
+    fn depth_boundaries_preserve_precedence_and_saturation()
+    {
+        let before = super::ValueDepth(super::DEPTH_LIMIT.0.saturating_sub(1_u32));
+        assert_eq!(
+            super::reach(super::Admits::Value, before, super::Kind::Unknown),
+            super::Reach::Spell
+        );
+        assert_eq!(
+            super::reach(
+                super::Admits::Value,
+                super::DEPTH_LIMIT,
+                super::Kind::Unknown
+            ),
+            super::Reach::Deep
+        );
+        assert_eq!(
+            super::reach(super::Admits::Type, super::DEPTH_LIMIT, super::Kind::Value),
+            super::Reach::Misplaced
+        );
+        assert_eq!(
+            super::reach(
+                super::Admits::Type,
+                super::DEPTH_LIMIT,
+                super::Kind::Unknown
+            ),
+            super::Reach::Spell
+        );
+        let ceiling = super::ValueDepth(u32::MAX);
+        assert_eq!(super::below(ceiling, super::Kind::Value), ceiling);
+        assert_eq!(super::below(before, super::Kind::CompType), before);
+        assert_eq!(super::below(before, super::Kind::Value), super::DEPTH_LIMIT);
+    }
+
+    /// Candidate spelling crosses alphabet rounds and represents the last
+    /// ordinal.
+    #[test]
+    fn candidate_names_cross_rounds_without_losing_the_last_ordinal()
+    {
+        for (ordinal, expected) in [
+            (0_u32, "a"),
+            (25_u32, "z"),
+            (26_u32, "a1"),
+            (51_u32, "z1"),
+            (52_u32, "a2"),
+            (u32::MAX, "v165191049"),
+        ] {
+            assert!(matches!(super::candidate(super::Ordinal(ordinal)),
+                super::Maybe::Present(name) if name.0 == expected));
+        }
+    }
+
+    /// Avoided names and cached positions survive candidate-counter exhaustion.
+    #[test]
+    fn binder_exhaustion_preserves_existing_names()
+    {
+        let mut binders = super::Binders::new(super::BTreeSet::from([super::Name::from("a")]));
+        assert!(
+            matches!(binders.name_at(super::OpenBinders(0_usize)), super::Maybe::Present(name) if name.0 == "b")
+        );
+        assert!(
+            matches!(binders.name_at(super::OpenBinders(1_usize)), super::Maybe::Present(name) if name.0 == "c")
+        );
+        binders.next = super::Ordinal(u32::MAX);
+        assert!(matches!(
+            binders.name_at(super::OpenBinders(2_usize)),
+            super::Maybe::Absent(super::binder::Absent::Exhausted)
+        ));
+        assert!(
+            matches!(binders.name_at(super::OpenBinders(0_usize)), super::Maybe::Present(name) if name.0 == "b")
+        );
+        assert_eq!(binders.generated.len(), 2_usize);
+    }
+
+    /// Text-budget refusal must not manufacture a piece or erase approximation.
+    #[test]
+    fn failed_atoms_do_not_push_pieces_or_restore_fidelity()
+    {
+        let limits = gandr_surface_layout::limits::BuildLimits {
+            max_text_bytes: 0_usize.into(),
+            ..gandr_surface_layout::limits::BuildLimits::default()
+        };
+        let mut meter = gandr_surface_layout::limits::BuildMeter::new(limits);
+        let mut builder = gandr_surface_layout::build::DocBuilder::try_new(&mut meter)
+            .expect("singleton nodes need no text bytes");
+        let mut paged = crate::compose::Paged::new(&mut builder);
+        let mut walk = super::Walk {
+            builder: &mut paged,
+            pieces: super::Vec::new(),
+            binders: super::Binders::new(super::BTreeSet::new()),
+            names: super::Vec::new(),
+            opened: super::Vec::new(),
+            scopes: super::Vec::new(),
+            occurring: super::BTreeSet::new(),
+            openings: super::Openings::default(),
+            hidden: super::BTreeSet::new(),
+            loops: super::Vec::new(),
+            subjects: 0_usize,
+            unwinds: 0_usize,
+            held: super::Vec::new(),
+            substituted: super::BTreeMap::new(),
+            context: &[],
+            recursive: None,
+            fidelity: Fidelity::Faithful,
+            unspelled: super::BTreeSet::new(),
+            wildcards: super::Wildcards::Unwritten,
+            bodies: super::Bodies::Opaque,
+            protocols: super::Vec::new(),
+            links: super::Vec::new(),
+            records: super::BTreeMap::new(),
+            unrecorded: super::BTreeSet::new(),
+            fields: None,
+            forms: super::Vec::new(),
+            form: crate::Form::Sugared,
+            crossed: false,
+            spelling: super::grammar::Spelling::Unicode,
+            remaining: super::VISIT_BUDGET,
+            surface: super::Surface::Expression,
+            elaboration: super::Elaboration::Checked,
+        };
+        let refusal = super::PresentationError::Build(
+            gandr_surface_layout::error::BuildError::LimitExceeded {
+                kind: gandr_surface_layout::error::BuildLimitKind::TextBytes,
+                limit: 0_u64.into(),
+            },
+        );
+        assert_eq!(walk.atom(super::Glyphs("x")), Err(refusal));
+        assert!(walk.pieces.is_empty());
+        assert_eq!(walk.fidelity, Fidelity::Faithful);
+        assert!(matches!(
+            walk.approximate(
+                super::Glyphs("?"),
+                super::Unspelled::Elided(crate::former::Elided::Deep)
+            ),
+            Err(super::PresentationError::Build(
+                gandr_surface_layout::error::BuildError::LimitExceeded {
+                    kind: gandr_surface_layout::error::BuildLimitKind::TextBytes,
+                    ..
+                }
+            ))
+        ));
+        assert!(walk.pieces.is_empty());
+        assert_eq!(walk.fidelity, Fidelity::Approximate);
+    }
+
+    /// The scan visits as many nodes as its budget and no more: a tree of
+    /// exactly `VISIT_BUDGET` nodes is scanned, one of a node more is over
+    /// budget.
+    #[test]
+    fn the_name_scan_visits_exactly_its_budget()
+    {
+        let budget = usize::try_from(super::VISIT_BUDGET).expect("the budget fits a usize");
+        let mut arena = gandr_core_term::CoreArena::new();
+        let unit = arena.value_unit();
+        let within = arena.value_tuple(&super::Vec::from_iter(core::iter::repeat_n(
+            unit,
+            budget.saturating_sub(1_usize),
+        )));
+        let over = arena.value_tuple(&super::Vec::from_iter(core::iter::repeat_n(unit, budget)));
+        let source = crate::core_source::CoreSource::new(&arena, &[]);
+        let scanned = |root| {
+            super::mentioned(
+                &source,
+                crate::core_source::CoreNode::Value(root),
+                super::Admits::Value,
+                super::Bodies::Opaque,
+            )
+        };
+        assert!(matches!(scanned(within), super::Maybe::Present(_)));
+        assert!(matches!(
+            scanned(over),
+            super::Maybe::Absent(super::scan::Absent::OverBudget)
+        ));
+    }
+
+    /// An incomplete join reports bookkeeping, not a fabricated layout refusal.
+    #[test]
+    fn missing_operands_are_unbalanced_not_layout_failures()
+    {
+        let mut meter = gandr_surface_layout::limits::BuildMeter::new(
+            gandr_surface_layout::limits::BuildLimits::default(),
+        );
+        let mut builder = gandr_surface_layout::build::DocBuilder::try_new(&mut meter)
+            .expect("default limits build");
+        let mut paged = crate::compose::Paged::new(&mut builder);
+        let mut walk = super::Walk {
+            builder: &mut paged,
+            pieces: super::Vec::new(),
+            binders: super::Binders::new(super::BTreeSet::new()),
+            names: super::Vec::new(),
+            opened: super::Vec::new(),
+            scopes: super::Vec::new(),
+            occurring: super::BTreeSet::new(),
+            openings: super::Openings::default(),
+            hidden: super::BTreeSet::new(),
+            loops: super::Vec::new(),
+            subjects: 0_usize,
+            unwinds: 0_usize,
+            held: super::Vec::new(),
+            substituted: super::BTreeMap::new(),
+            context: &[],
+            recursive: None,
+            fidelity: Fidelity::Faithful,
+            unspelled: super::BTreeSet::new(),
+            wildcards: super::Wildcards::Unwritten,
+            bodies: super::Bodies::Opaque,
+            protocols: super::Vec::new(),
+            links: super::Vec::new(),
+            records: super::BTreeMap::new(),
+            unrecorded: super::BTreeSet::new(),
+            fields: None,
+            forms: super::Vec::new(),
+            form: crate::Form::Sugared,
+            crossed: false,
+            spelling: super::grammar::Spelling::Unicode,
+            remaining: super::VISIT_BUDGET,
+            surface: super::Surface::Expression,
+            elaboration: super::Elaboration::Checked,
+        };
+        walk.atom(super::Glyphs("x")).expect("one operand builds");
+        assert_eq!(
+            walk.join(super::Join::Arrow),
+            Err(super::PresentationError::Unbalanced)
+        );
+        assert!(walk.pieces.is_empty());
+        assert!(matches!(
+            walk.pop(),
+            Err(super::PresentationError::Unbalanced)
+        ));
+        walk.forms.push(super::Vec::from([super::Part::Open]));
+        assert_eq!(
+            walk.join(super::Join::Form {
+                pieces: super::Arity(0_usize),
+                binding: super::Binding::Atom,
+            }),
+            Err(super::PresentationError::Unbalanced),
+            "a form that opens a block it never closes"
+        );
+        walk.atom(super::Glyphs("x")).expect("one piece builds");
+        walk.forms.push(super::Vec::new());
+        assert_eq!(
+            walk.join(super::Join::Form {
+                pieces: super::Arity(1_usize),
+                binding: super::Binding::Atom,
+            }),
+            Err(super::PresentationError::Unbalanced),
+            "a form that leaves a piece it takes unplaced"
+        );
+    }
+
+    /// Empty and forbidden-control names cannot masquerade as faithful atoms.
+    #[test]
+    fn unprintable_names_are_approximate_atoms()
+    {
+        let mut arena = gandr_core_term::CoreArena::new();
+        let constant = arena.value_constant(gandr_kernel_term::ConstantIndex::from(0_usize));
+        let family = arena.value_type_data(
+            gandr_kernel_term::ConstantIndex::from(0_usize),
+            super::Vec::new(),
+        );
+        for invalid in ["", "\r", "\n", "\t"] {
+            let names = [super::Name::from(invalid)];
+            let source = crate::core_source::CoreSource::new(&arena, &names);
+            let result = crate::present_value(
+                &source,
+                crate::core_source::CoreNode::Value(constant),
+                PageWidth::from(80_u32),
+                crate::Form::Sugared.into(),
+            )
+            .expect("malformed names are approximated");
+            assert_eq!(result.as_ref(), "?");
+            assert_eq!(result.fidelity(), Fidelity::Approximate);
+            let typed = crate::present_type(
+                &source,
+                crate::core_source::CoreNode::ValueType(family),
+                PageWidth::from(80_u32),
+                crate::Form::Sugared.into(),
+            )
+            .expect("malformed names are approximated");
+            assert_eq!(typed.as_ref(), "?", "a family named {invalid:?}");
+            assert_eq!(typed.fidelity(), Fidelity::Approximate);
+        }
+    }
+
+    /// At the cutoff the operator remains unpeeled and executes before its
+    /// argument.
+    #[test]
+    fn spine_schedules_operator_first_at_the_depth_limit()
+    {
+        let mut arena = gandr_core_term::CoreArena::new();
+        let inner = arena.value_unit();
+        let argument = arena.value_constant(gandr_kernel_term::ConstantIndex::from(0_usize));
+        let operator = arena.value_static_application(inner, argument);
+        let source = crate::core_source::CoreSource::new(&arena, &[]);
+        let operator = crate::core_source::CoreNode::Value(operator);
+        let argument = crate::core_source::CoreNode::Value(argument);
+        let mut tasks = super::Vec::new();
+        super::Walk::spine(
+            &source,
+            operator,
+            argument,
+            super::ValueDepth(super::DEPTH_LIMIT.0.saturating_sub(1_u32)),
+            super::ReductAs::Term,
+            &mut tasks,
+        );
+        assert!(matches!(tasks.as_slice(), [
+            super::Task::Join(super::Join::Apply(super::Arity(1_usize))),
+            super::Task::Visit { node: found_argument, admits: super::Admits::Value, depth: argument_depth },
+            super::Task::Visit { node: found_operator, admits: super::Admits::Value, depth: operator_depth },
+        ] if *found_argument == argument && *found_operator == operator
+            && *argument_depth == super::DEPTH_LIMIT && *operator_depth == super::DEPTH_LIMIT));
+    }
+}

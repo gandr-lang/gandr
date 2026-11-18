@@ -1,0 +1,12 @@
+@[checks]
+def  f ( x  :  Integer , y : Integer ) -> -F Integer{ return x  +  y ;}
+def p = *{ a = 1 , b = -   2 } ;
+def q : +{ A : Integer , B : Unit } ;
+def g[ r : Row ]( k : Integer ) -> [ Partial | r ] Unit { pure *{} }
+def l = fun( x ){ x } ;
+def c = thunk { fun( x ) { x } } ;
+def m = r . a [ 0 ] ;
+module M :> *{type T} where { type T = Integer ; }
+theory S where { boundary Q {p,q} ; face left = { p , q } ; }
+theory Kit . Shape where { sort T : Type ; }
+module Kit . Made : Model( Kit . Shape ) where { type T = Integer ; }

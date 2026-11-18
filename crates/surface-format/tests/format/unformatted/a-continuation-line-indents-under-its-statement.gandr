@@ -1,0 +1,6 @@
+def f(x : Integer) -> -F Integer {
+let y = inc x
+      ;
+         let z = inc y;
+  return z
+}

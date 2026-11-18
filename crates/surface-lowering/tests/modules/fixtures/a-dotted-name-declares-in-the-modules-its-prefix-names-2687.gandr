@@ -1,0 +1,10 @@
+theory Gandr.Shape where {
+  oper label : String;
+}
+module Gandr.Tools where {
+  def answer : Integer = 42;
+}
+module Shaped : Model(Gandr.Shape) where {
+  def label : String = "shaped";
+}
+def asked : Integer = Gandr.Tools.answer;

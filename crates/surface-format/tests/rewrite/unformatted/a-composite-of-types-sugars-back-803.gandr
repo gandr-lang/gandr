@@ -1,0 +1,3 @@
+def joined(a : Type, b : Type, c : Type, p : Path[.A = Type](a, b), q : Path[.A = Type](b, c)) -> -F Path[.A = Path[.A = Type](a, c)](Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p, Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p) {
+  Path.here (Path.walk (fun (d) { type(Path[.A = Type](a, d)) }) q p)
+}

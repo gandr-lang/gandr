@@ -1,0 +1,120 @@
+/// This source compares one lambda with a composite of two lambdas.
+///
+/// The two lambda bodies return the same path for each argument.
+/// A bind over the inner composite reads its endpoint.
+/// A transport that sticks on `g` returns the value that it moves, at any path.
+/// So the bind is the transport along `h` at that endpoint.
+///
+/// The kernel evaluates the composite calls inside the action motive.
+/// The two codes then compare by the same path rules.
+///
+/// - see: #3824 — returning variable call
+/// - see: #4011 — lambda composite
+/// - see: #4005 — composite action
+
+/// The `composeAfter` function composes `F` and `G`.
+def composeAfter(A : Type, B : Type, C : Type, F : A -> B, G : B -> C) -> A -> C =
+  (fun (a : A) { G (F a) } : A -> C)
+
+/// The first endpoint writes one lambda against the composite of two lambdas.
+def oneLambdaAgainstCompose(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  g : Path(y, z),
+  h : Path(z, w)
+) -> Path[.A = Path[.A = A](x, y) -> Path[.A = A](x, w)](
+  (fun (q : Path(x, y)) { Path.step (Path.step q g) h } : Path(x, y) -> Path(x, w)),
+  composeAfter (type(Path(x, y))) (type(Path(x, z))) (type(Path(x, w))) (fun (q : Path(x, y)) {
+    Path.step q g
+  } : Path(x, y) -> Path(x, z)) (fun (r : Path(x, z)) { Path.step r h } : Path(x, z) -> Path(x, w))
+) =
+  Path.here (fun (q : Path[.A = A](x, y)) {
+    Path.step (Path.step q g) h
+  } : Path(x, y) -> Path(x, w))
+
+/// The second endpoint writes the composite as its point.
+def composeAgainstOneLambda(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  g : Path(y, z),
+  h : Path(z, w)
+) -> Path[.A = Path[.A = A](x, y) -> Path[.A = A](x, w)](
+  composeAfter (type(Path(x, y))) (type(Path(x, z))) (type(Path(x, w))) (fun (q : Path(x, y)) {
+    Path.step q g
+  } : Path(x, y) -> Path(x, z)) (fun (r : Path(x, z)) { Path.step r h } : Path(x, z) -> Path(x, w)),
+  (fun (q : Path(x, y)) { Path.step (Path.step q g) h } : Path(x, y) -> Path(x, w))
+) =
+  Path.here (composeAfter (type(Path(x, y))) (type(Path(x, z))) (type(Path(
+    x,
+    w
+  ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(
+    x,
+    z
+  )) (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path(x, z) -> Path(x, w)))
+
+/// The `actThrough` function applies `F` to `p`.
+def actThrough(
+  A : Type,
+  B : Type,
+  F : A -> B,
+  x : A,
+  y : A,
+  p : Path[.A = A](x, y)
+) -> Path[.A = B](
+  F x,
+  F y
+) =
+  Path.ap F p
+
+/// The `actOfCompose` function applies the composite of `F` and `G` to `p`.
+def actOfCompose(
+  A : Type,
+  B : Type,
+  C : Type,
+  F : A -> B,
+  G : B -> C,
+  x : A,
+  y : A,
+  p : Path[.A = A](x, y)
+) -> Path[.A = C](G (F x), G (F y)) =
+  actThrough A C (fun (a : A) { G (F a) } : A -> C) x y p
+
+/// The final proof compares the lambda action with the composite action.
+def composedAgainstActOfCompose(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  fm : Path[.A = A](x, y),
+  fp : Path[.A = A](x, y),
+  fa : Path[.A = Path[.A = A](x, y)](fm, fp),
+  g : Path(y, z),
+  h : Path(z, w)
+) -> Path[.A = Path[.A = Path[.A = A](x, w)](
+  Path.step (Path.step fm g) h,
+  Path.step (Path.step fp g) h
+)](
+  actThrough (type(Path(x, y))) (type(Path(x, w))) (fun (q : Path[.A = A](x, y)) {
+    Path.step (Path.step q g) h
+  } : Path(x, y) -> Path(x, w)) fm fp fa,
+  actOfCompose (type(Path(x, y))) (type(Path(x, z))) (type(Path(x, w))) (fun (q : Path[.A = A](
+    x,
+    y
+  )) { Path.step q g } : Path(x, y) -> Path(x, z)) (fun (r : Path[.A = A](x, z)) {
+    Path.step r h
+  } : Path(x, z) -> Path(x, w)) fm fp fa
+) =
+  Path.here (actOfCompose (type(Path(x, y))) (type(Path(x, z))) (type(Path[.A = A](
+    x,
+    w
+  ))) (fun (q : Path[.A = A](x, y)) { Path.step q g } : Path(x, y) -> Path(
+    x,
+    z
+  )) (fun (r : Path[.A = A](x, z)) { Path.step r h } : Path(x, z) -> Path(x, w)) fm fp fa)
