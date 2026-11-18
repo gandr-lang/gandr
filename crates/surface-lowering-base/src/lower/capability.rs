@@ -76,8 +76,8 @@ pub enum Interface
     Host(EffectName),
     /// The theory a capability scope or a row reads as an interface.
     Theory(Arc<TheoryInterface>),
-    /// The interface an extern block of the source declares, which the host
-    /// the run is offered to answers.
+    /// The interface an extern block declares, in the source or in a source
+    /// that its import opens, which the host the run is offered to answers.
     Foreign(Arc<ForeignInterface>),
 }
 

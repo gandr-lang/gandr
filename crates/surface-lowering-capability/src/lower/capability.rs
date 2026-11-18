@@ -793,7 +793,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
                     arity: crate::resolve::HeadArity::Nullary,
                 });
             }
-            self.cx_mut().collected.reach_host(path.start(), &interface);
+            self.cx_mut()
+                .collected
+                .reach_interface(path.start(), &interface);
         }
         else {
             let mut segments = self.shared().path_segments(path);
@@ -1178,17 +1180,22 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             self.host().read(ty.node, Reading::ValueType(frame));
             self.cx_mut().fixed_carriers.push(ty);
         }
-        // Each host interface the row names reaches the import of its module.
+        // Each interface the row names reaches the import it is read through:
+        // a host interface its module's, a block of another source the
+        // import that opens it.
         for interface in row
             .interfaces
             .iter()
             .chain(row.labels.iter().map(|&(_, ref held)| held))
         {
-            if let Interface::Host(ref named) = *interface {
-                self.cx_mut()
-                    .collected
-                    .reach_host(site.at.span.start(), named);
-            }
+            let named = match *interface {
+                Interface::Host(ref named) => named,
+                Interface::Foreign(ref foreign) => &foreign.name,
+                Interface::Theory(_) => continue,
+            };
+            self.cx_mut()
+                .collected
+                .reach_interface(site.at.span.start(), named);
         }
         for &(span, theory) in &row.named {
             self.cx_mut()
@@ -1337,7 +1344,9 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             return Ok(Planned(false));
         };
         if let Performer::Interface(ref named) = performer {
-            self.cx_mut().collected.reach_host(head.span.start(), named);
+            self.cx_mut()
+                .collected
+                .reach_interface(head.span.start(), named);
         }
         let name = self.cx().name_at(selected);
         let operation = OperationName::from(name.as_ref());
@@ -2041,7 +2050,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
             Interface::Host(ref name) => {
                 self.cx_mut()
                     .collected
-                    .reach_host(site.at.span.start(), name);
+                    .reach_interface(site.at.span.start(), name);
                 let _first = self.cx_mut().answered.insert(held, name.clone());
             },
             Interface::Theory(ref theory) => {

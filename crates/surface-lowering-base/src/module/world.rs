@@ -511,7 +511,7 @@ impl<'source> Collector<'_, 'source>
             }
         }
         for (at, named) in granted {
-            self.collected.reach_host(at, &named);
+            self.collected.reach_interface(at, &named);
         }
         if let Some(block) = first
             && let Some(refusal) = strayed(self.module_child(block))?

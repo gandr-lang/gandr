@@ -462,7 +462,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         // Each host interface a requirement names reaches the import of its
         // module (#4523).
         for (at, named) in hosts {
-            self.cx_mut().collected.reach_host(at, &named);
+            self.cx_mut().collected.reach_interface(at, &named);
         }
         for (slot, refusal) in refusals {
             let _first = self.cx_mut().faults.entry(slot).or_insert(refusal);
