@@ -1,3 +1,2 @@
 import "./deeper/mid.gandr";
-def three : Integer;
-def three = two;
+def three : Integer = two;

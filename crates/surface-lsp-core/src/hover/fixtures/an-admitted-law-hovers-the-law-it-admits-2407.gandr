@@ -4,6 +4,6 @@ theory Lawful where {
   law refl : (a : Carrier) -> Path[.A = Bool](alike a a, true);
 }
 module Host : Model(Lawful) with sort Carrier = Integer where {
-  def alike(a : Integer, b : Integer) -> Bool { int.eq a b }
+  def alike(a : Integer, b : Integer) -> Bool = int.eq a b;
   law refl = ~admitted;
 }

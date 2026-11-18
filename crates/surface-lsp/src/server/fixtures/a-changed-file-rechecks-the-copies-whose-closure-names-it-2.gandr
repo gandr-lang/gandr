@@ -1,3 +1,2 @@
 import "./later.gandr";
-def three : Integer;
-def three = four;
+def three : Integer = four;
