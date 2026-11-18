@@ -803,7 +803,7 @@ pub(crate) fn refined_case(
                 return Ok(Maybe::Absent(unrefined::Absent::Unshaped));
             }
             let mut arms = Vec::with_capacity(branches.len());
-            for (&branch, &arity) in branches.iter().zip(arities) {
+            for (&branch, &arity) in branches.iter().zip(arities.iter()) {
                 let written = usize::from(arity)
                     .checked_add(usize::from(equations))
                     .ok_or(CheckRefusal::MachineInvariant)?;
@@ -815,7 +815,7 @@ pub(crate) fn refined_case(
             }
             let form = Eliminated::Data {
                 motive,
-                arities: arities.clone(),
+                arities: arities.to_vec(),
                 equations,
             };
             (scrutinee, form, arms)

@@ -182,7 +182,7 @@ fn placing_each_edge_recovers_its_child()
                                 panic!("one edge per child");
                             };
                             assert_eq!(edge.scope(), child.scope());
-                            assert_eq!(cover.support().place(edge, crossing), Ok(child.clone()));
+                            assert_eq!(cover.support().place(edge, crossing).as_ref(), Ok(&child));
                             assert_eq!(
                                 check_cover(
                                     cover.support().scope(),

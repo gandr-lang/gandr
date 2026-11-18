@@ -756,7 +756,8 @@ where
         let first = Binders::ONE;
         let second = Binders::from(2_u32);
         let opened = Binders::from(3_u32);
-        let arities: Vec<FieldCount> = rows.iter().map(|row| FieldCount::from(row.len())).collect();
+        let arities: alloc::sync::Arc<[FieldCount]> =
+            rows.iter().map(|row| FieldCount::from(row.len())).collect();
         let mut outer = Vec::with_capacity(rows.len());
         for (tag, own) in rows.iter().enumerate() {
             let width = count(own)?;
@@ -782,9 +783,12 @@ where
                 }
             }
             let scrutinee = self.at(rights, second)?;
-            let case =
-                self.arena
-                    .computation_data_case(scrutinee, self.answer, inner, arities.clone());
+            let case = self.arena.computation_data_case(
+                scrutinee,
+                self.answer,
+                inner,
+                alloc::sync::Arc::clone(&arities),
+            );
             self.cases.push((case, position));
             outer.push(self.abstracted(case, width));
         }

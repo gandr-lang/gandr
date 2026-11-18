@@ -2459,7 +2459,7 @@ impl<'run> Focusing<'run>
             } => {
                 self.tasks.push(Task::DataCase {
                     branches: NodeCount::from(branches.len()),
-                    arities: alloc::boxed::Box::from(arities.as_slice()),
+                    arities: alloc::boxed::Box::from(&arities[..]),
                     equations,
                     continuation,
                 });

@@ -892,7 +892,8 @@ where
             self.deriving.arena.comp_type_returner(path)
         };
         let rows = self.fields.get(&at).cloned().unwrap_or_default();
-        let arities: Vec<FieldCount> = rows.iter().map(|row| FieldCount::from(row.len())).collect();
+        let arities: alloc::sync::Arc<[FieldCount]> =
+            rows.iter().map(|row| FieldCount::from(row.len())).collect();
         let mut outer = Vec::with_capacity(rows.len());
         for (tag, own) in rows.iter().enumerate() {
             let width = count(own)?;
@@ -939,7 +940,7 @@ where
                 scrutinee,
                 inner_motive,
                 inner,
-                arities.clone(),
+                alloc::sync::Arc::clone(&arities),
             );
             self.deriving.cases.push((case, at));
             outer.push(self.deriving.abstracted(case, width));

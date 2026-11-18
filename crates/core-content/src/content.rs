@@ -3977,7 +3977,7 @@ fn computation_content(
             scrutinee: found.value()?,
             motive: found.comp_type()?,
             branches: found.take(Sort::Computation, branches)?,
-            arities: arities.clone(),
+            arities: arities.to_vec(),
             equations,
         },
         Computation::RecordProjection(_, ref label) => {

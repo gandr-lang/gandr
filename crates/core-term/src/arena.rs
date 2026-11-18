@@ -3299,13 +3299,15 @@ impl CoreArena
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn computation_data_case(
+    pub fn computation_data_case<A>(
         &mut self,
         scrutinee: ValueId,
         motive: CompTypeId,
         branches: alloc::vec::Vec<ComputationId>,
-        arities: alloc::vec::Vec<gandr_kernel_term::FieldCount>,
+        arities: A,
     ) -> ComputationId
+    where
+        A: Into<alloc::sync::Arc<[gandr_kernel_term::FieldCount]>>,
     {
         self.computation_data_case_with_equations(
             scrutinee,
@@ -3321,22 +3323,21 @@ impl CoreArena
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn computation_data_case_with_equations(
+    pub fn computation_data_case_with_equations<A>(
         &mut self,
         scrutinee: ValueId,
         motive: CompTypeId,
-        (branches, arities): (
-            alloc::vec::Vec<ComputationId>,
-            alloc::vec::Vec<gandr_kernel_term::FieldCount>,
-        ),
+        (branches, arities): (alloc::vec::Vec<ComputationId>, A),
         equations: gandr_kernel_term::EquationCount,
     ) -> ComputationId
+    where
+        A: Into<alloc::sync::Arc<[gandr_kernel_term::FieldCount]>>,
     {
         self.alloc_computation(Computation::DataCase {
             scrutinee,
             motive,
             branches,
-            arities,
+            arities: arities.into(),
             equations,
         })
     }

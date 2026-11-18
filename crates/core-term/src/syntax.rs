@@ -949,7 +949,7 @@ pub enum Computation
         /// Each constructor's field count, in tag order: how many of its
         /// branch's curried parameters take fields. A loop arm after the
         /// constructors' branches has none.
-        arities: Vec<FieldCount>,
+        arities: alloc::sync::Arc<[FieldCount]>,
         /// How many index equations each constructor's branch binds after its
         /// fields: the family's index count, none for a family indexed by
         /// nothing.
