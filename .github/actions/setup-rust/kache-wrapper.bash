@@ -6,11 +6,16 @@
 # in the job sees them. Where the job has no kache, as in an image built
 # before the pin, the wrapper runs the compiler itself.
 #
-# Each job has a runtime directory of its own under its `RUNNER_TEMP`: the
-# socket, the locks and the state of its daemon. Two runners of one account
-# resolve one default runtime directory. Without a directory for each job,
-# they share one daemon, and the job that ends first stops it under the other
-# job's compiles. The cache directory stays shared by the jobs of a host.
+# Each job has a runtime directory of its own. A root container job keeps its
+# socket, locks and state inside the CI image. Other jobs keep them under
+# `RUNNER_TEMP`. Cargo writes its target files under the checkout. The wrapper
+# keeps the root user for the compiler in a root container job.
+#
+# Two runners of one account resolve one default runtime directory. Without a
+# directory for each job, they share one daemon, and the job that ends first
+# stops it under the other job's compiles.
+#
+# The cache directory stays shared by the jobs of a host.
 # - see: #7828
 #
 # A trusted run publishes: a merge group, or a push, a schedule or a dispatch
@@ -27,10 +32,15 @@
 #   RUNNER_TEMP=<dir> KACHE_TRUSTED=<true|false> KACHE_USER=<login> \
 #     KACHE_TOKEN=<token> kache-wrapper.bash
 set -euo pipefail
-config=${RUNNER_TEMP:?}/kache.toml
-token=$RUNNER_TEMP/kache-token
-wrapper=$RUNNER_TEMP/kache-wrapper
-runtime=$RUNNER_TEMP/kache-runtime
+state=${RUNNER_TEMP:?}
+if [[ $(id -u) == 0 ]]; then
+  state=/opt/ci/kache/${GITHUB_RUN_ID:?}/${GITHUB_JOB:?}
+  install -d -m 700 "$state"
+fi
+config=$state/kache.toml
+token=$state/kache-token
+wrapper=$state/kache-wrapper
+runtime=$state/kache-runtime
 printf '[cache]\ncache_executables = true\nruntime_dir = "%s"\n\n[cache.remote]\ntype = "oci"\nrepository = "ghcr.io/gandr-lang/gandr-kache"\nprefix = "gandr"\n' "$runtime" > "$config"
 (umask 077 && printf '%s' "${KACHE_TOKEN:?}" > "$token")
 trusted=
@@ -41,6 +51,9 @@ command -v kache > /dev/null 2>&1 || exec "\$@"
 export KACHE_CONFIG='$config' KACHE_OCI_USERNAME='${KACHE_USER:?}'
 KACHE_OCI_PASSWORD=\$(cat '$token'); export KACHE_OCI_PASSWORD
 $trusted
+if [[ \$(id -u) == 0 ]]; then
+  export HOME=/opt/ci XDG_CACHE_HOME=/opt/ci/.cache KACHE_CACHE_DIR=/opt/ci/.cache/kache
+fi
 exec kache "\$@"
 EOF
 chmod +x "$wrapper"
