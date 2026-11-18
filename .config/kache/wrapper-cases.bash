@@ -65,6 +65,11 @@ running "$first" || fail "#7828: the first job's wrapper started no daemon"
 running "$second" || fail "#7828: the second job's wrapper started no daemon"
 [[ $("$first" daemon status --json | jq -r .socket) != "$("$second" daemon status --json | jq -r .socket)" ]] \
   || fail "#7828: two jobs at one time resolve one socket, so they share one daemon"
+for job in first second; do
+  [[ $(stat -c '%u' "$scratch/$job/kache-runtime") == $(id -u) ]] \
+    || fail "#7950: the $job job's kache runtime belongs to another user"
+done
+
 "$first" daemon stop > /dev/null
 ! running "$first" || fail "#7828: the first job's drain left its daemon running"
 running "$second" || fail "#7828: the end of the first job stopped the daemon of the second job"
