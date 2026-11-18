@@ -364,3 +364,145 @@ fn a_check_reads_its_names_where_the_imports_reach_them_4698()
         "the call is typed: {verdict:?}"
     );
 }
+
+/// #3138: a source that imports a block's source reads the block's interface.
+/// Its row names the interface, its call performs the block's operation, and
+/// its import reads as used. Two importers leave one check, the block's own.
+/// A source whose imports open no block of the name refuses the row's head.
+#[test]
+fn an_importer_performs_an_imported_block_s_interface_3138()
+{
+    let layout = "pub data Scalar : Type where { | U32 : Scalar | U64 : Scalar | I32 : Scalar | I64 \
+                  : Scalar }\n";
+    let boundary = include_str!(
+        "tests/fixtures/a-check-reads-its-names-where-the-imports-reach-them-4698-boundary.gandr"
+    );
+    let rows = include_str!(
+        "tests/fixtures/a-check-reads-its-names-where-the-imports-reach-them-4698-rows.gandr"
+    );
+    let block = include_str!(
+        "tests/unformatted/an-importer-performs-an-imported-block-s-interface-3138-block.gandr"
+    );
+    let four = include_str!(
+        "tests/unformatted/an-importer-performs-an-imported-block-s-interface-3138-four.gandr"
+    );
+    let eight = include_str!(
+        "tests/unformatted/an-importer-performs-an-imported-block-s-interface-3138-eight.gandr"
+    );
+    let bare = include_str!(
+        "tests/unformatted/an-importer-performs-an-imported-block-s-interface-3138-bare.gandr"
+    );
+    let on = |source: usize| ImportTarget::Source(SourceIndex::from(source));
+    let mut text = String::new();
+    let mut sources = Vec::new();
+    let mut importers = Vec::new();
+    for (written, imports) in [
+        (layout, vec![]),
+        (boundary, vec![on(0_usize)]),
+        (rows, vec![on(1_usize), on(0_usize)]),
+        (block, vec![on(2_usize)]),
+        (four, vec![on(3_usize)]),
+        (eight, vec![on(3_usize)]),
+        (bare, vec![on(2_usize)]),
+    ] {
+        if written == four || written == eight {
+            importers.push(ByteOffset::from(text.len()));
+        }
+        sources.push(UnitSource::new(ByteOffset::from(text.len()), imports));
+        text.push_str(written);
+    }
+    let unit = Unit::new(sources).expect("the sources are laid in order");
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    let refused: Vec<(String, String)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                Some((
+                    String::from(declaration.name().as_ref()),
+                    format!("{refusal:?}"),
+                ))
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        refused
+            .iter()
+            .map(|&(ref name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["bare"],
+        "only the source that imports no block refuses: {refused:?}"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("bare")),
+            LoweringRefusal::UnresolvedTypeHead { name, .. } if name == SurfaceName::from("Boundary")
+        ),
+        "the row's head is unresolved where no import opens the block: {:?}",
+        refusal_of(&module, SurfaceName::from("bare"))
+    );
+    for name in ["four", "eight"] {
+        let body = body_named(&module, SurfaceName::from(name));
+        let mut last = tail_of(&arena, body);
+        while let Some(&Computation::Bind(_, next)) = arena.computation(last) {
+            last = next;
+        }
+        let Some(&Computation::Perform {
+            ref signature,
+            ref operation,
+            ..
+        }) = arena.computation(last)
+        else {
+            panic!(
+                "{name}: the last call performs the block's operation: {:?}",
+                arena.computation(last)
+            );
+        };
+        assert_eq!(
+            (signature.name().as_ref(), operation.as_ref()),
+            ("Boundary", "add"),
+            "{name}: the perform is the block's"
+        );
+    }
+    for importer in importers {
+        assert!(
+            module
+                .reached_imports()
+                .iter()
+                .any(|span| span.start() == importer),
+            "the import of the block's source reads as used"
+        );
+    }
+    let checks = module
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.name() == SurfaceName::from("Boundary"))
+        .count();
+    assert_eq!(checks, 1_usize, "two importers leave the block's one check");
+    let report = judged(&module, &mut arena);
+    for name in ["twice", "four", "eight", "Boundary"] {
+        let Some(declared) = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+        else {
+            panic!("{name} is declared");
+        };
+        let verdict = report
+            .judged()
+            .iter()
+            .find(|judged| judged.constant() == declared.constant())
+            .map(gandr_core_checker::Judged::verdict);
+        assert!(
+            matches!(
+                verdict,
+                Some(Verdict::Checked { .. } | Verdict::Synthesised { .. })
+            ),
+            "{name} checks: {verdict:?}"
+        );
+    }
+}

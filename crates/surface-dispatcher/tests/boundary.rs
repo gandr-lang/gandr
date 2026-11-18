@@ -87,6 +87,28 @@ fn round_trip() -> &'static Laid
     })
 }
 
+/// The exemplar that imports `round-trip.gandr`'s block and performs its
+/// operation, laid out once with the sources it imports.
+///
+/// # Specification
+/// - ensures: the unit of `imported.gandr` as the corpus holds it.
+/// - panics: if the exemplar does not read.
+/// - executable: none — as [`laid`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`laid`].
+/// - witness: `tests::boundary::an_imported_block_s_operation_is_answered_by_the_rust_caller_3138`
+fn imported() -> &'static Laid
+{
+    static IMPORTED: OnceLock<Laid> = OnceLock::new();
+    IMPORTED.get_or_init(|| {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/interop/boundary/imported.gandr");
+        let text = std::fs::read_to_string(&path).expect("the exemplar reads");
+        laid(&path, SourceText::from(text.as_str()))
+    })
+}
+
 /// The exemplar whose definitions read values Rust holds by their layouts,
 /// laid out once with the modules it imports.
 ///
@@ -473,6 +495,38 @@ fn an_extern_operation_no_host_answers_sticks_the_run()
             Terminal::Ended(Evaluation::Stuck(Stuck::PerformNoHandler(_)))
         ),
         "{terminal:?}"
+    );
+}
+
+/// #3138: a source that imports the block's source performs its operation,
+/// and the Rust caller's host answers each perform, the importer's own and
+/// those of `quadrupled`, in order.
+#[test]
+fn an_imported_block_s_operation_is_answered_by_the_rust_caller_3138()
+{
+    let mut rust = RustSide {
+        received: Vec::new(),
+    };
+    let (arena, terminal) = call_under(
+        imported(),
+        SurfaceName::from("sixteenfold"),
+        &[word(Word(5))],
+        &mut rust,
+    );
+    assert_eq!(
+        returned(&arena, &terminal),
+        Some(&Value::Literal(word(Word(80)))),
+        "sixteenfold(5): {terminal:?}"
+    );
+    assert_eq!(
+        rust.received,
+        [
+            (Word(5), Word(5)),
+            (Word(10), Word(10)),
+            (Word(20), Word(20)),
+            (Word(40), Word(40)),
+        ],
+        "each perform reached Rust with its arguments, in order"
     );
 }
 

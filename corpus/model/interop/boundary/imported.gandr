@@ -1,0 +1,22 @@
+// A source that imports an `extern` block's source and performs the block's
+// operation.
+//
+// `round-trip.gandr` declares the block `Boundary`. This source writes no
+// block of its own. Its import opens the block's interface, so a row here
+// names `Boundary`, and a call performs `Boundary.add`. The run offers each
+// perform to the Rust caller's host, as it does for `quadrupled`. The block's
+// row check runs at the block's own source alone.
+//
+// - see: `model/interop/boundary/round-trip.gandr` — the block and
+//   `quadrupled`
+// - see: `crates/surface-dispatcher/tests/boundary.rs` — the Rust caller
+
+// `Boundary` and `quadrupled`.
+import "./round-trip.gandr";
+
+/// Sixteen times its argument: `quadrupled`, then two adds of the sum to
+/// itself.
+pub def sixteenfold(x : u32) -> [Boundary] u32 =
+  let y = quadrupled x
+  let z = Boundary.add y y
+  Boundary.add z z
