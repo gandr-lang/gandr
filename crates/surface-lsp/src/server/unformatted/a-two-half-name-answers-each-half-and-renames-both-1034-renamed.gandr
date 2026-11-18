@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":1,"method":"textDocument/rename","params":{
+                    "textDocument":{"uri":"file:///tmp/halves.gandr"},
+                    "position":{"line":2,"character":8},"newName":"z"}}

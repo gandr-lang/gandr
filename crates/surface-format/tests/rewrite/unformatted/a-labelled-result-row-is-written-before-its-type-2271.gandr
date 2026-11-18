@@ -1,0 +1,13 @@
+import std.io;
+
+def say() -> -F [out : std.io.Console.Eff] Unit {
+  out.print "said"
+}
+
+def both() -> -F [Partial, out : std.io.Console.Eff] Unit {
+  out.print "said"
+}
+
+def tailed[r : Row]() -> -F [d : std.io.Console.Eff, Partial | r] Unit {
+  pure *{}
+}

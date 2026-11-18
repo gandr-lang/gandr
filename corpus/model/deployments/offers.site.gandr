@@ -1,0 +1,54 @@
+// A site answering its role's row: the console from its authority, and
+// `store` by a module of its own.
+//
+// A site's offer lives in its own file, so the program never names the place
+// that serves it.
+//
+// Each label is bound to a model module the file declares. The module need
+// not model the program's `Store`. It must hold each of its members at the
+// sorts the row fixes, and this one models the site's own `Kept`.
+//
+// - see: `offers.gandr` — the program whose `far` requires the row
+// - see: `offers.manifold.gandr` — the manifold placing `far` here
+
+// The site theory.
+import std.manifold (Site);
+// `Authority`, which the site grants the console from.
+import std.authority (Authority);
+// The console's host interface.
+import std.io;
+
+/// What the site keeps: values by key.
+pub theory Kept where
+  /// The site keeps values of this sort.
+  sort V : Type+;
+  /// What a computation over them answers.
+  sort C : Type;
+  /// Reads the value at `key`.
+  oper get : (key : V, k : pi+ (v : V). C) --> C;
+  /// Keeps `value` at `key`.
+  oper put : (key : V, value : V, k : C) --> C;
+
+/// Every key holds its own name, and a write keeps nothing.
+pub module Echo : Model(Kept) with sort V = String where
+  /// A computation answers a string.
+  type C = String;
+  /// Hands the key on.
+  def get(key : String, k : String -> String) -> String { k key }
+  /// Drops the write and runs what comes after.
+  def put(key : String, value : String, k : String) -> String { k }
+
+/// The site grants the console, and answers `store` with `Echo`.
+pub offers [std.io.Console.Eff, store = Echo];
+
+/// The far site, on a loopback socket.
+pub module Site : Model(Site) where
+  /// The key the hosting process proves.
+  def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
+  /// The socket it binds, where a dialer reaches it.
+  def sockets = "127.0.0.1:7433";
+  /// The name of the key's secret.
+  def secret = "far";
+
+/// The far site's model, where a manifold places a world.
+pub def site : Model Site = pack Site at Model Site;

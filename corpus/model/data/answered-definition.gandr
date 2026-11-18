@@ -1,0 +1,27 @@
+// A body-ending constructor takes its body's answer type.
+//
+// The result can name a definition application.
+// The lowering reads the definition's body.
+//
+// The checker unfolds that body.
+// `Maybe` supplies the optional type.
+//
+// - see: #2112 — `someOne`, `noneAt`, `someTwo`
+
+/// Optional values, `None` and `Some(x)`.
+import "./data-maybe.gandr";
+
+/// An optional computation's type, named once.
+def opt : Type -> Type[-] = fun (A) { -F Maybe A };
+
+/// The same type through a second name.
+def optAgain : Type -> Type[-] = fun (A) { opt A };
+
+/// A present value against the named type at `Integer`.
+def someOne() -> opt(Integer) { Some 1 }
+
+/// An absent value against the named type at a type parameter.
+def noneAt(A : Type) -> opt(A) { None }
+
+/// A present value through both names.
+def someTwo() -> optAgain(Integer) { Some 2 }

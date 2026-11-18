@@ -1,0 +1,53 @@
+// This source shows an omitted model implicit at a manifest type.
+//
+// The manifest sort distinguishes `Up` from `Flips`.
+//
+// The checker selects the model whose carrier matches the fixed sort. The slot
+// `[s : Model Dial with sort C = Integer]` binds no parameter for `C`. So no
+// argument forces the sort, and the fixed sort tells the modules in scope
+// apart.
+//
+// - see: #2317
+
+/// `Dial` states a carrier, a zero, a turn and a reading.
+theory Dial where
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+
+/// `Up` counts integers.
+module Up : Model(Dial) where
+  type C = Integer;
+  /// `zero` gives zero.
+  def zero = 0;
+  /// `incr` adds one.
+  def incr(c : Integer) -> Integer { c + 1 }
+  /// `read` returns the count.
+  def read(c : Integer) -> Integer { c }
+
+/// `Flips` toggles a Boolean value.
+module Flips : Model(Dial) where
+  type C = Bool;
+  /// `zero` gives false.
+  def zero = (false : Bool);
+  /// `incr` toggles the flag.
+  def incr(c : Bool) -> Bool { if c { false } else { true } }
+  /// `read` maps true to one.
+  def read(c : Bool) -> Integer { if c { 1 } else { 0 } }
+
+/// `upOnce` turns an integer dial once.
+def upOnce[s : Model Dial with sort C = Integer]() -> Integer =
+  s.read (s.incr s.zero)
+
+/// `flipOnce` turns a Boolean dial once.
+def flipOnce[s : Model Dial with sort C = Bool]() -> Integer =
+  s.read (s.incr s.zero)
+
+/// `turnedUp` selects `Up`.
+@[runs("1")]
+def turnedUp() -> Integer { upOnce () }
+
+/// `turnedOver` selects `Flips`.
+@[runs("1")]
+def turnedOver() -> Integer { flipOnce () }

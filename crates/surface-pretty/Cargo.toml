@@ -1,0 +1,56 @@
+[package]
+name = "gandr-surface-pretty"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The presentation printer: checked core types and normal-form values laid out at a page width through the layout engine, sugared or explicit"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["call-by-push-value", "gandr", "layout", "pretty-printing"]
+categories = ["text-processing"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The printer reads core types and values and the content tables of the
+# content crate. It also reads the leaf vocabularies and their levels. It
+# writes its documents through the layout engine. For a name with no
+# spelling, the named absence of the shape crate gives the reason. The
+# spelling table of the grammar gives the ASCII spelling of each glyph.
+#
+# The binder scopes index the nodes they reach in a `hashbrown` map under
+# `foldhash`'s fixed seed. The pinned anodized facade supplies core-only
+# specification helpers. The crate does not enable its feature logic/BigInt.
+[dependencies]
+anodized.workspace = true
+foldhash.workspace = true
+gandr-core-content.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-layout.workspace = true
+hashbrown.workspace = true
+quenchant-shape.workspace = true
+
+# The goldens compare whole files, and the value goldens print normal forms
+# evaluation and readback produce. A univalence statement's golden names its
+# descriptions and its stratum. The content witnesses check a one-item
+# program of the incremental checker, which takes the checker's declaration
+# and budget.
+[dev-dependencies]
+expect-test.workspace = true
+gandr-core-checker.workspace = true
+gandr-core-incremental.workspace = true
+gandr-core-nbe.workspace = true
+gandr-theory-levitation.workspace = true
+gandr-theory-sites.workspace = true
+
+[lints]
+workspace = true

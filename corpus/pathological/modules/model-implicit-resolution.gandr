@@ -1,0 +1,69 @@
+// An omitted model implicit no module answers, or more than one: a call
+// leaving the slot out is refused when no module in scope is a model of its
+// theory at the types its arguments force, or at the sorts its model type
+// fixes, and when two are, naming both.
+//
+// - see: #739
+// - see: #2317
+
+/// A tally: a carrier, a zero, a step and a reading.
+theory Tally where
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+
+/// The reading after one step, over any tally the slot names.
+def stepped[s : Model Tally](c : s.C) -> Integer { s.read (s.incr c) }
+
+/// No module of `Tally` is in scope yet.
+@[refuses("ModelUnanswered")]
+def nothingYet() -> Integer { stepped 4 }
+
+/// Counting up by one.
+module Up : Model(Tally) where
+  type C = Integer;
+  /// Zero.
+  def zero = 0;
+  /// One count more.
+  def incr(c : Integer) -> Integer { c + 1 }
+  /// The count as it is.
+  def read(c : Integer) -> Integer { c }
+
+/// Counting up by ten.
+module Tens : Model(Tally) where
+  type C = Integer;
+  /// Zero.
+  def zero = 0;
+  /// Ten counts more.
+  def incr(c : Integer) -> Integer { c + 10 }
+  /// The count as it is.
+  def read(c : Integer) -> Integer { c }
+
+/// Text is no tally's carrier.
+@[refuses("ModelUnanswered")]
+def textual() -> Integer { stepped "four" }
+
+/// Both count integers.
+@[refuses("ModelAmbiguous")]
+def twin() -> Integer { stepped 4 }
+
+/// Naming one settles it.
+@[runs("14")]
+def named() -> Integer { stepped[.s = Tens] 4 }
+
+/// The reading from zero over a tally of integers.
+def fromZero[s : Model Tally with sort C = Integer]() -> Integer =
+  s.read (s.incr s.zero)
+
+/// Both fix the carrier to the integers, as the slot does.
+@[refuses("ModelAmbiguous")]
+def manifest() -> Integer { fromZero () }
+
+/// The reading from zero over a tally of text.
+def fromText[s : Model Tally with sort C = String]() -> Integer =
+  s.read (s.incr s.zero)
+
+/// No tally in scope counts text.
+@[refuses("ModelUnanswered")]
+def textTally() -> Integer { fromText () }

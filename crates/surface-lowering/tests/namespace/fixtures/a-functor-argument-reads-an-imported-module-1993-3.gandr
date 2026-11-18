@@ -1,0 +1,3 @@
+import "./base.gandr";
+module TimesSquared = Squaring(Times);
+def nine() -> -F Integer { become TimesSquared.square 3 }

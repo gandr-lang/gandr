@@ -1,0 +1,25 @@
+//! `entry` defines a program entry point and its command arguments.
+//!
+//! A program's top-level `main` returns its exit code.
+//! The entry point follows C and Rust `main` functions.
+//!
+//! `gandr run` passes arguments after the source path to `main`.
+//! `gandr run entry.gandr a b c` exits 3.
+//!
+//! - cites: [ISO-2018-programming_languages_c]
+//! - cites: [Rust-reference]
+//!
+//! [ISO-2018-programming_languages_c]: https://www.iso.org/standard/74528.html "ISO/IEC JTC 1/SC 22, ISO/IEC 9899:2018, Programming languages — C"
+//! [Rust-reference]: https://doc.rust-lang.org/reference/ "The Rust Project, The Rust Reference"
+
+// The native finite lists.
+import std.list (List);
+
+/// The function counts strings in a list.
+pub def rec count(xs : List String) -> Integer =
+  match xs where
+    | #[] => 0
+    | #[x, ..rest] => { let n = count[<] rest; n + 1 }
+
+/// `main` returns its string argument count as its exit code.
+def main(args : List String) -> Integer { count args }

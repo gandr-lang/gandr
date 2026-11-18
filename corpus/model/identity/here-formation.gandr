@@ -1,0 +1,30 @@
+/// This source states formation for `Path.here`.
+///
+/// Reflexivity synthesises a type or checks against a written path type.
+/// A function can pass it as a value.
+/// `Path.here` is the HoTT book's § 1.12 `refl`.
+///
+/// The checker reads the point and its selected path type.
+/// The examples use reflexivity at four.
+///
+/// - see: #539 — `picked`
+
+/// The unannotated reflexivity synthesises its path type.
+def four_eq_four = Path.here 4;
+
+/// The `cast` function returns its path.
+def cast(p : Path(4, 4)) -> Path(4, 4) =
+  p
+
+/// The written path type checks the reflexivity.
+def checked : Path(4, 4) = Path.here 4;
+
+/// The `cast_four` run passes reflexivity through `cast`.
+def cast_four() -> Path(4, 4) { cast four_eq_four }
+
+/// The `pick` function returns its value argument.
+def pick(t : Type, x : t) -> t =
+  x
+
+/// A type argument to `pick` supplies a path type code.
+def picked() -> Path(4, 4) { pick (Path 4 4) (Path.here 4) }

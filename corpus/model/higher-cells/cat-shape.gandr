@@ -1,0 +1,126 @@
+// This source defines a precategory.
+//
+// `CatShape` has objects, a dependent hom type, identities and composition.
+// Its unit and associativity laws are rewrite rules.
+// It follows the HoTT book's Definition 9.1.1.
+//
+// `SetoidCat` models the shape with types and functions. It checks every law
+// by conversion. One law can prove another law of the same type.
+//
+// - see: #1510 — `CatShape`
+// - see: #452 — `identity_observed`, `composite_observed`
+// - cites: [HoTT-Book]
+//
+// [HoTT-Book]: https://homotopytypetheory.org/book/ "The Univalent Foundations Program, Homotopy Type Theory: Univalent Foundations of Mathematics"
+
+/// `CatShape` defines a morphism sort indexed by two objects. It reads each
+/// law at the composite's objects, so the unit laws agree
+/// at `comp(id(a), id(a))`.
+theory CatShape where
+  sort Ob : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
+
+  oper id : (a : Ob) --> Hom a a;
+  oper comp : (f : Hom a b, g : Hom b c) --> Hom a c;
+
+  rule unitL : comp (id a) f <=> f;
+  rule unitR : comp f (id b) <=> f;
+  rule assoc : comp (comp f g) h <=> comp f (comp g h);
+
+/// `SetoidCat` models the category shape with types and functions.
+module SetoidCat : Model(CatShape) where {
+  type Ob = Type;
+  type Hom(a : Ob, b : Ob) = a -> b;
+
+  /// `ident` is the identity function at one type.
+  @[runs("fun (a) { fun (b) { b } }")]
+  def ident(t : Type, x : t) -> t { x }
+
+  /// `compose` applies two functions in sequence.
+  @[runs("fun (a) { fun (b) { fun (c) { fun (d) { fun (e) { fun (f) { e (d f) } } } } } }")]
+  def compose(
+    t : Type,
+    u : Type,
+    v : Type,
+    f : t -> u,
+    g : u -> v,
+    x : t
+  ) -> v =
+    g (f x)
+
+  /// `id` exposes an opaque interface operation. Its run applies the hidden
+  /// `ident` function.
+  @[runs("⟨opaque at SetoidCat⟩ : (a : Type) -> (a -> a)")]
+  def id(t : Type) -> t -> t { thunk { ident t } }
+
+  /// `comp` exposes an opaque interface operation through `compose`.
+  @[runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a -> b, b -> c) -> (a -> c)")]
+  def comp(
+    t : Type,
+    u : Type,
+    v : Type,
+    f : t -> u,
+    g : u -> v
+  ) -> t -> v =
+    thunk { compose t u v f g }
+
+  /// `unitL` proves the left unit law by conversion.
+  def unitL(p : Type, q : Type, f : p -> q) -> Path(
+    comp p p q (id p) f,
+    f
+  ) =
+    Path.here f
+
+  /// `unitR` proves the right unit law by conversion.
+  def unitR(p : Type, q : Type, f : p -> q) -> Path(
+    comp p q q f (id q),
+    f
+  ) =
+    Path.here f
+
+  /// `assoc` proves associativity by conversion through `compose`.
+  def assoc(
+    p : Type,
+    q : Type,
+    r : Type,
+    s : Type,
+    f : p -> q,
+    g : q -> r,
+    h : r -> s
+  ) -> Path(
+    comp p r s (comp p q r f g) h,
+    comp p q s f (comp q r s g h)
+  ) =
+    Path.here (thunk { compose p q s f (thunk { compose q r s g h }) })
+
+  /// `unitLFromR` uses the right unit law at a converting type.
+  def unitLFromR : (p : Type, q : Type, f : p -> q) -> Path[.A = (p -> q)](
+    comp p p q (id p) f,
+    f
+  ) = unitR;
+
+  /// `unitLEither` selects either unit proof with a boolean.
+  def unitLEither(p : Type, q : Type, f : p -> q, b : Bool) -> Path(
+    comp p p q (id p) f,
+    f
+  ) =
+    match b where
+      | true => unitL p q f
+      | false => unitR p q f
+}
+
+/// `identity_observed` calls the interface operation at `Integer`.
+@[runs("3")]
+def identity_observed() -> Integer { let f = SetoidCat.id Integer; f 3 }
+
+/// `composite_observed` composes `n + 1` with `n + 2` and applies them to `1`.
+@[runs("4")]
+def composite_observed() -> Integer {
+  let h = SetoidCat.comp
+    Integer
+    Integer
+    Integer
+    (fun (n) { n + 1 })
+    (fun (n) { n + 2 });
+  h 1
+}

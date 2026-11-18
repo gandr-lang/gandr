@@ -1,0 +1,30 @@
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/worlds/rows.gandr:29:20
+   │
+28 │ ┌ def unrequired() -> [std.io.Console.Eff] Unit =
+29 │ │   migrate [bare] { std.io.Console.print "bare" }
+   │ │   ┬────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━─│
+   │ └───│────────────────│───────────────────────────┤
+   │     │                │                           checked against `+U (-F [std.io.Console.Eff] Unit)`; while checking the body of this thunk
+   │     │                its type does not convert: expected `-F Unit`, found `-F [std.io.Console.Eff] Unit`
+   │     checked against `-F [std.io.Console.Eff] Unit`; while checking the body of this migration at its world
+   │
+   ├ note: `unrequired` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree
+
+error[TypeMismatch]: the type of this term does not match the type it is checked against
+   ╭▸ corpus/pathological/worlds/rows.gandr:36:34
+   │
+35 │ ┌ def bound() -> [std.io.Console.Eff] Unit {
+36 │ │   let printed = migrate [bare] { std.io.Console.print "bare" };
+   │ │   ┬──           ┬────────────────┯━━━━━━━━━━━━━━━━━━━━━━━━━━──
+   │ │   │             │                │
+   │ │   │             │                its type does not convert: expected `-F Unit`, found `-F [std.io.Console.Eff] Unit`
+   │ │   │             synthesised; while checking the body of this migration at its world
+   │ │   checked against `-F [std.io.Console.Eff] Unit`; while synthesising the computation this binds
+37 │ │   pure printed
+38 │ │ }
+   │ └─┘ checked against `+U (-F [std.io.Console.Eff] Unit)`; while checking the body of this thunk
+   │
+   ├ note: `bound` is refused with TypeMismatch, as its expectation states
+   ╰ help: change the term or the type it is checked against, so that the two types agree

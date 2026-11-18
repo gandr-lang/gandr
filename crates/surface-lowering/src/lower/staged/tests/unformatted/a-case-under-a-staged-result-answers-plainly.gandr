@@ -1,0 +1,6 @@
+{NAT}def predAt[i : Size](n : Nat[i]) -> -F Nat[i] {{
+  match n {{
+    | Zero => Zero
+    | Succ(p) => p
+  }}
+}}

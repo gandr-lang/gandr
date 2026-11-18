@@ -1,0 +1,83 @@
+def same(A : Type, a : A) -> A {
+  a
+}
+
+def fromUnit(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step f g, h)
+) -> Path[.A = Path[.A = A](x, z)](Path.step (Path.step f g) (Path.here z), h) {
+  s
+}
+
+def thenStart(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  h : Path[.A = A](x, z),
+  k : Path[.A = A](x, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step f g, h),
+  r : Path[.A = Path[.A = A](x, z)](h, k)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g, k)](
+  Path.step (fromUnit A x y z f g h s) r,
+  Path.step s r
+) {
+  Path.here (Path.step s r)
+}
+
+def unfoldStart(
+  A : Type,
+  x : A,
+  y : A,
+  k : A,
+  s : Path[.A = A](x, y),
+  r : Path[.A = A](y, k)
+) -> Path[.A = Path[.A = A](x, k)](
+  Path.walk (fun (c) { type(Path[.A = A](same A x, c)) }) r s,
+  Path.walk (fun (c) { type(Path[.A = A](x, c)) }) r s
+) {
+  Path.here (Path.walk (fun (c) { type(Path[.A = A](x, c)) }) r s)
+}
+
+def hereStart(
+  A : Type,
+  x : A,
+  y : A,
+  k : A,
+  s : Path[.A = A](x, y),
+  r : Path[.A = A](y, k)
+) -> Path[.A = Path[.A = A](x, k)](
+  Path.walk (fun (c) { type(Path[.A = A](Path.walk (fun (d) { A }) (Path.here x) x, c)) }) r s,
+  Path.walk (fun (c) { type(Path[.A = A](x, c)) }) r s
+) {
+  Path.here (Path.walk (fun (c) { type(Path[.A = A](x, c)) }) r s)
+}
+
+def unitStart(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  k : Path[.A = A](x, z),
+  f : Path[.A = A](x, y),
+  g : Path[.A = A](y, z),
+  s : Path[.A = Path[.A = A](x, z)](Path.step f g, k),
+  m : Path[.A = A](x, z),
+  r : Path[.A = Path[.A = A](x, z)](k, m)
+) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g, m)](
+  Path.walk
+    (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step (Path.step f g) (Path.here z), c)) })
+    r
+    s,
+  Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step f g, c)) }) r s
+) {
+  Path.here (Path.walk (fun (c) { type(Path[.A = Path[.A = A](x, z)](Path.step f g, c)) }) r s)
+}

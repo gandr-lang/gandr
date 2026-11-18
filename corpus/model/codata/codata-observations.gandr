@@ -1,0 +1,27 @@
+//! `codata-observations` is an earlier source with rejected observations.
+//!
+//! A declaration of codata needs a universe for computations.
+//! A copattern needs a copattern block.
+//!
+//! The source defines a rejected point and projects its rejected origin.
+//!
+//! - see: streams.gandr — current surface spelling
+
+/// Point is refused because its kind is a value universe.
+@[refuses("CodataKindNotUniverse")]
+codata Point : Type where
+  x : Integer;
+  y : Integer;
+
+/// `origin` supplies three and four with bare copatterns.
+/// The checker refuses it without a copattern block.
+@[refuses("MalformedForm")]
+def rec origin() -> Point {
+  .x => 3,
+  .y => 4
+}
+
+/// `coordinates` sums the rejected origin coordinates.
+/// It is refused because origin has no known type.
+@[refuses("UnknownConstant")]
+def coordinates() -> Integer { origin.x + origin.y }

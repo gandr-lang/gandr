@@ -1,0 +1,69 @@
+// This source shows inert operations.
+//
+// An inert operation identifies a package. It does not define the package
+// content. So an edit to an inert operation moves the content of no other
+// declaration.
+//
+// The checker allows a manifest step and another inert declaration to read
+// it. A top-level definition marked inert is such a declaration. The component
+// of a model for an inert operation is inert. An `include` carries the mark.
+//
+// - see: #3029
+// - see: #6141 — a top-level definition marked inert
+// - see: pathological/modules/inert-field.gandr
+
+/// `Released` states an inert version.
+theory Released where {
+  /// The version.
+  @[inert]
+  oper version : String;
+}
+
+/// `Named` adds an inert name and a greeting.
+theory Named where {
+  /// `Released` provides the inert version.
+  include Released;
+  /// The name.
+  @[inert]
+  oper name : String;
+  /// The greeting.
+  oper greeting : String;
+}
+
+/// `Family` provides a shared release version.
+module Family : Model(Released) where {
+  /// `version` gives the family version.
+  @[runs("\"0.1.0\"")]
+  def version = "0.1.0";
+}
+
+/// `Hello` reads the family version and defines content.
+module Hello : Model(Named) where {
+  /// `version` reads the family version.
+  @[runs("\"0.1.0\"")]
+  def version = Family.version;
+  /// `name` gives the package name.
+  @[runs("\"hello\"")]
+  def name = "hello";
+  /// `greeting` gives the package greeting.
+  @[runs("\"hello, world\"")]
+  def greeting = "hello, world";
+}
+
+/// `welcome` reads the greeting through `Hello`.
+@[runs("\"hello, world\"")]
+def welcome = Hello.greeting;
+
+/// `helloName` reads the inert name by its path, so it is inert too.
+@[inert]
+@[runs("\"hello\"")]
+def helloName = Hello.name;
+
+/// `nameOf` reads the inert name off any model of `Named`.
+@[inert]
+def nameOf(n : Model Named) -> String { n.name }
+
+/// `shownName` reads another inert definition.
+@[inert]
+@[runs("\"hello\"")]
+def shownName = helloName;

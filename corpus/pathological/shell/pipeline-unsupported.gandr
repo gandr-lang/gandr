@@ -1,0 +1,12 @@
+//! `pipeline-unsupported` puts a pipe between shell commands.
+//!
+//! A shell block runs one command per statement.
+//! The lowering refuses shell blocks before it reaches this form.
+//!
+//! The source pipes `printf 'x'` to `cat`.
+//!
+//! - see: #1057 — `piped`
+
+/// `piped` puts a pipe between two commands.
+@[refuses("OutOfFragment.shell_block")]
+def piped() -> Unit { #!{ printf 'x' | cat; } }
