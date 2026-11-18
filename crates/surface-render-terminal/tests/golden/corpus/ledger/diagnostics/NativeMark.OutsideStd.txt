@@ -5,4 +5,4 @@ error[NativeMark.OutsideStd]: only a module of `std` writes a `native` mark
   │   ━━━━━━━━━━━━━━━━━━━━━━━ a native mark outside std
   │
   ├ note: `append` is refused with NativeMark.OutsideStd, as its expectation states
-  ╰ help: call the declaration of `std`, and delete the mark
+  ╰ help: delete the mark. Call the declaration of `std`

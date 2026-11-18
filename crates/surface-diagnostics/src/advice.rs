@@ -180,9 +180,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::NativeMark { fault, .. } => String::from(match fault {
             NativeFault::NoRow => "name a row of the native table, as `string.append`",
             NativeFault::Bodied => "delete the body, and the row gives the value",
-            NativeFault::OutsideStd => "call the declaration of `std`, and delete the mark",
+            NativeFault::OutsideStd => "delete the mark. Call the declaration of `std`",
             NativeFault::TypeDiffers => "write the type of the row, its arguments then its result",
-            NativeFault::SecondDeclaration => "delete this declaration, and call the earlier one",
+            NativeFault::SecondDeclaration => "delete this declaration. Call the earlier one",
         }),
         LoweringRefusal::UnresolvedDocLink { name, .. } => {
             format!("declare `{name}`, or link to a name this source declares")
