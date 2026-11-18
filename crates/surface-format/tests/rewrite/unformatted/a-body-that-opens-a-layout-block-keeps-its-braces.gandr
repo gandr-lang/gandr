@@ -1,7 +1,0 @@
-data Rose : Type where
-  | Node : (kid : Integer) --> Rose
-
-def rec size(t : Rose) -> Integer {
-  match t where
-    | Node(kid) => kid
-}

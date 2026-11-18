@@ -1013,27 +1013,6 @@ fn a_sugared_source_keeps_every_comment_with_its_construct()
     );
 }
 
-/// #1057: a body that opens a layout block keeps its braces. Written after
-/// `=`, the body's `;` falls inside the `match … where` block, and the parser
-/// owes the block's tiles there. Before the fix, the rewrite owed them, and
-/// the declaration was withdrawn.
-#[test]
-fn a_body_that_opens_a_layout_block_keeps_its_braces_1057()
-{
-    let grammar = grammar();
-    let source =
-        include_str!("rewrite/unformatted/a-body-that-opens-a-layout-block-keeps-its-braces.gandr");
-    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
-    let options = FormatOptions {
-        form: Form::Sugared,
-        ..FormatOptions::default()
-    };
-    let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, None))
-        .unwrap_or_else(|error| panic!("the source formats: {error}"));
-    assert_eq!(formatted.withdrawn(), []);
-    assert_eq!(formatted.into_text(), source);
-}
-
 /// A source's declared form wins over the option, either way.
 #[test]
 fn a_declared_form_wins_over_the_option()

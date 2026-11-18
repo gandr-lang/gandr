@@ -3042,18 +3042,10 @@ impl<'source> Respelling<'_, 'source>
                     )
                 })
         };
-        // A `where` opens a layout block, and the block runs to the end of the
-        // body: a `;` written after it falls inside the block, and the parser
-        // owes the block's tiles there. The body keeps its braces.
-        let laid = |part: &Part<'source>| {
-            part.leaves
-                .iter()
-                .any(|leaf| leaf.material == Material::Token && <&str>::from(leaf.text) == "where")
-        };
         if inner
             .iter()
             .chain([closer])
-            .any(|part| own(part, "=>") || commentary(part) || laid(part))
+            .any(|part| own(part, "=>") || commentary(part))
         {
             return None;
         }
