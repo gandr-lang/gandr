@@ -1722,6 +1722,11 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns the precise signature boundary or malformed syntax.
     ///
+    /// # Cost
+    /// - allocation: the operation's ports, their sorts and its name, durable
+    ///   by the theory's description
+    /// - allocation: the list of ports that the shared-name scan reads, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a filler, a data-spelled operation, a shared port
     ///   name and a two-output operation separate the declines from admission,

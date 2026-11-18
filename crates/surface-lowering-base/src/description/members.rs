@@ -55,6 +55,10 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns `Malformed` for missing names, classifiers or delimiters.
     ///
+    /// # Cost
+    /// - allocation: the operation's ports, its bridge and where each is
+    ///   written, durable by the theory's description
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-input, two-output declaration distinguishes
     ///   lost ports and wrong bridge maps.
@@ -373,6 +377,10 @@ impl Reader<'_, '_>
     ///
     /// # Errors
     /// As [`Self::free_term`].
+    ///
+    /// # Cost
+    /// - allocation: the term's nodes and where each is written, durable by the
+    ///   theory's description
     ///
     /// # Adequacy
     /// - hypothesis: L3 — `Z` and `S(Z)` in `Skip(S(Z))` read as constructor
