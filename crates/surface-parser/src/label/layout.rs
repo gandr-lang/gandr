@@ -443,6 +443,10 @@ impl Plan<'_>
 /// - executable: none — the clauses compare the stream with itself before the
 ///   pass, which the witnesses do over each rule.
 ///
+/// # Cost
+/// - allocation: the stack of open blocks, growth within the source's nesting
+///   depth
+///
 /// # Adequacy
 /// - hypothesis: L3 — each opener, the column rule in a layout block, in a
 ///   brace and at the top level, a dedent, a word at column zero, each place a
