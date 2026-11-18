@@ -2548,6 +2548,11 @@ impl<'pbg> MeldState<'pbg>
     ///   `Path[.A = Type](Bool * List Bool, Int)` reads them, and a term
     ///   endpoint after any other carrier stays a term.
     /// - witness: `tests::grammar::a_path_type_reads_its_endpoints_juxtaposed_5750`
+    ///
+    /// # Clause cost
+    /// - bound: one read of the emission log for each application of the spine,
+    ///   at most two, and one read for each direct child of the head's form, at
+    ///   most eight.
     fn operands_of(
         &self,
         spine: &Cell,
@@ -2603,6 +2608,10 @@ impl<'pbg> MeldState<'pbg>
     ///   [`Self::applies_next`] states. `None` otherwise.
     /// - provides: the one test of whether a juxtaposition continues a spine.
     /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: at most two reads of the emission log for the spine and eight
+    ///   reads of the head's direct children, as [`Self::operands_of`] states.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::juxtaposed`].
