@@ -3,6 +3,4 @@ def faced : Config.#{{secure ↦ *{{.port = 443, .tls = true}}}} = *{{.host = "l
 def ascii : Config.#{{secure |-> *{{.port = 443, .tls = true}}}} = *{{.host = "localhost"}};
 def placed : *{{a : Integer, b : Bool}}.#{{.b = true}} = *{{.a = 1}};
 data Nat : Type where {{ | Zero : Nat | Succ : (n : Nat) --> Nat }}
-def staged[i : Size](n : Nat[i], c : Config.#{{.port = 443, .tls = true}}) -> -F Nat[i] {{
-  return n
-}}
+def staged[i : Size](n : Nat[i], c : Config.#{{.port = 443, .tls = true}}) -> -F Nat[i] = return n;

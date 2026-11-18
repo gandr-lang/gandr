@@ -554,7 +554,7 @@ fn a_loop_exit_off_every_loop_body_is_refused_by_name()
             "skip",
             spelled_within(
                 text,
-                SourceText::from("{ continue }"),
+                SourceText::from("= continue;"),
                 SourceText::from("continue"),
             ),
             LoopExit::Continue,

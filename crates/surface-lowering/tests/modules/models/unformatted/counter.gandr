@@ -7,6 +7,6 @@ theory Counter where {
 module Open : Model(Counter) where {
   type C = Integer;
   def start = 0;
-  def step(n : Integer) -> -F Integer { become n + 1 }
-  def read(n : Integer) -> -F Integer { n }
+  def step(n : Integer) -> -F Integer = become n + 1;
+  def read(n : Integer) -> -F Integer = n;
 }

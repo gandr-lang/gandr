@@ -1,4 +1,4 @@
-def exchange(n : Integer) -> -F Unit {
+def exchange(n : Integer) -> -F Unit = {
 let peer = fork (c : ?String >> rec turn => +{ report : !String >> &{ next : turn, retire : end }, handoff : !String >> end }) {
 let task = recv c;
 select c report;
@@ -20,4 +20,4 @@ offer peer {
 }
 | handoff => { let notes = recv peer; close peer }
 }
-}
+};

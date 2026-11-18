@@ -1,4 +1,4 @@
-def spoken() -> -F Unit {
+def spoken() -> -F Unit = {
   let desk = fork (seat : ?Integer >> !Integer >> end) {
     let asked = recv(seat);
     send seat (asked + 1);
@@ -7,10 +7,10 @@ def spoken() -> -F Unit {
   send desk 1;
   let answer = recv desk;
   close desk
-}
-def counted() -> -F Integer {
+};
+def counted() -> -F Integer = {
   var c = 0;
   access c as v { resume v (v + 1) };
   access c as w { abort(w) } unwind { pure *{} };
   return c
-}
+};

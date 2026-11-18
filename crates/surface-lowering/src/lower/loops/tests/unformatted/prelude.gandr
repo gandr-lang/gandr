@@ -1,2 +1,2 @@
 data Nat : Type where { | Zero : Nat | Succ : (n : Nat) --> Nat }
-def tick(n : Nat) -> -F Unit { return *{} }
+def tick(n : Nat) -> -F Unit = return *{};

@@ -573,19 +573,19 @@ fn a_tail_without_an_exit_takes_the_one_its_polarity_names()
     assert_eq!(
         module.inferred_exits(),
         [
-            inferred(at("Nat { n }", "n"), Exit::Return),
-            inferred(at("{ Succ n }", "Succ n"), Exit::Return),
-            inferred(at("{ 3 }", "3"), Exit::Return),
-            inferred(at("{ *{n, n} }", "*{n, n}"), Exit::Return),
-            inferred(at("{ (Succ n : Nat) }", "(Succ n : Nat)"), Exit::Return),
-            inferred(at("Nat { value n }", "value n"), Exit::Become),
-            inferred(at("{ pure n }", "pure n"), Exit::Become),
+            inferred(at("Nat = n;", "n"), Exit::Return),
+            inferred(at("= Succ n;", "Succ n"), Exit::Return),
+            inferred(at("= 3;", "3"), Exit::Return),
+            inferred(at("= *{n, n};", "*{n, n}"), Exit::Return),
+            inferred(at("= (Succ n : Nat);", "(Succ n : Nat)"), Exit::Return),
+            inferred(at("Nat = value n;", "value n"), Exit::Become),
+            inferred(at("= pure n;", "pure n"), Exit::Become),
             inferred(at("Zero => n |", "n"), Exit::Return),
             inferred(at("=> value p", "value p"), Exit::Become),
             inferred(at("; Succ m }", "Succ m"), Exit::Return),
             inferred(at("; pure q }", "pure q"), Exit::Become),
             inferred(
-                at("{ thunk { value n } }", "thunk { value n }"),
+                at("= thunk { value n };", "thunk { value n }"),
                 Exit::Return
             ),
             inferred(at("thunk { value n }", "value n"), Exit::Become),
@@ -616,18 +616,10 @@ fn an_explicit_exits_attribute_asks_within_its_form()
     assert_eq!(
         module.inferred_exits(),
         [
-            inferred(at("{ n }", "n"), Exit::Return, Explicitness::Asked),
-            inferred(
-                at("{ kept n }", "kept n"),
-                Exit::Become,
-                Explicitness::Asked
-            ),
-            inferred(
-                at("{ Succ n }", "Succ n"),
-                Exit::Return,
-                Explicitness::Asked
-            ),
-            inferred(at("{ Zero }", "Zero"), Exit::Return, Explicitness::Unasked),
+            inferred(at("= n;", "n"), Exit::Return, Explicitness::Asked),
+            inferred(at("= kept n;", "kept n"), Exit::Become, Explicitness::Asked),
+            inferred(at("= Succ n;", "Succ n"), Exit::Return, Explicitness::Asked),
+            inferred(at("= Zero;", "Zero"), Exit::Return, Explicitness::Unasked),
         ],
         "a module's attribute asks for its members' exits, a declaration's for its own, \
          and a refused declaration lists none"
@@ -666,13 +658,9 @@ fn an_inner_attribute_decorates_its_module()
     assert_eq!(
         module.inferred_exits(),
         [
-            inferred(at("{ n }", "n"), Exit::Return, Explicitness::Asked),
-            inferred(at("{ Zero }", "Zero"), Exit::Return, Explicitness::Unasked),
-            inferred(
-                at("{ Succ n }", "Succ n"),
-                Exit::Return,
-                Explicitness::Asked
-            ),
+            inferred(at("= n;", "n"), Exit::Return, Explicitness::Asked),
+            inferred(at("= Zero;", "Zero"), Exit::Return, Explicitness::Unasked),
+            inferred(at("= Succ n;", "Succ n"), Exit::Return, Explicitness::Asked),
         ],
         "a leading inner block asks for its module's exits, a nested one's too, and the late \
          one asks for none"
@@ -718,7 +706,7 @@ fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
         module.elidable_exits(),
         [
             elidable(
-                "{ return Succ n }",
+                "= return Succ n;",
                 "return Succ n",
                 "Succ n",
                 Returned::Value
@@ -727,13 +715,13 @@ fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
             elidable("=> return p }", "return p", "p", Returned::Value),
             elidable("Zero => return k |", "return k", "k", Returned::Value),
             elidable(
-                "{ return succeeded n }",
+                "= return succeeded n;",
                 "return succeeded n",
                 "succeeded n",
                 Returned::Run
             ),
             elidable(
-                "{ return (Succ n) }",
+                "= return (Succ n);",
                 "return (Succ n)",
                 "(Succ n)",
                 Returned::Value

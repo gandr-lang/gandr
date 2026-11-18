@@ -9,6 +9,4 @@ def exchange(b : Bool) -> -F Bool {
     | false => return +{.0 = *{}}
   }
 }
-def keep(e : +{Unit}) -> -F +{Unit} {
-  return e
-}
+def keep(e : +{Unit}) -> -F +{Unit} = return e;

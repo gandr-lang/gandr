@@ -1,7 +1,7 @@
-{MAYBE}def refused(m : Maybe(Integer)) -> -F Integer {{
+{MAYBE}def refused(m : Maybe(Integer)) -> -F Integer = {{
 (Some 1 : Maybe(Integer));
 return 0
-}}
+}};
 def bare : () -> Integer ;
 def bare = thunk {{ become refused None }} ;
 def annotated : () -> Integer ;

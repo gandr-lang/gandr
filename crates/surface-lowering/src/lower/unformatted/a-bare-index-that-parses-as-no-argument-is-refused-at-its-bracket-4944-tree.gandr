@@ -1,3 +1,1 @@
-def f[a : Type](x : a) -> -F a {
-  zebra x
-}
+def f[a : Type](x : a) -> -F a = zebra x;
