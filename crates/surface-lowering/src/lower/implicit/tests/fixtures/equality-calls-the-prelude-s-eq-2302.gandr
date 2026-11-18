@@ -1,0 +1,4 @@
+def integers() -> Bool { 3 == 3 }
+def strings() -> Bool { "types" == "types" }
+def eq(a : Bool) -> Bool { a }
+def own() -> Bool { 3 == 4 }

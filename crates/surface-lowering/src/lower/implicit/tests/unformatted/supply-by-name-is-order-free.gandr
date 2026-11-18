@@ -1,0 +1,4 @@
+{FIRST}def written : () -> Integer ;
+def written = thunk {{ become first[.a = Integer, .b = Unit] 5 *{{}} }} ;
+def swapped : () -> Integer ;
+def swapped = thunk {{ become first[.b = Unit, .a = Integer] 5 *{{}} }} ;

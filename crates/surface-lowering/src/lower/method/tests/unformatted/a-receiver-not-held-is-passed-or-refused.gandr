@@ -1,0 +1,5 @@
+{COUNTER}def passed(t : Integer) -> -F Integer {{
+  let n = t.read ();
+  t.spend ()
+}}
+def written(t : Integer) -> -F Unit {{ t.bump 1 }}

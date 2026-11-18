@@ -1,0 +1,51 @@
+//! This fixture defines a universe with two codes.
+//!
+//! Each code decodes to one type.
+//!
+//! A case reads each value at its decoded type. The case generalises its motive
+//! over the value. The kernel checks the case at that motive. The machine runs
+//! the case as written.
+//!
+//! - cites: [McBride-2002-elimination_motive]
+//!
+//! [McBride-2002-elimination_motive]: https://doi.org/10.1007/3-540-45842-5_13 "McBride, Elimination with a Motive"
+
+/// The naturals.
+data Nat : Type where
+  /// Zero.
+  | Zero : Nat
+  /// One past a natural.
+  | Succ : (n : Nat) --> Nat
+
+/// A universe of two codes.
+data UQ : Type where
+  /// The code of the naturals.
+  | NatQ : UQ
+  /// The code of the unit type.
+  | UnitQ : UQ
+
+/// The type each code decodes to.
+def elQ(u : UQ) -> Type =
+  match u where
+    | NatQ => return Nat
+    | UnitQ => return Unit
+
+/// A value at each code: the goal reads the arm's code.
+def pick(u : UQ) -> elQ(u) =
+  match u where
+    | NatQ => Zero
+    | UnitQ => *{}
+
+/// A value beside its code, read back as a natural. The `NatQ` arm reads `v`
+/// at `elQ(NatQ)`, which decodes to `Nat`.
+def back(u : UQ, v : elQ(u)) -> Nat =
+  match u where
+    | NatQ => v
+    | UnitQ => Zero
+
+/// A value beside its code, at the code's decode. Each arm reads `v` at its
+/// own code.
+def same(u : UQ, v : elQ(u)) -> elQ(u) =
+  match u where
+    | NatQ => v
+    | UnitQ => v

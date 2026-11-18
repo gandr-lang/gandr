@@ -1,0 +1,8 @@
+error[OutputsAsOneValue]: `sumDiff` returns several outputs, and one value stands here: bind them with an output group, `(s, d)` or `(.s, .d)`, or collect them into a record with `~ports e`
+  ╭▸ corpus/ledger/diagnostics/OutputsAsOneValue.gandr:9:14
+  │
+9 │   let pair = sumDiff 7 2
+  │              ━━━━━━━━━━━ a call of several outputs read as one value
+  │
+  ├ note: `both` is refused with OutputsAsOneValue, as its expectation states
+  ╰ help: bind the outputs with an output group, `let (s, d) = …`, or write `~ports e`

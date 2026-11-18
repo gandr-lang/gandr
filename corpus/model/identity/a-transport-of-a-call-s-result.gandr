@@ -1,0 +1,41 @@
+/// This source compares two transports when one value comes from a call.
+///
+/// The lowering binds the call result before it transports the value.
+/// The kernel evaluates the call before it reads the path.
+///
+/// Each row uses the same variable path and one value family.
+/// The loop family and the fixed-point family give the two cases.
+///
+/// - see: #3806 — call result transport
+
+/// The `handedBack` function returns its argument.
+def handedBack(B : Type, b : B) -> B =
+  b
+
+/// The first proof compares transports in a loop family.
+/// Its two values are one unfolding apart.
+def transportInALoopFamily(
+  B : Type,
+  x : B,
+  y : B,
+  p : Path(x, y),
+  v : Path(x, x)
+) -> Path[.A = Path[.A = B](y, y)](
+  Path.walk (fun (z) { type(Path[.A = B](z, z)) }) p v,
+  Path.walk (fun (z) { type(Path[.A = B](z, z)) }) p (handedBack (Path x x) v)
+) =
+  Path.here (Path.walk (fun (z) { type(Path[.A = B](z, z)) }) p v)
+
+/// The second proof compares transports in a fixed-point path family.
+/// Its two values are one unfolding apart.
+def transportInAFreeFamily(
+  B : Type,
+  x : B,
+  y : B,
+  p : Path(x, y),
+  v : Path(x, x)
+) -> Path[.A = Path[.A = B](y, x)](
+  Path.walk (fun (z) { type(Path[.A = B](z, x)) }) p v,
+  Path.walk (fun (z) { type(Path[.A = B](z, x)) }) p (handedBack (Path x x) v)
+) =
+  Path.here (Path.walk (fun (z) { type(Path[.A = B](z, x)) }) p v)

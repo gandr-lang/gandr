@@ -1,0 +1,6 @@
+{NAT}def later[i : Size, i < n, n : Size](x : Nat[i]) -> -F Nat {{
+  return x
+}}
+def stray[i : Size](x : Nat[j]) -> -F Nat {{
+  return x
+}}
