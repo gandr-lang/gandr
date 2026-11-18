@@ -8,5 +8,5 @@ theory Monad where {
 theory Ordered where {
   include Monad;
   sort Below(w : C, v : C) : Type;
-  oper refl : (w : C) --> Below(w, w);
+  oper refl : (w : C) --> Below w w;
 }
