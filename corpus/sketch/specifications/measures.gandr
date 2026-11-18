@@ -27,7 +27,7 @@ pub def rec search(xs : Array Integer, x : Integer, lo : Nat, hi : Nat) -> Maybe
     | decreases hi - lo
     | cost log2 (hi - lo) + 1
   }
-} {
+} = {
   if lo >= hi {
     none
   } else {
@@ -36,7 +36,7 @@ pub def rec search(xs : Array Integer, x : Integer, lo : Nat, hi : Nat) -> Maybe
     else if xs.#[mid] < x { search xs x (mid + 1) hi }
     else { search xs x lo mid }
   }
-}
+};
 
 /// A queue as two lists: pushes go on the back list, and pops reverse it onto
 /// the front when the front runs out.
@@ -52,7 +52,7 @@ pub def pop[a : Type](q : Banker a) -> [State(Banker a)] Maybe a #spec{
     | potential length(q.back)
     | cost 1
   }
-} {
+} = {
   match q.front where
     | Cons(x, rest) =>
       q.front := rest;
@@ -63,7 +63,7 @@ pub def pop[a : Type](q : Banker a) -> [State(Banker a)] Maybe a #spec{
         q.front := rest;
         q.back := Nil;
         some x
-}
+};
 
 /// The shortest distance to every node, its bound in the tropical semiring.
 pub def shortest(g : Graph, source : Node) -> Map Node Distance #spec{
@@ -71,6 +71,5 @@ pub def shortest(g : Graph, source : Node) -> Map Node Distance #spec{
   measure Tropical {
     | cost edges(g) + nodes g * log2 (nodes g)
   }
-} {
+} =
   dijkstra g source
-}

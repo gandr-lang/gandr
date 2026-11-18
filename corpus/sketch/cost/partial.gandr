@@ -57,7 +57,7 @@ def rec explore(next : Node -> List Node, goal : Node -> Bool, frontier : Batche
     | potential length(frontier.back)
     | cost 1
   }
-} {
+} =
   match pop frontier where
     | None => none
     | Some(*{n, rest}) => if goal n {
@@ -65,4 +65,3 @@ def rec explore(next : Node -> List Node, goal : Node -> Bool, frontier : Batche
     } else {
       explore next goal (fold (next n) rest push)
     }
-}

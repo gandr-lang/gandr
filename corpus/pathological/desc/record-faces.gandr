@@ -61,16 +61,16 @@ type Config = *{host : String, port : Integer, tls : Bool} where
 
 /// `mode` is no field of `Config`: the reader is refused at the label.
 @[refuses("UnresolvedName")]
-def moded(c : Config.#{.mode = 1}) -> Integer { 0 }
+def moded(c : Config.#{.mode = 1}) -> Integer = 0;
 
 /// `remote` is no face of `Config`: the reader is refused at the face.
 @[refuses("UnresolvedName")]
-def remote(c : Config.#{remote ↦ *{.host = "localhost"}}) -> Integer { 0 }
+def remote(c : Config.#{remote ↦ *{.host = "localhost"}}) -> Integer = 0;
 
 /// `true` is no `Integer`: the reader is refused at the value it fixes for
 /// `port`.
 @[refuses("TypeMismatch")]
-def mistyped(c : Config.#{.port = true}) -> Integer { 0 }
+def mistyped(c : Config.#{.port = true}) -> Integer = 0;
 
 /// The literal states `port` at 80, but the reader fixes it at 443: the
 /// literal is refused at the field.

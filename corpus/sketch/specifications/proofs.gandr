@@ -24,9 +24,8 @@ pub def total(xs : List Nat) -> Nat #spec{
       }
     | s >= 0 with sumNonNegative(xs)
   }
-} {
+} =
   fold xs 0 (fun (acc, x) { acc + x })
-}
 
 /// Sorts a list and keeps its length and elements, which one lemma proves.
 pub def sortKeeps(xs : List Integer) -> List Integer #spec{
@@ -34,9 +33,8 @@ pub def sortKeeps(xs : List Integer) -> List Integer #spec{
     | length(ys) == length xs
     | permutation(ys, xs
   } with mergeSortPermutes(xs)
-} {
+} =
   mergeSort xs
-}
 
 /// The first failure of a validation, under the theory of exceptions, which
 /// has no entry state, so a ghost binding names the input's length.
@@ -44,6 +42,5 @@ pub def firstInvalid(rows : List Row) -> [Raise(Invalid)] Unit #spec{
   ghost n = length rows
   requires { n > 0 }
   ensures _ { n == length rows }
-} {
+} =
   forEach(rows, fun (row) { if !valid(row) { raise (Invalid row) } })
-}

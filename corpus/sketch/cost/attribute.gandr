@@ -31,6 +31,5 @@ def find(xs : Array Integer, x : Integer) -> [Cost] Maybe Nat =
 /// bound is their sum.
 def hashBoth(a : Bytes, b : Bytes) -> [Cost] *{Digest, Digest} #spec{
   measure { cost length a / 64 + length b / 64 + 2 }
-} {
+} =
   *{hash a, hash b}
-}
