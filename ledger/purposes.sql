@@ -3392,6 +3392,7 @@ INSERT INTO purpose VALUES('surface-lowering-base','form::misspelt_keyword','fun
 INSERT INTO purpose VALUES('surface-lowering-base','form::misspelt_operator','function','Finds the operator a refused name nearly spells, so the refusal lands at the run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::opens_expression','function','Names whether a keyword opens an expression, so a misspelt word is read only where it can stand.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::operand_entry','function','Reads the path and fixed sorts a type operand spells, so a package''s entry resolves as written.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','form::owed_tile','function','Finds the tile a form owes after a run it holds as an extra operand, so the run reads as that operator.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::own_children','function','Lists the children a form reads as its own, so a nested form''s tiles stay its own.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::read_as_type','function','Names whether a form stands as a type, so a form of the wrong sort is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','form::read_pieces','function','Reads a node''s children against its own rule, so each form reads its tiles and operands in written order.',NULL,'fits','sound',NULL);
