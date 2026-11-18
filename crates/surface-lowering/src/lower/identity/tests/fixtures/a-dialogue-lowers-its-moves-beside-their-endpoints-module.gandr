@@ -1,0 +1,7 @@
+def untagged = dialogue (sent 1);
+def elsewhere = dialogue (middle closed);
+def twice = dialogue (left closed closed);
+def inner = dialogue (right (skipped 1));
+def both(d : Integer) -> -F Integer {
+  become decompose d d
+}

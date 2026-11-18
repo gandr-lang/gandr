@@ -1,0 +1,2 @@
+def hello() -> -F [std.io.Console.Eff] Unit { std.io.Console.print "hello, world!" }
+def elsewhere() -> -F [std.process.Exit.Eff] Unit { std.process.Exit.print "x" }

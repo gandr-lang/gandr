@@ -1,0 +1,2 @@
+{MAYBE}def keep(m : Maybe(Integer)) -> -F Integer {{ return 0 }}
+def wide : Maybe(Integer, Integer) ;

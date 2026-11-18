@@ -1,0 +1,5 @@
+{pairing}def hand(m : Model(Pairing) with sort A = Integer, n : {second}) -> -F m.B {{
+  match n {{
+    | *{{.left = l, .right = r}} => become keep m r
+  }}
+}}

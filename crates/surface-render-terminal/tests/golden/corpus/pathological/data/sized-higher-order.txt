@@ -1,0 +1,183 @@
+error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:31:38
+   │
+28 │    def rec applied_again(n : Nat) -> Nat =
+   │    │                     ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ ┌──┘
+   │ │
+29 │ │┌   match n where
+30 │ ││     | Zero => Zero
+31 │ ││     | Succ(p) => Succ (apply Nat Nat applied_again[<] n)
+   │ ││                  ┬─────┬─────────────┯━━━━━━━━━━━━━━━──│
+   │ └│──────────────────│─────│─────────────│─────────────────│
+   │  └──────────────────│─────│─────────────│─────────────────checked against `Nat -> Nat`; while checking the body of this function; binds applied_again : Nat -> Nat
+   │                     │     │             │                 checked against `-F Nat`; while checking the body of this function; binds p : Nat
+   │                     │     │             not below the stage its recursion wants
+   │                     │     checked against `Nat`; while checking the argument of this application
+   │                     checked against `-F Nat`; while finishing the type of this
+   │
+   ├ note: `applied_again` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
+
+error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:39:52
+   │
+36 │    def rec applied_at_again(n : Nat) -> Nat =
+   │    │                        ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ ┌──┘
+   │ │
+37 │ │┌   match n where
+38 │ ││     | Zero => Zero
+39 │ ││     | Succ(p) => Succ (applyAt applied_at_again[<] n)
+   │ ││                  ┬─────┬───────────────────────────┯│
+   │ └│──────────────────│─────│───────────────────────────││
+   │  └──────────────────│─────│───────────────────────────│checked against `Nat -> Nat`; while checking the body of this function; binds applied_at_again : Nat -> Nat
+   │                     │     │                           │checked against `-F Nat`; while checking the body of this function; binds p : Nat
+   │                     │     │                           not below the stage its recursion wants
+   │                     │     checked against `Nat`; while checking the argument of this application
+   │                     checked against `-F Nat`; while finishing the type of this
+   │
+   ├ note: `applied_at_again` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
+
+error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:44:29
+   │
+44 │ def integerAt[i : Size](n : Integer[i]) -> Integer =
+   │                             ━━━━━━━━━━ no rule for this former
+   │
+   ├ note: `integerAt` is refused with OutOfFragment.Stage, as its expectation states
+   ╰ help: write the kernel-visible type without a stage
+
+error[OutOfFragment.staged_type]: the staged type is not supported yet
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:50:48
+   │
+50 │ def carriedAt[i : Size](a : Nat, q : Path[.A = Nat[i]](a, a)) -> Nat =
+   │                                                ━━━━━━ a form the fragment does not admit
+   │
+   ├ note: `carriedAt` is refused with OutOfFragment.staged_type, as its expectation states
+   ╰ note: tracked by #1502 <https://github.com/gandr-lang/gandr/issues/1502>
+
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:64:33
+   │
+61 │    def rec plainly_helped(n : Nat) -> Nat =
+   │    │                      ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ ┌──┘
+   │ │
+62 │ │┌   match n where
+63 │ ││     | Zero => Zero
+64 │ ││     | Succ(p) => Succ (applyNat plainly_helped[<] p)
+   │ ││                  ┬─────┬────────┯━━━━━━━━━━━━━━━━──│
+   │ └│──────────────────│─────│────────│──────────────────│
+   │  └──────────────────│─────│────────│──────────────────checked against `Nat -> Nat`; while checking the body of this function; binds plainly_helped : Nat -> Nat
+   │                     │     │        │                  checked against `-F Nat`; while checking the body of this function; binds p : Nat
+   │                     │     │        not below the stage its recursion wants
+   │                     │     checked against `Nat`; while checking the argument of this application
+   │                     checked against `-F Nat`; while finishing the type of this
+   │
+   ├ note: `plainly_helped` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
+
+error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:81:65
+   │
+78 │    def rec halved_through_pred(n : Nat) -> Nat =
+   │    │                           ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ ┌──┘
+   │ │
+79 │ │┌   match n where
+80 │ ││     | Zero => Zero
+81 │ ││     | Succ(p) => { let q = pred p; Succ (halved_through_pred[<] q) }
+   │ ││                    ┬──             ┬─────┬──────────────────────┯─ │
+   │ └│────────────────────│───────────────│─────│──────────────────────│──│
+   │  └────────────────────│───────────────│─────│──────────────────────│──checked against `Nat -> Nat`; while checking the body of this function; binds halved_through_pred : Nat -> Nat
+   │                       │               │     │                      │  checked against `-F Nat`; while checking the body of this function; binds p : Nat
+   │                       │               │     │                      not below the stage its recursion wants
+   │                       │               │     checked against `Nat`; while checking the argument of this application
+   │                       │               checked against `-F Nat`; while finishing the type of this
+   │                       checked against `-F Nat`; while checking the body under this binding; binds _ : Nat
+   │
+   ├ note: `halved_through_pred` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
+
+error[StageNotBelow]: the recursion is not structural: it stands at a stage not below the one wanted
+   ╭▸ corpus/pathological/data/sized-higher-order.gandr:92:40
+   │
+89 │    def rec looping_through_bound(n : Nat) -> Nat =
+   │    │                             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+   │ ┌──┘
+   │ │
+90 │ │┌   match n where
+91 │ ││     | Zero => Zero
+92 │ ││     | Succ(p) => { let q = boundedAt p n; looping_through_bound[<] q }
+   │ ││                    ┬──     ┬───────────┯                             │
+   │ └│────────────────────│───────│───────────│─────────────────────────────│
+   │  └────────────────────│───────│───────────│─────────────────────────────checked against `Nat -> Nat`; while checking the body of this function; binds looping_through_bound : Nat -> Nat
+   │                       │       │           │                             checked against `-F Nat`; while checking the body of this function; binds p : Nat
+   │                       │       │           not below the stage its recursion wants
+   │                       │       synthesised; while synthesising the function this applies
+   │                       │       synthesised; while forcing this
+   │                       checked against `-F Nat`; while synthesising the computation this runs where a value is read
+   │
+   ├ note: `looping_through_bound` is refused with StageNotBelow, as its expectation states
+   ╰ help: recurse on a field of the parameter, which a match takes apart, and not on the parameter itself
+
+error[StagesDisagree]: the call's arguments stand at stages that no single stage of the callee's stage parameter fits
+    ╭▸ corpus/pathological/data/sized-higher-order.gandr:103:31
+    │
+100 │    def rec disagreeing(n : Nat) -> Nat =
+    │    │                   ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+    │ ┌──┘
+    │ │
+101 │ │┌   match n where
+102 │ ││     | Zero => Zero
+103 │ ││     | Succ(p) => Succ (sameAt disagreeing[<] n)
+    │ ││                  ┬─────┬──────┯━━━━━━━━━━━━━──│
+    │ └│──────────────────│─────│──────│───────────────│
+    │  └──────────────────│─────│──────│───────────────checked against `Nat -> Nat`; while checking the body of this function; binds disagreeing : Nat -> Nat
+    │                     │     │      │               checked against `-F Nat`; while checking the body of this function; binds p : Nat
+    │                     │     │      a stage the call's earlier arguments exclude
+    │                     │     checked against `Nat`; while synthesising the function this applies
+    │                     │     synthesised; while forcing this
+    │                     checked against `-F Nat`; while finishing the type of this
+    │
+    ├ note: `disagreeing` is refused with StagesDisagree, as its expectation states
+    ╰ help: change the call's arguments so that they stand at one stage
+
+error[StagesDisagree]: the call's arguments stand at stages that no single stage of the callee's stage parameter fits
+    ╭▸ corpus/pathological/data/sized-higher-order.gandr:109:3
+    │
+108 │   def suppliedApart[j : Size, k : Size](f : Nat[< j] -> Nat, x : Nat[< j]) -> Nat =
+    │   │                                     ┬                    ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds x : Nat
+    │   │                                     │
+    │ ┌─┘                                     checked against `(Nat -> Nat) -> Nat -> -F Nat`; while checking the body of this function; binds f : Nat -> Nat
+    │ │
+109 │ │   applyAt[.i = k] f x
+    │ │   ┯━━━━━━───────────│
+    │ └───│─────────────────┤
+    │     │                 checked against `(Nat -> Nat, Nat) -> Nat`; while checking the body of this thunk
+    │     a stage the call's earlier arguments exclude
+    │     checked against `-F Nat`; while synthesising the function this applies
+    │
+    ├ note: `suppliedApart` is refused with StagesDisagree, as its expectation states
+    ╰ help: change the call's arguments so that they stand at one stage
+
+error[OutOfFragment.Stage]: a stage that refines no data type, names no binder of its signature, or was minted by a judgement outside the kernel is not supported here
+    ╭▸ corpus/pathological/data/sized-higher-order.gandr:115:11
+    │
+114 │   def suppliedUnshown[j : Size](n : Nat) -> Nat =
+    │   │                             ─ checked against `Nat -> -F Nat`; while checking the body of this function; binds n : Nat
+    │ ┌─┘
+    │ │
+115 │ │   let m = predAt[.i = j] n
+    │ │   ┬──     ┯━━━━━──────────
+    │ │   │       │
+    │ │   │       no rule for this former
+    │ │   │       synthesised; while synthesising the function this applies
+    │ │   checked against `-F Nat`; while synthesising the computation this runs where a value is read
+116 │ │   m
+    │ └───┘ checked against `Nat -> Nat`; while checking the body of this thunk
+    │
+    ├ note: `suppliedUnshown` is refused with OutOfFragment.Stage, as its expectation states
+    ╰ help: write the kernel-visible type without a stage

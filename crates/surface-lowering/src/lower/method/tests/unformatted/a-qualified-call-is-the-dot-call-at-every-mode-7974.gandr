@@ -1,0 +1,23 @@
+{COUNTER}def pair : List(Integer) ;
+def pair = cons 1 (cons 2 nil) ;
+module Places where {{
+  def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) {{ self.#[0] }}
+  def nth[m : Mode](self : m List(Integer), i : Integer) -> View[m](Integer) {{ self.#[i] }}
+}}
+module Outer where {{
+  module Inner where {{
+    def first[m : Mode](self : m List(Integer)) -> -F View[m](Integer) {{ self.#[0] }}
+  }}
+}}
+def counted() -> -F Integer {{
+  var s = 1;
+  let n = Counter.read s;
+  let _ = Counter.bump s 2;
+  let m = Counter.spend s;
+  pure n + m
+}}
+def head() -> -F Integer {{ var xs = pair; let h = Places.first xs; pure h }}
+def nested() -> -F Integer {{ var xs = pair; let h = Outer.Inner.first xs; pure h }}
+def raised() -> -F Integer {{ var xs = pair; (Places.nth xs 1) as w {{ resume w (w + 3) }}; pure 0 }}
+def unheld(ys : List(Integer)) -> -F Integer {{ let h = Places.first ys; pure h }}
+def elaborated() -> -F Integer {{ var xs = pair; access shared xs as b {{ Places.first b }} }}

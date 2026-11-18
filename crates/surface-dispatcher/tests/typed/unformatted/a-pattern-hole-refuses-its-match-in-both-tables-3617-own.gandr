@@ -1,0 +1,2 @@
+data Color : Type where {{ | Red : Color | Green : Color | Blue : Color }}
+def pick(c : Color) -> -F Integer {{ match c {{ {arms} }} }}

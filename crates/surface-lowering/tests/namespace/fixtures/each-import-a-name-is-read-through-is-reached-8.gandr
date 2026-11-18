@@ -1,0 +1,2 @@
+import "./base.gandr";
+def measured() -> -F Integer { var s = 1; s.len () }

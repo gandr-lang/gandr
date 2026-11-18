@@ -1,0 +1,31 @@
+[package]
+name = "gandr-surface-lowering-exits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The exits family of gandr's lowering: early exits commuted to where a body ends, a loop's break, continue and re-entry, and the runs a computation asks for, over the lowering's base crate"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["control-flow", "gandr", "lowering", "no-std"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# The pinned anodized facade supplies the executable specifications. The base
+# crate holds the lowering's context, the records that the families share and
+# the `Families` trait, through which this family reads the context and calls
+# the other families. The kernel and core crates name the terms the family
+# mints, the grammar the tree's productions that a run's operand reads, and
+# the syntax crate the tree it reads.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering-base.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

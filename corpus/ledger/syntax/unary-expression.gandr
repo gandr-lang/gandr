@@ -1,0 +1,4 @@
+/// `unary_expression`: negation.
+@[checks]
+def negated(n : Integer) -> -F Integer =
+  return - n
