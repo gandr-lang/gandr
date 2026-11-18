@@ -40,6 +40,9 @@
 //!   declares one effect signature named by its library namespace, each
 //!   bodiless member an operation, and a declared namespace shadows a host
 //!   interface of its name.
+//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — anchor: a block's interface
+//!   stands in the row of each caller, and the block's check runs at the
+//!   block's own source.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
