@@ -16,4 +16,4 @@ def pick() -> Integer =
 /// `picked` calls the refused `pick` declaration.
 /// Its result type is unknown.
 @[refuses("UnknownConstant")]
-def picked() -> Integer { pick () }
+def picked() -> Integer = pick ();

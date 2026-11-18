@@ -29,10 +29,10 @@ module Successor : Model(PointedMonoid) where
     g (f x)
 
   /// `ident` returns its input.
-  def ident(x : Integer) -> Integer { x }
+  def ident(x : Integer) -> Integer = x;
 
   /// `succ` adds one.
-  def succ(x : Integer) -> Integer { x + 1 }
+  def succ(x : Integer) -> Integer = x + 1;
 
   def mul(
     f : Integer -> Integer,

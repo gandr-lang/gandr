@@ -45,7 +45,7 @@ pub module Endo : Model(Monoid) where
     g (f x)
 
   /// `ident` returns its input.
-  def ident(x : Integer) -> Integer { x }
+  def ident(x : Integer) -> Integer = x;
 
   def mul(
     f : Integer -> Integer,

@@ -16,10 +16,10 @@ pub module Seed :> *{type T, zero : T, next : T -> T, read : T -> Integer} where
   def zero = 0;
   /// `next` increments the counter.
   @[runs("fun (a) { a + 1 }")]
-  def next(n : T) -> T { n + 1 }
+  def next(n : T) -> T = n + 1;
   /// `read` converts a counter value to an integer.
   @[runs("fun (a) { a }")]
-  def read(n : T) -> Integer { n }
+  def read(n : T) -> Integer = n;
 }
 
 /// `MkCounter` creates a sealed counter from a counter argument.
@@ -42,8 +42,8 @@ module B = MkCounter(Seed);
 /// `a_once` steps the first abstract counter. A run answers it opaque at the
 /// seal of `A`.
 @[runs("⟨opaque at A⟩ : () -> A.T")]
-def a_once() -> A.T { A.step A.seed }
+def a_once() -> A.T = A.step A.seed;
 
 /// `b_twice` reads two steps of the second counter.
 @[runs("2")]
-def b_twice() -> Integer { let one = B.step B.seed; B.read (B.step one) }
+def b_twice() -> Integer = { let one = B.step B.seed; B.read (B.step one) };

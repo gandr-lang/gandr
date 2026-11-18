@@ -61,4 +61,4 @@ def letters = string.length stated;
 /// `exclaimed` appends an exclamation to a rejected phrase. Its type is
 /// unknown.
 @[refuses("UnknownConstant")]
-def exclaimed() -> String { string.append phrase "!" }
+def exclaimed() -> String = string.append phrase "!";

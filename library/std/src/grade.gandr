@@ -177,11 +177,11 @@ pub module Count : Model(Grade) where
   /// One.
   def one = Positive One;
   /// The sum.
-  def plus(a : Nat, b : Nat) -> Nat { addNat a b }
+  def plus(a : Nat, b : Nat) -> Nat = addNat a b;
   /// The product.
-  def times(a : Nat, b : Nat) -> Nat { mulNat a b }
+  def times(a : Nat, b : Nat) -> Nat = mulNat a b;
   /// The order.
-  def le(a : Nat, b : Nat) -> Bool { leNat a b }
+  def le(a : Nat, b : Nat) -> Bool = leNat a b;
 
 /// Usage, as an algebra a reader takes.
 pub def usage : Model Grade = pack Usage at Model Grade;

@@ -55,10 +55,10 @@ module Signs : Model(Monoid) where {
   /// `Plus` is the unit.
   def e = Plus;
   /// The product uses `times`.
-  def mul(x : Sign, y : Sign) -> Sign { times x y }
+  def mul(x : Sign, y : Sign) -> Sign = times x y;
   /// The left unit law follows by conversion.
   @[checks]
-  def unitL(x : Sign) -> Path(mul e x, x) { Path.here x }
+  def unitL(x : Sign) -> Path(mul e x, x) = Path.here x;
   /// The right unit law follows by cases.
   @[checks]
   def unitR(x : Sign) -> Path(mul x e, x) =

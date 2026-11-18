@@ -19,7 +19,7 @@ error[InertRead]: `manifest` reads the inert `version`; only another inert decla
 error[InertRead]: `leaked` reads the inert `packageEntries`; only another inert declaration reads one
    ╭▸ corpus/pathological/desc/module-reflection.gandr:32:75
    │
-32 │ def leaked(m : Model (Gandr.Package)) -> modelType(packagePresentation) { packageEntries m }
+32 │ def leaked(m : Model (Gandr.Package)) -> modelType(packagePresentation) = packageEntries m;
    │                                                                           ━━━━━━━━━━━━━━ an inert read
    │
    ├ note: `leaked` is refused with InertRead, as its expectation states
@@ -28,7 +28,7 @@ error[InertRead]: `leaked` reads the inert `packageEntries`; only another inert 
 error[InertRead]: `written` reads the inert `render`; only another inert declaration reads one
    ╭▸ corpus/pathological/desc/module-reflection.gandr:36:52
    │
-36 │ def written(m : Model (Gandr.Package)) -> String { render m }
+36 │ def written(m : Model (Gandr.Package)) -> String = render m;
    │                                                    ━━━━━━ an inert read
    │
    ├ note: `written` is refused with InertRead, as its expectation states

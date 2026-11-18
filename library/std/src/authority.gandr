@@ -17,6 +17,4 @@
 pub type Authority = Cap { print, eprint, read_line };
 
 /// The standard streams' root capability, opened from `authority`.
-pub def console(authority : Authority) -> Cap { print, eprint, read_line } {
-  authority
-}
+pub def console(authority : Authority) -> Cap { print, eprint, read_line } = authority;

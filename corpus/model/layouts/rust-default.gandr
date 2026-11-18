@@ -59,16 +59,16 @@ pub def mixed : Fields = Field "a" U8 (Field "b" U32 (Field "c" U16 Done));
 /// Mixed's fields by alignment, largest first: rustc prints `b`, `c`, `a`
 /// in 8 bytes.
 @[runs("Layout 8 4 (At \"b\" 0 (At \"c\" 4 (At \"a\" 6 End)))")]
-def mixedLayout() -> Layout { structLayout mixed }
+def mixedLayout() -> Layout = structLayout mixed;
 
 /// Wide's two bytes share the eight after `b`: rustc prints `b`, `a`, `c`
 /// in 16 bytes.
 @[runs("Layout 16 8 (At \"b\" 0 (At \"a\" 8 (At \"c\" 9 End)))")]
-def wideLayout() -> Layout { structLayout (Field "a" U8 (Field "b" U64 (Field "c" U8 Done))) }
+def wideLayout() -> Layout = structLayout (Field "a" U8 (Field "b" U64 (Field "c" U8 Done)));
 
 /// Small keeps its order: rustc prints `x`, `y` in 4 bytes.
 @[runs("Layout 4 2 (At \"x\" 0 (At \"y\" 2 End))")]
-def smallLayout() -> Layout { structLayout (Field "x" U16 (Field "y" U8 Done)) }
+def smallLayout() -> Layout = structLayout (Field "x" U16 (Field "y" U8 Done));
 
 /// Flagged's `bool` goes last, its niche at the end, not in the middle: rustc
 /// prints `c`, `a`, `b` in 4 bytes.

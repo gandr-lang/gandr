@@ -27,12 +27,12 @@ def isApplication(link : Theory) -> Integer =
 
 /// This value tests a qualified theory application.
 @[runs("1")]
-def theoryApplied() -> Integer { isApplication (Theory.App "f" Theory.End) }
+def theoryApplied() -> Integer = isApplication (Theory.App "f" Theory.End);
 
 /// The bare `App` is this source's.
 @[runs("App (Var 0) (Var 1)")]
-def bare() -> Tree { App (Var 0) (Var 1) }
+def bare() -> Tree = App (Var 0) (Var 1);
 
 /// Qualification keeps a source constructor's meaning.
 @[runs("App (Var 0) (Var 1)")]
-def qualified() -> Tree { Tree.App (Var 0) (Var 1) }
+def qualified() -> Tree = Tree.App (Var 0) (Var 1);

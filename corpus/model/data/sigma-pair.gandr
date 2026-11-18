@@ -22,7 +22,7 @@ def tag_of(p : *{n : Integer, w : Ix n}) -> Integer =
 
 /// The tag of `tagged`.
 @[runs("3")]
-def tag() -> Integer { tag_of tagged }
+def tag() -> Integer = tag_of tagged;
 
 /// The first component of a dependent pair, selected by its label.
 def index_of(p : *{n : Integer, w : Ix n}) -> Integer =
@@ -30,7 +30,7 @@ def index_of(p : *{n : Integer, w : Ix n}) -> Integer =
 
 /// The index of `tagged`.
 @[runs("3")]
-def index() -> Integer { index_of tagged }
+def index() -> Integer = index_of tagged;
 
 /// A pair whose second component is a loop at its first.
 def ring : *{n : Integer, v : Path[.A = Integer](n, n)} = *{2, Path.here 2};
@@ -111,7 +111,7 @@ def tagged_around : Path(tagged, tagged) = *{
 };
 
 /// Five, carried along `both` through the constant family.
-def moved() -> Integer { Path.walk (fun (s) { Integer }) both 5 }
+def moved() -> Integer = Path.walk (fun (s) { Integer }) both 5;
 
 /// A later entry's type can call an earlier entry.
 /// The printed second type, `Path[.A = Integer](e.0(0), 0)`, reads back to it.

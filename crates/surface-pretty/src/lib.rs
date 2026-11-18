@@ -1123,8 +1123,8 @@ quenchant_shape::reason_enum! {
 
 /// The definition `name` of `source`, `(ty, body)`, laid out at `page` whole.
 ///
-/// It is `def name(x₁ : A₁, …, xₙ : Aₙ) -> C { b }`, or `def rec` over a
-/// fixpoint, or `def name() -> B { b }` for a suspended computation; either
+/// It is `def name(x₁ : A₁, …, xₙ : Aₙ) -> C = b;`, or `def rec` over a
+/// fixpoint, or `def name() -> B = b;` for a suspended computation; either
 /// form writes a result `-F B` as `B`, the returner the lowering inserts, as
 /// either leaves out the exit the lowering infers, unless `B` is a value at a
 /// world or a region.
@@ -1135,41 +1135,41 @@ quenchant_shape::reason_enum! {
 ///   `body` is `thunk { fun (x₁) { … fun (xₙ) { b } … } }` — or `fun (x₁) { …
 ///   }` read as a value at an arrow, the thunk the checker inserts — `n` the
 ///   abstractions the arrows run through and `n ≥ 1` unless `C` is a returner
-///   `-F B`: the header `def name(x₁ : A₁, …, xₙ : Aₙ) -> C {` — `C` written
-///   `B` in the sugared form when it is `-F B` with no effect row — each type
-///   under the binders of the dependent arrows before it, then `b` as
+///   `-F B`: the header `def name(x₁ : A₁, …, xₙ : Aₙ) -> C` — `C` written `B`
+///   in the sugared form when it is `-F B` with no effect row — each type under
+///   the binders of the dependent arrows before it, then `b` as
 ///   [`present_computation`] writes it at a page two columns narrower under the
-///   context binding `x₁` to `xₙ`, each of its lines two columns in, then `}`.
-///   When `body` is instead `thunk { fun (x₁) { … fun (xₖ) { rec f { fun (xₖ₊₁)
-///   { … fun (xₙ) { b } … } } } … } }`, `k ≥ 0` of them outside the fixpoint
-///   and at least one inside, the header opens `def rec` and `b` stands under
-///   the context binding `x₁` to `xₖ`, `name`, then `xₖ₊₁` to `xₙ`. Each
-///   occurrence of the fixpoint's own binder is written with its claim:
-///   `name[<]` where the fixpoint claims structural recursion on a parameter,
-///   `name[>]` where it claims nothing; each call of it passes the uniform
-///   parameters `x₁` to `xₖ` as themselves before its own arguments. `xᵢ` is
-///   its dependent arrow's binder where the source names it and neither the
-///   definition nor an earlier parameter takes it, otherwise the next generated
-///   name that neither `name`, the definition nor an earlier parameter takes.
-///   Where a header type or the body keeps a value at a region binder, the
-///   header writes `[r : Region, …]` before the parameters, one binder per
-///   ordinal up to the greatest kept at, each `r`, `r1`, … where the definition
-///   takes no such name and named as a parameter is otherwise, and every `at`
-///   names its binder. Where `source` records a telescope for `constant`
-///   ([`CoreSource::naming_implicits`]) of one entry per parameter, each
-///   implicit `xᵢ` is written after the region binders as `xᵢ : Aᵢ`, `[xᵢ : Aᵢ,
-///   …]`, under the name the telescope records where nothing earlier takes it,
-///   and only the explicit parameters stand in the parentheses. Where the
-///   returner's row labels an instance of a theory whose entry `source` records
-///   ([`CoreSource::manifesting`]) at a region binder past every other the
-///   header writes, and a parameter is a capability at that binder, the row's
-///   label is the parameter's name, `[st : T with sort C = A]`, and neither the
-///   binder nor the parameter is written: `Cap {…}` names a host interface's
-///   operations alone. The presentation is approximate, its unspelled reasons
-///   collected, when a header type or the body is. Absent for any other shape,
-///   when no names for the parameters are found, and when the body abstracts
-///   fewer parameters than the arrows run through, whose result arrow the
-///   header reads no spelling of (#5219).
+///   context binding `x₁` to `xₙ`: ` = b;` when `b` is one line with no `;`,
+///   otherwise ` = {`, each line of `b` two columns in, then `};`. When `body`
+///   is instead `thunk { fun (x₁) { … fun (xₖ) { rec f { fun (xₖ₊₁) { … fun
+///   (xₙ) { b } … } } } … } }`, `k ≥ 0` of them outside the fixpoint and at
+///   least one inside, the header opens `def rec` and `b` stands under the
+///   context binding `x₁` to `xₖ`, `name`, then `xₖ₊₁` to `xₙ`. Each occurrence
+///   of the fixpoint's own binder is written with its claim: `name[<]` where
+///   the fixpoint claims structural recursion on a parameter, `name[>]` where
+///   it claims nothing; each call of it passes the uniform parameters `x₁` to
+///   `xₖ` as themselves before its own arguments. `xᵢ` is its dependent arrow's
+///   binder where the source names it and neither the definition nor an earlier
+///   parameter takes it, otherwise the next generated name that neither `name`,
+///   the definition nor an earlier parameter takes. Where a header type or the
+///   body keeps a value at a region binder, the header writes `[r : Region, …]`
+///   before the parameters, one binder per ordinal up to the greatest kept at,
+///   each `r`, `r1`, … where the definition takes no such name and named as a
+///   parameter is otherwise, and every `at` names its binder. Where `source`
+///   records a telescope for `constant` ([`CoreSource::naming_implicits`]) of
+///   one entry per parameter, each implicit `xᵢ` is written after the region
+///   binders as `xᵢ : Aᵢ`, `[xᵢ : Aᵢ, …]`, under the name the telescope records
+///   where nothing earlier takes it, and only the explicit parameters stand in
+///   the parentheses. Where the returner's row labels an instance of a theory
+///   whose entry `source` records ([`CoreSource::manifesting`]) at a region
+///   binder past every other the header writes, and a parameter is a capability
+///   at that binder, the row's label is the parameter's name, `[st : T with
+///   sort C = A]`, and neither the binder nor the parameter is written: `Cap
+///   {…}` names a host interface's operations alone. The presentation is
+///   approximate, its unspelled reasons collected, when a header type or the
+///   body is. Absent for any other shape, when no names for the parameters are
+///   found, and when the body abstracts fewer parameters than the arrows run
+///   through, whose result arrow the header reads no spelling of (#5219).
 /// - provides: the declaration a function definition reads back as, written
 ///   whole: a recursive one where `def name = body` would write a fixpoint the
 ///   surface spells only in its declaration, a suspended computation as the
@@ -1214,7 +1214,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::goldens::a_body_short_of_its_arrows_is_written_in_halves_5219`
 #[spec(ensures: |ref ret| match *ret {
     Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
-        && presentation.as_ref().ends_with('}')
+        && presentation.as_ref().ends_with(';')
         && !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
     Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -1687,29 +1687,38 @@ pub fn present_whole(
         Rowed::Yes => appended_unreturned(&mut text, &mut written, &returned),
         Rowed::No => appended(&mut text, &mut written, &returned),
     }
-    text.push_str(" {");
-    // The body is written a line at a time, two columns in: a name moves by
-    // where its line lands.
-    let mut line_from = 0_u64;
-    for line in spelled.as_ref().lines() {
-        text.push('\n');
-        if !line.is_empty() {
-            text.push_str("  ");
+    // One line with no statement is the body alone after `=`. Any other
+    // body is a block after `=`, written a line at a time, two columns in: a
+    // name moves by where its line lands.
+    if spelled.as_ref().contains(['\n', ';']) {
+        text.push_str(" = {");
+        let mut line_from = 0_u64;
+        for line in spelled.as_ref().lines() {
+            text.push('\n');
+            if !line.is_empty() {
+                text.push_str("  ");
+            }
+            let line_end = line_from.saturating_add(u64::from(written_bytes(Glyphs(line))));
+            let moved = OutputBytes::from(
+                u64::from(written_bytes(Glyphs(&text))).saturating_sub(line_from),
+            );
+            written.extend(
+                spelled
+                    .names
+                    .iter()
+                    .filter(|name| (line_from .. line_end).contains(&u64::from(name.start())))
+                    .map(|name| name.shifted(moved)),
+            );
+            text.push_str(line);
+            line_from = line_end.saturating_add(1_u64);
         }
-        let line_end = line_from.saturating_add(u64::from(written_bytes(Glyphs(line))));
-        let moved =
-            OutputBytes::from(u64::from(written_bytes(Glyphs(&text))).saturating_sub(line_from));
-        written.extend(
-            spelled
-                .names
-                .iter()
-                .filter(|name| (line_from .. line_end).contains(&u64::from(name.start())))
-                .map(|name| name.shifted(moved)),
-        );
-        text.push_str(line);
-        line_from = line_end.saturating_add(1_u64);
+        text.push_str("\n};");
     }
-    text.push_str("\n}");
+    else {
+        text.push_str(" = ");
+        appended(&mut text, &mut written, &spelled);
+        text.push(';');
+    }
     parts.push(returned);
     parts.push(spelled);
     Ok(Maybe::Present(Presentation {

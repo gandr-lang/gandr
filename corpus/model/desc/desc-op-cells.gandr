@@ -22,4 +22,4 @@ data NatAdd : Type where {
 
 /// Two plus one runs to three.
 @[runs("Succ (Succ (Succ Zero))")]
-def two_plus_one() -> NatAdd { add (Succ (Succ Zero)) (Succ Zero) }
+def two_plus_one() -> NatAdd = add (Succ (Succ Zero)) (Succ Zero);

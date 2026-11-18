@@ -19,7 +19,7 @@ data Chain : Type where
   | Link : (prev : Chain, test : Chain -> Two) --> Chain
 
 /// `linked` returns `R` for a link and `L` for the start.
-def linked(c : Chain) -> Two { match c -> -F Two { | Start => L | Link(p, t) => R } }
+def linked(c : Chain) -> Two = match c -> -F Two { | Start => L | Link(p, t) => R };
 
 /// Two links over the start, each holding `linked`.
 def twice : Chain = Link (Link Start linked) linked;

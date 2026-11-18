@@ -71,7 +71,7 @@ module PathCells : Model(Glob) where
   type Hom(a : Ob, b : Ob) = Path[.A = Circle](a, b);
 
   /// `id` returns path reflexivity.
-  def id(a : Circle) -> Path(a, a) { Path.here a }
+  def id(a : Circle) -> Path(a, a) = Path.here a;
 
   /// `comp` joins paths.
   def comp(
@@ -116,7 +116,7 @@ module Discharged : Model(Glob) where
   type Hom(a : Ob, b : Ob) = Path(a, b);
 
   /// `id` returns path reflexivity.
-  def id(a : Circle) -> Path(a, a) { Path.here a }
+  def id(a : Circle) -> Path(a, a) = Path.here a;
 
   /// `comp` joins paths.
   def comp(

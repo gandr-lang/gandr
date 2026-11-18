@@ -38,7 +38,7 @@ def rec conditions(chain : Theory) -> Integer =
 
 /// `Pi` states one condition.
 @[runs("1")]
-def stated() -> Integer { match Pi {
+def stated() -> Integer = match Pi {
   | Presents(sorts, opers, rules) => conditions rules
   | _ => 0
-} }
+};

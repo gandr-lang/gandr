@@ -33,7 +33,7 @@ pub def multiplies(s : Model Semigroup) -> Integer =
 /// `asSemigroup` gives the checker an endomorphism monoid when it
 /// requires a semigroup.
 @[runs("0")]
-def asSemigroup() -> Integer { multiplies endoMonoid }
+def asSemigroup() -> Integer = multiplies endoMonoid;
 
 /// `throughTheDiamond` reads either inclusion route to `Semigroup`. The two
 /// routes give one reduct.
@@ -49,7 +49,7 @@ pub def endoManifest : Model Monoid with sort M = (Integer -> Integer) = *{
 
 /// `manifestAsSemigroup` reads the manifest model as a semigroup.
 @[runs("0")]
-def manifestAsSemigroup() -> Integer { multiplies endoManifest }
+def manifestAsSemigroup() -> Integer = multiplies endoManifest;
 
 /// `manifestDiamond` reads either manifest inclusion route to `Semigroup`. The
 /// two routes compose to one inclusion.

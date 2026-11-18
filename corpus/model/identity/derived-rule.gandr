@@ -35,10 +35,10 @@ module Parity : Model(Group) where {
   def e = Zero;
   def a = One;
   def b = Zero;
-  def inv(x : Bit) -> Bit { x }
-  def mul(x : Bit, y : Bit) -> Bit { xor x y }
+  def inv(x : Bit) -> Bit = x;
+  def mul(x : Bit, y : Bit) -> Bit = xor x y;
   @[checks]
-  def unitL(x : Bit) -> Path(mul e x, x) { Path.here x }
+  def unitL(x : Bit) -> Path(mul e x, x) = Path.here x;
   @[checks]
   def unitR(x : Bit) -> Path(mul x e, x) =
     match x where
@@ -54,9 +54,9 @@ module Parity : Model(Group) where {
           | Zero => Path.here Zero
           | One => Path.here One
   @[checks]
-  def invInv(x : Bit) -> Path(inv (inv x), x) { Path.here x }
+  def invInv(x : Bit) -> Path(inv (inv x), x) = Path.here x;
   @[checks]
-  def invE() -> Path(inv e, e) { Path.here Zero }
+  def invE() -> Path(inv e, e) = Path.here Zero;
   @[checks]
   def invL(x : Bit) -> Path(mul (inv x) x, e) =
     match x where

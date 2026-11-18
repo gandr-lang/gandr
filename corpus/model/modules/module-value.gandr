@@ -29,7 +29,7 @@ module Up : Model(Ticker) where
   def start : Integer = 0;
 
   /// `step` adds one.
-  def step(n : Integer) -> Integer { n + 1 }
+  def step(n : Integer) -> Integer = n + 1;
 
 /// `packed` writes `Up` with `pack`.
 def packed : Model Ticker = pack Up at Model Ticker;
@@ -38,7 +38,7 @@ def packed : Model Ticker = pack Up at Model Ticker;
 def named : Model Ticker = Up;
 
 /// `namedIsPacked` equates both spellings.
-def namedIsPacked() -> Path(named, packed) { Path.here named }
+def namedIsPacked() -> Path(named, packed) = Path.here named;
 
 /// `ticked` steps any ticker value.
 def ticked(c : Model Ticker, n : c.C) -> c.C =
@@ -47,4 +47,4 @@ def ticked(c : Model Ticker, n : c.C) -> c.C =
 
 /// `upTicked` passes `Up` as a ticker value.
 @[runs("2")]
-def upTicked() -> Integer { ticked Up 1 }
+def upTicked() -> Integer = ticked Up 1;

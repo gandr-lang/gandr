@@ -29,7 +29,7 @@ def performsBoth(c : Cap { read }) -> [std.fs.Eff, Partial] Integer =
 
 /// The same interfaces listed the other way round are the same row:
 /// `performsBoth`'s call stands at it unchanged.
-def listedSwapped(c : Cap { read }) -> [Partial, std.fs.Eff] Integer { performsBoth c }
+def listedSwapped(c : Cap { read }) -> [Partial, std.fs.Eff] Integer = performsBoth c;
 
 /// `forcedAcross` forces a computation at an equivalent row order.
 def forcedAcross(t : +U (-F [Partial, std.fs.Eff] Integer)) -> [std.fs.Eff, Partial] Integer =
@@ -37,4 +37,4 @@ def forcedAcross(t : +U (-F [Partial, std.fs.Eff] Integer)) -> [std.fs.Eff, Part
 
 /// `widenedRow` runs `Partial` where its row also holds `std.fs.Eff`.
 @[runs("3")]
-def widenedRow() -> [std.fs.Eff, Partial] Integer { once 3 }
+def widenedRow() -> [std.fs.Eff, Partial] Integer = once 3;

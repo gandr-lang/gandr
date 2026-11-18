@@ -17,7 +17,7 @@ module Counting : Model(Nat) where {
 
   def zero : Integer = 0;
 
-  def succ(n : Integer) -> Integer { n + 1 }
+  def succ(n : Integer) -> Integer = n + 1;
 
   /// Two successors of zero: the derived operations run.
   @[runs("2")]

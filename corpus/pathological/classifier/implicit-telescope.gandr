@@ -21,47 +21,47 @@ import "../../classifier/implicit-telescope.gandr";
 /// `twice` with its implicits omitted: the argument determines `m`, and
 /// nothing determines the combination.
 @[refuses("ImplicitUnsolved")]
-def undetermined() -> Integer { twice 3 }
+def undetermined() -> Integer = twice 3;
 
 /// `chosen` with its implicit omitted: `x` is a value of `t`, and nothing
 /// determines which.
 @[refuses("ImplicitUnsolved")]
-def unchosen() -> Integer { chosen Integer }
+def unchosen() -> Integer = chosen Integer;
 
 /// `konst` with its implicit omitted where the lambda returns its own
 /// argument: the only solution for `b` is the lambda's binder `t`, which the
 /// call does not stand under.
 @[refuses("ImplicitUnsolved")]
-def escaping() -> Integer { konst (fun (t) { fun (y) { y } }) }
+def escaping() -> Integer = konst (fun (t) { fun (y) { y } });
 
 /// `same(3)` where a unit is expected: the argument solves `a` as `Integer`,
 /// and the returned type then disagrees with `Unit`.
 @[refuses("TypeMismatch")]
-def disagreeing() -> Unit { same 3 }
+def disagreeing() -> Unit = same 3;
 
 /// The implicit written among the parentheses, as for `sameExplicit`.
 @[refuses("ImplicitInParentheses")]
-def inParentheses() -> Integer { same Integer 3 }
+def inParentheses() -> Integer = same Integer 3;
 
 /// A resident naming no implicit of `same`.
 @[refuses("UnresolvedName")]
-def strayResident() -> Integer { same[.b = Integer] 3 }
+def strayResident() -> Integer = same[.b = Integer] 3;
 
 /// A positional resident after a named one: the positions come first.
 @[refuses("MalformedForm")]
-def positionAfterName() -> Integer { same[.a = Integer, Integer] 3 }
+def positionAfterName() -> Integer = same[.a = Integer, Integer] 3;
 
 /// A second positional resident, where `same`'s block writes one implicit.
 @[refuses("MalformedForm")]
-def positionPastBlock() -> Integer { same[Integer, Integer] 3 }
+def positionPastBlock() -> Integer = same[Integer, Integer] 3;
 
 /// A position supplies `a`, and a name supplies it again.
 @[refuses("MalformedForm")]
-def suppliedTwice() -> Integer { same[Integer, .a = Integer] 3 }
+def suppliedTwice() -> Integer = same[Integer, .a = Integer] 3;
 
 /// A compound value by position: it goes by name, `chosen[.x = 3 + 4]`.
 @[refuses("MalformedForm")]
-def compoundPosition() -> Integer { chosen[3 + 4] Integer }
+def compoundPosition() -> Integer = chosen[3 + 4] Integer;
 
 /// `same` named as a value, its implicit unsupplied.
 @[refuses("ImplicitUnsupplied")]
@@ -74,7 +74,7 @@ def chosenStanding : Type -> Integer = chosen[7];
 
 /// Two implicits each typed by the other: no order binds either first.
 @[refuses("TelescopeCycle")]
-def tangled[a : b, b : a](x : a) -> a { return x }
+def tangled[a : b, b : a](x : a) -> a = return x;
 
 /// `chosen` with its implicit omitted in a declared type with no body: no
 /// body poses a comparison, so nothing determines `x`.

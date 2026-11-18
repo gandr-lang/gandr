@@ -18,7 +18,7 @@ def unwrap(a : Type, p : Parcel a) -> a =
 
 /// This source opens an integer parcel at a bare type.
 @[runs("1")]
-def openedBare() -> Integer { unwrap Integer (Enclosed 1 : Parcel Integer) }
+def openedBare() -> Integer = unwrap Integer (Enclosed 1 : Parcel Integer);
 
 /// A parcel of a parcel opened at the applied type `Parcel(Integer)`: the
 /// argument is the type, never a constructor applied to nothing.

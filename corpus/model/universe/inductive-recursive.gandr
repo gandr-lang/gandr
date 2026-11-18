@@ -37,7 +37,7 @@ rec {
 
 /// The `toNat` family picks the natural code at each natural.
 @[checks]
-def toNat(x : Nat) -> -F UPi { return NatC }
+def toNat(x : Nat) -> -F UPi = return NatC;
 
 /// The `idDecoded` value is the identity at the decode of the
 /// function code from
@@ -48,7 +48,7 @@ def idDecoded = thunk { fun (x) { return x } };
 
 /// The `appliedDecoded` run applies the identity at its decoded type.
 @[runs("Succ Zero")]
-def appliedDecoded() -> -F Nat { idDecoded (Succ Zero) }
+def appliedDecoded() -> -F Nat = idDecoded (Succ Zero);
 
 /// The `idNat` value uses the same identity at the plain
 /// arrow between naturals.

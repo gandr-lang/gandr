@@ -16,9 +16,9 @@ def graded = +U[1] (-F Integer);
 def greatest : Type[+, 18446744073709551615];
 
 @[runs("fun (a) { fun (b) { b } }")]
-def id(a : Type, x : a) -> -F a { return x }
+def id(a : Type, x : a) -> -F a = return x;
 
-def chosen() -> -F Type { return Integer }
+def chosen() -> -F Type = return Integer;
 
 @[refuses("TypeMismatch")]
 def escaped : +U (Integer -> -F Integer);

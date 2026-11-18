@@ -22,7 +22,7 @@ error[NoFiller.Omitted]: the module omits this law, and its sides do not convert
    ╭▸ corpus/pathological/modules/model-laws.gandr:41:1
    │
 41 │ ┏ module FloatEqMissing : Model(Eq) with sort Carrier = f64 where
-42 │ ┃   def eq(a : f64, b : f64) -> Bool { float64.eq a b }
+42 │ ┃   def eq(a : f64, b : f64) -> Bool = float64.eq a b;
 43 │ ┃   law sym = ~admitted;
    │ ┗━━━━━━━━━━━━━━━━━━━━━━┛ a law whose sides do not convert: found `(a : f64) -> Path[.A = Bool](FloatEqMissing.eq a a, true)`
    │

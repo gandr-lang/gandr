@@ -27,29 +27,29 @@ pub module LCSyntax : Model(LC) where
   def empty : N = Z;
 
   /// A substitution applied to a term.
-  def subTm(g : N, d : N, t : Term, s : Env) -> Term { subst t s }
+  def subTm(g : N, d : N, t : Term, s : Env) -> Term = subst t s;
 
   /// Context extension adds one variable.
-  def extendTm(g : N) -> N { S g }
+  def extendTm(g : N) -> N = S g;
 
   /// Weakening shifts every index by one.
-  def pTm(g : N) -> Env { Shift (S Z) }
+  def pTm(g : N) -> Env = Shift (S Z);
 
   /// The newest variable is index zero.
-  def qTm(g : N) -> Term { Ix Z }
+  def qTm(g : N) -> Term = Ix Z;
 
   /// Single substitution conses its term onto the identity.
-  def singleTm(g : N, a : Term) -> Env { Cons a (Shift Z) }
+  def singleTm(g : N, a : Term) -> Env = Cons a (Shift Z);
 
   /// `Lift` is the substitution constructor. Its indices start with target
   /// `d` and then source `g`.
-  def liftTm(d : N, g : N, s : Env) -> Env { Lift s }
+  def liftTm(d : N, g : N, s : Env) -> Env = Lift s;
 
   /// Abstraction binds index zero.
-  def lam(g : N, t : Term) -> Term { Lam t }
+  def lam(g : N, t : Term) -> Term = Lam t;
 
   /// Application.
-  def app(g : N, t : Term, u : Term) -> Term { Ap t u }
+  def app(g : N, t : Term, u : Term) -> Term = Ap t u;
 
   /// Law 1, `subQSingle`.
   def law1(g : N, b : Term) -> Path(subTm (S g) g (qTm g) (singleTm g b), b) =

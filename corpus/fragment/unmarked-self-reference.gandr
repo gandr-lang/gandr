@@ -28,7 +28,7 @@ def rec marked(n : Nat) -> Nat =
     | Zero => n
     | Succ(p) => marked[<] p
 
-def rec idle(n : Nat) -> Nat { n }
+def rec idle(n : Nat) -> Nat = n;
 
 /// A parameter written before the staged one may vary across the call: it is
 /// passed to the fixpoint as a leading argument.
@@ -47,9 +47,9 @@ def rec ahead(n : Nat) -> Nat =
 
 /// A recursive definition of no parameter binds its own name over its body,
 /// which this one never calls.
-def rec constant() -> Nat { Zero }
+def rec constant() -> Nat = Zero;
 
 /// A descent claimed by a recursive definition of no parameter: its fixpoint
 /// stands at no arrow, so the call has nothing to descend on.
 @[refuses("ShapeMismatch")]
-def rec spin() -> Nat { spin[<] () }
+def rec spin() -> Nat = spin[<] ();

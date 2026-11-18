@@ -16,11 +16,11 @@ def unlessZero(n : Integer) -> [Partial] Integer =
 
 /// Three is not zero, so the loop returns it.
 @[runs("3")]
-def unlessZeroThree() -> [Partial] Integer { unlessZero 3 }
+def unlessZeroThree() -> [Partial] Integer = unlessZero 3;
 
 /// Zero is zero, so the loop never runs.
 @[runs("0")]
-def unlessZeroZero() -> [Partial] Integer { unlessZero 0 }
+def unlessZeroZero() -> [Partial] Integer = unlessZero 0;
 
 /// Its argument when that is at most zero, else zero.
 def atMostZero(n : Integer) -> [Partial] Integer =
@@ -29,7 +29,7 @@ def atMostZero(n : Integer) -> [Partial] Integer =
 
 /// Zero is at most zero, so the loop returns it.
 @[runs("0")]
-def atMostZeroZero() -> [Partial] Integer { atMostZero 0 }
+def atMostZeroZero() -> [Partial] Integer = atMostZero 0;
 
 /// Its argument when that is at least one, else zero.
 def atLeastOne(n : Integer) -> [Partial] Integer =
@@ -38,8 +38,8 @@ def atLeastOne(n : Integer) -> [Partial] Integer =
 
 /// One is at least one, so the loop returns it.
 @[runs("1")]
-def atLeastOneOne() -> [Partial] Integer { atLeastOne 1 }
+def atLeastOneOne() -> [Partial] Integer = atLeastOne 1;
 
 /// Zero is not at least one, so the loop never runs.
 @[runs("0")]
-def atLeastOneZero() -> [Partial] Integer { atLeastOne 0 }
+def atLeastOneZero() -> [Partial] Integer = atLeastOne 0;

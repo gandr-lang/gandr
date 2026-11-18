@@ -42,7 +42,7 @@ pub def pair() -> Vec Integer (Succ (Succ Zero)) =
     (VCons Zero 2 (VNil : Vec Integer Zero) : Vec Integer (Succ Zero))
 
 /// A vector `m` long is `plus(m, Zero)` long. The sum computes `m`.
-def padded(m : Nat, v : Vec Integer m) -> Vec Integer plus(m, Zero) { v }
+def padded(m : Nat, v : Vec Integer m) -> Vec Integer plus(m, Zero) = v;
 
 /// An element before a vector `plus(m, k)` long. Its field writes the length
 /// as the sum that the types write.

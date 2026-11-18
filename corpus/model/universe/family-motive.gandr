@@ -17,14 +17,14 @@ data Seq(a : Type) : Type where
   | Cons : (h : a, t : Seq a) --> Seq a
 
 /// At each index `d`, the paths from `d` to `a`.
-def pathsTo(a : Integer) -> Integer -> Type { fun (d) { return Path d a } }
+def pathsTo(a : Integer) -> Integer -> Type = fun (d) { return Path d a };
 
 /// At each index `d`, the bridges from `d` to `a`.
-def bridgesTo(a : Integer) -> Integer -> Type { fun (d) { return Bridge d a } }
+def bridgesTo(a : Integer) -> Integer -> Type = fun (d) { return Bridge d a };
 
 /// At each index `d`, the flows from `d` to `a`.
-def flowsTo(a : Integer) -> Integer -> Type { fun (d) { return Flow d a } }
+def flowsTo(a : Integer) -> Integer -> Type = fun (d) { return Flow d a };
 
 /// At each index, the sequences over the integers: a declared family takes
 /// the same spelling as a builtin former.
-def sequencesAt(a : Integer) -> Integer -> Type { fun (d) { return Seq Integer } }
+def sequencesAt(a : Integer) -> Integer -> Type = fun (d) { return Seq Integer };

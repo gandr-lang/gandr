@@ -581,8 +581,8 @@ pub fn members<'source>(
 /// after it, whose leaves are `written` as the source writes them and
 /// `definition` respelled, merged into one function form: the signature's
 /// leaves to its name, the parameters, `->`, the returner its type
-/// suspends, then the definition's body in braces — what the thunk the
-/// source writes holds, or the computation the respelling left the checker
+/// suspends, then `=` and the definition's body with its `;` — what the thunk
+/// the source writes holds, or the computation the respelling left the checker
 /// to wrap, under one lambda binder per parameter.
 ///
 /// # Specification
@@ -599,7 +599,8 @@ pub fn members<'source>(
 ///   `A` its domain, then `->` and the result: `-F B` with `B` parenthesised
 ///   unless it is one token, one bracketed group or a name applied to one, or
 ///   `B` alone where `returning` is [`Returning::Bare`] and the signature wrote
-///   `B` as an alias's result; then the innermost body in braces.
+///   `B` as an alias's result; then `=`, the innermost body, in braces unless
+///   [`alone`] finds it one expression alone, and `;`.
 /// - provides: the leaves [`crate::format_beside`] lays out for the two forms.
 /// - fails: never.
 /// - panics: none.
@@ -757,11 +758,18 @@ pub fn merged<'leaves, 'source>(
     }
     out.extend([
         made(" ", Material::Whitespace),
-        made("{", Material::Token),
+        made("=", Material::Token),
         made(" ", Material::Whitespace),
     ]);
+    let block = alone(inside) == Alone::No;
+    if block {
+        out.extend([made("{", Material::Token), made(" ", Material::Whitespace)]);
+    }
     out.extend_from_slice(inside);
-    out.extend([made(" ", Material::Whitespace), made("}", Material::Token)]);
+    if block {
+        out.extend([made(" ", Material::Whitespace), made("}", Material::Token)]);
+    }
+    out.push(made(";", Material::Token));
     for leaf in &mut out {
         leaf.owner = first.owner;
     }
@@ -1019,6 +1027,63 @@ fn spanned<'leaves, 'source>(
     leaves.get(first ..= last)
 }
 
+/// Whether a body's leaves are one expression alone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Alone
+{
+    /// They are: the body stands after `=` with no braces.
+    Yes,
+    /// They may hold a statement: the body stands in a block after `=`.
+    No,
+}
+
+/// Whether the leaves `body` are one expression alone. A statement's
+/// keyword or a `;`, an assignment or a line break outside every bracketed
+/// group marks a statement, so such a body is no expression alone.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Alone::Yes`] when `body` holds a token, its first token is no
+///   `let`, `var`, `module` or `import`, and outside every bracketed group it
+///   holds no `;`, `=`, `+=`, `-=` or `*=` token and no whitespace with a line
+///   break; [`Alone::No`] otherwise.
+/// - panics: none.
+/// - executable: none — the clause names the leaves' bracket depth at each
+///   token, which no predicate on `body` and the result states more simply.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a body of one operand moves alone after `=`, and a body
+///   of statements moves in a block after `=`.
+/// - witness: `tests::rewrite::a_brace_body_moves_after_the_equals_6318`
+fn alone(body: &[Leaf<'_>]) -> Alone
+{
+    let mut depth = 0_usize;
+    let mut first = true;
+    for leaf in body {
+        let text = <&str>::from(leaf.text);
+        if leaf.material == Material::Whitespace {
+            if depth == 0 && text.contains('\n') {
+                return Alone::No;
+            }
+            continue;
+        }
+        if first && matches!(text, "let" | "var" | "module" | "import") {
+            return Alone::No;
+        }
+        first = false;
+        if OPENERS.contains(&text) {
+            depth = depth.saturating_add(1);
+        }
+        else if CLOSERS.contains(&text) {
+            depth = depth.saturating_sub(1);
+        }
+        else if depth == 0 && matches!(text, ";" | "=" | "+=" | "-=" | "*=") {
+            return Alone::No;
+        }
+    }
+    if first { Alone::No } else { Alone::Yes }
+}
+
 /// Whether a token is a name a binder may take.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Identifier
@@ -1124,7 +1189,7 @@ fn tokens<'leaves>(leaves: &'leaves [Leaf<'_>]) -> Vec<Token<'leaves>>
 ///
 /// # Specification
 /// trivial.
-fn trimmed<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> &'leaves [Leaf<'source>]
+pub fn trimmed<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> &'leaves [Leaf<'source>]
 {
     let start = leaves
         .iter()

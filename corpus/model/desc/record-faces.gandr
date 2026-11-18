@@ -69,7 +69,7 @@ def secured_local : Config.#{.port = 443, .tls = true} = local;
 def home : String = "localhost";
 
 /// The port of a configuration whose host is the name `home`.
-def home_port(c : Config.#{.host = home}) -> Integer { c.port }
+def home_port(c : Config.#{.host = home}) -> Integer = c.port;
 
 /// The coercion gives `local` the host `home`. The kernel reads the name
 /// `home` as its value when it replays the coercion.
@@ -82,10 +82,10 @@ def local_port : Integer = home_port (local);
 def faced : Config.#{secure ↦ *{.port = 443, .tls = true}} = *{.host = "localhost"};
 
 /// The port a configuration on the secure port fixes: 443.
-def port_of(c : Config.#{.port = 443, .tls = true}) -> Integer { c.port }
+def port_of(c : Config.#{.port = 443, .tls = true}) -> Integer = c.port;
 
 /// The host of a configuration on the secure face, written in ASCII.
-def host_of(c : Config.#{secure |-> *{.port = 443, .tls = true}}) -> String { c.host }
+def host_of(c : Config.#{secure |-> *{.port = 443, .tls = true}}) -> String = c.host;
 
 /// The port of the configuration by its fields.
 def secured_port : Integer = port_of (secured);
@@ -94,7 +94,7 @@ def secured_port : Integer = port_of (secured);
 def local_host : String = host_of (local);
 
 /// The port of any configuration.
-def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer { c.port }
+def any_port(c : *{host : String, port : Integer, tls : Bool}) -> Integer = c.port;
 
 /// `secured` stands at `Config` as its whole record, which holds the fixed
 /// port.
@@ -109,7 +109,7 @@ def secured_whole : Config = secured;
 def default_port : Integer = 443;
 
 /// A selection of a fixed field reads the name the reader fixes.
-def named_port(c : Config.#{.port = default_port}) -> Integer { c.port }
+def named_port(c : Config.#{.port = default_port}) -> Integer = c.port;
 
 /// A configuration on the default port, by its free fields.
 def defaulted : Config.#{.port = default_port} = *{.host = "localhost", .tls = true};
@@ -123,7 +123,7 @@ def defaulted_port : Integer = named_port (defaulted);
 def both_port(c : Config.#{
   secure ↦ *{.port = 443, .tls = true},
   addr ↦ *{.host = "localhost", .port = 443}
-}) -> Integer { c.port }
+}) -> Integer = c.port;
 
 /// `local` stands at the system by the coercion in: each of its fields
 /// converts with the value that the system fixes.

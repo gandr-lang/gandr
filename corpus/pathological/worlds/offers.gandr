@@ -37,9 +37,9 @@ pub module Counted : Model(Kept) with sort V = Integer where
   /// A computation answers an integer.
   type C = Integer;
   /// Hands the key on.
-  def get(key : Integer, k : Integer -> Integer) -> Integer { k key }
+  def get(key : Integer, k : Integer -> Integer) -> Integer = k key;
   /// Drops the write and runs what comes after.
-  def put(key : Integer, value : Integer, k : Integer) -> Integer { k }
+  def put(key : Integer, value : Integer, k : Integer) -> Integer = k;
 
 /// A store at other sorts, and no console.
 pub offers [store = Counted];

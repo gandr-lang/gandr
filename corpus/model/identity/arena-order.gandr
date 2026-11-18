@@ -24,32 +24,32 @@ def relabelling : Path[.A = Type](
 ) = equiv swapFirstTwo swapFirstTwo;
 
 /// The `nextABC` ring allocates `a`, then `b`, then `c`.
-def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { match i {
+def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) = match i {
   | +{.0 = u} => +{.1 = +{.0 = u}}
   | +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}}
   | +{.1 = +{.1 = u}} => +{.0 = u}
-} }
+};
 
 /// The `labelABC` function labels ids in allocation order.
-def labelABC(i : Unit + (Unit + Unit)) -> Integer { match i {
+def labelABC(i : Unit + (Unit + Unit)) -> Integer = match i {
   | +{.0 = u} => 1
   | +{.1 = +{.0 = u}} => 2
   | +{.1 = +{.1 = u}} => 3
-} }
+};
 
 /// The `nextBAC` ring allocates `b`, then `a`, then `c`.
-def nextBAC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { match i {
+def nextBAC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) = match i {
   | +{.0 = u} => +{.1 = +{.1 = u}}
   | +{.1 = +{.0 = u}} => +{.0 = u}
   | +{.1 = +{.1 = u}} => +{.1 = +{.0 = u}}
-} }
+};
 
 /// The `labelBAC` function labels ids in allocation order.
-def labelBAC(i : Unit + (Unit + Unit)) -> Integer { match i {
+def labelBAC(i : Unit + (Unit + Unit)) -> Integer = match i {
   | +{.0 = u} => 2
   | +{.1 = +{.0 = u}} => 1
   | +{.1 = +{.1 = u}} => 3
-} }
+};
 
 /// The `builtABC` arena starts at `a`.
 def builtABC : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Integer} = *{
@@ -91,11 +91,11 @@ def walk(r : *{ids : Type, start : ids, next : ids -> ids, label : ids -> Intege
 
 /// The consumer reaches `c` in the first order.
 @[runs("3")]
-def walkedABC() -> Integer { walk builtABC }
+def walkedABC() -> Integer = walk builtABC;
 
 /// The consumer reaches `c` in the second order.
 @[runs("3")]
-def walkedBAC() -> Integer { walk builtBAC }
+def walkedBAC() -> Integer = walk builtBAC;
 
 /// The arena path makes both consumer results equal.
 def walkedAlike() -> Path(walk builtABC, walk builtBAC) =

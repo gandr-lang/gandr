@@ -58,4 +58,4 @@ def rec envs(g : Ctx, d : Ctx) -> Type =
 def extendEnv(g : Ctx, a : ObjTy, d : Ctx, rho : envs(g, d), v : sem(a, d)) -> envs(
   Extend g a,
   d
-) { *{rho, v} }
+) = *{rho, v};

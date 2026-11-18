@@ -1,7 +1,7 @@
 error[OutOfFragment.Arity]: the type path cannot take 2 operands
    ╭▸ corpus/pathological/modules/family-applied.gandr:22:15
    │
-22 │ def twice(x : Shapes.Same(Integer, Bool)) -> Integer { 0 }
+22 │ def twice(x : Shapes.Same(Integer, Bool)) -> Integer = 0;
    │               ━━━━━━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
    │
    ├ note: `twice` is refused with OutOfFragment.Arity, as its expectation states
@@ -10,7 +10,7 @@ error[OutOfFragment.Arity]: the type path cannot take 2 operands
 error[OutOfFragment.Arity]: the type path cannot take 1 operands
    ╭▸ corpus/pathological/modules/family-applied.gandr:26:14
    │
-26 │ def flat(x : Shapes.Count(Integer)) -> Integer { 0 }
+26 │ def flat(x : Shapes.Count(Integer)) -> Integer = 0;
    │              ━━━━━━━━━━━━━━━━━━━━━ the wrong number of operands
    │
    ├ note: `flat` is refused with OutOfFragment.Arity, as its expectation states
@@ -19,7 +19,7 @@ error[OutOfFragment.Arity]: the type path cannot take 1 operands
 error[OutOfFragment.projection_expression]: the type path is not supported yet
    ╭▸ corpus/pathological/modules/family-applied.gandr:30:18
    │
-30 │ def selected(x : Shapes.Same(Integer).Count) -> Integer { 0 }
+30 │ def selected(x : Shapes.Same(Integer).Count) -> Integer = 0;
    │                  ━━━━━━━━━━━━━━━━━━━━━━━━━━ a form the fragment does not admit
    │
    ├ note: `selected` is refused with OutOfFragment.projection_expression, as its expectation states
@@ -28,8 +28,8 @@ error[OutOfFragment.projection_expression]: the type path is not supported yet
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/modules/family-applied.gandr:34:47
    │
-34 │ def other(x : Shapes.Same(Integer)) -> Bool { x }
-   │ ┬─────────┬───────────────┬────────────┬──────┯──
+34 │ def other(x : Shapes.Same(Integer)) -> Bool = x;
+   │ ┬─────────┬───────────────┬────────────┬──────┯─
    │ │         │               │            │      │
    │ │         │               │            │      its type does not convert: expected `Bool`, found `Integer`
    │ │         │               │            the type it is checked against

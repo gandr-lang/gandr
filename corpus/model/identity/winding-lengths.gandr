@@ -21,12 +21,12 @@ import "./ladder-base.gandr";
 
 /// A word of a hundred loops winds a hundred times.
 @[runs("Tt")]
-def wound100() -> Top { forceInt (wind (loops n100)) }
+def wound100() -> Top = forceInt (wind (loops n100));
 
 /// A word of a thousand loops winds a thousand times.
 @[runs("Tt")]
-def wound1000() -> Top { forceInt (wind (loops n1k)) }
+def wound1000() -> Top = forceInt (wind (loops n1k));
 
 /// A word of a hundred thousand loops winds a hundred thousand times.
 @[runs("Tt")]
-def wound100000() -> Top { forceInt (wind (loops n100k)) }
+def wound100000() -> Top = forceInt (wind (loops n100k));

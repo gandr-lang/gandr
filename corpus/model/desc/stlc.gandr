@@ -115,17 +115,17 @@ pub module Syntax : Model(STLC) where
   /// The base type.
   def base : ObjTy = Base;
   /// The function type.
-  def arr(a : ObjTy, b : ObjTy) -> ObjTy { Arr a b }
+  def arr(a : ObjTy, b : ObjTy) -> ObjTy = Arr a b;
   /// The empty context.
   def empty : Ctx = Empty;
   /// One more entry.
-  def ext(g : Ctx, a : ObjTy) -> Ctx { Extend g a }
+  def ext(g : Ctx, a : ObjTy) -> Ctx = Extend g a;
   /// The variable of the last entry.
-  def vz(g : Ctx, a : ObjTy) -> Var (Extend g a) a { Here g a }
+  def vz(g : Ctx, a : ObjTy) -> Var (Extend g a) a = Here g a;
   /// A variable past one more entry.
-  def vs(g : Ctx, a : ObjTy, x : Var g a, b : ObjTy) -> Var (Extend g b) a { There g a b x }
+  def vs(g : Ctx, a : ObjTy, x : Var g a, b : ObjTy) -> Var (Extend g b) a = There g a b x;
   /// A variable as a term.
-  def var(g : Ctx, a : ObjTy, x : Var g a) -> Tm g a { V g a x }
+  def var(g : Ctx, a : ObjTy, x : Var g a) -> Tm g a = V g a x;
   /// An abstraction.
   def lam(g : Ctx, a : ObjTy, b : ObjTy, t : Tm (Extend g a) b) -> Tm g (Arr a b) =
     Lam g a b t
@@ -197,7 +197,7 @@ def redex() -> Tm (Extend Empty Base) Base =
 /// The redex has four nodes: an application, an abstraction and two
 /// variables.
 @[runs("4")]
-def redexSize() -> Integer { size (Extend Empty Base) Base (redex ()) }
+def redexSize() -> Integer = size (Extend Empty Base) Base (redex ());
 
 /// Environments: a semantic value for each entry of `g`, at the context `d`.
 pub data SemEnv : (g : Ctx, d : Ctx) --> Type where
@@ -230,7 +230,7 @@ rec {
 
 /// The depth of `Base -> Base` as reification reads it: one arrow.
 @[runs("1")]
-def arrowDepth() -> Integer { reifyDepth (Arr Base Base) Empty }
+def arrowDepth() -> Integer = reifyDepth (Arr Base Base) Empty;
 
 /// The lookup of a variable in an environment. Each inner case omits `ENil`
 /// and learns the indices of `ECons` from the equations that it binds.

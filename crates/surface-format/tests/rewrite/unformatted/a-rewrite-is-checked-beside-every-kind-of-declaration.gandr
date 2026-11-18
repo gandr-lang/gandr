@@ -10,6 +10,6 @@ module Pair :> *{type Kept, one : Kept} where {
   def one = 1;
 }
 
-def lost() -> Integer { migrate [nowhere] { pure 1 } }
+def lost() -> Integer = migrate [nowhere] { pure 1 };
 
 def pair : *{Integer, String};

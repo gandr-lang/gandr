@@ -103,11 +103,11 @@ pub def observe(m : Model Counter) -> Integer =
 
 /// The consumer reads the upward counter.
 @[runs("1")]
-def observedUp() -> Integer { observe upModel }
+def observedUp() -> Integer = observe upModel;
 
 /// The consumer reads the downward counter.
 @[runs("1")]
-def observedDown() -> Integer { observe downModel }
+def observedDown() -> Integer = observe downModel;
 
 /// The consumer gives equal readings for related models.
 def observedAlike() -> Path(observe upModel, observe downModel) =

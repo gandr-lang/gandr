@@ -29,8 +29,8 @@ def manifest(m : Model (Gandr.Package)) -> String =
 /// A package's entries, read by a declaration with no `@[ inert ]`. The
 /// entries hold the model's inert fields, so this is refused.
 @[refuses("InertRead")]
-def leaked(m : Model (Gandr.Package)) -> modelType(packagePresentation) { packageEntries m }
+def leaked(m : Model (Gandr.Package)) -> modelType(packagePresentation) = packageEntries m;
 
 /// A package's lines, written by a declaration with no `@[ inert ]`.
 @[refuses("InertRead")]
-def written(m : Model (Gandr.Package)) -> String { render m }
+def written(m : Model (Gandr.Package)) -> String = render m;

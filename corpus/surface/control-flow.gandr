@@ -30,7 +30,7 @@ def first(n : Nat) -> [Partial] Nat =
 
 /// The value the `break` left with, one further.
 @[runs("Succ (Succ Zero)")]
-def first_zero() -> [Partial] Nat { become first Zero }
+def first_zero() -> [Partial] Nat = become first Zero;
 
 /// Each arm of a case leaves the loop with its own value.
 def pick(n : Nat) -> [Partial] Nat =
@@ -43,7 +43,7 @@ def pick(n : Nat) -> [Partial] Nat =
 
 /// The successor arm leaves with the predecessor.
 @[runs("Succ (Succ Zero)")]
-def pick_two() -> [Partial] Nat { become pick (Succ (Succ Zero)) }
+def pick_two() -> [Partial] Nat = become pick (Succ (Succ Zero));
 
 /// A `return` inside the loop leaves the function; `continue` runs
 /// the loop again.
@@ -56,7 +56,7 @@ def leave(n : Nat) -> [Partial] Nat =
 
 /// One is a successor, so its predecessor is returned.
 @[runs("Zero")]
-def leave_one() -> [Partial] Nat { become leave (Succ Zero) }
+def leave_one() -> [Partial] Nat = become leave (Succ Zero);
 
 /// A loop whose body hands the rest of the run to another function.
 def hand(n : Nat) -> [Partial] Nat =
@@ -64,7 +64,7 @@ def hand(n : Nat) -> [Partial] Nat =
 
 /// The handed-on call returns at once.
 @[runs("Succ Zero")]
-def hand_one() -> [Partial] Nat { become hand (Succ Zero) }
+def hand_one() -> [Partial] Nat = become hand (Succ Zero);
 
 /// A `while` that returns from its first pass when its condition holds.
 def until_done(n : Integer) -> [Partial] Integer =
@@ -73,11 +73,11 @@ def until_done(n : Integer) -> [Partial] Integer =
 
 /// Three is above zero, so the loop returns it.
 @[runs("3")]
-def until_three() -> [Partial] Integer { become until_done 3 }
+def until_three() -> [Partial] Integer = become until_done 3;
 
 /// Zero is not above zero, so the loop never runs.
 @[runs("0")]
-def until_none() -> [Partial] Integer { become until_done 0 }
+def until_none() -> [Partial] Integer = become until_done 0;
 
 /// A bare `break` leaves the loop with unit, and what follows reads the binder.
 def sift(n : Nat) -> [Partial] Nat =
@@ -90,7 +90,7 @@ def sift(n : Nat) -> [Partial] Nat =
 
 /// Zero breaks at once.
 @[runs("Zero")]
-def sift_zero() -> [Partial] Nat { become sift Zero }
+def sift_zero() -> [Partial] Nat = become sift Zero;
 
 /// A loop inside a handler's body leaves with its value to the body.
 def handled(n : Nat) -> [Partial] Nat =
@@ -104,7 +104,7 @@ def handled(n : Nat) -> [Partial] Nat =
 
 /// The loop's value, through the `pure` clause.
 @[runs("Succ (Succ Zero)")]
-def handled_zero() -> [Partial] Nat { become handled Zero }
+def handled_zero() -> [Partial] Nat = become handled Zero;
 
 @[refuses("OutsideLoop")]
 def stray(n : Nat) -> Nat =
@@ -134,12 +134,12 @@ def find_succ(xs : List Nat, otherwise : Nat) -> Nat =
 
 /// The search returns from the second cell.
 @[runs("Succ Zero")]
-def find_one() -> Nat { become find_succ (cons Zero (cons (Succ (Succ Zero)) nil)) Zero }
+def find_one() -> Nat = become find_succ (cons Zero (cons (Succ (Succ Zero)) nil)) Zero;
 
 /// The search reaches the empty list, which leaves the loop with unit, and
 /// returns what it was given.
 @[runs("Succ Zero")]
-def find_none() -> Nat { become find_succ (cons Zero nil) (Succ Zero) }
+def find_none() -> Nat = become find_succ (cons Zero nil) (Succ Zero);
 
 /// A `for` ending a body runs it on every cell and returns unit.
 def for_each(xs : List Nat) -> Unit =

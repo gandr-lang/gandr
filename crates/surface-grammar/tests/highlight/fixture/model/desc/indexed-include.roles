@@ -153,6 +153,6 @@
 1405..1410 Type "Model"
 1411..1411 Other ""
 1411..1417 Type "Scoped"
-1418..1419 Other "{"
+1418..1419 Other "="
 1420..1421 Variable "m"
-1422..1423 Other "}"
+1421..1422 Other ";"

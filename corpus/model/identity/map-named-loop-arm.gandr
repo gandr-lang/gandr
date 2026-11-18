@@ -18,20 +18,16 @@ import "./circle-base.gandr";
 
 /// The map that keeps the circle: the point to itself, the loop to the named
 /// loop.
-def keepNamed(c : Circle) -> Circle {
-  match c {
-    | Base => Base
-    | loop => loop
-  }
-}
+def keepNamed(c : Circle) -> Circle = match c {
+  | Base => Base
+  | loop => loop
+};
 
 /// The map that keeps the circle, its loop arm the one-letter word.
-def keepWord(c : Circle) -> Circle {
-  match c {
-    | Base => Base
-    | loop => loop ∷ Path.here Base
-  }
-}
+def keepWord(c : Circle) -> Circle = match c {
+  | Base => Base
+  | loop => loop ∷ Path.here Base
+};
 
 /// The image of the loop under `keepNamed` is the loop.
 def keptLoop : Path[.A = Path[.A = Circle](Base, Base)](

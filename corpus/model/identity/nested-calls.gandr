@@ -54,7 +54,7 @@ def bound(k : Integer -> (Integer -> Integer), s : Integer) -> Integer =
   f s
 
 /// The `apply` function calls a function argument.
-def apply(f : Integer -> Integer, x : Integer) -> Integer { f x }
+def apply(f : Integer -> Integer, x : Integer) -> Integer = f x;
 
 /// The `bound` and `apply` forms give the same result.
 /// Conversion reads each form as a bind over the call.

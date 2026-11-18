@@ -31,7 +31,7 @@ def rec size(t : Tree) -> Nat =
     }
 
 /// Every branch a leaf.
-def leaves(x : Two) -> Tree { Leaf }
+def leaves(x : Two) -> Tree = Leaf;
 
 /// A node over two leaves.
 def cherry : Tree = Node leaves;

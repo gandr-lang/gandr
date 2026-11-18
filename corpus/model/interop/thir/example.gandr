@@ -180,7 +180,7 @@ pub def identityMeets(
   v : Value,
   k : Value -> Type,
   h : identitySpec(Identity, v, k)
-) -> wpFn(spec, identityBody, v, k) { h }
+) -> wpFn(spec, identityBody, v, k) = h;
 
 /// `example`'s specification: the postcondition at one for true and at
 /// zero for false.

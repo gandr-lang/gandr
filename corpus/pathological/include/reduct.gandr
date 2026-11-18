@@ -16,4 +16,4 @@ def absorbs(z : Model LeftZero) -> Integer =
 
 /// `noZero` tries to read a monoid model as `LeftZero`.
 @[refuses("TypeMismatch")]
-def noZero() -> Integer { absorbs endoManifest }
+def noZero() -> Integer = absorbs endoManifest;

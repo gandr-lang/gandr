@@ -17,7 +17,7 @@ import std.quantum (Amplitude, Ket, eighth, ground, hadamard, norm, plus);
 /// `H T H` on `|0⟩`: the amplitudes `(2 + √2 + √2 i)/4` and
 /// `(2 − √2 − √2 i)/4`.
 @[runs("Ket (Amp 2 1 0 1 (Halved (Halved Whole))) (Amp 2 (- 1) 0 (- 1) (Halved (Halved Whole)))")]
-def circuit() -> Ket { hadamard (eighth (hadamard ground)) }
+def circuit() -> Ket = hadamard (eighth (hadamard ground));
 
 /// The squared moduli of the two amplitudes sum to one.
 @[runs("Amp 1 0 0 0 Whole")]

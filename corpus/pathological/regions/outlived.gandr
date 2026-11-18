@@ -11,7 +11,7 @@
 import std.process;
 
 /// `pass` returns a thunk at the same region.
-def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) { pure k }
+def pass[r : Region](k : (() -> Integer) at r) -> -F ((() -> Integer) at r) = pure k;
 
 /// `outlived` binds `pass` output at no region.
 @[refuses("TypeMismatch")]

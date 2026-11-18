@@ -19,12 +19,12 @@ import "./negation-composite.gandr";
 
 /// A hundred and one negations move `true` to `false`.
 @[runs("+{.1 = *{}}")]
-def negated100() -> Bool { negVal n100 }
+def negated100() -> Bool = negVal n100;
 
 /// A thousand and one negations move `true` to `false`.
 @[runs("+{.1 = *{}}")]
-def negated1000() -> Bool { negVal n1k }
+def negated1000() -> Bool = negVal n1k;
 
 /// A hundred thousand and one negations move `true` to `false`.
 @[runs("+{.1 = *{}}")]
-def negated100000() -> Bool { negVal n100k }
+def negated100000() -> Bool = negVal n100k;

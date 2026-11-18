@@ -13,8 +13,8 @@ module Flips : Model(ResetCount) where
   /// `zero` gives false.
   def zero = false;
   /// `incr` toggles the flag.
-  def incr(c : Bool) -> Bool { match c { | true => false | false => true } }
+  def incr(c : Bool) -> Bool = match c { | true => false | false => true };
   /// `read` maps true to one.
-  def read(c : Bool) -> Integer { match c { | true => 1 | false => 0 } }
+  def read(c : Bool) -> Integer = match c { | true => 1 | false => 0 };
   /// `reset` gives false.
-  def reset(c : Bool) -> Bool { false }
+  def reset(c : Bool) -> Bool = false;

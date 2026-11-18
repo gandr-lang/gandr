@@ -25,15 +25,15 @@ data NatUnits : Type where {
 
 /// At zero plus zero, the two unit rules overlap.
 @[runs("Zero")]
-def zero_plus_zero() -> NatUnits { add Zero Zero }
+def zero_plus_zero() -> NatUnits = add Zero Zero;
 
 /// At one plus zero, the right unit and recursion overlap.
 @[runs("Succ Zero")]
-def one_plus_zero() -> NatUnits { add (Succ Zero) Zero }
+def one_plus_zero() -> NatUnits = add (Succ Zero) Zero;
 
 /// The recursive rule alone evaluates two plus one.
 @[runs("Succ (Succ (Succ Zero))")]
-def two_plus_one_overlapping() -> NatUnits { add (Succ (Succ Zero)) (Succ Zero) }
+def two_plus_one_overlapping() -> NatUnits = add (Succ (Succ Zero)) (Succ Zero);
 
 /// Associativity overlaps with itself at `mul(mul(mul(a, b), c), d)`, and both
 /// ways round reach `mul(a, mul(b, mul(c, d)))`. The rewrite at the peak

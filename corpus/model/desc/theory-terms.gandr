@@ -39,7 +39,7 @@ def cancelled : Path(
 
 /// A term a function builds, which runs to itself.
 @[runs("Mag.mul Mag.one Mag.one")]
-def built() -> Terms Mag { Mag.mul Mag.one Mag.one }
+def built() -> Terms Mag = Mag.mul Mag.one Mag.one;
 
 /// Counts: no tick, then one more.
 data Ticks : Type where
@@ -55,7 +55,7 @@ def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
     | Tick(k) => Tick (joinLeft[<] k n)
 
 /// One more tick.
-def tick(n : Ticks) -> Ticks { Tick n }
+def tick(n : Ticks) -> Ticks = Tick n;
 
 /// No tick on the right, by induction.
 def rec noTickRight(n : Ticks) -> Path(joinLeft n NoTick, n) =
@@ -70,11 +70,11 @@ module Counts : Model(Mag) where
   /// The unit, no tick.
   def one : Ticks = NoTick;
   /// The product joins the counts.
-  def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft x y }
+  def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y;
   /// The left unit holds by conversion.
-  def unitL(x : Ticks) -> Path(mul one x, x) { Path.here x }
+  def unitL(x : Ticks) -> Path(mul one x, x) = Path.here x;
   /// The right unit holds by induction.
-  def unitR(x : Ticks) -> Path(mul x one, x) { noTickRight x }
+  def unitR(x : Ticks) -> Path(mul x one, x) = noTickRight x;
 
 /// The fold into the counts, which respects the counts' laws.
 @[respects(*{Counts.unitL, Counts.unitR})]
@@ -85,4 +85,4 @@ def rec intoCounts(t : Terms Mag) -> Ticks =
 
 /// A closed term folded into the counts.
 @[runs("NoTick")]
-def folded() -> Ticks { intoCounts (Mag.mul Mag.one (Mag.mul Mag.one Mag.one)) }
+def folded() -> Ticks = intoCounts (Mag.mul Mag.one (Mag.mul Mag.one Mag.one));

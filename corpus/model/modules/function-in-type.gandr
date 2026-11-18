@@ -16,19 +16,19 @@
 /// The types of a small theory, each a function to `Type`.
 module Standard where
   /// The type with one point.
-  def unit() -> Type { return Unit }
+  def unit() -> Type = return Unit;
 
   /// The type its argument names.
-  def same(a : Type) -> Type { a }
+  def same(a : Type) -> Type = a;
 
   /// A family that ignores its index.
-  def after(a : Type) -> Integer -> Type { fun (x) { a } }
+  def after(a : Type) -> Integer -> Type = fun (x) { a };
 
 /// The point, at the type a function of no arguments names.
-def point() -> Standard.unit() { *{} }
+def point() -> Standard.unit() = *{};
 
 /// An integer at the type a call names.
-def sameCalled() -> Standard.same(Integer) { 1 }
+def sameCalled() -> Standard.same(Integer) = 1;
 
 /// An integer at the type a call's result names at one more argument.
-def indexed(n : Integer) -> Standard.after(Integer)(n) { 2 }
+def indexed(n : Integer) -> Standard.after(Integer)(n) = 2;

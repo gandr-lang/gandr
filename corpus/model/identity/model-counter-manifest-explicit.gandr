@@ -40,4 +40,4 @@ def observeSharedWritten(a : Model Counter, b : Model Counter with sort C = a.C)
 
 /// The explicit map reads the twin at the up counter carrier.
 @[runs("1"), form(explicit)]
-def observedSharedUpWritten() -> -F Integer { become observeSharedWritten upModel upManifest }
+def observedSharedUpWritten() -> -F Integer = become observeSharedWritten upModel upManifest;

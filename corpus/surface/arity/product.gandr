@@ -36,4 +36,4 @@ def last(t : *{Integer, Integer, Integer}) -> -F Integer =
     | *{x, y, z} => return z
 
 @[runs("3")]
-def picked() -> -F Integer { last (*{1, 2, 3}) }
+def picked() -> -F Integer = last (*{1, 2, 3});

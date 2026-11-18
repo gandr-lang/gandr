@@ -1908,7 +1908,7 @@ fn a_definition_writes_each_type_at_its_stage_7906()
         let header = spelled.lines().next().unwrap_or_default();
         assert_eq!(
             header,
-            "def boundedAt[j : Size, k : Size, k < j](a : Nat[j], b : Nat[k]) -> Nat[< j] {",
+            "def boundedAt[j : Size, k : Size, k < j](a : Nat[j], b : Nat[k]) -> Nat[< j] = b;",
             "boundedAt in {form:?} writes each type at its stage"
         );
     }

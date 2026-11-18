@@ -39,7 +39,7 @@ def lawlessOriginOther : Path(Lawless.origin, Lawless.other) = *{};
 def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
   *{b, r},
   *{a, pathReflexivity a}
-) { *{} }
+) = *{};
 
 /// The unit type sealed, naming the refused law. The atom and its members
 /// check against their types; the kernel withholds them with the law, as it

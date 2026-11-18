@@ -27,7 +27,7 @@ pub def rec spinWords(n : Int) -> Words =
 
 /// The sample spins two successors to two loops.
 @[runs("Loop (Loop Nil)")]
-def spun() -> Words { spinWords (S (S Z)) }
+def spun() -> Words = spinWords (S (S Z));
 
 /// Conversion spins two successors to two loops.
 def spun_twice : Path[.A = Words](

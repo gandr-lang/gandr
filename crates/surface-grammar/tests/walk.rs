@@ -84,14 +84,15 @@ use crate::failure::Failure;
 /// and an offer's module, and by a flow applied to a module (#3461), then by
 /// a path between two signatures, `path p : A ≃ B` with its `into` and
 /// `from` bodies (#3487), then by the reader `.#{` that fixes a record type's
-/// fields, `T.#{.l = v}` and `T.#{f ↦ v}` (#6498).
-const BUILT_IN_FINGERPRINT: u64 = 0x8090_945a_1b2b_dbd5;
+/// fields, `T.#{.l = v}` and `T.#{f ↦ v}` (#6498), then by a definition's
+/// body after `=` (#6318).
+const BUILT_IN_FINGERPRINT: u64 = 0x6dc7_d66d_ff5b_0884;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3147);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3153);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 99;
@@ -135,14 +136,14 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     (".@", 1),
     (":", 251),
     (":>", 2),
-    (";", 133),
+    (";", 136),
     ("<", 18),
     ("<&", 1),
     ("<->", 24),
     ("<=", 1),
     ("<=>", 27),
     ("<>", 1),
-    ("=", 149),
+    ("=", 152),
     ("==", 1),
     ("==>", 27),
     ("=>", 36),

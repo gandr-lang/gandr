@@ -14,8 +14,8 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 error[TypeMismatch]: the type of this term does not match the type it is checked against
    ╭▸ corpus/pathological/universe/closed.gandr:33:47
    │
-33 │ def idAt(c : U, v : el(c)) -> el(Arrow c c) { v }
-   │ ┬────────┬──────┬─────────────────────────────┯──
+33 │ def idAt(c : U, v : el(c)) -> el(Arrow c c) = v;
+   │ ┬────────┬──────┬─────────────────────────────┯─
    │ │        │      │                             │
    │ │        │      │                             its type does not convert: expected `el(Arrow c c)`, found `el(c)`
    │ │        │      checked against `el(c) -> -F el(Arrow c c)`; while checking the body of this function; binds v : el(c)
@@ -41,7 +41,7 @@ error[TypeMismatch]: the type of this term does not match the type it is checked
 error[OutOfFragment.Arity]: the type variable cannot take 0 operands
    ╭▸ corpus/pathological/universe/closed.gandr:49:25
    │
-49 │ def unapplied(c : U) -> el { return c }
+49 │ def unapplied(c : U) -> el = return c;
    │                         ━━ the wrong number of operands
    │
    ├ note: `unapplied` is refused with OutOfFragment.Arity, as its expectation states

@@ -1,7 +1,7 @@
 error[ModelAmbiguous]: more than one module in scope answers the model implicit `e` this call to `eq` omits: `EqInteger` and `EqLoose`; supply the one meant as `eq[.e = …](…)`
    ╭▸ corpus/pathological/modules/model-include.gandr:19:30
    │
-19 │ def looselyEqual() -> Bool { 3 == 3 }
+19 │ def looselyEqual() -> Bool = 3 == 3;
    │                              ━━━━━━ a model implicit more than one module answers
    │
    ├ note: `looselyEqual` is refused with ModelAmbiguous, as its expectation states
@@ -22,7 +22,7 @@ error[DuplicateDefinition]: `least` is defined twice
 36 │   include Zero;
    │           ━━━━ written again here
 37 │   /// A second `least`.
-38 │   def least() -> Integer { 1 }
+38 │   def least() -> Integer = 1;
    │       ───── first written here
    │
    ├ note: `Shadowing` is refused with DuplicateDefinition, as its expectation states

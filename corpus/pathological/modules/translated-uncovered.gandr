@@ -24,4 +24,4 @@ import "../../model/modules/translated-newer.gandr" as newer : Wider via downgra
 
 /// The answer, which is refused with its import.
 @[refuses("SignatureMismatch.Missing")]
-def widened() -> Integer { newer.answer }
+def widened() -> Integer = newer.answer;

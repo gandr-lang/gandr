@@ -10,10 +10,10 @@ def rec down(n : Nat) -> -F Nat =
     | Succ(p) => become down[<] p
 
 @[checks]
-def produced(n : Nat) -> -F Nat { pure n }
+def produced(n : Nat) -> -F Nat = pure n;
 
 @[checks]
-def called(n : Nat) -> -F Nat { down n }
+def called(n : Nat) -> -F Nat = down n;
 
 @[checks]
 def one_arm(n : Nat) -> -F Nat =
@@ -38,10 +38,10 @@ def nested(n : Nat) -> -F Nat =
     }
 
 @[checks]
-def thunked() -> -F Nat { pure Zero }
+def thunked() -> -F Nat = pure Zero;
 
 @[checks]
-def lambda(n : Nat) -> -F Nat { pure n }
+def lambda(n : Nat) -> -F Nat = pure n;
 
 @[checks]
 def bound(n : Nat) -> -F Nat =

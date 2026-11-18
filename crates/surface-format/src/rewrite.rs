@@ -47,6 +47,7 @@ use crate::leaf::copied;
 use crate::merge::Joining;
 use crate::merge::Pairing;
 use crate::merge::Returning;
+use crate::merge::trimmed;
 use crate::reduct::Applied;
 use crate::reduct::Reduct;
 use crate::reduct::Reducts;
@@ -127,7 +128,7 @@ pub enum RewriteName
     /// only beside a checker that elaborates both.
     InsertedForget,
     /// A signature and its definition, merged: `def f : () => B ; def f =
-    /// thunk { c } ;` and `def f() -> -F B { c }`; both forms move it.
+    /// thunk { c } ;` and `def f() -> -F B = c ;`; both forms move it.
     FunctionForm,
     /// A signature and the definition directly after it, joined: `def x : T
     /// ; def x = e ;` and `def x : T = e ;`; the sugared form joins them and
@@ -137,6 +138,10 @@ pub enum RewriteName
     /// juxtaposition (#5326); both forms write the juxtaposition, an argument
     /// that is no atom in its parentheses.
     TypeApplication,
+    /// A definition's body after `=`: `def f() -> B { c }` and `def f() -> B
+    /// = c ;`, a body of statements in a block after `=`; both forms move it,
+    /// as `=` is the one spelling of a body.
+    BodyAfterEquals,
 }
 
 impl fmt::Display for RewriteName
@@ -169,6 +174,7 @@ impl fmt::Display for RewriteName
             Self::FunctionForm => "function-form",
             Self::JoinedDefinition => "joined-definition",
             Self::TypeApplication => "type-application",
+            Self::BodyAfterEquals => "body-after-equals",
         })
     }
 }
@@ -213,7 +219,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 32] = [
+pub const REWRITES: [Rewrite; 38] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -431,7 +437,7 @@ pub const REWRITES: [Rewrite; 32] = [
         direction: Direction::Sugar,
         mold: MoldName("def_value"),
         from: Spelling("def f : () -> B ; def f = thunk { c } ;"),
-        to: Spelling("def f() -> -F B { c }"),
+        to: Spelling("def f() -> -F B = c ;"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -439,7 +445,7 @@ pub const REWRITES: [Rewrite; 32] = [
         direction: Direction::Desugar,
         mold: MoldName("def_value"),
         from: Spelling("def f : +U (-F B) ; def f = thunk { c } ;"),
-        to: Spelling("def f() -> -F B { c }"),
+        to: Spelling("def f() -> -F B = c ;"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -472,6 +478,54 @@ pub const REWRITES: [Rewrite; 32] = [
         mold: MoldName("type_application"),
         from: Spelling("F(a, b)"),
         to: Spelling("F a b"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Sugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Sugar,
+        mold: MoldName("module_definition_member"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Sugar,
+        mold: MoldName("attributed_module_member"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Desugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Desugar,
+        mold: MoldName("module_definition_member"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::BodyAfterEquals,
+        direction: Direction::Desugar,
+        mold: MoldName("attributed_module_member"),
+        from: Spelling("def f() -> B { c }"),
+        to: Spelling("def f() -> B = c ;"),
         enabled: Enabled::On,
     },
 ];
@@ -2140,6 +2194,10 @@ impl<'source> Respelling<'_, 'source>
                 }
                 self.juxtaposed_type(&mut out, parts)?
             },
+            (RewriteName::BodyAfterEquals, Direction::Sugar | Direction::Desugar) => {
+                let rule = self.rule(at)?;
+                return self.after_equals(rule, parts, extent);
+            },
             (RewriteName::TailReturn, Direction::Sugar) => {
                 if self.tails.exit(extent) != Exit::Inferred {
                     return None;
@@ -2817,6 +2875,127 @@ impl<'source> Respelling<'_, 'source>
         Some(operand.band)
     }
 
+    /// The definition spanning `extent` whose parts are `parts`, its body in
+    /// the braces its head opens, written with the body after `=`: `= c ;`
+    /// for one expression, `= { … } ;` for statements. Nothing when no head
+    /// opens a brace body, or the brace holds copattern clauses or a comment.
+    ///
+    /// # Specification
+    /// - requires: `parts` are the parts of a form of the rule `rule`, in
+    ///   source order.
+    /// - ensures: `None` unless an own `{` stands before any own `=` and any
+    ///   own `where`, an own `def` stands before it, the last part is the own
+    ///   `}` that closes it, and no own `=>` and no comment stands between
+    ///   them; otherwise the form as written, but for ` = ` before the `{` and
+    ///   `;` after the `}`, both braces left out when they hold one operand
+    ///   alone.
+    /// - panics: none.
+    /// - executable: none — the clause names the roles of the form's parts,
+    ///   which no predicate on the arguments and the result states more simply.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a brace body moves after `=`, a recursive one too,
+    ///   and a body that holds a comment keeps its braces.
+    /// - witness: `tests::rewrite::a_brace_body_moves_after_the_equals_6318`
+    ///
+    /// # Cost
+    /// - allocation: the written leaves, growth within the form's parts
+    fn after_equals(
+        &mut self,
+        rule: MoldName,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Spelled<'source>>
+    {
+        let own = |part: &Part<'source>, text: &str| matches!(part.role, Role::Own(tile) if <&str>::from(tile) == text);
+        let open = parts
+            .iter()
+            .position(|part| own(part, "{") || own(part, "=") || own(part, "where"))?;
+        let close = parts.len().checked_sub(1)?;
+        let (opener, closer) = (parts.get(open)?, parts.get(close)?);
+        let defined = parts.get(.. open)?.iter().any(|part| own(part, "def"));
+        if !defined || !own(opener, "{") || !own(closer, "}") || open >= close {
+            return None;
+        }
+        let inner = parts.get(open.saturating_add(1) .. close)?;
+        // A comment in the body would move into the block after `=`, or
+        // beside the body alone, off the node that owns it: the formatter
+        // keeps each comment's owner.
+        let commentary = |part: &Part<'source>| {
+            matches!(part.role, Role::Comment)
+                || part.before.iter().chain(&part.leaves).any(|leaf| {
+                    matches!(
+                        leaf.material,
+                        Material::LineComment | Material::BlockComment
+                    )
+                })
+        };
+        if inner
+            .iter()
+            .chain([closer])
+            .any(|part| own(part, "=>") || commentary(part))
+        {
+            return None;
+        }
+        let lone = matches!(inner, [Part {
+            role: Role::Operand(_),
+            ..
+        }]);
+        let commented = if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            Commented::Yes
+        }
+        else {
+            Commented::No
+        };
+        let kept = self.kept(rule, parts, extent, (commented, Open::Yes));
+        let brace = |part: &Part<'source>| {
+            part.leaves
+                .iter()
+                .find(|leaf| leaf.material == Material::Token)
+                .map(|leaf| leaf.span)
+        };
+        let (open_span, close_span) = (brace(opener)?, brace(closer)?);
+        let at_open = kept
+            .leaves
+            .iter()
+            .position(|leaf| leaf.span == open_span && leaf.material == Material::Token)?;
+        let at_close = kept
+            .leaves
+            .iter()
+            .rposition(|leaf| leaf.span == close_span && leaf.material == Material::Token)?;
+        let head = kept.leaves.get(.. at_open)?;
+        let ends = head
+            .iter()
+            .rposition(|leaf| leaf.material != Material::Whitespace)
+            .map_or(0, |last| last.saturating_add(1));
+        let mut out = Builder {
+            leaves: Vec::with_capacity(kept.leaves.len().saturating_add(3)),
+            position: ByteSpan::new(extent.start(), extent.start()).unwrap_or(extent),
+            form: extent,
+            owner: Owner::Form(self.form),
+        };
+        out.leaves.extend_from_slice(head.get(.. ends)?);
+        out.spaced(Spelling(" = "));
+        if lone {
+            out.leaves.extend_from_slice(trimmed(
+                kept.leaves.get(at_open.saturating_add(1) .. at_close)?,
+            ));
+        }
+        else {
+            out.leaves
+                .extend_from_slice(kept.leaves.get(at_open ..= at_close)?);
+        }
+        out.token(Spelling(";"));
+        out.leaves
+            .extend_from_slice(kept.leaves.get(at_close.saturating_add(1) ..)?);
+        self.changed = Changed::Yes;
+        Some(Spelled {
+            leaves: out.leaves,
+            rewritten: Changed::Yes,
+            ..kept
+        })
+    }
+
     /// Write the call spanning `extent` whose parts are `parts` as its one
     /// argument, answering the argument's band, when its callee names a
     /// reduct the checker would apply there; nothing when a comment stands
@@ -3429,7 +3608,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 36] = [
+const RULES: [MoldName; 39] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3466,6 +3645,9 @@ const RULES: [MoldName; 36] = [
     MoldName("thunk_expression"),
     MoldName("become_expression"),
     STATEMENT_BLOCK,
+    MoldName("def_value"),
+    MoldName("module_definition_member"),
+    MoldName("attributed_module_member"),
 ];
 
 /// The block a form reaches through a `Sort::Block` hole, read among its

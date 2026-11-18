@@ -26,7 +26,7 @@ module Open : Model(Counter) where
 
   def start : Integer = 0;
 
-  def step(n : Integer) -> Integer { n + 1 }
+  def step(n : Integer) -> Integer = n + 1;
 
 /// `Sealed` hides its integer carrier.
 module Sealed :> Model(Counter) where
@@ -34,14 +34,14 @@ module Sealed :> Model(Counter) where
 
   def start : Integer = 0;
 
-  def step(n : Integer) -> Integer { n + 1 }
+  def step(n : Integer) -> Integer = n + 1;
 
 /// `openTwice` reads two transparent steps.
 @[runs("2")]
-def openTwice() -> Integer { let s = Open.start; Open.step (Open.step s) }
+def openTwice() -> Integer = { let s = Open.start; Open.step (Open.step s) };
 
 /// `sealedTwice` returns two sealed steps.
-def sealedTwice() -> Sealed.C { let s = Sealed.start; Sealed.step (Sealed.step s) }
+def sealedTwice() -> Sealed.C = { let s = Sealed.start; Sealed.step (Sealed.step s) };
 
 /// `Toggle` states an involutive step law.
 theory Toggle where
@@ -73,4 +73,4 @@ module Bits : Model(Toggle) where {
 
 /// `flippedTwice` runs the toggle twice.
 @[runs("Low")]
-def flippedTwice() -> Bit { Bits.flip (Bits.flip Low) }
+def flippedTwice() -> Bit = Bits.flip (Bits.flip Low);

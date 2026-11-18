@@ -44,10 +44,10 @@ pub def quadrupled(x : u32) -> [Boundary] u32 =
   Boundary.add y y
 
 /// Twice its argument.
-pub def double(x : Integer) -> Integer { x + x }
+pub def double(x : Integer) -> Integer = x + x;
 
 /// The first less the second: the arguments' order decides the answer.
-pub def less(x : Integer, y : Integer) -> Integer { x - y }
+pub def less(x : Integer, y : Integer) -> Integer = x - y;
 
 /// The function that adds `n`: a call answers it as a value, unapplied.
 def adder(n : Integer) -> Integer -> Integer =
@@ -55,11 +55,11 @@ def adder(n : Integer) -> Integer -> Integer =
 
 /// `double` at 21, as the Rust test calls it.
 @[runs("42")]
-def doubled() -> Integer { double 21 }
+def doubled() -> Integer = double 21;
 
 /// `less` at 19 and 7, as the Rust test calls it.
 @[runs("12")]
-def lessened() -> Integer { less 19 7 }
+def lessened() -> Integer = less 19 7;
 
 /// `adder` at 5, applied to 7.
 @[runs("12")]

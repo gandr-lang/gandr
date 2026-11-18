@@ -64,15 +64,15 @@ def falsity() -> Integer =
   n
 
 /// `doubled` accepts an annotated argument.
-def doubled(n : Integer) -> Integer { n + n }
+def doubled(n : Integer) -> Integer = n + n;
 
 /// An argument annotated with the parameter's type.
 @[runs("6")]
-def called() -> Integer { doubled (3 : Integer) }
+def called() -> Integer = doubled (3 : Integer);
 
 /// The function an application forces, annotated with its type at the head.
 @[runs("6")]
-def headed() -> Integer { (doubled : Integer -> Integer) 3 }
+def headed() -> Integer = (doubled : Integer -> Integer) 3;
 
 /// This bind runs a pair.
 /// Its annotated pattern binds both names under the product type.

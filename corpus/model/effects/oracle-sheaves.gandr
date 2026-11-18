@@ -63,7 +63,7 @@ def rec answer(
     | Node(a, k) => answer[<] s p x o (k (o a))
 
 /// Each query has two answers.
-def branches(a : Two) -> Type { return Two }
+def branches(a : Two) -> Type = return Two;
 
 /// One query, then a leaf at each answer.
 def asked : Tree Two branches Nat = Node
@@ -71,7 +71,7 @@ def asked : Tree Two branches Nat = Node
   (fun (u) { match u -> -F Tree Two branches Nat { | L => Leaf Zero | R => Leaf (Succ Zero) } });
 
 /// The oracle answers right.
-def right(a : Two) -> Two { R }
+def right(a : Two) -> Two = R;
 
 /// The run follows the right answer.
 @[runs("Succ Zero")]
@@ -168,9 +168,10 @@ def rec equifoliate(s : Type, p : s -> Type, x : Type, t : Tree s p x) -> Type =
     }))
 
 /// An equifoliate tree: a tree with its witness.
-def equiTree(s : Type, p : s -> Type, x : Type) -> Type {
-  return (type(*{t : Tree s p x, e : equifoliate(s, p, x, t)}))
-}
+def equiTree(s : Type, p : s -> Type, x : Type) -> Type = return (type(*{
+  t : Tree s p x,
+  e : equifoliate(s, p, x, t)
+}));
 
 /// A leaf is equifoliate.
 def equiLeaf(s : Type, p : s -> Type, x : Type, v : x) -> equiTree(s, p, x) =

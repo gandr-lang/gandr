@@ -70,11 +70,11 @@ pub def written(w : Written) -> Repr =
 
 /// `long` builds a string with twenty-four bytes and a terminating zero.
 /// Its loop and forced calls state `Partial`.
-pub def long() -> [Partial] Repr { own (repeatOnto 97 24 (Nil : List Integer)) }
+pub def long() -> [Partial] Repr = own (repeatOnto 97 24 (Nil : List Integer));
 
 /// `alone` appends `!` to an unshared long string and copies no buffer.
 @[runs("0")]
-def alone() -> [Partial] Integer { let s = force long; copies (push s 33) }
+def alone() -> [Partial] Integer = { let s = force long; copies (push s 33) };
 
 /// `shared` appends `!` to a copied long string.
 /// The write copies one buffer.

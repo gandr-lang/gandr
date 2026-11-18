@@ -36,7 +36,7 @@ def rec plus_run(n : Nat, m : Nat) -> Nat =
 
 /// This example adds two and three.
 @[runs("Succ (Succ (Succ (Succ (Succ Zero))))")]
-def five() -> Nat { plus_returned two three }
+def five() -> Nat = plus_returned two three;
 
 /// Two and three, added with the `return`s elided.
 @[runs("Succ (Succ (Succ (Succ (Succ Zero))))")]
@@ -52,4 +52,4 @@ def five_run : () -> Nat = plus_run two three;
 
 /// One more than two and three, the nested addition inside a successor.
 @[runs("Succ (Succ (Succ (Succ (Succ (Succ Zero)))))")]
-def six() -> Nat { Succ (plus two three) }
+def six() -> Nat = Succ (plus two three);

@@ -33,4 +33,4 @@ import "../../model/modules/translated-newer.gandr" as newer : Older via retagge
 
 /// The answer, which is refused with its import.
 @[refuses("SignatureMismatch.Missing")]
-def relayed() -> Integer { newer.answer }
+def relayed() -> Integer = newer.answer;

@@ -34,8 +34,8 @@ def grey(color : Color3) -> Bool =
 
 /// A colour whose red and green channels are one.
 @[runs("+{.0 = *{}}")]
-def greyRun() -> Bool { grey (RGB 5 5 9) }
+def greyRun() -> Bool = grey (RGB 5 5 9);
 
 /// A colour whose red channel exceeds its green.
 @[runs("+{.0 = *{}}")]
-def reddishRun() -> Bool { reddish (RGB 9 5 1) }
+def reddishRun() -> Bool = reddish (RGB 9 5 1);

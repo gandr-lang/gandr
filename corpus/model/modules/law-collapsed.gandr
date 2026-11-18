@@ -35,8 +35,8 @@ module CollapsedDot : Model(Collapsed) with sort Loop = Dot where
 
 /// The program reads the model's law at its carrier as a path from the one
 /// loop to itself.
-def one_loop() -> Path(Spot, Spot) { CollapsedDot.one Spot Spot }
+def one_loop() -> Path(Spot, Spot) = CollapsedDot.one Spot Spot;
 
 /// The entry returns the unit.
 @[runs("*{}")]
-def main() -> Unit { *{} }
+def main() -> Unit = *{};

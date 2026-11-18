@@ -38,4 +38,4 @@ def recoupled() -> Couple Integer (Maybe Integer) =
 def maybeRun : Type -> Type[-] = fun (A) { -F Maybe A };
 
 /// A present value against the named type at `Integer`.
-def presentOne() -> maybeRun(Integer) { Some 1 }
+def presentOne() -> maybeRun(Integer) = Some 1;

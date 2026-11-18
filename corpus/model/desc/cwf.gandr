@@ -84,17 +84,17 @@ pub module Standard : Model(CwF) where
   def empty : Type = Unit;
 
   /// Comprehension pairs a point with a point of its type.
-  def ext(g : Type, a : g -> Type) -> Type { return type(*{x : g, y : a(x)}) }
+  def ext(g : Type, a : g -> Type) -> Type = return type(*{x : g, y : a(x)});
 
   /// The identity function.
-  def id(g : Type) -> g -> g { fun (x) { x } }
+  def id(g : Type) -> g -> g = fun (x) { x };
 
   /// Composition of two functions.
   def comp(d : Type, g : Type, e : Type, s : d -> g, t : e -> d) -> e -> g =
     fun (x) { s (t x) }
 
   /// Every point goes to the one point.
-  def eps(g : Type) -> g -> Unit { fun (_x) { *{} } }
+  def eps(g : Type) -> g -> Unit = fun (_x) { *{} };
 
   /// A family after a function: it reads the family at the function's result.
   def subTy(g : Type, d : Type, a : g -> Type, s : d -> g) -> d -> Type =
@@ -107,10 +107,10 @@ pub module Standard : Model(CwF) where
     fun (x) { t (s x) }
 
   /// The first projection.
-  def p(g : Type, a : g -> Type) -> *{x : g, y : a(x)} -> g { fun (z) { z.0 } }
+  def p(g : Type, a : g -> Type) -> *{x : g, y : a(x)} -> g = fun (z) { z.0 };
 
   /// The point a pair holds first.
-  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g { z.0 }
+  def first(g : Type, a : g -> Type, z : *{x : g, y : a(x)}) -> g = z.0;
 
   /// The second projection, at the family read at the first.
   def q(g : Type, a : g -> Type) -> (z : *{x : g, y : a(x)}) -> a(first(g, a, z)) =
@@ -128,7 +128,7 @@ pub module Standard : Model(CwF) where
     fun (z) { *{s z, t z} }
 
 /// A family over the integers that is `Bool` at every point.
-def flags(_n : Integer) -> Type { return Bool }
+def flags(_n : Integer) -> Type = return Bool;
 
 /// The newest variable reads the second point of a pair.
 @[runs("+{.0 = *{}}")]
@@ -159,8 +159,8 @@ def rec lastIndices(chain : Theory) -> Integer =
 
 /// The CwF declares four sorts.
 @[runs("4")]
-def sorts() -> Integer { match CwF { | Presents(s, _o, _r) => links s | _ => 0 } }
+def sorts() -> Integer = match CwF { | Presents(s, _o, _r) => links s | _ => 0 };
 
 /// `Tm` has two index ports: a context and a type in it.
 @[runs("2")]
-def termIndices() -> Integer { match CwF { | Presents(s, _o, _r) => lastIndices s | _ => 0 } }
+def termIndices() -> Integer = match CwF { | Presents(s, _o, _r) => lastIndices s | _ => 0 };

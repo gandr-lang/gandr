@@ -34,4 +34,4 @@ data Shrub : Type where {
 
 /// A leaf written twice.
 @[runs("Node Leaf Leaf")]
-def twice_leaf() -> Shrub { twice Leaf }
+def twice_leaf() -> Shrub = twice Leaf;

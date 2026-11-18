@@ -25,7 +25,7 @@ pub data Pair : Type where
 pub module Pairs where {
   /// The pair, taken out of its hold.
   @[checks]
-  def take(self : consumed Pair) -> Pair { pure self }
+  def take(self : consumed Pair) -> Pair = pure self;
 }
 
 /// The pair `q` with its first component one more.

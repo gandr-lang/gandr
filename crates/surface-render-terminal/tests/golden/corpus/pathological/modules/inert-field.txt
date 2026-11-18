@@ -46,7 +46,7 @@ error[InertRead]: `shown` reads the inert `label`; only another inert declaratio
 error[InertRead]: `labelOf` reads the inert `label`; only another inert declaration reads one
    ╭▸ corpus/pathological/modules/inert-field.gandr:41:45
    │
-41 │ def labelOf(l : Model Labelled) -> String { l.label }
+41 │ def labelOf(l : Model Labelled) -> String = l.label;
    │                                             ━━━━━━━ an inert read
    │
    ├ note: `labelOf` is refused with InertRead, as its expectation states

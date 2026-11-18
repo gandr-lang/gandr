@@ -40,9 +40,7 @@ def tickerObserved(m : Model Ticker with sort C = Integer) -> Integer =
 /// readings manifest is asked: forgetting puts sorts back, and never moves a
 /// manifest from one sort to another.
 @[refuses("TypeMismatch")]
-def countsForReadings(m : Model ReadCounter with sort C = Integer) -> Model ReadCounter with sort R = Integer {
-  m
-}
+def countsForReadings(m : Model ReadCounter with sort C = Integer) -> Model ReadCounter with sort R = Integer = m;
 
 /// A count of one counter stepped by a second whose carrier is its own: the
 /// second's counts are not the first's.
@@ -59,7 +57,7 @@ def integersShared(m : Model Counter with sort C = Integer) -> Integer =
 
 /// A count of a sort the counter does not have.
 @[refuses("UnknownMember")]
-def countOfNothing(a : Model Counter, c : a.Nope) -> Integer { return 0 }
+def countOfNothing(a : Model Counter, c : a.Nope) -> Integer = return 0;
 
 /// A count of one counter stepped by a second counter's own step, read off
 /// the second's binder: the second's counts are not the first's.

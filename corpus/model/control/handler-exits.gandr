@@ -41,7 +41,7 @@ def left(n : Integer) -> Integer =
 
 /// `left` at five, by a run.
 @[runs("5")]
-def left_run() -> Integer { become left 5 }
+def left_run() -> Integer = become left 5;
 
 /// The operation's clause discards its continuation and answers for the
 /// handler.
@@ -86,11 +86,11 @@ def branch(n : Integer) -> Integer =
 
 /// The returning arm, by a run.
 @[runs("8")]
-def branch_zero() -> Integer { become branch 0 }
+def branch_zero() -> Integer = become branch 0;
 
 /// The continuing arm, through the operation and the `pure` clause.
 @[runs("102")]
-def branch_one() -> Integer { become branch 1 }
+def branch_one() -> Integer = become branch 1;
 
 /// `break` gives the loop value to its body.
 /// `looped` carries `Partial` through the handler.

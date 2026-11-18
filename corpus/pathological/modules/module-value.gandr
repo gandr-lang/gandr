@@ -28,7 +28,7 @@ module Bare where
   def start : Integer = 0;
 
   /// One more.
-  def step(n : Integer) -> Integer { n + 1 }
+  def step(n : Integer) -> Integer = n + 1;
 
 /// The unascribed module, named as a ticker.
 @[refuses("UnresolvedName")]

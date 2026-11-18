@@ -36,7 +36,7 @@ def holders(s : Repr) -> Integer =
 
 /// `aloneCopies` writes an unshared long string without copying.
 @[runs("0")]
-def aloneCopies() -> [Partial] Integer { let s = force long; copies (pushInPlace s 33) }
+def aloneCopies() -> [Partial] Integer = { let s = force long; copies (pushInPlace s 33) };
 
 /// `aloneHolders` reports one holder after an unshared write.
 @[runs("1")]
