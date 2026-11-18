@@ -544,6 +544,10 @@ impl RegisteredAttribute
     /// word names, which a core former reads by role
     /// ([`gandr_kernel_term::Builtin`]).
     pub const BUILTIN: Self = Self("builtin");
+    /// `native`: the signature it decorates is a declaration of the row of
+    /// the native table that its text names. The row gives the value, and
+    /// the declared type states the row's type.
+    pub const NATIVE: Self = Self("native");
     /// `traces`: the run of the declaration it decorates is recorded, and the
     /// payload states the web one channel's play decomposes to. It is the one
     /// attribute written more than once on a name, once per channel.
@@ -766,7 +770,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 20_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 21_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -802,6 +806,7 @@ const REGISTRY: [(&str, AttributeSchema); 20_usize] = [
         AttributeSchema::Word(gandr_kernel_term::Builtin::WORDS),
     ),
     (RegisteredAttribute::INERT.0, AttributeSchema::Marker),
+    (RegisteredAttribute::NATIVE.0, AttributeSchema::Text),
 ];
 
 impl AttributeRegistry
@@ -1972,6 +1977,7 @@ mod tests
                 AttributeSchema::Word(&["irSignature", "irPair", "irArgs", "irDecode"]),
             ),
             ("inert", AttributeSchema::Marker),
+            ("native", AttributeSchema::Text),
         ];
 
         for (spelling, schema) in expected {
@@ -2034,6 +2040,7 @@ mod tests
             ("boundary", "boundary"),
             ("builtins", "builtin"),
             ("inrt", "inert"),
+            ("natives", "native"),
         ];
 
         for (written, nearest) in expected {
