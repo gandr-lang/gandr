@@ -171,5 +171,18 @@ got=$(
 )
 [[ $got == "0 builds, failed, 1 pages name it" ]] || fail "#7486: a main that pins no toolchain builds nothing and pages its reason" "$got"
 
+# One configuration serves hosts whose home directories differ. A `checkout`
+# and a `page` entry that start with `~/` read under `$HOME`. An absolute
+# entry reads as written.
+# - see: #8000
+got=$(
+  setup "$scratch/home"
+  mkdir -p "${follow_config%/*}"
+  printf '%s\n' '{"checkout": "~/main", "interval": 300, "page": ["~/page.sh", "/abs/~/x", "coordinator"]}' > "$follow_config"
+  HOME=$scratch/home/user follow_configuration
+)
+[[ $got == "{\"checkout\":\"$scratch/home/user/main\",\"interval\":300,\"page\":[\"$scratch/home/user/page.sh\",\"/abs/~/x\",\"coordinator\"]}" ]] \
+  || fail "#8000: a checkout and a page entry under ~/ read under \$HOME" "$got"
+
 (( failed == 0 )) || exit 1
-echo "follow readings OK: 8 cases record, page and deploy as recorded"
+echo "follow readings OK: 9 cases record, page and deploy as recorded"

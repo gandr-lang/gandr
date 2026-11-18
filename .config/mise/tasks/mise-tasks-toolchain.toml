@@ -193,29 +193,48 @@ cargo build --release --locked -p gandr-lang --bin gandr
 .config/wasm/compare.bash target/release/gandr target/wasm32-wasip3/release/gandr.wasm
 '''
 
-# Each host's toolchain follows `main` (#4499), so no seat and no editor
-# reloads for new tooling: every `interval` seconds the follower fetches
-# `origin main` into the main checkout, fast-forwards it, builds the driver in
-# its warm `target/` and deploys the build as the default toolchain `main`. A
-# running `gandr lsp` or `gandr mcp` moves to it in place on the next request
-# its client sends, and keeps its process and its session (#4380). The builds
-# live under `$XDG_DATA_HOME/gandr/builds/<commit>/`, the current one and the
-# one before it, linked as `previous` for a rollback; a build a process still
-# runs stays until the next deploy (`prune.jq`). A checkout off `main` or
-# dirty is never touched, and it and a build that cargo refuses are paged once
-# per commit, a fetch that fails twice in a row too (#4540,
-# `.config/follow/follow.bash`). A build that a signal ends is built again at
-# the next reading. The fetches keep the URL `origin` names, past a rewrite in
-# the user's git configuration. After each fast-forward it syncs the
-# checkout's code index, where one exists, so `wt:warm` copies a current index
-# into every new worktree; a failed sync is paged and holds back no deploy
-# (#4866). `--once` reads once and exits. `--install` runs the follower as a
-# host service from this checkout, as `stall:watch --install` does
-# (`.config/service/`), carrying git's configuration from the installing
-# shell, and `--remove` stops and deletes it. A main checkout older than the
-# follower has no such task: fast-forward it once to `origin/main` before the
-# first `--install`. The checkout, the interval and the page command are
-# configuration, never the tree's.
+# Each host's toolchain follows `main`, so no seat and no editor reloads for
+# new tooling. Every `interval` seconds, the follower fetches `origin main`
+# into the main checkout and fast-forwards it. It builds the driver in its
+# warm `target/`, and it deploys the build as the default toolchain `main`.
+# - see: #4499
+#
+# A running `gandr lsp` or `gandr mcp` moves to the new build on the next
+# request of its client. It keeps its process and its session.
+# - see: #4380
+#
+# The builds live under `$XDG_DATA_HOME/gandr/builds/<commit>/`. The follower
+# keeps the current build and the one before it, linked as `previous` for a
+# rollback. A build that a process still runs stays until the next deploy.
+# - see: `prune.jq`
+#
+# The follower never touches a checkout off `main` or a dirty one. It pages
+# such a checkout once per commit, and a build that cargo refuses too. It
+# pages a fetch that fails twice in a row. The next reading builds again a
+# build that a signal ends.
+# - see: #4540, `.config/follow/follow.bash`
+#
+# The fetches keep the URL that `origin` names, past a rewrite in the user's
+# git configuration. After each fast-forward, the follower syncs the code
+# index of the checkout, where one exists. So `wt:warm` copies a current
+# index into each new worktree. The follower pages a failed sync, and the
+# sync holds back no deploy.
+# - see: #4866
+#
+# `--once` reads once and exits. `--install` runs the follower as a host
+# service from this checkout, as `stall:watch --install` does. The service
+# carries the git configuration of the shell that installs it. `--remove`
+# stops the service and deletes it.
+# - see: `.config/service/`
+#
+# A main checkout older than the follower has no such task. Fast-forward it
+# once to `origin/main` before the first `--install`.
+#
+# The checkout, the interval and the page command are configuration, never
+# the tree's. The hosts share one configuration, and their home directories
+# differ. So a path that starts with `~/` reads under the `$HOME` of each
+# host.
+# - see: #8000
 ["toolchain:follow"]
 description = "Build and deploy main as the default toolchain whenever main moves, so a running gandr lsp or mcp follows it with no reload; --install runs it as a service"
 quiet = true
