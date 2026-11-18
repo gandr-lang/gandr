@@ -1,0 +1,4115 @@
+//! The append-only core arena: the single owner of every core term and type
+//! node, addressed by four typed `u32`-backed node ids.
+//!
+//! # Why an arena rather than owned trees
+//!
+//! A deep uniquely-owned tree still recurses on destruction, so an elaborator
+//! that builds a deep term overflows the stack *dropping* it even when every
+//! walk over it was iterative. The arena dissolves that obligation rather than
+//! managing it: ids are `Copy`, teardown is a flat per-family vector drop with
+//! no recursive drop glue, and the derived equality, hashing and debug
+//! instances are shallow over ids.
+//!
+//! # Constructor discipline and wholesale truncation
+//!
+//! - **Constructor-only minting.** Opaque ids originate in [`CoreArena`]
+//!   constructors. Callers supply live children from the same arena and keep
+//!   family indices within their representable limit. Under that discipline,
+//!   each same-family child precedes its parent; cross-family acyclicity
+//!   follows from minting order, not numeric comparison. Constructors record
+//!   ids but do not validate their provenance or allocation generation.
+//! - **Wholesale truncation.** [`CoreArena::watermark`] snapshots the four
+//!   family lengths and [`CoreArena::truncate_to`] restores them, so a pass's
+//!   intermediates allocate past a mark and are dropped in one step afterwards.
+//! - **Frozen rows.** [`CoreArena::freeze`] shares every node minted so far
+//!   with every clone made after, so a clone copies, and its drop releases,
+//!   only the nodes minted since. A truncation into frozen rows takes the
+//!   arena's own copy of those it keeps, and no other clone changes.
+//!
+//! # The honest cost
+//!
+//! An id can name no current node or the same numeric slot in another arena.
+//! Checked lookup rejects an out-of-bounds slot, not a foreign origin. A later
+//! allocation can reuse a truncated slot, so the caller must discard ids and
+//! edges to removed nodes rather than treating an id as a permanent identity.
+//!
+//! # Quotes and decode-on-mint
+//!
+//! `Value::Quote` names a value type as a code and `Value::QuoteComputation` a
+//! computation type; `ValueType::Element` and `CompType::Element` read a code
+//! back as the type it names. `CoreArena::value_type_element` and
+//! `CoreArena::comp_type_element` decode on mint: given a quote of the matching
+//! family as the code, they return the quoted type itself rather than minting a
+//! decode of it, so `El(⌜A⌝)` and `A` are one id and no conversion ever meets
+//! the redex. The level a decode carries is the code's universe level, and a
+//! decode of a quote ignores it: the quoted type has its own.
+//!
+//! Alternatives: a decode node kept over a quote and the β-rule left to
+//! conversion, which every comparison of a type then pays and the kernel would
+//! have to fire too. Reversal: a decode whose quote is only known after
+//! substitution still meets the rule, so a machine that substitutes a quote for
+//! a code variable re-mints the decode through the same constructor
+//! (`instantiate_comp_type` does).
+//!
+//! # Arena ownership
+//!
+//! A constructor records child ids supplied by its caller. Keeping those
+//! children live in the same arena, within the representable family-index
+//! limit, makes a same-family child strictly earlier than its parent;
+//! cross-family acyclicity follows from minting order rather than numeric
+//! comparison. The ids carry neither arena identity nor allocation generation.
+//! A lookup checks the current family bounds, not provenance: truncation
+//! removes nodes, but later allocation can reuse their indices. The caller
+//! therefore discards ids to removed nodes. `CoreArena::watermark` snapshots
+//! the four family lengths and `CoreArena::truncate_to` drops later nodes
+//! without growing a family when given a stale larger mark. Each walk over
+//! arena edges belongs to the consumer that needs it.
+//!
+//! # Carried supports
+//!
+//! Every node carries its support — a [`crate::support::Thinning`] of the
+//! binders in scope where it stands — minted with it as the union of what the
+//! node names and its children's carried supports, each lowered past the
+//! binders the node opens over that child: a lambda's body past one
+//! intuitionistic binder, a split's body past one per component, a fork's
+//! halves past one linear binder. A primitive value is a leaf. The support
+//! sits in the node's row as one slot, the code itself when it is one word and
+//! a handle into the arena's word arena otherwise
+//! ([`crate::support::WordArena`]), so truncation drops each support with its
+//! node and a read is an index. Edges are not stored: an edge is a function of
+//! the node's support, the child's and the crossing, derived where a reader
+//! needs it. The `carried` module states the scoping.
+//!
+//! - Choice: a support computed once at mint from the children's, which the
+//!   append-only discipline makes final, kept in every node's row; a reader
+//!   that needs one — an annotation's in the command IL, a capture's — reads it
+//!   rather than walking the term.
+//! - Alternatives: supports stored only where a union makes them, a leaf's and
+//!   a pass-through's derived where they are read. Measured on the
+//!   differential's generated terms it saved about a tenth of the arena's
+//!   bytes, and it cost the corpus roots instructions at every mint and read
+//!   and a rank table and its directory per family, which do not fit the arena
+//!   that is held and moved by value. A walk computing a support on demand,
+//!   linear in the term at every read; supports and edges both stored,
+//!   `McBride`'s relevant cover, which spends a thinning per child that no
+//!   current reader reads.
+//! - Reversal: arena bytes measured as the cost that binds, where the rows of
+//!   leaves and pass-throughs come back out; a reader that needs an edge per
+//!   child at a cost a derivation cannot meet stores the edges.
+
+use anodized::spec;
+use gandr_kernel_check_memo::TableHash;
+use gandr_kernel_check_memo::TablePosition;
+use gandr_kernel_check_memo::TableSlot;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::ArenaLength;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Family;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Summand;
+
+use self::index::Index;
+use self::index::Interned;
+use crate::classifier::Sort;
+use crate::effect::capability::Region;
+use crate::hole::HoleId;
+use crate::hole::MarkIndex;
+use crate::support::Slot;
+use crate::support::ThinningRef;
+use crate::support::WordArena;
+use crate::support::WordMark;
+use crate::syntax::CompType;
+use crate::syntax::ComponentCount;
+use crate::syntax::Computation;
+use crate::syntax::SplitMotive;
+use crate::syntax::Value;
+use crate::syntax::ValueType;
+use crate::syntax::Zone;
+
+mod carried;
+mod index;
+
+/// How a constructor of a [`CoreArena`] mints a node.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Mint
+{
+    /// A node of its own, which the index never files, so no probe returns
+    /// it: what every constructor mints.
+    Occurrence,
+    /// The node the index files for the content, minted and filed when the
+    /// index files none: what a canonical import mints.
+    Interned,
+}
+
+/// The hash of `node` and where a probe of `index` for it ends: the filed
+/// node of `family` equal to it, or the slot that files `node`.
+///
+/// # Specification
+/// - requires: `index` files positions of `family` alone, each under the hash
+///   of its node.
+/// - ensures: `Found(position)` names a row of `family` whose node equals
+///   `node`. Otherwise `index` files no row of `family` with a node equal to
+///   it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal content minted twice in each family, and unequal
+///   content under one former, distinguish a probe that trusts the hash from
+///   one that compares the nodes.
+/// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+#[spec(ensures: |ret| match ret.1 {
+    Interned::Found(position) => family
+        .get(ArenaLength::from(usize::from(position)))
+        .is_some_and(|row| row.node == *node),
+    Interned::Vacant(_) => true,
+})]
+#[inline]
+fn probed<Node>(
+    family: &Family<Row<Node>>,
+    index: &Index,
+    node: &Node,
+) -> (TableHash, Interned)
+where
+    Node: core::hash::Hash + PartialEq,
+{
+    let hash = TableHash::of(node);
+    let interned = index.probe(hash, |position| {
+        family
+            .get(ArenaLength::from(usize::from(position)))
+            .is_some_and(|row| row.node == *node)
+    });
+    (hash, interned)
+}
+
+/// File the node appended at `offset` under `hash` at `slot` of `index`. A
+/// position past the last one an index can file is left unfiled, so the node
+/// stays an occurrence that no probe finds.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn filed(
+    index: &mut Index,
+    (slot, hash): (TableSlot, TableHash),
+    offset: ArenaLength,
+)
+{
+    if let Ok(position) = TablePosition::try_from(usize::from(offset)) {
+        index.insert(slot, hash, position);
+    }
+}
+
+/// Take each node of `family` at or past `from` out of `index`, before a
+/// truncation removes it.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn unfiled<Node>(
+    family: &Family<Row<Node>>,
+    index: &mut Index,
+    from: ArenaLength,
+) where
+    Node: core::hash::Hash,
+{
+    for offset in usize::from(from) .. usize::from(family.len()) {
+        if let (Some(row), Ok(position)) = (
+            family.get(ArenaLength::from(offset)),
+            TablePosition::try_from(offset),
+        ) {
+            index.remove(TableHash::of(&row.node), position);
+        }
+    }
+}
+
+/// The id of a [`Value`] node in a [`CoreArena`].
+///
+/// An arena-relative allocation index, valid while its node remains live.
+/// With live children from the same arena and representable family indices,
+/// a newly minted id exceeds its same-family children. Neither provenance
+/// nor allocation generation is encoded; truncation can permit index reuse.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ValueId(u32);
+
+/// The id of a [`Computation`] node in a [`CoreArena`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ComputationId(u32);
+
+/// The id of a [`ValueType`] node in a [`CoreArena`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ValueTypeId(u32);
+
+/// The id of a [`CompType`] node in a [`CoreArena`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CompTypeId(u32);
+
+impl ValueId
+{
+    /// The node's offset within its family: the row a dense side table keyed
+    /// by the family's nodes reads it at, as the arena's own rows read it. The
+    /// arena mints children before parents, so the distance between two roots'
+    /// offsets counts the nodes minted between them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn offset(self) -> ArenaLength
+    {
+        id_offset(ArenaIndex(self.0))
+    }
+}
+
+impl ComputationId
+{
+    /// The node's offset within its family: the row a dense side table keyed
+    /// by the family's nodes reads it at, as the arena's own rows read it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn offset(self) -> ArenaLength
+    {
+        id_offset(ArenaIndex(self.0))
+    }
+}
+
+impl ValueTypeId
+{
+    /// The node's offset within its family: the row a dense side table keyed
+    /// by the family's nodes reads it at, as the arena's own rows read it. The
+    /// arena mints children before parents, so the distance between two roots'
+    /// offsets counts the nodes minted between them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn offset(self) -> ArenaLength
+    {
+        id_offset(ArenaIndex(self.0))
+    }
+}
+
+impl CompTypeId
+{
+    /// The node's offset within its family: the row a dense side table keyed
+    /// by the family's nodes reads it at, as the arena's own rows read it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn offset(self) -> ArenaLength
+    {
+        id_offset(ArenaIndex(self.0))
+    }
+}
+
+/// The stored index of one node within its arena family.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct ArenaIndex(u32);
+
+/// Widen an arena length to the `u32` an id wraps, saturating at the ceiling.
+///
+/// # Specification
+/// - requires: `length` is a family length within an arena.
+/// - ensures: `|ret| ret.0 ==
+///   u32::try_from(usize::from(length)).unwrap_or(u32::MAX)` — the equal index
+///   below the `u32` ceiling. **At and above the ceiling every further mint
+///   returns the same id and later nodes alias**, so the saturation is a
+///   documented ceiling rather than a safe fallback.
+/// - provides: the total, panic-free length-to-index widening. The requirement
+///   stays prose: every `usize` an arena can reach is a family length, so a
+///   predicate over the argument would state nothing.
+/// - fails: never; saturation keeps the arithmetic total but cannot preserve
+///   fresh allocation identity beyond the representable family-index limit.
+///   Memory availability is not evidence that the limit cannot be reached.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, an interior index and the u32 ceiling distinguish
+///   round-trip identity from off-by-one and truncating conversions; an
+///   over-ceiling usize, where representable, distinguishes saturation.
+/// - witness: `arena::tests::index_boundaries_preserve_identity_or_saturate`
+#[inline]
+#[spec(ensures: |ret| ret.0 == u32::try_from(usize::from(length)).unwrap_or(u32::MAX))]
+fn id_index(length: ArenaLength) -> ArenaIndex
+{
+    ArenaIndex(u32::try_from(usize::from(length)).unwrap_or(u32::MAX))
+}
+
+/// Narrow an id's index to the offset a checked vector read takes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `|ret| usize::from(ret) ==
+///   usize::try_from(index.0).unwrap_or(usize::MAX)` — the equal offset,
+///   lossless on every supported platform of at least 32 bits.
+/// - provides: the total, panic-free index-to-offset narrowing.
+/// - fails: never; it saturates at the offset ceiling, which a checked read
+///   then rejects.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, an interior index and the u32 ceiling distinguish
+///   round-trip identity from off-by-one and truncating conversions; an
+///   over-ceiling usize, where representable, distinguishes saturation.
+/// - witness: `arena::tests::index_boundaries_preserve_identity_or_saturate`
+#[inline]
+#[spec(ensures: |ret| usize::from(ret) == usize::try_from(index.0).unwrap_or(usize::MAX))]
+fn id_offset(index: ArenaIndex) -> ArenaLength
+{
+    ArenaLength::from(usize::try_from(index.0).unwrap_or(usize::MAX))
+}
+
+/// Where a type stands against its arena's first type naming a region binder,
+/// a capability or kept type at a [`Region::Bound`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum BinderPrecedence
+{
+    /// Minted before it: neither the type nor any node it reaches names a
+    /// region binder.
+    Before,
+    /// Minted at or after it, or not minted in this arena: only a walk says
+    /// whether the type names one.
+    Unread,
+}
+
+/// Where a value type stands against its arena's first qubit type.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum QubitPrecedence
+{
+    /// Minted before it: neither the type nor any node it holds is the qubit
+    /// type.
+    Before,
+    /// Minted at or after it, or not minted in this arena: only a walk says
+    /// whether the type holds a qubit.
+    Unread,
+}
+
+/// Where a node stands against an arena watermark.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Minted
+{
+    /// Minted before the watermark: the watermark's arena holds it.
+    Before,
+    /// Minted at or after the watermark.
+    Since,
+}
+
+/// A snapshot of the four family lengths and of the supports' word arena.
+///
+/// Restoring an arena to a watermark drops exactly the nodes allocated after
+/// it, as flat vector truncations. The default is the empty arena's
+/// watermark.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ArenaWatermark
+{
+    /// The [`Value`] family length.
+    values: usize,
+    /// The [`Computation`] family length.
+    computations: usize,
+    /// The [`ValueType`] family length.
+    value_types: usize,
+    /// The [`CompType`] family length.
+    comp_types: usize,
+    /// The supports' word arena length.
+    words: WordMark,
+}
+
+impl ArenaWatermark
+{
+    /// Where the value `id` stands against this watermark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_value(
+        self,
+        id: ValueId,
+    ) -> Minted
+    {
+        if id.0 >= id_index(ArenaLength::from(self.values)).0 {
+            Minted::Since
+        }
+        else {
+            Minted::Before
+        }
+    }
+
+    /// Where the computation `id` stands against this watermark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_computation(
+        self,
+        id: ComputationId,
+    ) -> Minted
+    {
+        if id.0 >= id_index(ArenaLength::from(self.computations)).0 {
+            Minted::Since
+        }
+        else {
+            Minted::Before
+        }
+    }
+
+    /// Where the value type `id` stands against this watermark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_value_type(
+        self,
+        id: ValueTypeId,
+    ) -> Minted
+    {
+        if id.0 >= id_index(ArenaLength::from(self.value_types)).0 {
+            Minted::Since
+        }
+        else {
+            Minted::Before
+        }
+    }
+
+    /// Where the computation type `id` stands against this watermark.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of_comp_type(
+        self,
+        id: CompTypeId,
+    ) -> Minted
+    {
+        if id.0 >= id_index(ArenaLength::from(self.comp_types)).0 {
+            Minted::Since
+        }
+        else {
+            Minted::Before
+        }
+    }
+}
+
+/// The fields an element of a record type or of a patched type holds.
+///
+/// [`CoreArena::element_fields`] reads them: a record type's fields, or a
+/// patched type's base record's fields less the labels the patch fixes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ElementFields<'arena>
+{
+    /// The record's fields: the base's, for a patched type.
+    fields: &'arena alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueTypeId>,
+    /// The fields a patched type fixes, with their values; nothing for a
+    /// record type.
+    fixed: Option<&'arena alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>>,
+}
+
+impl<'arena> ElementFields<'arena>
+{
+    /// The type of the field `label` an element holds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the field's type when the record holds `label` and the patch
+    ///   does not fix it; nothing otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a free field, a fixed field and a label the base
+    ///   lacks.
+    /// - witness: `arena::tests::an_element_of_a_patched_type_holds_its_free_fields`
+    #[must_use]
+    #[inline]
+    #[spec(ensures: |ret| ret.is_none() || !self.fixed.is_some_and(|fixed| fixed.contains_key(label)))]
+    pub fn get(
+        self,
+        label: &gandr_kernel_term::FieldLabel,
+    ) -> Option<ValueTypeId>
+    {
+        if self.fixed.is_some_and(|fixed| fixed.contains_key(label)) {
+            return None;
+        }
+        self.fields.get(label).copied()
+    }
+
+    /// Each field an element holds, with its type, least label first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each label the record holds and the patch does not fix, once
+    ///   and in label order, with its type.
+    /// - panics: none.
+    /// - executable: none — the specification facade cannot expand an opaque
+    ///   iterator return type; the witness reads every field it yields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record's fields, and a patched type's fields less
+    ///   the one it fixes.
+    /// - witness: `arena::tests::an_element_of_a_patched_type_holds_its_free_fields`
+    #[inline]
+    pub fn iter(
+        self
+    ) -> impl DoubleEndedIterator<Item = (&'arena gandr_kernel_term::FieldLabel, ValueTypeId)>
+    {
+        let fixed = self.fixed;
+        self.fields
+            .iter()
+            .filter(move |&(label, _)| fixed.is_none_or(|fixed| !fixed.contains_key(label)))
+            .map(|(label, &field)| (label, field))
+    }
+
+    /// The fields the patch fixes, with their values; nothing for a record
+    /// type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn fixed(
+        self
+    ) -> Option<&'arena alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>>
+    {
+        self.fixed
+    }
+}
+
+/// A node beside the slot its support is kept in: one row of its family's
+/// table.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Row<Node>
+{
+    /// The node.
+    node: Node,
+    /// The support minting gathered for it.
+    support: Slot,
+}
+
+/// The append-only arena owning every core term and type node of one run.
+///
+/// The four families are parallel append-only vectors and a node's children are
+/// ids into the same arena, so cloning or dropping a whole arena is a flat
+/// per-family vector operation, total on any term depth. Each node's support
+/// sits beside it, in its family's row, recorded when the node is minted, and
+/// the word arena holds the codes wider than a slot. Rows [`Self::freeze`]
+/// froze are shared by every clone made after, so such a clone copies, and
+/// its drop releases, only the rows minted since.
+///
+/// Each family files its interned nodes by their one-level records. A
+/// constructor mints an occurrence: a node of its own that no probe returns,
+/// so a reader that keys a table by node, such as the origins of a lowering or
+/// a decision of the checker, tells two sites apart.
+/// [`Self::canonical_value_type`] answers one canonical node for each content:
+/// the interned node of its record over the canonical nodes of its children.
+/// The atoms of a node, a seal site, a hole or a mark, are part of its record,
+/// so two generative instantiations stay two contents.
+///
+/// The context, the chain and the environment store ids and never dereference
+/// them. A lookup refuses an id the arena does not hold, but it cannot tell an
+/// id another arena minted, so the caller keeps every id with its arena.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CoreArena
+{
+    /// The value nodes and their supports, in allocation order, which is
+    /// child-before-parent.
+    values: Family<Row<Value>>,
+    /// The computation nodes and their supports.
+    computations: Family<Row<Computation>>,
+    /// The value-type nodes and their supports.
+    value_types: Family<Row<ValueType>>,
+    /// The computation-type nodes and their supports.
+    comp_types: Family<Row<CompType>>,
+    /// The interned values, filed by their content.
+    value_index: Index,
+    /// The interned computations, filed by their content.
+    computation_index: Index,
+    /// The interned value types, filed by their content.
+    value_type_index: Index,
+    /// The interned computation types, filed by their content.
+    comp_type_index: Index,
+    /// The words of every support wider than a slot.
+    words: WordArena,
+    /// The watermark just before the arena's first node naming a region
+    /// binder — a capability or kept type at a [`Region::Bound`], or a
+    /// returner or row value whose row names an instance there: a type below
+    /// it in its family was minted earlier, so neither it nor any node it
+    /// reaches names one.
+    region_binders_from: Option<ArenaWatermark>,
+    /// The offset of the arena's first qubit type in the value-type family: a
+    /// type below it was minted earlier, so neither it nor any node it holds
+    /// is the qubit type.
+    qubits_from: Option<usize>,
+}
+
+impl CoreArena
+{
+    /// The native rows carried by this arena, in allocation order with repeats.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn native_primitives(&self) -> impl Iterator<Item = crate::primitive::Primitive> + '_
+    {
+        self.values
+            .iter()
+            .filter_map(|row| match row.node {
+                Value::Primitive { primitive, .. } => Some(primitive),
+                Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Univalence(..)
+                | Value::Funext(..)
+                | Value::Equiv(..)
+                | Value::Ua { .. }
+                | Value::Compose { .. }
+                | Value::Fill { .. }
+                | Value::SessionRelated { .. }
+                | Value::Stay(_)
+                | Value::Then(..)
+                | Value::FlowProduct(..)
+                | Value::Forward(_)
+                | Value::FunctionFlow(..)
+                | Value::Recorded(_)
+                | Value::Dialogue(_)
+                | Value::Web(_)
+                | Value::Returned(_)
+                | Value::Nested(_)
+                | Value::Run(_)
+                | Value::RecordUpdate { .. }
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Literal(_)
+                | Value::Tuple(_)
+                | Value::Injection(..)
+                | Value::ListNil
+                | Value::ListCons(..)
+                | Value::Thunk(_)
+                | Value::Ascribe { .. }
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)
+                | Value::StaticLambda(_)
+                | Value::StaticApplication(..)
+                | Value::Constructor { .. }
+                | Value::Record(_)
+                | Value::Row(_)
+                | Value::Hole(_)
+                | Value::Mark { .. }
+                | Value::Reify(_) => None,
+            })
+            .chain(self.computations.iter().filter_map(|row| match row.node {
+                Computation::Primitive { primitive, .. } => Some(primitive),
+                Computation::Transport(..)
+                | Computation::PathTransport { .. }
+                | Computation::Ride { .. }
+                | Computation::Decompose(_)
+                | Computation::TelescopeTransport { .. }
+                | Computation::Lambda(_)
+                | Computation::LinearLambda(_)
+                | Computation::Fixpoint { .. }
+                | Computation::Application(..)
+                | Computation::Return(_)
+                | Computation::Bind(..)
+                | Computation::ReturnAll(_)
+                | Computation::BindAll { .. }
+                | Computation::Ascribe { .. }
+                | Computation::Force(_)
+                | Computation::Case { .. }
+                | Computation::Split { .. }
+                | Computation::DataCase { .. }
+                | Computation::RecordProjection(..)
+                | Computation::TupleProjection(..)
+                | Computation::Hole(_)
+                | Computation::Mark { .. }
+                | Computation::ListFold { .. }
+                | Computation::ListCase { .. }
+                | Computation::Perform { .. }
+                | Computation::Handle { .. }
+                | Computation::Exercise { .. }
+                | Computation::Scope { .. }
+                | Computation::Resume(..)
+                | Computation::Abandon(_)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::With(..)
+                | Computation::Project(..)
+                | Computation::Session(_)
+                | Computation::Memory(_)
+                | Computation::World(_) => None,
+            }))
+    }
+    /// An empty arena.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// The current watermark: the four family lengths and the word arena's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn watermark(&self) -> ArenaWatermark
+    {
+        ArenaWatermark {
+            values: usize::from(self.values.len()),
+            computations: usize::from(self.computations.len()),
+            value_types: usize::from(self.value_types.len()),
+            comp_types: usize::from(self.comp_types.len()),
+            words: self.words.mark(),
+        }
+    }
+
+    /// The value ids allocated after `after`, in allocation order.
+    ///
+    /// A mark beyond the current family answers no ids; truncation neither
+    /// authenticates an old mark nor resurrects discarded allocations.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the current value suffix beginning at the mark.
+    /// - provides: the nodes a rewrite minted, for a caller that records where
+    ///   each came from.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the specification facade cannot expand an opaque
+    ///   iterator return type; the witness checks exact ids across truncation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — allocations in every family before and after the
+    ///   mark, and a truncation below it, separate each family's suffix from
+    ///   the others and from a stale mark.
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[inline]
+    pub fn values_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> impl ExactSizeIterator<Item = ValueId> + use<>
+    {
+        (after.values .. usize::from(self.values.len()))
+            .map(|index| ValueId(id_index(ArenaLength::from(index)).0))
+    }
+
+    /// The computation ids allocated after `after`, in allocation order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the current computation suffix beginning at the mark;
+    ///   none for a mark beyond the family.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::values_since`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::values_since`].
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[inline]
+    pub fn computations_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> impl ExactSizeIterator<Item = ComputationId> + use<>
+    {
+        (after.computations .. usize::from(self.computations.len()))
+            .map(|index| ComputationId(id_index(ArenaLength::from(index)).0))
+    }
+
+    /// The value-type ids allocated after `after`, in allocation order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the current value-type suffix beginning at the mark;
+    ///   none for a mark beyond the family.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::values_since`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::values_since`].
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[inline]
+    pub fn value_types_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> impl ExactSizeIterator<Item = ValueTypeId> + use<>
+    {
+        (after.value_types .. usize::from(self.value_types.len()))
+            .map(|index| ValueTypeId(id_index(ArenaLength::from(index)).0))
+    }
+
+    /// The computation-type ids allocated after `after`, in allocation order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the current computation-type suffix beginning at the
+    ///   mark; none for a mark beyond the family.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::values_since`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::values_since`].
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[inline]
+    pub fn comp_types_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> impl ExactSizeIterator<Item = CompTypeId> + use<>
+    {
+        (after.comp_types .. usize::from(self.comp_types.len()))
+            .map(|index| CompTypeId(id_index(ArenaLength::from(index)).0))
+    }
+
+    /// How many nodes the four families allocated after `after`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the sum of the four family suffixes that begin at the mark;
+    ///   zero for a mark beyond every family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::values_since`].
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[spec(ensures: |ret| usize::from(ret) == self.values_since(after).len()
+        .saturating_add(self.computations_since(after).len())
+        .saturating_add(self.value_types_since(after).len())
+        .saturating_add(self.comp_types_since(after).len()))]
+    #[inline]
+    #[must_use]
+    pub fn minted_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> ArenaLength
+    {
+        ArenaLength::from(
+            self.values_since(after)
+                .len()
+                .saturating_add(self.computations_since(after).len())
+                .saturating_add(self.value_types_since(after).len())
+                .saturating_add(self.comp_types_since(after).len()),
+        )
+    }
+
+    /// Truncate every family back to `watermark`, dropping later allocations.
+    ///
+    /// # Specification
+    /// - requires: retained graph content does not depend on nodes that the
+    ///   truncation removes. A stale larger mark is admissible and does not
+    ///   grow any family; discarded ids may still be queried for absence.
+    /// - ensures: `self.watermark() == ArenaWatermark { values:
+    ///   watermark.values.min(entry.values), computations:
+    ///   watermark.computations.min(entry.computations), value_types:
+    ///   watermark.value_types.min(entry.value_types), comp_types:
+    ///   watermark.comp_types.min(entry.comp_types), words:
+    ///   watermark.words.min(entry.words) }` — each family holds exactly its
+    ///   watermark-many leading nodes, and a mark above the entry lengths
+    ///   leaves that family where it was. Removed nodes do not resolve
+    ///   immediately after truncation; later allocation can reuse their
+    ///   indices, so the caller discards the corresponding ids. The index of
+    ///   each family unfiles the nodes that the truncation removes, so a later
+    ///   interned mint of equal content files a node anew. A truncation that
+    ///   drops the first value type naming a region binder forgets it, so
+    ///   [`Self::value_type_binder_precedence`] reads the arena left.
+    /// - provides: the wholesale truncation a per-run arena is torn down by.
+    ///   The clause checks the four family lengths and the word arena's,
+    ///   including the documented stale-mark no-op. Arena provenance and the
+    ///   unreachability the requirement names stay prose: a watermark carries
+    ///   no arena identity, and what the caller still retains is not an
+    ///   observation of the arena.
+    /// - fails: never — a truncation past the end is a no-op, so a stale
+    ///   watermark cannot grow the arena.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the truncation has one decision surface per family,
+    ///   separated by a mark below the current length and a mark at it, with
+    ///   the post-truncation lookup of a dropped id asserted to be absent.
+    /// - witness: `arena::tests::truncating_to_a_watermark_drops_later_nodes`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
+    #[inline]
+    #[spec(
+        captures: entry = self.watermark(),
+        ensures: self.watermark()
+            == ArenaWatermark {
+                values: watermark.values.min(entry.values),
+                computations: watermark.computations.min(entry.computations),
+                value_types: watermark.value_types.min(entry.value_types),
+                comp_types: watermark.comp_types.min(entry.comp_types),
+                words: watermark.words.min(entry.words),
+            },
+    )]
+    pub fn truncate_to(
+        &mut self,
+        watermark: ArenaWatermark,
+    )
+    {
+        let values = ArenaLength::from(watermark.values);
+        let computations = ArenaLength::from(watermark.computations);
+        let value_types = ArenaLength::from(watermark.value_types);
+        let comp_types = ArenaLength::from(watermark.comp_types);
+        unfiled(&self.values, &mut self.value_index, values);
+        unfiled(
+            &self.computations,
+            &mut self.computation_index,
+            computations,
+        );
+        unfiled(&self.value_types, &mut self.value_type_index, value_types);
+        unfiled(&self.comp_types, &mut self.comp_type_index, comp_types);
+        self.values.truncate(values);
+        self.computations.truncate(computations);
+        self.value_types.truncate(value_types);
+        self.comp_types.truncate(comp_types);
+        self.words.truncate(watermark.words);
+        if self.region_binders_from.is_some_and(|from| {
+            usize::from(self.values.len()) <= from.values
+                && usize::from(self.value_types.len()) <= from.value_types
+                && usize::from(self.comp_types.len()) <= from.comp_types
+        }) {
+            self.region_binders_from = None;
+        }
+        if self
+            .qubits_from
+            .is_some_and(|from| usize::from(self.value_types.len()) <= from)
+        {
+            self.qubits_from = None;
+        }
+    }
+
+    /// Share every node minted so far, and the index that files it, with every
+    /// clone of the arena made after: such a clone copies, and its drop
+    /// releases, only the nodes and the entries made after the freeze.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the watermark is unchanged and every id resolves to the node
+    ///   and the support it did; minting, truncation and comparison answer as
+    ///   they would have unfrozen.
+    /// - provides: the arena of an import closure judged once, which each
+    ///   revision of a document laid after it copies and drops at the cost of
+    ///   the document's nodes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arena frozen, cloned, minted into on both sides,
+    ///   frozen again and truncated past and into its frozen nodes, each read
+    ///   against an arena built alike and never frozen.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
+    #[spec(
+        captures: entry = self.watermark(),
+        ensures: self.watermark() == entry,
+    )]
+    #[inline]
+    pub fn freeze(&mut self)
+    {
+        self.values.freeze();
+        self.computations.freeze();
+        self.value_types.freeze();
+        self.comp_types.freeze();
+        self.value_index.freeze();
+        self.computation_index.freeze();
+        self.value_type_index.freeze();
+        self.comp_type_index.freeze();
+    }
+
+    /// Resolve a value id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: the current value node at the index carried by `id`, or
+    ///   `None` when that index is outside the family. A truncated index can be
+    ///   reused by later allocation; ids do not carry generations.
+    /// - provides: the read side of the value family.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct nodes at both ends of each family,
+    ///   truncation to zero, and a later stale mark distinguish wrong-slot
+    ///   lookup, surviving removed nodes and accidental growth.
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(ensures: |ret| match (ret, self.values.get(id_offset(ArenaIndex(id.0)))) {
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
+        | (None, None) => true,
+        | (Some(_), None) | (None, Some(_)) => false,
+    })]
+    #[inline]
+    #[must_use]
+    pub fn value(
+        &self,
+        id: ValueId,
+    ) -> Option<&Value>
+    {
+        self.values
+            .get(id_offset(ArenaIndex(id.0)))
+            .map(|row| &row.node)
+    }
+
+    /// Resolve a computation id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: the current computation node at the index carried by `id`, or
+    ///   `None` when that index is outside the family. A truncated index can be
+    ///   reused by later allocation; ids do not carry generations.
+    /// - provides: the read side of the computation family.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct nodes at both ends of each family,
+    ///   truncation to zero, and a later stale mark distinguish wrong-slot
+    ///   lookup, surviving removed nodes and accidental growth.
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(ensures: |ret| match (ret, self.computations.get(id_offset(ArenaIndex(id.0)))) {
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
+        | (None, None) => true,
+        | (Some(_), None) | (None, Some(_)) => false,
+    })]
+    #[inline]
+    #[must_use]
+    pub fn computation(
+        &self,
+        id: ComputationId,
+    ) -> Option<&Computation>
+    {
+        self.computations
+            .get(id_offset(ArenaIndex(id.0)))
+            .map(|row| &row.node)
+    }
+
+    /// Resolve a value-type id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: the current value-type node at the index carried by `id`, or
+    ///   `None` when that index is outside the family. A truncated index can be
+    ///   reused by later allocation; ids do not carry generations.
+    /// - provides: the read side of the value-type family.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct nodes at both ends of each family,
+    ///   truncation to zero, and a later stale mark distinguish wrong-slot
+    ///   lookup, surviving removed nodes and accidental growth.
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(ensures: |ret| match (ret, self.value_types.get(id_offset(ArenaIndex(id.0)))) {
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
+        | (None, None) => true,
+        | (Some(_), None) | (None, Some(_)) => false,
+    })]
+    #[inline]
+    #[must_use]
+    pub fn value_type(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<&ValueType>
+    {
+        self.value_types
+            .get(id_offset(ArenaIndex(id.0)))
+            .map(|row| &row.node)
+    }
+
+    /// Resolve a computation-type id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: the current computation-type node at the index carried by
+    ///   `id`, or `None` when that index is outside the family. A truncated
+    ///   index can be reused by later allocation; ids do not carry generations.
+    /// - provides: the read side of the computation-type family.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct nodes at both ends of each family,
+    ///   truncation to zero, and a later stale mark distinguish wrong-slot
+    ///   lookup, surviving removed nodes and accidental growth.
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(ensures: |ret| match (ret, self.comp_types.get(id_offset(ArenaIndex(id.0)))) {
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), &raw const expected.node),
+        | (None, None) => true,
+        | (Some(_), None) | (None, Some(_)) => false,
+    })]
+    #[inline]
+    #[must_use]
+    pub fn comp_type(
+        &self,
+        id: CompTypeId,
+    ) -> Option<&CompType>
+    {
+        self.comp_types
+            .get(id_offset(ArenaIndex(id.0)))
+            .map(|row| &row.node)
+    }
+
+    /// The support a value carries, or `None` when its id dangles: the
+    /// variables it mentions, as a selection from the scope it stands in.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: `Some` exactly when [`Self::value`] resolves `id`; then the
+    ///   support minting gathered for it.
+    /// - provides: a node's support read off its row, never a walk below it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a minted value and a dangling id separate the read
+    ///   from absence; L2 — the carried support equals the shift machine's free
+    ///   indices on every generated node.
+    /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
+    /// - witness: `arena::tests::a_wide_support_is_kept_in_the_word_arena`
+    #[spec(ensures: |ret| ret.is_some() == self.value(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn value_support(
+        &self,
+        id: ValueId,
+    ) -> Option<ThinningRef<'_>>
+    {
+        self.values
+            .get(id_offset(ArenaIndex(id.0)))
+            .map(|row| self.support_of(row.support))
+    }
+
+    /// The support a computation carries, or `None` when its id dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: `Some` exactly when [`Self::computation`] resolves `id`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
+    #[spec(ensures: |ret| ret.is_some() == self.computation(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn computation_support(
+        &self,
+        id: ComputationId,
+    ) -> Option<ThinningRef<'_>>
+    {
+        self.computations
+            .get(id_offset(ArenaIndex(id.0)))
+            .map(|row| self.support_of(row.support))
+    }
+
+    /// The support a value type carries, or `None` when its id dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: `Some` exactly when [`Self::value_type`] resolves `id`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
+    #[spec(ensures: |ret| ret.is_some() == self.value_type(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn value_type_support(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<ThinningRef<'_>>
+    {
+        self.value_types
+            .get(id_offset(ArenaIndex(id.0)))
+            .map(|row| self.support_of(row.support))
+    }
+
+    /// Where the value type at `id` stands against the arena's first type
+    /// naming a region binder.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: [`BinderPrecedence::Before`] exactly when `id` resolves and
+    ///   sits below the first value type naming a region binder, or the arena
+    ///   holds none; [`BinderPrecedence::Unread`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type minted before the first kept type at a bound
+    ///   region, that kept type, a thunk minted after it over a closed body, a
+    ///   dangling id, and the same arena truncated below the kept type.
+    /// - witness: `arena::tests::a_type_minted_before_the_first_region_binder_names_none`
+    #[spec(ensures: |ret| ret == BinderPrecedence::Unread || self.value_type(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn value_type_binder_precedence(
+        &self,
+        id: ValueTypeId,
+    ) -> BinderPrecedence
+    {
+        let first = self.region_binders_from.map_or_else(
+            || usize::from(self.value_types.len()),
+            |from| from.value_types,
+        );
+        if usize::from(id_offset(ArenaIndex(id.0))) < first {
+            BinderPrecedence::Before
+        }
+        else {
+            BinderPrecedence::Unread
+        }
+    }
+
+    /// Where the value type at `id` stands against the arena's first qubit
+    /// type.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: [`QubitPrecedence::Before`] exactly when `id` resolves and
+    ///   sits below the first qubit type, or the arena holds none;
+    ///   [`QubitPrecedence::Unread`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type minted before the first qubit type, that qubit
+    ///   type, a product minted after it over a unit, a dangling id, and the
+    ///   same arena truncated below the qubit type.
+    /// - witness: `arena::tests::a_type_minted_before_the_first_qubit_holds_none_5739`
+    #[spec(ensures: |ret| ret == QubitPrecedence::Unread || self.value_type(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn value_type_qubit_precedence(
+        &self,
+        id: ValueTypeId,
+    ) -> QubitPrecedence
+    {
+        let first = self
+            .qubits_from
+            .unwrap_or_else(|| usize::from(self.value_types.len()));
+        if usize::from(id_offset(ArenaIndex(id.0))) < first {
+            QubitPrecedence::Before
+        }
+        else {
+            QubitPrecedence::Unread
+        }
+    }
+
+    /// Where the computation type at `id` stands against the arena's first
+    /// value type naming a region binder.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: as [`Self::value_type_binder_precedence`], at the
+    ///   computation-type family's length when that type was minted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_type_binder_precedence`].
+    /// - witness: `arena::tests::a_type_minted_before_the_first_region_binder_names_none`
+    #[spec(ensures: |ret| ret == BinderPrecedence::Unread || self.comp_type(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn comp_type_binder_precedence(
+        &self,
+        id: CompTypeId,
+    ) -> BinderPrecedence
+    {
+        let first = self.region_binders_from.map_or_else(
+            || usize::from(self.comp_types.len()),
+            |from| from.comp_types,
+        );
+        if usize::from(id_offset(ArenaIndex(id.0))) < first {
+            BinderPrecedence::Before
+        }
+        else {
+            BinderPrecedence::Unread
+        }
+    }
+
+    /// The support a computation type carries, or `None` when its id
+    /// dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id is admissible.
+    /// - ensures: `Some` exactly when [`Self::comp_type`] resolves `id`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value_support`].
+    /// - witness: `arena::tests::every_binder_former_carries_its_bodys_support_past_its_binders`
+    #[spec(ensures: |ret| ret.is_some() == self.comp_type(id).is_some())]
+    #[inline]
+    #[must_use]
+    pub fn comp_type_support(
+        &self,
+        id: CompTypeId,
+    ) -> Option<ThinningRef<'_>>
+    {
+        self.comp_types
+            .get(id_offset(ArenaIndex(id.0)))
+            .map(|row| self.support_of(row.support))
+    }
+
+    /// Mint a value node as an occurrence ([`Self::mint_value`]).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn alloc_value(
+        &mut self,
+        value: Value,
+    ) -> ValueId
+    {
+        self.mint_value(value, Mint::Occurrence)
+    }
+
+    /// Mint a value node as `mint` asks.
+    ///
+    /// # Specification
+    /// - requires: every child of `value` is minted in this arena.
+    /// - ensures: the id names a value equal to `value`. An interned mint of a
+    ///   content that the index files answers the filed node, and the family
+    ///   does not grow. Otherwise `value` is appended at the family's previous
+    ///   end, above every value id already minted, with its support beside it,
+    ///   and an interned mint files it.
+    /// - provides: the single mint every value constructor goes through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal content minted twice separates an occurrence
+    ///   from an interned find. Unequal children and distinct formers separate
+    ///   a find that trusts the hash from one that compares the nodes, and a
+    ///   truncation then a mint separates fresh allocation from a stale-slot
+    ///   alias.
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = usize::from(self.values.len()), wanted = value.clone(), asked = mint],
+        ensures: |ret| self.value(ret) == Some(&wanted)
+            && ((asked == Mint::Interned && usize::from(self.values.len()) == entry)
+                || (entry.checked_add(1) == Some(usize::from(self.values.len()))
+                    && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX))),
+    )]
+    #[inline]
+    pub(crate) fn mint_value(
+        &mut self,
+        value: Value,
+        mint: Mint,
+    ) -> ValueId
+    {
+        let filing = match mint {
+            Mint::Occurrence => None,
+            Mint::Interned => match probed(&self.values, &self.value_index, &value) {
+                (_, Interned::Found(position)) => {
+                    return ValueId(id_index(ArenaLength::from(usize::from(position))).0);
+                },
+                (hash, Interned::Vacant(slot)) => Some((slot, hash)),
+            },
+        };
+        let id = ValueId(id_index(self.values.len()).0);
+        if self.region_binders_from.is_none()
+            && matches!(value, Value::Row(ref row) if row.regions().any(|region| matches!(region, Region::Bound(_))))
+        {
+            self.region_binders_from = Some(self.watermark());
+        }
+        let support = self.value_carried(&value);
+        self.values.push(Row {
+            node: value,
+            support,
+        });
+        if let Some(filing) = filing {
+            filed(&mut self.value_index, filing, id.offset());
+        }
+        id
+    }
+
+    /// Mint a computation node as an occurrence ([`Self::mint_computation`]).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn alloc_computation(
+        &mut self,
+        computation: Computation,
+    ) -> ComputationId
+    {
+        self.mint_computation(computation, Mint::Occurrence)
+    }
+
+    /// Mint a computation node as `mint` asks.
+    ///
+    /// # Specification
+    /// - requires: every child of `computation` is minted in this arena.
+    /// - ensures: as [`Self::mint_value`], in the computation family.
+    /// - provides: the single mint every computation constructor goes through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_value`].
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = usize::from(self.computations.len()), wanted = computation.clone(), asked = mint],
+        ensures: |ret| self.computation(ret) == Some(&wanted)
+            && ((asked == Mint::Interned && usize::from(self.computations.len()) == entry)
+                || (entry.checked_add(1) == Some(usize::from(self.computations.len()))
+                    && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX))),
+    )]
+    #[inline]
+    pub(crate) fn mint_computation(
+        &mut self,
+        computation: Computation,
+        mint: Mint,
+    ) -> ComputationId
+    {
+        let filing = match mint {
+            Mint::Occurrence => None,
+            Mint::Interned => {
+                match probed(&self.computations, &self.computation_index, &computation) {
+                    (_, Interned::Found(position)) => {
+                        return ComputationId(id_index(ArenaLength::from(usize::from(position))).0);
+                    },
+                    (hash, Interned::Vacant(slot)) => Some((slot, hash)),
+                }
+            },
+        };
+        let id = ComputationId(id_index(self.computations.len()).0);
+        let support = self.computation_carried(&computation);
+        self.computations.push(Row {
+            node: computation,
+            support,
+        });
+        if let Some(filing) = filing {
+            filed(&mut self.computation_index, filing, id.offset());
+        }
+        id
+    }
+
+    /// Mint a saturated native call; the checker validates its arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_primitive(
+        &mut self,
+        primitive: crate::primitive::Primitive,
+        arguments: crate::primitive::Arguments,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Primitive {
+            primitive,
+            arguments,
+        })
+    }
+
+    /// Mint the table-typed thunk produced by the primitive constructor.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn value_primitive(
+        &mut self,
+        primitive: crate::primitive::Primitive,
+        body: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Primitive { primitive, body })
+    }
+
+    /// Mint a value-type node as an occurrence ([`Self::mint_value_type`]).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn alloc_value_type(
+        &mut self,
+        value_type: ValueType,
+    ) -> ValueTypeId
+    {
+        self.mint_value_type(value_type, Mint::Occurrence)
+    }
+
+    /// Mint a value-type node as `mint` asks.
+    ///
+    /// # Specification
+    /// - requires: every child of `value_type` is minted in this arena.
+    /// - ensures: as [`Self::mint_value`], in the value-type family. An append
+    ///   records the watermark before the arena's first type naming a region
+    ///   binder, and the offset of its first qubit type.
+    /// - provides: the single mint every value-type constructor goes through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_value`].
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = usize::from(self.value_types.len()), wanted = value_type.clone(), asked = mint],
+        ensures: |ret| self.value_type(ret) == Some(&wanted)
+            && ((asked == Mint::Interned && usize::from(self.value_types.len()) == entry)
+                || (entry.checked_add(1) == Some(usize::from(self.value_types.len()))
+                    && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX))),
+    )]
+    #[inline]
+    pub(crate) fn mint_value_type(
+        &mut self,
+        value_type: ValueType,
+        mint: Mint,
+    ) -> ValueTypeId
+    {
+        let filing = match mint {
+            Mint::Occurrence => None,
+            Mint::Interned => {
+                match probed(&self.value_types, &self.value_type_index, &value_type) {
+                    (_, Interned::Found(position)) => {
+                        return ValueTypeId(id_index(ArenaLength::from(usize::from(position))).0);
+                    },
+                    (hash, Interned::Vacant(slot)) => Some((slot, hash)),
+                }
+            },
+        };
+        let id = ValueTypeId(id_index(self.value_types.len()).0);
+        if self.region_binders_from.is_none()
+            && matches!(
+                value_type,
+                ValueType::Kept {
+                    region: Region::Bound(_),
+                    ..
+                } | ValueType::Capability {
+                    region: Region::Bound(_),
+                    ..
+                }
+            )
+        {
+            self.region_binders_from = Some(self.watermark());
+        }
+        if self.qubits_from.is_none() && matches!(value_type, ValueType::Qubit) {
+            self.qubits_from = Some(usize::from(self.value_types.len()));
+        }
+        let support = self.value_type_carried(&value_type);
+        self.value_types.push(Row {
+            node: value_type,
+            support,
+        });
+        if let Some(filing) = filing {
+            filed(&mut self.value_type_index, filing, id.offset());
+        }
+        id
+    }
+
+    /// Mint a computation-type node as an occurrence
+    /// ([`Self::mint_comp_type`]).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn alloc_comp_type(
+        &mut self,
+        comp_type: CompType,
+    ) -> CompTypeId
+    {
+        self.mint_comp_type(comp_type, Mint::Occurrence)
+    }
+
+    /// Mint a computation-type node as `mint` asks.
+    ///
+    /// # Specification
+    /// - requires: every child of `comp_type` is minted in this arena.
+    /// - ensures: as [`Self::mint_value`], in the computation-type family. An
+    ///   append records the watermark before the arena's first returner whose
+    ///   row names a region binder.
+    /// - provides: the single mint every computation-type constructor goes
+    ///   through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_value`].
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = usize::from(self.comp_types.len()), wanted = comp_type.clone(), asked = mint],
+        ensures: |ret| self.comp_type(ret) == Some(&wanted)
+            && ((asked == Mint::Interned && usize::from(self.comp_types.len()) == entry)
+                || (entry.checked_add(1) == Some(usize::from(self.comp_types.len()))
+                    && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX))),
+    )]
+    #[inline]
+    pub(crate) fn mint_comp_type(
+        &mut self,
+        comp_type: CompType,
+        mint: Mint,
+    ) -> CompTypeId
+    {
+        let filing = match mint {
+            Mint::Occurrence => None,
+            Mint::Interned => match probed(&self.comp_types, &self.comp_type_index, &comp_type) {
+                (_, Interned::Found(position)) => {
+                    return CompTypeId(id_index(ArenaLength::from(usize::from(position))).0);
+                },
+                (hash, Interned::Vacant(slot)) => Some((slot, hash)),
+            },
+        };
+        let id = CompTypeId(id_index(self.comp_types.len()).0);
+        if self.region_binders_from.is_none()
+            && matches!(comp_type, CompType::Returner { ref effects, .. } if effects.regions().any(|region| matches!(region, Region::Bound(_))))
+        {
+            self.region_binders_from = Some(self.watermark());
+        }
+        let support = self.comp_type_carried(&comp_type);
+        self.comp_types.push(Row {
+            node: comp_type,
+            support,
+        });
+        if let Some(filing) = filing {
+            filed(&mut self.comp_type_index, filing, id.offset());
+        }
+        id
+    }
+
+    /// The canonical node of the content of the value type `at`: the node the
+    /// index files for its record over the canonical nodes of its children.
+    /// A content that no filed node holds yet is minted once and filed, so a
+    /// later call answers the same node.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a value type of this arena, whose content equals the content
+    ///   of `at` at every depth. Two types of equal content answer one node.
+    ///   None when `at`, or a node it reaches, is not in this arena.
+    /// - provides: the node a table keyed by content reads, beside the
+    ///   occurrences that a table keyed by place reads.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two equal types over separate occurrences of equal
+    ///   children answer one node, a type that differs in one leaf answers
+    ///   another, and a second call answers the first call's node without a
+    ///   mint.
+    /// - witness: `arena::tests::equal_content_mints_occurrences_of_one_canonical_node`
+    #[spec(ensures: |ret| ret.is_none_or(|canonical| self.value_type(canonical).is_some()))]
+    #[inline]
+    pub fn canonical_value_type(
+        &mut self,
+        at: ValueTypeId,
+    ) -> Option<ValueTypeId>
+    {
+        crate::import::TypeImporter::within(self)
+            .value_type(at)
+            .ok()
+    }
+
+    // Value constructors. Each mints over already-allocated children, which is
+    // what makes a child id strictly less than its parent's.
+
+    /// Mint a bound value variable in a named zone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_variable(
+        &mut self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Variable { zone, index })
+    }
+
+    /// Mint a constant reference to a prior declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constant(
+        &mut self,
+        index: ConstantIndex,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Constant(index))
+    }
+
+    /// Mint a fresh value equal to `at`, over the same children.
+    ///
+    /// A copy stands apart from its original by its id, so a reader that keys
+    /// a table by node tells the two places apart.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_copy(
+        &mut self,
+        at: ValueId,
+    ) -> Option<ValueId>
+    {
+        let node = self.value(at)?.clone();
+        Some(self.mint_value(node, Mint::Occurrence))
+    }
+
+    /// Mint the unit value, the tuple of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends `Tuple([])` and returns its fresh id.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit is the empty tuple, not a former of its own,
+    ///   so the two spellings mint equal nodes.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret).is_some_and(|held| matches!(*held, Value::Tuple(ref components) if components.is_empty())))]
+    #[inline]
+    pub fn value_unit(&mut self) -> ValueId
+    {
+        self.value_tuple(&[])
+    }
+
+    /// Mint a base-type literal value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_literal(
+        &mut self,
+        literal: Literal,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Literal(literal))
+    }
+
+    /// Mint a tuple over already-allocated value children, in order.
+    ///
+    /// # Specification
+    /// - requires: every component names a value node already allocated in this
+    ///   arena.
+    /// - ensures: appends the tuple of `components`, in order, and returns a
+    ///   fresh id strictly above every component.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids at arities zero, two and three,
+    ///   unequal branch bodies and distinct summands distinguish swapped,
+    ///   dropped or merged children and confused formers. Readback observes the
+    ///   minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret).is_some_and(|held| matches!(*held, Value::Tuple(ref minted) if **minted == *components)))]
+    #[inline]
+    pub fn value_tuple(
+        &mut self,
+        components: &[ValueId],
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Tuple(components.into()))
+    }
+
+    /// Mint a sum injection over an already-allocated value body.
+    ///
+    /// # Specification
+    /// - requires: `body` names a value node already allocated in this arena.
+    /// - ensures: appends the injection and returns a fresh id strictly above
+    ///   `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and
+    ///   distinct summands distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Injection(summand, body)))]
+    #[inline]
+    pub fn value_injection(
+        &mut self,
+        summand: Summand,
+        body: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Injection(summand, body))
+    }
+
+    /// Mint a thunk over an already-allocated computation body.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node already allocated in this
+    ///   arena.
+    /// - ensures: appends the thunk and returns a fresh value id.
+    /// - provides: the only way to mint this former; the child is in the
+    ///   computation family, so the two id spaces stay independent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Thunk(body)))]
+    #[inline]
+    pub fn value_thunk(
+        &mut self,
+        body: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Thunk(body))
+    }
+
+    /// Mint an ascription of the value `value` to the value type `ty`.
+    ///
+    /// # Specification
+    /// - requires: `value` names a value node and `ty` a value type already
+    ///   allocated in this arena.
+    /// - ensures: appends the ascription and returns a fresh value id.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_ascribe`]: the minted node
+    ///   holds both children, unswapped.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Ascribe { value, ty }))]
+    #[inline]
+    pub fn value_ascribe(
+        &mut self,
+        value: ValueId,
+        ty: ValueTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Ascribe { value, ty })
+    }
+
+    /// Mint a value lift over an already-allocated value body.
+    ///
+    /// # Specification
+    /// - requires: `body` names a value node already allocated in this arena.
+    /// - ensures: appends the lift at `target` and returns a fresh id strictly
+    ///   above `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero target and an already allocated child
+    ///   distinguish a lost level, the wrong child and a lift confused with its
+    ///   underlying node; the executable predicate observes the former and
+    ///   child only.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| matches!(self.value(ret), Some(Value::Lift { body: actual, .. }) if *actual == body))]
+    #[inline]
+    pub fn value_lift(
+        &mut self,
+        target: Level,
+        body: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Lift { target, body })
+    }
+
+    /// Mint the quote of an already-allocated value type: its code.
+    ///
+    /// # Specification
+    /// - requires: `quoted` names a value-type node already allocated in this
+    ///   arena.
+    /// - ensures: appends the quote and returns a fresh value id.
+    /// - provides: the only way to mint this former; the child is in the
+    ///   value-type family, so the two id spaces stay independent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Quote(quoted)))]
+    #[inline]
+    pub fn value_quote(
+        &mut self,
+        quoted: ValueTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Quote(quoted))
+    }
+
+    /// Mint the quote of an already-allocated computation type: its code.
+    ///
+    /// # Specification
+    /// - requires: `quoted` names a computation-type node already allocated in
+    ///   this arena.
+    /// - ensures: appends the quote and returns a fresh value id.
+    /// - provides: the only way to mint this former; the child is in the
+    ///   computation-type family, so the two id spaces stay independent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::QuoteComputation(quoted)))]
+    #[inline]
+    pub fn value_quote_computation(
+        &mut self,
+        quoted: CompTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::QuoteComputation(quoted))
+    }
+
+    /// Mint a static lambda over an already-allocated value body, scoped under
+    /// the one binder the lambda opens.
+    ///
+    /// # Specification
+    /// - requires: `body` names a value node already allocated in this arena;
+    ///   that it reads the binder at a static classifier is a typing fact this
+    ///   constructor does not decide.
+    /// - ensures: appends the static lambda and returns a fresh id strictly
+    ///   above `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a static lambda as one argument shape among the six a
+    ///   static family takes, read back as minted beneath its application.
+    /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
+    #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticLambda(body)))]
+    pub fn value_static_lambda(
+        &mut self,
+        body: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::StaticLambda(body))
+    }
+
+    /// Mint a static application over an already-allocated head and argument.
+    ///
+    /// Minting reduces nothing: a static lambda at the head is a redex the
+    /// normaliser fires, so the redex is representable and the reduction is
+    /// a step a certificate can name.
+    ///
+    /// # Specification
+    /// - requires: `head` and `argument` name value nodes already allocated in
+    ///   this arena; that the head inhabits a static Pi the argument suits is a
+    ///   typing fact this constructor does not decide.
+    /// - ensures: appends the static application and returns a fresh id
+    ///   strictly above `head` and `argument`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every argument shape a static family takes, a quote,
+    ///   a computation quote, a variable, a constant, a static lambda and a
+    ///   nested application, reads back as minted with a lambda head left
+    ///   unreduced; and a spine fifty thousand applications deep is built,
+    ///   rewritten and walked inside a small stack.
+    /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
+    /// - witness: `tests::deep_static::flat_arena_round_trips_deep_static_family_without_stack_recursion`
+    #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticApplication(head, argument)))]
+    pub fn value_static_application(
+        &mut self,
+        head: ValueId,
+        argument: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::StaticApplication(head, argument))
+    }
+
+    // Computation constructors.
+
+    /// Mint a lambda over an already-allocated computation body.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node already allocated in this
+    ///   arena.
+    /// - ensures: appends the lambda and returns a fresh id strictly above
+    ///   `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Lambda(body)))]
+    #[inline]
+    pub fn computation_lambda(
+        &mut self,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Lambda(body))
+    }
+
+    /// Mint a linear lambda over an already-allocated computation body, whose
+    /// parameter binds in the linear zone.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node already allocated in this
+    ///   arena.
+    /// - ensures: appends the linear lambda and returns a fresh id strictly
+    ///   above `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::LinearLambda(body)))]
+    #[inline]
+    pub fn computation_linear_lambda(
+        &mut self,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::LinearLambda(body))
+    }
+
+    /// Mint a fixpoint over an already-allocated body, carrying its
+    /// termination claim.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node already allocated in this
+    ///   arena, scoped under the self binder.
+    /// - ensures: appends the fixpoint and returns a fresh id strictly above
+    ///   `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Fixpoint { body, evidence }))]
+    #[inline]
+    pub fn computation_fixpoint(
+        &mut self,
+        body: ComputationId,
+        evidence: gandr_kernel_term::FixpointEvidence,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Fixpoint { body, evidence })
+    }
+
+    /// Mint an application over an already-allocated head and argument.
+    ///
+    /// # Specification
+    /// - requires: `head` names a computation node and `argument` a value node,
+    ///   both already allocated in this arena.
+    /// - ensures: appends the application and returns a fresh id strictly above
+    ///   `head`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Application(head, argument)))]
+    #[inline]
+    pub fn computation_application(
+        &mut self,
+        head: ComputationId,
+        argument: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Application(head, argument))
+    }
+
+    /// Mint a returner over an already-allocated value.
+    ///
+    /// # Specification
+    /// - requires: `value` names a value node already allocated in this arena.
+    /// - ensures: appends the returner and returns a fresh computation id.
+    /// - provides: the only way to mint this former; the child is in the value
+    ///   family, so the two id spaces stay independent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Return(value)))]
+    #[inline]
+    pub fn computation_return(
+        &mut self,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Return(value))
+    }
+
+    /// Mint a bind over an already-allocated bound computation and body.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` name computation nodes already allocated
+    ///   in this arena.
+    /// - ensures: appends the bind and returns a fresh id strictly above both
+    ///   children.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Bind(bound, body)))]
+    #[inline]
+    pub fn computation_bind(
+        &mut self,
+        bound: ComputationId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Bind(bound, body))
+    }
+
+    /// Mint a return of `values` at once: the return of the one value when
+    /// there is one, the many-value return otherwise.
+    ///
+    /// # Specification
+    /// - requires: every value names a value node already allocated in this
+    ///   arena.
+    /// - ensures: appends [`Computation::Return`] of the value when `values`
+    ///   holds one, and [`Computation::ReturnAll`] of `values` in order
+    ///   otherwise, and returns a fresh computation id.
+    /// - provides: the only way to mint a many-value return, which keeps one
+    ///   value's return in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no values, one and two mint the empty many-value
+    ///   return, the return and the many-value return in order.
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(ensures: |ret| match *values {
+        | [value] => self.computation(ret) == Some(&Computation::Return(value)),
+        | _ => matches!(self.computation(ret), Some(Computation::ReturnAll(minted)) if **minted == *values),
+    })]
+    #[inline]
+    pub fn computation_return_all(
+        &mut self,
+        values: &[ValueId],
+    ) -> ComputationId
+    {
+        match *values {
+            [value] => self.computation_return(value),
+            _ => self.alloc_computation(Computation::ReturnAll(values.into())),
+        }
+    }
+
+    /// Mint a bind of the `arity` values `bound` returns into `body`: the bind
+    /// of the one value when `arity` is one, the many-value bind otherwise.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` name computation nodes already allocated
+    ///   in this arena.
+    /// - ensures: appends [`Computation::Bind`] when `arity` is one, and
+    ///   [`Computation::BindAll`] otherwise, and returns a fresh id strictly
+    ///   above both children.
+    /// - provides: the only way to mint a many-value bind, which keeps one
+    ///   value's bind in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_return_all`].
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(ensures: |ret| if usize::from(arity) == 1 {
+        self.computation(ret) == Some(&Computation::Bind(bound, body))
+    } else {
+        self.computation(ret) == Some(&Computation::BindAll { bound, arity, body })
+    })]
+    #[inline]
+    pub fn computation_bind_all(
+        &mut self,
+        bound: ComputationId,
+        arity: ComponentCount,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        if usize::from(arity) == 1 {
+            self.computation_bind(bound, body)
+        }
+        else {
+            self.alloc_computation(Computation::BindAll { bound, arity, body })
+        }
+    }
+
+    /// Mint an ascription of the computation `body` to the type `ty`.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node and `ty` a computation type
+    ///   already allocated in this arena.
+    /// - ensures: appends the ascription and returns a fresh computation id.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_bind`]: the minted node holds
+    ///   both children, unswapped.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Ascribe { body, ty }))]
+    #[inline]
+    pub fn computation_ascribe(
+        &mut self,
+        body: ComputationId,
+        ty: CompTypeId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Ascribe { body, ty })
+    }
+
+    /// Mint a force over an already-allocated value.
+    ///
+    /// # Specification
+    /// - requires: `value` names a value node already allocated in this arena.
+    /// - ensures: appends the force and returns a fresh computation id.
+    /// - provides: the only way to mint this former; the child is in the value
+    ///   family, so the two id spaces stay independent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Force(value)))]
+    #[inline]
+    pub fn computation_force(
+        &mut self,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Force(value))
+    }
+
+    /// Mint a case over an already-allocated scrutinee and one branch per
+    /// summand.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` names a value node, and every branch a
+    ///   computation node, all already allocated in this arena.
+    /// - ensures: appends the case with `branches` in order and returns a fresh
+    ///   id strictly above every branch.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and
+    ///   distinct summands distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret).is_some_and(|held| matches!(*held, Computation::Case { scrutinee: minted, branches: ref minted_branches } if minted == scrutinee && **minted_branches == *branches)))]
+    #[inline]
+    pub fn computation_case(
+        &mut self,
+        scrutinee: ValueId,
+        branches: &[ComputationId],
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Case {
+            scrutinee,
+            branches: branches.into(),
+        })
+    }
+
+    /// Mint a split of an already-allocated scrutinee into a body under one
+    /// binder per component, checked against the ambient type.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` names a value node and `body` a computation
+    ///   node, both already allocated in this arena.
+    /// - ensures: appends the split of `arity` components with the ambient
+    ///   motive and returns a fresh id strictly above its children.
+    /// - provides: one of the two ways to mint this former, which is what keeps
+    ///   a child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids and an arity other than the body's
+    ///   distinguish swapped children, a dropped arity and confused formers.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret).is_some_and(|held| *held == Computation::Split { scrutinee, arity, motive: SplitMotive::Ambient, body }))]
+    #[inline]
+    pub fn computation_split(
+        &mut self,
+        scrutinee: ValueId,
+        arity: ComponentCount,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Ambient,
+            body,
+        })
+    }
+
+    /// Mint a split of an already-allocated scrutinee into a body under one
+    /// binder per component, checked against a motive under one binder of the
+    /// scrutinee.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` names a value node, `motive` a computation-type
+    ///   node and `body` a computation node, all already allocated in this
+    ///   arena; whether the motive reads its binder is a typing fact this
+    ///   constructor does not decide.
+    /// - ensures: appends the split of `arity` components with the scrutinee
+    ///   motive `motive` and returns a fresh id strictly above its children.
+    /// - provides: one of the two ways to mint this former, which is what keeps
+    ///   a child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, an arity and a motive distinguish
+    ///   a dropped motive, swapped children and confused formers.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret).is_some_and(|held| *held == Computation::Split { scrutinee, arity, motive: SplitMotive::Scrutinee(motive), body }))]
+    #[inline]
+    pub fn computation_dependent_split(
+        &mut self,
+        scrutinee: ValueId,
+        arity: ComponentCount,
+        motive: CompTypeId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Split {
+            scrutinee,
+            arity,
+            motive: SplitMotive::Scrutinee(motive),
+            body,
+        })
+    }
+
+    // Value-type constructors.
+
+    /// Mint a base value type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_base(
+        &mut self,
+        base: BaseType,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Base(base))
+    }
+
+    /// Mint the unit value type, the product of no components.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends `Product([])` and returns its fresh id.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit is the empty product, not a former of its
+    ///   own, so the two spellings mint equal nodes.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret).is_some_and(|held| matches!(*held, ValueType::Product(ref components) if components.is_empty())))]
+    #[inline]
+    pub fn value_type_unit(&mut self) -> ValueTypeId
+    {
+        self.value_type_product(&[])
+    }
+
+    /// Mint a product over already-allocated value types, in order.
+    ///
+    /// # Specification
+    /// - requires: every component names a value-type node already allocated in
+    ///   this arena.
+    /// - ensures: appends the product of `components`, in order, and returns a
+    ///   fresh id strictly above every component.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids at arities zero, two and three
+    ///   distinguish swapped, dropped or merged components and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret).is_some_and(|held| matches!(*held, ValueType::Product(ref minted) if **minted == *components)))]
+    #[inline]
+    pub fn value_type_product(
+        &mut self,
+        components: &[ValueTypeId],
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Product(components.into()))
+    }
+
+    /// Mint a dependent pair over an already-allocated first factor and a
+    /// second factor scoped under the first's binder.
+    ///
+    /// Minting does not check the scoping: whether the second factor reads the
+    /// binder is a typing fact, so a second factor that ignores it is
+    /// representable here.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` name value-type nodes already allocated
+    ///   in this arena; whether `second` reads the binder is a typing fact this
+    ///   constructor does not decide.
+    /// - ensures: appends the dependent pair and returns a fresh id strictly
+    ///   above both factors.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids distinguish swapped or dropped
+    ///   factors and a dependent pair confused with the product of the same two
+    ///   factors.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Sigma { first, second }))]
+    #[inline]
+    pub fn value_type_sigma(
+        &mut self,
+        first: ValueTypeId,
+        second: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Sigma { first, second })
+    }
+
+    /// Mint a sum over already-allocated value types, in order.
+    ///
+    /// # Specification
+    /// - requires: every summand names a value-type node already allocated in
+    ///   this arena.
+    /// - ensures: appends the sum of `summands`, in order, and returns a fresh
+    ///   id strictly above every summand.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids at arities zero, two and three
+    ///   distinguish swapped, dropped or merged summands and confused formers.
+    ///   Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret).is_some_and(|held| matches!(*held, ValueType::Sum(ref minted) if **minted == *summands)))]
+    #[inline]
+    pub fn value_type_sum(
+        &mut self,
+        summands: &[ValueTypeId],
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Sum(summands.into()))
+    }
+
+    /// Mint a thunk type over an already-allocated computation type.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation-type node already allocated in
+    ///   this arena.
+    /// - ensures: appends the thunk type and returns a fresh value-type id.
+    /// - provides: the only way to mint this former; the child is in the
+    ///   computation-type family, so the two id spaces stay independent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Thunk(body)))]
+    #[inline]
+    pub fn value_type_thunk(
+        &mut self,
+        body: CompTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Thunk(body))
+    }
+
+    /// Mint the universe of one sort at a canonical level.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_universe(
+        &mut self,
+        sort: Sort,
+        level: Level,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Universe { sort, level })
+    }
+
+    /// Mint a reference to a sealed abstract type by its declaration's
+    /// admission position.
+    ///
+    /// Minting does not check the position: whether it names an admitted
+    /// abstract-type declaration is a typing fact, so an unadmitted position is
+    /// a rejection downstream rather than an unrepresentable node here.
+    ///
+    /// # Specification
+    /// - requires: nothing; whether `atom` names an admitted abstract-type
+    ///   declaration is a typing fact this constructor does not decide.
+    /// - ensures: appends the reference and returns a fresh value-type id.
+    /// - provides: the representation of a sealed abstract type, with its
+    ///   admission left to the judgement that owns it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Abstract(atom)))]
+    #[inline]
+    pub fn value_type_abstract(
+        &mut self,
+        atom: ConstantIndex,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Abstract(atom))
+    }
+
+    /// Mint `base` refined at `stage`, the refinement of a staged `base`
+    /// replacing its stage.
+    ///
+    /// # Specification
+    /// - requires: `base` names a value-type node already allocated in this
+    ///   arena.
+    /// - ensures: a fresh staged node at `stage` whose base is `base`, or the
+    ///   base `base` refines when `base` is itself staged; never a stage over a
+    ///   stage.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain base and a staged one separate the
+    ///   replacement from a nested stage.
+    /// - witness: `arena::tests::a_stage_refines_its_base_once`
+    #[spec(ensures: |ret| matches!(self.value_type(ret), Some(&ValueType::Staged { base: minted, stage: held }) if held == stage && !matches!(self.value_type(minted), Some(ValueType::Staged { .. }))))]
+    #[inline]
+    pub fn value_type_staged(
+        &mut self,
+        base: ValueTypeId,
+        stage: gandr_kernel_term::Stage,
+    ) -> ValueTypeId
+    {
+        let base = match self.value_type(base) {
+            Some(&ValueType::Staged { base: refined, .. }) => refined,
+            Some(_) | None => base,
+        };
+        self.alloc_value_type(ValueType::Staged { base, stage })
+    }
+
+    /// Mint the value type a code denotes, over an already-allocated code
+    /// value, decoding a quote on the spot.
+    ///
+    /// Decode-on-mint is the one computation rule types obey by construction:
+    /// `El ⌜A⌝` is `A`, so a decode whose code is a value-type quote answers
+    /// the quoted type itself and no node is minted. Every other code — a
+    /// variable, a constant, a computation-type quote of the wrong sort — is
+    /// represented as it stands, and whether it inhabits `Type[+, target]` is
+    /// a typing fact rather than a representation one.
+    ///
+    /// # Specification
+    /// - requires: `code` names a value node already allocated in this arena;
+    ///   that it inhabits `Type[+, target]` is a typing fact this constructor
+    ///   does not decide.
+    /// - ensures: the quoted type when `code` resolves to a value-type quote,
+    ///   and a freshly appended element type otherwise.
+    /// - provides: the type a code denotes, with decoding a quote total and
+    ///   inhabitation left to the judgement that owns it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one decision surface, the code's former: a quote of
+    ///   the matching sort decodes, a quote of the other sort and a non-quote
+    ///   code are minted as they stand.
+    /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
+    #[spec(ensures: |ret| if let Some(&Value::Quote(quoted)) = self.value(code) {
+        ret == quoted
+    } else {
+        matches!(self.value_type(ret), Some(ValueType::Element { code: actual, .. }) if *actual == code)
+    })]
+    #[inline]
+    pub fn value_type_element(
+        &mut self,
+        code: ValueId,
+        target: Level,
+    ) -> ValueTypeId
+    {
+        if let Some(&Value::Quote(quoted)) = self.value(code) {
+            return quoted;
+        }
+        self.alloc_value_type(ValueType::Element { code, target })
+    }
+
+    /// Mint a value-type lift over an already-allocated inner value type.
+    ///
+    /// # Specification
+    /// - requires: `inner` names a value-type node already allocated in this
+    ///   arena.
+    /// - ensures: appends the lift at `target` and returns a fresh id strictly
+    ///   above `inner`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero target and an already allocated child
+    ///   distinguish a lost level, the wrong child and a lift confused with its
+    ///   underlying node; the executable predicate observes the former and
+    ///   child only.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| matches!(self.value_type(ret), Some(ValueType::Lift { inner: actual, .. }) if *actual == inner))]
+    #[inline]
+    pub fn value_type_lift(
+        &mut self,
+        inner: ValueTypeId,
+        target: Level,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Lift { inner, target })
+    }
+
+    /// Mint a static Pi over an already-allocated domain and codomain, both in
+    /// the ambient context.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` name value-type nodes already
+    ///   allocated in this arena; that both are static classifiers is a typing
+    ///   fact this constructor does not decide.
+    /// - ensures: appends the static Pi and returns a fresh id strictly above
+    ///   `domain` and `codomain`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one static Pi over the value universe, read back as
+    ///   minted; the static Pi's own decision surface is the typing
+    ///   judgement's.
+    /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
+    #[inline]
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::StaticPi { domain, codomain }))]
+    pub fn value_type_static_pi(
+        &mut self,
+        domain: ValueTypeId,
+        codomain: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::StaticPi { domain, codomain })
+    }
+
+    /// Mint `Row`, the kind of row descriptions.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_row(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Row)
+    }
+
+    /// Mint the tail standing for the row the value `row` denotes.
+    ///
+    /// # Specification
+    /// - requires: `row` names a value node already allocated in this arena;
+    ///   that it inhabits `Row` is a typing fact this constructor does not
+    ///   decide.
+    /// - ensures: appends the tail and returns a fresh id strictly above `row`.
+    /// - provides: the only way to mint this former; a row carrying the tail
+    ///   merges a literal's instances when it is minted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail over a variable stands, and a returner over a
+    ///   tail over a literal is minted as the joined row.
+    /// - witness: `arena::tests::a_tail_over_a_row_literal_is_merged_at_mint`
+    #[inline]
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::RowTail(row)))]
+    pub fn value_type_row_tail(
+        &mut self,
+        row: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::RowTail(row))
+    }
+
+    /// Read `row` through a tail standing over a row literal: its instances
+    /// joined with the literal's by identity, open through the literal's
+    /// tail. A join the literal's instances refuse, a label defined apart,
+    /// leaves the row as it stands for its judgement to refuse.
+    ///
+    /// # Specification
+    /// - ensures: the result's tail, when there is one, stands over no row
+    ///   literal unless the join was refused; a row whose tail stands over
+    ///   anything else is returned unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed row, a tail over a variable and a tail over
+    ///   a literal separate merging from identity.
+    /// - witness: `arena::tests::a_tail_over_a_row_literal_is_merged_at_mint`
+    #[must_use]
+    #[inline]
+    #[spec(captures: written = row.tail(), ensures: |ret| ret.tail() == written || ret.tail().is_none_or(|tail| !matches!(self.value_type(tail), Some(&ValueType::RowTail(value)) if matches!(self.value(value), Some(Value::Row(_))))))]
+    pub fn settled_row(
+        &self,
+        row: crate::effect::EffectRow,
+    ) -> crate::effect::EffectRow
+    {
+        let mut settled = row;
+        while let Some(tail) = settled.tail()
+            && let Some(&ValueType::RowTail(value)) = self.value_type(tail)
+            && let Some(&Value::Row(ref literal)) = self.value(value)
+        {
+            match settled.with_tail(None).union_by_identity(literal) {
+                Ok(joined) => settled = joined,
+                Err(_apart) => break,
+            }
+        }
+        settled
+    }
+
+    /// Mint a row value, a tail over a row literal merged.
+    ///
+    /// # Specification
+    /// - requires: every type of `row` belongs to this arena.
+    /// - ensures: the value is the row [`Self::settled_row`] reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row value over a tail over a literal is minted as
+    ///   the joined row.
+    /// - witness: `arena::tests::a_tail_over_a_row_literal_is_merged_at_mint`
+    #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body settles the row once; the check settles it once more"
+        )
+    )]
+    #[spec(captures: expected = Value::Row(self.settled_row(row.clone())), ensures: |ret| self.value(ret) == Some(&expected))]
+    pub fn value_row(
+        &mut self,
+        row: crate::effect::EffectRow,
+    ) -> ValueId
+    {
+        let settled = self.settled_row(row);
+        self.alloc_value(Value::Row(settled))
+    }
+
+    // Computation-type constructors.
+
+    /// Mint a returner type over an already-allocated value type.
+    ///
+    /// # Specification
+    /// - requires: `result` names a value-type node already allocated in this
+    ///   arena.
+    /// - ensures: appends the returner type and returns a fresh
+    ///   computation-type id.
+    /// - provides: the only way to mint this former; the child is in the
+    ///   value-type family, so the two id spaces stay independent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::Returner { result, effects: crate::effect::EffectRow::EMPTY }))]
+    #[inline]
+    pub fn comp_type_returner(
+        &mut self,
+        result: ValueTypeId,
+    ) -> CompTypeId
+    {
+        self.comp_type_returner_with_effects(result, crate::effect::EffectRow::EMPTY)
+    }
+
+    /// Mint a returner with the row of effect interfaces it may perform, a
+    /// tail over a row literal merged.
+    ///
+    /// # Specification
+    /// - requires: the result and every operation type belong to this arena.
+    /// - ensures: preserves the result type and the row [`Self::settled_row`]
+    ///   reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested thunk signatures retain row types
+    ///   independently of the ids at which their equal children were allocated,
+    ///   and a tail over a literal is merged.
+    /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+    /// - witness: `arena::tests::a_tail_over_a_row_literal_is_merged_at_mint`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body settles the row once; the check settles it once more"
+        )
+    )]
+    #[spec(captures: expected = CompType::Returner { result, effects: self.settled_row(effects.clone()) }, ensures: |ret| self.comp_type(ret) == Some(&expected))]
+    #[inline]
+    pub fn comp_type_returner_with_effects(
+        &mut self,
+        result: ValueTypeId,
+        effects: crate::effect::EffectRow,
+    ) -> CompTypeId
+    {
+        let effects = self.settled_row(effects);
+        self.alloc_comp_type(CompType::Returner { result, effects })
+    }
+
+    /// Mint the returner of `results` with the row of effect interfaces it may
+    /// perform: the returner of the one result when there is one, the
+    /// many-value returner otherwise.
+    ///
+    /// # Specification
+    /// - requires: every result and every operation type belong to this arena;
+    ///   each result stands under the binders of the results before it.
+    /// - ensures: appends [`CompType::Returner`] of the one result, or
+    ///   [`CompType::Returns`] of `results` in order, at the row
+    ///   [`Self::settled_row`] reads, and returns a fresh id.
+    /// - provides: the only way to mint a many-value returner, which keeps one
+    ///   result's returner in its one spelling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::computation_return_all`].
+    /// - witness: `arena::tests::a_many_value_former_of_one_is_its_one_value_former`
+    #[spec(ensures: |ret| match *results {
+        | [result] => matches!(self.comp_type(ret), Some(&CompType::Returner { result: minted, .. }) if minted == result),
+        | _ => matches!(self.comp_type(ret), Some(CompType::Returns { results: minted, .. }) if **minted == *results),
+    })]
+    #[inline]
+    pub fn comp_type_returns_with_effects(
+        &mut self,
+        results: &[ValueTypeId],
+        effects: crate::effect::EffectRow,
+    ) -> CompTypeId
+    {
+        if let [result] = *results {
+            return self.comp_type_returner_with_effects(result, effects);
+        }
+        let effects = self.settled_row(effects);
+        self.alloc_comp_type(CompType::Returns {
+            results: results.into(),
+            effects,
+        })
+    }
+
+    /// Mint an arrow type over an already-allocated domain and codomain.
+    ///
+    /// # Specification
+    /// - requires: `domain` names a value-type node and `codomain` a
+    ///   computation-type node, both already allocated in this arena.
+    /// - ensures: appends the arrow and returns a fresh id strictly above
+    ///   `codomain`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::Arrow { domain, codomain }))]
+    #[inline]
+    pub fn comp_type_arrow(
+        &mut self,
+        domain: ValueTypeId,
+        codomain: CompTypeId,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Arrow { domain, codomain })
+    }
+
+    /// Mint a linear arrow type over an already-allocated domain, multiplicity
+    /// and codomain, the codomain scoped under the shadow's binder.
+    ///
+    /// # Specification
+    /// - requires: `domain` names a value-type node, `multiplicity` a value
+    ///   node and `codomain` a computation-type node, all already allocated in
+    ///   this arena.
+    /// - ensures: appends the linear arrow and returns a fresh id strictly
+    ///   above each child.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::LinearArrow { domain, multiplicity, codomain }))]
+    #[inline]
+    pub fn comp_type_linear_arrow(
+        &mut self,
+        domain: ValueTypeId,
+        multiplicity: ValueId,
+        codomain: CompTypeId,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        })
+    }
+
+    /// Mint a dependent arrow over an already-allocated domain and a codomain
+    /// scoped under the domain's binder.
+    ///
+    /// Minting does not check the scoping: whether the codomain reads the
+    /// binder is a typing fact, so a codomain that ignores it is
+    /// representable here.
+    ///
+    /// # Specification
+    /// - requires: `domain` names a value-type node and `codomain` a
+    ///   computation-type node, both already allocated in this arena; whether
+    ///   the codomain reads the domain's binder is a typing fact this
+    ///   constructor does not decide.
+    /// - ensures: appends the dependent arrow and returns a fresh id strictly
+    ///   above `codomain`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::Pi { domain, codomain }))]
+    #[inline]
+    pub fn comp_type_pi(
+        &mut self,
+        domain: ValueTypeId,
+        codomain: CompTypeId,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Pi { domain, codomain })
+    }
+
+    /// Mint the computation type a code denotes, over an already-allocated
+    /// code value, decoding a quote on the spot.
+    ///
+    /// The computation-sort twin of [`Self::value_type_element`]: a code that
+    /// is a computation-type quote answers the quoted type, and every other
+    /// code is represented as it stands.
+    ///
+    /// # Specification
+    /// - requires: `code` names a value node already allocated in this arena;
+    ///   that it inhabits `Type[-, target]` is a typing fact this constructor
+    ///   does not decide.
+    /// - ensures: the quoted computation type when `code` resolves to a
+    ///   computation-type quote, and a freshly appended element type otherwise.
+    /// - provides: the computation decode, with decoding a quote total and
+    ///   inhabitation left to the judgement that owns it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same decision surface as the value decode, over
+    ///   the other sort's quote.
+    /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
+    #[spec(ensures: |ret| if let Some(&Value::QuoteComputation(quoted)) = self.value(code) {
+        ret == quoted
+    } else {
+        matches!(self.comp_type(ret), Some(CompType::Element { code: actual, .. }) if *actual == code)
+    })]
+    #[inline]
+    pub fn comp_type_element(
+        &mut self,
+        code: ValueId,
+        target: Level,
+    ) -> CompTypeId
+    {
+        if let Some(&Value::QuoteComputation(quoted)) = self.value(code) {
+            return quoted;
+        }
+        self.alloc_comp_type(CompType::Element { code, target })
+    }
+    /// Mint a native universe-path classifier; admission checks its codes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path_universe(
+        &mut self,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::PathUniverse(source, target))
+    }
+
+    /// Mint native reflexivity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_refl(
+        &mut self,
+        code: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathRefl(code))
+    }
+    /// Apply a nominal declaration to its telescope arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_data(
+        &mut self,
+        declaration: gandr_kernel_term::ConstantIndex,
+        arguments: alloc::vec::Vec<ValueId>,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Data {
+            declaration,
+            arguments,
+        })
+    }
+
+    /// Apply a codata declaration to its telescope arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn comp_type_codata(
+        &mut self,
+        declaration: gandr_kernel_term::ConstantIndex,
+        arguments: alloc::vec::Vec<ValueId>,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Codata {
+            declaration,
+            arguments,
+        })
+    }
+
+    /// Form a structural record classifier in canonical label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_record(
+        &mut self,
+        fields: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueTypeId>,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Record(fields))
+    }
+
+    /// Fix the fields `fixed` names of the record type `base` at their values.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `base` itself when `fixed` is empty, since a patch that fixes
+    ///   nothing is its base; otherwise a fresh patched type of `base` with no
+    ///   meets.
+    /// - provides: a patched type always fixes at least one field.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty and a one-field patch of one record.
+    /// - witness: `arena::tests::a_patch_that_fixes_nothing_is_its_base`
+    #[spec(captures: empty = fixed.is_empty(), ensures: |ret| !empty || ret == base)]
+    #[inline]
+    pub fn value_type_patched(
+        &mut self,
+        base: ValueTypeId,
+        fixed: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>,
+    ) -> ValueTypeId
+    {
+        self.value_type_system(base, fixed, alloc::vec::Vec::new())
+    }
+
+    /// Fix the fields `fixed` names of the record type `base` at their values,
+    /// keeping each later face's value on a meet, `meets`, beside its label.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `base` itself when `fixed` is empty, since a patch that fixes
+    ///   nothing is its base; otherwise a fresh patched type of `base` with
+    ///   `meets` in their order.
+    /// - provides: a patched type always fixes at least one field.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty and a one-field patch of one record, and a
+    ///   system whose two faces meet at one field.
+    /// - witness: `arena::tests::a_patch_that_fixes_nothing_is_its_base`
+    #[spec(captures: empty = fixed.is_empty(), ensures: |ret| !empty || ret == base)]
+    #[inline]
+    pub fn value_type_system(
+        &mut self,
+        base: ValueTypeId,
+        fixed: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>,
+        meets: alloc::vec::Vec<(gandr_kernel_term::FieldLabel, ValueId)>,
+    ) -> ValueTypeId
+    {
+        if fixed.is_empty() {
+            return base;
+        }
+        self.alloc_value_type(ValueType::Patched { base, fixed, meets })
+    }
+
+    /// The fields an element of the type `ty` holds, when `ty` is a record
+    /// type or a patched type of one.
+    ///
+    /// # Specification
+    /// - requires: `ty` is a node of this arena.
+    /// - ensures: a record type's fields; a patched type's base record's fields
+    ///   less the labels it fixes; nothing for any other type, and for a
+    ///   patched type whose base is no record type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record, a patch of one of its two fields, a patch
+    ///   whose base is no record, and a type that is no record.
+    /// - witness: `arena::tests::an_element_of_a_patched_type_holds_its_free_fields`
+    #[must_use]
+    #[inline]
+    #[spec(ensures: |ret| ret.is_some() == (matches!(*ty, ValueType::Record(_)) || matches!(*ty, ValueType::Patched { base, .. } if matches!(self.value_type(base), Some(&ValueType::Record(_))))))]
+    pub fn element_fields<'arena>(
+        &'arena self,
+        ty: &'arena ValueType,
+    ) -> Option<ElementFields<'arena>>
+    {
+        if let ValueType::Record(ref fields) = *ty {
+            return Some(ElementFields {
+                fields,
+                fixed: None,
+            });
+        }
+        if let ValueType::Patched {
+            base, ref fixed, ..
+        } = *ty
+            && let Some(&ValueType::Record(ref fields)) = self.value_type(base)
+        {
+            return Some(ElementFields {
+                fields,
+                fixed: Some(fixed),
+            });
+        }
+        None
+    }
+
+    /// Introduce a nominal constructor of `family` with explicit application
+    /// and fields.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor(
+        &mut self,
+        family: gandr_kernel_term::ConstantIndex,
+        datatype: ValueTypeId,
+        tag: gandr_kernel_term::ConstructorTag,
+        fields: alloc::vec::Vec<ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Constructor {
+            family,
+            datatype,
+            tag,
+            fields,
+        })
+    }
+
+    /// Introduce the constructor `tag` of `family` over `fields`, at the data
+    /// classifier `family` applied to `arguments`, minted beside it: the
+    /// constructor's family and its classifier's declaration are one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor_of(
+        &mut self,
+        family: gandr_kernel_term::ConstantIndex,
+        arguments: alloc::vec::Vec<ValueId>,
+        tag: gandr_kernel_term::ConstructorTag,
+        fields: alloc::vec::Vec<ValueId>,
+    ) -> ValueId
+    {
+        let datatype = self.value_type_data(family, arguments);
+        self.value_constructor(family, datatype, tag, fields)
+    }
+
+    /// Introduce a structural record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_record(
+        &mut self,
+        fields: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Record(fields))
+    }
+
+    /// Eliminate nominal data with an explicit motive and field functions,
+    /// each constructor's branch taking `arities`' count of its fields, over a
+    /// family indexed by nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_data_case(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        branches: alloc::vec::Vec<ComputationId>,
+        arities: alloc::vec::Vec<gandr_kernel_term::FieldCount>,
+    ) -> ComputationId
+    {
+        self.computation_data_case_with_equations(
+            scrutinee,
+            motive,
+            (branches, arities),
+            gandr_kernel_term::EquationCount::NONE,
+        )
+    }
+
+    /// Eliminate nominal data whose constructors' branches each take
+    /// `arities`' count of fields, then `equations` index equations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_data_case_with_equations(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        (branches, arities): (
+            alloc::vec::Vec<ComputationId>,
+            alloc::vec::Vec<gandr_kernel_term::FieldCount>,
+        ),
+        equations: gandr_kernel_term::EquationCount,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+            arities,
+            equations,
+        })
+    }
+
+    /// Return the selected field of a record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_record_projection(
+        &mut self,
+        record: ValueId,
+        label: gandr_kernel_term::FieldLabel,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::RecordProjection(record, label))
+    }
+
+    /// Return the component of a tuple at a position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_tuple_projection(
+        &mut self,
+        tuple: ValueId,
+        component: gandr_kernel_term::Component,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TupleProjection(tuple, component))
+    }
+
+    /// Mint the componentwise product of two paths.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathProduct(first, second))
+    }
+
+    /// Mint an equivalence whose evidence remains untrusted until admission.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_equiv(
+        &mut self,
+        path_type: ValueTypeId,
+        forward: ValueId,
+        backward: ValueId,
+        evidence: gandr_kernel_data::Shared<gandr_kernel_term::PathEvidence, alloc::alloc::Global>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            evidence,
+        })
+    }
+
+    /// Mint a native transport computation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_transport(
+        &mut self,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Transport(path, value))
+    }
+
+    /// Mint the element identity `Path[.A = A](a, b)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path(
+        &mut self,
+        carrier: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Path {
+            carrier,
+            left,
+            right,
+        })
+    }
+
+    /// Mint the bridge type `Bridge[.A = A](a, b)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_bridge(
+        &mut self,
+        carrier: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Bridge {
+            carrier,
+            left,
+            right,
+        })
+    }
+
+    /// Mint reflexivity `here(a)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_here(
+        &mut self,
+        point: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Here(point))
+    }
+
+    /// Mint function extensionality `funext(f, g)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_funext(
+        &mut self,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Funext(left, right))
+    }
+
+    /// Mint a universe equivalence `equiv(f, g)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_equiv(
+        &mut self,
+        forward: ValueId,
+        backward: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Equiv(forward, backward))
+    }
+
+    /// Mint univalence `ua(e)` over a bi-invertible record and its derived
+    /// forward map.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_univalence(
+        &mut self,
+        equivalence: ValueId,
+        forward: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Univalence(equivalence, forward))
+    }
+
+    /// Mint univalence at a stratum, `ua[n, k](a, b, f, g)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_ua(
+        &mut self,
+        stratum: crate::ua::Stratum,
+        sides: alloc::sync::Arc<crate::ua::Sides>,
+        forward: ValueId,
+        backward: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Ua {
+            stratum,
+            sides,
+            forward,
+            backward,
+        })
+    }
+
+    /// Mint unbiased composition at a stratum, `compose[n, k](Γ, d)`, over
+    /// `cells` in vertex order and the fold `realised` that composes them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_compose(
+        &mut self,
+        composite: crate::compose::Composite,
+        cells: alloc::boxed::Box<[ValueId]>,
+        realised: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Compose {
+            composite,
+            cells,
+            realised,
+        })
+    }
+
+    /// Mint the filler generator at a stratum, `fill[n, k](Γ, t, d)`, over
+    /// the computation `generator` returning `t` and `cells` in vertex order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_fill(
+        &mut self,
+        composite: crate::compose::Composite,
+        generator: ComputationId,
+        cells: alloc::boxed::Box<[ValueId]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Fill {
+            composite,
+            generator,
+            cells,
+        })
+    }
+
+    /// Mint a session identity statement, `bisim(a, b)`, `bisim(a, b, p)` or
+    /// `sim(a, b)`, `payloads` the empty tuple when no payload path is
+    /// written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_session_related(
+        &mut self,
+        relation: crate::session::SessionRelation,
+        source: ValueId,
+        target: ValueId,
+        payloads: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::SessionRelated {
+            relation,
+            source,
+            target,
+            payloads,
+        })
+    }
+
+    /// Mint directed reflexivity `stay(a)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_stay(
+        &mut self,
+        point: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Stay(point))
+    }
+
+    /// Mint directed composition `then(f, g)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_then(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Then(first, second))
+    }
+
+    /// Mint the componentwise product `flowProduct(p, q)` of two universe
+    /// flows.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_flow_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::FlowProduct(first, second))
+    }
+
+    /// Mint the forward flow `forward(f)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_forward(
+        &mut self,
+        translator: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Forward(translator))
+    }
+
+    /// Mint the function flow `arrow(d, c)` over a domain and a codomain flow.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_function_flow(
+        &mut self,
+        domain: ValueId,
+        codomain: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::FunctionFlow(domain, codomain))
+    }
+
+    /// Mint the recorded run of `moves`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_recorded(
+        &mut self,
+        moves: alloc::sync::Arc<[crate::session::RecordedMove]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Recorded(moves))
+    }
+
+    /// Mint the dialogue of `moves`, in the order they were logged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_dialogue(
+        &mut self,
+        moves: alloc::sync::Arc<[crate::session::DialogueMove]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Dialogue(moves))
+    }
+
+    /// Mint the decomposition `pieces`, its nodes in preorder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_web(
+        &mut self,
+        pieces: alloc::sync::Arc<[crate::session::WebPiece]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Web(pieces))
+    }
+
+    /// Mint the directed identity `Flow[.A = A](a, b)`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_flow(
+        &mut self,
+        carrier: ValueTypeId,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Flow {
+            carrier,
+            source,
+            target,
+        })
+    }
+
+    /// Mint the run type `Run(s)` of the session code `s`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_run(
+        &mut self,
+        session: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Run(session))
+    }
+
+    /// Mint the dialogue type `Dialogue(s)` of the session code `s`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_dialogue(
+        &mut self,
+        session: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Dialogue(session))
+    }
+
+    /// Mint the decomposition type `Web`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_web(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Web)
+    }
+
+    /// Mint the prefix type `Prefix(s)` of the session code `s`.
+    ///
+    /// # Specification
+    /// - requires: `session` names a value node already allocated in this
+    ///   arena.
+    /// - ensures: appends the prefix type and returns a fresh value-type id.
+    /// - provides: the only way to mint this former.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the minted node reads back as the prefix type of the
+    ///   code it was given, apart from every other former minted beside it.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Prefix(session)))]
+    #[inline]
+    pub fn value_type_prefix(
+        &mut self,
+        session: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Prefix(session))
+    }
+
+    /// Mint directed transport `ride(P, f, x)`, the motive under one
+    /// intuitionistic binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_ride(
+        &mut self,
+        motive: ValueTypeId,
+        flow: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Ride {
+            motive,
+            flow,
+            value,
+        })
+    }
+
+    /// Mint `decompose(d)` over the dialogue `d`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_decompose(
+        &mut self,
+        dialogue: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Decompose(dialogue))
+    }
+
+    /// Mint the value a pure computation returns, standing as a value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_returned(
+        &mut self,
+        computation: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Returned(computation))
+    }
+
+    /// Mint a computation written where a value is read, which elaboration runs
+    /// or suspends by the type expected there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_nested(
+        &mut self,
+        computation: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Nested(computation))
+    }
+
+    /// Mint a written `run c` standing where a value is read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_run(
+        &mut self,
+        computation: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Run(computation))
+    }
+
+    /// Mint the record update `*{ base | … }` laying `overlay`'s fields over
+    /// `base`'s.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_record_update(
+        &mut self,
+        base: ValueId,
+        overlay: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::RecordUpdate { base, overlay })
+    }
+
+    /// Mint transport `tr(P, p, x)` along an element path, the motive under
+    /// one intuitionistic binder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_path_transport(
+        &mut self,
+        motive: ValueTypeId,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::PathTransport {
+            motive,
+            path,
+            value,
+        })
+    }
+
+    /// Mint transport over a two-entry telescope, the motive the dependent
+    /// arrow `Π (y : A). Π (z : B). F C`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_telescope_transport(
+        &mut self,
+        motive: CompTypeId,
+        path: ValueId,
+        start: ValueId,
+        over: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        })
+    }
+
+    /// Mint a typed hole in value position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_hole(
+        &mut self,
+        hole: HoleId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Hole(hole))
+    }
+
+    /// Mint a marked value over an already-allocated body.
+    ///
+    /// # Specification
+    /// - requires: `body` names a value node already allocated in this arena.
+    /// - ensures: appends the mark and returns a fresh id strictly above
+    ///   `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two marks over unequal bodies and indices distinguish
+    ///   a dropped index, a swapped body and a confused former.
+    /// - witness: `arena::tests::a_mark_keeps_its_index_and_its_body`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Mark { mark, body }))]
+    #[inline]
+    pub fn value_mark(
+        &mut self,
+        mark: MarkIndex,
+        body: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Mark { mark, body })
+    }
+
+    /// Mint a typed hole in computation position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_hole(
+        &mut self,
+        hole: HoleId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Hole(hole))
+    }
+
+    /// Mint a marked computation over an already-allocated body.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node already allocated in this
+    ///   arena.
+    /// - ensures: appends the mark and returns a fresh id strictly above
+    ///   `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two marks over unequal bodies and indices distinguish
+    ///   a dropped index, a swapped body and a confused former.
+    /// - witness: `arena::tests::a_mark_keeps_its_index_and_its_body`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Mark { mark, body }))]
+    #[inline]
+    pub fn computation_mark(
+        &mut self,
+        mark: MarkIndex,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Mark { mark, body })
+    }
+
+    /// Mint the unknown value type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_unknown(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Unknown)
+    }
+
+    /// Mint the buffer token type `Buf`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_buffer(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Buffer)
+    }
+
+    /// Mint the qubit type `Qubit`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_qubit(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Qubit)
+    }
+
+    /// Mint the unknown computation type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn comp_type_unknown(&mut self) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Unknown)
+    }
+
+    /// Mint a native List type over an existing element type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_list(
+        &mut self,
+        element: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::List(element))
+    }
+
+    /// Mint the empty native list.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_list_nil(&mut self) -> ValueId
+    {
+        self.alloc_value(Value::ListNil)
+    }
+
+    /// Mint a native list cell.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_list_cons(
+        &mut self,
+        head: ValueId,
+        tail: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::ListCons(head, tail))
+    }
+
+    /// Mint a pure right fold; the cell branch binds head then folded result.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_list_fold(
+        &mut self,
+        element: ValueTypeId,
+        result: ValueTypeId,
+        list: ValueId,
+        on_nil: ComputationId,
+        on_cons: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        })
+    }
+
+    /// Mint a case on a native list; the cell branch binds head then tail.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_list_case(
+        &mut self,
+        list: ValueId,
+        on_nil: ComputationId,
+        on_cons: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests;

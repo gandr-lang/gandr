@@ -1,0 +1,84 @@
+/// This source gives the circle shape and two models.
+///
+/// The presented-integer model proves its cancellation laws by conversion.
+/// The native-integer model declares its arithmetic laws as obligations.
+/// Conversion leaves arithmetic to the runtime, so the model owes each law, and
+/// a fold into the model rests on the laws.
+///
+/// The winding fold maps loop words into both models.
+/// Each model supplies the circle operations at its selected carrier.
+///
+/// - see: corpus/model/identity/loop-winding.gandr
+
+// The presented integers.
+import "./circle-base.gandr";
+
+/// The `CircleShape` theory gives the circle point and its loop operations.
+theory CircleShape where
+  sort Pt : Type;
+
+  oper base : Pt;
+  oper turn : (x : Pt) --> Pt;
+  oper unturn : (x : Pt) --> Pt;
+
+  rule turnUnturn : turn (unturn x) <=> x;
+  rule unturnTurn : unturn (turn x) <=> x;
+
+/// The `laws` function counts rules in a theory chain.
+def rec laws(chain : Theory) -> Integer =
+  match chain where
+    | Rule(name, left, right, rest) => { let r = laws[<] rest; r + 1 }
+    | _ => 0
+
+/// The `law_count` function counts the rules in one presentation.
+def law_count(presented : Theory) -> Integer =
+  match presented where
+    | Presents(sorts, opers, rules) => laws rules
+    | _ => 0
+
+/// The `shape_laws` run counts the two circle laws.
+@[runs("2")]
+def shape_laws() -> Integer = law_count CircleShape;
+
+/// The `Winding` model interprets the circle shape with presented integers.
+pub module Winding : Model(CircleShape) where {
+  type Pt = Int;
+
+  def base = Z;
+
+  def turn(n : Int) -> Int = S n;
+
+  def unturn(n : Int) -> Int = P n;
+
+  def turnUnturn(n : Int) -> Path[.A = Int](turn (unturn n), n) =
+    Path.here n
+
+  def unturnTurn(n : Int) -> Path[.A = Int](unturn (turn n), n) =
+    Path.here n
+
+  @[runs("S (S Z)")]
+  def wound() -> Int =
+    turn (turn base)
+}
+
+/// The `NativeWinding` model interprets the circle shape with native integers.
+pub module NativeWinding : Model(CircleShape) where {
+  type Pt = Integer;
+
+  def base = 0;
+
+  def turn(n : Integer) -> Integer = n + 1;
+
+  def unturn(n : Integer) -> Integer = n - 1;
+
+  @[owes(1)]
+  def turnUnturn : (n : Integer) -> Path[.A = Integer](turn (unturn n), n);
+
+  @[owes(1)]
+  def unturnTurn : (n : Integer) -> Path[.A = Integer](unturn (turn n), n);
+
+  @[runs("2")]
+  def wound() -> Integer =
+    let n = turn base
+    turn n
+}

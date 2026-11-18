@@ -1,0 +1,71 @@
+# The uses of the providers of one crate, written with a path whose first
+# segment `__PATH__` names that crate: `gandr_kernel_term::ValueId`, or
+# `crate::arena::ValueId` in the crate's own files `__FILES__`. The names
+# `__NAMES__` are the crate's providers. Outside a body a use takes `'r`, and
+# in a body `'_`. A struct literal and a struct pattern are not uses.
+id: qualified-use-takes-brand-__ID__
+language: Rust
+severity: hint
+files: __FILES__
+message: the use of a provider takes the region's brand
+rule:
+  pattern: $NAME
+  kind: type_identifier
+  regex: ^(__NAMES__)$
+  inside:
+    kind: scoped_type_identifier
+    field: name
+    all:
+      - has:
+          field: path
+          regex: ^(::)?(__PATH__)(::\w+)*$
+      - not:
+          inside:
+            kind: generic_type
+            field: type
+      - not:
+          inside:
+            kind: struct_expression
+            field: name
+      - not:
+          inside:
+            kind: struct_pattern
+            field: type
+  not:
+    inside:
+      kind: block
+      stopBy: end
+fix: $NAME<'r>
+---
+id: qualified-use-in-body-takes-elided-brand-__ID__
+language: Rust
+severity: hint
+files: __FILES__
+message: the use of a provider in a body takes the elided brand
+rule:
+  pattern: $NAME
+  kind: type_identifier
+  regex: ^(__NAMES__)$
+  inside:
+    kind: scoped_type_identifier
+    field: name
+    all:
+      - has:
+          field: path
+          regex: ^(::)?(__PATH__)(::\w+)*$
+      - not:
+          inside:
+            kind: generic_type
+            field: type
+      - not:
+          inside:
+            kind: struct_expression
+            field: name
+      - not:
+          inside:
+            kind: struct_pattern
+            field: type
+      - inside:
+          kind: block
+          stopBy: end
+fix: $NAME<'_>

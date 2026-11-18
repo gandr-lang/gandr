@@ -1,0 +1,4 @@
+import "./base.gandr";
+/// The importer.
+def eight : Integer;
+def eight = 8;

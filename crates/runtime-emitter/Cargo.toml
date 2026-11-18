@@ -1,0 +1,66 @@
+[package]
+name = "gandr-runtime-emitter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Copy-and-patch emission of the L machine's lowered commands: native code under a content cache, the portable executor elsewhere"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["copy-and-patch", "gandr", "jit", "sequent-calculus"]
+categories = ["compilers"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The lowering reads the command IL and its vocabulary: the zones from the
+# core syntax, literals, indices and fixpoint evidence from the kernel's term
+# crate, and the cut polarity from the cell substrate. A run's outcome is
+# moved into the sequent crate's store, where its readback reads it. A
+# decomposition's web comes from the session crate. The stencils are a normal
+# dependency for their layout and the executor, and a build dependency for
+# the stencil list the build script checks the object against. A value
+# crossing between worlds commits to the value plane under the typed
+# chunker's constants, a lift's level read through the strata crate. A cut's
+# writer and reader run as the two halves of a join on the fork the caller
+# hands over.
+#
+# The block compiler keys each block by a digest. It reads the text of each
+# object of the assembler. Its map of blocks takes no lock on a warm read.
+#
+# The image of a command writes its annotations as one content table of the
+# core-content crate. It writes the table in the node codec of that crate.
+# It reads the reason of an absent value through the shape crate.
+[dependencies]
+blake3.workspace = true
+gandr-core-content.workspace = true
+gandr-core-fork.workspace = true
+gandr-core-sequent.workspace = true
+gandr-core-session.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-runtime-stencils.workspace = true
+gandr-storage-chunker.workspace = true
+gandr-storage-values.workspace = true
+gandr-theory-cell-complexes.workspace = true
+object.workspace = true
+papaya.workspace = true
+quenchant-shape.workspace = true
+
+[build-dependencies]
+gandr-runtime-stencils.workspace = true
+object.workspace = true
+
+# A unix host maps a run's regions, reads its memory and, where it has a
+# patcher, maps executable memory through the C library.
+[target."cfg(unix)".dependencies]
+libc.workspace = true
+
+[lints]
+workspace = true

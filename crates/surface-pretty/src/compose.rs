@@ -1,0 +1,869 @@
+//! Where the walk writes its document.
+//!
+//! The walk spells every former once, through [`Compose`]: a leaf's glyphs,
+//! the joins between pieces, and the places a line may break. Two composers
+//! receive it.
+//!
+//! - [`Paged`] writes into the layout engine's builder, so a face that lays a
+//!   presentation out at a page — a hover, a diagnostic, the formatter's
+//!   operand — gets the resolver's choice of breaks.
+//! - [`OneLine`] writes the text itself, for a spelling read as one line — a
+//!   value a run prints — that is never laid out: every soft line a space, as
+//!   the root's group reads it flat, and each choice by the alternative with
+//!   fewer hard breaks, the left on a tie. That is the layout the resolver
+//!   selects at a page no line overflows, without building the document or
+//!   searching it for breaks.
+//!
+//! A declaration's name ([`Compose::named`]) is recorded where it lands. The
+//! paged composer stores it as a marked text, whose byte in the layout chosen
+//! the render reports; the one-line composer carries each name's bytes
+//! through its own joins.
+//!
+//! The decision: one walk and two receivers, rather than a second printer for
+//! values or a flat render of the built document. A second printer would spell
+//! every former twice and drift; a flat render still pays for the document's
+//! interning, its flattened images and its validation, which cost a run's
+//! value more than the run. Reversal: a one-line face whose output must follow
+//! a cost only the resolver decides.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use gandr_kernel_term::ConstantIndex;
+use gandr_surface_layout::arena::DocId;
+use gandr_surface_layout::arena::MarkTag;
+use gandr_surface_layout::arena::TextSource;
+use gandr_surface_layout::build::DocBuilder;
+use gandr_surface_layout::render::Marked;
+use gandr_surface_layout::units::NestAmount;
+use gandr_surface_layout::units::OutputBytes;
+
+use crate::PresentationError;
+use crate::WrittenName;
+use crate::written_bytes;
+
+/// One document the walk composed, by the composer's own count.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Doc(u32);
+
+impl Doc
+{
+    /// The document with nothing in it.
+    pub const EMPTY: Self = Self(0);
+    /// A line break that survives flattening.
+    pub const HARD_LINE: Self = Self(2);
+    /// A soft line break.
+    pub const LINE: Self = Self(1);
+}
+
+/// The glyphs of one leaf, never holding a line break.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Glyphs<'text>(pub &'text str);
+
+/// What the walk writes its document into.
+///
+/// # Specification
+/// - requires: every [`Doc`] passed back came from the same composer.
+/// - ensures: the composed document is the walk's spelling: [`Paged`] the
+///   layout engine's document, [`OneLine`] its text on as few lines as it
+///   admits.
+/// - panics: none.
+/// - executable: none — the trait carries no body of its own; each composer's
+///   witnesses compare its output.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`OneLine`].
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+pub trait Compose
+{
+    /// The leaf `glyphs`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn text(
+        &mut self,
+        glyphs: Glyphs<'_>,
+    ) -> Result<Doc, PresentationError>;
+
+    /// The leaf `glyphs`, the name of the declaration `constant`, recorded
+    /// where it lands.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named(
+        &mut self,
+        glyphs: Glyphs<'_>,
+        constant: ConstantIndex,
+    ) -> Result<Doc, PresentationError>;
+
+    /// `left`, then `right`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn concat(
+        &mut self,
+        left: Doc,
+        right: Doc,
+    ) -> Result<Doc, PresentationError>;
+
+    /// Each of `docs` in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn concat_all(
+        &mut self,
+        docs: &[Doc],
+    ) -> Result<Doc, PresentationError>;
+
+    /// `doc`, each of its line breaks indented `amount` further.
+    ///
+    /// # Specification
+    /// trivial.
+    fn nest(
+        &mut self,
+        amount: NestAmount,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>;
+
+    /// `doc`, each of its line breaks indented to the column `doc` starts at.
+    ///
+    /// # Specification
+    /// trivial.
+    fn align(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>;
+
+    /// `left` or `right`, whichever lays out better; `left` on a tie.
+    ///
+    /// # Specification
+    /// trivial.
+    fn choice(
+        &mut self,
+        left: Doc,
+        right: Doc,
+    ) -> Result<Doc, PresentationError>;
+
+    /// `doc` on one line where it fits, as laid out otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn group(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>;
+}
+
+/// The document `doc` numbers among `docs`.
+///
+/// # Specification
+/// - requires: `docs` are the composer's documents by position.
+/// - ensures: the document at `doc`'s position.
+/// - fails: [`PresentationError::Unbalanced`] for a position past the end, a
+///   document the composer never numbered.
+/// - panics: none.
+/// - executable: none — a foreign document is a walk defect, which the walk's
+///   own witnesses would show as an unbalanced presentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every golden spelling is composed through it.
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+fn held<T>(
+    docs: &[T],
+    doc: Doc,
+) -> Result<&T, PresentationError>
+{
+    usize::try_from(doc.0)
+        .ok()
+        .and_then(|at| docs.get(at))
+        .ok_or(PresentationError::Unbalanced)
+}
+
+/// Number `kept` as the next of `docs`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `kept` appended, numbered by its position.
+/// - fails: [`PresentationError::Unbalanced`] past `u32::MAX` documents, a
+///   ceiling beyond any walk's budget.
+/// - panics: none.
+/// - executable: none — the ceiling is four billion documents.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every golden spelling is composed through it.
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+fn numbered<T>(
+    docs: &mut Vec<T>,
+    kept: T,
+) -> Result<Doc, PresentationError>
+{
+    let doc = u32::try_from(docs.len())
+        .map(Doc)
+        .map_err(|_overflow| PresentationError::Unbalanced)?;
+    docs.push(kept);
+    Ok(doc)
+}
+
+/// A name the paged composer wrote: its declaration and its length, its place
+/// left to the layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Named
+{
+    /// The declaration the name stands for.
+    constant: ConstantIndex,
+    /// The bytes the name takes.
+    length: OutputBytes,
+}
+
+/// The names a paged composer wrote, by the tag of the mark before each.
+#[derive(Debug, Default)]
+#[repr(transparent)]
+pub struct Names(Vec<Named>);
+
+impl Names
+{
+    /// Each name `marks` reached, where it stands in the rendered text.
+    ///
+    /// # Specification
+    /// - requires: `marks` are a render of a document this composer's names
+    ///   were marked in.
+    /// - ensures: one written name per mark whose tag numbers a name, in output
+    ///   order, starting at the mark's byte and as long as the name.
+    /// - panics: none.
+    /// - executable: none — the printer's witness reads each range back out of
+    ///   the text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type naming a family, an abstract type and a
+    ///   declared value lists each name it writes at the bytes it wrote it.
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    pub fn placed(
+        &self,
+        marks: &[Marked],
+    ) -> Vec<WrittenName>
+    {
+        marks
+            .iter()
+            .filter_map(|mark| {
+                let named = usize::try_from(u32::from(mark.tag))
+                    .ok()
+                    .and_then(|at| self.0.get(at))?;
+                Some(WrittenName::new(mark.at, named.length, named.constant))
+            })
+            .collect()
+    }
+}
+
+/// The layout engine's builder as a composer: every document the walk
+/// composes is the builder's, numbered in the order composed.
+#[derive(Debug)]
+pub struct Paged<'builder, 'meter>
+{
+    /// The builder every document is written into.
+    builder: &'builder mut DocBuilder<'meter>,
+    /// The builder's handle of each document, by position.
+    docs: Vec<DocId>,
+    /// Each declaration's name written, by its mark's tag.
+    names: Names,
+}
+
+impl<'builder, 'meter> Paged<'builder, 'meter>
+{
+    /// A composer writing into `builder`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn new(builder: &'builder mut DocBuilder<'meter>) -> Self
+    {
+        let docs = Vec::from([builder.empty(), builder.line(), builder.hard_line()]);
+        Self {
+            builder,
+            docs,
+            names: Names::default(),
+        }
+    }
+
+    /// The names written, to place once the document is rendered.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn into_names(self) -> Names
+    {
+        self.names
+    }
+
+    /// The builder's handle of `doc`.
+    ///
+    /// # Specification
+    /// - requires: `doc` came from this composer.
+    /// - ensures: the handle the builder minted for `doc`.
+    /// - fails: [`PresentationError::Unbalanced`] for a document this composer
+    ///   never numbered.
+    /// - panics: none.
+    /// - executable: none — a foreign document is a walk defect, which the
+    ///   walk's own witnesses would show as an unbalanced presentation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every laid-out golden is rendered from it.
+    /// - witness: `tests::goldens::arrow_chain_breaks_before_each_continuation`
+    pub fn handle(
+        &self,
+        doc: Doc,
+    ) -> Result<DocId, PresentationError>
+    {
+        held(&self.docs, doc).copied()
+    }
+
+    /// Number `handle` as the next document.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(
+        &mut self,
+        handle: DocId,
+    ) -> Result<Doc, PresentationError>
+    {
+        numbered(&mut self.docs, handle)
+    }
+}
+
+impl Compose for Paged<'_, '_>
+{
+    /// The builder's leaf `glyphs`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn text(
+        &mut self,
+        glyphs: Glyphs<'_>,
+    ) -> Result<Doc, PresentationError>
+    {
+        let handle = self.builder.text(TextSource::from(glyphs.0))?;
+        self.keep(handle)
+    }
+
+    /// The builder's leaf `glyphs`, marked with the name's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one marked leaf; the name numbered by its tag.
+    /// - fails: the builder's refusal, or [`PresentationError::Unbalanced`]
+    ///   past `u32::MAX` names.
+    /// - panics: none.
+    /// - executable: none — the printer's witness reads each range back out of
+    ///   the text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Names::placed`].
+    /// - witness: `tests::goldens::each_written_constant_name_is_listed_where_it_stands_1441`
+    fn named(
+        &mut self,
+        glyphs: Glyphs<'_>,
+        constant: ConstantIndex,
+    ) -> Result<Doc, PresentationError>
+    {
+        let tag =
+            u32::try_from(self.names.0.len()).map_err(|_overflow| PresentationError::Unbalanced)?;
+        let handle = self
+            .builder
+            .marked_text(TextSource::from(glyphs.0), MarkTag::from(tag))?;
+        self.names.0.push(Named {
+            constant,
+            length: written_bytes(glyphs),
+        });
+        self.keep(handle)
+    }
+
+    /// The builder's concatenation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn concat(
+        &mut self,
+        left: Doc,
+        right: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let handle = self
+            .builder
+            .concat(self.handle(left)?, self.handle(right)?)?;
+        self.keep(handle)
+    }
+
+    /// The builder's concatenation of every document.
+    ///
+    /// # Specification
+    /// trivial.
+    fn concat_all(
+        &mut self,
+        docs: &[Doc],
+    ) -> Result<Doc, PresentationError>
+    {
+        let handles = docs
+            .iter()
+            .map(|&doc| self.handle(doc))
+            .collect::<Result<Vec<_>, _>>()?;
+        let handle = self.builder.concat_all(handles)?;
+        self.keep(handle)
+    }
+
+    /// The builder's nesting.
+    ///
+    /// # Specification
+    /// trivial.
+    fn nest(
+        &mut self,
+        amount: NestAmount,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let handle = self.builder.nest(amount, self.handle(doc)?)?;
+        self.keep(handle)
+    }
+
+    /// The builder's alignment.
+    ///
+    /// # Specification
+    /// trivial.
+    fn align(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let handle = self.builder.align(self.handle(doc)?)?;
+        self.keep(handle)
+    }
+
+    /// The builder's choice, the resolver's to make.
+    ///
+    /// # Specification
+    /// trivial.
+    fn choice(
+        &mut self,
+        left: Doc,
+        right: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let handle = self
+            .builder
+            .choice(self.handle(left)?, self.handle(right)?)?;
+        self.keep(handle)
+    }
+
+    /// The builder's group.
+    ///
+    /// # Specification
+    /// trivial.
+    fn group(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let handle = self.builder.group(self.handle(doc)?)?;
+        self.keep(handle)
+    }
+}
+
+/// One composed text, the hard line breaks it holds and the names it writes.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Written
+{
+    /// The text.
+    text: String,
+    /// How many line breaks it holds.
+    breaks: u32,
+    /// Each declaration's name the text writes, in order.
+    names: Vec<WrittenName>,
+}
+
+/// The text itself as a composer, on as few lines as the document admits.
+///
+/// # Specification
+/// - requires: the walk's root is a group, so every soft line reads flat.
+/// - ensures: every soft line a space; each choice the alternative with fewer
+///   line breaks, the left on a tie; a surviving break a line feed and the
+///   indentation its nesting adds.
+/// - panics: none.
+/// - executable: none — the composer is exercised through
+///   [`crate::present_computation_line`], whose witness compares its text with
+///   the resolver's at a page no line overflows.
+///
+/// # Adequacy
+/// - hypothesis: L3 — elaborated bodies with binds, blocks, calls and case
+///   analyses written on one line equal their layout at a page no line
+///   overflows; a choice taken the wrong way or a soft line kept as a break
+///   changes the text.
+/// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OneLine
+{
+    /// Each document composed, by position.
+    docs: Vec<Written>,
+}
+
+impl OneLine
+{
+    /// A composer holding the empty document and the two line breaks.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn new() -> Self
+    {
+        Self {
+            docs: Vec::from([
+                Written::default(),
+                Written {
+                    text: String::from(" "),
+                    breaks: 0_u32,
+                    names: Vec::new(),
+                },
+                Written {
+                    text: String::from("\n"),
+                    breaks: 1_u32,
+                    names: Vec::new(),
+                },
+            ]),
+        }
+    }
+
+    /// The text of `doc` and the names it writes.
+    ///
+    /// # Specification
+    /// - requires: `doc` came from this composer.
+    /// - ensures: the composed text, and each name it writes where it stands.
+    /// - fails: [`PresentationError::Unbalanced`] for a document this composer
+    ///   never numbered.
+    /// - panics: none.
+    /// - executable: none — as [`Paged::handle`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OneLine`].
+    /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
+    /// - witness: `compose::tests::a_name_moves_with_the_text_written_before_it`
+    pub fn into_parts(
+        mut self,
+        doc: Doc,
+    ) -> Result<(String, Vec<WrittenName>), PresentationError>
+    {
+        let at = usize::try_from(doc.0).map_err(|_overflow| PresentationError::Unbalanced)?;
+        if at >= self.docs.len() {
+            return Err(PresentationError::Unbalanced);
+        }
+        let written = self.docs.swap_remove(at);
+        Ok((written.text, written.names))
+    }
+
+    /// The composed text and breaks of `doc`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written(
+        &self,
+        doc: Doc,
+    ) -> Result<&Written, PresentationError>
+    {
+        held(&self.docs, doc)
+    }
+
+    /// Number `written` as the next document.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(
+        &mut self,
+        written: Written,
+    ) -> Result<Doc, PresentationError>
+    {
+        numbered(&mut self.docs, written)
+    }
+}
+
+impl Compose for OneLine
+{
+    /// The glyphs as they stand.
+    ///
+    /// # Specification
+    /// trivial.
+    fn text(
+        &mut self,
+        glyphs: Glyphs<'_>,
+    ) -> Result<Doc, PresentationError>
+    {
+        self.keep(Written {
+            text: String::from(glyphs.0),
+            breaks: 0_u32,
+            names: Vec::new(),
+        })
+    }
+
+    /// The glyphs as they stand, the name of `constant` from their first
+    /// byte.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`OneLine`].
+    /// - witness: `compose::tests::a_name_moves_with_the_text_written_before_it`
+    fn named(
+        &mut self,
+        glyphs: Glyphs<'_>,
+        constant: ConstantIndex,
+    ) -> Result<Doc, PresentationError>
+    {
+        self.keep(Written {
+            text: String::from(glyphs.0),
+            breaks: 0_u32,
+            names: Vec::from([WrittenName::new(
+                OutputBytes::from(0_u64),
+                written_bytes(glyphs),
+                constant,
+            )]),
+        })
+    }
+
+    /// `left` then `right`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn concat(
+        &mut self,
+        left: Doc,
+        right: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        self.concat_all(&[left, right])
+    }
+
+    /// Each document's text in order, the line breaks summed, each name
+    /// moved past the text before it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn concat_all(
+        &mut self,
+        docs: &[Doc],
+    ) -> Result<Doc, PresentationError>
+    {
+        // A concatenation of one written document is that document, uncopied.
+        let mut written = docs
+            .iter()
+            .copied()
+            .filter(|&doc| self.written(doc).is_ok_and(|held| !held.text.is_empty()));
+        if let (Some(only), None) = (written.next(), written.next()) {
+            return Ok(only);
+        }
+        let mut text = String::new();
+        let mut breaks = 0_u32;
+        let mut names = Vec::new();
+        for &doc in docs {
+            let held = self.written(doc)?;
+            let before = written_bytes(Glyphs(&text));
+            names.extend(held.names.iter().map(|name| name.shifted(before)));
+            text.push_str(&held.text);
+            breaks = breaks.saturating_add(held.breaks);
+        }
+        if text.is_empty() {
+            return Ok(Doc::EMPTY);
+        }
+        self.keep(Written {
+            text,
+            breaks,
+            names,
+        })
+    }
+
+    /// `doc` with each line feed followed by `amount` more spaces, each name
+    /// moved by the spaces added before it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a flat document is its own nest; a broken one gains
+    ///   the indentation after each line feed, and a name after a line feed
+    ///   moves with it.
+    /// - witness: `compose::tests::a_nest_indents_each_line_feed_and_leaves_a_flat_document_itself`
+    /// - witness: `compose::tests::a_name_moves_with_the_text_written_before_it`
+    fn nest(
+        &mut self,
+        amount: NestAmount,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let written = self.written(doc)?;
+        if written.breaks == 0_u32 {
+            return Ok(doc);
+        }
+        let width = usize::try_from(u32::from(amount)).unwrap_or(usize::MAX);
+        let indentation = " ".repeat(width);
+        let text = written
+            .text
+            .replace('\n', &alloc::format!("\n{indentation}"));
+        let names = written
+            .names
+            .iter()
+            .map(|name| {
+                let before = usize::try_from(u64::from(name.start()))
+                    .ok()
+                    .and_then(|start| written.text.get(.. start))
+                    .unwrap_or_default()
+                    .matches('\n')
+                    .count();
+                let added = u64::try_from(before.saturating_mul(width)).unwrap_or(u64::MAX);
+                name.shifted(OutputBytes::from(added))
+            })
+            .collect();
+        let breaks = written.breaks;
+        self.keep(Written {
+            text,
+            breaks,
+            names,
+        })
+    }
+
+    /// `doc` itself: a one-line composition keeps no column to align a hard
+    /// line break to, so each keeps the indentation a `nest` gives it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn align(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        Ok(doc)
+    }
+
+    /// The alternative with fewer line breaks, `left` on a tie.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tie and a strictly fewer-broken right.
+    /// - witness: `compose::tests::a_choice_takes_fewer_breaks_and_the_left_on_a_tie`
+    fn choice(
+        &mut self,
+        left: Doc,
+        right: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        let fewer = self.written(right)?.breaks < self.written(left)?.breaks;
+        Ok(if fewer { right } else { left })
+    }
+
+    /// `doc` itself: every soft line already reads flat.
+    ///
+    /// # Specification
+    /// trivial.
+    fn group(
+        &mut self,
+        doc: Doc,
+    ) -> Result<Doc, PresentationError>
+    {
+        Ok(doc)
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_surface_layout::units::NestAmount;
+
+    use super::Compose as _;
+    use super::Doc;
+    use super::Glyphs;
+    use super::OneLine;
+
+    #[test]
+    fn a_nest_indents_each_line_feed_and_leaves_a_flat_document_itself()
+    {
+        let mut one = OneLine::new();
+        let flat = one.text(Glyphs("x y")).expect("a leaf composes");
+        assert_eq!(
+            flat,
+            one.nest(NestAmount::from(2_u32), flat)
+                .expect("a nest composes"),
+            "a document with no break is its own nest"
+        );
+        let head = one.text(Glyphs("x")).expect("a leaf composes");
+        let tail = one.text(Glyphs("y")).expect("a leaf composes");
+        let broken = one
+            .concat_all(&[head, Doc::HARD_LINE, tail])
+            .expect("a concatenation composes");
+        let nested = one
+            .nest(NestAmount::from(2_u32), broken)
+            .expect("a nest composes");
+        assert_eq!(
+            "x\n  y",
+            one.into_parts(nested).expect("the nest is numbered").0
+        );
+    }
+
+    /// A name moves past the text a concatenation writes before it, and past
+    /// the indentation a nest adds after each line feed before it; a name
+    /// before every line feed stays where it stands.
+    #[test]
+    fn a_name_moves_with_the_text_written_before_it()
+    {
+        let mut one = OneLine::new();
+        let head = one
+            .named(Glyphs("Nat"), ConstantIndex::from(3_usize))
+            .expect("a name composes");
+        let middle = one.text(Glyphs(" ->")).expect("a leaf composes");
+        let tail = one
+            .named(Glyphs("List"), ConstantIndex::from(5_usize))
+            .expect("a name composes");
+        let broken = one
+            .concat_all(&[head, middle, Doc::HARD_LINE, tail])
+            .expect("a concatenation composes");
+        let nested = one
+            .nest(NestAmount::from(2_u32), broken)
+            .expect("a nest composes");
+        let (text, names) = one.into_parts(nested).expect("the nest is numbered");
+        assert_eq!("Nat ->\n  List", text);
+        let placed: Vec<(&str, ConstantIndex)> = names
+            .iter()
+            .map(|name| {
+                let start = usize::try_from(u64::from(name.start())).expect("a byte");
+                let end = usize::try_from(u64::from(name.end())).expect("a byte");
+                (
+                    text.get(start .. end).expect("a name's bytes"),
+                    name.constant(),
+                )
+            })
+            .collect();
+        assert_eq!(placed, [
+            ("Nat", ConstantIndex::from(3_usize)),
+            ("List", ConstantIndex::from(5_usize))
+        ]);
+    }
+
+    #[test]
+    fn a_choice_takes_fewer_breaks_and_the_left_on_a_tie()
+    {
+        let mut one = OneLine::new();
+        let left = one.text(Glyphs("left")).expect("a leaf composes");
+        let right = one.text(Glyphs("right")).expect("a leaf composes");
+        assert_eq!(
+            left,
+            one.choice(left, right).expect("a choice composes"),
+            "a tie"
+        );
+        let broken = one
+            .concat(left, Doc::HARD_LINE)
+            .expect("a concatenation composes");
+        assert_eq!(
+            right,
+            one.choice(broken, right).expect("a choice composes"),
+            "the alternative with fewer breaks"
+        );
+    }
+}

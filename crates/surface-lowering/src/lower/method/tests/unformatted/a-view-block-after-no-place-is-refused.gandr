@@ -1,0 +1,2 @@
+{COUNTER}def viewed() -> -F Integer {{ var s = 1; (s.read ()) as w {{ pure w }} }}
+def called() -> -F Integer {{ var s = 1; s as w {{ pure w }} }}

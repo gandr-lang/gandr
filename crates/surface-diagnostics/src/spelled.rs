@@ -1,0 +1,1983 @@
+//! The failures a module's refused bodies kept, and the spelling of every type
+//! they and its checker refusals name, made while the arena they name is at
+//! hand.
+//!
+//! # Spelled once, at the judgement
+//!
+//! A checker refusal and the failure the checking machine built for it name
+//! type nodes of the arena the module was judged over, and the composition
+//! moves that arena into the kernel admission once the module is judged. A
+//! diagnostic is built before the admission runs or after it has consumed the
+//! arena, so it cannot read the arena; the composition spells every type the
+//! module's produced checker refusals compare and every type their failures
+//! name — what each rule's term was checked against, the binders each rule
+//! opened, the hypotheses in scope — through `gandr-surface-pretty` on a
+//! [`SPELLING_WIDTH`]-column page, constants by their paths from the top
+//! level as the source holding the refused declaration reads them, whatever
+//! source the unit lays last, and carries the spellings beside the origin
+//! table. A type the printer cannot lay out on one line is left unspelled,
+//! since it stands in a one-line label. A module that refuses nothing spells
+//! nothing. A document judged after its import closure spells its own
+//! refusals and failures and keeps the closure's spellings
+//! ([`TypeSpellings::after`]).
+//!
+//! The alternatives were keeping the arena in the composition, which costs a
+//! copy of the whole arena per revision or makes the admission borrow what a
+//! face also reads, and spelling from a cloned arena at the diagnostic, which
+//! costs the same copy. Reversal: a diagnostic that needs a type no failure
+//! names needs the arena, or a richer table built at the judgement.
+//!
+//! # Spelled in both spellings
+//!
+//! Each type is spelled twice, once in each [`Spelling`]: the arena is gone
+//! by the time a face asks, and the face, not the judgement, knows which
+//! spelling its reader chose. [`TypeSpellings`] holds both, and a face reads
+//! one through [`TypeSpellings::spelled`]. The alternative, the reader's
+//! spelling threaded into the judgement, would judge a document once per
+//! spelling where a shared session serves editors that chose differently.
+//! The second pass spells only the types a refusal names. Reversal: a profile
+//! that shows the second pass, at which point the judgement spells the one
+//! spelling each face it serves asked for.
+//!
+//! # Spelled under the binders in scope
+//!
+//! A type a failure names stands under the binders its run had opened up to
+//! where the type is read: an obligation's expected type under those opened
+//! before it, a binder's type under those before the binder, a compared type
+//! under them all. Each is spelled under the names the source wrote for them,
+//! read as a context's binders are ([`crate::frame::contexts`]), so a mismatch
+//! between `counted_at(presented)` and `counted_at(other)` reads so rather than
+//! as `counted_at(?)` twice. A data declaration's binders stand outside every
+//! obligation, and the frame the lowering keeps around the refused node names
+//! them ([`crate::frame::framed`]). A failure whose frame and obligations do
+//! not account for every hypothesis spells its types under no name. A type
+//! stands in the regions its run had opened the same way, one per capability
+//! scope and hold the checker entered, outermost first, each named as the
+//! source writes the capability or the held slot, so a kept type reads `at c`
+//! rather than `at ?`. A region the failing definition abstracts,
+//! `[r : Region]`, is named as its telescope writes it, by the lowering's
+//! [`LoweredModule::region_names`]. The alternative, a spelling per
+//! diagnostic, is the arena copy the section above declines.
+//!
+//! # A failure is kept by position
+//!
+//! The checker's module report keeps each refused body's [`Failure`] by its
+//! admission position, which a settled declaration report names. The
+//! composition copies them out as [`Failures`] before the report moves into
+//! the admission, so a diagnostic finds a refusal's failure without the
+//! checker's report.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::Failure;
+use gandr_core_checker::FailureOf;
+use gandr_core_checker::FrameRole;
+use gandr_core_checker::Keyed;
+use gandr_core_checker::Keying;
+use gandr_core_checker::ModuleReport;
+use gandr_core_checker::TypeNode;
+use gandr_core_checker::TypeNodeOf;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::key::NodeKey;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::Reflexivities;
+use gandr_surface_corpus::DeclarationReport;
+use gandr_surface_corpus::Refusal;
+use gandr_surface_corpus::SettleReport;
+use gandr_surface_corpus::checker_refusal;
+use gandr_surface_lowering::ConstructorSpelling;
+use gandr_surface_lowering::Container;
+use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::ImportBinding;
+use gandr_surface_lowering::ImportResolution;
+use gandr_surface_lowering::ImportTarget;
+use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Opening;
+use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::ReadAs;
+use gandr_surface_lowering::Role;
+use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::homed_formers;
+use gandr_surface_pretty::Arity;
+use gandr_surface_pretty::Constructors;
+use gandr_surface_pretty::CoreNode;
+use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::FamilyKey;
+use gandr_surface_pretty::Form;
+use gandr_surface_pretty::ModelSlot;
+use gandr_surface_pretty::Name;
+use gandr_surface_pretty::PageWidth;
+use gandr_surface_pretty::Presentation;
+use gandr_surface_pretty::Spelling;
+use gandr_surface_pretty::Style;
+use gandr_surface_pretty::WrittenStage;
+use gandr_surface_pretty::present_computation;
+use gandr_surface_pretty::present_type_line;
+use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+use crate::binders::named_forms;
+use crate::binders::written_spans;
+use crate::frame::framed;
+use crate::frame::opened;
+use crate::frame::written_binder;
+
+quenchant_shape::reason_enum! {
+    /// Why a type node has no spelling.
+    pub mod spelling {
+        /// The reason no spelling is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No refusal or failure of the module names the node, or the
+            /// printer could not lay it out on one line.
+            Unspelled,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration has no failure.
+    pub mod kept {
+        /// The reason no failure is kept.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The body was not refused by the checking machine: it checked,
+            /// was not judged, or was refused before the machine ran.
+            Unrefused,
+        }
+    }
+}
+
+/// The page a spelled type is laid out on: one line beside a source locus, as
+/// wide as the transcript a session prints.
+const SPELLING_WIDTH: u32 = 100;
+
+/// Where a type a failure names stands: the failure, by its declaration, and
+/// how many of its hypotheses and regions, outermost first, the type stands
+/// under.
+///
+/// A spelling reads the names of this place, so a spelling is keyed by its
+/// node and its place. Two nodes of one content share a key, and the place
+/// spells each under the names of its own context.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SpellingPlace
+{
+    /// The refused declaration that names the type. Its failure gives the
+    /// hypotheses and regions the type stands under, and its source reads
+    /// the constants the type names.
+    pub scope: ConstantIndex,
+    /// How many of its hypotheses the type stands under.
+    pub depth: usize,
+    /// How many of its regions the type stands in.
+    pub regions: usize,
+    /// What the type is read as. A binder's name is not in a node's content,
+    /// so a hypothesis and a type checked against at one depth spell apart:
+    /// each keeps the binder names that its own node writes.
+    pub reading: Reading,
+}
+
+impl SpellingPlace
+{
+    /// A compared type of the refused declaration at `scope`, standing under
+    /// no binder and in no region.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn closed(scope: ConstantIndex) -> Self
+    {
+        Self {
+            scope,
+            depth: 0_usize,
+            regions: 0_usize,
+            reading: Reading::Checked,
+        }
+    }
+}
+
+/// What a spelled type is read as, at its place.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Reading
+{
+    /// The type of a hypothesis or a binder.
+    Hypothesis,
+    /// A type an obligation checks against, or one the refusal compares,
+    /// pursues or carries at an endpoint.
+    Checked,
+}
+
+/// A spelled node at its place: the key of a spelling.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SpelledNode
+{
+    /// The node's content key.
+    pub node: TypeNodeOf<Keyed>,
+    /// The place whose names the spelling reads.
+    pub place: SpellingPlace,
+}
+
+/// A spelled side of a loop refusal at its place: the key of its spelling.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SpelledLoop
+{
+    /// The side's content key.
+    pub node: NodeKey,
+    /// The place whose names the spelling reads.
+    pub place: SpellingPlace,
+}
+
+/// The failure each refused body of a module kept, by the declaration's
+/// admission position.
+///
+/// # Specification
+/// - requires: built by [`Failures::of`] from the checker's report.
+/// - ensures: each position keyed is a body the checking machine refused.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; [`Failures::of`]
+///   carries the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refused body keeps its failure under its position and a
+///   module that refuses nothing keeps none.
+/// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Failures(BTreeMap<ConstantIndex, FailureOf<Keyed>>);
+
+impl Failures
+{
+    /// The failures the checker's `report` keeps, each node named by its
+    /// content key under `keys`.
+    ///
+    /// # Specification
+    /// - requires: `keys` keys the arena that `report` judged over.
+    /// - ensures: exactly the report's failures, by position, each keyed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the failures, each node named by its key, diagnostic
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused body's failure is read back under its
+    ///   position.
+    /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+    #[spec(ensures: |ret| ret.0.len() == report.failures().len()
+        && report.failures().iter().all(|(constant, failure)| ret.0.get(constant) == Some(&failure.keyed(keys))))]
+    #[inline]
+    #[must_use]
+    pub fn of<K>(
+        report: &ModuleReport,
+        keys: &K,
+    ) -> Self
+    where
+        K: Keying,
+    {
+        Self(
+            report
+                .failures()
+                .iter()
+                .map(|(&constant, failure)| (constant, failure.keyed(keys)))
+                .collect(),
+        )
+    }
+
+    /// The failure the body at `constant` was refused with.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn get(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<&FailureOf<Keyed>, kept::Absent>
+    {
+        let Some(failure) = self.0.get(&constant)
+        else {
+            return Maybe::Absent(kept::Absent::Unrefused);
+        };
+        Maybe::Present(failure)
+    }
+}
+
+/// The spelling of every type a module's checker refusals compare and its
+/// failures name, keyed by its node's content key, in one spelling.
+///
+/// # Specification
+/// - requires: read from a [`TypeSpellings`] built over the arena the refusals
+///   were judged over.
+/// - ensures: each node keyed is one a refusal of the module compares, or one a
+///   failure names, spelled by the shared printer.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`TypeSpellings::of`] carries the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a mismatch spells both of its types, a failure the type
+///   its outer rule was checked against, and a module that refuses nothing
+///   spells none.
+/// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Spellings
+{
+    /// The types a refusal compares.
+    types: BTreeMap<SpelledNode, Presentation>,
+    /// The sides a loop refusal compares.
+    loops: BTreeMap<SpelledLoop, Presentation>,
+    /// The place of each refused declaration's failure: where its compared
+    /// types and the sides of its loop refusal stand.
+    places: BTreeMap<ConstantIndex, SpellingPlace>,
+}
+
+/// A module's [`Spellings`] in each [`Spelling`].
+///
+/// # Specification
+/// - requires: built by [`TypeSpellings::of`].
+/// - ensures: both spellings key the same nodes but where the printer lays one
+///   out on more lines than the other.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`TypeSpellings::of`] carries the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a mismatch between relations spells each side with its
+///   glyph in Unicode and its ASCII spelling in ASCII.
+/// - witness: `tests::diagnostics::a_refusal_spells_its_types_in_either_spelling_782`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TypeSpellings
+{
+    /// The types in [`Spelling::Unicode`].
+    unicode: Spellings,
+    /// The types in [`Spelling::Ascii`].
+    ascii: Spellings,
+}
+
+impl TypeSpellings
+{
+    /// Spell every type the checker refusals `report` settled compare, and
+    /// every type the failures of `verdicts` name, their nodes read from
+    /// `arena`, their constants named by `module` and their binders by
+    /// `origins` over `text`, each keyed by its content key under `keys`.
+    ///
+    /// # Specification
+    /// - requires: `report` settled the verdicts `verdicts` judged over
+    ///   `arena`, of the declarations `module` lowered into it, and `keys` keys
+    ///   `arena`; `origins` is `module`'s origin table with the judgement's
+    ///   elaborated nodes carried, and `text` the source it measures.
+    /// - ensures: each type a produced checker refusal compares, as
+    ///   [`gandr_core_checker::CheckRefusal::compared`] names it, and each type
+    ///   [`Failure::types`] names, is keyed by its content key and spelled on
+    ///   one line through [`present_type_line`] in its sugared form, once in
+    ///   each spelling, constants by their paths from the top level, so a
+    ///   member of a module, a sealed abstract type among them, reads as it is
+    ///   written outside it, each read as [`constant_names`] reads it for the
+    ///   source holding the declaration whose refusal or failure names the
+    ///   type; a dependent arrow's binder is named as the source writes it,
+    ///   where it captures nothing; a compared type that [`Failure::solved`]
+    ///   reads through a solution is keyed as written and spelled as solved; a
+    ///   type a failure names is spelled under the hypotheses it stands under,
+    ///   each by the name [`crate::frame::contexts`] gives it, and in the
+    ///   regions it stands in, each by its scope's capability or its hold's
+    ///   slot as written, and at its definition's region binders, each by its
+    ///   name in the telescope, a failure's first naming of a key winning; a
+    ///   type the printer cannot spell, or whose line is wider than a page of
+    ///   [`SPELLING_WIDTH`] columns, is left unkeyed, and is never laid out;
+    ///   each side of a produced
+    ///   [`gandr_core_checker::CheckRefusal::LoopNotRespected`] is keyed by the
+    ///   content key of its node and spelled through [`present_computation`] at
+    ///   that page, under the hypotheses and regions of its declaration's first
+    ///   failure, the case's context, laid out on more lines where it is wider;
+    ///   nothing else is keyed.
+    /// - provides: the spellings a diagnostic reads a refusal's types from once
+    ///   the arena is gone.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the spelled types, diagnostic
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value mismatch spells its expected and found types
+    ///   apart; a failure spells the types its rules were checked against; a
+    ///   module whose declarations all check spells none; a sealed abstract
+    ///   type is spelled by its module's path; a mismatch between types over
+    ///   two parameters spells each by its name, and a hypothesis's type the
+    ///   parameters before it; a type kept at a scope or a hold names it, and
+    ///   one kept at a definition's region binder names the binder; an
+    ///   importer's refusal spells a declaration after the importer's alias
+    ///   beside a later source that opens the same module.
+    /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+    /// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
+    /// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
+    /// - witness: `tests::diagnostics::a_trace_spells_a_kept_region_by_its_name_1494`
+    /// - witness: `tests::diagnostics::a_mismatch_between_two_region_binders_names_both_2138`
+    /// - witness: `tests::diagnostics::a_refusal_is_spelled_as_its_own_source_reads_it_4813`
+    #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.types.iter().all(|(spelled_node, presentation)| !presentation.as_ref().contains('\n')
+        && (report.declarations().iter().any(|declaration|
+            matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
+                if [refusal.compared().expected, refusal.compared().found, refusal.compared().unfolded].contains(&Maybe::Present(spelled_node.node))))
+            || verdicts.failures().values().any(|failure| failure.types().iter().any(|&written| written.keyed(keys) == spelled_node.node))))))]
+    #[inline]
+    #[must_use]
+    pub fn of<K>(
+        arena: &CoreArena,
+        module: &LoweredModule<'_>,
+        report: &SettleReport<'_>,
+        verdicts: &ModuleReport,
+        (origins, text): (&OriginTable, SourceText<'_>),
+        keys: &K,
+    ) -> Self
+    where
+        K: Keying,
+    {
+        spell(
+            (arena, module),
+            (report.declarations(), verdicts, verdicts.failures().iter()),
+            (origins, text),
+            keys,
+        )
+    }
+
+    /// [`Self::of`], `earlier` the spellings of a module whose declarations
+    /// lead `module`'s, below `boundary`: only the refusals and failures of
+    /// the declarations from `boundary` on are spelled, and a node `earlier`
+    /// spells keeps that spelling.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::of`]; `earlier` is [`Self::of`] over the leading
+    ///   module's report and failures, judged over an arena `arena` extends,
+    ///   and `boundary` its first position past them.
+    /// - ensures: `earlier`'s spellings, with each type the refusals and
+    ///   failures from `boundary` on name spelled as [`Self::of`] spells it,
+    ///   where `earlier` keys no spelling of it.
+    /// - provides: a document's spellings at the cost of its own refusals.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause names [`Self::of`]'s spelling of each
+    ///   node; the witness compares the joined spellings with a fresh one's.
+    ///
+    /// # Cost
+    /// - allocation: the spelled types, diagnostic
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document judged after a closure judged once spells
+    ///   as on a fresh judgement of the closure.
+    /// - witness: `tests::diagnostics::a_document_judged_after_its_closure_spells_as_the_whole_unit_776`
+    #[inline]
+    #[must_use]
+    pub fn after<K>(
+        earlier: &Self,
+        boundary: ConstantIndex,
+        (arena, module): (&CoreArena, &LoweredModule<'_>),
+        (report, verdicts): (&SettleReport<'_>, &ModuleReport),
+        (origins, text): (&OriginTable, SourceText<'_>),
+        keys: &K,
+    ) -> Self
+    where
+        K: Keying,
+    {
+        let mut later = spell(
+            (arena, module),
+            (
+                report
+                    .declarations()
+                    .get(
+                        report
+                            .declarations()
+                            .partition_point(|declaration| declaration.constant() < boundary) ..,
+                    )
+                    .unwrap_or_default(),
+                verdicts,
+                verdicts.failures().range(boundary ..),
+            ),
+            (origins, text),
+            keys,
+        );
+        for (into, from) in [
+            (&mut later.unicode, &earlier.unicode),
+            (&mut later.ascii, &earlier.ascii),
+        ] {
+            into.types.extend(
+                from.types
+                    .iter()
+                    .map(|(&node, spelled)| (node, spelled.clone())),
+            );
+            into.loops.extend(
+                from.loops
+                    .iter()
+                    .map(|(&node, spelled)| (node, spelled.clone())),
+            );
+            into.places.extend(
+                from.places
+                    .iter()
+                    .map(|(&constant, &place)| (constant, place)),
+            );
+        }
+        later
+    }
+
+    /// The types in `spelling`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn spelled(
+        &self,
+        spelling: Spelling,
+    ) -> &Spellings
+    {
+        match spelling {
+            Spelling::Unicode => &self.unicode,
+            Spelling::Ascii => &self.ascii,
+        }
+    }
+}
+
+/// [`TypeSpellings::of`] over `declarations`' checker refusals and
+/// `failures`.
+///
+/// # Specification
+/// - requires: as [`TypeSpellings::of`].
+/// - ensures: as [`TypeSpellings::of`], of the refusals among `declarations`
+///   and of `failures`, in their order; every type spelling kept is one line.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the spellings and the printer's tables, growth within the
+///   declarations and the failures.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TypeSpellings::of`], and a split opening two binders
+///   at once, the second's type naming the first.
+/// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+/// - witness: `tests::diagnostics::a_later_binder_of_one_split_spells_under_the_earlier`
+#[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled|
+    spelled
+        .types
+        .values()
+        .all(|presentation| !presentation.as_ref().contains('\n'))))]
+fn spell<'failure, K>(
+    (arena, module): (&CoreArena, &LoweredModule<'_>),
+    (declarations, verdicts, failures): (
+        &[DeclarationReport<'_>],
+        &ModuleReport,
+        impl Iterator<Item = (&'failure ConstantIndex, &'failure Failure)>,
+    ),
+    (origins, text): (&OriginTable, SourceText<'_>),
+    keys: &K,
+) -> TypeSpellings
+where
+    K: Keying,
+{
+    let mut unicode = BTreeMap::new();
+    let mut ascii = BTreeMap::new();
+    let mut unicode_loops = BTreeMap::new();
+    let mut ascii_loops = BTreeMap::new();
+    let mut seen = BTreeSet::new();
+    let mut seen_loops = BTreeSet::new();
+    // Each failure's hypotheses, named where the source wrote their
+    // binders, and each type it names with how many of them it stands
+    // under.
+    let mut scopes: Vec<Vec<Option<String>>> = Vec::new();
+    // Each failure's regions, outermost first: the checker opens one at a
+    // capability scope's subject and one at a hold's body, each named as the
+    // source writes the binder it opens, the capability or the held slot.
+    let mut regions: Vec<Vec<Option<String>>> = Vec::new();
+    // Each failure's definition's region binders, by ordinal, named as its
+    // telescope writes them.
+    let mut bindings: Vec<Vec<Option<Name<'_>>>> = Vec::new();
+    // The declaration of each failure, ascending: the failure's ordinal in
+    // the three lists above.
+    let mut constants: Vec<ConstantIndex> = Vec::new();
+    // Each type named, with the source that reads it: the one holding the
+    // declaration whose refusal or failure names it.
+    let mut named: Vec<(TypeNode, SpellingPlace, SourceIndex)> = Vec::new();
+    // Each compared type a failure reads through the solver's solutions:
+    // keyed as written, spelled as solved.
+    let mut solved: BTreeMap<TypeNode, TypeNode> = BTreeMap::new();
+    // Each refused declaration's first failure, as the scope its loop
+    // refusal's sides stand in: the case's context at the refusal.
+    let mut failed: BTreeMap<ConstantIndex, SpellingPlace> = BTreeMap::new();
+    let unit = module.unit();
+    let holders: BTreeMap<ConstantIndex, SourceIndex> = module
+        .declarations()
+        .iter()
+        .map(|declaration| {
+            (
+                declaration.constant(),
+                unit.source_at(declaration.span().start()),
+            )
+        })
+        .collect();
+    let reader_of = |constant: ConstantIndex| {
+        holders
+            .get(&constant)
+            .copied()
+            .unwrap_or_else(|| unit.last())
+    };
+    for (&constant, failure) in failures {
+        let compared = failure.refusal().compared();
+        solved.extend(
+            [compared.expected, compared.found]
+                .into_iter()
+                .filter_map(|side| match side {
+                    Maybe::Present(written) => Some((written, failure.solved(written))),
+                    Maybe::Absent(_) => None,
+                })
+                .filter(|&(written, read)| written != read),
+        );
+        let reader = reader_of(constant);
+        bindings.push(
+            module
+                .region_names(constant)
+                .iter()
+                .map(|name| name.map(|name| Name::from(<&str>::from(SourceFragment::from(name)))))
+                .collect(),
+        );
+        constants.push(constant);
+        let scope = constant;
+        let first = named.len();
+        let mut names: Vec<Option<String>> = Vec::with_capacity(failure.hypotheses().len());
+        // A data declaration's binders stand outside every obligation, named
+        // by the frame around the node the failure pursued.
+        names.extend(framed(failure, origins).into_iter().map(|name| match name {
+            Maybe::Present(name) => Some(name),
+            Maybe::Absent(_) => None,
+        }));
+        let mut around: Vec<Option<String>> = Vec::new();
+        for obligation in failure.obligations() {
+            let standing = SpellingPlace {
+                scope,
+                depth: names.len(),
+                regions: around.len(),
+                reading: Reading::Checked,
+            };
+            if let Maybe::Present(expected) = obligation.expected() {
+                named.push((expected, standing, reader));
+            }
+            if matches!(
+                obligation.role(),
+                FrameRole::ScopeSubject | FrameRole::HoldBody
+            ) {
+                around.push(match written_binder(obligation.at(), origins, text) {
+                    Maybe::Present(name) => Some(name),
+                    Maybe::Absent(_) => None,
+                });
+            }
+            let binders = opened(obligation, origins, text);
+            for (name, &ty) in binders.into_iter().zip(obligation.binders()) {
+                named.push((
+                    TypeNode::Value(ty),
+                    SpellingPlace {
+                        depth: names.len(),
+                        reading: Reading::Hypothesis,
+                        ..standing
+                    },
+                    reader,
+                ));
+                names.push(match name {
+                    Maybe::Present(name) => Some(name),
+                    Maybe::Absent(_) => None,
+                });
+            }
+        }
+        if names.len() != failure.hypotheses().len() {
+            // The obligations do not account for every hypothesis, so
+            // no name is known to stand at its position.
+            names.clear();
+            for &mut (_, ref mut scoped, _) in named.get_mut(first ..).into_iter().flatten() {
+                scoped.depth = 0;
+            }
+        }
+        let full = names.len();
+        let enclosed = around.len();
+        let _first = failed.entry(constant).or_insert(SpellingPlace {
+            scope,
+            depth: full,
+            regions: enclosed,
+            reading: Reading::Checked,
+        });
+        let compared = failure.refusal().compared();
+        let pursued = match failure.pursuit().expected() {
+            Maybe::Present(node) => Some(node),
+            Maybe::Absent(_) => None,
+        };
+        named.extend(
+            [compared.expected, compared.found, compared.unfolded]
+                .into_iter()
+                .filter_map(|side| match side {
+                    Maybe::Present(node) => Some(node),
+                    Maybe::Absent(_) => None,
+                })
+                .chain(pursued)
+                .chain(
+                    failure
+                        .endpoints()
+                        .iter()
+                        .map(|live| TypeNode::Value(live.state)),
+                )
+                .map(|node| {
+                    (
+                        node,
+                        SpellingPlace {
+                            scope,
+                            depth: full,
+                            regions: enclosed,
+                            reading: Reading::Checked,
+                        },
+                        reader,
+                    )
+                }),
+        );
+        // A region's depth counts from the outermost, so a hypothesis spelled
+        // under every region the failure stands in names the ones it was
+        // formed in as they were.
+        named.extend(failure.hypotheses().iter().enumerate().map(|(at, &ty)| {
+            (
+                TypeNode::Value(ty),
+                SpellingPlace {
+                    scope,
+                    depth: at.min(full),
+                    regions: enclosed,
+                    reading: Reading::Hypothesis,
+                },
+                reader,
+            )
+        }));
+        scopes.push(names);
+        regions.push(around);
+    }
+    named.extend(
+        declarations
+            .iter()
+            .filter_map(|declaration| match declaration.produced().refusal() {
+                Maybe::Present(Refusal::Checking(_)) => {
+                    match checker_refusal(module, verdicts, declaration.constant()) {
+                        // A declaration's compared types stand where its
+                        // failure stands, so a refused body's compared
+                        // types read its failure's names.
+                        Maybe::Present(refusal) => {
+                            Some((
+                                refusal.compared(),
+                                (
+                                    failed.get(&declaration.constant()).copied().unwrap_or_else(
+                                        || SpellingPlace::closed(declaration.constant()),
+                                    ),
+                                    reader_of(declaration.constant()),
+                                ),
+                            ))
+                        },
+                        Maybe::Absent(_) => None,
+                    }
+                },
+                Maybe::Present(Refusal::Lowering(_) | Refusal::Corpus(_)) | Maybe::Absent(_) => {
+                    None
+                },
+            })
+            .flat_map(|(compared, at)| {
+                [compared.expected, compared.found, compared.unfolded].map(|side| (side, at))
+            })
+            .filter_map(|(side, (place, reader))| match side {
+                Maybe::Present(node) => Some((node, place, reader)),
+                Maybe::Absent(_) => None,
+            }),
+    );
+    let named_loops: Vec<(ComputationId, SpellingPlace, SourceIndex)> = declarations
+        .iter()
+        .filter(|declaration| {
+            matches!(
+                declaration.produced().refusal(),
+                Maybe::Present(Refusal::Checking(_))
+            )
+        })
+        .filter_map(
+            |declaration| match checker_refusal(module, verdicts, declaration.constant()) {
+                Maybe::Present(CheckRefusal::LoopNotRespected { left, right, .. }) => Some((
+                    [left, right],
+                    failed
+                        .get(&declaration.constant())
+                        .copied()
+                        .unwrap_or_else(|| SpellingPlace::closed(declaration.constant())),
+                    reader_of(declaration.constant()),
+                )),
+                Maybe::Present(_) | Maybe::Absent(_) => None,
+            },
+        )
+        .flat_map(|(sides, scoped, reader)| sides.map(|side| (side, scoped, reader)))
+        .collect();
+    if named.is_empty() && named_loops.is_empty() {
+        return TypeSpellings::default();
+    }
+    // A reader names each constant as its imports bind it, so each source
+    // that reads a named type takes its own names.
+    let mut readers: Vec<SourceIndex> = named
+        .iter()
+        .map(|&(_, _, reader)| reader)
+        .chain(named_loops.iter().map(|&(_, _, reader)| reader))
+        .collect();
+    readers.sort_unstable();
+    readers.dedup();
+    let paths: Vec<Vec<String>> = readers
+        .iter()
+        .map(|&reader| constant_names(module, reader))
+        .collect();
+    let names: Vec<Vec<Name<'_>>> = paths
+        .iter()
+        .map(|paths| paths.iter().map(|path| Name::from(path.as_str())).collect())
+        .collect();
+    let homed: Vec<Vec<HomedName>> = readers
+        .iter()
+        .map(|&reader| homed_names(module, reader))
+        .collect();
+    let homes: Vec<Vec<(Name<'_>, Name<'_>)>> = homed
+        .iter()
+        .map(|homed| {
+            homed
+                .iter()
+                .map(|homed| {
+                    (
+                        Name::from(homed.head.as_str()),
+                        Name::from(homed.written.as_str()),
+                    )
+                })
+                .collect()
+        })
+        .collect();
+    let families = Families::of(module);
+    let constructors = families.naming();
+    let contexts = printed_names(&scopes);
+    let enclosing = printed_names(&regions);
+    let spans = written_spans(origins);
+    let forms = named_forms(&spans, text);
+    let implicits = telescopes(module);
+    let blocks = written_blocks(module);
+    let slots = model_slots(module);
+    let sources: Vec<CoreSource<'_>> = names
+        .iter()
+        .zip(&homes)
+        .map(|(names, homes)| {
+            CoreSource::new(arena, names)
+                .homing(homes)
+                .naming(&constructors)
+                .writing(&forms)
+                .naming_implicits(&implicits)
+                .ordering_implicits(&blocks)
+                .flattening(&slots)
+                .operating(module.operators())
+        })
+        .collect();
+    // A place's scope names its failure by declaration, so the place is one
+    // value in a session that takes and in a fresh one. Its ordinal in the
+    // lists of names is local to this spelling.
+    let ordinal = |scope: ConstantIndex| constants.binary_search(&scope).ok();
+    for (node, place, reader) in named {
+        let SpellingPlace {
+            scope,
+            depth,
+            regions: within,
+            ..
+        } = place;
+        let scope = ordinal(scope);
+        let key = SpelledNode {
+            node: node.keyed(keys),
+            place,
+        };
+        if !seen.insert(key) {
+            continue;
+        }
+        let Some(source) = readers
+            .binary_search(&reader)
+            .ok()
+            .and_then(|at| sources.get(at))
+        else {
+            continue;
+        };
+        let root = match solved.get(&node).copied().unwrap_or(node) {
+            TypeNode::Value(id) => CoreNode::ValueType(id),
+            TypeNode::Computation(id) => CoreNode::CompType(id),
+        };
+        let context = scope
+            .and_then(|scope| contexts.get(scope))
+            .and_then(|context| context.get(.. depth))
+            .unwrap_or_default();
+        let around = scope
+            .and_then(|scope| enclosing.get(scope))
+            .and_then(|around| around.get(.. within))
+            .unwrap_or_default();
+        let bound = scope
+            .and_then(|scope| bindings.get(scope))
+            .map_or_default(Vec::as_slice);
+        for (spelling, spelled) in [
+            (Spelling::Unicode, &mut unicode),
+            (Spelling::Ascii, &mut ascii),
+        ] {
+            let style = Style {
+                form: Form::Sugared,
+                spelling,
+            };
+            // The one-line spelling is the page's layout wherever it fits,
+            // and a type laid out over more lines is not kept, so one whose
+            // line does not fit is never laid out.
+            if let Ok(presentation) = present_type_line(
+                &source.within(context).scoped(around).bounding(bound),
+                root,
+                style,
+            ) && !presentation.as_ref().contains('\n')
+                && u32::try_from(presentation.as_ref().chars().count())
+                    .is_ok_and(|width| width <= SPELLING_WIDTH)
+            {
+                let _fresh = spelled.insert(key, presentation);
+            }
+        }
+    }
+    for (node, place, reader) in named_loops {
+        let SpellingPlace {
+            scope,
+            depth,
+            regions: within,
+            ..
+        } = place;
+        let scope = ordinal(scope);
+        let key = SpelledLoop {
+            node: keys.computation(node),
+            place,
+        };
+        if !seen_loops.insert(key) {
+            continue;
+        }
+        let Some(source) = readers
+            .binary_search(&reader)
+            .ok()
+            .and_then(|at| sources.get(at))
+        else {
+            continue;
+        };
+        let context = scope
+            .and_then(|scope| contexts.get(scope))
+            .and_then(|context| context.get(.. depth))
+            .unwrap_or_default();
+        let around = scope
+            .and_then(|scope| enclosing.get(scope))
+            .and_then(|around| around.get(.. within))
+            .unwrap_or_default();
+        let bound = scope
+            .and_then(|scope| bindings.get(scope))
+            .map_or_default(Vec::as_slice);
+        for (spelling, spelled) in [
+            (Spelling::Unicode, &mut unicode_loops),
+            (Spelling::Ascii, &mut ascii_loops),
+        ] {
+            let style = Style {
+                form: Form::Sugared,
+                spelling,
+            };
+            if let Ok(presentation) = present_computation(
+                &source.within(context).scoped(around).bounding(bound),
+                CoreNode::Computation(node),
+                PageWidth::from(SPELLING_WIDTH),
+                style,
+            ) {
+                let _fresh = spelled.insert(key, presentation);
+            }
+        }
+    }
+    TypeSpellings {
+        unicode: Spellings {
+            types: unicode,
+            loops: unicode_loops,
+            places: failed.clone(),
+        },
+        ascii: Spellings {
+            types: ascii,
+            loops: ascii_loops,
+            places: failed,
+        },
+    }
+}
+
+impl Spellings
+{
+    /// The spelling of `node` at its place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn get(
+        &self,
+        node: SpelledNode,
+    ) -> Maybe<&Presentation, spelling::Absent>
+    {
+        let Some(presentation) = self.types.get(&node)
+        else {
+            return Maybe::Absent(spelling::Absent::Unspelled);
+        };
+        Maybe::Present(presentation)
+    }
+
+    /// The place of the failure that the refused declaration at `constant`
+    /// kept: where its compared types stand. A declaration with no failure
+    /// spells its compared types closed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn place_of(
+        &self,
+        constant: ConstantIndex,
+    ) -> SpellingPlace
+    {
+        self.places
+            .get(&constant)
+            .copied()
+            .unwrap_or_else(|| SpellingPlace::closed(constant))
+    }
+
+    /// The printed side `side` of a loop refusal: on one line where it fits a
+    /// page of [`SPELLING_WIDTH`] columns, laid out on that page otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn loop_side(
+        &self,
+        side: SpelledLoop,
+    ) -> Maybe<&Presentation, spelling::Absent>
+    {
+        let Some(presentation) = self.loops.get(&side)
+        else {
+            return Maybe::Absent(spelling::Absent::Unspelled);
+        };
+        Maybe::Present(presentation)
+    }
+}
+
+/// The names `held` keeps for each failure, outermost first, as the printer
+/// reads them: a binder or region the source names by its name, any other as
+/// unnamed.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one list per failure of `held`, each as long as its own, each
+///   name the one `held` keeps at its position.
+/// - provides: the contexts and regions [`spell`] prints a failure's types in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TypeSpellings::of`].
+/// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
+#[spec(ensures: |ret| ret.len() == held.len()
+    && ret.iter().zip(held).all(|(printed, kept)| printed.len() == kept.len()))]
+fn printed_names(held: &[Vec<Option<String>>]) -> Vec<Vec<Option<Name<'_>>>>
+{
+    held.iter()
+        .map(|names| {
+            names
+                .iter()
+                .map(|name| name.as_deref().map(Name::from))
+                .collect()
+        })
+        .collect()
+}
+
+/// The path of each constant of `module` in the source that declares it, by
+/// admission position.
+///
+/// A name is the declaration's path from the top level, its segments joined
+/// by `.`; a position no declaration holds is the empty name. The words of a
+/// family's loops are named by the path type they read as, `Path[.A = Circle](
+/// Base, Base)`, so a word's type spells as it is written and its letters are
+/// not looked up under its family's name. Words over a cell at the point's
+/// reflexivity are named by the path type at the wrapped point.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one name per position up to the highest declared one; each
+///   declared position holds its declaration's path, so a member of a module, a
+///   sealed abstract type among them, reads as it is written outside it, and
+///   the words of a family's loops hold the path type at their point.
+/// - provides: the paths a declaration is found by, and the names
+///   [`constant_names`] starts from.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a refusal comparing two declared types spells the names
+///   of the declarations it mentions, and a sealed abstract type is spelled by
+///   its module's path rather than its bare name; a word spells by its letters,
+///   which only a words family named apart from its sort finds.
+/// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
+/// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
+/// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
+#[spec(ensures: |ret| module.declarations().iter().all(|declaration|
+    ret.get(usize::from(declaration.constant())).is_some()))]
+#[inline]
+#[must_use]
+pub fn constant_paths(module: &LoweredModule<'_>) -> Vec<String>
+{
+    let positions = module
+        .declarations()
+        .iter()
+        .map(|declaration| usize::from(declaration.constant()).saturating_add(1))
+        .max()
+        .unwrap_or_default();
+    let mut paths = alloc::vec![String::new(); positions];
+    for declaration in module.declarations() {
+        if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
+            slot.clear();
+            for (index, segment) in module.path_of(declaration).iter().enumerate() {
+                if index > 0 {
+                    slot.push('.');
+                }
+                slot.push_str(<&str>::from(SourceFragment::from(*segment)));
+            }
+        }
+    }
+    for declaration in module.declarations() {
+        if let Maybe::Present((sort, point, wraps)) = words_point(module, declaration) {
+            let family = paths.get(usize::from(sort)).cloned().unwrap_or_default();
+            let (carrier, point) = wrapped(family, point, wraps);
+            if let Some(slot) = paths.get_mut(usize::from(declaration.constant())) {
+                *slot = alloc::format!("Path[.A = {carrier}]({point}, {point})");
+            }
+        }
+    }
+    paths
+}
+
+/// The carrier and the point a type of words reads its path at, spelled: the
+/// family `family` and its point `point`, then for each of `wraps` wrappings
+/// the path type at the point below and `Path.here` applied to it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `(family, point)` for no wrapping; otherwise `(Path[.A = c](p,
+///   p), Path.here p)` over the pair `(c, p)` for one wrapping fewer, `p` in
+///   parentheses unless it is a bare name, as the printer writes an
+///   application.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `for` over the wrappings, not recursion.
+/// - measure: the wrappings left.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the sphere's words spell the path type at the reflexivity
+///   of its point, which reads back to their certificate and reprints as
+///   itself.
+/// - witness: `tests::diagnostics::a_higher_cell_s_words_spell_at_the_wrapped_point_6446`
+#[spec(ensures: |ret| ret.1.matches("Path.here").count() >= usize::from(wraps))]
+fn wrapped(
+    family: String,
+    point: String,
+    wraps: Reflexivities,
+) -> (String, String)
+{
+    let (mut carrier, mut point) = (family, point);
+    for _ in 0 .. usize::from(wraps) {
+        carrier = alloc::format!("Path[.A = {carrier}]({point}, {point})");
+        point = if point.contains([' ', '(']) {
+            alloc::format!("Path.here ({point})")
+        }
+        else {
+            alloc::format!("Path.here {point}")
+        };
+    }
+    (carrier, point)
+}
+
+/// `paths`, each name that the source `reader` writes otherwise written as
+/// it writes it.
+///
+/// A declaration that `reader` reads through an import under another name
+/// takes that name: `far.placements` through `import "…" as far ;`, and a
+/// flow's member name through an import via the flow.
+///
+/// # Specification
+/// - requires: `paths` is [`constant_paths`] of `module`.
+/// - ensures: each non-empty position [`LoweredModule::reads`] answers for
+///   `reader` holds the name it answers; every other position is unchanged.
+/// - provides: the names a printer writes in the source `reader`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the names are the lowering's record, which a clause
+///   would restate whole.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration read through an alias is spelled after it
+///   for its reader and bare for its own source.
+/// - witness: `tests::diagnostics::a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498`
+#[inline]
+pub fn read_by(
+    module: &LoweredModule<'_>,
+    reader: SourceIndex,
+    paths: &mut [String],
+)
+{
+    for (constant, read) in module.reads(reader) {
+        let Some(slot) = paths.get_mut(usize::from(constant))
+        else {
+            continue;
+        };
+        if slot.is_empty() {
+            continue;
+        }
+        *slot = match read {
+            ReadAs::Under(under) => {
+                alloc::format!("{}.{slot}", <&str>::from(SourceFragment::from(under)))
+            },
+            ReadAs::Member { under, member } => alloc::format!(
+                "{}.{}",
+                <&str>::from(SourceFragment::from(under)),
+                <&str>::from(SourceFragment::from(member))
+            ),
+            ReadAs::Opened(member) => String::from(<&str>::from(SourceFragment::from(member))),
+        };
+    }
+}
+
+/// The name a printer writes for each constant of `module`, by admission
+/// position, in the source `reader`: [`constant_paths`], [`read_by`]
+/// `reader`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`constant_paths`], then [`read_by`].
+/// - provides: the constant names a [`CoreSource`] reads to spell a type that
+///   mentions a declaration, in the source `reader`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`constant_paths`] and [`read_by`].
+/// - witness: `tests::diagnostics::a_declaration_read_through_an_import_is_spelled_as_its_reader_writes_it_3498`
+#[spec(ensures: |ret| module.declarations().iter().all(|declaration|
+    ret.get(usize::from(declaration.constant())).is_some()))]
+#[inline]
+#[must_use]
+pub fn constant_names(
+    module: &LoweredModule<'_>,
+    reader: SourceIndex,
+) -> Vec<String>
+{
+    let mut paths = constant_paths(module);
+    read_by(module, reader, &mut paths);
+    paths
+}
+
+/// The name a source writes for a type head a `std` module homes, where it
+/// does not write the head bare.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HomedName
+{
+    /// The head's bare spelling, `List`.
+    pub head: String,
+    /// The name the source writes for it, `l.List` or `std.list.List`.
+    pub written: String,
+    /// The module path of its home, `std.list`.
+    pub home: String,
+    /// Whether the source imports its home: a source that does not writes
+    /// the home's path, which reads back with the import of that home.
+    pub imported: bool,
+}
+
+/// The name the source `reader` writes for each type head a `std` module
+/// homes, where it does not write the head bare.
+///
+/// A source that lists the head from its home writes it bare, `List A`
+/// under `import std.list (List);`, and holds no entry. A source that
+/// imports the home otherwise writes it after the qualifier its import binds:
+/// `l.List A` under `import std.list as l;`, `std.list.List A` under
+/// `import std.list;`. Any other source writes it after its home's path,
+/// `std.list.List A`, which reads back with the import of that home.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per homed former that `reader`'s resolved imports do
+///   not list: the qualifier of `reader`'s first resolved import of its home,
+///   else the home's path, then `.` and the head; imported exactly when such an
+///   import stands.
+/// - provides: the homed heads a printer writes in the source `reader`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the names are the imports' record, which a clause would
+///   restate whole.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a list type spelled in a source that lists `List`, one
+///   that imports `std.list` under an alias, and one that imports nothing of
+///   it.
+/// - witness: `tests::diagnostics::a_list_type_is_spelled_as_its_reader_reads_it_4835`
+#[inline]
+#[must_use]
+pub fn homed_names(
+    module: &LoweredModule<'_>,
+    reader: SourceIndex,
+) -> Vec<HomedName>
+{
+    homed_formers()
+        .filter_map(|(home, head)| {
+            let imports = || {
+                module.imports().iter().filter(move |import| {
+                    import.source() == reader
+                        && matches!(
+                            import.resolution(),
+                            ImportResolution::Path(ImportTarget::Source(_))
+                        )
+                        && matches!(import.module(), Maybe::Present(module) if module.as_ref() == home.as_ref())
+                })
+            };
+            let listed = imports().any(|import| {
+                matches!(*import.opening(), Opening::Listed(ref listed)
+                    if listed.iter().any(|&(held, _)| held.as_ref() == head.as_ref()))
+            });
+            if listed {
+                return None;
+            }
+            let qualifier = imports().find_map(|import| match import.binding() {
+                ImportBinding::Aliased(qualifier) | ImportBinding::Qualified(qualifier) => {
+                    Some(qualifier)
+                },
+                ImportBinding::Unqualified => None,
+            });
+            Some(HomedName {
+                head: String::from(head.as_ref()),
+                written: alloc::format!(
+                    "{}.{}",
+                    qualifier.unwrap_or(home).as_ref(),
+                    head.as_ref()
+                ),
+                home: String::from(home.as_ref()),
+                imported: qualifier.is_some(),
+            })
+        })
+        .collect()
+}
+
+/// The telescope of each function of `module` that writes an implicit.
+///
+/// Ascending by its constant, as [`CoreSource::naming_implicits`] reads it:
+/// one entry per parameter in the merged order, an implicit's name and none
+/// for an explicit one.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn telescopes<'module>(
+    module: &'module LoweredModule<'_>
+) -> Vec<(ConstantIndex, Vec<Option<Name<'module>>>)>
+{
+    let mut telescopes: Vec<(ConstantIndex, Vec<Option<Name<'module>>>)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let constant = declaration.constant();
+            let held = module.implicits(constant);
+            (!held.is_empty()).then(|| {
+                (
+                    constant,
+                    held.iter()
+                        .map(|name| name.as_ref().map(|name| Name::from(name.as_ref())))
+                        .collect(),
+                )
+            })
+        })
+        .collect();
+    telescopes.sort_by_key(|&(constant, _)| constant);
+    telescopes.dedup_by_key(|&mut (constant, _)| constant);
+    telescopes
+}
+
+/// The written block of each function of `module` that writes an implicit.
+///
+/// Ascending by its constant, as [`CoreSource::ordering_implicits`] reads it:
+/// the name of each entry of the `[ … ]` block, in written order.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the blocks and their names, growth within the module's
+///   declarations.
+#[inline]
+#[must_use]
+pub fn written_blocks<'module>(
+    module: &'module LoweredModule<'_>
+) -> Vec<(ConstantIndex, Vec<Name<'module>>)>
+{
+    let mut blocks: Vec<(ConstantIndex, Vec<Name<'module>>)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let constant = declaration.constant();
+            let held = module.written_implicits(constant);
+            (!held.is_empty()).then(|| {
+                (
+                    constant,
+                    held.iter().map(|name| Name::from(name.as_ref())).collect(),
+                )
+            })
+        })
+        .collect();
+    blocks.sort_by_key(|&(constant, _)| constant);
+    blocks.dedup_by_key(|&mut (constant, _)| constant);
+    blocks
+}
+
+/// The stage binders of each function of `module` quantified over stages.
+///
+/// Ascending by its constant, as [`CoreSource::staging`] reads them: each
+/// stage's name, in stage order, joined by position with the bound the
+/// declaration holds for it. A declaration whose names and bounds differ in
+/// count records none.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the stages and their names, growth within the module's
+///   declarations.
+#[inline]
+#[must_use]
+pub fn written_stages<'module>(
+    module: &'module LoweredModule<'_>
+) -> Vec<(ConstantIndex, Vec<WrittenStage<'module>>)>
+{
+    let mut stages: Vec<(ConstantIndex, Vec<WrittenStage<'module>>)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let constant = declaration.constant();
+            let names = module.stage_names(constant);
+            let bounds = module.stages(declaration);
+            (!names.is_empty() && names.len() == bounds.len()).then(|| {
+                (
+                    constant,
+                    names
+                        .iter()
+                        .zip(bounds)
+                        .map(|(name, &bound)| WrittenStage {
+                            name: Name::from(name.as_ref()),
+                            bound,
+                        })
+                        .collect(),
+                )
+            })
+        })
+        .collect();
+    stages.sort_by_key(|&(constant, _)| constant);
+    stages.dedup_by_key(|&mut (constant, _)| constant);
+    stages
+}
+
+/// The model implicits of each function of `module` whose telescope writes
+/// one.
+///
+/// Ascending by its constant, as [`CoreSource::flattening`] reads them: each
+/// slot in telescope order, its components and its fixed sorts by name.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the model implicits of each function, diagnostic
+#[inline]
+#[must_use]
+pub fn model_slots<'module>(
+    module: &'module LoweredModule<'_>
+) -> Vec<(ConstantIndex, Vec<ModelSlot<'module, CoreNode>>)>
+{
+    let mut slots: Vec<(ConstantIndex, Vec<ModelSlot<'module, CoreNode>>)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let constant = declaration.constant();
+            let held = module.model_slots(constant);
+            (!held.is_empty()).then(|| {
+                (
+                    constant,
+                    held.iter()
+                        .map(|slot| ModelSlot {
+                            at: slot.at,
+                            name: Name::from(slot.name.as_ref()),
+                            theory: Name::from(slot.theory.as_ref()),
+                            components: slot
+                                .components
+                                .iter()
+                                .map(|&(ref component, sort)| {
+                                    (Name::from(component.as_ref()), sort)
+                                })
+                                .collect(),
+                            fixed: slot
+                                .fixed
+                                .iter()
+                                .map(|&(ref sort, ty)| {
+                                    (Name::from(sort.as_ref()), CoreNode::ValueType(ty))
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                )
+            })
+        })
+        .collect();
+    slots.sort_by_key(|&(constant, _)| constant);
+    slots.dedup_by_key(|&mut (constant, _)| constant);
+    slots
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration names no words' point.
+    pub mod words_point {
+        /// The reason no point is spelled.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The declaration is no words of a family's loops, or its family
+            /// is not among the module's data declarations.
+            Unworded,
+        }
+    }
+}
+
+/// The sort the words `declaration` declares are over, the point their loops
+/// are at, spelled by the sort's constructor names, and how many times the
+/// point is wrapped in its reflexivity.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for the words of a family's loops whose family the module holds,
+///   the family's admission position, the closed term its loops are at, each
+///   constructor by its name, applied to its fields when it has any, and the
+///   cells' wrapping.
+/// - fails: [`words_point::Absent::Unworded`] for any other declaration.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one pass over the point's pre-order nodes, last to first.
+/// - measure: the point's nodes still to spell.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`constant_names`], and points whose constructors take
+///   one argument and two.
+/// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
+/// - witness: `tests::diagnostics::a_words_point_spells_its_constructors_arguments`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present((_, ref point, _)) => !point.is_empty(),
+    Maybe::Absent(_) => true,
+})]
+fn words_point(
+    module: &LoweredModule<'_>,
+    declaration: &gandr_surface_lowering::LoweredDeclaration<'_>,
+) -> Maybe<(ConstantIndex, String, Reflexivities), words_point::Absent>
+{
+    let unworded = Maybe::Absent(words_point::Absent::Unworded);
+    if declaration.role() != Role::Words {
+        return unworded;
+    }
+    let DeclarationOutcome::Data(index) = declaration.outcome()
+    else {
+        return unworded;
+    };
+    let Maybe::Present(cells) = module
+        .data(index)
+        .map(|signature| signature.presentation().cells())
+    else {
+        return unworded;
+    };
+    let Some(cells) = cells
+    else {
+        return unworded;
+    };
+    let Some(family) = module
+        .declarations()
+        .iter()
+        .find_map(|held| match held.outcome() {
+            DeclarationOutcome::Data(family) if held.constant() == cells.sort() => Some(family),
+            DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_) => None,
+        })
+    else {
+        return unworded;
+    };
+    let Maybe::Present(signature) = module.data(family)
+    else {
+        return unworded;
+    };
+    let names = module.constructors(family);
+    let mut spelled: Vec<String> = Vec::new();
+    for node in cells.point().iter().rev() {
+        let gandr_kernel_term::RuleNode::Constructor(tag) = *node
+        else {
+            return unworded;
+        };
+        let tag = usize::from(tag);
+        let (Some(name), Some(fields)) = (names.get(tag), signature.constructors().get(tag))
+        else {
+            return unworded;
+        };
+        let start = spelled.len().saturating_sub(fields.len());
+        let mut text = name.clone();
+        if start < spelled.len() {
+            text.push('(');
+            for (index, argument) in spelled.drain(start ..).rev().enumerate() {
+                if index > 0 {
+                    text.push_str(", ");
+                }
+                text.push_str(&argument);
+            }
+            text.push(')');
+        }
+        spelled.push(text);
+    }
+    match (spelled.pop(), spelled.is_empty()) {
+        (Some(point), true) => Maybe::Present((cells.sort(), point, cells.reflexivities())),
+        _ => unworded,
+    }
+}
+
+/// The constructors of every data declaration of a module, each family by
+/// its constant's admission position, and the family each data case of its
+/// bodies eliminates.
+///
+/// Each constructor is kept by its name and field count in tag order, and
+/// a family records whether it is the words of a family's loops, whose empty
+/// word is spelled `Path.here(a)` at their point `a` as a value and `here` as a
+/// pattern, and whose letters cons onto the rest of a word. The core names a
+/// constructor by its family and its tag, and a data case matches by tag
+/// alone, so a printer reads the names here, owned so a table outliving the
+/// lowered module keeps them.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Families
+{
+    /// Each data declaration's constructors.
+    families: Vec<Family>,
+    /// Each data case, with the constant of the family it eliminates.
+    cases: Vec<(ComputationId, ConstantIndex)>,
+}
+
+/// One data declaration's constructors, as [`Families`] keeps them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Family
+{
+    /// The family's constant.
+    constant: ConstantIndex,
+    /// Each constructor's name and field count, in tag order.
+    constructors: Vec<(String, usize)>,
+    /// The empty word as a value is written, `Path.here(a)`, when the family is
+    /// the words of a family's loops.
+    empty: Option<String>,
+    /// The names of the family's loops, in the order a data case over the
+    /// family takes their branches after its constructors'.
+    loops: Vec<String>,
+    /// Whether the family takes arguments, parameters or indices.
+    applied: bool,
+}
+
+impl Families
+{
+    /// The constructors of every data declaration of `module`, and the
+    /// family each data case of its arena eliminates.
+    ///
+    /// A case is named by its node in the module's own arena, so a table
+    /// made here names the cases of that arena alone; a source over another
+    /// arena, such as a run's value read back, takes [`Self::declared`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the families [`Self::declared`] holds, and one case per data
+    ///   case the module's origins record a family for, at that family's
+    ///   position.
+    /// - provides: the constructor names a [`CoreSource`] over the module's
+    ///   arena spells a constructor value and a data case's patterns with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body's match names each branch by its constructor;
+    ///   a case left out spells `?`, which the test fails on.
+    /// - witness: `tests::diagnostics::a_body_names_its_match_arms_by_their_constructors_809`
+    #[spec(ensures: |ret| ret.families.len() <= module.declarations().iter().len()
+        && ret.cases.len() == module.origins().eliminations().len())]
+    #[inline]
+    #[must_use]
+    pub fn of(module: &LoweredModule<'_>) -> Self
+    {
+        let cases = module.origins().eliminations().collect();
+        Self {
+            cases,
+            ..Self::declared(module)
+        }
+    }
+
+    /// The constructors of every data declaration of `module`, naming no
+    /// data case.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one family per data declaration whose signature the module
+    ///   holds, at its constant's position, its constructors named as written
+    ///   in tag order with the field count the signature gives each, a
+    ///   constructor whose bare name the module reports shadowed qualified by
+    ///   its family's path, `Theory.App`, or by its module's path for a family
+    ///   a module declares, `M.B`; then its loops named as written, the words
+    ///   declaring them in module order; the words of a family's loops are
+    ///   consed, their empty word written `Path.here(a)` as a value at their
+    ///   point `a`; no case.
+    /// - provides: the constructor names a [`CoreSource`] over any arena spells
+    ///   a constructor value with.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the constructor names, diagnostic
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal whose type mentions a constructor value
+    ///   spells it by its declared name; a family left out spells `?`, which
+    ///   the test fails on.
+    /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
+    /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
+    /// - witness: `tests::diagnostics::a_loop_arm_is_named_by_its_loop_823`
+    /// - witness: `tests::diagnostics::a_shadowed_constructor_spells_by_its_family_2428`
+    #[spec(ensures: |ret| ret.families.len() <= module.declarations().iter().len() && ret.cases.is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn declared(module: &LoweredModule<'_>) -> Self
+    {
+        let mut looped: BTreeMap<ConstantIndex, Vec<String>> = BTreeMap::new();
+        for declaration in module.declarations() {
+            if declaration.role() != Role::Words {
+                continue;
+            }
+            let DeclarationOutcome::Data(index) = declaration.outcome()
+            else {
+                continue;
+            };
+            let Maybe::Present(Some(cells)) = module
+                .data(index)
+                .map(|signature| signature.presentation().cells())
+            else {
+                continue;
+            };
+            // A word's constructors are the empty word, then a letter and its
+            // inverse per loop: the letters, at the odd tags, name the loops.
+            let letters = module
+                .constructors(index)
+                .iter()
+                .skip(1)
+                .step_by(2)
+                .take(cells.cells().len())
+                .cloned();
+            looped.entry(cells.sort()).or_default().extend(letters);
+        }
+        let reader = module.unit().last();
+        let mut imported = BTreeMap::new();
+        for declaration in module.declarations() {
+            let Container::TopLevel(source) = declaration.container()
+            else {
+                continue;
+            };
+            let DeclarationOutcome::Data(index) = declaration.outcome()
+            else {
+                continue;
+            };
+            for name in module.constructors(index) {
+                let opened = module.imports().iter().any(|import| {
+                    import.source() == reader
+                        && matches!(
+                            import.resolution(),
+                            ImportResolution::Path(ImportTarget::Source(target)) if target == source
+                        )
+                        && match *import.signature() {
+                            Maybe::Present(ref signature) => {
+                                matches!(&signature.via, Maybe::Absent(_))
+                                    && match signature.stated {
+                                        Maybe::Present(ref stated) => {
+                                            stated.iter().any(|held| held.as_ref() == name.as_str())
+                                        },
+                                        Maybe::Absent(_) => true,
+                                    }
+                            },
+                            Maybe::Absent(_) => true,
+                        }
+                        && match *import.opening() {
+                            Opening::Every => true,
+                            Opening::Listed(ref listed) => listed
+                                .iter()
+                                .any(|&(held, _)| held.as_ref() == name.as_str()),
+                            Opening::Nothing => false,
+                        }
+                });
+                if opened {
+                    let count = imported.entry(name.as_str()).or_insert(0_u8);
+                    *count = count.saturating_add(1);
+                }
+            }
+        }
+
+        let mut qualifier = alloc::string::String::new();
+        let families = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                let DeclarationOutcome::Data(index) = declaration.outcome()
+                else {
+                    return None;
+                };
+                let Maybe::Present(signature) = module.data(index)
+                else {
+                    return None;
+                };
+                let point = words_point(module, declaration);
+                let names = module.constructors(index);
+                let family = declaration.constant();
+                qualifier.clear();
+                let constructors = names
+                    .iter()
+                    .zip(signature.constructors())
+                    .map(|(name, fields)| {
+                        let spelled = if imported.get(name.as_str()).is_some_and(|count| *count > 1)
+                            || module.constructor_spelling(family, SurfaceName::from(name.as_str()))
+                                == ConstructorSpelling::Qualified
+                        {
+                            if qualifier.is_empty() {
+                                let path = module.path_of(declaration);
+                                // A module family's constructor is written
+                                // through its module, `M.B`, the spelling a
+                                // pattern reads (#4298).
+                                let segments = match declaration.container() {
+                                    Container::Module(_) => {
+                                        path.split_last().map_or(&[][..], |(_, within)| within)
+                                    },
+                                    Container::TopLevel(_) => path.as_slice(),
+                                };
+                                for segment in segments {
+                                    if !qualifier.is_empty() {
+                                        qualifier.push('.');
+                                    }
+                                    qualifier
+                                        .push_str(<&str>::from(SourceFragment::from(*segment)));
+                                }
+                            }
+                            alloc::format!("{qualifier}.{name}")
+                        }
+                        else {
+                            name.clone()
+                        };
+                        (spelled, fields.len())
+                    })
+                    .collect();
+                // The empty word's pattern is its bare name, `here`; as a
+                // value it is reflexivity at the wrapped point, under its
+                // former.
+                let empty = match point {
+                    Maybe::Present((_, point, wraps)) => names.first().map(|name| {
+                        let (_, point) = wrapped(String::new(), point, wraps);
+                        alloc::format!("Path.{name}({point})")
+                    }),
+                    Maybe::Absent(_) => None,
+                };
+                Some(Family {
+                    constant: family,
+                    constructors,
+                    empty,
+                    loops: looped.remove(&family).unwrap_or_default(),
+                    applied: !signature.parameters().is_empty() || !signature.indices().is_empty(),
+                })
+            })
+            .collect();
+        Self {
+            families,
+            cases: Vec::new(),
+        }
+    }
+
+    /// The constructor table these families make, each family and each data
+    /// case over it under the family's declaration.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each family answers its constructors by tag under its
+    ///   declaration, whichever other family shares its name, and is applied
+    ///   when it takes arguments; each case answers its family's declaration.
+    /// - provides: the [`Constructors`] a [`CoreSource`] names through.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — a clause would traverse every family the receiver
+    ///   holds, which `spec_clause_traversal` refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::of`]; a family keyed by its name instead
+    ///   answers a namesake's constructors, which the driver's
+    ///   `cli::a_run_spells_its_value_by_its_own_type_past_a_namesake_3125`
+    ///   fails on.
+    /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
+    /// - witness: `tests::diagnostics::a_body_names_its_match_arms_by_their_constructors_809`
+    #[inline]
+    #[must_use]
+    pub fn naming(&self) -> Constructors<'_>
+    {
+        let mut constructors = Constructors::default();
+        for family in &self.families {
+            let declared = FamilyKey::Declared(family.constant);
+            let members = family
+                .constructors
+                .iter()
+                .map(|&(ref name, fields)| (Name::from(name.as_str()), Arity::from(fields)));
+            match family.empty {
+                Some(ref empty) => {
+                    constructors.words(declared, members, Name::from(empty.as_str()));
+                },
+                None => constructors.family(declared, members),
+            }
+            if !family.loops.is_empty() {
+                constructors.loops(
+                    declared,
+                    family.loops.iter().map(|name| Name::from(name.as_str())),
+                );
+            }
+            if family.applied {
+                constructors.applied(declared);
+            }
+        }
+        for &(case, family) in &self.cases {
+            constructors.case(case, FamilyKey::Declared(family));
+        }
+        constructors
+    }
+}
