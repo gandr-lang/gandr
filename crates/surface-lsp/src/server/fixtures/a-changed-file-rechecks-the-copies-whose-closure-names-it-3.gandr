@@ -1,1 +1,2 @@
-def five : Integer = 5;
+def five : Integer;
+def five = 5;

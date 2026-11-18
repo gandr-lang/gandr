@@ -1,6 +1,6 @@
 def laid() -> -F Unit =
   pure *{};
-def braced() -> -F Unit {
+def braced() -> -F Unit = {
   let u = { pure *{}; };
   pure u
-}
+};

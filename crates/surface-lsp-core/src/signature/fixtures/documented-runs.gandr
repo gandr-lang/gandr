@@ -15,10 +15,10 @@ def apply(
   /// The pair.
   p : (a : Nat, b : Nat),
   y : Nat
-) -> -F Nat { y }
+) -> -F Nat = y;
 def use(
   h : (
     /// The index.
     i : Nat
   ) -> Nat
-) -> -F Nat { 0 }
+) -> -F Nat = 0;

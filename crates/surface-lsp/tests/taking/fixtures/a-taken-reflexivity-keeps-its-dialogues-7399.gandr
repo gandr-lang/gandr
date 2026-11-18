@@ -12,7 +12,12 @@ pub theory Eq where
   law refl : (a : Carrier) -> Path[.A = Bool](eq a a, true);
 
 /// An unread empty-row call does not change the next computation.
-def unreadCall(a : Type, b : Type, f : a -> b, g : a -> b) -> Path[.A = a -> b](
+def unreadCall(
+  a : Type,
+  b : Type,
+  f : +U (a -> -F b),
+  g : +U (a -> -F b)
+) -> Path[.A = +U (a -> -F b)](
   fun (x) { let _ = g x; f x },
   f
 ) =

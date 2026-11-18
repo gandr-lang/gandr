@@ -8,10 +8,12 @@ def corner = *{x = 1, y = 2};
 def commute : Path[.A = *{x : Integer, y : Integer}](
   *{*{corner | x = 9} | y = 3},
   *{*{corner | y = 3} | x = 9}
-) = Path.here (*{x = 9, y = 3});
+);
+def commute = Path.here (*{x = 9, y = 3});
 
 /// `unchanged` equates an update with its base record.
 def unchanged : Path[.A = *{x : Integer, y : Integer}](
   *{corner | x = 1},
   corner
-) = Path.here corner;
+);
+def unchanged = Path.here corner;
