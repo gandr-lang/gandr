@@ -1,0 +1,6 @@
+def one(a : Integer) -> -F Integer {
+  return a
+}
+def two(x : Integer, y : Integer) -> -F Integer {
+  return y
+}

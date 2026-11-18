@@ -1,0 +1,46 @@
+error[MalformedForm]: this codata declaration has an operand it does not take here
+   ╭▸ corpus/pathological/desc/record-faces.gandr:55:7
+   │
+55 │   face front = {head};
+   │       ━ the form leaves its shape here
+   │
+   ├ note: `Stream` is refused with MalformedForm, as its expectation states
+   ╰ help: remove the extra operand
+
+error[IllFormedDescription]: the face `bad` holds a name the boundary `Outside` does not list
+   ╭▸ corpus/pathological/desc/record-faces.gandr:30:18
+   │
+30 │     type Outside = *{host : String, port : Integer} where
+   │ ┏━━━━━━━━━━━━━━━━━━┛
+31 │ ┃     face bad = { port, cert };
+   │ ┃                        ┬──╿
+   │ ┗━━━━━━━━━━━━━━━━━━━━━━━━│━━┥
+   │                          │  what the description check refuses
+   │                          the part the description check refuses
+   │
+   ├ note: `Outside` is refused with IllFormedDescription, as its expectation states
+   ╰ help: put in the face only names that the boundary lists
+
+error[IllFormedDescription]: the boundary `Twice` names the face `addr` twice
+   ╭▸ corpus/pathological/desc/record-faces.gandr:38:10
+   │
+38 │     face addr = { port };
+   │          ━━━━ what the description check refuses
+   │
+   ├ note: `Twice` is refused with IllFormedDescription, as its expectation states
+   ╰ help: give each face of the boundary its own name
+
+error[IllFormedDescription]: the face `secure` holds a name the boundary `Server` does not list
+   ╭▸ corpus/pathological/desc/record-faces.gandr:43:15
+   │
+43 │   type Server = &{host : String, port : Integer, tls : Bool} where
+   │ ┏━━━━━━━━━━━━━━━┛
+44 │ ┃   /// `secure` names the port and TLS fields.
+45 │ ┃   face secure = {port, tls};
+   │ ┃                  ┬──╿
+   │ ┗━━━━━━━━━━━━━━━━━━│━━┥
+   │                    │  what the description check refuses
+   │                    the part the description check refuses
+   │
+   ├ note: `Server` is refused with IllFormedDescription, as its expectation states
+   ╰ help: put in the face only names that the boundary lists

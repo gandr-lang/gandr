@@ -1,0 +1,30 @@
+// This source shows dotted names with nested module blocks.
+//
+// `Net` contains modules `Wire` and `Meter`. `Wire` contains `Core`.
+//
+// A path resolves a nested member from the source and from its prefix.
+//
+// - see: #2687
+
+/// `Net.Wire` holds nested module `Core`.
+module Net.Wire where
+  /// `Core` belongs to `Net.Wire`.
+  module Core where
+    /// `gauge` has value three.
+    def gauge = 3;
+
+/// `Panel` reads the dotted module path.
+module Panel where
+  /// `gauge` reads `Net.Wire.Core.gauge`.
+  def gauge = Net.Wire.Core.gauge;
+
+/// `Net.Meter` is a second `Net` module.
+module Net.Meter where
+  /// `shown` reads `Panel.gauge`.
+  def shown = Panel.gauge;
+  /// This definition reads `Wire.Core.gauge`.
+  def sibling = Wire.Core.gauge;
+
+/// `readings` returns both gauge values.
+@[runs("*{.shown = 3, .sibling = 3}")]
+def readings = *{shown = Net.Meter.shown, sibling = Net.Meter.sibling};

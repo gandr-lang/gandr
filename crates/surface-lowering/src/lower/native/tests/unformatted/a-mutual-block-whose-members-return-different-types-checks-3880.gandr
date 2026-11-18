@@ -1,0 +1,6 @@
+{NAT}rec {{
+  data Rose : Type where {{ | Node : (kids : Forest) --> Rose }}
+  data Forest : Type where {{ | Empty : Forest | More : (head : Rose, tail : Forest) --> Forest }}
+  def rec bumpTree(t : Rose) -> -F Rose {{ match t {{ | Node(kids) => {{ let k = bumpForest[<] kids; return Node k }} }} }}
+  def rec bumpForest(ts : Forest) -> -F Forest {{ match ts {{ | Empty => return Empty | More(t, rest) => {{ let a = bumpTree[<] t; let r = bumpForest[<] rest; return More a r }} }} }}
+}}

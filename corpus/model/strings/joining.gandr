@@ -1,0 +1,30 @@
+// This source models string joining.
+//
+// The source tests `concat`, `empty` and `isEmpty`. The module states monoid
+// laws for joining.
+//
+// Each item evaluates one literal expression. The module certifies laws for
+// the join operation.
+//
+// - see: `library/std/src/string.gandr` — the functions and the laws
+// - see: `pathological/strings/joining.gandr` — a law over the definition, refused
+// - see: #525 — admits a law over a definition
+
+// This source imports the join operation, its unit and its emptiness test.
+import std.string (empty, concat, isEmpty);
+
+/// `greeted` joins a greeting and a name.
+@[runs("\"hello, ada\"")]
+def greeted() -> String { concat "hello, " "ada" }
+
+/// `paddedLeft` joins the empty string before a word, which leaves the word.
+@[runs("\"ada\"")]
+def paddedLeft() -> String { concat empty "ada" }
+
+/// `blank` asks whether the empty string joined to itself is empty.
+@[runs("+{.0 = *{}}")]
+def blank() -> Bool { isEmpty (concat empty empty) }
+
+/// `worded` asks whether a word is empty.
+@[runs("+{.1 = *{}}")]
+def worded() -> Bool { isEmpty "ada" }

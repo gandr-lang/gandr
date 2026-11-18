@@ -1,0 +1,4 @@
+module Counts where {
+  def zero : Integer ;
+  de zero = 0 ;
+}
