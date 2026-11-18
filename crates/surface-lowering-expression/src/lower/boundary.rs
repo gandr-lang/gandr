@@ -584,6 +584,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             IntegerWidth::U64 => "U64",
             IntegerWidth::I32 => "I32",
             IntegerWidth::I64 => "I64",
+            IntegerWidth::U8 => "U8",
         };
         let scalar = self.constructed(
             site,

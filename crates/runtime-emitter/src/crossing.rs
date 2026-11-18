@@ -888,7 +888,7 @@ fn sign_word(sign: Sign) -> CanonicalWord
     })
 }
 
-/// A width as its word, `u32`, `u64`, `i32`, `i64` from zero.
+/// A width as its word, in the order of [`IntegerWidth::ALL`] from zero.
 ///
 /// # Specification
 /// trivial.
@@ -899,6 +899,12 @@ fn width_word(width: IntegerWidth) -> CanonicalWord
         IntegerWidth::U64 => 1_u64,
         IntegerWidth::I32 => 2_u64,
         IntegerWidth::I64 => 3_u64,
+        IntegerWidth::U8 => 4_u64,
+        IntegerWidth::U16 => 5_u64,
+        IntegerWidth::I8 => 6_u64,
+        IntegerWidth::I16 => 7_u64,
+        IntegerWidth::Usize => 8_u64,
+        IntegerWidth::Isize => 9_u64,
     })
 }
 
@@ -1253,6 +1259,12 @@ impl Opened
                     1_u64 => IntegerWidth::U64,
                     2_u64 => IntegerWidth::I32,
                     3_u64 => IntegerWidth::I64,
+                    4_u64 => IntegerWidth::U8,
+                    5_u64 => IntegerWidth::U16,
+                    6_u64 => IntegerWidth::I8,
+                    7_u64 => IntegerWidth::I16,
+                    8_u64 => IntegerWidth::Usize,
+                    9_u64 => IntegerWidth::Isize,
                     _ => return Err(self.refused()),
                 };
                 let bits = u64::from(reader.read_word()?);

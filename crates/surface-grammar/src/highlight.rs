@@ -184,6 +184,7 @@ const OPERATORS: &[&str] = &[
 const PRIMITIVE_TYPES: &[&str] = &[
     "Any", "Boolean", "Bridge", "Buf", "Cap", "Char", "Integer", "Never", "Path", "String",
     "Symbol", "Type", "Type+", "Unit", "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
+    "u8",
 ];
 
 /// The keywords whose next identifier names what the declaration defines.

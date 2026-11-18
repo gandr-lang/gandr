@@ -516,6 +516,18 @@ pub const BASE_I32: WireTag = WireTag(6);
 pub const BASE_I64: WireTag = WireTag(7);
 /// Base-type atom: the 64-bit binary floating-point atom.
 pub const BASE_FLOAT64: WireTag = WireTag(8);
+/// Base-type atom: the `u8` width atom.
+pub const BASE_U8: WireTag = WireTag(9);
+/// Base-type atom: the `u16` width atom.
+pub const BASE_U16: WireTag = WireTag(10);
+/// Base-type atom: the `i8` width atom.
+pub const BASE_I8: WireTag = WireTag(11);
+/// Base-type atom: the `i16` width atom.
+pub const BASE_I16: WireTag = WireTag(12);
+/// Base-type atom: the `usize` width atom.
+pub const BASE_USIZE: WireTag = WireTag(13);
+/// Base-type atom: the `isize` width atom.
+pub const BASE_ISIZE: WireTag = WireTag(14);
 
 /// Literal sign: non-negative, which the canonical zero always is.
 pub const SIGN_NON_NEGATIVE: WireTag = WireTag(0);
@@ -558,6 +570,21 @@ pub const LITERAL_I64: WireTag = WireTag(7);
 /// Literal kind: a 64-bit binary floating-point literal, its bit pattern
 /// following as a varint.
 pub const LITERAL_FLOAT64: WireTag = WireTag(8);
+/// Literal kind: a `u8` literal, its bit pattern as an unsigned varint.
+pub const LITERAL_U8: WireTag = WireTag(9);
+/// Literal kind: a `u16` literal, its bit pattern as an unsigned varint.
+pub const LITERAL_U16: WireTag = WireTag(10);
+/// Literal kind: an `i8` literal, its two's complement bit pattern,
+/// zero-extended, as an unsigned varint.
+pub const LITERAL_I8: WireTag = WireTag(11);
+/// Literal kind: an `i16` literal, its two's complement bit pattern,
+/// zero-extended, as an unsigned varint.
+pub const LITERAL_I16: WireTag = WireTag(12);
+/// Literal kind: a `usize` literal, its bit pattern as an unsigned varint.
+pub const LITERAL_USIZE: WireTag = WireTag(13);
+/// Literal kind: an `isize` literal, its two's complement bit pattern as an
+/// unsigned varint.
+pub const LITERAL_ISIZE: WireTag = WireTag(14);
 
 /// Landmark-constraint relation: `left ≤ right`.
 pub const RELATION_LEQ: WireTag = WireTag(0);

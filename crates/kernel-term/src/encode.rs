@@ -3848,7 +3848,7 @@ fn encode_text(
 /// - witness: `encode::tests::text_and_literals_match_literal_wire_fixtures`
 /// - witness: `encode::tests::levels_and_interfaces_match_literal_wire_fixtures`
 #[spec(
-    ensures: |ret| ret == match base { BaseType::Integer => tags::BASE_INTEGER, BaseType::String => tags::BASE_STRING, BaseType::Numeric => tags::BASE_NUMERIC, BaseType::Character => tags::BASE_CHARACTER, BaseType::Float64 => tags::BASE_FLOAT64, BaseType::Fixed(IntegerWidth::U32) => tags::BASE_U32, BaseType::Fixed(IntegerWidth::U64) => tags::BASE_U64, BaseType::Fixed(IntegerWidth::I32) => tags::BASE_I32, BaseType::Fixed(IntegerWidth::I64) => tags::BASE_I64 },
+    ensures: |ret| ret == match base { BaseType::Integer => tags::BASE_INTEGER, BaseType::String => tags::BASE_STRING, BaseType::Numeric => tags::BASE_NUMERIC, BaseType::Character => tags::BASE_CHARACTER, BaseType::Float64 => tags::BASE_FLOAT64, BaseType::Fixed(IntegerWidth::U32) => tags::BASE_U32, BaseType::Fixed(IntegerWidth::U64) => tags::BASE_U64, BaseType::Fixed(IntegerWidth::I32) => tags::BASE_I32, BaseType::Fixed(IntegerWidth::I64) => tags::BASE_I64, BaseType::Fixed(IntegerWidth::U8) => tags::BASE_U8, BaseType::Fixed(IntegerWidth::U16) => tags::BASE_U16, BaseType::Fixed(IntegerWidth::I8) => tags::BASE_I8, BaseType::Fixed(IntegerWidth::I16) => tags::BASE_I16, BaseType::Fixed(IntegerWidth::Usize) => tags::BASE_USIZE, BaseType::Fixed(IntegerWidth::Isize) => tags::BASE_ISIZE },
 )]
 #[inline]
 fn base_type_tag(base: BaseType) -> WireTag
@@ -3863,6 +3863,12 @@ fn base_type_tag(base: BaseType) -> WireTag
         BaseType::Fixed(IntegerWidth::U64) => tags::BASE_U64,
         BaseType::Fixed(IntegerWidth::I32) => tags::BASE_I32,
         BaseType::Fixed(IntegerWidth::I64) => tags::BASE_I64,
+        BaseType::Fixed(IntegerWidth::U8) => tags::BASE_U8,
+        BaseType::Fixed(IntegerWidth::U16) => tags::BASE_U16,
+        BaseType::Fixed(IntegerWidth::I8) => tags::BASE_I8,
+        BaseType::Fixed(IntegerWidth::I16) => tags::BASE_I16,
+        BaseType::Fixed(IntegerWidth::Usize) => tags::BASE_USIZE,
+        BaseType::Fixed(IntegerWidth::Isize) => tags::BASE_ISIZE,
     }
 }
 
@@ -3879,7 +3885,7 @@ fn base_type_tag(base: BaseType) -> WireTag
 ///   a swapped kind changes a fixture.
 /// - witness: `encode::tests::text_and_literals_match_literal_wire_fixtures`
 #[spec(
-    ensures: |ret| ret == match width { IntegerWidth::U32 => tags::LITERAL_U32, IntegerWidth::U64 => tags::LITERAL_U64, IntegerWidth::I32 => tags::LITERAL_I32, IntegerWidth::I64 => tags::LITERAL_I64 },
+    ensures: |ret| ret == match width { IntegerWidth::U32 => tags::LITERAL_U32, IntegerWidth::U64 => tags::LITERAL_U64, IntegerWidth::I32 => tags::LITERAL_I32, IntegerWidth::I64 => tags::LITERAL_I64, IntegerWidth::U8 => tags::LITERAL_U8, IntegerWidth::U16 => tags::LITERAL_U16, IntegerWidth::I8 => tags::LITERAL_I8, IntegerWidth::I16 => tags::LITERAL_I16, IntegerWidth::Usize => tags::LITERAL_USIZE, IntegerWidth::Isize => tags::LITERAL_ISIZE },
 )]
 #[inline]
 fn fixed_literal_tag(width: IntegerWidth) -> WireTag
@@ -3889,6 +3895,12 @@ fn fixed_literal_tag(width: IntegerWidth) -> WireTag
         IntegerWidth::U64 => tags::LITERAL_U64,
         IntegerWidth::I32 => tags::LITERAL_I32,
         IntegerWidth::I64 => tags::LITERAL_I64,
+        IntegerWidth::U8 => tags::LITERAL_U8,
+        IntegerWidth::U16 => tags::LITERAL_U16,
+        IntegerWidth::I8 => tags::LITERAL_I8,
+        IntegerWidth::I16 => tags::LITERAL_I16,
+        IntegerWidth::Usize => tags::LITERAL_USIZE,
+        IntegerWidth::Isize => tags::LITERAL_ISIZE,
     }
 }
 

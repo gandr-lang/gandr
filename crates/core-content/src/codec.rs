@@ -1063,6 +1063,12 @@ where
                 IntegerWidth::U64 => 5,
                 IntegerWidth::I32 => 6,
                 IntegerWidth::I64 => 7,
+                IntegerWidth::U8 => 9,
+                IntegerWidth::U16 => 10,
+                IntegerWidth::I8 => 11,
+                IntegerWidth::I16 => 12,
+                IntegerWidth::Usize => 13,
+                IntegerWidth::Isize => 14,
             }));
             writer.word(Word(u64::from(fixed)));
         },
@@ -1105,6 +1111,12 @@ where
                         | IntegerWidth::U64 => 5,
                         | IntegerWidth::I32 => 6,
                         | IntegerWidth::I64 => 7,
+                        | IntegerWidth::U8 => 9,
+                        | IntegerWidth::U16 => 10,
+                        | IntegerWidth::I8 => 11,
+                        | IntegerWidth::I16 => 12,
+                        | IntegerWidth::Usize => 13,
+                        | IntegerWidth::Isize => 14,
                     },
                 })
                 && reader.cursor > before
@@ -1156,6 +1168,12 @@ pub fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
         5 => read_fixed(reader, IntegerWidth::U64),
         6 => read_fixed(reader, IntegerWidth::I32),
         7 => read_fixed(reader, IntegerWidth::I64),
+        9 => read_fixed(reader, IntegerWidth::U8),
+        10 => read_fixed(reader, IntegerWidth::U16),
+        11 => read_fixed(reader, IntegerWidth::I8),
+        12 => read_fixed(reader, IntegerWidth::I16),
+        13 => read_fixed(reader, IntegerWidth::Usize),
+        14 => read_fixed(reader, IntegerWidth::Isize),
         _ => Err(CodecError::Corrupt),
     }
 }
@@ -2162,6 +2180,12 @@ where
                 BaseType::Fixed(IntegerWidth::U64) => Tag(5),
                 BaseType::Fixed(IntegerWidth::I32) => Tag(6),
                 BaseType::Fixed(IntegerWidth::I64) => Tag(7),
+                BaseType::Fixed(IntegerWidth::U8) => Tag(9),
+                BaseType::Fixed(IntegerWidth::U16) => Tag(10),
+                BaseType::Fixed(IntegerWidth::I8) => Tag(11),
+                BaseType::Fixed(IntegerWidth::I16) => Tag(12),
+                BaseType::Fixed(IntegerWidth::Usize) => Tag(13),
+                BaseType::Fixed(IntegerWidth::Isize) => Tag(14),
             });
         },
         ContentNode::Product(ref parts) => {
@@ -3932,6 +3956,12 @@ pub fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 5 => BaseType::Fixed(IntegerWidth::U64),
                 6 => BaseType::Fixed(IntegerWidth::I32),
                 7 => BaseType::Fixed(IntegerWidth::I64),
+                9 => BaseType::Fixed(IntegerWidth::U8),
+                10 => BaseType::Fixed(IntegerWidth::U16),
+                11 => BaseType::Fixed(IntegerWidth::I8),
+                12 => BaseType::Fixed(IntegerWidth::I16),
+                13 => BaseType::Fixed(IntegerWidth::Usize),
+                14 => BaseType::Fixed(IntegerWidth::Isize),
                 _ => return Err(CodecError::Corrupt),
             })
         },

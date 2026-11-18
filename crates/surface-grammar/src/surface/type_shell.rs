@@ -965,6 +965,7 @@ fn add_type_rules(
             tile(TileLabel("u64")),
             tile(TileLabel("i32")),
             tile(TileLabel("i64")),
+            tile(TileLabel("u8")),
             tile(TileLabel("f32")),
             tile(TileLabel("f64")),
             tile(TileLabel("Char")),

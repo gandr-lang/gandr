@@ -5873,6 +5873,12 @@ const fn base_tag(base: BaseType) -> WireTag
         BaseType::Fixed(IntegerWidth::U64) => gandr_kernel_term::BASE_U64,
         BaseType::Fixed(IntegerWidth::I32) => gandr_kernel_term::BASE_I32,
         BaseType::Fixed(IntegerWidth::I64) => gandr_kernel_term::BASE_I64,
+        BaseType::Fixed(IntegerWidth::U8) => gandr_kernel_term::BASE_U8,
+        BaseType::Fixed(IntegerWidth::U16) => gandr_kernel_term::BASE_U16,
+        BaseType::Fixed(IntegerWidth::I8) => gandr_kernel_term::BASE_I8,
+        BaseType::Fixed(IntegerWidth::I16) => gandr_kernel_term::BASE_I16,
+        BaseType::Fixed(IntegerWidth::Usize) => gandr_kernel_term::BASE_USIZE,
+        BaseType::Fixed(IntegerWidth::Isize) => gandr_kernel_term::BASE_ISIZE,
     }
 }
 
@@ -5888,6 +5894,12 @@ const fn fixed_kind(width: IntegerWidth) -> WireTag
         IntegerWidth::U64 => gandr_kernel_term::LITERAL_U64,
         IntegerWidth::I32 => gandr_kernel_term::LITERAL_I32,
         IntegerWidth::I64 => gandr_kernel_term::LITERAL_I64,
+        IntegerWidth::U8 => gandr_kernel_term::LITERAL_U8,
+        IntegerWidth::U16 => gandr_kernel_term::LITERAL_U16,
+        IntegerWidth::I8 => gandr_kernel_term::LITERAL_I8,
+        IntegerWidth::I16 => gandr_kernel_term::LITERAL_I16,
+        IntegerWidth::Usize => gandr_kernel_term::LITERAL_USIZE,
+        IntegerWidth::Isize => gandr_kernel_term::LITERAL_ISIZE,
     }
 }
 

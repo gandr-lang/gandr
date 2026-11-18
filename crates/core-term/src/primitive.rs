@@ -293,6 +293,8 @@ enum Operation
     /// An integer reduced modulo two to the result's width, in that width's
     /// two's complement.
     FromIntegerToWidth,
+    /// The sum of two values of one width, modulo two to its bit count.
+    WrappingAdd,
 }
 
 /// A law the host asserts of a primitive.
@@ -674,6 +676,16 @@ pub const PRELUDE: &[Primitive] = &[
         result: PrimitiveType::Fixed(IntegerWidth::I64),
         operation: Operation::FromIntegerToWidth,
     }),
+    Primitive(&Definition {
+        name: "u8.wrapping_add",
+        operator: Operator::Named,
+        arguments: &[
+            PrimitiveType::Fixed(IntegerWidth::U8),
+            PrimitiveType::Fixed(IntegerWidth::U8),
+        ],
+        result: PrimitiveType::Fixed(IntegerWidth::U8),
+        operation: Operation::WrappingAdd,
+    }),
 ];
 
 /// A native scalar supplied to or returned from the table evaluator.
@@ -834,7 +846,8 @@ impl Primitive
             | Operation::FromInteger
             | Operation::Round
             | Operation::ToInteger
-            | Operation::FromIntegerToWidth => return None,
+            | Operation::FromIntegerToWidth
+            | Operation::WrappingAdd => return None,
         };
         (self.0.result == PrimitiveType::Boolean).then_some(LiteralIdentity::new(base, polarity))
     }
@@ -1121,7 +1134,8 @@ impl Primitive
                 | Operation::FromInteger
                 | Operation::Round
                 | Operation::ToInteger
-                | Operation::FromIntegerToWidth => Err(PrimitiveError::ArgumentType),
+                | Operation::FromIntegerToWidth
+                | Operation::WrappingAdd => Err(PrimitiveError::ArgumentType),
             };
         }
         if let Scalar::Float64(left) = *first {
@@ -1129,10 +1143,16 @@ impl Primitive
         }
         // Only the `to_integer` rows take a width, and they take it alone.
         if let Scalar::Fixed(fixed) = *first {
-            if self.0.operation != Operation::ToInteger {
-                return Err(PrimitiveError::ArgumentType);
-            }
-            return scalar(&widened(fixed));
+            return match self.0.operation {
+                Operation::ToInteger => scalar(&widened(fixed)),
+                Operation::WrappingAdd => match (fixed, arguments.get(1)) {
+                    (FixedInteger::U8(left), Some(&Scalar::Fixed(FixedInteger::U8(right)))) => {
+                        Ok(Scalar::Fixed(FixedInteger::U8(left.wrapping_add(right))))
+                    },
+                    _ => Err(PrimitiveError::ArgumentType),
+                },
+                _ => Err(PrimitiveError::ArgumentType),
+            };
         }
         if self.0.operation == Operation::FromIntegerToWidth {
             let PrimitiveType::Fixed(width) = self.0.result
@@ -1175,7 +1195,8 @@ impl Primitive
                 | Operation::FromInteger
                 | Operation::Round
                 | Operation::ToInteger
-                | Operation::FromIntegerToWidth => return Err(PrimitiveError::ArgumentType),
+                | Operation::FromIntegerToWidth
+                | Operation::WrappingAdd => return Err(PrimitiveError::ArgumentType),
             };
             return Ok(Scalar::Boolean(if answer {
                 Side::Left
@@ -1222,7 +1243,8 @@ impl Primitive
             | Operation::FromInteger
             | Operation::Round
             | Operation::ToInteger
-            | Operation::FromIntegerToWidth => {
+            | Operation::FromIntegerToWidth
+            | Operation::WrappingAdd => {
                 return Err(PrimitiveError::ArgumentType);
             },
         };
@@ -1416,6 +1438,7 @@ fn widened(fixed: FixedInteger) -> BigInt
         FixedInteger::U64(value) => BigInt::from(value),
         FixedInteger::I32(value) => BigInt::from(value),
         FixedInteger::I64(value) => BigInt::from(value),
+        FixedInteger::U8(value) => BigInt::from(value),
     }
 }
 
@@ -1446,6 +1469,7 @@ fn narrowed(
     let bits: u32 = match width {
         IntegerWidth::U32 | IntegerWidth::I32 => 32,
         IntegerWidth::U64 | IntegerWidth::I64 => 64,
+        IntegerWidth::U8 => 8,
     };
     let modulus = BigInt::from(1_u8).shl(bits);
     // The remainder takes the dividend's sign; one modulus more is the least

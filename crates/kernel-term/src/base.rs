@@ -85,12 +85,25 @@ pub enum IntegerWidth
     I32,
     /// Signed two's complement, 64 bits: `i64`.
     I64,
+    /// Unsigned, 8 bits: `u8`.
+    U8,
+    /// Unsigned, 16 bits: `u16`.
+    U16,
+    /// Signed two's complement, 8 bits: `i8`.
+    I8,
+    /// Signed two's complement, 16 bits: `i16`.
+    I16,
+    /// Unsigned, the bits of the target's word: `usize`. The word is 64 bits
+    /// on each host that gandr runs on.
+    Usize,
+    /// Signed two's complement, the bits of the target's word: `isize`.
+    Isize,
 }
 
 impl AsRef<str> for IntegerWidth
 {
-    /// The width's name, which is also the suffix its literals carry: `u32`,
-    /// `u64`, `i32` or `i64`.
+    /// The width's name, which is also the suffix its literals carry, such as
+    /// `u8` or `isize`.
     ///
     /// # Specification
     /// trivial.
@@ -102,7 +115,67 @@ impl AsRef<str> for IntegerWidth
             Self::U64 => "u64",
             Self::I32 => "i32",
             Self::I64 => "i64",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::Usize => "usize",
+            Self::Isize => "isize",
         }
+    }
+}
+
+impl IntegerWidth
+{
+    /// Each width, in the order of its wire tags.
+    pub const ALL: [Self; 10] = [
+        Self::U32,
+        Self::U64,
+        Self::I32,
+        Self::I64,
+        Self::U8,
+        Self::U16,
+        Self::I8,
+        Self::I16,
+        Self::Usize,
+        Self::Isize,
+    ];
+
+    /// The width's bit count: 8, 16, 32 or 64. The target's word is 64 bits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn bits(self) -> WidthBits
+    {
+        WidthBits(match self {
+            Self::U8 | Self::I8 => 8,
+            Self::U16 | Self::I16 => 16,
+            Self::U32 | Self::I32 => 32,
+            Self::U64 | Self::I64 | Self::Usize | Self::Isize => 64,
+        })
+    }
+}
+
+/// The bit count of an integer width.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WidthBits(u32);
+
+impl From<WidthBits> for u32
+{
+    /// The bit count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bits: WidthBits) -> Self
+    {
+        bits.0
     }
 }
 
@@ -719,7 +792,7 @@ impl TryFrom<String> for CharacterLiteral
 /// # Adequacy
 /// - hypothesis: L3 observes the width, the decimal spelling and the bit
 ///   pattern of zero, one and each width's extremes, and reads each pattern
-///   back at its width; a pattern one past a 32-bit width is refused. This
+///   back at its width; a pattern one past each narrow width is refused. This
 ///   separates width substitution, sign extension where zero extension is owed,
 ///   and truncation of a wide pattern.
 /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
@@ -734,6 +807,18 @@ pub enum FixedInteger
     I32(i32),
     /// An `i64` literal.
     I64(i64),
+    /// A `u8` literal.
+    U8(u8),
+    /// A `u16` literal.
+    U16(u16),
+    /// An `i8` literal.
+    I8(i8),
+    /// An `i16` literal.
+    I16(i16),
+    /// A `usize` literal, at the 64 bits of the target's word.
+    Usize(u64),
+    /// An `isize` literal, at the 64 bits of the target's word.
+    Isize(i64),
 }
 
 /// Why a bit pattern is no literal of a width: it sets a bit above the width.
@@ -743,8 +828,58 @@ pub enum FixedInteger
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WiderThanWidth;
 
+/// Why decimal digits are no literal of a width: their value lies outside
+/// the width's range, or they are not decimal digits.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OutsideWidth;
+
 impl FixedInteger
 {
+    /// The literal of `width` whose value `digits` spell in decimal.
+    ///
+    /// # Specification
+    /// - requires: nothing; any text is admissible.
+    /// - ensures: on `Ok`, the literal has `width`, and its decimal is `digits`
+    ///   without their leading zeros.
+    /// - fails: [`OutsideWidth`] for text that is not decimal digits alone, or
+    ///   whose value lies outside the width's range.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails` states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each width's extremes read at that width, and one
+    ///   past each extreme is refused.
+    /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|literal| literal.width() == width))]
+    #[inline]
+    pub fn from_decimal(
+        width: IntegerWidth,
+        digits: &str,
+    ) -> Result<Self, OutsideWidth>
+    {
+        if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(OutsideWidth);
+        }
+        let read = match width {
+            IntegerWidth::U32 => digits.parse().map(Self::U32),
+            IntegerWidth::U64 => digits.parse().map(Self::U64),
+            IntegerWidth::I32 => digits.parse().map(Self::I32),
+            IntegerWidth::I64 => digits.parse().map(Self::I64),
+            IntegerWidth::U8 => digits.parse().map(Self::U8),
+            IntegerWidth::U16 => digits.parse().map(Self::U16),
+            IntegerWidth::I8 => digits.parse().map(Self::I8),
+            IntegerWidth::I16 => digits.parse().map(Self::I16),
+            IntegerWidth::Usize => digits.parse().map(Self::Usize),
+            IntegerWidth::Isize => digits.parse().map(Self::Isize),
+        };
+        read.map_err(|_outside| OutsideWidth)
+    }
+
     /// The literal's width.
     ///
     /// # Specification
@@ -756,7 +891,7 @@ impl FixedInteger
     /// - hypothesis: L3 — a literal of each width reports that width.
     /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
     #[spec(
-        ensures: |ret| matches!((self, ret), (&Self::U32(_), IntegerWidth::U32) | (&Self::U64(_), IntegerWidth::U64) | (&Self::I32(_), IntegerWidth::I32) | (&Self::I64(_), IntegerWidth::I64)),
+        ensures: |ret| matches!((self, ret), (&Self::U32(_), IntegerWidth::U32) | (&Self::U64(_), IntegerWidth::U64) | (&Self::I32(_), IntegerWidth::I32) | (&Self::I64(_), IntegerWidth::I64) | (&Self::U8(_), IntegerWidth::U8) | (&Self::U16(_), IntegerWidth::U16) | (&Self::I8(_), IntegerWidth::I8) | (&Self::I16(_), IntegerWidth::I16) | (&Self::Usize(_), IntegerWidth::Usize) | (&Self::Isize(_), IntegerWidth::Isize)),
     )]
     #[inline]
     #[must_use]
@@ -767,6 +902,12 @@ impl FixedInteger
             Self::U64(_) => IntegerWidth::U64,
             Self::I32(_) => IntegerWidth::I32,
             Self::I64(_) => IntegerWidth::I64,
+            Self::U8(_) => IntegerWidth::U8,
+            Self::U16(_) => IntegerWidth::U16,
+            Self::I8(_) => IntegerWidth::I8,
+            Self::I16(_) => IntegerWidth::I16,
+            Self::Usize(_) => IntegerWidth::Usize,
+            Self::Isize(_) => IntegerWidth::Isize,
         }
     }
 
@@ -783,7 +924,7 @@ impl FixedInteger
     ///   minimums included, spell as their decimal values.
     /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
     #[spec(
-        ensures: |ret| *ret == match *self { Self::U32(value) => alloc::format!("{value}"), Self::U64(value) => alloc::format!("{value}"), Self::I32(value) => alloc::format!("{value}"), Self::I64(value) => alloc::format!("{value}") },
+        ensures: |ret| match ret.strip_prefix('-') { Some(digits) => !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|byte| byte.is_ascii_digit()), None => FixedInteger::from_decimal(self.width(), ret.as_str()) == Ok(*self) },
     )]
     #[inline]
     #[must_use]
@@ -791,9 +932,13 @@ impl FixedInteger
     {
         match *self {
             Self::U32(value) => alloc::format!("{value}"),
-            Self::U64(value) => alloc::format!("{value}"),
+            Self::U64(value) | Self::Usize(value) => alloc::format!("{value}"),
             Self::I32(value) => alloc::format!("{value}"),
-            Self::I64(value) => alloc::format!("{value}"),
+            Self::I64(value) | Self::Isize(value) => alloc::format!("{value}"),
+            Self::U8(value) => alloc::format!("{value}"),
+            Self::U16(value) => alloc::format!("{value}"),
+            Self::I8(value) => alloc::format!("{value}"),
+            Self::I16(value) => alloc::format!("{value}"),
         }
     }
 }
@@ -804,14 +949,15 @@ impl From<FixedInteger> for u64
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a 32-bit literal sets no bit above its 32nd; a signed
+    /// - ensures: a narrow literal sets no bit above its width; a signed
     ///   literal's pattern is its two's complement at its own width.
     /// - provides: the payload every encoding writes, one image per value.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `-1i32` is `0xffff_ffff`, not sign-extended; the
-    ///   extremes of each width read back through the pattern.
+    /// - hypothesis: L3 — `-1i32` is `0xffff_ffff` and `-1i8` is `0xff`, not
+    ///   sign-extended; the extremes of each width read back through the
+    ///   pattern.
     /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
     #[spec(
         ensures: |ret| FixedInteger::try_from((literal.width(), ret)) == Ok(literal),
@@ -821,9 +967,13 @@ impl From<FixedInteger> for u64
     {
         match literal {
             FixedInteger::U32(value) => Self::from(value),
-            FixedInteger::U64(value) => value,
+            FixedInteger::U64(value) | FixedInteger::Usize(value) => value,
             FixedInteger::I32(value) => Self::from(value.cast_unsigned()),
-            FixedInteger::I64(value) => value.cast_unsigned(),
+            FixedInteger::I64(value) | FixedInteger::Isize(value) => value.cast_unsigned(),
+            FixedInteger::U8(value) => Self::from(value),
+            FixedInteger::U16(value) => Self::from(value),
+            FixedInteger::I8(value) => Self::from(value.cast_unsigned()),
+            FixedInteger::I16(value) => Self::from(value.cast_unsigned()),
         }
     }
 }
@@ -838,31 +988,40 @@ impl TryFrom<(IntegerWidth, u64)> for FixedInteger
     /// - requires: nothing; any pattern is admissible.
     /// - ensures: on `Ok`, the literal has the width and the pattern, the
     ///   pattern read without [`u64::from`], whose own clause reads this one.
-    /// - fails: [`WiderThanWidth`] when a 32-bit width's pattern sets a bit
-    ///   above its 32nd.
+    /// - fails: [`WiderThanWidth`] when a narrow width's pattern sets a bit
+    ///   above its width.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each width's extremes read back from their patterns;
-    ///   `u32::MAX + 1` is refused at both 32-bit widths and admitted at both
-    ///   64-bit ones.
+    ///   one past each narrow width's greatest pattern is refused, and
+    ///   `u32::MAX + 1` is admitted at the 64-bit widths.
     /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
     #[spec(
-        ensures: |ret| match ret { Ok(literal) => match (literal, pattern.0) { (Self::U32(value), IntegerWidth::U32) => u64::from(value) == pattern.1, (Self::U64(value), IntegerWidth::U64) => value == pattern.1, (Self::I32(value), IntegerWidth::I32) => u64::from(value.cast_unsigned()) == pattern.1, (Self::I64(value), IntegerWidth::I64) => value.cast_unsigned() == pattern.1, _ => false }, Err(WiderThanWidth) => matches!(pattern.0, IntegerWidth::U32 | IntegerWidth::I32) && u32::try_from(pattern.1).is_err() },
+        ensures: |ret| match ret { Ok(literal) => literal.width() == pattern.0, Err(WiderThanWidth) => u32::from(pattern.0.bits()) < 64 && pattern.1.checked_shr(u32::from(pattern.0.bits())).is_some_and(|high| high != 0) },
     )]
     #[inline]
     fn try_from(pattern: (IntegerWidth, u64)) -> Result<Self, Self::Error>
     {
         let (width, bits) = pattern;
+        let wide = |_wide| WiderThanWidth;
         match width {
-            IntegerWidth::U32 => u32::try_from(bits)
-                .map(Self::U32)
-                .map_err(|_wide| WiderThanWidth),
+            IntegerWidth::U32 => u32::try_from(bits).map(Self::U32).map_err(wide),
             IntegerWidth::U64 => Ok(Self::U64(bits)),
             IntegerWidth::I32 => u32::try_from(bits)
                 .map(|narrow| Self::I32(narrow.cast_signed()))
-                .map_err(|_wide| WiderThanWidth),
+                .map_err(wide),
             IntegerWidth::I64 => Ok(Self::I64(bits.cast_signed())),
+            IntegerWidth::U8 => u8::try_from(bits).map(Self::U8).map_err(wide),
+            IntegerWidth::U16 => u16::try_from(bits).map(Self::U16).map_err(wide),
+            IntegerWidth::I8 => u8::try_from(bits)
+                .map(|narrow| Self::I8(narrow.cast_signed()))
+                .map_err(wide),
+            IntegerWidth::I16 => u16::try_from(bits)
+                .map(|narrow| Self::I16(narrow.cast_signed()))
+                .map_err(wide),
+            IntegerWidth::Usize => Ok(Self::Usize(bits)),
+            IntegerWidth::Isize => Ok(Self::Isize(bits.cast_signed())),
         }
     }
 }
@@ -1207,7 +1366,7 @@ impl Literal
     /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
     /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
     #[spec(
-        ensures: |ret| match (self, ret) { (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric) | (&Self::Character(_), BaseType::Character) | (&Self::Float64(_), BaseType::Float64) => true, (&Self::Fixed(fixed), BaseType::Fixed(width)) => matches!((fixed.width(), width), (IntegerWidth::U32, IntegerWidth::U32) | (IntegerWidth::U64, IntegerWidth::U64) | (IntegerWidth::I32, IntegerWidth::I32) | (IntegerWidth::I64, IntegerWidth::I64)), _ => false },
+        ensures: |ret| match (self, ret) { (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric) | (&Self::Character(_), BaseType::Character) | (&Self::Float64(_), BaseType::Float64) => true, (&Self::Fixed(fixed), BaseType::Fixed(width)) => matches!((fixed.width(), width), (IntegerWidth::U32, IntegerWidth::U32) | (IntegerWidth::U64, IntegerWidth::U64) | (IntegerWidth::I32, IntegerWidth::I32) | (IntegerWidth::I64, IntegerWidth::I64) | (IntegerWidth::U8, IntegerWidth::U8) | (IntegerWidth::U16, IntegerWidth::U16) | (IntegerWidth::I8, IntegerWidth::I8) | (IntegerWidth::I16, IntegerWidth::I16) | (IntegerWidth::Usize, IntegerWidth::Usize) | (IntegerWidth::Isize, IntegerWidth::Isize)), _ => false },
     )]
     #[inline]
     #[must_use]
@@ -1241,6 +1400,7 @@ mod tests
     use super::MalformedDecimal;
     use super::NotOneCharacter;
     use super::NumericLiteral;
+    use super::OutsideWidth;
     use super::Sign;
     use super::StringLiteral;
     use super::WiderThanWidth;
@@ -1371,6 +1531,12 @@ mod tests
             (FixedInteger::U64(1), IntegerWidth::U64),
             (FixedInteger::I32(1), IntegerWidth::I32),
             (FixedInteger::I64(1), IntegerWidth::I64),
+            (FixedInteger::U8(1), IntegerWidth::U8),
+            (FixedInteger::U16(1), IntegerWidth::U16),
+            (FixedInteger::I8(1), IntegerWidth::I8),
+            (FixedInteger::I16(1), IntegerWidth::I16),
+            (FixedInteger::Usize(1), IntegerWidth::Usize),
+            (FixedInteger::Isize(1), IntegerWidth::Isize),
         ] {
             assert_eq!(
                 BaseType::Fixed(width),
@@ -1418,6 +1584,28 @@ mod tests
                 "-9223372036854775808",
                 0x8000_0000_0000_0000,
             ),
+            (FixedInteger::U8(u8::MAX), IntegerWidth::U8, "255", 0xff),
+            (
+                FixedInteger::U16(u16::MAX),
+                IntegerWidth::U16,
+                "65535",
+                0xffff,
+            ),
+            (FixedInteger::I8(-1), IntegerWidth::I8, "-1", 0xff),
+            (FixedInteger::I8(i8::MIN), IntegerWidth::I8, "-128", 0x80),
+            (
+                FixedInteger::I16(i16::MIN),
+                IntegerWidth::I16,
+                "-32768",
+                0x8000,
+            ),
+            (
+                FixedInteger::Usize(u64::MAX),
+                IntegerWidth::Usize,
+                "18446744073709551615",
+                u64::MAX,
+            ),
+            (FixedInteger::Isize(-1), IntegerWidth::Isize, "-1", u64::MAX),
         ];
         for (fixed, width, decimal, bits) in cases {
             assert_eq!(width, fixed.width(), "{fixed:?} keeps its width");
@@ -1429,12 +1617,60 @@ mod tests
                 "{fixed:?} reads back from its pattern"
             );
         }
-        let past = 0x1_0000_0000_u64;
-        for width in [IntegerWidth::U32, IntegerWidth::I32] {
+        for (width, past) in [
+            (IntegerWidth::U32, 0x1_0000_0000_u64),
+            (IntegerWidth::I32, 0x1_0000_0000),
+            (IntegerWidth::U8, 0x100),
+            (IntegerWidth::I8, 0x100),
+            (IntegerWidth::U16, 0x1_0000),
+            (IntegerWidth::I16, 0x1_0000),
+        ] {
             assert_eq!(
                 Err(WiderThanWidth),
                 FixedInteger::try_from((width, past)),
-                "a pattern past 32 bits is no {width:?}"
+                "a pattern past {} bits is no {width:?}",
+                u32::from(width.bits())
+            );
+        }
+        let past = 0x1_0000_0000_u64;
+        for (width, greatest, beyond) in [
+            (IntegerWidth::U8, FixedInteger::U8(u8::MAX), "256"),
+            (IntegerWidth::I8, FixedInteger::I8(i8::MAX), "128"),
+            (IntegerWidth::U16, FixedInteger::U16(u16::MAX), "65536"),
+            (IntegerWidth::I16, FixedInteger::I16(i16::MAX), "32768"),
+            (IntegerWidth::U32, FixedInteger::U32(u32::MAX), "4294967296"),
+            (
+                IntegerWidth::Isize,
+                FixedInteger::Isize(i64::MAX),
+                "9223372036854775808",
+            ),
+            (
+                IntegerWidth::Usize,
+                FixedInteger::Usize(u64::MAX),
+                "18446744073709551616",
+            ),
+        ] {
+            assert_eq!(
+                Ok(greatest),
+                FixedInteger::from_decimal(width, &greatest.to_decimal()),
+                "the greatest {width:?} reads from its digits"
+            );
+            assert_eq!(
+                Err(OutsideWidth),
+                FixedInteger::from_decimal(width, beyond),
+                "one past the greatest {width:?} is refused"
+            );
+        }
+        assert_eq!(
+            Ok(FixedInteger::U8(7)),
+            FixedInteger::from_decimal(IntegerWidth::U8, "007"),
+            "leading zeros are no part of the value"
+        );
+        for text in ["", "-1", "+1", "1_0", "1.5"] {
+            assert_eq!(
+                Err(OutsideWidth),
+                FixedInteger::from_decimal(IntegerWidth::I8, text),
+                "{text:?} is no digits"
             );
         }
         assert_eq!(

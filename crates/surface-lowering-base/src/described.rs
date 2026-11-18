@@ -2790,6 +2790,7 @@ where
         ("u64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U64)),
         ("i32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I32)),
         ("i64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I64)),
+        ("u8", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U8)),
     ] {
         let ty = typer.arena.value_type_base(atom);
         let _first = families.insert(Name::from(name), (ty, base));

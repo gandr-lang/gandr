@@ -5410,6 +5410,12 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
         tags::BASE_U64 => Ok(BaseType::Fixed(IntegerWidth::U64)),
         tags::BASE_I32 => Ok(BaseType::Fixed(IntegerWidth::I32)),
         tags::BASE_I64 => Ok(BaseType::Fixed(IntegerWidth::I64)),
+        tags::BASE_U8 => Ok(BaseType::Fixed(IntegerWidth::U8)),
+        tags::BASE_U16 => Ok(BaseType::Fixed(IntegerWidth::U16)),
+        tags::BASE_I8 => Ok(BaseType::Fixed(IntegerWidth::I8)),
+        tags::BASE_I16 => Ok(BaseType::Fixed(IntegerWidth::I16)),
+        tags::BASE_USIZE => Ok(BaseType::Fixed(IntegerWidth::Usize)),
+        tags::BASE_ISIZE => Ok(BaseType::Fixed(IntegerWidth::Isize)),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::BaseType,
             tag: other,
@@ -5574,7 +5580,7 @@ fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
         else { sign == Some(match value.sign() { Sign::NonNegative => 0, Sign::Negative => 1 }) }, Literal::Character(ref value) => { let text = value.to_text();
         kind == Some(3)
             && reader.position.0 == start.0.saturating_add(2).saturating_add(text.len())
-            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Float64(_) => kind == Some(8), Literal::Fixed(fixed) => kind == Some(match fixed.width() { IntegerWidth::U32 => 4, IntegerWidth::U64 => 5, IntegerWidth::I32 => 6, IntegerWidth::I64 => 7 }) } }),
+            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Float64(_) => kind == Some(8), Literal::Fixed(fixed) => kind == Some(match fixed.width() { IntegerWidth::U32 => 4, IntegerWidth::U64 => 5, IntegerWidth::I32 => 6, IntegerWidth::I64 => 7, IntegerWidth::U8 => 9, IntegerWidth::U16 => 10, IntegerWidth::I8 => 11, IntegerWidth::I16 => 12, IntegerWidth::Usize => 13, IntegerWidth::Isize => 14 }) } }),
 )]
 fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 {
@@ -5617,6 +5623,12 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
         tags::LITERAL_U64 => decode_fixed(reader, IntegerWidth::U64),
         tags::LITERAL_I32 => decode_fixed(reader, IntegerWidth::I32),
         tags::LITERAL_I64 => decode_fixed(reader, IntegerWidth::I64),
+        tags::LITERAL_U8 => decode_fixed(reader, IntegerWidth::U8),
+        tags::LITERAL_U16 => decode_fixed(reader, IntegerWidth::U16),
+        tags::LITERAL_I8 => decode_fixed(reader, IntegerWidth::I8),
+        tags::LITERAL_I16 => decode_fixed(reader, IntegerWidth::I16),
+        tags::LITERAL_USIZE => decode_fixed(reader, IntegerWidth::Usize),
+        tags::LITERAL_ISIZE => decode_fixed(reader, IntegerWidth::Isize),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::LiteralKind,
             tag: other,
