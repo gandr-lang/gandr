@@ -2,6 +2,7 @@
 //! presented with their complements, and the outer pushout square of two
 //! subshapes over their meet.
 
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
@@ -40,8 +41,9 @@ pub enum Membership
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Subshape
 {
-    /// One membership decision per carrier point, in carrier order.
-    membership: Vec<Membership>,
+    /// One membership decision per carrier point, in carrier order, shared
+    /// by each copy of the subshape.
+    membership: Arc<[Membership]>,
 }
 
 impl Subshape
@@ -64,6 +66,9 @@ impl Subshape
     ///   the bound and the duplicate handling.
     /// - witness: `tests::finite::all_small_union_squares`
     /// - witness: `tests::finite::finite_boundaries_are_checked`
+    ///
+    /// # Cost
+    /// - allocation: the shared membership list, setup
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref shape) => shape.ambient() == ambient
@@ -84,7 +89,9 @@ impl Subshape
                 .ok_or(ShapeError::PointOutside(point))?;
             *entry = Membership::Inside;
         }
-        Ok(Self { membership })
+        Ok(Self {
+            membership: membership.into(),
+        })
     }
 
     /// The number of points of the carrier.
@@ -153,10 +160,13 @@ impl Subshape
     ///   partial reversal.
     /// - witness: `tests::finite::all_small_union_squares`
     /// - witness: `tests::finite::finite_boundaries_are_checked`
+    ///
+    /// # Cost
+    /// - allocation: the complement's shared membership list, setup
     #[inline]
     #[must_use]
     #[spec(ensures: |ref ret| ret.membership.len() == self.membership.len()
-        && ret.membership.iter().zip(&self.membership).all(|(after, before)| after != before))]
+        && ret.membership.iter().zip(&*self.membership).all(|(after, before)| after != before))]
     pub fn complement(&self) -> Self
     {
         Self {
@@ -189,6 +199,9 @@ impl Subshape
     ///   zero and one separate the carrier check.
     /// - witness: `tests::finite::all_small_union_squares`
     /// - witness: `tests::finite::finite_boundaries_are_checked`
+    ///
+    /// # Cost
+    /// - allocation: the combined shared membership list, setup
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -199,7 +212,7 @@ impl Subshape
     )]
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref shape) => shape.membership.len() == self.membership.len()
-            && shape.membership.iter().zip(self.membership.iter().zip(&other.membership)).all(|(result, (left, right))| {
+            && shape.membership.iter().zip(self.membership.iter().zip(other.membership.iter())).all(|(result, (left, right))| {
                 let inside = match operation {
                     SetOperation::Meet => *left == Membership::Inside && *right == Membership::Inside,
                     SetOperation::Union => *left == Membership::Inside || *right == Membership::Inside,
@@ -220,7 +233,7 @@ impl Subshape
         let membership = self
             .membership
             .iter()
-            .zip(&other.membership)
+            .zip(other.membership.iter())
             .map(|(left, right)| match (operation, *left, *right) {
                 (SetOperation::Meet, Membership::Inside, Membership::Inside)
                 | (SetOperation::Union, Membership::Inside, _)
@@ -267,10 +280,10 @@ impl Subshape
     )]
     #[spec(ensures: |ref ret| match *ret {
         Ok(Inclusion::Included) => self.membership.len() == target.membership.len()
-            && self.membership.iter().zip(&target.membership).all(|pair| *pair.0 == Membership::Outside || *pair.1 == Membership::Inside),
+            && self.membership.iter().zip(target.membership.iter()).all(|pair| *pair.0 == Membership::Outside || *pair.1 == Membership::Inside),
         Ok(Inclusion::Escapes(point)) => self.contains(point) == Ok(Membership::Inside)
             && target.contains(point) == Ok(Membership::Outside)
-            && self.membership.iter().zip(&target.membership).take(usize::from(point))
+            && self.membership.iter().zip(target.membership.iter()).take(usize::from(point))
                 .all(|pair| *pair.0 == Membership::Outside || *pair.1 == Membership::Inside),
         Err(error) => error == ShapeError::DifferentAmbient && self.membership.len() != target.membership.len(),
     })]
@@ -285,7 +298,7 @@ impl Subshape
         let escape = self
             .membership
             .iter()
-            .zip(&target.membership)
+            .zip(target.membership.iter())
             .position(|pair| *pair.0 == Membership::Inside && *pair.1 == Membership::Outside);
         Ok(escape.map_or(Inclusion::Included, |point| {
             Inclusion::Escapes(Point::from(point))
@@ -491,6 +504,10 @@ impl UnionSquare
     ///   one separate the carrier check.
     /// - witness: `tests::finite::all_small_union_squares`
     /// - witness: `tests::finite::finite_boundaries_are_checked`
+    ///
+    /// # Cost
+    /// - allocation: the shared antecedent and consequent, when the caller
+    ///   gives an owned formula, setup
     #[inline]
     #[spec(ensures: |ref ret| match *ret {
         Ok(ref square) => square.blocks.len() == left.decisions().len()
@@ -513,7 +530,7 @@ impl UnionSquare
         let blocks = left
             .membership
             .iter()
-            .zip(&right.membership)
+            .zip(right.membership.iter())
             .map(|pair| match (*pair.0, *pair.1) {
                 (Membership::Inside, Membership::Inside) => Block::Both,
                 (Membership::Inside, Membership::Outside) => Block::Left,

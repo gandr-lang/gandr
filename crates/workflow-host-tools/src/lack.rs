@@ -220,13 +220,13 @@ pub fn disabled(json: &Json) -> Result<Vec<ToolKey>, HostToolsError>
 /// - provides: the tool, its version, and why the host lacks it.
 /// - executable: none — a plain record.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Lack
+pub enum Lack<'listing>
 {
     /// mise holds no install of the tool.
     Absent
     {
         /// The tool.
-        tool: ToolKey,
+        tool: &'listing ToolKey,
         /// Its version.
         version: Version,
     },
@@ -234,7 +234,7 @@ pub enum Lack
     Empty
     {
         /// The tool.
-        tool: ToolKey,
+        tool: &'listing ToolKey,
         /// Its version.
         version: Version,
     },
@@ -242,7 +242,7 @@ pub enum Lack
     Foreign
     {
         /// The tool.
-        tool: ToolKey,
+        tool: &'listing ToolKey,
         /// Its version.
         version: Version,
         /// The program's machine.
@@ -250,13 +250,16 @@ pub enum Lack
     },
 }
 
-impl fmt::Display for Lack
+impl fmt::Display for Lack<'_>
 {
     /// Writes the lack as the second half of the check's line: `lacks <tool>
     /// <version>`, or `holds <tool> <version> for <machine>`.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the written text of the tool and the version, diagnostic
     #[inline]
     fn fmt(
         &self,
@@ -264,16 +267,12 @@ impl fmt::Display for Lack
     ) -> fmt::Result
     {
         match *self {
-            Self::Absent {
-                ref tool,
-                ref version,
-            } => write!(f, "lacks {tool} {version}"),
-            Self::Empty {
-                ref tool,
-                ref version,
-            } => write!(f, "lacks {tool} {version}: its install holds no program"),
+            Self::Absent { tool, ref version } => write!(f, "lacks {tool} {version}"),
+            Self::Empty { tool, ref version } => {
+                write!(f, "lacks {tool} {version}: its install holds no program")
+            },
             Self::Foreign {
-                ref tool,
+                tool,
                 ref version,
                 machine,
             } => write!(f, "holds {tool} {version} for {machine}"),
@@ -322,14 +321,17 @@ pub enum Inspection
 /// - witness: `lack::tests::a_tool_whose_backend_needs_a_disabled_tool_stays_out`
 /// - witness: `lack::tests::an_install_of_another_machine_and_an_empty_install_lack`
 /// - witness: `lack::tests::a_tool_that_the_host_pins_for_itself_stays_out_7262`
+///
+/// # Cost
+/// - allocation: the list of lacks and the paths of the installs, diagnostic
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. })))]
 #[inline]
-pub fn lacks(
-    listing: &Listing,
+pub fn lacks<'listing>(
+    listing: &'listing Listing,
     disabled: &[ToolKey],
     host: Option<Machine>,
     checkout: &Path,
-) -> Result<Vec<Lack>, HostToolsError>
+) -> Result<Vec<Lack<'listing>>, HostToolsError>
 {
     let skipped: BTreeSet<&str> = BACKEND_NEEDS
         .iter()
@@ -357,11 +359,11 @@ pub fn lacks(
                 match inspect(Path::new(&entry.install_path), host)? {
                     Inspection::Fit => None,
                     Inspection::Empty => Some(Lack::Empty {
-                        tool: tool.clone(),
+                        tool,
                         version: entry.version.clone(),
                     }),
                     Inspection::Foreign(machine) => Some(Lack::Foreign {
-                        tool: tool.clone(),
+                        tool,
                         version: entry.version.clone(),
                         machine,
                     }),
@@ -369,7 +371,7 @@ pub fn lacks(
             }
             else {
                 Some(Lack::Absent {
-                    tool: tool.clone(),
+                    tool,
                     version: entry.version.clone(),
                 })
             };
@@ -582,7 +584,7 @@ mod tests
         assert_eq!(inspect(&foreign, None), Ok(Inspection::Fit));
         assert_eq!(
             Lack::Foreign {
-                tool: "github:j178/prek".into(),
+                tool: &ToolKey::from("github:j178/prek"),
                 version: "0.5.9".into(),
                 machine: Machine::PPC64,
             }
@@ -613,7 +615,7 @@ mod tests
         );
         let listing = Listing::read(&json).unwrap();
         let worktrunk = Lack::Absent {
-            tool: "github:max-sixty/worktrunk".into(),
+            tool: &ToolKey::from("github:max-sixty/worktrunk"),
             version: Version::from("0.81.0"),
         };
         let host = Some(Machine::RISCV);
@@ -624,7 +626,7 @@ mod tests
         assert_eq!(
             lacks(&listing, &[], host, &root),
             Ok(vec![worktrunk, Lack::Absent {
-                tool: "npm:oxfmt".into(),
+                tool: &ToolKey::from("npm:oxfmt"),
                 version: Version::from("0.75.0"),
             }])
         );
@@ -663,11 +665,11 @@ mod tests
             lacks(&listing, &[], Some(Machine::RISCV), &checkout),
             Ok(vec![
                 Lack::Absent {
-                    tool: "github:j178/prek".into(),
+                    tool: &ToolKey::from("github:j178/prek"),
                     version: Version::from("0.5.9"),
                 },
                 Lack::Absent {
-                    tool: "rust".into(),
+                    tool: &ToolKey::from("rust"),
                     version: Version::from("1.95.0"),
                 },
             ])

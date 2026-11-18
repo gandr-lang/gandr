@@ -481,10 +481,9 @@ mod tests
                         continue;
                     }
                     for warrant in [Warrant::Pending, Warrant::Replayed] {
-                        let mut longer = list.clone();
-                        longer.push(card(key, warrant));
-                        let mut using = used.clone();
-                        let _new = using.insert(key);
+                        let longer: Vec<AccountCard> =
+                            list.iter().cloned().chain([card(key, warrant)]).collect();
+                        let using: BTreeSet<Key> = used.iter().copied().chain([key]).collect();
                         lists.push(longer.clone());
                         next.push((longer, using));
                     }

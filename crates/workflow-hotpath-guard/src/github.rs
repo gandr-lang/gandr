@@ -541,6 +541,10 @@ struct Touched
 /// - witness: `tests::cli::a_landing_with_an_accepted_verdict_files_no_issue`
 /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
 /// - witness: `tests::cli::an_unaccepted_benchmark_beside_an_accepted_one_still_files`
+///
+/// # Cost
+/// - allocation: the filed issues, their bodies and the calls to `gh`,
+///   diagnostic
 #[inline]
 pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
 {
@@ -665,11 +669,14 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
 /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
 /// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
 /// - witness: `tests::cli::a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress`
+///
+/// # Cost
+/// - allocation: the comment, the index body and the calls to `gh`, diagnostic
 fn file_function(
     function: &SiteName,
     mut entry: Touched,
     report: &Report,
-    regressions: &[Regression],
+    regressions: &[Regression<'_>],
     at: &Run<'_>,
 ) -> Result<Filed, GuardError>
 {
@@ -683,7 +690,7 @@ fn file_function(
         entry.index.record(regression, at, &unposted);
     }
     for (series, passing) in report.passed() {
-        if !own().any(|regression| &regression.series == series) {
+        if !own().any(|regression| regression.series == series) {
             entry.index.fix(series, passing, at);
         }
     }

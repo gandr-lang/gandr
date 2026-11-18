@@ -9,6 +9,7 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use core::fmt;
 use core::time::Duration;
 use std::path::Path;
@@ -22,25 +23,25 @@ use crate::error::TimingError;
 /// A test's path inside its binary: what nextest's `test()` filter matches.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TestName(String);
+pub struct TestName(Arc<str>);
 
 /// The test binary a case ran in, as nextest names it in `classname`.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct BinaryId(String);
+pub struct BinaryId(Arc<str>);
 
 /// The job a report came from, named by the artifact that carried it.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Lane(String);
+pub struct Lane(Arc<str>);
 
 /// The text of one JUnit report.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub struct ReportText<'text>(&'text str);
 
-/// Declares `From` conversions, the text and the rendering of a name over
-/// `String`.
+/// Declares `From` conversions, the text and the rendering of a name. Each
+/// copy of a name shares its text.
 macro_rules! name {
     ($name:ident) => {
         impl AsRef<str> for $name
@@ -62,10 +63,13 @@ macro_rules! name {
             ///
             /// # Specification
             /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the shared text, setup
             #[inline]
             fn from(name: &str) -> Self
             {
-                Self(name.to_owned())
+                Self(name.into())
             }
         }
 
@@ -75,10 +79,13 @@ macro_rules! name {
             ///
             /// # Specification
             /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the shared text, setup
             #[inline]
             fn from(name: String) -> Self
             {
-                Self(name)
+                Self(name.into())
             }
         }
 
@@ -138,13 +145,13 @@ impl TestName
             reason = "parity: the body runs the same substring search once"
         )
     )]
-    #[spec(ensures: |ret| (ret == Containment::Contains) == self.0.contains(&text.0))]
+    #[spec(ensures: |ret| (ret == Containment::Contains) == self.0.contains(&*text.0))]
     pub fn contains(
         &self,
         text: &Self,
     ) -> Containment
     {
-        if self.0.contains(&text.0) {
+        if self.0.contains(&*text.0) {
             Containment::Contains
         }
         else {

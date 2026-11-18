@@ -371,6 +371,12 @@ impl Search
     /// # Errors
     /// - [`SuspendReason`]: as [`Self::unit`].
     ///
+    /// # Cost
+    /// - allocation: the piece's ends, once for the step of the bound variable,
+    ///   setup
+    /// - allocation: the steps, their premises and the halves of a split piece,
+    ///   growth within the plan's order
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`Self::unit`].
     /// - witness: `tests::quantifier::quantified_formulas_settle_to_certificates_that_replay`
@@ -387,6 +393,9 @@ impl Search
             StepId::try_from(base.saturating_add(offset)).map_err(|_wide| SuspendReason::Quota)
         };
         let mut written: Vec<Step> = Vec::new();
+        // A plan holds each distinct structure once, so the bound variable
+        // stands at one node, and its step takes the piece's ends once.
+        let mut variable = Some((lower.clone(), upper.clone()));
         for (place, visited) in self.order.iter().enumerate() {
             let known = self.enclosed.get(place).and_then(Option::as_ref);
             if visited.reads == Reads::Nothing && known.is_some() {
@@ -404,18 +413,19 @@ impl Search
                 visited.operands,
             ) {
                 (&Node::Real(Real::Bound(_)), None) => {
-                    if lower.width() > quotas.width || upper.width() > quotas.width {
+                    let (low, high) = variable.take().ok_or(SuspendReason::NoRule)?;
+                    if low.width() > quotas.width || high.width() > quotas.width {
                         return Err(SuspendReason::Quota);
                     }
                     (
                         Step::Variable {
                             real: node,
-                            lower: lower.clone(),
-                            upper: upper.clone(),
+                            lower: low.clone(),
+                            upper: high.clone(),
                         },
                         NumericInterval::new(
-                            Bound::closed(lower.clone()),
-                            Bound::closed(upper.clone()),
+                            Bound::closed(low),
+                            Bound::closed(high),
                             Orientation::Proper,
                         )
                         .map_err(|_reversed| SuspendReason::NoRule)?,

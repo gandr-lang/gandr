@@ -1,5 +1,7 @@
 //! The jobs of a target: one for each tool that the table builds for it.
 
+use alloc::sync::Arc;
+
 use anodized::spec;
 
 use crate::error::HostToolsError;
@@ -29,8 +31,8 @@ pub struct Job
     pub key: ToolKey,
     /// The version to build.
     pub version: Version,
-    /// The target triple.
-    pub target: Target,
+    /// The target triple, shared by each job of one plan.
+    pub target: Arc<Target>,
     /// The name of the tool's directory in mise's install directory.
     pub install_name: InstallName,
     /// How it builds.
@@ -60,6 +62,9 @@ pub struct Job
 ///   out is refused by its key.
 /// - witness: `jobs::tests::a_targets_jobs_take_the_locked_versions_and_the_pin`
 /// - witness: `jobs::tests::a_tool_the_lock_leaves_out_is_refused`
+///
+/// # Cost
+/// - allocation: the jobs and the one shared target, setup
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|jobs| jobs.len() <= builds.tool.len()) || matches!(ret, Err(HostToolsError::Unlocked { .. })))]
 #[inline]
 pub fn plan(
@@ -69,6 +74,7 @@ pub fn plan(
     target: &Target,
 ) -> Result<Vec<Job>, HostToolsError>
 {
+    let shared = Arc::new(target.clone());
     builds
         .tool
         .iter()
@@ -86,7 +92,7 @@ pub fn plan(
             Ok(Job {
                 key: tool.key.clone(),
                 version: version.clone(),
-                target: target.clone(),
+                target: Arc::clone(&shared),
                 install_name: tool.key.install_name(),
                 recipe: tool.recipe.clone(),
                 needs: tool.needs.clone(),
@@ -165,7 +171,7 @@ crate = \"mise\"
             "2026.11.4",
             "mise"
         ]]);
-        assert!(jobs.iter().all(|job| job.target == riscv64));
+        assert!(jobs.iter().all(|job| *job.target == riscv64));
     }
 
     #[test]

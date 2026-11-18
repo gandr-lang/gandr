@@ -55,13 +55,16 @@ impl Key
     /// - hypothesis: L3 — the same sentence keys alike wherever it moves, and a
     ///   reworded one keys apart; digesting the line instead changes both.
     /// - witness: `ledger::tests::a_moved_sentence_keeps_its_key_and_a_reworded_one_does_not`
+    ///
+    /// # Cost
+    /// - allocation: the key's path and digest, durable by the ledger key
     #[inline]
     #[must_use]
     pub fn of(finding: &Finding) -> Self
     {
         let digest = blake3::hash(finding.sentence.as_bytes()).to_hex();
         Self {
-            path: finding.path.clone(),
+            path: String::from(&*finding.path),
             rule: finding.rule,
             digest: digest.get(.. DIGITS).unwrap_or_default().to_owned(),
         }
@@ -161,7 +164,7 @@ mod tests
     macro_rules! finding {
         ($path:literal, $line:literal, $sentence:literal) => {
             Finding {
-                path: $path.to_owned(),
+                path: $path.into(),
                 line: crate::passage::comments(
                     crate::passage::Text($path),
                     crate::passage::Text(&format!("{}/// x", "\n".repeat($line - 1))),

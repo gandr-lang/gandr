@@ -177,6 +177,9 @@ impl Runner for Processes
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the key's path, durable by the build key
 #[inline]
 #[must_use]
 pub fn key(
@@ -184,7 +187,7 @@ pub fn key(
     job: &Job,
 ) -> PathBuf
 {
-    into.join(&job.target)
+    into.join(&*job.target)
         .join(&job.install_name)
         .join(&job.version)
 }
@@ -218,6 +221,10 @@ pub fn key(
 /// - witness: `build::tests::a_build_renames_its_result_into_the_key`
 /// - witness: `build::tests::a_failed_build_leaves_no_key`
 /// - witness: `build::tests::a_stamp_writes_the_version_over_each_placeholder`
+///
+/// # Cost
+/// - allocation: the paths, the arguments and the stamped text of one build,
+///   setup
 #[inline]
 pub fn build<R>(
     job: &Job,
@@ -246,7 +253,7 @@ where
     }
     let partial = into
         .join(".partial")
-        .join(&job.target)
+        .join(&*job.target)
         .join(&job.install_name)
         .join(&job.version);
     clear(&partial)?;
@@ -306,6 +313,9 @@ where
 /// - hypothesis: L3 — a prune leaves a scratch that a build holds, removes it
 ///   when no build holds it, and finds none after.
 /// - witness: `build::tests::a_prune_removes_the_scratch_unless_a_build_holds_it`
+///
+/// # Cost
+/// - allocation: the listing of the scratch directory and its paths, setup
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. })))]
 #[inline]
 pub fn prune(into: &Path) -> Result<Pruned, HostToolsError>
@@ -350,6 +360,9 @@ pub fn prune(into: &Path) -> Result<Pruned, HostToolsError>
 /// - hypothesis: L3 — the keys of an older and a newer version go with their
 ///   markers; the key and the marker of the job's version stay.
 /// - witness: `build::tests::a_retire_removes_each_other_version_and_its_markers`
+///
+/// # Cost
+/// - allocation: the paths of the retired keys and their versions, setup
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(HostToolsError::Io { .. })))]
 #[inline]
 pub fn retire(
@@ -357,7 +370,7 @@ pub fn retire(
     job: &Job,
 ) -> Result<Vec<Version>, HostToolsError>
 {
-    let tool = into.join(&job.target).join(&job.install_name);
+    let tool = into.join(&*job.target).join(&job.install_name);
     let mut versions = names(&tool)?
         .into_iter()
         .filter(|name| job.version != *name.as_str())
@@ -629,7 +642,7 @@ mod tests
         Job {
             key: "github:a/tool".into(),
             version: "1.2.3".into(),
-            target: "riscv64gc-unknown-linux-gnu".into(),
+            target: alloc::sync::Arc::new("riscv64gc-unknown-linux-gnu".into()),
             install_name: "github-a-tool".into(),
             recipe: Recipe::Crate {
                 name: "tool".to_owned(),

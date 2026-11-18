@@ -327,7 +327,7 @@ impl Comment
     /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[must_use]
     #[inline]
-    pub const fn of(regression: &Regression) -> Self
+    pub const fn of(regression: &Regression<'_>) -> Self
     {
         if matches!(regression.shift, Maybe::Present(_))
             || matches!(regression.accepted, Maybe::Present(_))
@@ -543,16 +543,19 @@ impl Index
     /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     /// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
     /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
+    ///
+    /// # Cost
+    /// - allocation: the row's cells, durable by the row's key
     #[inline]
     pub fn record(
         &mut self,
-        regression: &Regression,
+        regression: &Regression<'_>,
         at: &Run<'_>,
         comment: &Maybe<CommentUrl, Unposted>,
     )
     {
         let status = match (&regression.accepted, regression.shift) {
-            (&Maybe::Present(ref acceptance), _) => format!("accepted — {acceptance}"),
+            (&Maybe::Present(acceptance), _) => format!("accepted — {acceptance}"),
             (&Maybe::Absent(_), Maybe::Present(shift)) => format!(
                 "runner shift — the {} functions both reports time moved {} % at the median, and \
                  none moved past the policy's threshold beside it",
@@ -560,7 +563,7 @@ impl Index
             ),
             (&Maybe::Absent(_), Maybe::Absent(_)) => "open".to_owned(),
         };
-        let key = Key::new(at.subject, &regression.series);
+        let key = Key::new(at.subject, regression.series);
         let found = self.rows.iter().position(|row| row.key() == key.borrowed());
         let earlier = found
             .and_then(|index| self.rows.get(index))

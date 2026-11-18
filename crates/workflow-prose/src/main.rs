@@ -208,6 +208,9 @@ fn main() -> ExitCode
 ///   line, rule, sentence and fix; a lost part changes the printed line.
 /// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
 /// - witness: `tests::cli::a_body_is_refused_on_its_findings`
+///
+/// # Cost
+/// - allocation: the path and the message of a failed write, error path
 fn print(
     out: &mut impl std::io::Write,
     finding: &Finding,
