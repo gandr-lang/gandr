@@ -63,6 +63,9 @@ macro_rules! name {
             ///
             /// # Specification
             /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the shared text, setup
             #[inline]
             fn from(name: &str) -> Self
             {
@@ -76,6 +79,9 @@ macro_rules! name {
             ///
             /// # Specification
             /// trivial.
+            ///
+            /// # Cost
+            /// - allocation: the shared text, setup
             #[inline]
             fn from(name: String) -> Self
             {
