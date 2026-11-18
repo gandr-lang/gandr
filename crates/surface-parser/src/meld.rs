@@ -7440,7 +7440,10 @@ impl<'pbg> MeldState<'pbg>
             };
             match cell.role {
                 Role::FormTile {
-                    mold, open: true, ..
+                    mold,
+                    open: true,
+                    start,
+                    ..
                 } => {
                     // A completable frontier (a `?` hole before its optional
                     // `hole_name`, mold in the grammar's LAST set) is already a
@@ -7448,6 +7451,13 @@ impl<'pbg> MeldState<'pbg>
                     // reports neither an expected tile nor an obligation for it
                     // — mirroring `force_close_form`.
                     if bool::from(FormTable::is_form_last(self.pbg, mold)) {
+                        continue;
+                    }
+                    // A form that a stray mid opened, and that no tile
+                    // continued, closes with no ghost and owes nothing more:
+                    // its absent opener is already owed, mirroring
+                    // `force_close_form`.
+                    if start && !bool::from(FormTable::is_form_first(self.pbg, mold)) {
                         continue;
                     }
                     // A required-tail frontier whose tail is one form already
