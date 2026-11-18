@@ -1,3 +1,1 @@
-def dropped(seat : Integer) -> -F Unit {
-  drop seat
-}
+def dropped(seat : Integer) -> -F Unit = drop seat;

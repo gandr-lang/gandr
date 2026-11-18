@@ -13,6 +13,6 @@ def f : Integer;
 def f = Open.x;
 module Pointing : Model(Pointed) where {
   type P = Integer;
-  def pt() -> -F Integer { return 0 }
+  def pt() -> -F Integer = return 0;
 }
-def g() -> -F Integer { var s = 1; s.width () }
+def g() -> -F Integer = { var s = 1; s.width () };

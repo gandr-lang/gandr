@@ -1,6 +1,4 @@
-def same(A : Type, a : A) -> A {
-  a
-}
+def same(A : Type, a : A) -> A = a;
 
 def fromUnit(
   A : Type,
@@ -11,9 +9,7 @@ def fromUnit(
   g : Path[.A = A](y, z),
   h : Path[.A = A](x, z),
   s : Path[.A = Path[.A = A](x, z)](Path.step f g, h)
-) -> Path[.A = Path[.A = A](x, z)](Path.step (Path.step f g) (Path.here z), h) {
-  s
-}
+) -> Path[.A = Path[.A = A](x, z)](Path.step (Path.step f g) (Path.here z), h) = s;
 
 def thenStart(
   A : Type,
@@ -29,9 +25,7 @@ def thenStart(
 ) -> Path[.A = Path[.A = Path[.A = A](x, z)](Path.step f g, k)](
   Path.step (fromUnit A x y z f g h s) r,
   Path.step s r
-) {
-  Path.here (Path.step s r)
-}
+) = Path.here (Path.step s r);
 
 def unfoldStart(
   A : Type,

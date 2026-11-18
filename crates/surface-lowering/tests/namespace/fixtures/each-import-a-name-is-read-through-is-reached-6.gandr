@@ -1,3 +1,2 @@
 import "./member.gandr";
-def far : String;
-def far = Cancel.notes;
+def far : String = Cancel.notes;

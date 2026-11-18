@@ -2,9 +2,12 @@ theory Gandr.Shape where {
   oper label : String;
 }
 module Gandr.Tools where {
-  def answer : Integer = 42;
+  def answer : Integer;
+  def answer = 42;
 }
 module Shaped : Model(Gandr.Shape) where {
-  def label : String = "shaped";
+  def label : String;
+  def label = "shaped";
 }
-def asked : Integer = Gandr.Tools.answer;
+def asked : Integer;
+def asked = Gandr.Tools.answer;

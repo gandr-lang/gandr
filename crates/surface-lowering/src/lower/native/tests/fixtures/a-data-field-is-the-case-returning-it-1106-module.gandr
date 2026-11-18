@@ -4,7 +4,7 @@ data Shape : Type where {
   | Line : (start : Integer, tag : Integer) --> Shape
 }
 data Twin(a : Type) : Type where { | Both : (first : a, second : a) --> Twin a }
-def lowOf(band : Band) -> Integer { band.low }
-def above(band : Band) -> Bool { band.high >= 1 }
-def tagOf(shape : Shape) -> Integer { shape.tag }
-def secondAbove(twin : Twin Integer) -> Bool { twin.second >= 1 }
+def lowOf(band : Band) -> Integer = band.low;
+def above(band : Band) -> Bool = band.high >= 1;
+def tagOf(shape : Shape) -> Integer = shape.tag;
+def secondAbove(twin : Twin Integer) -> Bool = twin.second >= 1;

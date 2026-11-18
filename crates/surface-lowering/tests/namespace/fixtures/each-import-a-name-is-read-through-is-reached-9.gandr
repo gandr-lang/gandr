@@ -1,3 +1,2 @@
 import "./base.gandr";
-def idle : Integer;
-def idle = 1;
+def idle : Integer = 1;

@@ -8,6 +8,6 @@ def derived : Model Unital;
 def written : *{
   m : Type,
   e : m,
-  mul : (m, m) -> m,
-  unitL : (x : m) -> Path[.A = m](mul e x, x)
+  mul : +U (m -> m -> -F m),
+  unitL : +U ((x : m) -> -F Path[.A = m](mul e x, x))
 };

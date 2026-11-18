@@ -1,2 +1,2 @@
-def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
-def silent(a : Integer) -> Integer { let r = divmod a a; r.q }
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) = (m, n);
+def silent(a : Integer) -> Integer = { let r = divmod a a; r.q };

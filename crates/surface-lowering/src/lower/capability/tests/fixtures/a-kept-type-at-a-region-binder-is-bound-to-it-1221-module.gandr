@@ -1,2 +1,2 @@
-def read[q : Region, r : Region](k : (() -> Integer) at r) -> Integer { force k }
-def named[r : Region](k : (() -> Integer) at r) -> -F Integer { pure r }
+def read[q : Region, r : Region](k : (+U (-F Integer)) at r) -> Integer = force k;
+def named[r : Region](k : (+U (-F Integer)) at r) -> -F Integer = pure r;

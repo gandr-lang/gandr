@@ -9,9 +9,9 @@ theory Scoped where {
 def derived : Model Scoped;
 def written : *{
   c : Type,
-  t : c -> Type,
-  m : (g : c, t(g)) -> Type,
-  ext : (g : c, t(g)) -> c,
-  wk : (g : c, a : t(g)) -> t(ext(g, a)),
-  q : (g : c, a : t(g)) -> m(ext(g, a), wk(g, a))
+  t : +U (c -> -F Type),
+  m : +U ((g : c) -> t(g) -> -F Type),
+  ext : +U ((g : c) -> t(g) -> -F c),
+  wk : +U ((g : c) -> (a : t(g)) -> -F t(ext(g, a))),
+  q : +U ((g : c) -> (a : t(g)) -> -F m(ext(g, a), wk(g, a)))
 };

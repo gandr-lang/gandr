@@ -6,6 +6,6 @@ theory Kept where {
 }
 module Echo : Model(Kept) with sort V = String where {
   type C = String;
-  def get(key : String, k : String -> String) -> String { k key }
-  def put(key : String, value : String, k : String) -> String { k }
+  def get(key : String, k : +U (String -> -F String)) -> String = k key;
+  def put(key : String, value : String, k : String) -> String = k;
 }

@@ -6,6 +6,6 @@ module Outer where {
     def three = 3;
   }
 }
-def counted() -> -F Integer { import Counting; return two }
-def nested() -> -F Integer { import Outer.Inner; return three }
-def bound(two : Integer) -> -F Integer { import Counting; return two + 1 }
+def counted() -> -F Integer = { import Counting; return two };
+def nested() -> -F Integer = { import Outer.Inner; return three };
+def bound(two : Integer) -> -F Integer = { import Counting; return two + 1 };

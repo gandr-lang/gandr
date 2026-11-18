@@ -12,4 +12,4 @@ pub data Signatures : Type where {
 pub data Row : Type where { | Row : (result : Code) --> Row }
 pub data Rows : Type where { | NoRow : Rows | Named : (r : Row, rest : Rows) --> Rows }
 pub data Admission : Type where { | Admitted : Admission }
-pub def admitBlock(ss : Signatures, rs : Rows) -> Admission { Admitted }
+pub def admitBlock(ss : Signatures, rs : Rows) -> Admission = Admitted;

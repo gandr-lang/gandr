@@ -1,1 +1,2 @@
-pub def one : Integer = 2;
+pub def one : Integer;
+def one = 2;

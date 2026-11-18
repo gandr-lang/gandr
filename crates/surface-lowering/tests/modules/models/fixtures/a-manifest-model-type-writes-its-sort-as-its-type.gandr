@@ -5,4 +5,8 @@ theory Toggle where {
   oper read : (t : T) --> Integer;
 }
 def derived : Model Toggle with sort T = Integer;
-def written : *{start : Integer, step : Integer -> Integer, read : Integer -> Integer};
+def written : *{
+  start : Integer,
+  step : +U (Integer -> -F Integer),
+  read : +U (Integer -> -F Integer)
+};

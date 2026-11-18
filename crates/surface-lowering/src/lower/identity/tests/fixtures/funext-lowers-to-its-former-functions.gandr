@@ -1,6 +1,2 @@
-def id(b : Unit + Unit) -> Unit + Unit {
-  b
-}
-def again(b : Unit + Unit) -> Unit + Unit {
-  b
-}
+def id(b : +{Unit, Unit}) -> +{Unit, Unit} = b;
+def again(b : +{Unit, Unit}) -> +{Unit, Unit} = b;

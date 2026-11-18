@@ -17,4 +17,4 @@ module Hello : Model(Named) where {
   def greeting = name;
 }
 def named = Hello.name;
-def versionOf(r : Model(Released)) -> String { r.version }
+def versionOf(r : Model Released) -> String = r.version;

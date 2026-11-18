@@ -1,2 +1,1 @@
-def lost : Sealed.inner.U;
-def lost = Sealed.inner.zero;
+def lost : Sealed.inner.U = Sealed.inner.zero;

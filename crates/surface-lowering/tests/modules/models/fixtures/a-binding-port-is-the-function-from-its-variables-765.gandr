@@ -12,12 +12,12 @@ theory Typed where {
   oper lam : (t : pi+ (x : VTm a). CTm b) --> CTm b;
 }
 def state : Model State with sort S = Integer;
-def stated : *{c : Type, get : (Integer -> c) -> c, put : (Integer, c) -> c};
+def stated : *{c : Type, get : +U (+U (Integer -> -F c) -> -F c), put : +U (Integer -> c -> -F c)};
 def typed : Model Typed;
 def written : *{
   vty : Type,
   cty : Type,
-  vtm : vty -> Type,
-  ctm : cty -> Type,
-  lam : (a : vty, b : cty, vtm(a) -> ctm(b)) -> ctm(b)
+  vtm : +U (vty -> -F Type),
+  ctm : +U (cty -> -F Type),
+  lam : +U ((a : vty) -> (b : cty) -> +U (vtm(a) -> -F ctm(b)) -> -F ctm(b))
 };

@@ -6,9 +6,9 @@ module Counting where {
 module Other where {
   def four = 40;
 }
-def clash() -> -F Integer { import Counting; return two }
-def twice() -> -F Integer { import Counting; import Other; return four }
-def ahead() -> -F Integer { import Later; return five }
+def clash() -> -F Integer = { import Counting; return two };
+def twice() -> -F Integer = { import Counting; import Other; return four };
+def ahead() -> -F Integer = { import Later; return five };
 module Later where {
   def five = 5;
 }

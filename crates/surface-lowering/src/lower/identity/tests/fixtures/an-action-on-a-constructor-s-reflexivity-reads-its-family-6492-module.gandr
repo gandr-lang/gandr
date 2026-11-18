@@ -10,7 +10,8 @@ def sphereId(x : S2) -> S2 =
 def apHere : Path[.A = Path[.A = S2](sphereId Base2, sphereId Base2)](
   Path.ap sphereId (Path.here Base2),
   Path.ap sphereId (Path.here Base2)
-) = Path.here (Path.ap sphereId (Path.here Base2));
+);
+def apHere = Path.here (Path.ap sphereId (Path.here Base2));
 
 def apHereTwice : Path[.A = Path[.A = Path[.A = S2](sphereId Base2, sphereId Base2)](
   Path.ap sphereId (Path.here Base2),
@@ -18,4 +19,5 @@ def apHereTwice : Path[.A = Path[.A = Path[.A = S2](sphereId Base2, sphereId Bas
 )](
   Path.ap sphereId (Path.here (Path.here Base2)),
   Path.ap sphereId (Path.here (Path.here Base2))
-) = Path.here (Path.ap sphereId (Path.here (Path.here Base2)));
+);
+def apHereTwice = Path.here (Path.ap sphereId (Path.here (Path.here Base2)));

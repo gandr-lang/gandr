@@ -1,4 +1,2 @@
-def swap(p : Integer * Integer) -> Integer * Integer {
-  match p { | *{m, w} => *{w, m} }
-}
-def whole(p : Integer * Integer) -> Integer * Integer { match p { | q => q } }
+def swap(p : *{Integer, Integer}) -> *{Integer, Integer} = match p { | *{m, w} => *{w, m} };
+def whole(p : *{Integer, Integer}) -> *{Integer, Integer} = match p { | q => q };

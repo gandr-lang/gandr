@@ -1,3 +1,2 @@
 import "./base.gandr" as base;
-def again : Integer;
-def again = base.owed;
+def again : Integer = base.owed;

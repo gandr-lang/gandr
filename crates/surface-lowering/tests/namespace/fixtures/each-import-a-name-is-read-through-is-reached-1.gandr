@@ -4,5 +4,5 @@ pub module Cancel :> *{
 } where {
   def notes = "notes";
 }
-pub module Str where { def len(self : shared Integer) -> Integer { pure self } }
+pub module Str where { def len(self : shared Integer) -> Integer = pure self; }
 pub def seven : Integer = 7;

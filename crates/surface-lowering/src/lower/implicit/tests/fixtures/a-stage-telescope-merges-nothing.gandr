@@ -1,4 +1,4 @@
-def staged[i : Size](x : Integer) -> Integer { x }
-def stagedRun() -> Integer { become staged 1 }
-def kept[i : Size, a : Type](n : Integer, y : a) -> a { y }
-def twin(a : Type, n : Integer, y : a) -> a { y }
+def staged[i : Size](x : Integer) -> Integer = x;
+def stagedRun() -> Integer = become staged 1;
+def kept[i : Size, a : Type](n : Integer, y : a) -> a = y;
+def twin(a : Type, n : Integer, y : a) -> a = y;

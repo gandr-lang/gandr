@@ -1,3 +1,2 @@
 import "./base.gandr";
-pub def wide : Band;
-def wide = *{low = 1, high = 2};
+pub def wide : Band = *{low = 1, high = 2};

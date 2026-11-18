@@ -1,6 +1,6 @@
 def laid() -> -F Unit =
   pure *{};
-def braced() -> -F Unit { pure *{}; }
+def braced() -> -F Unit = { pure *{}; };
 def kept() -> -F Integer =
   let n = 1
   pure n

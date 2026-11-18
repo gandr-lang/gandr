@@ -1,9 +1,9 @@
 module M where {
-  def empty() -> Type { return Integer } def same(a : Type) -> Type {
-    return a
-  } def after(a : Type) -> Integer -> Type = return fun (x) { a };
+  def empty() -> Type = return Integer;
+  def same(a : Type) -> Type = return a;
+  def after(a : Type) -> +U (Integer -> -F Type) = return fun (x) { a };
 }
-def none(x : M.empty()) -> Integer { x }
-def one(x : M.same(Integer)) -> Integer { x }
-def twice(n : Integer, x : M.after(Integer)(n)) -> Integer { x }
-def other(x : M.same(Integer)) -> String { x }
+def none(x : M.empty()) -> Integer = x;
+def one(x : M.same(Integer)) -> Integer = x;
+def twice(n : Integer, x : M.after(Integer)(n)) -> Integer = x;
+def other(x : M.same(Integer)) -> String = x;

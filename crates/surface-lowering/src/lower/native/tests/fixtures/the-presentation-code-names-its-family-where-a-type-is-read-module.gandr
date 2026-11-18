@@ -1,2 +1,3 @@
 theory Monoid where {sort M : Type;}
-def held : Theory = Monoid;
+def held : Theory;
+def held = Monoid;
