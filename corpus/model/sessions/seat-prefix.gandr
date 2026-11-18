@@ -1,0 +1,49 @@
+//! This source records prefixes of a seat protocol.
+//!
+//! A prefix records each completed seat move.
+//! A prefix remains valid while its run stays open.
+//! A monitor checks one session message at a time.
+//! `Prefix(S)` holds each accepted record.
+//! `Run(S)` holds only complete records.
+//!
+//! The checker admits each record that the protocol accepts.
+//!
+//! - see: `./seat-evolution.gandr` — complete seat runs
+//! - see: #1861 — `reporting`
+//! - cites: [Bocchi-2017-monitoring_networks_through_multiparty_session_types]
+//!
+//! [Bocchi-2017-monitoring_networks_through_multiparty_session_types]: https://doi.org/10.1016/j.tcs.2017.02.009 "Bocchi, Chen, Demangeon, Honda and Yoshida, Monitoring Networks through Multiparty Session Types"
+
+// The native session formers.
+import std.session (Prefix);
+
+// The seat's protocol and its messages.
+import "./seat-base.gandr";
+
+/// The seat before its first move: the empty record is a prefix.
+def unstarted : Prefix Seat.SeatEnd = recorded ();
+
+/// `reporting` records a seat that received its task and reported.
+/// Its next move offers continuation or retirement.
+pub def reporting : Prefix Seat.SeatEnd = recorded
+  (received Seat.task)
+  (selected report)
+  (sent Seat.progress);
+
+/// On the machine the prefix reads back as the moves it records.
+@[runs("recorded (received \"task\") (selected report) (sent \"progress\")")]
+def shown() -> Prefix Seat.SeatEnd { reporting }
+
+/// A run the seat completed is a prefix too.
+def retired : Prefix Seat.SeatEnd = recorded
+  (received Seat.task)
+  (selected report)
+  (sent Seat.progress)
+  (offered retire)
+  closed;
+
+/// A seat that reports forever has no complete run, and every record of it
+/// is a prefix: two reports so far.
+def reportedTwice : Prefix mu more. !(Seat.Report). more = recorded
+  (sent Seat.progress)
+  (sent Seat.progress);

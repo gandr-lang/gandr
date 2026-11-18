@@ -1,0 +1,3 @@
+def kept[i : Size, a : Type](n : Integer, y : a) -> a { y }
+def boundedAt[j : Size, k : Size, k < j](n : Integer) -> Integer { n }
+def twin(a : Type, n : Integer, y : a) -> a { y }

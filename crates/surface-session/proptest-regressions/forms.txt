@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a9190a4ff1f7ed097d650b359fbec099ae19c2de2ace0b1a8a3fe45f88a04d6c # shrinks to forms = 8, fixture = false, wide = false, chain = [Insert(Position(32384460479978))]

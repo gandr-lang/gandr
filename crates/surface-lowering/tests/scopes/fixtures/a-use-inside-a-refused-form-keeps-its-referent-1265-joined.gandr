@@ -1,0 +1,11 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+def joined(n : Nat) -> -F Nat {
+  let m = match n -> -F Nat {
+    | Zero => return n
+    | Succ(p) => pure p
+  };
+  return m
+}

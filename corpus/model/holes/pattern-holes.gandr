@@ -1,0 +1,40 @@
+//! This source shows pattern holes in matches.
+//!
+//! A pattern hole stands for an unwritten arm or payload. The checker
+//! cannot decide coverage.
+//!
+//! The checker refuses the match by name with `UndecidedCoverage`. Coverage
+//! does not read a hole yet.
+//!
+//! - see: `corpus/pathological/holes/` — each source refuses one pattern-hole shape.
+//! - see: #391 — `rank`, `weigh`
+//!
+/// This data type has three colours.
+data Shade : Type where
+  | Crimson : Shade
+  | Olive : Shade
+  | Navy : Shade
+
+/// This function has a hole between two arms.
+@[refuses("UndecidedCoverage")]
+def rank(c : Shade) -> Integer =
+  match c where
+    | Crimson => 0
+    | ? => 1
+    | Navy => 2
+
+/// This data type holds an integer or no value.
+data Option : Type where
+  | NoValue : Option
+  | Value : (x : Integer) --> Option
+
+/// This function has a hole in a constructor payload.
+@[refuses("UndecidedCoverage")]
+def weigh(m : Option) -> Integer =
+  match m where
+    | Value(?) => 100
+    | NoValue => 200
+
+/// A pattern hole refuses `weigh` before this function runs. This function
+/// checks against the signature of `weigh`.
+def weighed() -> Integer { weigh NoValue }

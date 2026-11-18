@@ -1,0 +1,6783 @@
+//! The content table of a core node: its nodes as a co-de Bruijn table,
+//! numbered by discovery, free of arena ids and admission positions.
+//!
+//! The encoder lists every node that the roots reach as a de Bruijn table. It
+//! reads the children of each node from `gandr_core_term::children`. A
+//! constant becomes the [`Reference`] that the resolver gives its position.
+//! The factor then gives the co-de Bruijn table of `crate::support`.
+//!
+//! A breadth-first walk from the roots numbers the table. So equal terms in two
+//! arenas give equal tables. The table names a node up to alpha-equivalence
+//! and sharing.
+//!
+//! # Items
+//!
+//! - [`TypeContent`]: the table of one node and the support of its root.
+//! - [`TypeContent::debruijn`]: the de Bruijn table under the root support, for
+//!   a reader that counts binders.
+//! - [`TypeContent::mint`]: the table minted back into an arena, each entry
+//!   once and after its children.
+//! - [`Encoder`] and [`tabled_roots`]: the table of a set of roots.
+//! - [`TypeMemo`]: the tables of one judgement pass, by arena type.
+//!
+//! # Boundaries
+//!
+//! An id that the arena does not hold gives [`ContentNode::Unresolved`] with
+//! its sort. So the encoder stays total. A table with such a node beneath a
+//! root is opaque. A child of a de Bruijn table out of its range gives the
+//! same node. A child that closes a cycle gives it too.
+//!
+//! The mint refuses a table by name. It names an unresolved node, an unplaced
+//! reference and a child of the wrong sort. A stage type and a codata
+//! application stay opaque as content. A native thunk of a table type keeps no
+//! body as content. The mint builds its curried body again from its row.
+//!
+//! The table names each hole by its place among the holes that it meets. It
+//! names a seal site by its component alone. So the content of an item is a
+//! function of its own source and of the sources that it reaches.
+//!
+//! A root thinning whose index passes `u32` beneath a binder gives
+//! `PlacementError::IndexOverflow`. The projection never saturates the index.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+
+use anodized::spec;
+use gandr_core_term::BinderDepth;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::HoleOrigin;
+use gandr_core_term::hole::MarkIndex;
+use gandr_core_term::hole::NominationIndex;
+use gandr_core_term::memory::AccessMode;
+use gandr_core_term::memory::MemoryForm;
+use gandr_core_term::memory::Place;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::support::Crossing;
+use gandr_core_term::support::PlacementError;
+use gandr_core_term::support::Thinning;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixpointEvidence;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Summand;
+use quenchant_shape::shape::Maybe;
+
+use crate::boundary::ChildPosition;
+use crate::boundary::NodeIndex;
+use crate::reference::Reference;
+use crate::reference::Resolver;
+use crate::support::SupportedNode;
+
+/// The resolver through which a table reads and places its constants.
+type Layout = dyn Resolver;
+
+quenchant_shape::reason_enum! {
+    /// Why a content table could not be minted back into an arena.
+    pub mod seating {
+        /// The reason no node was minted.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The table holds an id another arena minted.
+            Unresolved,
+            /// The table holds a node that is its own descendant, which no
+            /// arena can mint child before parent.
+            Cyclic,
+            /// The table names an item the program does not hold.
+            Unplaced,
+            /// The table is not of the sort its seat asks for, or a child
+            /// has the wrong sort.
+            IllSorted,
+            /// The item holds no seat to mint: it states its signature, or
+            /// its typing synthesised no type.
+            Unseatable,
+            /// The type's de Bruijn projection places an index past the
+            /// index space, or an edge past its node's support.
+            Unplaceable,
+            /// A failure names a node at a place the item's walk in the edited
+            /// program does not hold, or past the places it keeps.
+            Unwalked,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a content node names no reference.
+    pub mod referencing {
+        /// The reason no reference is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The node is neither a constant nor an abstract type.
+            NotAReference,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a content node names no variable occurrence of its own.
+    pub mod occurring {
+        /// The reason no occurrence is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The node is no variable, endpoint use or memory slot use.
+            Unnamed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a nominal type's presentation holds no free cells.
+    pub mod words {
+        /// The reason no cell is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The type is no type of words.
+            Unworded,
+        }
+    }
+}
+
+/// The four node sorts of the core vocabulary.
+///
+/// # Specification
+/// - executable: none — a sort tag carries no arena or node whose
+///   classification it could certify.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the finite content corpus exercises all four sorts; the
+///   tag alone does not certify a table edge.
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Sort
+{
+    /// A value.
+    Value,
+    /// A computation.
+    Computation,
+    /// A value type.
+    ValueType,
+    /// A computation type.
+    CompType,
+}
+
+/// A node of a core arena, of any sort.
+///
+/// # Specification
+/// - executable: none — the tagged identifier has no arena to establish whether
+///   its node resolves.
+///
+/// # Adequacy
+/// - hypothesis: L2 — arena-relative identity is separated by allocation noise
+///   and an unresolved value identifier; other unresolved sorts are not claimed
+///   here.
+/// - witness: `gandr-core-incremental::content::tests::content_is_free_of_arena_ids`
+/// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ArenaNode
+{
+    /// A value node.
+    Value(ValueId),
+    /// A computation node.
+    Computation(ComputationId),
+    /// A value-type node.
+    ValueType(ValueTypeId),
+    /// A computation-type node.
+    CompType(CompTypeId),
+}
+
+impl ArenaNode
+{
+    /// The node's sort.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn sort(self) -> Sort
+    {
+        match self {
+            Self::Value(_) => Sort::Value,
+            Self::Computation(_) => Sort::Computation,
+            Self::ValueType(_) => Sort::ValueType,
+            Self::CompType(_) => Sort::CompType,
+        }
+    }
+
+    /// The node, when `arena` holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn held(
+        self,
+        arena: &CoreArena,
+    ) -> Option<Self>
+    {
+        let held = match self {
+            Self::Value(id) => arena.value(id).is_some(),
+            Self::Computation(id) => arena.computation(id).is_some(),
+            Self::ValueType(id) => arena.value_type(id).is_some(),
+            Self::CompType(id) => arena.comp_type(id).is_some(),
+        };
+        held.then_some(self)
+    }
+}
+
+/// One node of a content table: a core former over table indices.
+///
+/// # Specification
+/// - executable: none — an entry alone has neither its table nor its arena;
+///   edge validity belongs to the consuming walk.
+///
+/// # Adequacy
+/// - hypothesis: L3 — shared and unresolved nodes, interleaved roots and the
+///   finite persistence corpus bound the former and edge evidence; raw entries
+///   need not form a closed or well-sorted table.
+/// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ContentNode
+{
+    /// A nominal datatype instance, preserving its declaration identity.
+    Data
+    {
+        /// The declaration's stable item reference.
+        declaration: Reference,
+        /// Value arguments in telescope order.
+        arguments: Vec<NodeIndex>,
+    },
+    /// A structural record classifier, ordered by field label.
+    RecordType(BTreeMap<gandr_core_term::FieldLabel, NodeIndex>),
+    /// A record classifier patched by a static bracket: the base record
+    /// type, then each fixed label with its value, ordered by label, then each
+    /// meet of a system of faces with its value, in written order. It fixes
+    /// at least one label.
+    Patched
+    {
+        /// The base record type.
+        base: NodeIndex,
+        /// Each fixed label with the value it is fixed at.
+        fixed: BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+        /// Each later face's value on a meet, beside its label.
+        meets: Vec<(gandr_core_term::FieldLabel, NodeIndex)>,
+    },
+    /// A constructor at its classifier, preserving its family's identity.
+    Constructor
+    {
+        /// The stable item reference of the constructor's family.
+        family: Reference,
+        /// The classifier of the constructed value.
+        datatype: NodeIndex,
+        /// The constructor's ordinal in its declaration.
+        tag: gandr_core_term::ConstructorTag,
+        /// Constructor fields in declaration order.
+        fields: Vec<NodeIndex>,
+    },
+    /// A record value, ordered by field label.
+    Record(BTreeMap<gandr_core_term::FieldLabel, NodeIndex>),
+    /// Nominal elimination with a one-scrutinee-binder motive.
+    DataCase
+    {
+        /// The eliminated value.
+        scrutinee: NodeIndex,
+        /// The result classifier under the scrutinee binder.
+        motive: NodeIndex,
+        /// Ambient-scope branch functions, in constructor order.
+        branches: Vec<NodeIndex>,
+        /// Each constructor's field count, in constructor order.
+        arities: Vec<gandr_kernel_term::FieldCount>,
+        /// The equations each branch takes past its fields, one per index.
+        equations: gandr_kernel_term::EquationCount,
+    },
+    /// A projection returning the selected record field.
+    RecordProjection(NodeIndex, gandr_core_term::FieldLabel),
+    /// A projection returning the selected tuple component.
+    TupleProjection(NodeIndex, gandr_core_term::Component),
+    /// A flat literal continuation, in execution order.
+    Reify(alloc::sync::Arc<[gandr_core_term::control::StackFrame<NodeIndex, NodeIndex>]>),
+    /// A stack classifier with ordered input and output computation types.
+    Stack
+    {
+        /// Computation fed to the stack.
+        input: NodeIndex,
+        /// Computation produced after all frames.
+        output: NodeIndex,
+    },
+    /// A lazy product classifier over its components, in order.
+    WithType(Vec<NodeIndex>),
+    /// An operation request with its inline interface.
+    Perform
+    {
+        /// Arena-independent interface type edges.
+        signature: gandr_core_term::effect::EffectSig<NodeIndex>,
+        /// Qualified operation's local name.
+        operation: gandr_core_term::effect::OperationName,
+        /// Request payload.
+        payload: NodeIndex,
+    },
+    /// A deep handler retaining branch scopes and operation names.
+    Handle
+    {
+        /// The discharged interface.
+        signature: gandr_core_term::effect::EffectSig<NodeIndex>,
+        /// Handled computation, no additional value binder.
+        subject: NodeIndex,
+        /// Return branch, beneath one value binder.
+        on_return: NodeIndex,
+        /// Each operation branch binds payload then resumption.
+        clauses: alloc::sync::Arc<[gandr_core_term::control::EffectClause<NodeIndex>]>,
+    },
+    /// An operation exercised through a capability, with the interface the
+    /// operation belongs to.
+    Exercise
+    {
+        /// The capability.
+        capability: NodeIndex,
+        /// Arena-independent interface type edges.
+        signature: gandr_core_term::effect::EffectSig<NodeIndex>,
+        /// The operation's local name.
+        operation: gandr_core_term::effect::OperationName,
+        /// Request payload.
+        payload: NodeIndex,
+    },
+    /// A capability scope: a deep handler whose subject binds the capability
+    /// it introduces.
+    Scope
+    {
+        /// The handled interface.
+        signature: gandr_core_term::effect::EffectSig<NodeIndex>,
+        /// Handled computation, beneath the capability's binder.
+        subject: NodeIndex,
+        /// Return branch, beneath one value binder.
+        on_return: NodeIndex,
+        /// Each operation branch binds payload then resumption.
+        clauses: alloc::sync::Arc<[gandr_core_term::control::EffectClause<NodeIndex>]>,
+    },
+    /// A capability classifier: its authority's type edges, grade and
+    /// region.
+    Capability
+    {
+        /// The grant atoms, each interface restricted to its granted
+        /// operations.
+        authority: gandr_core_term::effect::EffectRow<NodeIndex>,
+        /// How often it may be exercised.
+        grade: gandr_core_term::effect::capability::CapabilityGrade,
+        /// How long it lives.
+        region: gandr_core_term::effect::capability::Region,
+    },
+    /// Feed a computation to a first-class stack.
+    Resume(NodeIndex, NodeIndex),
+    /// End a first-class stack without resuming it.
+    Abandon(NodeIndex),
+    /// Bind every component of a tuple in the body, component zero
+    /// outermost.
+    Split(NodeIndex, gandr_core_term::ComponentCount, NodeIndex),
+    /// Bind every component of a tuple in the body, component zero
+    /// outermost, under a motive over the scrutinee.
+    DependentSplit
+    {
+        /// The tuple.
+        scrutinee: NodeIndex,
+        /// How many components the body binds.
+        arity: gandr_core_term::ComponentCount,
+        /// The motive, under one binder of the scrutinee.
+        motive: NodeIndex,
+        /// The body.
+        body: NodeIndex,
+    },
+    /// A delimited answer boundary.
+    Reset(NodeIndex),
+    /// Capture a stack, bound in the body.
+    Shift(NodeIndex),
+    /// Suspended computations, in order.
+    With(Vec<NodeIndex>),
+    /// A computation ascribed a computation type.
+    Ascribe
+    {
+        /// The computation ascribed.
+        body: NodeIndex,
+        /// The type it is checked against.
+        ty: NodeIndex,
+    },
+    /// A value ascribed a value type.
+    ValueAscribe
+    {
+        /// The value ascribed.
+        value: NodeIndex,
+        /// The type it is checked against.
+        ty: NodeIndex,
+    },
+    /// Select a lazy-product component.
+    Project(gandr_core_term::Component, NodeIndex),
+    /// A closed table-typed native thunk.
+    PrimitiveValue(gandr_core_term::primitive::Primitive),
+    /// A saturated runtime-native operation.
+    Primitive(
+        gandr_core_term::primitive::Primitive,
+        gandr_core_term::primitive::Arguments<NodeIndex>,
+    ),
+    /// A native universe-path classifier over quoted codes.
+    PathUniverse(NodeIndex, NodeIndex),
+    /// A reflexivity certificate.
+    PathRefl(NodeIndex),
+    /// A product certificate.
+    PathProduct(NodeIndex, NodeIndex),
+    /// A function extensionality over its two functions.
+    Funext(NodeIndex, NodeIndex),
+    /// A universe equivalence over its forward and backward translators.
+    Equiv(NodeIndex, NodeIndex),
+    /// Univalence `ua(e)` over its record and the forward map it carries.
+    Univalence(NodeIndex, NodeIndex),
+    /// Univalence at a stratum over its two translator records, retaining
+    /// the stratum and the descriptions in the cache identity.
+    Ua
+    {
+        /// The degree and the catalogue bound.
+        stratum: gandr_core_term::ua::Stratum,
+        /// The two descriptions.
+        sides: alloc::sync::Arc<gandr_core_term::ua::Sides>,
+        /// The forward translator record.
+        forward: NodeIndex,
+        /// The backward translator record.
+        backward: NodeIndex,
+    },
+    /// A composite at a stratum over its cells, then its realisation,
+    /// retaining the stratum and the pasting in the cache identity.
+    Compose
+    {
+        /// The stratum and the pasting.
+        composite: gandr_core_term::compose::Composite,
+        /// The cells, in vertex order.
+        cells: Vec<NodeIndex>,
+        /// The realisation.
+        realised: NodeIndex,
+    },
+    /// A fill at a stratum over a chain, retaining the stratum and the
+    /// pasting in the cache identity: its generator, then its cells.
+    Fill
+    {
+        /// The stratum and the pasting.
+        composite: gandr_core_term::compose::Composite,
+        /// The generator's computation.
+        generator: NodeIndex,
+        /// The cells, in vertex order.
+        cells: Vec<NodeIndex>,
+    },
+    /// An equivalence, retaining its evidence in the cache identity.
+    PathEquiv
+    {
+        /// The classifier.
+        path_type: NodeIndex,
+        /// The forward map.
+        forward: NodeIndex,
+        /// The inverse map.
+        backward: NodeIndex,
+        /// The untrusted round-trip dialogues.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
+    /// Native transport.
+    Transport(NodeIndex, NodeIndex),
+    /// An element path type over its carrier and two endpoints.
+    PathType
+    {
+        /// The carrier.
+        carrier: NodeIndex,
+        /// The left endpoint.
+        left: NodeIndex,
+        /// The right endpoint.
+        right: NodeIndex,
+    },
+    /// Element reflexivity at its point.
+    Here(NodeIndex),
+    /// A compound endpoint: the computation whose returned value it stands
+    /// for.
+    Returned(NodeIndex),
+    /// A computation written where a value is read, before elaboration.
+    Nested(NodeIndex),
+    /// A written run where a value is read, before elaboration.
+    Run(NodeIndex),
+    /// A record update, before elaboration: the base, then the overlay.
+    RecordUpdate(NodeIndex, NodeIndex),
+    /// Transport along an element path in a motive under one binder.
+    ElementTransport
+    {
+        /// The motive, under one binder.
+        motive: NodeIndex,
+        /// The path.
+        path: NodeIndex,
+        /// The transported value.
+        value: NodeIndex,
+    },
+    /// Transport over a two-entry telescope, its motive a computation type
+    /// whose arrows bind the telescope.
+    TelescopeTransport
+    {
+        /// The motive.
+        motive: NodeIndex,
+        /// The path.
+        path: NodeIndex,
+        /// The family element at the path's source.
+        start: NodeIndex,
+        /// The identity over the path.
+        over: NodeIndex,
+        /// The transported value.
+        value: NodeIndex,
+    },
+    /// A session statement over two session codes, retaining the relation it
+    /// claims, and the paths covering its differing payload pairs.
+    SessionRelated
+    {
+        /// Equivalence or subtyping.
+        relation: gandr_core_term::session::SessionRelation,
+        /// The source code.
+        source: NodeIndex,
+        /// The target code.
+        target: NodeIndex,
+        /// The payload paths, the empty tuple when none is written.
+        payloads: NodeIndex,
+    },
+    /// The identity flow at its point.
+    Stay(NodeIndex),
+    /// Two flows composed, the first first.
+    Then(NodeIndex, NodeIndex),
+    /// The forward flow of a translator, `forward(f)`.
+    Forward(NodeIndex),
+    /// The arrow's action on a domain and a codomain flow, `arrow(d, c)`.
+    FunctionFlow(NodeIndex, NodeIndex),
+    /// The product of two universe flows, `flowProduct(p, q)`.
+    FlowProduct(NodeIndex, NodeIndex),
+    /// A recorded run, its moves in order, each payload an edge.
+    Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<NodeIndex>]>),
+    /// A dialogue, its moves in log order, each beside its endpoint, each
+    /// payload an edge.
+    Dialogue(alloc::sync::Arc<[gandr_core_term::session::DialogueMove<NodeIndex>]>),
+    /// A web: a dialogue's decomposition in preorder. It has no edge.
+    Web(alloc::sync::Arc<[gandr_core_term::session::WebPiece]>),
+    /// The decomposition of a dialogue.
+    Decompose(NodeIndex),
+    /// Transport of a value along a flow in a motive under one binder.
+    Ride
+    {
+        /// The motive, under one binder.
+        motive: NodeIndex,
+        /// The flow.
+        flow: NodeIndex,
+        /// The ridden value.
+        value: NodeIndex,
+    },
+    /// A flow type over its carrier and two endpoints.
+    FlowType
+    {
+        /// The carrier.
+        carrier: NodeIndex,
+        /// The source endpoint.
+        source: NodeIndex,
+        /// The target endpoint.
+        target: NodeIndex,
+    },
+    /// A bridge type over its carrier and two endpoints.
+    BridgeType
+    {
+        /// The carrier.
+        carrier: NodeIndex,
+        /// The left endpoint.
+        left: NodeIndex,
+        /// The right endpoint.
+        right: NodeIndex,
+    },
+    /// The type of recorded runs of a session code.
+    RunType(NodeIndex),
+    /// The type of recorded prefixes of a session code.
+    PrefixType(NodeIndex),
+    /// The type of dialogues of a session code.
+    DialogueType(NodeIndex),
+    /// The type of webs.
+    WebType,
+    /// A bound variable.
+    Variable
+    {
+        /// The zone its index counts in.
+        zone: Zone,
+        /// The index.
+        index: DeBruijnIndex,
+    },
+    /// A constant, by what its position names.
+    Constant(Reference),
+    /// A literal.
+    Literal(Literal),
+    /// A tuple of values, in order; the empty tuple is the unit value.
+    Tuple(Vec<NodeIndex>),
+    /// The empty native list.
+    ListNil,
+    /// A native list cell.
+    ListCons(NodeIndex, NodeIndex),
+    /// A sum injection into its summand.
+    Injection(Summand, NodeIndex),
+    /// A thunk of a computation.
+    Thunk(NodeIndex),
+    /// A universe lift of a value.
+    ValueLift
+    {
+        /// The target level.
+        target: Level,
+        /// The value lifted.
+        body: NodeIndex,
+    },
+    /// The code of a value type.
+    Quote(NodeIndex),
+    /// The code of a computation type.
+    QuoteComputation(NodeIndex),
+    /// A row literal: its instances, its operations' type edges and its
+    /// tail's, in this content table's indices.
+    RowValue(gandr_core_term::effect::EffectRow<NodeIndex>),
+    /// A static lambda over its body, under one binder.
+    StaticLambda(NodeIndex),
+    /// A static application of an operator to an argument.
+    StaticApplication(NodeIndex, NodeIndex),
+    /// A term hole in value position, by its name among the holes of its
+    /// table, in the order the table meets them.
+    Hole(HoleId),
+    /// A marked value: the mark's index over the value it marks.
+    ValueMark
+    {
+        /// The mark's index in its elaboration's table.
+        mark: MarkIndex,
+        /// The value marked.
+        body: NodeIndex,
+    },
+    /// A lambda over its body.
+    Lambda(NodeIndex),
+    /// A linear lambda over its body, which binds the parameter's shadow.
+    LinearLambda(NodeIndex),
+    /// An application of a computation to a value.
+    Application(NodeIndex, NodeIndex),
+    /// A return of a value.
+    Return(NodeIndex),
+    /// A bind of a computation into a continuation.
+    Bind(NodeIndex, NodeIndex),
+    /// A return of several values, in order.
+    ReturnAll(Vec<NodeIndex>),
+    /// A bind of every value a computation returns into a continuation, one
+    /// binder per value, the first outermost.
+    BindAll(NodeIndex, gandr_core_term::ComponentCount, NodeIndex),
+    /// A force of a value.
+    Force(NodeIndex),
+    /// A sum elimination.
+    Case
+    {
+        /// The scrutinee.
+        scrutinee: NodeIndex,
+        /// The branches, one per summand in order.
+        branches: Vec<NodeIndex>,
+    },
+    /// A term hole in computation position, by its name among the holes of
+    /// its table, in the order the table meets them.
+    ComputationHole(HoleId),
+    /// A marked computation: the mark's index over the computation it marks.
+    ComputationMark
+    {
+        /// The mark's index in its elaboration's table.
+        mark: MarkIndex,
+        /// The computation marked.
+        body: NodeIndex,
+    },
+    /// A fixpoint over its body, under the self binder, with its evidence.
+    Fixpoint
+    {
+        /// The body.
+        body: NodeIndex,
+        /// The termination evidence it carries.
+        evidence: FixpointEvidence,
+    },
+    /// A pure native List fold, with annotations and ordered branches.
+    ListFold
+    {
+        /// Ambient element type.
+        element: NodeIndex,
+        /// Ambient result type.
+        result: NodeIndex,
+        /// The list value.
+        list: NodeIndex,
+        /// The empty branch.
+        on_nil: NodeIndex,
+        /// The cell branch beneath two binders.
+        on_cons: NodeIndex,
+    },
+    /// A native List case: the list and its two branches.
+    ListCase
+    {
+        /// The list value.
+        list: NodeIndex,
+        /// The empty branch.
+        on_nil: NodeIndex,
+        /// The cell branch beneath two binders: the head, then the tail.
+        on_cons: NodeIndex,
+    },
+    /// A session action: payload, arms, fork protocol and halves as edges,
+    /// endpoints and labels as written.
+    Session(gandr_core_term::session::SessionAction<NodeIndex, NodeIndex, NodeIndex>),
+    /// A memory form: a held or written-back value and the bodies as edges,
+    /// the linear slots as written.
+    Memory(gandr_core_term::memory::MemoryForm<NodeIndex, NodeIndex>),
+    /// `hold v`: the value held at the current world, as an edge.
+    Hold(NodeIndex),
+    /// `let x at w = v ; t`: the handle opened at the world its position
+    /// names, and the body beneath one intuitionistic binder.
+    Leta
+    {
+        /// The world the handle stands at.
+        world: WorldContent,
+        /// The handle opened.
+        value: NodeIndex,
+        /// The body, under one intuitionistic binder.
+        body: NodeIndex,
+    },
+    /// `migrate[w] { t }`: the body run at the world its position names.
+    Migrate
+    {
+        /// The world migrated to.
+        world: WorldContent,
+        /// The body run there.
+        body: NodeIndex,
+    },
+    /// A base-type atom.
+    Base(BaseType),
+    /// A product type over its components, in order; the empty product is
+    /// the unit type.
+    Product(Vec<NodeIndex>),
+    /// A sum type over its summands, in order.
+    Sum(Vec<NodeIndex>),
+    /// A finite-list type.
+    List(NodeIndex),
+    /// A value type kept in a region: a capability scope's or a hold's by its
+    /// depth, or a definition's region binder by its ordinal.
+    KeptType
+    {
+        /// The kept value's type.
+        value: NodeIndex,
+        /// The region it lives in.
+        region: gandr_core_term::effect::capability::Region,
+    },
+    /// A thunk type.
+    ThunkType(NodeIndex),
+    /// A universe of one sort.
+    Universe
+    {
+        /// The family it classifies.
+        sort: gandr_core_term::Sort,
+        /// Its level within that family.
+        level: Level,
+    },
+    /// A lift of a value type.
+    TypeLift
+    {
+        /// The type lifted.
+        inner: NodeIndex,
+        /// The target level.
+        target: Level,
+    },
+    /// The type a code denotes.
+    Element
+    {
+        /// The code.
+        code: NodeIndex,
+        /// The level it is read at.
+        target: Level,
+    },
+    /// A static Pi, whose codomain binds nothing.
+    StaticPi
+    {
+        /// The domain.
+        domain: NodeIndex,
+        /// The codomain.
+        codomain: NodeIndex,
+    },
+    /// A dependent pair, whose second factor binds the first.
+    Sigma
+    {
+        /// The first factor.
+        first: NodeIndex,
+        /// The second factor, under the binder.
+        second: NodeIndex,
+    },
+    /// A session type: its protocol and state, payload edges in slot order.
+    SessionType(gandr_core_term::session::SessionType<NodeIndex>),
+    /// A sealed abstract type, by what its position names.
+    Abstract(Reference),
+    /// `A at w`: a handle to a value of `inner`, meaningful at the world its
+    /// position names.
+    HeldType
+    {
+        /// The type of the value held.
+        inner: NodeIndex,
+        /// The world the value is meaningful at.
+        world: WorldContent,
+    },
+    /// `cap_w`: the authority to migrate once to the world its position
+    /// names.
+    CapabilityType(WorldContent),
+    /// The unknown value type.
+    UnknownType,
+    /// The opaque buffer type a receive places live.
+    BufferType,
+    /// The qubit type, which carries no comonoid.
+    QubitType,
+    /// The row kind: the type of a row.
+    RowKind,
+    /// A row's tail: the value type the row term `tail` stands for.
+    RowTail(NodeIndex),
+    /// A returner type.
+    Returner
+    {
+        /// The returned value type.
+        result: NodeIndex,
+        /// Interfaces whose type edges use this content table's indices.
+        effects: gandr_core_term::effect::EffectRow<NodeIndex>,
+    },
+    /// A returner of several results, each under the binders of the results
+    /// before it.
+    Returns
+    {
+        /// The result types, in order.
+        results: Vec<NodeIndex>,
+        /// Interfaces whose type edges use this content table's indices.
+        effects: gandr_core_term::effect::EffectRow<NodeIndex>,
+    },
+    /// A non-dependent arrow.
+    Arrow
+    {
+        /// The domain.
+        domain: NodeIndex,
+        /// The codomain.
+        codomain: NodeIndex,
+    },
+    /// A dependent arrow.
+    Pi
+    {
+        /// The domain.
+        domain: NodeIndex,
+        /// The codomain, under the domain's binder.
+        codomain: NodeIndex,
+    },
+    /// A linear arrow.
+    LinearArrow
+    {
+        /// The domain.
+        domain: NodeIndex,
+        /// The multiplicity, a value.
+        multiplicity: NodeIndex,
+        /// The codomain, under the parameter's shadow.
+        codomain: NodeIndex,
+    },
+    /// The computation type a code denotes.
+    ComputationElement
+    {
+        /// The code.
+        code: NodeIndex,
+        /// The level it is read at.
+        target: Level,
+    },
+    /// The unknown computation type.
+    UnknownComputationType,
+    /// A nominal codata instance, preserving its declaration identity. A
+    /// codata declaration has no content form, so an item that reads one is
+    /// opaque to reuse; the application keys its node by content alone.
+    Codata
+    {
+        /// The declaration's stable item reference.
+        declaration: Reference,
+        /// Value arguments in telescope order.
+        arguments: Vec<NodeIndex>,
+    },
+    /// An id of this sort the arena resolves to nothing.
+    Unresolved(Sort),
+}
+
+/// A fixed child slot of a former, counted from zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChildSlot(pub usize);
+
+/// The children of one content node, each with the sort it must have and the
+/// binders it stands under.
+///
+/// # Specification
+/// - executable: none — the active-prefix representation is maintained by
+///   `Children::of` and read by the graph walks, not a callable declaration.
+///
+/// # Adequacy
+/// - hypothesis: L2 — sharing and interleaved roots exercise active child
+///   slots; the persistence corpus covers selected multi-sort formers, not
+///   every graph. Every binding former's crossings are checked by projecting
+///   its cover back to de Bruijn indices.
+/// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Children<'node>
+{
+    /// The children in order; slots past `count` are unused.
+    slots: [(NodeIndex, Sort); 5],
+    /// The binders each fixed child stands under, slot for slot.
+    crossings: [Crossing; 5],
+    /// How many slots hold a child.
+    count: usize,
+    /// A variadic suffix, borrowed without per-node allocation.
+    suffix: &'node [NodeIndex],
+    /// Label-ordered fields, when this node is a record.
+    fields: Option<&'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>>,
+    /// A system's meets, after its fields, each with its label.
+    meets: &'node [(gandr_core_term::FieldLabel, NodeIndex)],
+    /// The common sort of the suffix or fields.
+    tail_sort: Sort,
+    /// The binders every suffix child or field stands under.
+    tail_crossing: Crossing,
+    /// Whether the suffix is a telescope: each suffix child stands under one
+    /// intuitionistic binder per suffix child before it, in place of the tail
+    /// crossing.
+    telescope: bool,
+    /// Additional operation-type edges borrowed from a returner's row.
+    effects: Option<&'node gandr_core_term::effect::EffectRow<NodeIndex>>,
+    /// Inline operation types, after fixed children.
+    signature: Option<&'node gandr_core_term::effect::EffectSig<NodeIndex>>,
+    /// Named branch bodies, after interface types, each under its payload
+    /// and resumption binders.
+    clauses: &'node [gandr_core_term::control::EffectClause<NodeIndex>],
+    /// Literal stack edges, retaining frame order and omitting projections;
+    /// a bind frame's body stands under its binder.
+    frames: &'node [gandr_core_term::control::StackFrame<NodeIndex, NodeIndex>],
+    /// Recorded moves, contributing their payload values in order.
+    moves: &'node [gandr_core_term::session::RecordedMove<NodeIndex>],
+    /// A dialogue's moves, contributing their payload values in log order.
+    turns: &'node [gandr_core_term::session::DialogueMove<NodeIndex>],
+}
+
+impl Default for Sort
+{
+    /// The value sort, which only fills unused child slots.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::Value
+    }
+}
+
+impl<'node> Children<'node>
+{
+    /// The children listed in `children`, in order.
+    ///
+    /// # Specification
+    /// - requires: at most five fixed-prefix children; variadic children and a
+    ///   row's extra edges are borrowed.
+    /// - ensures: the first `children.len()` slots, in order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — shared nodes and the signature walk exercise active
+    ///   child slots through graph consumers; the finite corpus adds selected
+    ///   arities.
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(
+        requires: children.len() <= 5,
+        ensures: |ret| ret.count == children.len()
+            && ret.slots.get(..ret.count) == Some(children) && ret.effects.is_none(),
+    )]
+    fn of(children: &[(NodeIndex, Sort)]) -> Self
+    {
+        let mut slots = [(NodeIndex::default(), Sort::Value); 5];
+        let mut count = 0_usize;
+        for (slot, &child) in slots.iter_mut().zip(children) {
+            *slot = child;
+            count = count.saturating_add(1);
+        }
+        Self {
+            slots,
+            count,
+            ..Self::default()
+        }
+    }
+
+    /// The children, in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the active prefix, in order, excluding unused slots.
+    /// - executable: none — anodized 0.7 emits an invalid closure return type
+    ///   for this opaque iterator, including for preconditions alone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named graph consumer exercises the iterator; that
+    ///   bounded evidence does not instrument the opaque return.
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[inline]
+    pub fn iter(self) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort)> + Clone + 'node
+    {
+        self.crossed().map(|(child, sort, _)| (child, sort))
+    }
+
+    /// The children, in order, each beside the binders of either zone the
+    /// node opens over it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the children of [`Children::iter`], in its order; a fixed
+    ///   slot carries the crossing its former set, a suffix child or field the
+    ///   tail crossing, a telescope's suffix child one binder per child before
+    ///   it, a clause body two intuitionistic binders, a bind frame's body one,
+    ///   every other child none.
+    /// - executable: none — anodized 0.7 emits an invalid closure return type
+    ///   for this opaque iterator, including for preconditions alone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every binding former, in both zones, projected back
+    ///   from its cover recovers its original de Bruijn indices; a crossing on
+    ///   the wrong slot or zone shifts an index. Interface types, clause bodies
+    ///   and recorded payloads are walked whenever the former carries them,
+    ///   checked against `map_children`'s independent enumeration.
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+    /// - witness: `gandr-core-incremental::content::tests::projection_keeps_every_variadic_child`
+    #[inline]
+    pub fn crossed(
+        self
+    ) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort, Crossing)> + Clone + 'node
+    {
+        let sort = self.tail_sort;
+        let tail = self.tail_crossing;
+        let none = Crossing::default();
+        let clause = Crossing::of(Zone::Intuitionistic, BinderDepth::from(2_usize));
+        let frame = Crossing::of(Zone::Intuitionistic, BinderDepth::from(1_usize));
+        let fixed = self
+            .slots
+            .into_iter()
+            .zip(self.crossings)
+            .take(self.count)
+            .map(|((child, sort), crossing)| (child, sort, crossing));
+        // Most formers have only fixed slots: their walk skips the seven
+        // empty variadic iterators a full chain would step through.
+        let variadic = !self.suffix.is_empty()
+            || self.fields.is_some()
+            || !self.meets.is_empty()
+            || self.effects.is_some()
+            || self.signature.is_some()
+            || !self.clauses.is_empty()
+            || !self.frames.is_empty()
+            || !self.moves.is_empty()
+            || !self.turns.is_empty();
+        let telescope = self.telescope;
+        let rest =
+            variadic.then(move || {
+                self.suffix
+                    .iter()
+                    .enumerate()
+                    .map(move |(before, &child)| {
+                        let crossing = if telescope {
+                            Crossing::of(Zone::Intuitionistic, BinderDepth::from(before))
+                        }
+                        else {
+                            tail
+                        };
+                        (child, sort, crossing)
+                    })
+                    .chain(
+                        self.fields
+                            .into_iter()
+                            .flat_map(|fields| fields.values())
+                            .map(move |&child| (child, sort, tail)),
+                    )
+                    .chain(self.meets.iter().map(move |met| (met.1, sort, tail)))
+                    .chain(self.effects.into_iter().flat_map(move |row| {
+                        row.types().map(move |ty| (ty, Sort::ValueType, none))
+                    }))
+                    .chain(self.signature.into_iter().flat_map(move |signature| {
+                        signature.types().map(move |ty| (ty, Sort::ValueType, none))
+                    }))
+                    .chain(
+                        self.clauses
+                            .iter()
+                            .map(move |clause_body| (clause_body.body, Sort::Computation, clause)),
+                    )
+                    .chain(self.frames.iter().filter_map(move |step| match *step {
+                        gandr_core_term::control::StackFrame::Apply(value) => {
+                            Some((value, Sort::Value, none))
+                        },
+                        gandr_core_term::control::StackFrame::Bind(body) => {
+                            Some((body, Sort::Computation, frame))
+                        },
+                        gandr_core_term::control::StackFrame::Project(_) => None,
+                    }))
+                    .chain(
+                        self.moves
+                            .iter()
+                            .filter_map(move |step| match step.payload() {
+                                Maybe::Present(payload) => Some((payload, Sort::Value, none)),
+                                Maybe::Absent(_) => None,
+                            }),
+                    )
+                    .chain(self.turns.iter().filter_map(
+                        move |turn| match turn.movement.payload() {
+                            Maybe::Present(payload) => Some((payload, Sort::Value, none)),
+                            Maybe::Absent(_) => None,
+                        },
+                    ))
+            });
+        fixed.chain(rest.into_iter().flatten())
+    }
+
+    /// Stand the fixed child at `slot` under `crossing`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binding(
+        mut self,
+        slot: ChildSlot,
+        crossing: Crossing,
+    ) -> Self
+    {
+        if let Some(target) = self.crossings.get_mut(slot.0) {
+            *target = crossing;
+        }
+        self
+    }
+
+    /// Stand every suffix child or field under `crossing`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn tail_binding(
+        mut self,
+        crossing: Crossing,
+    ) -> Self
+    {
+        self.tail_crossing = crossing;
+        self
+    }
+
+    /// Append a borrowed variadic child suffix.
+    ///
+    /// # Specification
+    /// trivial.
+    fn followed_by(
+        mut self,
+        suffix: &'node [NodeIndex],
+        sort: Sort,
+    ) -> Self
+    {
+        self.suffix = suffix;
+        self.tail_sort = sort;
+        self
+    }
+
+    /// Borrow the children of a label-ordered record.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fields(
+        fields: &'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+        sort: Sort,
+    ) -> Self
+    {
+        Self {
+            fields: Some(fields),
+            tail_sort: sort,
+            ..Self::default()
+        }
+    }
+
+    /// Append the children of a label-ordered map after the fixed children.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn with_fields(
+        mut self,
+        fields: &'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+        sort: Sort,
+    ) -> Self
+    {
+        self.fields = Some(fields);
+        self.tail_sort = sort;
+        self
+    }
+
+    /// Append a system's meets after the fields, at the fields' sort.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn with_meets(
+        mut self,
+        meets: &'node [(gandr_core_term::FieldLabel, NodeIndex)],
+    ) -> Self
+    {
+        self.meets = meets;
+        self
+    }
+}
+
+impl ContentNode
+{
+    /// Direct children in canonical former order, with each child's required
+    /// sort.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn child_indices(&self) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort)> + Clone + '_
+    {
+        self.children().iter()
+    }
+
+    /// The node's sort.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the core family of the former, or the stored unresolved sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises all four
+    ///   families; the unresolved witness bounds the foreign-identifier case to
+    ///   values.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
+    #[spec(ensures: |ret| match *self {
+        | Self::Constructor { .. }
+        | Self::Record(_)
+        | Self::Reify(_)
+        | Self::PathRefl(_)
+        | Self::Here(_)
+        | Self::Returned(_)
+        | Self::Nested(_)
+        | Self::Run(_)
+        | Self::RecordUpdate(..)
+        | Self::SessionRelated { .. }
+        | Self::Stay(_)
+        | Self::Then(..)
+        | Self::Forward(_)
+        | Self::FunctionFlow(..)
+        | Self::FlowProduct(..)
+        | Self::Recorded(_)
+        | Self::Dialogue(_)
+        | Self::Web(_)
+        | Self::PrimitiveValue(_)
+        | Self::PathProduct(..)
+        | Self::Funext(..)
+        | Self::Equiv(..)
+        | Self::Univalence(..)
+        | Self::Ua { .. }
+        | Self::Compose { .. }
+        | Self::Fill { .. }
+        | Self::PathEquiv { .. }
+        | Self::Variable { .. }
+        | Self::Constant(_)
+        | Self::Tuple(_)
+        | Self::ListNil
+        | Self::ListCons(..)
+        | Self::Literal(_)
+        | Self::Injection(..)
+        | Self::Thunk(_)
+        | Self::ValueLift { .. }
+        | Self::Quote(_)
+        | Self::QuoteComputation(_)
+        | Self::StaticLambda(_)
+        | Self::StaticApplication(..)
+        | Self::Hole(_)
+        | Self::ValueAscribe { .. }
+        | Self::ValueMark { .. }
+        | Self::RowValue(_) => matches!(ret, Sort::Value),
+        | Self::DataCase { .. }
+        | Self::RecordProjection(..)
+        | Self::TupleProjection(..)
+        | Self::Perform { .. }
+        | Self::Handle { .. }
+        | Self::Exercise { .. }
+        | Self::Scope { .. }
+        | Self::Resume(..)
+        | Self::Abandon(_)
+        | Self::Split(..)
+        | Self::DependentSplit { .. }
+        | Self::Reset(_)
+        | Self::Shift(_)
+        | Self::With(..)
+        | Self::Ascribe { .. }
+        | Self::Project(..)
+        | Self::Transport(..)
+        | Self::ElementTransport { .. }
+        | Self::TelescopeTransport { .. }
+        | Self::Ride { .. }
+        | Self::Primitive(..)
+        | Self::Lambda(_)
+        | Self::LinearLambda(_)
+        | Self::Application(..)
+        | Self::Return(_)
+        | Self::Bind(..)
+        | Self::ReturnAll(_)
+        | Self::BindAll(..)
+        | Self::Force(_)
+        | Self::Decompose(_)
+        | Self::ListFold { .. }
+        | Self::ListCase { .. }
+        | Self::Case { .. }
+        | Self::ComputationHole(_)
+        | Self::ComputationMark { .. }
+        | Self::Session(_)
+        | Self::Memory(_)
+        | Self::Hold(_)
+        | Self::Leta { .. }
+        | Self::Migrate { .. }
+        | Self::Fixpoint { .. } => matches!(ret, Sort::Computation),
+        | Self::Data { .. }
+        | Self::RecordType(_)
+        | Self::Patched { .. }
+        | Self::Stack { .. }
+        | Self::Capability { .. }
+        | Self::PathUniverse(..)
+        | Self::PathType { .. }
+        | Self::BridgeType { .. }
+        | Self::FlowType { .. }
+        | Self::RunType(_)
+        | Self::PrefixType(_)
+        | Self::DialogueType(_)
+        | Self::WebType
+        | Self::Base(_)
+        | Self::Product(_)
+        | Self::Sum(_)
+        | Self::List(_)
+        | Self::KeptType { .. }
+        | Self::ThunkType(_)
+        | Self::Universe { .. }
+        | Self::TypeLift { .. }
+        | Self::Element { .. }
+        | Self::Abstract(_)
+        | Self::HeldType { .. }
+        | Self::CapabilityType(_)
+        | Self::SessionType(_)
+        | Self::StaticPi { .. }
+        | Self::Sigma { .. }
+        | Self::UnknownType
+        | Self::BufferType
+        | Self::QubitType
+        | Self::RowKind
+        | Self::RowTail(_) => matches!(ret, Sort::ValueType),
+        | Self::WithType(..)
+        | Self::Returner { .. }
+        | Self::Returns { .. }
+        | Self::Arrow { .. }
+        | Self::Pi { .. }
+        | Self::LinearArrow { .. }
+        | Self::ComputationElement { .. }
+        | Self::UnknownComputationType
+        | Self::Codata { .. } => matches!(ret, Sort::CompType),
+        | Self::Unresolved(sort) => matches!(
+            (sort, ret),
+            (Sort::Value, Sort::Value)
+                | (Sort::Computation, Sort::Computation)
+                | (Sort::ValueType, Sort::ValueType)
+                | (Sort::CompType, Sort::CompType)
+        ),
+    })]
+    #[inline]
+    #[must_use]
+    pub const fn sort(&self) -> Sort
+    {
+        match *self {
+            Self::Constructor { .. }
+            | Self::Record(_)
+            | Self::Reify(_)
+            | Self::PathRefl(_)
+            | Self::Here(_)
+            | Self::Returned(_)
+            | Self::Nested(_)
+            | Self::Run(_)
+            | Self::RecordUpdate(..)
+            | Self::SessionRelated { .. }
+            | Self::Stay(_)
+            | Self::Then(..)
+            | Self::Forward(_)
+            | Self::FunctionFlow(..)
+            | Self::FlowProduct(..)
+            | Self::Recorded(_)
+            | Self::Dialogue(_)
+            | Self::Web(_)
+            | Self::PrimitiveValue(_)
+            | Self::PathProduct(..)
+            | Self::Funext(..)
+            | Self::Equiv(..)
+            | Self::Univalence(..)
+            | Self::Ua { .. }
+            | Self::Compose { .. }
+            | Self::Fill { .. }
+            | Self::PathEquiv { .. }
+            | Self::Variable { .. }
+            | Self::Constant(_)
+            | Self::Tuple(_)
+            | Self::ListNil
+            | Self::ListCons(..)
+            | Self::Literal(_)
+            | Self::Injection(..)
+            | Self::Thunk(_)
+            | Self::ValueLift { .. }
+            | Self::Quote(_)
+            | Self::QuoteComputation(_)
+            | Self::StaticLambda(_)
+            | Self::StaticApplication(..)
+            | Self::Hole(_)
+            | Self::ValueAscribe { .. }
+            | Self::ValueMark { .. }
+            | Self::RowValue(_) => Sort::Value,
+            Self::DataCase { .. }
+            | Self::RecordProjection(..)
+            | Self::TupleProjection(..)
+            | Self::Perform { .. }
+            | Self::Handle { .. }
+            | Self::Exercise { .. }
+            | Self::Scope { .. }
+            | Self::Resume(..)
+            | Self::Abandon(_)
+            | Self::Split(..)
+            | Self::DependentSplit { .. }
+            | Self::Reset(_)
+            | Self::Shift(_)
+            | Self::With(..)
+            | Self::Ascribe { .. }
+            | Self::Project(..)
+            | Self::Transport(..)
+            | Self::ElementTransport { .. }
+            | Self::TelescopeTransport { .. }
+            | Self::Ride { .. }
+            | Self::Primitive(..)
+            | Self::Lambda(_)
+            | Self::LinearLambda(_)
+            | Self::Application(..)
+            | Self::Return(_)
+            | Self::Bind(..)
+            | Self::ReturnAll(_)
+            | Self::BindAll(..)
+            | Self::Force(_)
+            | Self::Decompose(_)
+            | Self::ListFold { .. }
+            | Self::ListCase { .. }
+            | Self::Case { .. }
+            | Self::ComputationHole(_)
+            | Self::ComputationMark { .. }
+            | Self::Session(_)
+            | Self::Memory(_)
+            | Self::Hold(_)
+            | Self::Leta { .. }
+            | Self::Migrate { .. }
+            | Self::Fixpoint { .. } => Sort::Computation,
+            Self::Data { .. }
+            | Self::RecordType(_)
+            | Self::Patched { .. }
+            | Self::Stack { .. }
+            | Self::Capability { .. }
+            | Self::PathUniverse(..)
+            | Self::PathType { .. }
+            | Self::BridgeType { .. }
+            | Self::FlowType { .. }
+            | Self::RunType(_)
+            | Self::PrefixType(_)
+            | Self::DialogueType(_)
+            | Self::WebType
+            | Self::Base(_)
+            | Self::Product(_)
+            | Self::Sum(_)
+            | Self::List(_)
+            | Self::KeptType { .. }
+            | Self::ThunkType(_)
+            | Self::Universe { .. }
+            | Self::TypeLift { .. }
+            | Self::Element { .. }
+            | Self::Abstract(_)
+            | Self::HeldType { .. }
+            | Self::CapabilityType(_)
+            | Self::SessionType(_)
+            | Self::StaticPi { .. }
+            | Self::Sigma { .. }
+            | Self::UnknownType
+            | Self::BufferType
+            | Self::QubitType
+            | Self::RowKind
+            | Self::RowTail(_) => Sort::ValueType,
+            Self::WithType(..)
+            | Self::Returner { .. }
+            | Self::Returns { .. }
+            | Self::Arrow { .. }
+            | Self::Pi { .. }
+            | Self::LinearArrow { .. }
+            | Self::ComputationElement { .. }
+            | Self::UnknownComputationType
+            | Self::Codata { .. } => Sort::CompType,
+            Self::Unresolved(sort) => sort,
+        }
+    }
+
+    /// The node's children, in order, each with the sort its former requires.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every child index the node holds, left to right, beside the
+    ///   sort the core vocabulary gives that position.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — shared edges and interleaved signature roots test
+    ///   graph discovery; the finite persistence corpus supplies selected edges
+    ///   across the four sorts. This is not exhaustive evidence for all graphs.
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(ensures: |ret| {
+        use Sort::CompType as C;
+        use Sort::Computation as M;
+        use Sort::Value as V;
+        use Sort::ValueType as A;
+        let actual = ret.slots.get(.. ret.count);
+        (matches!(*self, Self::Returner { .. } | Self::Returns { .. } | Self::Capability { .. } | Self::RowValue(_)) || ret.effects.is_none()) && match *self {
+            Self::Data { ref arguments,.. } | Self::Codata { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
+            Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
+            Self::Patched { base, ref fixed, ref meets } => ret.iter().eq(core::iter::once((base,A)).chain(fixed.values().map(|&value| (value,V))).chain(meets.iter().map(|met| (met.1,V)))),
+            Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
+            Self::Record(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,V))),
+            Self::DataCase { scrutinee,motive,ref branches,.. } => ret.iter().eq([(scrutinee,V),(motive,C)].into_iter().chain(branches.iter().map(|&branch| (branch,M)))),
+            Self::RecordProjection(record,_) | Self::TupleProjection(record,_) => ret.iter().eq([(record,V)]),
+            | Self::Reify(ref frames) => ret.iter().eq(frames.iter().filter_map(|frame| match *frame {
+                gandr_core_term::control::StackFrame::Apply(value) => Some((value, V)),
+                gandr_core_term::control::StackFrame::Bind(body) => Some((body, M)),
+                gandr_core_term::control::StackFrame::Project(_) => None,
+            })),
+            | Self::Stack { input, output } => actual == Some(&[(input, C), (output, C)][..]),
+            | Self::WithType(ref components) => ret.iter().eq(components.iter().map(|&component| (component, C))),
+            | Self::Perform { payload, ref signature, .. } => ret.iter().eq(core::iter::once((payload, V)).chain(signature.types().map(|ty| (ty, A)))),
+            | Self::Handle { subject, on_return, ref signature, ref clauses } | Self::Scope { subject, on_return, ref signature, ref clauses } => ret.iter().eq([(subject, M), (on_return, M)].into_iter().chain(signature.types().map(|ty| (ty, A))).chain(clauses.iter().map(|clause| (clause.body, M)))),
+            | Self::Exercise { capability, payload, ref signature, .. } => ret.iter().eq([(capability, V), (payload, V)].into_iter().chain(signature.types().map(|ty| (ty, A)))),
+            | Self::Capability { ref authority, .. } => ret.iter().eq(authority.types().map(|ty| (ty, A))),
+            | Self::Resume(stack, body) | Self::Split(stack, _, body) => actual == Some(&[(stack, V), (body, M)][..]),
+            | Self::Abandon(stack) => actual == Some(&[(stack, V)][..]),
+            | Self::DependentSplit { scrutinee, motive, body, .. } => actual == Some(&[(scrutinee, V), (motive, C), (body, M)][..]),
+            | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) | Self::Migrate { body, .. } => actual == Some(&[(body, M)][..]),
+            | Self::With(ref components) => ret.iter().eq(components.iter().map(|&component| (component, M))),
+            | Self::Ascribe { body, ty } => actual == Some(&[(body, M), (ty, C)][..]),
+            | Self::ValueAscribe { value, ty } => actual == Some(&[(value, V), (ty, A)][..]),
+            | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
+            | Self::Session(ref action) => ret.iter().eq(action.value_types().map(|ty| (ty, A)).chain(action.values().map(|value| (value, V))).chain(action.computations().map(|body| (body, M)))),
+            | Self::Memory(ref form) => ret.iter().eq(form.values().map(|value| (value, V)).chain(form.computations().map(|body| (body, M)))),
+            | Self::Hold(value) => actual == Some(&[(value, V)][..]),
+            | Self::Leta { value, body, .. } => actual == Some(&[(value, V), (body, M)][..]),
+            | Self::HeldType { inner, .. } => actual == Some(&[(inner, A)][..]),
+            | Self::SessionType(ref session) => ret.iter().eq(session.payloads().iter().map(|&payload| (payload, A))),
+            | Self::PrimitiveValue(_) | Self::Variable { .. }
+            | Self::Constant(_)
+            | Self::ListNil
+            | Self::Literal(_)
+            | Self::Base(_)
+            | Self::Universe { .. }
+            | Self::Abstract(_)
+            | Self::CapabilityType(_)
+            | Self::Unresolved(_)
+            | Self::Hole(_)
+            | Self::ComputationHole(_)
+            | Self::UnknownType
+            | Self::BufferType
+            | Self::QubitType
+            | Self::RowKind
+            | Self::Web(_)
+            | Self::WebType
+            | Self::UnknownComputationType => ret.count == 0,
+            | Self::Tuple(ref components) => ret.iter().eq(components.iter().map(|&component| (component, V))),
+            | Self::Compose { ref cells, realised, .. } => ret.iter().eq(core::iter::once((realised, M)).chain(cells.iter().map(|&cell| (cell, V)))),
+            | Self::Fill { ref cells, generator, .. } => ret.iter().eq(core::iter::once((generator, M)).chain(cells.iter().map(|&cell| (cell, V)))),
+            | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
+            | Self::ListCase { list, on_nil, on_cons } => actual == Some(&[(list, V), (on_nil, M), (on_cons, M)][..]),
+            | Self::Univalence(a, b)
+            | Self::RecordUpdate(a, b)
+            | Self::ListCons(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Funext(a, b) | Self::Equiv(a, b) | Self::Ua { forward: a, backward: b, .. } | Self::Transport(a, b) | Self::Then(a, b) | Self::FlowProduct(a, b) | Self::FunctionFlow(a, b) => {
+                actual == Some(&[(a, V), (b, V)][..])
+            },
+            | Self::SessionRelated { source, target, payloads, .. } => actual == Some(&[(source, V), (target, V), (payloads, V)][..]),
+            | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
+            | Self::PathType { carrier, left, right } | Self::BridgeType { carrier, left, right } | Self::FlowType { carrier, source: left, target: right } => actual == Some(&[(carrier, A), (left, V), (right, V)][..]),
+            | Self::ElementTransport { motive, path, value } | Self::Ride { motive, flow: path, value } => actual == Some(&[(motive, A), (path, V), (value, V)][..]),
+            | Self::Recorded(ref moves) => ret.iter().eq(moves.iter().filter_map(|step| match step.payload() { Maybe::Present(payload) => Some((payload, V)), Maybe::Absent(_) => None })),
+            | Self::Dialogue(ref turns) => ret.iter().eq(turns.iter().filter_map(|turn| match turn.movement.payload() { Maybe::Present(payload) => Some((payload, V)), Maybe::Absent(_) => None })),
+            | Self::TelescopeTransport { motive, path, start, over, value } => actual == Some(&[(motive, C), (path, V), (start, V), (over, V), (value, V)][..]),
+            | Self::Returned(a) | Self::Nested(a) | Self::Run(a) => actual == Some(&[(a, M)][..]),
+            | Self::PathRefl(a)
+            | Self::Here(a)
+            | Self::Stay(a)
+            | Self::Forward(a)
+            | Self::RunType(a)
+            | Self::PrefixType(a)
+            | Self::DialogueType(a)
+            | Self::StaticLambda(a)
+            | Self::Injection(_, a)
+            | Self::ValueLift { body: a, .. }
+            | Self::Return(a)
+            | Self::Force(a)
+            | Self::Decompose(a)
+            | Self::Element { code: a, .. }
+            | Self::RowTail(a)
+            | Self::ComputationElement { code: a, .. }
+            | Self::ValueMark { body: a, .. } => actual == Some(&[(a, V)][..]),
+            | Self::ComputationMark { body: a, .. } | Self::Thunk(a) | Self::Lambda(a) | Self::LinearLambda(a) | Self::Fixpoint { body: a, .. } => {
+                actual == Some(&[(a, M)][..])
+            },
+            | Self::Application(a, b) => actual == Some(&[(a, M), (b, V)][..]),
+            | Self::Bind(a, b) | Self::BindAll(a, _, b) => actual == Some(&[(a, M), (b, M)][..]),
+            | Self::ReturnAll(ref values) => ret.iter().eq(values.iter().map(|&value| (value, V))),
+            | Self::Case {
+                scrutinee: a,
+                ref branches,
+            } => ret.iter().eq(core::iter::once((a, V)).chain(branches.iter().map(|&branch| (branch, M)))),
+            | Self::Product(ref parts) | Self::Sum(ref parts) => ret.iter().eq(parts.iter().map(|&part| (part, A))),
+            | Self::StaticPi {
+                domain: a,
+                codomain: b,
+            }
+            | Self::Sigma {
+                first: a,
+                second: b,
+            } => actual == Some(&[(a, A), (b, A)][..]),
+            | Self::ThunkType(a) | Self::QuoteComputation(a) => actual == Some(&[(a, C)][..]),
+            | Self::Returner { result, ref effects } => ret.iter().eq(core::iter::once((result, A)).chain(effects.types().map(|ty| (ty, A)))),
+            | Self::Returns { ref results, ref effects } => ret.iter().eq(results.iter().map(|&result| (result, A)).chain(effects.types().map(|ty| (ty, A)))),
+            | Self::RowValue(ref row) => ret.iter().eq(row.types().map(|ty| (ty, A))),
+            | Self::List(a)
+            | Self::KeptType { value: a, .. }
+            | Self::TypeLift { inner: a, .. }
+            | Self::Quote(a) => {
+                actual == Some(&[(a, A)][..])
+            },
+            | Self::Arrow {
+                domain: a,
+                codomain: b,
+            }
+            | Self::Pi {
+                domain: a,
+                codomain: b,
+            } => actual == Some(&[(a, A), (b, C)][..]),
+            | Self::LinearArrow {
+                domain: a,
+                multiplicity: m,
+                codomain: b,
+            } => actual == Some(&[(a, A), (m, V), (b, C)][..]),
+        }
+    })]
+    #[inline]
+    #[must_use]
+    pub fn children(&self) -> Children<'_>
+    {
+        use Sort::CompType as C;
+        use Sort::Computation as M;
+        use Sort::Value as V;
+        use Sort::ValueType as A;
+        let one = Crossing::of(Zone::Intuitionistic, BinderDepth::from(1_usize));
+        let two = Crossing::of(Zone::Intuitionistic, BinderDepth::from(2_usize));
+        let linear = Crossing::of(Zone::Linear, BinderDepth::from(1_usize));
+        let split = |arity: gandr_core_term::ComponentCount| {
+            Crossing::of(Zone::Intuitionistic, BinderDepth::from(usize::from(arity)))
+        };
+        match *self {
+            Self::Data { ref arguments, .. } | Self::Codata { ref arguments, .. } => {
+                Children::default().followed_by(arguments, V)
+            },
+            Self::RecordType(ref fields) => Children::fields(fields, A),
+            Self::Patched {
+                base,
+                ref fixed,
+                ref meets,
+            } => Children::of(&[(base, A)])
+                .with_fields(fixed, V)
+                .with_meets(meets),
+            Self::Constructor {
+                datatype,
+                ref fields,
+                ..
+            } => Children::of(&[(datatype, A)]).followed_by(fields, V),
+            Self::Record(ref fields) => Children::fields(fields, V),
+            Self::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+                ..
+            } => Children::of(&[(scrutinee, V), (motive, C)])
+                .binding(ChildSlot(1), one)
+                .followed_by(branches, M),
+            Self::RecordProjection(record, _) | Self::TupleProjection(record, _) => {
+                Children::of(&[(record, V)])
+            },
+            Self::Reify(ref frames) => Children {
+                frames,
+                ..Children::default()
+            },
+            Self::Stack { input, output } => Children::of(&[(input, C), (output, C)]),
+            Self::WithType(ref components) => Children::default().followed_by(components, C),
+            Self::Perform {
+                payload,
+                ref signature,
+                ..
+            } => Children {
+                signature: Some(signature),
+                ..Children::of(&[(payload, V)])
+            },
+            Self::Handle {
+                subject,
+                on_return,
+                ref signature,
+                ref clauses,
+            } => Children {
+                signature: Some(signature),
+                clauses,
+                ..Children::of(&[(subject, M), (on_return, M)]).binding(ChildSlot(1), one)
+            },
+            Self::Scope {
+                subject,
+                on_return,
+                ref signature,
+                ref clauses,
+            } => Children {
+                signature: Some(signature),
+                clauses,
+                ..Children::of(&[(subject, M), (on_return, M)])
+                    .binding(ChildSlot(0), one)
+                    .binding(ChildSlot(1), one)
+            },
+            Self::Exercise {
+                capability,
+                payload,
+                ref signature,
+                ..
+            } => Children {
+                signature: Some(signature),
+                ..Children::of(&[(capability, V), (payload, V)])
+            },
+            Self::Capability { ref authority, .. } => Children {
+                effects: Some(authority),
+                ..Children::default()
+            },
+            Self::Resume(stack, body) => Children::of(&[(stack, V), (body, M)]),
+            Self::Abandon(stack) => Children::of(&[(stack, V)]),
+            Self::Split(stack, arity, body) => {
+                Children::of(&[(stack, V), (body, M)]).binding(ChildSlot(1), split(arity))
+            },
+            Self::DependentSplit {
+                scrutinee,
+                motive,
+                body,
+                arity,
+            } => Children::of(&[(scrutinee, V), (motive, C), (body, M)])
+                .binding(ChildSlot(1), one)
+                .binding(ChildSlot(2), split(arity)),
+            Self::Shift(body) => Children::of(&[(body, M)]).binding(ChildSlot(0), one),
+            Self::With(ref components) => Children::default().followed_by(components, M),
+            Self::Ascribe { body, ty } => Children::of(&[(body, M), (ty, C)]),
+            Self::ValueAscribe { value, ty } => Children::of(&[(value, V), (ty, A)]),
+            Self::Session(ref action) => match *action {
+                SessionAction::Send { payload, .. } => Children::of(&[(payload, V)]),
+                SessionAction::Offer { ref arms, .. } => Children::fields(arms, M),
+                SessionAction::Fork {
+                    protocol,
+                    child,
+                    parent,
+                } => Children::of(&[(protocol, A), (child, M), (parent, M)])
+                    .binding(ChildSlot(1), linear)
+                    .binding(ChildSlot(2), linear),
+                SessionAction::Receive { body, .. } => {
+                    Children::of(&[(body, M)]).binding(ChildSlot(0), linear)
+                },
+                SessionAction::Place { payload, body } => {
+                    Children::of(&[(payload, V), (body, M)]).binding(ChildSlot(1), linear)
+                },
+                SessionAction::Select { .. } | SessionAction::Close { .. } => Children::default(),
+            },
+            Self::Memory(ref form) => match *form {
+                MemoryForm::Hold { value, body, .. } => {
+                    Children::of(&[(value, V), (body, M)]).binding(ChildSlot(1), linear)
+                },
+                MemoryForm::Access {
+                    mode: AccessMode::Exclusive { unwind },
+                    place: Place::Whole,
+                    body,
+                    ..
+                } => Children::of(&[(body, M), (unwind, M)]).binding(ChildSlot(0), linear),
+                MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    place: Place::Whole,
+                    body,
+                    ..
+                } => Children::of(&[(body, M)]).binding(ChildSlot(0), linear),
+                MemoryForm::Access {
+                    mode: AccessMode::Exclusive { unwind },
+                    place: Place::At { index },
+                    body,
+                    ..
+                } => Children::of(&[(index, V), (body, M), (unwind, M)])
+                    .binding(ChildSlot(1), linear),
+                MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    place: Place::At { index },
+                    body,
+                    ..
+                } => Children::of(&[(index, V), (body, M)]).binding(ChildSlot(1), linear),
+                MemoryForm::Resume { value, .. } => Children::of(&[(value, V)]),
+                MemoryForm::Abort { .. } | MemoryForm::Consume { .. } => Children::default(),
+            },
+            Self::Hold(value) => Children::of(&[(value, V)]),
+            Self::Leta { value, body, .. } => {
+                Children::of(&[(value, V), (body, M)]).binding(ChildSlot(1), one)
+            },
+            Self::SessionType(ref session) => {
+                Children::default().followed_by(session.payloads(), A)
+            },
+            Self::Primitive(_, arguments) => match arguments {
+                gandr_core_term::primitive::Arguments::Unary(argument) => {
+                    Children::of(&[(argument, V)])
+                },
+                gandr_core_term::primitive::Arguments::Binary([first, second]) => {
+                    Children::of(&[(first, V), (second, V)])
+                },
+            },
+            Self::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            } => Children::of(&[(path_type, A), (forward, V), (backward, V)]),
+            Self::PathType {
+                carrier,
+                left,
+                right,
+            }
+            | Self::BridgeType {
+                carrier,
+                left,
+                right,
+            }
+            | Self::FlowType {
+                carrier,
+                source: left,
+                target: right,
+            } => Children::of(&[(carrier, A), (left, V), (right, V)]),
+            Self::ElementTransport {
+                motive,
+                path,
+                value,
+            }
+            | Self::Ride {
+                motive,
+                flow: path,
+                value,
+            } => Children::of(&[(motive, A), (path, V), (value, V)]).binding(ChildSlot(0), one),
+            Self::Recorded(ref moves) => Children {
+                moves,
+                ..Children::default()
+            },
+            Self::Dialogue(ref turns) => Children {
+                turns,
+                ..Children::default()
+            },
+            Self::TelescopeTransport {
+                motive,
+                path,
+                start,
+                over,
+                value,
+            } => Children::of(&[(motive, C), (path, V), (start, V), (over, V), (value, V)]),
+            Self::PrimitiveValue(_)
+            | Self::Variable { .. }
+            | Self::Constant(_)
+            | Self::ListNil
+            | Self::Literal(_)
+            | Self::Base(_)
+            | Self::Universe { .. }
+            | Self::Abstract(_)
+            | Self::CapabilityType(_)
+            | Self::Unresolved(_)
+            | Self::Hole(_)
+            | Self::ComputationHole(_)
+            | Self::UnknownType
+            | Self::BufferType
+            | Self::QubitType
+            | Self::RowKind
+            | Self::Web(_)
+            | Self::WebType
+            | Self::UnknownComputationType => Children::default(),
+            Self::Tuple(ref components) => Children::default().followed_by(components, V),
+            Self::Compose {
+                ref cells,
+                realised,
+                ..
+            } => Children::of(&[(realised, M)]).followed_by(cells, V),
+            Self::Fill {
+                ref cells,
+                generator,
+                ..
+            } => Children::of(&[(generator, M)]).followed_by(cells, V),
+            Self::PathUniverse(first, second)
+            | Self::PathProduct(first, second)
+            | Self::Funext(first, second)
+            | Self::Equiv(first, second)
+            | Self::Univalence(first, second)
+            | Self::Ua {
+                forward: first,
+                backward: second,
+                ..
+            }
+            | Self::Transport(first, second)
+            | Self::Then(first, second)
+            | Self::FlowProduct(first, second)
+            | Self::FunctionFlow(first, second)
+            | Self::ListCons(first, second)
+            | Self::RecordUpdate(first, second)
+            | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
+            Self::SessionRelated {
+                source,
+                target,
+                payloads,
+                ..
+            } => Children::of(&[(source, V), (target, V), (payloads, V)]),
+            Self::StaticLambda(body) => Children::of(&[(body, V)]).binding(ChildSlot(0), one),
+            Self::PathRefl(body)
+            | Self::Here(body)
+            | Self::Stay(body)
+            | Self::Forward(body)
+            | Self::RunType(body)
+            | Self::PrefixType(body)
+            | Self::DialogueType(body)
+            | Self::Injection(_, body)
+            | Self::ValueLift { body, .. }
+            | Self::Return(body)
+            | Self::Force(body)
+            | Self::Decompose(body)
+            | Self::ValueMark { body, .. } => Children::of(&[(body, V)]),
+            Self::ComputationMark { body, .. }
+            | Self::Thunk(body)
+            | Self::Returned(body)
+            | Self::Nested(body)
+            | Self::Run(body)
+            | Self::Reset(body)
+            | Self::Project(_, body)
+            | Self::Migrate { body, .. } => Children::of(&[(body, M)]),
+            Self::Lambda(body) | Self::LinearLambda(body) | Self::Fixpoint { body, .. } => {
+                Children::of(&[(body, M)]).binding(ChildSlot(0), one)
+            },
+            Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
+            Self::Bind(bound, rest) => {
+                Children::of(&[(bound, M), (rest, M)]).binding(ChildSlot(1), one)
+            },
+            Self::BindAll(bound, arity, rest) => {
+                Children::of(&[(bound, M), (rest, M)]).binding(ChildSlot(1), split(arity))
+            },
+            Self::ReturnAll(ref values) => Children::default().followed_by(values, V),
+            Self::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            } => Children::of(&[
+                (element, A),
+                (result, A),
+                (list, V),
+                (on_nil, M),
+                (on_cons, M),
+            ])
+            .binding(ChildSlot(4), two),
+            Self::ListCase {
+                list,
+                on_nil,
+                on_cons,
+            } => Children::of(&[(list, V), (on_nil, M), (on_cons, M)]).binding(ChildSlot(2), two),
+            Self::Case {
+                scrutinee,
+                ref branches,
+            } => Children::of(&[(scrutinee, V)])
+                .followed_by(branches, M)
+                .tail_binding(one),
+            Self::Product(ref parts) | Self::Sum(ref parts) => {
+                Children::default().followed_by(parts, A)
+            },
+            Self::StaticPi {
+                domain: first,
+                codomain: second,
+            } => Children::of(&[(first, A), (second, A)]),
+            Self::Sigma { first, second } => {
+                Children::of(&[(first, A), (second, A)]).binding(ChildSlot(1), one)
+            },
+            Self::ThunkType(body) => Children::of(&[(body, C)]),
+            Self::List(element) | Self::KeptType { value: element, .. } => {
+                Children::of(&[(element, A)])
+            },
+            Self::Returner {
+                result,
+                ref effects,
+            } => {
+                let mut children = Children::of(&[(result, A)]);
+                children.effects = Some(effects);
+                children
+            },
+            Self::Returns {
+                ref results,
+                ref effects,
+            } => Children {
+                telescope: true,
+                effects: Some(effects),
+                ..Children::default().followed_by(results, A)
+            },
+            Self::HeldType { inner, .. } | Self::TypeLift { inner, .. } => {
+                Children::of(&[(inner, A)])
+            },
+            Self::Element { code, .. }
+            | Self::ComputationElement { code, .. }
+            | Self::RowTail(code) => Children::of(&[(code, V)]),
+            Self::RowValue(ref row) => Children {
+                effects: Some(row),
+                ..Children::default()
+            },
+            Self::Quote(quoted) => Children::of(&[(quoted, A)]),
+            Self::QuoteComputation(quoted) => Children::of(&[(quoted, C)]),
+            Self::Arrow { domain, codomain } => Children::of(&[(domain, A), (codomain, C)]),
+            Self::Pi { domain, codomain } => {
+                Children::of(&[(domain, A), (codomain, C)]).binding(ChildSlot(1), one)
+            },
+            Self::LinearArrow {
+                domain,
+                multiplicity,
+                codomain,
+            } => Children::of(&[(domain, A), (multiplicity, V), (codomain, C)])
+                .binding(ChildSlot(2), one),
+        }
+    }
+
+    /// The reference a constant, abstract type or nominal datatype names, or
+    /// the declared world a world former names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the borrowed reference for Constant, Abstract or Data, and a
+    ///   world former's declared world; otherwise `NotAReference`. The
+    ///   predicate checks the presence classification.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the footprint corpus separates reachable references
+    ///   from unreachable and unresolved entries; the attribute does not assert
+    ///   borrowed payload identity in a const expression.
+    /// - witness: `gandr-core-incremental::footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
+    #[spec(ensures: |ret| match *self {
+        Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } | Self::Codata { .. } => matches!(ret, Maybe::Present(_)),
+        Self::Leta { ref world, .. } | Self::Migrate { ref world, .. } | Self::HeldType { ref world, .. } | Self::CapabilityType(ref world) => matches!(ret, Maybe::Present(_)) == matches!(*world, WorldContent::Declared(_)),
+        Self::Hold(_) => matches!(ret, Maybe::Absent(_)),
+        Self::Compose { .. } | Self::Fill { .. } | Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) | Self::BridgeType { .. } |
+        Self::ReturnAll(_) | Self::BindAll(..) | Self::Returns { .. } |
+        Self::Patched { .. } |
+        Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::LinearLambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::QubitType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::LinearArrow { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+    })]
+    #[inline]
+    pub const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
+    {
+        match *self {
+            Self::Constant(ref reference)
+            | Self::Abstract(ref reference)
+            | Self::Data {
+                declaration: ref reference,
+                ..
+            }
+            | Self::Codata {
+                declaration: ref reference,
+                ..
+            } => Maybe::Present(reference),
+            Self::Leta { ref world, .. }
+            | Self::Migrate { ref world, .. }
+            | Self::HeldType { ref world, .. }
+            | Self::CapabilityType(ref world) => world.reference(),
+            Self::PathUniverse(..)
+            | Self::RecordType(_)
+            | Self::Patched { .. }
+            | Self::Constructor { .. }
+            | Self::Record(_)
+            | Self::DataCase { .. }
+            | Self::RecordProjection(..)
+            | Self::TupleProjection(..)
+            | Self::Reify(_)
+            | Self::Stack { .. }
+            | Self::WithType(..)
+            | Self::Perform { .. }
+            | Self::Handle { .. }
+            | Self::Exercise { .. }
+            | Self::Scope { .. }
+            | Self::Capability { .. }
+            | Self::Resume(..)
+            | Self::Abandon(_)
+            | Self::Split(..)
+            | Self::DependentSplit { .. }
+            | Self::Reset(_)
+            | Self::Shift(_)
+            | Self::With(..)
+            | Self::Ascribe { .. }
+            | Self::ValueAscribe { .. }
+            | Self::Session(_)
+            | Self::Memory(_)
+            | Self::Hold(_)
+            | Self::SessionType(_)
+            | Self::Project(..)
+            | Self::PrimitiveValue(_)
+            | Self::Primitive(..)
+            | Self::PathRefl(_)
+            | Self::Here(_)
+            | Self::Returned(_)
+            | Self::Nested(_)
+            | Self::Run(_)
+            | Self::RecordUpdate(..)
+            | Self::PathType { .. }
+            | Self::BridgeType { .. }
+            | Self::FlowType { .. }
+            | Self::RunType(_)
+            | Self::PrefixType(_)
+            | Self::DialogueType(_)
+            | Self::WebType
+            | Self::SessionRelated { .. }
+            | Self::Stay(_)
+            | Self::Then(..)
+            | Self::Forward(_)
+            | Self::FunctionFlow(..)
+            | Self::FlowProduct(..)
+            | Self::Recorded(_)
+            | Self::Dialogue(_)
+            | Self::Web(_)
+            | Self::Decompose(_)
+            | Self::Ride { .. }
+            | Self::ElementTransport { .. }
+            | Self::TelescopeTransport { .. }
+            | Self::PathProduct(..)
+            | Self::Funext(..)
+            | Self::Equiv(..)
+            | Self::Univalence(..)
+            | Self::Ua { .. }
+            | Self::Compose { .. }
+            | Self::Fill { .. }
+            | Self::PathEquiv { .. }
+            | Self::Transport(..)
+            | Self::Variable { .. }
+            | Self::Tuple(_)
+            | Self::ListNil
+            | Self::ListCons(..)
+            | Self::ListFold { .. }
+            | Self::ListCase { .. }
+            | Self::Literal(_)
+            | Self::Injection(..)
+            | Self::Thunk(_)
+            | Self::ValueLift { .. }
+            | Self::Lambda(_)
+            | Self::LinearLambda(_)
+            | Self::Application(..)
+            | Self::Return(_)
+            | Self::Bind(..)
+            | Self::ReturnAll(_)
+            | Self::BindAll(..)
+            | Self::Returns { .. }
+            | Self::Force(_)
+            | Self::Case { .. }
+            | Self::Base(_)
+            | Self::Product(_)
+            | Self::Sum(_)
+            | Self::List(_)
+            | Self::KeptType { .. }
+            | Self::ThunkType(_)
+            | Self::Universe { .. }
+            | Self::TypeLift { .. }
+            | Self::Element { .. }
+            | Self::Returner { .. }
+            | Self::Arrow { .. }
+            | Self::Pi { .. }
+            | Self::LinearArrow { .. }
+            | Self::Quote(_)
+            | Self::QuoteComputation(_)
+            | Self::StaticLambda(_)
+            | Self::StaticApplication(..)
+            | Self::StaticPi { .. }
+            | Self::Sigma { .. }
+            | Self::ComputationElement { .. }
+            | Self::Unresolved(_)
+            | Self::Hole(_)
+            | Self::ValueMark { .. }
+            | Self::ComputationHole(_)
+            | Self::ComputationMark { .. }
+            | Self::Fixpoint { .. }
+            | Self::UnknownType
+            | Self::BufferType
+            | Self::QubitType
+            | Self::RowKind
+            | Self::RowTail(_)
+            | Self::RowValue(_)
+            | Self::UnknownComputationType => Maybe::Absent(referencing::Absent::NotAReference),
+        }
+    }
+
+    /// The variable occurrence the node names itself, beside its zone: a
+    /// variable's index, a session action's endpoint, an access's slot, a
+    /// resume's or an abort's view.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the zone and index of a variable; the linear endpoint of a
+    ///   send, receive, select, offer or close; the linear slot of an access
+    ///   and the linear view of a resume or abort; `Unnamed` for every other
+    ///   former, a fork and a hold included.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every occurrence-bearing former under binders of both
+    ///   zones is projected back from its compact form to its original index; a
+    ///   missed occurrence keeps a stale index.
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present((zone, index)) => matches!(*self, Self::Variable { zone: own, index: named } if own == zone && named == index)
+            || matches!(*self, Self::Session(ref action) if zone == Zone::Linear && action.endpoint() == Maybe::Present(index))
+            || matches!(*self, Self::Memory(ref form) if zone == Zone::Linear && form.resident() == Maybe::Present(index)),
+        Maybe::Absent(occurring::Absent::Unnamed) => !matches!(*self, Self::Variable { .. })
+            && !matches!(*self, Self::Session(ref action) if matches!(action.endpoint(), Maybe::Present(_)))
+            && !matches!(*self, Self::Memory(ref form) if matches!(form.resident(), Maybe::Present(_))),
+    })]
+    #[inline]
+    pub fn occurrence(&self) -> Maybe<(Zone, DeBruijnIndex), occurring::Absent>
+    {
+        if let Self::Variable { zone, index } = *self {
+            return Maybe::Present((zone, index));
+        }
+        if let Self::Session(ref action) = *self
+            && let Maybe::Present(endpoint) = action.endpoint()
+        {
+            return Maybe::Present((Zone::Linear, endpoint));
+        }
+        if let Self::Memory(ref form) = *self
+            && let Maybe::Present(slot) = form.resident()
+        {
+            return Maybe::Present((Zone::Linear, slot));
+        }
+        Maybe::Absent(occurring::Absent::Unnamed)
+    }
+
+    /// The node with the occurrence it names itself replaced by `index`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the node, its former, children and every other payload
+    ///   unchanged, its own occurrence — as [`ContentNode::occurrence`] reads
+    ///   it — now `index`; a node naming none is returned unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ContentNode::occurrence`]: the compact form of
+    ///   every occurrence-bearing former carries its rank, and its projection
+    ///   its ambient index.
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+    #[spec(
+        captures: [named = self.occurrence()],
+        ensures: |ret| match named {
+            Maybe::Present((zone, _)) => ret.occurrence() == Maybe::Present((zone, index)),
+            Maybe::Absent(_) => ret.occurrence() == named,
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn relocated(
+        mut self,
+        index: DeBruijnIndex,
+    ) -> Self
+    {
+        if let Self::Variable {
+            index: ref mut held,
+            ..
+        } = self
+        {
+            *held = index;
+        }
+        else if let Self::Session(ref mut action) = self {
+            match *action {
+                SessionAction::Send {
+                    ref mut endpoint, ..
+                }
+                | SessionAction::Receive {
+                    ref mut endpoint, ..
+                }
+                | SessionAction::Select {
+                    ref mut endpoint, ..
+                }
+                | SessionAction::Offer {
+                    ref mut endpoint, ..
+                }
+                | SessionAction::Close { ref mut endpoint } => *endpoint = index,
+                SessionAction::Fork { .. } | SessionAction::Place { .. } => {},
+            }
+        }
+        else if let Self::Memory(ref mut form) = self {
+            match *form {
+                MemoryForm::Access { ref mut held, .. }
+                | MemoryForm::Resume {
+                    view: ref mut held, ..
+                }
+                | MemoryForm::Abort { view: ref mut held }
+                | MemoryForm::Consume { ref mut held } => *held = index,
+                MemoryForm::Hold { .. } => {},
+            }
+        }
+        self
+    }
+}
+
+/// Whether a table holds an id another arena minted.
+///
+/// # Specification
+/// - executable: none — the tag contains no table; each [`SupportedNode`]
+///   carries the tag of its subterm, and `ItemContent::opacity` of
+///   `gandr-core-incremental` reads it off the roots.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a foreign unresolved value makes content opaque; the
+///   supported persistence corpus supplies resolving tables.
+/// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Opacity
+{
+    /// Every node resolved.
+    Transparent,
+    /// Some node did not resolve; the item is never adopted or persisted.
+    Opaque,
+}
+
+/// A world as content: the host's unnamed world, or a declared one by what
+/// the admission position of its declaration names.
+///
+/// A located judgement reads the world register: the worlds declared, the
+/// row of each, and the home and the spending of each constant it names.
+/// Content names a world by its declaration's reference, as it names a
+/// constant, so an item's content does not depend on where its program
+/// admits the world. The row of a world is the world item's own content; the
+/// home and the spending of a constant are answers that its reader's support
+/// records beside the constant's type.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum WorldContent
+{
+    /// The world a run stands at when its entry names none.
+    #[default]
+    Host,
+    /// The world the declaration at this reference declares.
+    Declared(Reference),
+}
+
+impl WorldContent
+{
+    /// The content of `world`, its position resolved through `layout`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the reference of a declared world, growth within the
+    ///   content of the world
+    #[inline]
+    pub fn of(
+        layout: &Layout,
+        world: gandr_core_term::world::World,
+    ) -> Self
+    {
+        match world {
+            gandr_core_term::world::World::Host => Self::Host,
+            gandr_core_term::world::World::Declared(position) => {
+                Self::Declared(layout.resolve(position))
+            },
+        }
+    }
+
+    /// The reference a declared world names; none for the host's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
+    {
+        match *self {
+            Self::Host => Maybe::Absent(referencing::Absent::NotAReference),
+            Self::Declared(ref reference) => Maybe::Present(reference),
+        }
+    }
+}
+
+/// A node's canonical content, a type's or a term's: every node reachable
+/// from it, numbered by discovery, the node itself first, and the node's
+/// support in the scope it stands in.
+///
+/// # Specification
+/// - executable: none — a data declaration; [`TypeContent::of`] and the reader
+///   establish that the table is supported and the root support has the root's
+///   widths.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independent type encoding and minting preserve a shared
+///   arrow; a finite malformed corpus separates the named mint refusals.
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct TypeContent
+{
+    /// The nodes; the root is the first.
+    nodes: Vec<SupportedNode>,
+    /// The root's support in the scope the type stands in.
+    root: Thinning,
+}
+
+impl TypeContent
+{
+    /// The nodes; the root is the first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn nodes(&self) -> &[SupportedNode]
+    {
+        &self.nodes
+    }
+
+    /// The root's support in the scope the type stands in: the de Bruijn
+    /// indices it reads there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn root(&self) -> &Thinning
+    {
+        &self.root
+    }
+
+    /// The type's de Bruijn table, the root first: the projection a reader
+    /// that prints ambient binders reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as `support::expand` from the first node under the root's
+    ///   support; an empty table projects to no node.
+    /// - fails: [`PlacementError::IndexOverflow`] when an ambient index under a
+    ///   binder passes `u32`; [`PlacementError::OutOfScope`] for a support
+    ///   narrower than its node.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PlacementError`]: as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every binding former of both zones projects back to
+    ///   its indices, and a root support at the index ceiling under a binder
+    ///   reports overflow.
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+    /// - witness: `gandr-core-incremental::content::tests::debruijn_projection_reports_index_overflow`
+    #[spec(ensures: |ret| self.nodes.is_empty() || ret.as_ref().is_err() || ret.as_ref().is_ok_and(|table|
+        table.first().map(ContentNode::sort) == self.nodes.first().map(SupportedNode::sort)))]
+    #[inline]
+    pub fn debruijn(&self) -> Result<Vec<ContentNode>, PlacementError>
+    {
+        if self.nodes.is_empty() {
+            return Ok(Vec::new());
+        }
+        crate::support::expand(&self.nodes, NodeIndex::from(0_usize), &self.root)
+    }
+
+    /// Every reference beneath the type, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the root's value and type reads; nothing for an empty table.
+    /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recorded answer naming a changed definition in a
+    ///   type position, an abstract type or a code invalidates its reader.
+    /// - witness: `gandr-core-incremental::checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
+    #[inline]
+    pub fn reads(&self) -> impl Iterator<Item = &Reference>
+    {
+        self.nodes
+            .first()
+            .into_iter()
+            .flat_map(|root| root.value_reads().chain(root.type_reads()))
+    }
+
+    /// The content of these parts, as the decoder reassembles it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn from_parts(
+        nodes: Vec<SupportedNode>,
+        root: Thinning,
+    ) -> Self
+    {
+        Self { nodes, root }
+    }
+
+    /// The content of the node `root` of `arena`, constants resolved through
+    /// `layout`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the discovery-numbered supported table of every node
+    ///   reachable from `root`, `root` first, with its support.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent type extraction and shared-node minting
+    ///   exercise a rooted value-type graph; other root families are not
+    ///   claimed here.
+    /// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[spec(ensures: |ret| {
+            ret.nodes.first().is_some_and(|node| {
+                node.sort()
+                    == match root {
+                        | ArenaNode::Value(_) => Sort::Value,
+                        | ArenaNode::Computation(_) => Sort::Computation,
+                        | ArenaNode::ValueType(_) => Sort::ValueType,
+                        | ArenaNode::CompType(_) => Sort::CompType,
+                    }
+            }) && ret.nodes.iter().all(|node| {
+                node.former().children()
+                    .iter()
+                    .all(|(child, _)| usize::from(child) < ret.nodes.len())
+            })
+        })]
+    #[inline]
+    pub fn of(
+        arena: &CoreArena,
+        layout: &Layout,
+        root: ArenaNode,
+    ) -> Self
+    {
+        let mut encoder = Encoder::new(arena, layout);
+        let raw = encoder.discover(root);
+        encoder.drain();
+        Self::tabulated(&encoder.nodes, raw)
+    }
+
+    /// The content of the node `root` of `arena` as a page reads it: each
+    /// staged type as its base, constants resolved through `layout`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`TypeContent::of`] the node with each staged type read as
+    ///   its base, so it holds no staged type. The root is of the sort of
+    ///   `root`, and each child names a node of the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Encoder::read_as`].
+    /// - witness: `gandr-core-incremental::checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    #[spec(ensures: |ret| {
+            ret.nodes.first().is_some_and(|node| {
+                node.sort()
+                    == match root {
+                        | ArenaNode::Value(_) => Sort::Value,
+                        | ArenaNode::Computation(_) => Sort::Computation,
+                        | ArenaNode::ValueType(_) => Sort::ValueType,
+                        | ArenaNode::CompType(_) => Sort::CompType,
+                    }
+            }) && ret.nodes.iter().all(|node| {
+                node.former().children()
+                    .iter()
+                    .all(|(child, _)| usize::from(child) < ret.nodes.len())
+            })
+        })]
+    #[inline]
+    pub fn unstaged(
+        arena: &CoreArena,
+        layout: &Layout,
+        root: ArenaNode,
+    ) -> Self
+    {
+        let mut encoder = Encoder::unstaging(arena, layout);
+        let raw = encoder.discover(root);
+        encoder.drain();
+        Self::tabulated(&encoder.nodes, raw)
+    }
+
+    /// The content of the node `root` of `arena`, as [`TypeContent::of`]
+    /// builds it, beside the place in it of each node it was built from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the content [`TypeContent::of`] gives; each node the walk
+    ///   from `root` reached has its place in that content.
+    /// - panics: none.
+    /// - executable: none — the clause compares with [`TypeContent::of`], which
+    ///   a predicate runs again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the judged body's nodes that a report names mint back
+    ///   to themselves from their places.
+    /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the table of every node that `root` reaches and the place
+    ///   of each node, growth within the table
+    #[inline]
+    pub fn placed(
+        arena: &CoreArena,
+        layout: &Layout,
+        root: ArenaNode,
+    ) -> (Self, Placer)
+    {
+        let mut encoder = Encoder::new(arena, layout);
+        let raw = encoder.discover(root);
+        encoder.drain();
+        let Tabled {
+            nodes,
+            placed,
+            numbers,
+        } = tabled(&encoder.nodes, &[raw]);
+        let root = placed
+            .get(usize::from(raw))
+            .map_or_else(Thinning::empty, |placement| placement.support.clone());
+        (Self { nodes, root }, Placer {
+            seen: encoder.seen,
+            placed,
+            numbers,
+        })
+    }
+
+    /// Mint the content into `arena` from its root, as [`TypeContent::mint`]
+    /// mints it, beside the node minted at each place beneath the root.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the root's minted node, and the node minted for
+    ///   each place that the root reaches.
+    /// - fails: as [`TypeContent::mint`].
+    /// - panics: none.
+    /// - executable: none — a predicate reads each minted node again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the judged body's nodes that a report names mint back
+    ///   to themselves from their places.
+    /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    ///
+    /// # Cost
+    /// - allocation: the place of each minted entry, and each minted node,
+    ///   growth within `arena`
+    #[inline]
+    pub fn mint_placed(
+        &self,
+        arena: &mut CoreArena,
+        layout: &Layout,
+    ) -> Maybe<(ArenaNode, Minted), seating::Absent>
+    {
+        let root = TablePlace {
+            node: NodeIndex::from(0_usize),
+            support: self.root.clone(),
+        };
+        let minted = match Minted::of(&self.nodes, core::iter::once(root.clone()), (arena, layout))
+        {
+            Maybe::Present(minted) => minted,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        minted
+            .node(&root)
+            .map_or(Maybe::Absent(seating::Absent::IllSorted), |node| {
+                Maybe::Present((node, minted))
+            })
+    }
+
+    /// The type rooted at `root` of the de Bruijn table `raw`, factored and
+    /// numbered from it.
+    ///
+    /// # Specification
+    /// - requires: `root` is an entry of `raw`.
+    /// - ensures: the supported table of every node reachable from `root`,
+    ///   `root` first, with its support in `raw`'s ambient scope.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TypeContent::of`], which builds through it; a
+    ///   table read back through [`TypeContent::debruijn`] is the table
+    ///   factored.
+    /// - witness: `gandr-core-incremental::content::tests::covers_preserve_every_binding_former`
+    #[spec(ensures: |ret| ret.nodes.iter().all(|node| node.former().children()
+        .iter()
+        .all(|(child, _)| usize::from(child) < ret.nodes.len())))]
+    #[inline]
+    #[must_use]
+    pub fn tabulated(
+        raw: &[ContentNode],
+        root: NodeIndex,
+    ) -> Self
+    {
+        let tabled = tabled(raw, &[root]);
+        Self {
+            root: tabled.support(root),
+            nodes: tabled.nodes,
+        }
+    }
+
+    /// Mint the content into `arena`, constants placed through `layout`.
+    ///
+    /// A table whose every node is closed is already its own de Bruijn
+    /// table: each node is its former over the empty scope, and the
+    /// projection would number and share it exactly as it stands. Only a
+    /// table with an open node is projected first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success a node of `arena`, of the root's sort, whose
+    ///   content is this table, each distinct placed node minted once.
+    /// - provides: the seat an adopted synthesised type is read from.
+    /// - fails: `seating::Absent` naming why: an index the projection cannot
+    ///   place, an unresolved node, a reference the program does not hold, or a
+    ///   child of the wrong sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shared arrow is minted back into a noisy arena, and
+    ///   terms with a lambda and a bind into a fresh one; one table for each
+    ///   refusal reason bounds error evidence, closed and open alike. The
+    ///   predicate checks successful seat resolution, not a second encoding.
+    /// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+    /// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+    /// - witness: `gandr-core-incremental::content::tests::alpha_equal_terms_mint_to_one_name`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(node) => node.held(arena).is_some()
+            && self.nodes.first().is_some_and(|root| root.sort() == node.sort()),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint(
+        &self,
+        arena: &mut CoreArena,
+        layout: &Layout,
+    ) -> Maybe<ArenaNode, seating::Absent>
+    {
+        self.mint_holding(arena, layout, &[])
+    }
+
+    /// Mint the content into `arena` as [`TypeContent::mint`] does, with each
+    /// node of `held` at the end of its path: a node outside an item that holds
+    /// a node of the item holds that node again.
+    ///
+    /// A path names the entry it ends at, so an entry that two paths reach is
+    /// the held node at both.
+    ///
+    /// # Specification
+    /// - requires: each node of `held` is a node of `arena`.
+    /// - ensures: as [`TypeContent::mint`]; the entry at the end of each path
+    ///   of `held` is its node, and no entry below it is minted for it.
+    /// - fails: as [`TypeContent::mint`]; [`seating::Absent::Unwalked`] for a
+    ///   path past the table; [`seating::Absent::IllSorted`] for a node of
+    ///   another sort than the entry at the end of its path.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a content outside an item that holds the item's body
+    ///   mints over that body, and a node the item does not hold is minted.
+    /// - witness: `gandr-core-incremental::failure::tests::a_content_outside_the_item_mints_over_the_item_nodes_it_holds`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(node) => node.held(arena).is_some()
+            && self.nodes.first().is_some_and(|root| root.sort() == node.sort()),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_holding(
+        &self,
+        arena: &mut CoreArena,
+        layout: &Layout,
+        held: &[(&[ChildPosition], ArenaNode)],
+    ) -> Maybe<ArenaNode, seating::Absent>
+    {
+        if self
+            .nodes
+            .iter()
+            .all(|node| node.scope() == gandr_core_term::support::Scope::default())
+        {
+            return mint_table(&self.nodes, arena, (layout, held));
+        }
+        let Ok(table) = self.debruijn()
+        else {
+            return Maybe::Absent(seating::Absent::Unplaceable);
+        };
+        mint_table(&table, arena, (layout, held))
+    }
+
+    /// Mint the content into `arena` as a value type: the seat a synthesised
+    /// type is read from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`TypeContent::mint`], when the root is a value type.
+    /// - fails: as [`TypeContent::mint`], and `IllSorted` for a table of
+    ///   another sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — no-op reuse seats synthesised types; a returner table
+    ///   is refused by sort.
+    /// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(id) => arena.value_type(id).is_some(),
+        Maybe::Absent(_) => true,
+    })]
+    #[inline]
+    pub fn mint_value_type(
+        &self,
+        arena: &mut CoreArena,
+        layout: &Layout,
+    ) -> Maybe<ValueTypeId, seating::Absent>
+    {
+        match self.mint(arena, layout) {
+            Maybe::Present(ArenaNode::ValueType(id)) => Maybe::Present(id),
+            Maybe::Present(
+                ArenaNode::Value(_) | ArenaNode::Computation(_) | ArenaNode::CompType(_),
+            ) => Maybe::Absent(seating::Absent::IllSorted),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+}
+
+/// The type tables one judgement pass has encoded, by the arena type each
+/// encodes.
+///
+/// Within a pass, the arena only grows. The resolver stays the same. So the
+/// table of an arena type never changes. The pass encodes each type that it
+/// answers or projects once.
+///
+/// # Specification
+/// - executable: none — a cache; [`TypeMemo::content`] checks every answer
+///   against a fresh encoding.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the incremental differential compares every judged item's
+///   answers and typings with a from-scratch pass.
+/// - witness: `gandr-core-incremental::tests::incremental::incremental_equals_from_scratch`
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub struct TypeMemo(core::cell::RefCell<BTreeMap<ArenaNode, TypeContent>>);
+
+impl TypeMemo
+{
+    /// The table of the arena type `node`, encoded on its first request in
+    /// the pass.
+    ///
+    /// # Specification
+    /// - requires: since the memo's first entry, `arena` has only grown and
+    ///   `layout` is the one every entry was encoded through.
+    /// - ensures: the table [`TypeContent::of`] encodes for `node`.
+    /// - panics: none; the memo is never borrowed across an encoding.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`TypeMemo`].
+    /// - witness: `gandr-core-incremental::tests::incremental::incremental_equals_from_scratch`
+    ///
+    /// # Cost
+    /// - allocation: the table of `node` on its first request, growth within
+    ///   the memo
+    #[spec(ensures: |ret| ret == TypeContent::of(arena, layout, node))]
+    #[inline]
+    pub fn content(
+        &self,
+        arena: &CoreArena,
+        layout: &Layout,
+        node: ArenaNode,
+    ) -> TypeContent
+    {
+        if let Some(found) = self.0.borrow().get(&node) {
+            return found.clone();
+        }
+        let content = TypeContent::of(arena, layout, node);
+        let _replaced = self.0.borrow_mut().insert(node, content.clone());
+        content
+    }
+}
+
+/// How the encoder reads a staged type.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stages
+{
+    /// A staged type stays opaque. A stage is minted by one judgement and
+    /// names nothing past it, so stored content holds none.
+    Opaque,
+    /// A staged type reads as its base, as a page spells it. A report keys
+    /// its nodes so.
+    Erased,
+}
+
+/// The breadth-first walk that numbers an arena graph by discovery.
+///
+/// # Specification
+/// - executable: none — queue order and first discovery relate mutable fields
+///   over a walk, not a callable type declaration.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct arena allocations, shared nodes and interleaved
+///   roots separate the breadth-first identity cases without a universal graph
+///   claim.
+/// - witness: `gandr-core-incremental::content::tests::content_is_free_of_arena_ids`
+/// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+pub struct Encoder<'arena, 'layout>
+{
+    /// The arena read.
+    arena: &'arena CoreArena,
+    /// The program positions resolve through.
+    layout: &'layout Layout,
+    /// The number each discovered node took.
+    pub seen: BTreeMap<ArenaNode, NodeIndex>,
+    /// The discovered nodes not yet written, in discovery order.
+    queue: VecDeque<ArenaNode>,
+    /// The written nodes, in discovery order.
+    pub nodes: Vec<ContentNode>,
+    /// The children of the node being read, by family. A read empties the
+    /// queues and leaves them here, so a read past the first allocates none.
+    found: Discovered,
+    /// How a staged type reads.
+    stages: Stages,
+}
+
+impl<'arena, 'layout> Encoder<'arena, 'layout>
+{
+    /// An empty walk over `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn new(
+        arena: &'arena CoreArena,
+        layout: &'layout Layout,
+    ) -> Self
+    {
+        Self {
+            arena,
+            layout,
+            seen: BTreeMap::new(),
+            queue: VecDeque::new(),
+            nodes: Vec::new(),
+            found: Discovered::new(),
+            stages: Stages::Opaque,
+        }
+    }
+
+    /// An empty walk over `arena` that reads each staged type as its base.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn unstaging(
+        arena: &'arena CoreArena,
+        layout: &'layout Layout,
+    ) -> Self
+    {
+        Self {
+            arena,
+            layout,
+            seen: BTreeMap::new(),
+            queue: VecDeque::new(),
+            nodes: Vec::new(),
+            found: Discovered::new(),
+            stages: Stages::Erased,
+        }
+    }
+
+    /// The node a discovery numbers for `node`: the base of a staged type
+    /// under [`Stages::Erased`], and `node` itself otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `node`, but for a value type under [`Stages::Erased`], which
+    ///   reads as [`gandr_core_term::unstaged`] gives it, never staged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a staged type, a former over one, and two staged
+    ///   types over two bases separate the reading from the stage.
+    /// - witness: `gandr-core-incremental::checkpoint::tests::a_staged_type_keys_as_its_base_7403`
+    #[spec(ensures: |ret| ret == node || (self.stages == Stages::Erased && matches!(node, ArenaNode::ValueType(_))))]
+    fn read_as(
+        &self,
+        node: ArenaNode,
+    ) -> ArenaNode
+    {
+        match (self.stages, node) {
+            (Stages::Erased, ArenaNode::ValueType(id)) => {
+                ArenaNode::ValueType(gandr_core_term::unstaged(self.arena, id))
+            },
+            (Stages::Erased | Stages::Opaque, _) => node,
+        }
+    }
+
+    /// The number of `node`, numbering and queueing it on first discovery. A
+    /// node is discovered as [`Self::read_as`] reads it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the number the node `node` reads as took when first
+    ///   discovered; a node discovered now takes the next number and joins the
+    ///   queue.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a shared node retains one number; separately
+    ///   allocated equal nodes retain distinct numbers.
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    ///
+    /// # Cost
+    /// - allocation: the number and the queue entry of a node discovered now,
+    ///   growth within the nodes the root reaches
+    #[spec(
+        captures: [old = self.seen.get(&self.read_as(node)).copied(), count = self.seen.len(), queued = self.queue.len()],
+        ensures: |ret| self.seen.get(&self.read_as(node)) == Some(&ret) && match old {
+            Some(index) => ret == index && self.seen.len() == count && self.queue.len() == queued,
+            None => usize::from(ret) == count && self.seen.len() == count.saturating_add(1)
+                && self.queue.len() == queued.saturating_add(1) && self.queue.back() == Some(&self.read_as(node)),
+        },
+    )]
+    #[inline]
+    pub fn discover(
+        &mut self,
+        node: ArenaNode,
+    ) -> NodeIndex
+    {
+        let node = self.read_as(node);
+        let next = NodeIndex::from(self.seen.len());
+        let index = *self.seen.entry(node).or_insert(next);
+        if index == next {
+            self.queue.push_back(node);
+        }
+        index
+    }
+
+    /// Discover a whole nominal signature in its canonical root order.
+    ///
+    /// # Specification
+    /// - requires: nothing; unresolved source nodes are admissible.
+    /// - ensures: every parameter, index, constructor field and stated index is
+    ///   discovered once by identity.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — shared fields and changed constructor signatures
+    ///   remain distinct.
+    /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    ///
+    /// # Cost
+    /// - allocation: the lists of roots of the signature, growth within the
+    ///   roots
+    #[spec(ensures: |ret| ret.parameters.len() == signature.parameters().len()
+        && ret.constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
+        && ret.iter().all(|root| usize::from(root) < self.seen.len()))]
+    #[inline]
+    pub fn data_roots(
+        &mut self,
+        signature: &gandr_core_term::DataSignature,
+    ) -> DataRoots
+    {
+        let parameters = signature
+            .parameters()
+            .iter()
+            .map(|&ty| self.discover(ArenaNode::ValueType(ty)))
+            .collect();
+        let indices = signature
+            .indices()
+            .iter()
+            .map(|&ty| self.discover(ArenaNode::ValueType(ty)))
+            .collect();
+        let constructors = signature
+            .constructors()
+            .iter()
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|&ty| self.discover(ArenaNode::ValueType(ty)))
+                    .collect()
+            })
+            .collect();
+        let results = signature
+            .results()
+            .iter()
+            .map(|stated| {
+                stated
+                    .iter()
+                    .map(|&value| self.discover(ArenaNode::Value(value)))
+                    .collect()
+            })
+            .collect();
+        let kind = self.discover(ArenaNode::ValueType(signature.kind()));
+        let presented = signature.presentation();
+        let cells = presented
+            .cells()
+            .map_or(Maybe::Absent(words::Absent::Unworded), |cells| {
+                Maybe::Present(CellsRoots {
+                    sort: self.layout.resolve(cells.sort()),
+                    reflexivities: cells.reflexivities(),
+                    cells: cells.cells().to_vec(),
+                })
+            });
+        DataRoots {
+            parameters,
+            indices,
+            constructors,
+            results,
+            kind,
+            presentation: PresentationRoots {
+                rules: presented.rules().to_vec(),
+                cells,
+            },
+        }
+    }
+
+    /// Write every queued node, discovering its children as it is written.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the queue is empty and the table holds one entry per number
+    ///   handed out, in number order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — shared and interleaved roots are exhausted into one
+    ///   discovery-numbered table.
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    /// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+    ///
+    /// # Cost
+    /// - allocation: the content node of each queued node and a queue entry for
+    ///   each new child, growth within the table
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: each encoder drains once, writing every node it discovered; the check reads each discovered number once"
+        )
+    )]
+    #[spec(ensures: self.queue.is_empty() && self.nodes.len() == self.seen.len()
+        && self.seen.values().all(|index| usize::from(*index) < self.nodes.len()))]
+    #[inline]
+    pub fn drain(&mut self)
+    {
+        while let Some(node) = self.queue.pop_front() {
+            let written = self.read(node);
+            self.nodes.push(written);
+        }
+    }
+
+    /// The content node of `node`, its children discovered left to right.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the former of `node` over its children's numbers, a constant
+    ///   resolved to its reference, or the unresolved node of its sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite corpus exercises four resolving node
+    ///   families; the foreign-id witness exercises the unresolved value
+    ///   branch.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::content::tests::an_unresolved_id_makes_the_item_opaque`
+    #[spec(ensures: |ret| ret.sort() == match node {
+        ArenaNode::Value(_) => Sort::Value,
+        ArenaNode::Computation(_) => Sort::Computation,
+        ArenaNode::ValueType(_) => Sort::ValueType,
+        ArenaNode::CompType(_) => Sort::CompType,
+    })]
+    fn read(
+        &mut self,
+        node: ArenaNode,
+    ) -> ContentNode
+    {
+        let arena = self.arena;
+        match node {
+            ArenaNode::Value(id) => arena
+                .value(id)
+                .map_or(ContentNode::Unresolved(Sort::Value), |value| {
+                    self.read_value(value)
+                }),
+            ArenaNode::Computation(id) => arena
+                .computation(id)
+                .map_or(ContentNode::Unresolved(Sort::Computation), |computation| {
+                    self.read_computation(computation)
+                }),
+            ArenaNode::ValueType(id) => arena
+                .value_type(id)
+                .map_or(ContentNode::Unresolved(Sort::ValueType), |value_type| {
+                    self.read_value_type(value_type)
+                }),
+            ArenaNode::CompType(id) => arena
+                .comp_type(id)
+                .map_or(ContentNode::Unresolved(Sort::CompType), |comp_type| {
+                    self.read_comp_type(comp_type)
+                }),
+        }
+    }
+
+    /// The former `translate` makes of the children `of` hands over, each
+    /// discovered as it comes, or the unresolved node of `sort` when a family
+    /// runs out before the former's last slot.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every child `of` hands to the walk is discovered, and its
+    ///   number joins its family's list in the order `of` hands it over; the
+    ///   node `translate` makes of the lists, or the unresolved node of `sort`
+    ///   when it fails. The lists return to the encoder, and the next read
+    ///   empties them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::discover`]; a shared child hands over one
+    ///   number each time the enumeration meets it.
+    /// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+    #[spec(
+        captures: [count = self.seen.len()],
+        ensures: |ret| self.seen.len() >= count
+            && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()),
+    )]
+    fn read_former<Of, Translate>(
+        &mut self,
+        sort: Sort,
+        of: Of,
+        translate: Translate,
+    ) -> ContentNode
+    where
+        Of: FnOnce(&mut Discovering<'_, 'arena, 'layout>),
+        Translate: FnOnce(&Discovered) -> Result<ContentNode, Short>,
+    {
+        let mut found = core::mem::replace(&mut self.found, Discovered::new());
+        found.clear();
+        let mut walk = Discovering {
+            encoder: self,
+            found,
+        };
+        of(&mut walk);
+        let found = walk.found;
+        let node = translate(&found).unwrap_or(ContentNode::Unresolved(sort));
+        self.found = found;
+        node
+    }
+
+    /// The content node of a value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the corresponding former over its children's discovery
+    ///   indices, the children discovered as [`gandr_core_term::children`]
+    ///   lists them; the predicate bounds the sort and child indices.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises selected
+    ///   formers and sharing. [`value_content`] checks every child's place.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(ensures: |ret| ret.sort() == Sort::Value
+        && !matches!(ret, ContentNode::Unresolved(_))
+        && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
+    fn read_value(
+        &mut self,
+        value: &Value,
+    ) -> ContentNode
+    {
+        let layout = self.layout;
+        self.read_former(
+            Sort::Value,
+            |walk| gandr_core_term::children::of_value(value, walk),
+            |found| value_content(layout, value, found),
+        )
+    }
+
+    /// The content node of a computation.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the corresponding former over its children's discovery
+    ///   indices, the children discovered as [`gandr_core_term::children`]
+    ///   lists them, a world form's world by its declaration's reference. The
+    ///   predicate bounds the sort and child indices.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises selected
+    ///   formers and sharing. [`computation_content`] checks every child's
+    ///   place.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(ensures: |ret| ret.sort() == Sort::Computation
+        && !matches!(ret, ContentNode::Unresolved(_))
+        && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
+    fn read_computation(
+        &mut self,
+        computation: &Computation,
+    ) -> ContentNode
+    {
+        let layout = self.layout;
+        self.read_former(
+            Sort::Computation,
+            |walk| gandr_core_term::children::of_computation(computation, walk),
+            |found| computation_content(layout, computation, found),
+        )
+    }
+
+    /// The content node of a value type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the corresponding former over its children's discovery
+    ///   indices, the children discovered as [`gandr_core_term::children`]
+    ///   lists them; the predicate bounds the sort and child indices. A staged
+    ///   type, the judgement's own, discovers no child and is the unresolved
+    ///   node.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises selected
+    ///   formers and sharing. [`value_type_content`] checks every child's
+    ///   place.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(ensures: |ret| ret.sort() == Sort::ValueType
+        && (!matches!(ret, ContentNode::Unresolved(_)) || matches!(*value_type, ValueType::Staged { .. }))
+        && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
+    fn read_value_type(
+        &mut self,
+        value_type: &ValueType,
+    ) -> ContentNode
+    {
+        let layout = self.layout;
+        self.read_former(
+            Sort::ValueType,
+            |walk| {
+                if !matches!(*value_type, ValueType::Staged { .. }) {
+                    gandr_core_term::children::of_value_type(value_type, walk);
+                }
+            },
+            |found| value_type_content(layout, value_type, found),
+        )
+    }
+
+    /// The content node of a computation type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the corresponding former over its children's discovery
+    ///   indices, the children discovered as [`gandr_core_term::children`]
+    ///   lists them; a codata application is its declaration's reference over
+    ///   its arguments. The predicate bounds the sort and child indices.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises selected
+    ///   formers and sharing. [`comp_type_content`] checks every child's place.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(ensures: |ret| ret.sort() == Sort::CompType
+        && !matches!(ret, ContentNode::Unresolved(_))
+        && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
+    fn read_comp_type(
+        &mut self,
+        comp_type: &CompType,
+    ) -> ContentNode
+    {
+        let layout = self.layout;
+        self.read_former(
+            Sort::CompType,
+            |walk| gandr_core_term::children::of_comp_type(comp_type, walk),
+            |found| comp_type_content(layout, comp_type, found),
+        )
+    }
+}
+
+/// The numbers of one node's children, apart by family, each family's in the
+/// order [`gandr_core_term::children`] lists it.
+#[derive(Debug)]
+struct Discovered
+{
+    /// The value children's numbers.
+    values: Vec<NodeIndex>,
+    /// The computation children's numbers.
+    computations: Vec<NodeIndex>,
+    /// The value-type children's numbers.
+    value_types: Vec<NodeIndex>,
+    /// The computation-type children's numbers.
+    comp_types: Vec<NodeIndex>,
+}
+
+/// A family's children ran out before the translation filled every slot of
+/// its former.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Short;
+
+impl Discovered
+{
+    /// No children, and no list allocated.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn new() -> Self
+    {
+        Self {
+            values: Vec::new(),
+            computations: Vec::new(),
+            value_types: Vec::new(),
+            comp_types: Vec::new(),
+        }
+    }
+
+    /// Empty every family's list, keeping what each has allocated.
+    ///
+    /// # Specification
+    /// trivial.
+    fn clear(&mut self)
+    {
+        self.values.clear();
+        self.computations.clear();
+        self.value_types.clear();
+        self.comp_types.clear();
+    }
+
+    /// Each family's children, to be read in turn from its first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn slots(&self) -> Slots<'_>
+    {
+        Slots {
+            values: self.values.iter(),
+            computations: self.computations.iter(),
+            value_types: self.value_types.iter(),
+            comp_types: self.comp_types.iter(),
+        }
+    }
+
+    /// Whether `node` places exactly these children: for each sort, the
+    /// children of that sort `node` lists, in its order, are that family's
+    /// numbers, in theirs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: placed exactly when every family's list equals the
+    ///   subsequence of `node`'s children of its sort.
+    /// - panics: none.
+    /// - executable: none — the clause is this predicate's body, which the
+    ///   translations state as their postcondition.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the enforcing lane states it after every translation,
+    ///   so a slot filled from another family or out of turn fails the encoding
+    ///   of any item holding that former.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    fn placed(
+        &self,
+        node: &ContentNode,
+    ) -> Placed
+    {
+        let children = node.children();
+        Placed(
+            [
+                (Sort::Value, &self.values),
+                (Sort::Computation, &self.computations),
+                (Sort::ValueType, &self.value_types),
+                (Sort::CompType, &self.comp_types),
+            ]
+            .into_iter()
+            .all(|(sort, family)| {
+                children
+                    .iter()
+                    .filter(|&(_, at)| at == sort)
+                    .map(|(child, _)| child)
+                    .eq(family.iter().copied())
+            }),
+        )
+    }
+}
+
+/// Whether a node places exactly the children a read discovered.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Placed(bool);
+
+/// The children a translation has yet to place, each family's from its next.
+struct Slots<'found>
+{
+    /// The value children left.
+    values: core::slice::Iter<'found, NodeIndex>,
+    /// The computation children left.
+    computations: core::slice::Iter<'found, NodeIndex>,
+    /// The value-type children left.
+    value_types: core::slice::Iter<'found, NodeIndex>,
+    /// The computation-type children left.
+    comp_types: core::slice::Iter<'found, NodeIndex>,
+}
+
+impl Slots<'_>
+{
+    /// The next value child's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first value child left, which is then placed.
+    /// - fails: [`Short`] when none is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when no value child is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a translation reads every value slot through it, and
+    ///   the enforcing lane checks each placed former; a reader that skipped a
+    ///   child or repeated one misplaces the next slot.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(
+        captures: [before = self.values.len()],
+        ensures: |ret| ret.is_ok() == (before > 0) && self.values.len() == before.saturating_sub(1),
+    )]
+    fn value(&mut self) -> Result<NodeIndex, Short>
+    {
+        self.values.next().copied().ok_or(Short)
+    }
+
+    /// The next computation child's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first computation child left, which is then placed.
+    /// - fails: [`Short`] when none is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when no computation child is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value`], over the computation slots.
+    /// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[spec(
+        captures: [before = self.computations.len()],
+        ensures: |ret| ret.is_ok() == (before > 0)
+            && self.computations.len() == before.saturating_sub(1),
+    )]
+    fn computation(&mut self) -> Result<NodeIndex, Short>
+    {
+        self.computations.next().copied().ok_or(Short)
+    }
+
+    /// The next value-type child's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first value-type child left, which is then placed.
+    /// - fails: [`Short`] when none is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when no value-type child is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value`], over the value-type slots; a
+    ///   signature's operation types are read through it in order.
+    /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    #[spec(
+        captures: [before = self.value_types.len()],
+        ensures: |ret| ret.is_ok() == (before > 0)
+            && self.value_types.len() == before.saturating_sub(1),
+    )]
+    fn value_type(&mut self) -> Result<NodeIndex, Short>
+    {
+        self.value_types.next().copied().ok_or(Short)
+    }
+
+    /// The next computation-type child's number.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first computation-type child left, which is then placed.
+    /// - fails: [`Short`] when none is left.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when no computation-type child is left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::value`], over the computation-type slots.
+    /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    #[spec(
+        captures: [before = self.comp_types.len()],
+        ensures: |ret| ret.is_ok() == (before > 0)
+            && self.comp_types.len() == before.saturating_sub(1),
+    )]
+    fn comp_type(&mut self) -> Result<NodeIndex, Short>
+    {
+        self.comp_types.next().copied().ok_or(Short)
+    }
+
+    /// The children of the family of `sort` for each of the former's `slots`,
+    /// in order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the first children left of the family, one per slot, which
+    ///   are then placed.
+    /// - fails: [`Short`] when the family holds fewer children than slots.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Short`] when the family runs out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tuple's components, a case's branches and a
+    ///   `with`'s components are read through it; a run one short or one long
+    ///   misplaces the slots after it, which the enforcing lane refuses.
+    /// - witness: `gandr-core-incremental::content::tests::control_graphs_preserve_scopes_and_signature_edges`
+    ///
+    /// # Cost
+    /// - allocation: the list of the children of the former's slots, growth
+    ///   within the former
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |taken| taken.len() == slots.len()))]
+    fn take<Slot>(
+        &mut self,
+        sort: Sort,
+        slots: &[Slot],
+    ) -> Result<Vec<NodeIndex>, Short>
+    {
+        let family = match sort {
+            Sort::Value => &mut self.values,
+            Sort::Computation => &mut self.computations,
+            Sort::ValueType => &mut self.value_types,
+            Sort::CompType => &mut self.comp_types,
+        };
+        let (taken, left) = family
+            .as_slice()
+            .split_at_checked(slots.len())
+            .ok_or(Short)?;
+        *family = left.iter();
+        Ok(taken.to_vec())
+    }
+}
+
+/// The encoder discovering each child the enumeration hands it, its number
+/// listed in its family.
+struct Discovering<'walk, 'arena, 'layout>
+{
+    /// The encoder whose numbering the children join.
+    encoder: &'walk mut Encoder<'arena, 'layout>,
+    /// The numbers discovered so far.
+    found: Discovered,
+}
+
+impl gandr_core_term::children::Visit for Discovering<'_, '_, '_>
+{
+    /// Discover a value child; its binders do not change its number.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a queue entry for a new child, growth within the queue
+    fn value(
+        &mut self,
+        child: ValueId,
+        _crossing: Crossing,
+    )
+    {
+        let number = self.encoder.discover(ArenaNode::Value(child));
+        self.found.values.push(number);
+    }
+
+    /// Discover a computation child; its binders do not change its number.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a queue entry for a new child, growth within the queue
+    fn computation(
+        &mut self,
+        child: ComputationId,
+        _crossing: Crossing,
+    )
+    {
+        let number = self.encoder.discover(ArenaNode::Computation(child));
+        self.found.computations.push(number);
+    }
+
+    /// Discover a value-type child; its binders do not change its number.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a queue entry for a new child, growth within the queue
+    fn value_type(
+        &mut self,
+        child: ValueTypeId,
+        _crossing: Crossing,
+    )
+    {
+        let number = self.encoder.discover(ArenaNode::ValueType(child));
+        self.found.value_types.push(number);
+    }
+
+    /// Discover a computation-type child; its binders do not change its
+    /// number.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a queue entry for a new child, growth within the queue
+    fn comp_type(
+        &mut self,
+        child: CompTypeId,
+        _crossing: Crossing,
+    )
+    {
+        let number = self.encoder.discover(ArenaNode::CompType(child));
+        self.found.comp_types.push(number);
+    }
+}
+
+/// The content former of `value` over the numbers `found` holds, each slot
+/// filled from its family's list in the enumeration's order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a value former whose children of each sort are exactly that
+///   family's numbers, in order; a constant is the reference `layout` resolves
+///   its position to.
+/// - fails: [`Short`] when a family runs out before the former's last slot.
+/// - panics: none.
+///
+/// # Errors
+/// [`Short`] when `found` holds fewer children than the former has slots.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the enforcing lane checks every encoded value against the
+///   enumeration; a slot filled from the wrong family or out of order fails the
+///   postcondition.
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the content former and its lists of children, growth within
+///   the table
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Value && found.placed(node).0),
+)]
+fn value_content(
+    layout: &Layout,
+    value: &Value,
+    found: &Discovered,
+) -> Result<ContentNode, Short>
+{
+    let found = &mut found.slots();
+    Ok(match *value {
+        Value::Constructor {
+            family,
+            tag,
+            ref fields,
+            ..
+        } => ContentNode::Constructor {
+            family: layout.resolve(family),
+            datatype: found.value_type()?,
+            tag,
+            fields: found.take(Sort::Value, fields)?,
+        },
+        Value::Record(ref fields) => ContentNode::Record(
+            fields
+                .keys()
+                .map(|label| found.value().map(|field| (label.clone(), field)))
+                .collect::<Result<_, Short>>()?,
+        ),
+        Value::Reify(ref frames) => ContentNode::Reify(
+            frames
+                .iter()
+                .map(|frame| match *frame {
+                    gandr_core_term::control::StackFrame::Apply(_) => found
+                        .value()
+                        .map(gandr_core_term::control::StackFrame::Apply),
+                    gandr_core_term::control::StackFrame::Bind(_) => found
+                        .computation()
+                        .map(gandr_core_term::control::StackFrame::Bind),
+                    gandr_core_term::control::StackFrame::Project(side) => {
+                        Ok(gandr_core_term::control::StackFrame::Project(side))
+                    },
+                })
+                .collect::<Result<_, Short>>()?,
+        ),
+        Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
+        Value::PathRefl(_) => ContentNode::PathRefl(found.value()?),
+        Value::Here(_) => ContentNode::Here(found.value()?),
+        Value::SessionRelated { relation, .. } => ContentNode::SessionRelated {
+            relation,
+            source: found.value()?,
+            target: found.value()?,
+            payloads: found.value()?,
+        },
+        Value::Stay(_) => ContentNode::Stay(found.value()?),
+        Value::Then(..) => ContentNode::Then(found.value()?, found.value()?),
+        Value::FlowProduct(..) => ContentNode::FlowProduct(found.value()?, found.value()?),
+        Value::Forward(_) => ContentNode::Forward(found.value()?),
+        Value::FunctionFlow(..) => ContentNode::FunctionFlow(found.value()?, found.value()?),
+        Value::Row(ref row) => ContentNode::RowValue(row.try_relocate(|_| found.value_type())?),
+        Value::Recorded(ref moves) => ContentNode::Recorded(
+            moves
+                .iter()
+                .map(|step| step.try_map(|_| found.value()))
+                .collect::<Result<_, Short>>()?,
+        ),
+        Value::Dialogue(ref turns) => ContentNode::Dialogue(
+            turns
+                .iter()
+                .map(|turn| {
+                    turn.movement.try_map(|_| found.value()).map(|movement| {
+                        gandr_core_term::session::DialogueMove {
+                            endpoint: turn.endpoint,
+                            movement,
+                        }
+                    })
+                })
+                .collect::<Result<_, Short>>()?,
+        ),
+        Value::Web(ref pieces) => ContentNode::Web(alloc::sync::Arc::clone(pieces)),
+        Value::Returned(_) => ContentNode::Returned(found.computation()?),
+        Value::Nested(_) => ContentNode::Nested(found.computation()?),
+        Value::Run(_) => ContentNode::Run(found.computation()?),
+        Value::RecordUpdate { .. } => ContentNode::RecordUpdate(found.value()?, found.value()?),
+        Value::PathProduct(..) => ContentNode::PathProduct(found.value()?, found.value()?),
+        Value::Funext(..) => ContentNode::Funext(found.value()?, found.value()?),
+        Value::Equiv(..) => ContentNode::Equiv(found.value()?, found.value()?),
+        Value::Univalence(..) => ContentNode::Univalence(found.value()?, found.value()?),
+        Value::Ua {
+            stratum, ref sides, ..
+        } => ContentNode::Ua {
+            stratum,
+            sides: alloc::sync::Arc::clone(sides),
+            forward: found.value()?,
+            backward: found.value()?,
+        },
+        Value::PathEquiv { ref evidence, .. } => ContentNode::PathEquiv {
+            path_type: found.value_type()?,
+            forward: found.value()?,
+            backward: found.value()?,
+            evidence: alloc::sync::Arc::clone(evidence),
+        },
+        Value::Variable { zone, index } => ContentNode::Variable { zone, index },
+        Value::Constant(position) => ContentNode::Constant(layout.resolve(position)),
+        Value::ListNil => ContentNode::ListNil,
+        Value::ListCons(..) => ContentNode::ListCons(found.value()?, found.value()?),
+        Value::Literal(ref literal) => ContentNode::Literal(literal.clone()),
+        Value::Tuple(ref components) => ContentNode::Tuple(found.take(Sort::Value, components)?),
+        Value::Compose {
+            composite,
+            ref cells,
+            ..
+        } => ContentNode::Compose {
+            composite,
+            cells: found.take(Sort::Value, cells)?,
+            realised: found.computation()?,
+        },
+        Value::Fill {
+            composite,
+            ref cells,
+            ..
+        } => ContentNode::Fill {
+            composite,
+            generator: found.computation()?,
+            cells: found.take(Sort::Value, cells)?,
+        },
+        Value::Injection(summand, _) => ContentNode::Injection(summand, found.value()?),
+        Value::Ascribe { .. } => ContentNode::ValueAscribe {
+            value: found.value()?,
+            ty: found.value_type()?,
+        },
+        Value::Thunk(_) => ContentNode::Thunk(found.computation()?),
+        Value::Lift { ref target, .. } => ContentNode::ValueLift {
+            target: target.clone(),
+            body: found.value()?,
+        },
+        Value::Quote(_) => ContentNode::Quote(found.value_type()?),
+        Value::QuoteComputation(_) => ContentNode::QuoteComputation(found.comp_type()?),
+        Value::StaticLambda(_) => ContentNode::StaticLambda(found.value()?),
+        Value::StaticApplication(..) => {
+            ContentNode::StaticApplication(found.value()?, found.value()?)
+        },
+        Value::Hole(hole) => ContentNode::Hole(hole),
+        Value::Mark { mark, .. } => ContentNode::ValueMark {
+            mark,
+            body: found.value()?,
+        },
+    })
+}
+
+/// The content former of `computation` over the numbers `found` holds, each
+/// slot filled from its family's list in the enumeration's order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a computation former whose children of each sort are exactly that
+///   family's numbers, in order; a world form names the reference of its
+///   world's declaration.
+/// - fails: [`Short`] when a family runs out before the former's last slot.
+/// - panics: none.
+///
+/// # Errors
+/// [`Short`] when `found` holds fewer children than the former has slots.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the enforcing lane checks every encoded computation
+///   against the enumeration; a slot filled from the wrong family or out of
+///   order fails the postcondition.
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the content former and its lists of children, growth within
+///   the table
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::Computation && found.placed(node).0),
+)]
+fn computation_content(
+    layout: &Layout,
+    computation: &Computation,
+    found: &Discovered,
+) -> Result<ContentNode, Short>
+{
+    let found = &mut found.slots();
+    Ok(match *computation {
+        Computation::DataCase {
+            ref branches,
+            ref arities,
+            equations,
+            ..
+        } => ContentNode::DataCase {
+            scrutinee: found.value()?,
+            motive: found.comp_type()?,
+            branches: found.take(Sort::Computation, branches)?,
+            arities: arities.clone(),
+            equations,
+        },
+        Computation::RecordProjection(_, ref label) => {
+            ContentNode::RecordProjection(found.value()?, label.clone())
+        },
+        Computation::TupleProjection(_, component) => {
+            ContentNode::TupleProjection(found.value()?, component)
+        },
+        Computation::Ride { .. } => ContentNode::Ride {
+            motive: found.value_type()?,
+            flow: found.value()?,
+            value: found.value()?,
+        },
+        Computation::Session(ref action) => ContentNode::Session(action.try_map(
+            gandr_core_term::session::ChildOrder::Forward,
+            found,
+            |found, _| found.value(),
+            |found, _| found.computation(),
+            |found, _| found.value_type(),
+        )?),
+        Computation::World(gandr_core_term::world::WorldForm::Hold { .. }) => {
+            ContentNode::Hold(found.value()?)
+        },
+        Computation::World(gandr_core_term::world::WorldForm::Leta { world, .. }) => {
+            ContentNode::Leta {
+                world: WorldContent::of(layout, world),
+                value: found.value()?,
+                body: found.computation()?,
+            }
+        },
+        Computation::World(gandr_core_term::world::WorldForm::Migrate { world, .. }) => {
+            ContentNode::Migrate {
+                world: WorldContent::of(layout, world),
+                body: found.computation()?,
+            }
+        },
+        Computation::Memory(ref form) => ContentNode::Memory(form.try_map(
+            gandr_core_term::session::ChildOrder::Forward,
+            found,
+            |found, _| found.value(),
+            |found, _| found.computation(),
+        )?),
+        Computation::Perform {
+            ref signature,
+            ref operation,
+            ..
+        } => ContentNode::Perform {
+            signature: signature.try_relocate(|_| found.value_type())?,
+            operation: operation.clone(),
+            payload: found.value()?,
+        },
+        Computation::Handle {
+            ref signature,
+            ref clauses,
+            ..
+        }
+        | Computation::Scope {
+            ref signature,
+            ref clauses,
+            ..
+        } => {
+            let signature = signature.try_relocate(|_| found.value_type())?;
+            let subject = found.computation()?;
+            let on_return = found.computation()?;
+            let clauses = clauses
+                .iter()
+                .map(|clause| {
+                    found
+                        .computation()
+                        .map(|body| gandr_core_term::control::EffectClause {
+                            operation: clause.operation.clone(),
+                            body,
+                        })
+                })
+                .collect::<Result<_, Short>>()?;
+            if matches!(*computation, Computation::Scope { .. }) {
+                ContentNode::Scope {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            }
+            else {
+                ContentNode::Handle {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            }
+        },
+        Computation::Exercise {
+            ref signature,
+            ref operation,
+            ..
+        } => ContentNode::Exercise {
+            signature: signature.try_relocate(|_| found.value_type())?,
+            capability: found.value()?,
+            operation: operation.clone(),
+            payload: found.value()?,
+        },
+        Computation::Resume(..) => ContentNode::Resume(found.value()?, found.computation()?),
+        Computation::Abandon(_) => ContentNode::Abandon(found.value()?),
+        Computation::Split {
+            arity,
+            motive: gandr_core_term::SplitMotive::Ambient,
+            ..
+        } => ContentNode::Split(found.value()?, arity, found.computation()?),
+        Computation::Split {
+            arity,
+            motive: gandr_core_term::SplitMotive::Scrutinee(_),
+            ..
+        } => ContentNode::DependentSplit {
+            scrutinee: found.value()?,
+            arity,
+            motive: found.comp_type()?,
+            body: found.computation()?,
+        },
+        Computation::Reset(_) => ContentNode::Reset(found.computation()?),
+        Computation::Shift(_) => ContentNode::Shift(found.computation()?),
+        Computation::With(ref components) => {
+            ContentNode::With(found.take(Sort::Computation, components)?)
+        },
+        Computation::Ascribe { .. } => ContentNode::Ascribe {
+            body: found.computation()?,
+            ty: found.comp_type()?,
+        },
+        Computation::Project(component, _) => ContentNode::Project(component, found.computation()?),
+        Computation::ListFold { .. } => ContentNode::ListFold {
+            element: found.value_type()?,
+            result: found.value_type()?,
+            list: found.value()?,
+            on_nil: found.computation()?,
+            on_cons: found.computation()?,
+        },
+        Computation::ListCase { .. } => ContentNode::ListCase {
+            list: found.value()?,
+            on_nil: found.computation()?,
+            on_cons: found.computation()?,
+        },
+        Computation::Primitive {
+            primitive,
+            arguments,
+        } => {
+            use gandr_core_term::primitive::Arguments;
+            let arguments = match arguments {
+                Arguments::Unary(_) => Arguments::Unary(found.value()?),
+                Arguments::Binary(_) => Arguments::Binary([found.value()?, found.value()?]),
+            };
+            ContentNode::Primitive(primitive, arguments)
+        },
+        Computation::Transport(..) => ContentNode::Transport(found.value()?, found.value()?),
+        Computation::PathTransport { .. } => ContentNode::ElementTransport {
+            motive: found.value_type()?,
+            path: found.value()?,
+            value: found.value()?,
+        },
+        Computation::TelescopeTransport { .. } => ContentNode::TelescopeTransport {
+            motive: found.comp_type()?,
+            path: found.value()?,
+            start: found.value()?,
+            over: found.value()?,
+            value: found.value()?,
+        },
+        Computation::ReturnAll(ref values) => {
+            ContentNode::ReturnAll(found.take(Sort::Value, values)?)
+        },
+        Computation::BindAll { arity, .. } => {
+            ContentNode::BindAll(found.computation()?, arity, found.computation()?)
+        },
+        Computation::Lambda(_) => ContentNode::Lambda(found.computation()?),
+        Computation::LinearLambda(_) => ContentNode::LinearLambda(found.computation()?),
+        Computation::Application(..) => {
+            ContentNode::Application(found.computation()?, found.value()?)
+        },
+        Computation::Return(_) => ContentNode::Return(found.value()?),
+        Computation::Bind(..) => ContentNode::Bind(found.computation()?, found.computation()?),
+        Computation::Force(_) => ContentNode::Force(found.value()?),
+        Computation::Decompose(_) => ContentNode::Decompose(found.value()?),
+        Computation::Case { ref branches, .. } => ContentNode::Case {
+            scrutinee: found.value()?,
+            branches: found.take(Sort::Computation, branches)?,
+        },
+        Computation::Hole(hole) => ContentNode::ComputationHole(hole),
+        Computation::Mark { mark, .. } => ContentNode::ComputationMark {
+            mark,
+            body: found.computation()?,
+        },
+        Computation::Fixpoint { evidence, .. } => ContentNode::Fixpoint {
+            body: found.computation()?,
+            evidence,
+        },
+    })
+}
+
+/// The content former of `value_type` over the numbers `found` holds, each
+/// slot filled from its family's list in the enumeration's order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a value-type former whose children of each sort are exactly that
+///   family's numbers, in order; a data type and an abstract type name the
+///   reference `layout` resolves their position to; a patched type holds its
+///   base, then its fixed values in label order; a world type names the
+///   reference of its world's declaration; a staged type is the unresolved
+///   node.
+/// - fails: [`Short`] when a family runs out before the former's last slot.
+/// - panics: none.
+///
+/// # Errors
+/// [`Short`] when `found` holds fewer children than the former has slots.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the enforcing lane checks every encoded value type
+///   against the enumeration; a slot filled from the wrong family or out of
+///   order fails the postcondition.
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the content former and its lists of children, growth within
+///   the table
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::ValueType && found.placed(node).0),
+)]
+fn value_type_content(
+    layout: &Layout,
+    value_type: &ValueType,
+    found: &Discovered,
+) -> Result<ContentNode, Short>
+{
+    let found = &mut found.slots();
+    Ok(match *value_type {
+        ValueType::Session(ref session) => {
+            ContentNode::SessionType(session.try_relocate(|_| found.value_type())?)
+        },
+        ValueType::Data {
+            declaration,
+            ref arguments,
+        } => ContentNode::Data {
+            declaration: layout.resolve(declaration),
+            arguments: found.take(Sort::Value, arguments)?,
+        },
+        ValueType::Record(ref fields) => ContentNode::RecordType(
+            fields
+                .keys()
+                .map(|label| found.value_type().map(|field| (label.clone(), field)))
+                .collect::<Result<_, Short>>()?,
+        ),
+        ValueType::Patched {
+            ref fixed,
+            ref meets,
+            ..
+        } => ContentNode::Patched {
+            base: found.value_type()?,
+            fixed: fixed
+                .keys()
+                .map(|label| found.value().map(|value| (label.clone(), value)))
+                .collect::<Result<_, Short>>()?,
+            meets: meets
+                .iter()
+                .map(|met| found.value().map(|value| (met.0.clone(), value)))
+                .collect::<Result<_, Short>>()?,
+        },
+        ValueType::Stack { .. } => ContentNode::Stack {
+            input: found.comp_type()?,
+            output: found.comp_type()?,
+        },
+        ValueType::Capability {
+            ref authority,
+            grade,
+            region,
+        } => ContentNode::Capability {
+            authority: authority.try_relocate(|_| found.value_type())?,
+            grade,
+            region,
+        },
+        ValueType::PathUniverse(..) => ContentNode::PathUniverse(found.value()?, found.value()?),
+        ValueType::Path { .. } => ContentNode::PathType {
+            carrier: found.value_type()?,
+            left: found.value()?,
+            right: found.value()?,
+        },
+        ValueType::Bridge { .. } => ContentNode::BridgeType {
+            carrier: found.value_type()?,
+            left: found.value()?,
+            right: found.value()?,
+        },
+        ValueType::Flow { .. } => ContentNode::FlowType {
+            carrier: found.value_type()?,
+            source: found.value()?,
+            target: found.value()?,
+        },
+        ValueType::Run(_) => ContentNode::RunType(found.value()?),
+        ValueType::Prefix(_) => ContentNode::PrefixType(found.value()?),
+        ValueType::Dialogue(_) => ContentNode::DialogueType(found.value()?),
+        ValueType::Web => ContentNode::WebType,
+        ValueType::Base(base) => ContentNode::Base(base),
+        ValueType::Kept { region, .. } => ContentNode::KeptType {
+            value: found.value_type()?,
+            region,
+        },
+        ValueType::List(_) => ContentNode::List(found.value_type()?),
+        ValueType::Product(ref parts) => ContentNode::Product(found.take(Sort::ValueType, parts)?),
+        ValueType::Sum(ref parts) => ContentNode::Sum(found.take(Sort::ValueType, parts)?),
+        ValueType::Thunk(_) => ContentNode::ThunkType(found.comp_type()?),
+        ValueType::Universe { sort, ref level } => ContentNode::Universe {
+            sort,
+            level: level.clone(),
+        },
+        ValueType::Lift { ref target, .. } => ContentNode::TypeLift {
+            inner: found.value_type()?,
+            target: target.clone(),
+        },
+        ValueType::Element { ref target, .. } => ContentNode::Element {
+            code: found.value()?,
+            target: target.clone(),
+        },
+        ValueType::Abstract(position) => ContentNode::Abstract(layout.resolve(position)),
+        ValueType::StaticPi { .. } => ContentNode::StaticPi {
+            domain: found.value_type()?,
+            codomain: found.value_type()?,
+        },
+        ValueType::Sigma { .. } => ContentNode::Sigma {
+            first: found.value_type()?,
+            second: found.value_type()?,
+        },
+        ValueType::Unknown => ContentNode::UnknownType,
+        ValueType::Buffer => ContentNode::BufferType,
+        ValueType::Qubit => ContentNode::QubitType,
+        ValueType::Row => ContentNode::RowKind,
+        ValueType::RowTail(_) => ContentNode::RowTail(found.value()?),
+        ValueType::World(gandr_core_term::world::WorldType::At { world, .. }) => {
+            ContentNode::HeldType {
+                inner: found.value_type()?,
+                world: WorldContent::of(layout, world),
+            }
+        },
+        ValueType::World(gandr_core_term::world::WorldType::Capability(world)) => {
+            ContentNode::CapabilityType(WorldContent::of(layout, world))
+        },
+        // A stage is minted by one judgement and names nothing past it:
+        // content naming one has no identity to key on, and stays opaque.
+        ValueType::Staged { .. } => ContentNode::Unresolved(Sort::ValueType),
+    })
+}
+
+/// The content former of `comp_type` over the numbers `found` holds, each
+/// slot filled from its family's list in the enumeration's order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a computation-type former whose children of each sort are exactly
+///   that family's numbers, in order; a codata application is its declaration's
+///   reference over its arguments.
+/// - fails: [`Short`] when a family runs out before the former's last slot.
+/// - panics: none.
+///
+/// # Errors
+/// [`Short`] when `found` holds fewer children than the former has slots.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the enforcing lane checks every encoded computation type
+///   against the enumeration; a slot filled from the wrong family or out of
+///   order fails the postcondition.
+/// - witness: `gandr-core-incremental::persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+///
+/// # Cost
+/// - allocation: the former's lists of children, growth within the children
+///   `found` holds
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |node| node.sort() == Sort::CompType && found.placed(node).0),
+)]
+fn comp_type_content(
+    layout: &Layout,
+    comp_type: &CompType,
+    found: &Discovered,
+) -> Result<ContentNode, Short>
+{
+    let found = &mut found.slots();
+    Ok(match *comp_type {
+        CompType::With(ref components) => {
+            ContentNode::WithType(found.take(Sort::CompType, components)?)
+        },
+        CompType::Returner { ref effects, .. } => ContentNode::Returner {
+            result: found.value_type()?,
+            effects: effects.try_relocate(|_| found.value_type())?,
+        },
+        CompType::Returns {
+            ref results,
+            ref effects,
+        } => ContentNode::Returns {
+            results: found.take(Sort::ValueType, results)?,
+            effects: effects.try_relocate(|_| found.value_type())?,
+        },
+        CompType::Arrow { .. } => ContentNode::Arrow {
+            domain: found.value_type()?,
+            codomain: found.comp_type()?,
+        },
+        CompType::Pi { .. } => ContentNode::Pi {
+            domain: found.value_type()?,
+            codomain: found.comp_type()?,
+        },
+        CompType::LinearArrow { .. } => ContentNode::LinearArrow {
+            domain: found.value_type()?,
+            multiplicity: found.value()?,
+            codomain: found.comp_type()?,
+        },
+        CompType::Element { ref target, .. } => ContentNode::ComputationElement {
+            code: found.value()?,
+            target: target.clone(),
+        },
+        CompType::Unknown => ContentNode::UnknownComputationType,
+        CompType::Codata {
+            declaration,
+            ref arguments,
+        } => ContentNode::Codata {
+            declaration: layout.resolve(declaration),
+            arguments: found.take(Sort::Value, arguments)?,
+        },
+    })
+}
+
+/// `node` with every child index replaced by its image under `image`, applied
+/// left to right.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the former and non-child payloads are retained; each child is
+///   replaced by one call to `image`, in left-to-right order. The predicate
+///   checks the former, sort and child-slot sorts without recalling `image`.
+/// - panics: propagates a panic from `image`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — an interleaved signature is renumbered independently. The
+///   malformed-table witness checks cycles, dangling children and root
+///   selection.
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::factoring_closes_dangling_and_cyclic_tables`
+/// - witness: `gandr-core-incremental::content::tests::renumbering_carries_every_frame_and_clause_body_to_its_image`
+///
+/// # Cost
+/// - allocation: the image's lists of children, growth within the children of
+///   `node`
+#[spec(ensures: |ret| {
+        core::mem::discriminant(&ret) == core::mem::discriminant(node)
+            && ret.sort() == node.sort()
+            && ret
+                .children()
+                .iter()
+                .map(|(_, sort)| sort)
+                .eq(node.children().iter().map(|(_, sort)| sort))
+    })]
+#[inline]
+pub fn map_children<Image>(
+    node: &ContentNode,
+    image: &mut Image,
+) -> ContentNode
+where
+    Image: FnMut(NodeIndex) -> NodeIndex,
+{
+    match *node {
+        ContentNode::Data {
+            ref declaration,
+            ref arguments,
+        } => ContentNode::Data {
+            declaration: declaration.clone(),
+            arguments: arguments.iter().map(|&argument| image(argument)).collect(),
+        },
+        ContentNode::Codata {
+            ref declaration,
+            ref arguments,
+        } => ContentNode::Codata {
+            declaration: declaration.clone(),
+            arguments: arguments.iter().map(|&argument| image(argument)).collect(),
+        },
+        ContentNode::Hold(value) => ContentNode::Hold(image(value)),
+        ContentNode::Leta {
+            ref world,
+            value,
+            body,
+        } => {
+            let value = image(value);
+            ContentNode::Leta {
+                world: world.clone(),
+                value,
+                body: image(body),
+            }
+        },
+        ContentNode::Migrate { ref world, body } => ContentNode::Migrate {
+            world: world.clone(),
+            body: image(body),
+        },
+        ContentNode::HeldType { inner, ref world } => ContentNode::HeldType {
+            inner: image(inner),
+            world: world.clone(),
+        },
+        ContentNode::CapabilityType(ref world) => ContentNode::CapabilityType(world.clone()),
+        ContentNode::RecordType(ref fields) => ContentNode::RecordType(
+            fields
+                .iter()
+                .map(|(label, &field)| (label.clone(), image(field)))
+                .collect(),
+        ),
+        ContentNode::Patched {
+            base,
+            ref fixed,
+            ref meets,
+        } => {
+            let base = image(base);
+            ContentNode::Patched {
+                base,
+                fixed: fixed
+                    .iter()
+                    .map(|(label, &value)| (label.clone(), image(value)))
+                    .collect(),
+                meets: meets
+                    .iter()
+                    .map(|met| (met.0.clone(), image(met.1)))
+                    .collect(),
+            }
+        },
+        ContentNode::Constructor {
+            ref family,
+            datatype,
+            tag,
+            ref fields,
+        } => ContentNode::Constructor {
+            family: family.clone(),
+            datatype: image(datatype),
+            tag,
+            fields: fields.iter().map(|&field| image(field)).collect(),
+        },
+        ContentNode::Record(ref fields) => ContentNode::Record(
+            fields
+                .iter()
+                .map(|(label, &field)| (label.clone(), image(field)))
+                .collect(),
+        ),
+        ContentNode::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+            ref arities,
+            equations,
+        } => ContentNode::DataCase {
+            scrutinee: image(scrutinee),
+            motive: image(motive),
+            branches: branches.iter().map(|&branch| image(branch)).collect(),
+            arities: arities.clone(),
+            equations,
+        },
+        ContentNode::RecordProjection(record, ref label) => {
+            ContentNode::RecordProjection(image(record), label.clone())
+        },
+        ContentNode::TupleProjection(tuple, component) => {
+            ContentNode::TupleProjection(image(tuple), component)
+        },
+        ContentNode::Reify(ref frames) => {
+            let mut mapped = alloc::sync::Arc::clone(frames);
+            for (index, frame) in frames.iter().enumerate() {
+                let new = match *frame {
+                    gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(image(value))
+                    },
+                    gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(image(body))
+                    },
+                    gandr_core_term::control::StackFrame::Project(side) => {
+                        gandr_core_term::control::StackFrame::Project(side)
+                    },
+                };
+                if new != *frame
+                    && let Some(slot) = alloc::sync::Arc::make_mut(&mut mapped).get_mut(index)
+                {
+                    *slot = new;
+                }
+            }
+            ContentNode::Reify(mapped)
+        },
+        ContentNode::Stack { input, output } => ContentNode::Stack {
+            input: image(input),
+            output: image(output),
+        },
+        ContentNode::WithType(ref components) => ContentNode::WithType(
+            components
+                .iter()
+                .map(|&component| image(component))
+                .collect(),
+        ),
+        ContentNode::Session(ref action) => ContentNode::Session(
+            action
+                .try_map(
+                    gandr_core_term::session::ChildOrder::Forward,
+                    image,
+                    |image, value| Ok::<_, core::convert::Infallible>(image(value)),
+                    |image, body| Ok(image(body)),
+                    |image, ty| Ok(image(ty)),
+                )
+                .unwrap_or_else(|never| match never {}),
+        ),
+        ContentNode::Memory(ref form) => ContentNode::Memory(
+            form.try_map(
+                gandr_core_term::session::ChildOrder::Forward,
+                image,
+                |image, value| Ok::<_, core::convert::Infallible>(image(value)),
+                |image, body| Ok(image(body)),
+            )
+            .unwrap_or_else(|never| match never {}),
+        ),
+        ContentNode::SessionType(ref session) => ContentNode::SessionType(
+            session
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(image(ty)))
+                .unwrap_or_else(|never| match never {}),
+        ),
+        ContentNode::Perform {
+            ref signature,
+            ref operation,
+            payload,
+        } => {
+            let payload = image(payload);
+            let signature = signature
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Perform {
+                signature,
+                operation: operation.clone(),
+                payload,
+            }
+        },
+        ContentNode::Handle {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        }
+        | ContentNode::Scope {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        } => {
+            let subject = image(subject);
+            let on_return = image(on_return);
+            let signature = signature
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            let mut mapped = alloc::sync::Arc::clone(clauses);
+            for (index, clause) in clauses.iter().enumerate() {
+                let body = image(clause.body);
+                if body != clause.body
+                    && let Some(slot) = alloc::sync::Arc::make_mut(&mut mapped).get_mut(index)
+                {
+                    slot.body = body;
+                }
+            }
+            if matches!(*node, ContentNode::Scope { .. }) {
+                ContentNode::Scope {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses: mapped,
+                }
+            }
+            else {
+                ContentNode::Handle {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses: mapped,
+                }
+            }
+        },
+        ContentNode::Exercise {
+            capability,
+            ref signature,
+            ref operation,
+            payload,
+        } => {
+            let capability = image(capability);
+            let payload = image(payload);
+            let signature = signature
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Exercise {
+                capability,
+                signature,
+                operation: operation.clone(),
+                payload,
+            }
+        },
+        ContentNode::Resume(stack, body) => ContentNode::Resume(image(stack), image(body)),
+        ContentNode::Abandon(stack) => ContentNode::Abandon(image(stack)),
+        ContentNode::Split(scrutinee, arity, body) => {
+            ContentNode::Split(image(scrutinee), arity, image(body))
+        },
+        ContentNode::DependentSplit {
+            scrutinee,
+            arity,
+            motive,
+            body,
+        } => ContentNode::DependentSplit {
+            scrutinee: image(scrutinee),
+            arity,
+            motive: image(motive),
+            body: image(body),
+        },
+        ContentNode::Reset(body) => ContentNode::Reset(image(body)),
+        ContentNode::Shift(body) => ContentNode::Shift(image(body)),
+        ContentNode::With(ref components) => ContentNode::With(
+            components
+                .iter()
+                .map(|&component| image(component))
+                .collect(),
+        ),
+        ContentNode::Ascribe { body, ty } => ContentNode::Ascribe {
+            body: image(body),
+            ty: image(ty),
+        },
+        ContentNode::ValueAscribe { value, ty } => ContentNode::ValueAscribe {
+            value: image(value),
+            ty: image(ty),
+        },
+        ContentNode::Project(component, body) => ContentNode::Project(component, image(body)),
+        ContentNode::PrimitiveValue(primitive) => ContentNode::PrimitiveValue(primitive),
+        ContentNode::Primitive(primitive, mut arguments) => {
+            for argument in arguments.iter_mut() {
+                *argument = image(*argument);
+            }
+            ContentNode::Primitive(primitive, arguments)
+        },
+        ContentNode::PathUniverse(source, target) => {
+            let source = image(source);
+            ContentNode::PathUniverse(source, image(target))
+        },
+        ContentNode::PathRefl(code) => ContentNode::PathRefl(image(code)),
+        ContentNode::Here(point) => ContentNode::Here(image(point)),
+        ContentNode::Returned(computation) => ContentNode::Returned(image(computation)),
+        ContentNode::Nested(computation) => ContentNode::Nested(image(computation)),
+        ContentNode::Run(computation) => ContentNode::Run(image(computation)),
+        ContentNode::RecordUpdate(base, overlay) => {
+            let base = image(base);
+            ContentNode::RecordUpdate(base, image(overlay))
+        },
+        ContentNode::PathType {
+            carrier,
+            left,
+            right,
+        } => ContentNode::PathType {
+            carrier: image(carrier),
+            left: image(left),
+            right: image(right),
+        },
+        ContentNode::BridgeType {
+            carrier,
+            left,
+            right,
+        } => ContentNode::BridgeType {
+            carrier: image(carrier),
+            left: image(left),
+            right: image(right),
+        },
+        ContentNode::FlowType {
+            carrier,
+            source,
+            target,
+        } => ContentNode::FlowType {
+            carrier: image(carrier),
+            source: image(source),
+            target: image(target),
+        },
+        ContentNode::RunType(code) => ContentNode::RunType(image(code)),
+        ContentNode::PrefixType(code) => ContentNode::PrefixType(image(code)),
+        ContentNode::DialogueType(code) => ContentNode::DialogueType(image(code)),
+        ContentNode::WebType => ContentNode::WebType,
+        ContentNode::SessionRelated {
+            relation,
+            source,
+            target,
+            payloads,
+        } => ContentNode::SessionRelated {
+            relation,
+            source: image(source),
+            target: image(target),
+            payloads: image(payloads),
+        },
+        ContentNode::Stay(point) => ContentNode::Stay(image(point)),
+        ContentNode::Then(first, second) => {
+            let first = image(first);
+            ContentNode::Then(first, image(second))
+        },
+        ContentNode::FlowProduct(first, second) => {
+            let first = image(first);
+            ContentNode::FlowProduct(first, image(second))
+        },
+        ContentNode::Forward(translator) => ContentNode::Forward(image(translator)),
+        ContentNode::FunctionFlow(domain, codomain) => {
+            let domain = image(domain);
+            ContentNode::FunctionFlow(domain, image(codomain))
+        },
+        ContentNode::Recorded(ref moves) => ContentNode::Recorded(
+            moves
+                .iter()
+                .map(|step| {
+                    step.try_map(|payload| Ok::<_, core::convert::Infallible>(image(payload)))
+                        .unwrap_or_else(|never| match never {})
+                })
+                .collect(),
+        ),
+        ContentNode::Dialogue(ref turns) => ContentNode::Dialogue(
+            turns
+                .iter()
+                .map(|turn| gandr_core_term::session::DialogueMove {
+                    endpoint: turn.endpoint,
+                    movement: turn
+                        .movement
+                        .try_map(|payload| Ok::<_, core::convert::Infallible>(image(payload)))
+                        .unwrap_or_else(|never| match never {}),
+                })
+                .collect(),
+        ),
+        ContentNode::Web(ref pieces) => ContentNode::Web(alloc::sync::Arc::clone(pieces)),
+        ContentNode::Decompose(dialogue) => ContentNode::Decompose(image(dialogue)),
+        ContentNode::Ride {
+            motive,
+            flow,
+            value,
+        } => ContentNode::Ride {
+            motive: image(motive),
+            flow: image(flow),
+            value: image(value),
+        },
+        ContentNode::ElementTransport {
+            motive,
+            path,
+            value,
+        } => ContentNode::ElementTransport {
+            motive: image(motive),
+            path: image(path),
+            value: image(value),
+        },
+        ContentNode::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        } => ContentNode::TelescopeTransport {
+            motive: image(motive),
+            path: image(path),
+            start: image(start),
+            over: image(over),
+            value: image(value),
+        },
+        ContentNode::PathProduct(first, second) => {
+            let first = image(first);
+            ContentNode::PathProduct(first, image(second))
+        },
+        ContentNode::Funext(left, right) => {
+            let left = image(left);
+            ContentNode::Funext(left, image(right))
+        },
+        ContentNode::Equiv(forward, backward) => {
+            let forward = image(forward);
+            ContentNode::Equiv(forward, image(backward))
+        },
+        ContentNode::Univalence(record, forward) => {
+            let record = image(record);
+            ContentNode::Univalence(record, image(forward))
+        },
+        ContentNode::Ua {
+            stratum,
+            ref sides,
+            forward,
+            backward,
+        } => {
+            let forward = image(forward);
+            ContentNode::Ua {
+                stratum,
+                sides: alloc::sync::Arc::clone(sides),
+                forward,
+                backward: image(backward),
+            }
+        },
+        ContentNode::Compose {
+            composite,
+            ref cells,
+            realised,
+        } => {
+            let realised = image(realised);
+            ContentNode::Compose {
+                composite,
+                cells: cells.iter().map(|&cell| image(cell)).collect(),
+                realised,
+            }
+        },
+        ContentNode::Fill {
+            composite,
+            generator,
+            ref cells,
+        } => {
+            let generator = image(generator);
+            ContentNode::Fill {
+                composite,
+                generator,
+                cells: cells.iter().map(|&cell| image(cell)).collect(),
+            }
+        },
+        ContentNode::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ref evidence,
+        } => ContentNode::PathEquiv {
+            path_type: image(path_type),
+            forward: image(forward),
+            backward: image(backward),
+            evidence: alloc::sync::Arc::clone(evidence),
+        },
+        ContentNode::Transport(path, value) => {
+            let path = image(path);
+            ContentNode::Transport(path, image(value))
+        },
+        ContentNode::Variable { .. }
+        | ContentNode::Constant(_)
+        | ContentNode::ListNil
+        | ContentNode::Literal(_)
+        | ContentNode::Base(_)
+        | ContentNode::Universe { .. }
+        | ContentNode::Abstract(_)
+        | ContentNode::Unresolved(_)
+        | ContentNode::Hole(_)
+        | ContentNode::ComputationHole(_)
+        | ContentNode::UnknownType
+        | ContentNode::BufferType
+        | ContentNode::QubitType
+        | ContentNode::UnknownComputationType => node.clone(),
+        ContentNode::ListCons(head, tail) => ContentNode::ListCons(image(head), image(tail)),
+        ContentNode::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        } => ContentNode::ListFold {
+            element: image(element),
+            result: image(result),
+            list: image(list),
+            on_nil: image(on_nil),
+            on_cons: image(on_cons),
+        },
+        ContentNode::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        } => ContentNode::ListCase {
+            list: image(list),
+            on_nil: image(on_nil),
+            on_cons: image(on_cons),
+        },
+        ContentNode::Tuple(ref components) => ContentNode::Tuple(
+            components
+                .iter()
+                .map(|&component| image(component))
+                .collect(),
+        ),
+        ContentNode::Injection(summand, body) => ContentNode::Injection(summand, image(body)),
+        ContentNode::Thunk(body) => ContentNode::Thunk(image(body)),
+        ContentNode::ValueLift { ref target, body } => ContentNode::ValueLift {
+            target: target.clone(),
+            body: image(body),
+        },
+        ContentNode::Lambda(body) => ContentNode::Lambda(image(body)),
+        ContentNode::LinearLambda(body) => ContentNode::LinearLambda(image(body)),
+        ContentNode::Application(head, argument) => {
+            let head = image(head);
+            ContentNode::Application(head, image(argument))
+        },
+        ContentNode::Return(value) => ContentNode::Return(image(value)),
+        ContentNode::Bind(bound, rest) => {
+            let bound = image(bound);
+            ContentNode::Bind(bound, image(rest))
+        },
+        ContentNode::BindAll(bound, arity, rest) => {
+            let bound = image(bound);
+            ContentNode::BindAll(bound, arity, image(rest))
+        },
+        ContentNode::ReturnAll(ref values) => {
+            ContentNode::ReturnAll(values.iter().map(|&value| image(value)).collect())
+        },
+        ContentNode::Force(value) => ContentNode::Force(image(value)),
+        ContentNode::Case {
+            scrutinee,
+            ref branches,
+        } => {
+            let scrutinee = image(scrutinee);
+            ContentNode::Case {
+                scrutinee,
+                branches: branches.iter().map(|&branch| image(branch)).collect(),
+            }
+        },
+        ContentNode::Product(ref parts) => {
+            ContentNode::Product(parts.iter().map(|&part| image(part)).collect())
+        },
+        ContentNode::Sum(ref parts) => {
+            ContentNode::Sum(parts.iter().map(|&part| image(part)).collect())
+        },
+        ContentNode::List(element) => ContentNode::List(image(element)),
+        ContentNode::KeptType { value, region } => ContentNode::KeptType {
+            value: image(value),
+            region,
+        },
+        ContentNode::ThunkType(body) => ContentNode::ThunkType(image(body)),
+        ContentNode::TypeLift { inner, ref target } => ContentNode::TypeLift {
+            inner: image(inner),
+            target: target.clone(),
+        },
+        ContentNode::Element { code, ref target } => ContentNode::Element {
+            code: image(code),
+            target: target.clone(),
+        },
+        ContentNode::RowTail(code) => ContentNode::RowTail(image(code)),
+        ContentNode::RowKind => ContentNode::RowKind,
+        ContentNode::RowValue(ref row) => ContentNode::RowValue(
+            row.try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                Ok::<_, core::convert::Infallible>(image(ty))
+            })
+            .unwrap_or_else(|never| match never {}),
+        ),
+        ContentNode::Returner {
+            result,
+            ref effects,
+        } => {
+            let result = image(result);
+            let effects = effects
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Returner { result, effects }
+        },
+        ContentNode::Returns {
+            ref results,
+            ref effects,
+        } => {
+            let results = results.iter().map(|&result| image(result)).collect();
+            let effects = effects
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Returns { results, effects }
+        },
+        ContentNode::Capability {
+            ref authority,
+            grade,
+            region,
+        } => ContentNode::Capability {
+            authority: authority
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {}),
+            grade,
+            region,
+        },
+        ContentNode::Arrow { domain, codomain } => {
+            let domain = image(domain);
+            ContentNode::Arrow {
+                domain,
+                codomain: image(codomain),
+            }
+        },
+        ContentNode::Pi { domain, codomain } => {
+            let domain = image(domain);
+            ContentNode::Pi {
+                domain,
+                codomain: image(codomain),
+            }
+        },
+        ContentNode::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } => {
+            let domain = image(domain);
+            let multiplicity = image(multiplicity);
+            ContentNode::LinearArrow {
+                domain,
+                multiplicity,
+                codomain: image(codomain),
+            }
+        },
+        ContentNode::Quote(quoted) => ContentNode::Quote(image(quoted)),
+        ContentNode::QuoteComputation(quoted) => ContentNode::QuoteComputation(image(quoted)),
+        ContentNode::StaticLambda(body) => ContentNode::StaticLambda(image(body)),
+        ContentNode::StaticApplication(head, argument) => {
+            let head = image(head);
+            ContentNode::StaticApplication(head, image(argument))
+        },
+        ContentNode::ValueMark { mark, body } => ContentNode::ValueMark {
+            mark,
+            body: image(body),
+        },
+        ContentNode::ComputationMark { mark, body } => ContentNode::ComputationMark {
+            mark,
+            body: image(body),
+        },
+        ContentNode::Fixpoint { body, evidence } => ContentNode::Fixpoint {
+            body: image(body),
+            evidence,
+        },
+        ContentNode::StaticPi { domain, codomain } => {
+            let domain = image(domain);
+            ContentNode::StaticPi {
+                domain,
+                codomain: image(codomain),
+            }
+        },
+        ContentNode::Sigma { first, second } => {
+            let first = image(first);
+            ContentNode::Sigma {
+                first,
+                second: image(second),
+            }
+        },
+        ContentNode::ComputationElement { code, ref target } => ContentNode::ComputationElement {
+            code: image(code),
+            target: target.clone(),
+        },
+    }
+}
+
+/// Where the post-order mint stands at one table entry.
+///
+/// # Specification
+/// - executable: none — a traversal marker alone cannot establish the preceding
+///   DFS transitions.
+///
+/// # Adequacy
+/// - hypothesis: L2 — Shared-node reuse and a cycle distinguish completed from
+///   open entries.
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MintState
+{
+    /// Not reached.
+    Fresh,
+    /// Reached; its children are being minted.
+    Open,
+    /// Minted.
+    Done(ArenaNode),
+}
+
+/// One step of the post-order mint.
+///
+/// # Specification
+/// - executable: none — an individual frame has neither the traversal stack nor
+///   its state table.
+///
+/// # Adequacy
+/// - hypothesis: L2 — The shared-arrow and refusal corpus bound post-order
+///   traversal evidence.
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MintFrame
+{
+    /// Reach the entry: open it and queue its children.
+    Enter(NodeIndex),
+    /// Mint the entry from its minted children.
+    Exit(NodeIndex),
+}
+
+/// An entry of a table a mint reads: a de Bruijn former, or a closed node of
+/// a supported table, which is its own former.
+pub trait MintEntry
+{
+    /// The former the entry mints.
+    ///
+    /// # Specification
+    /// trivial.
+    fn minted_former(&self) -> &ContentNode;
+}
+
+impl MintEntry for ContentNode
+{
+    /// The former itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn minted_former(&self) -> &ContentNode
+    {
+        self
+    }
+}
+
+impl MintEntry for SupportedNode
+{
+    /// The node's former.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn minted_former(&self) -> &ContentNode
+    {
+        self.former()
+    }
+}
+
+/// Mint the table `nodes`, rooted at its first entry, into `arena`, each node
+/// of `held` standing for the entry at the end of its path.
+///
+/// # Specification
+/// - requires: each node of `held` is a node of `arena`.
+/// - ensures: on success the root's minted node; each entry is minted once,
+///   after its children, but an entry at the end of a path of `held`, which is
+///   its node.
+/// - fails: as [`TypeContent::mint_holding`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a shared arrow is reconstructed after minting; one finite
+///   table for each named refusal bounds failures. Empty, dangling and
+///   wrong-sort child tables add structural boundaries without claiming
+///   arbitrary graphs.
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
+///
+/// # Cost
+/// - allocation: the mint state of each entry, and each minted node, growth
+///   within `arena`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(minted) => minted.held(arena).is_some()
+        && nodes.first().is_some_and(|node| node.minted_former().sort() == minted.sort()),
+    Maybe::Absent(reason) => !nodes.is_empty()
+        || matches!(reason, seating::Absent::IllSorted | seating::Absent::Unwalked),
+})]
+#[inline]
+pub fn mint_table<Entry>(
+    nodes: &[Entry],
+    arena: &mut CoreArena,
+    (layout, held): (&Layout, &[(&[ChildPosition], ArenaNode)]),
+) -> Maybe<ArenaNode, seating::Absent>
+where
+    Entry: MintEntry,
+{
+    let mut states = alloc::vec![MintState::Fresh; nodes.len()];
+    for &(path, node) in held {
+        let mut index = NodeIndex::from(0_usize);
+        for &position in path {
+            let child = nodes.get(usize::from(index)).and_then(|entry| {
+                entry
+                    .minted_former()
+                    .children()
+                    .iter()
+                    .nth(usize::from(position))
+            });
+            let Some((child, _)) = child
+            else {
+                return Maybe::Absent(seating::Absent::Unwalked);
+            };
+            index = child;
+        }
+        let (Some(state), Some(entry)) = (
+            states.get_mut(usize::from(index)),
+            nodes.get(usize::from(index)),
+        )
+        else {
+            return Maybe::Absent(seating::Absent::Unwalked);
+        };
+        if entry.minted_former().sort() != node.sort() {
+            return Maybe::Absent(seating::Absent::IllSorted);
+        }
+        *state = MintState::Done(node);
+    }
+    if let Err(reason) = mint_reached(
+        nodes,
+        &mut states,
+        NodeIndex::from(0_usize),
+        (arena, layout),
+    ) {
+        return Maybe::Absent(reason);
+    }
+    match states.first() {
+        Some(&MintState::Done(minted)) => Maybe::Present(minted),
+        Some(&(MintState::Fresh | MintState::Open)) | None => {
+            Maybe::Absent(seating::Absent::IllSorted)
+        },
+    }
+}
+
+/// Mint the entry `root` of the table `nodes` into `arena`, and each entry
+/// beneath it that `states` does not hold yet, recording each in `states`.
+///
+/// # Specification
+/// - requires: `states` has one slot per entry of `nodes`.
+/// - ensures: on success every entry reached from `root` is done in `states`.
+/// - fails: as [`TypeContent::mint`].
+/// - panics: none.
+/// - executable: none — a predicate walks the table again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`mint_table`].
+/// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
+///
+/// # Cost
+/// - allocation: the stack of the walk, and each minted node, growth within
+///   `arena`
+fn mint_reached<Entry>(
+    nodes: &[Entry],
+    states: &mut [MintState],
+    root: NodeIndex,
+    (arena, layout): (&mut CoreArena, &Layout),
+) -> Result<(), seating::Absent>
+where
+    Entry: MintEntry,
+{
+    let mut frames = alloc::vec![MintFrame::Enter(root)];
+    while let Some(frame) = frames.pop() {
+        match frame {
+            MintFrame::Enter(index) => {
+                let (Some(state), Some(node)) = (
+                    states.get_mut(usize::from(index)),
+                    nodes.get(usize::from(index)),
+                )
+                else {
+                    return Err(seating::Absent::IllSorted);
+                };
+                match *state {
+                    MintState::Done(_) => {},
+                    MintState::Open => return Err(seating::Absent::Cyclic),
+                    MintState::Fresh => {
+                        *state = MintState::Open;
+                        frames.push(MintFrame::Exit(index));
+                        let children = node.minted_former().children();
+                        frames.extend(
+                            children
+                                .iter()
+                                .rev()
+                                .map(|(child, _)| MintFrame::Enter(child)),
+                        );
+                    },
+                }
+            },
+            MintFrame::Exit(index) => {
+                let Some(node) = nodes.get(usize::from(index))
+                else {
+                    return Err(seating::Absent::IllSorted);
+                };
+                let minted = mint_node(node.minted_former(), states, arena, layout)?;
+                if let Some(state) = states.get_mut(usize::from(index)) {
+                    *state = MintState::Done(minted);
+                }
+            },
+        }
+    }
+    Ok(())
+}
+
+/// Mint every entry of the table `nodes` into `arena`, in table order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success the minted node of each entry; each entry is minted
+///   once, after its children.
+/// - fails: as [`TypeContent::mint`].
+/// - panics: none.
+/// - executable: none — a predicate reads each minted node again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the nodes of a report mint back to nodes whose content is
+///   their own.
+/// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the list of minted nodes, and each minted node, growth within
+///   `arena`
+fn mint_all<Entry>(
+    nodes: &[Entry],
+    arena: &mut CoreArena,
+    layout: &Layout,
+) -> Result<Vec<ArenaNode>, seating::Absent>
+where
+    Entry: MintEntry,
+{
+    let mut states = alloc::vec![MintState::Fresh; nodes.len()];
+    for index in 0 .. nodes.len() {
+        mint_reached(nodes, &mut states, NodeIndex::from(index), (arena, layout))?;
+    }
+    states
+        .into_iter()
+        .map(|state| match state {
+            MintState::Done(minted) => Ok(minted),
+            MintState::Fresh | MintState::Open => Err(seating::Absent::IllSorted),
+        })
+        .collect()
+}
+
+/// An arena id of one sort, read from a minted node.
+trait Seated: Sized
+{
+    /// The id `node` holds, when the node has this sort.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>;
+}
+
+impl Seated for ValueId
+{
+    /// The value `node` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>
+    {
+        match node {
+            ArenaNode::Value(id) => Some(id),
+            ArenaNode::Computation(_) | ArenaNode::ValueType(_) | ArenaNode::CompType(_) => None,
+        }
+    }
+}
+
+impl Seated for ComputationId
+{
+    /// The computation `node` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>
+    {
+        match node {
+            ArenaNode::Computation(id) => Some(id),
+            ArenaNode::Value(_) | ArenaNode::ValueType(_) | ArenaNode::CompType(_) => None,
+        }
+    }
+}
+
+impl Seated for ValueTypeId
+{
+    /// The value type `node` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>
+    {
+        match node {
+            ArenaNode::ValueType(id) => Some(id),
+            ArenaNode::Value(_) | ArenaNode::Computation(_) | ArenaNode::CompType(_) => None,
+        }
+    }
+}
+
+impl Seated for CompTypeId
+{
+    /// The computation type `node` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(node: ArenaNode) -> Option<Self>
+    {
+        match node {
+            ArenaNode::CompType(id) => Some(id),
+            ArenaNode::Value(_) | ArenaNode::Computation(_) | ArenaNode::ValueType(_) => None,
+        }
+    }
+}
+
+/// The node of `Id`'s sort minted for the entry `index`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the completed seat at `index` when it has `Id`'s sort.
+/// - fails: `IllSorted` for an entry that is not minted or has another sort.
+/// - panics: none.
+///
+/// # Errors
+/// `IllSorted`, as above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the shared-arrow reconstruction and terms with a lambda
+///   and a bind exercise completed seats; malformed child sorts are refused
+///   through the enclosing mint. Fresh and open states are not claimed as
+///   direct witness coverage.
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::alpha_equal_terms_mint_to_one_name`
+/// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
+#[spec(ensures: |ret| match states.get(usize::from(index)) {
+    Some(&MintState::Done(node)) => ret == Id::of(node).ok_or(seating::Absent::IllSorted),
+    _ => ret == Err(seating::Absent::IllSorted),
+})]
+fn seat<Id>(
+    states: &[MintState],
+    index: NodeIndex,
+) -> Result<Id, seating::Absent>
+where
+    Id: Seated + PartialEq,
+{
+    match states.get(usize::from(index)) {
+        Some(&MintState::Done(node)) => Id::of(node).ok_or(seating::Absent::IllSorted),
+        Some(&(MintState::Fresh | MintState::Open)) | None => Err(seating::Absent::IllSorted),
+    }
+}
+
+/// The nodes of `Id`'s sort minted for the entries `indices`, in order.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one seat for each index, as [`seat`] reads it.
+/// - fails: the first refusal of [`seat`].
+/// - panics: none.
+///
+/// # Errors
+/// `IllSorted`, as [`seat`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — products, sums and tuples mint each part in order.
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::alpha_equal_terms_mint_to_one_name`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |ids| ids.len() == indices.len()))]
+fn seats<Id>(
+    states: &[MintState],
+    indices: &[NodeIndex],
+) -> Result<Vec<Id>, seating::Absent>
+where
+    Id: Seated + PartialEq,
+{
+    indices.iter().map(|&index| seat(states, index)).collect()
+}
+
+/// The nodes of `Id`'s sort minted for the fields `fields`, by label.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each label beside the seat of its entry, as [`seat`] reads it.
+/// - fails: the first refusal of [`seat`].
+/// - panics: none.
+///
+/// # Errors
+/// `IllSorted`, as [`seat`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — a record type and a patched type mint each field under
+///   its label.
+/// - witness: `gandr-core-incremental::content::tests::every_dependent_former_mints_back_as_its_own_table`
+///
+/// # Cost
+/// - allocation: the map of the minted fields by label, growth within the
+///   minted former
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |seated| seated.keys().eq(fields.keys())))]
+fn seat_fields<Id>(
+    states: &[MintState],
+    fields: &BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+) -> Result<BTreeMap<gandr_core_term::FieldLabel, Id>, seating::Absent>
+where
+    Id: Seated + PartialEq,
+{
+    fields
+        .iter()
+        .map(|(label, &index)| seat(states, index).map(|id| (label.clone(), id)))
+        .collect()
+}
+
+/// Mint one entry whose children are all minted.
+///
+/// # Specification
+/// - requires: every child of `node` is `Done` in `states`.
+/// - ensures: the node of `node`'s former over its children's minted nodes, of
+///   `node`'s sort; a closed table-typed native thunk mints its curried body
+///   again from its row.
+/// - fails: `Unresolved` for an unresolved entry, `Unplaced` for a reference
+///   the program does not hold, and `IllSorted` for a child of the wrong sort.
+/// - panics: none.
+///
+/// # Errors
+/// The reasons above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the shared-arrow graph and terms with a lambda and a bind
+///   check reconstruction; named refusal tables and wrong-sort children bound
+///   failures. The predicate checks seat resolution, result sort and refusal
+///   class, not a duplicate arena encoding.
+/// - witness: `gandr-core-incremental::content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `gandr-core-incremental::content::tests::alpha_equal_terms_mint_to_one_name`
+/// - witness: `gandr-core-incremental::content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `gandr-core-incremental::content::tests::malformed_type_tables_fail_by_structure`
+/// - witness: `gandr-core-incremental::content::tests::every_dependent_former_mints_back_as_its_own_table`
+/// - witness: `gandr-core-incremental::content::tests::a_data_type_mints_with_its_arguments`
+///
+/// # Cost
+/// - allocation: the minted node and its lists of children, durable by the
+///   arena that holds the mint
+#[spec(
+    requires: node.children().iter().all(|(child, _)| matches!(states.get(usize::from(child)), Some(&MintState::Done(_)))),
+    ensures: |ret| match ret {
+        Ok(minted) => minted.sort() == node.sort() && minted.held(arena).is_some(),
+        Err(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
+            reason == seating::Absent::Unresolved
+        } else {
+            reason == seating::Absent::IllSorted
+                || (matches!(*node, ContentNode::Abstract(_) | ContentNode::Data { .. } | ContentNode::Constant(_) | ContentNode::Constructor { .. } | ContentNode::Leta { .. } | ContentNode::Migrate { .. } | ContentNode::HeldType { .. } | ContentNode::CapabilityType(_))
+                    && reason == seating::Absent::Unplaced)
+        },
+    },
+)]
+fn mint_node(
+    node: &ContentNode,
+    states: &[MintState],
+    arena: &mut CoreArena,
+    layout: &Layout,
+) -> Result<ArenaNode, seating::Absent>
+{
+    use gandr_core_term::session::ChildOrder;
+
+    let placed = |reference: &Reference| match layout.place(reference) {
+        Maybe::Present(position) => Ok(position),
+        Maybe::Absent(reason) => Err(reason),
+    };
+    Ok(match *node {
+        ContentNode::Data {
+            ref declaration,
+            ref arguments,
+        } => ArenaNode::ValueType(
+            arena.value_type_data(placed(declaration)?, seats(states, arguments)?),
+        ),
+        ContentNode::Codata {
+            ref declaration,
+            ref arguments,
+        } => ArenaNode::CompType(
+            arena.comp_type_codata(placed(declaration)?, seats(states, arguments)?),
+        ),
+        ContentNode::RecordType(ref fields) => {
+            ArenaNode::ValueType(arena.value_type_record(seat_fields(states, fields)?))
+        },
+        ContentNode::Patched {
+            base,
+            ref fixed,
+            ref meets,
+        } => {
+            let meets = meets
+                .iter()
+                .map(|&(ref label, value)| seat(states, value).map(|value| (label.clone(), value)))
+                .collect::<Result<_, _>>()?;
+            ArenaNode::ValueType(arena.value_type_system(
+                seat(states, base)?,
+                seat_fields(states, fixed)?,
+                meets,
+            ))
+        },
+        ContentNode::Stack { input, output } => ArenaNode::ValueType(
+            arena.value_type_stack(seat(states, input)?, seat(states, output)?),
+        ),
+        ContentNode::WithType(ref components) => {
+            ArenaNode::CompType(arena.comp_type_with(&seats::<CompTypeId>(states, components)?))
+        },
+        ContentNode::Base(base) => ArenaNode::ValueType(arena.value_type_base(base)),
+        ContentNode::Universe { sort, ref level } => {
+            ArenaNode::ValueType(arena.value_type_universe(sort, level.clone()))
+        },
+        ContentNode::Abstract(ref reference) => {
+            ArenaNode::ValueType(arena.value_type_abstract(placed(reference)?))
+        },
+        ContentNode::Product(ref parts) => {
+            ArenaNode::ValueType(arena.value_type_product(&seats::<ValueTypeId>(states, parts)?))
+        },
+        ContentNode::Sum(ref parts) => {
+            ArenaNode::ValueType(arena.value_type_sum(&seats::<ValueTypeId>(states, parts)?))
+        },
+        ContentNode::List(element) => {
+            ArenaNode::ValueType(arena.value_type_list(seat(states, element)?))
+        },
+        ContentNode::KeptType { value, region } => {
+            ArenaNode::ValueType(arena.value_type_kept(seat(states, value)?, region))
+        },
+        ContentNode::StaticPi { domain, codomain } => ArenaNode::ValueType(
+            arena.value_type_static_pi(seat(states, domain)?, seat(states, codomain)?),
+        ),
+        ContentNode::Sigma { first, second } => ArenaNode::ValueType(
+            arena.value_type_sigma(seat(states, first)?, seat(states, second)?),
+        ),
+        ContentNode::ThunkType(body) => {
+            ArenaNode::ValueType(arena.value_type_thunk(seat(states, body)?))
+        },
+        ContentNode::TypeLift { inner, ref target } => {
+            ArenaNode::ValueType(arena.value_type_lift(seat(states, inner)?, target.clone()))
+        },
+        ContentNode::SessionType(ref session) => ArenaNode::ValueType(
+            arena.value_type_session(session.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?),
+        ),
+        ContentNode::Capability {
+            ref authority,
+            grade,
+            region,
+        } => ArenaNode::ValueType(arena.value_type_capability(
+            authority.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+            grade,
+            region,
+        )),
+        ContentNode::PathUniverse(source, target) => ArenaNode::ValueType(
+            arena.value_type_path_universe(seat(states, source)?, seat(states, target)?),
+        ),
+        ContentNode::PathType {
+            carrier,
+            left,
+            right,
+        } => ArenaNode::ValueType(arena.value_type_path(
+            seat(states, carrier)?,
+            seat(states, left)?,
+            seat(states, right)?,
+        )),
+        ContentNode::BridgeType {
+            carrier,
+            left,
+            right,
+        } => ArenaNode::ValueType(arena.value_type_bridge(
+            seat(states, carrier)?,
+            seat(states, left)?,
+            seat(states, right)?,
+        )),
+        ContentNode::FlowType {
+            carrier,
+            source,
+            target,
+        } => ArenaNode::ValueType(arena.value_type_flow(
+            seat(states, carrier)?,
+            seat(states, source)?,
+            seat(states, target)?,
+        )),
+        ContentNode::RunType(session) => {
+            ArenaNode::ValueType(arena.value_type_run(seat(states, session)?))
+        },
+        ContentNode::PrefixType(session) => {
+            ArenaNode::ValueType(arena.value_type_prefix(seat(states, session)?))
+        },
+        ContentNode::DialogueType(session) => {
+            ArenaNode::ValueType(arena.value_type_dialogue(seat(states, session)?))
+        },
+        ContentNode::WebType => ArenaNode::ValueType(arena.value_type_web()),
+        ContentNode::Element { code, ref target } => {
+            ArenaNode::ValueType(arena.value_type_element(seat(states, code)?, target.clone()))
+        },
+        ContentNode::RowTail(row) => {
+            ArenaNode::ValueType(arena.value_type_row_tail(seat(states, row)?))
+        },
+        ContentNode::UnknownType => ArenaNode::ValueType(arena.value_type_unknown()),
+        ContentNode::BufferType => ArenaNode::ValueType(arena.value_type_buffer()),
+        ContentNode::QubitType => ArenaNode::ValueType(arena.value_type_qubit()),
+        ContentNode::RowKind => ArenaNode::ValueType(arena.value_type_row()),
+        ContentNode::Returner {
+            result,
+            ref effects,
+        } => ArenaNode::CompType(arena.comp_type_returner_with_effects(
+            seat(states, result)?,
+            effects.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+        )),
+        ContentNode::Returns {
+            ref results,
+            ref effects,
+        } => ArenaNode::CompType(arena.comp_type_returns_with_effects(
+            &seats::<ValueTypeId>(states, results)?,
+            effects.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+        )),
+        ContentNode::Arrow { domain, codomain } => ArenaNode::CompType(
+            arena.comp_type_arrow(seat(states, domain)?, seat(states, codomain)?),
+        ),
+        ContentNode::Pi { domain, codomain } => {
+            ArenaNode::CompType(arena.comp_type_pi(seat(states, domain)?, seat(states, codomain)?))
+        },
+        ContentNode::LinearArrow {
+            domain,
+            multiplicity,
+            codomain,
+        } => ArenaNode::CompType(arena.comp_type_linear_arrow(
+            seat(states, domain)?,
+            seat(states, multiplicity)?,
+            seat(states, codomain)?,
+        )),
+        ContentNode::ComputationElement { code, ref target } => {
+            ArenaNode::CompType(arena.comp_type_element(seat(states, code)?, target.clone()))
+        },
+        ContentNode::UnknownComputationType => ArenaNode::CompType(arena.comp_type_unknown()),
+        ContentNode::Constructor {
+            ref family,
+            datatype,
+            tag,
+            ref fields,
+        } => ArenaNode::Value(arena.value_constructor(
+            placed(family)?,
+            seat(states, datatype)?,
+            tag,
+            seats(states, fields)?,
+        )),
+        ContentNode::Record(ref fields) => {
+            ArenaNode::Value(arena.value_record(seat_fields(states, fields)?))
+        },
+        ContentNode::Reify(ref frames) => {
+            use gandr_core_term::control::StackFrame;
+            let frames = frames
+                .iter()
+                .map(|frame| match *frame {
+                    StackFrame::Apply(value) => seat(states, value).map(StackFrame::Apply),
+                    StackFrame::Bind(body) => seat(states, body).map(StackFrame::Bind),
+                    StackFrame::Project(side) => Ok(StackFrame::Project(side)),
+                })
+                .collect::<Result<_, _>>()?;
+            ArenaNode::Value(arena.value_reify(frames))
+        },
+        ContentNode::PrimitiveValue(primitive) => ArenaNode::Value(primitive.thunk(arena)),
+        ContentNode::PathRefl(code) => ArenaNode::Value(arena.value_path_refl(seat(states, code)?)),
+        ContentNode::Here(point) => ArenaNode::Value(arena.value_here(seat(states, point)?)),
+        ContentNode::SessionRelated {
+            relation,
+            source,
+            target,
+            payloads,
+        } => ArenaNode::Value(arena.value_session_related(
+            relation,
+            seat(states, source)?,
+            seat(states, target)?,
+            seat(states, payloads)?,
+        )),
+        ContentNode::Stay(point) => ArenaNode::Value(arena.value_stay(seat(states, point)?)),
+        ContentNode::Then(first, second) => {
+            ArenaNode::Value(arena.value_then(seat(states, first)?, seat(states, second)?))
+        },
+        ContentNode::FlowProduct(first, second) => {
+            ArenaNode::Value(arena.value_flow_product(seat(states, first)?, seat(states, second)?))
+        },
+        ContentNode::Forward(translator) => {
+            ArenaNode::Value(arena.value_forward(seat(states, translator)?))
+        },
+        ContentNode::FunctionFlow(domain, codomain) => ArenaNode::Value(
+            arena.value_function_flow(seat(states, domain)?, seat(states, codomain)?),
+        ),
+        ContentNode::RowValue(ref row) => ArenaNode::Value(
+            arena.value_row(row.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?),
+        ),
+        ContentNode::Recorded(ref moves) => {
+            let moves = moves
+                .iter()
+                .map(|step| step.try_map(|value| seat::<ValueId>(states, value)))
+                .collect::<Result<_, _>>()?;
+            ArenaNode::Value(arena.value_recorded(moves))
+        },
+        ContentNode::Dialogue(ref turns) => {
+            let turns = turns
+                .iter()
+                .map(|turn| {
+                    turn.movement
+                        .try_map(|value| seat::<ValueId>(states, value))
+                        .map(|movement| gandr_core_term::session::DialogueMove {
+                            endpoint: turn.endpoint,
+                            movement,
+                        })
+                })
+                .collect::<Result<_, _>>()?;
+            ArenaNode::Value(arena.value_dialogue(turns))
+        },
+        ContentNode::Web(ref pieces) => {
+            ArenaNode::Value(arena.value_web(alloc::sync::Arc::clone(pieces)))
+        },
+        ContentNode::Returned(body) => ArenaNode::Value(arena.value_returned(seat(states, body)?)),
+        ContentNode::Nested(body) => ArenaNode::Value(arena.value_nested(seat(states, body)?)),
+        ContentNode::Run(body) => ArenaNode::Value(arena.value_run(seat(states, body)?)),
+        ContentNode::RecordUpdate(base, overlay) => {
+            ArenaNode::Value(arena.value_record_update(seat(states, base)?, seat(states, overlay)?))
+        },
+        ContentNode::PathProduct(first, second) => {
+            ArenaNode::Value(arena.value_path_product(seat(states, first)?, seat(states, second)?))
+        },
+        ContentNode::Funext(left, right) => {
+            ArenaNode::Value(arena.value_funext(seat(states, left)?, seat(states, right)?))
+        },
+        ContentNode::Equiv(forward, backward) => {
+            ArenaNode::Value(arena.value_equiv(seat(states, forward)?, seat(states, backward)?))
+        },
+        ContentNode::Univalence(equivalence, forward) => ArenaNode::Value(
+            arena.value_univalence(seat(states, equivalence)?, seat(states, forward)?),
+        ),
+        ContentNode::Ua {
+            stratum,
+            ref sides,
+            forward,
+            backward,
+        } => ArenaNode::Value(arena.value_ua(
+            stratum,
+            alloc::sync::Arc::clone(sides),
+            seat(states, forward)?,
+            seat(states, backward)?,
+        )),
+        ContentNode::Compose {
+            composite,
+            ref cells,
+            realised,
+        } => ArenaNode::Value(arena.value_compose(
+            composite,
+            seats::<ValueId>(states, cells)?.into_boxed_slice(),
+            seat(states, realised)?,
+        )),
+        ContentNode::Fill {
+            composite,
+            generator,
+            ref cells,
+        } => ArenaNode::Value(arena.value_fill(
+            composite,
+            seat(states, generator)?,
+            seats::<ValueId>(states, cells)?.into_boxed_slice(),
+        )),
+        ContentNode::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ref evidence,
+        } => ArenaNode::Value(arena.value_path_equiv(
+            seat(states, path_type)?,
+            seat(states, forward)?,
+            seat(states, backward)?,
+            alloc::sync::Arc::clone(evidence),
+        )),
+        ContentNode::Variable { zone, index } => {
+            ArenaNode::Value(arena.value_variable(zone, index))
+        },
+        ContentNode::Constant(ref reference) => {
+            ArenaNode::Value(arena.value_constant(placed(reference)?))
+        },
+        ContentNode::ListNil => ArenaNode::Value(arena.value_list_nil()),
+        ContentNode::ListCons(head, tail) => {
+            ArenaNode::Value(arena.value_list_cons(seat(states, head)?, seat(states, tail)?))
+        },
+        ContentNode::Literal(ref literal) => ArenaNode::Value(arena.value_literal(literal.clone())),
+        ContentNode::Tuple(ref components) => {
+            ArenaNode::Value(arena.value_tuple(&seats::<ValueId>(states, components)?))
+        },
+        ContentNode::Injection(summand, body) => {
+            ArenaNode::Value(arena.value_injection(summand, seat(states, body)?))
+        },
+        ContentNode::ValueAscribe { value, ty } => {
+            ArenaNode::Value(arena.value_ascribe(seat(states, value)?, seat(states, ty)?))
+        },
+        ContentNode::Thunk(body) => ArenaNode::Value(arena.value_thunk(seat(states, body)?)),
+        ContentNode::ValueLift { ref target, body } => {
+            ArenaNode::Value(arena.value_lift(target.clone(), seat(states, body)?))
+        },
+        ContentNode::Quote(quoted) => ArenaNode::Value(arena.value_quote(seat(states, quoted)?)),
+        ContentNode::QuoteComputation(quoted) => {
+            ArenaNode::Value(arena.value_quote_computation(seat(states, quoted)?))
+        },
+        ContentNode::StaticLambda(body) => {
+            ArenaNode::Value(arena.value_static_lambda(seat(states, body)?))
+        },
+        ContentNode::StaticApplication(head, argument) => ArenaNode::Value(
+            arena.value_static_application(seat(states, head)?, seat(states, argument)?),
+        ),
+        ContentNode::Hole(hole) => ArenaNode::Value(arena.value_hole(hole)),
+        ContentNode::ValueMark { mark, body } => {
+            ArenaNode::Value(arena.value_mark(mark, seat(states, body)?))
+        },
+        ContentNode::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+            ref arities,
+            equations,
+        } => ArenaNode::Computation(arena.computation_data_case_with_equations(
+            seat(states, scrutinee)?,
+            seat(states, motive)?,
+            (seats(states, branches)?, arities.clone()),
+            equations,
+        )),
+        ContentNode::RecordProjection(record, ref label) => ArenaNode::Computation(
+            arena.computation_record_projection(seat(states, record)?, label.clone()),
+        ),
+        ContentNode::TupleProjection(tuple, component) => ArenaNode::Computation(
+            arena.computation_tuple_projection(seat(states, tuple)?, component),
+        ),
+        ContentNode::Ride {
+            motive,
+            flow,
+            value,
+        } => ArenaNode::Computation(arena.computation_ride(
+            seat(states, motive)?,
+            seat(states, flow)?,
+            seat(states, value)?,
+        )),
+        ContentNode::Session(ref action) => {
+            ArenaNode::Computation(arena.computation_session(action.try_map(
+                ChildOrder::Forward,
+                &mut (),
+                |&mut (), value| seat::<ValueId>(states, value),
+                |&mut (), body| seat::<ComputationId>(states, body),
+                |&mut (), ty| seat::<ValueTypeId>(states, ty),
+            )?))
+        },
+        ContentNode::Memory(ref form) => {
+            ArenaNode::Computation(arena.computation_memory(form.try_map(
+                ChildOrder::Forward,
+                &mut (),
+                |&mut (), value| seat::<ValueId>(states, value),
+                |&mut (), body| seat::<ComputationId>(states, body),
+            )?))
+        },
+        ContentNode::Hold(value) => ArenaNode::Computation(arena.computation_world(
+            gandr_core_term::world::WorldForm::Hold {
+                value: seat(states, value)?,
+            },
+        )),
+        ContentNode::Leta {
+            ref world,
+            value,
+            body,
+        } => ArenaNode::Computation(arena.computation_world(
+            gandr_core_term::world::WorldForm::Leta {
+                world: minted_world(world, &placed)?,
+                value: seat(states, value)?,
+                body: seat(states, body)?,
+            },
+        )),
+        ContentNode::Migrate { ref world, body } => ArenaNode::Computation(
+            arena.computation_world(gandr_core_term::world::WorldForm::Migrate {
+                world: minted_world(world, &placed)?,
+                body: seat(states, body)?,
+            }),
+        ),
+        ContentNode::HeldType { inner, ref world } => ArenaNode::ValueType(arena.value_type_world(
+            gandr_core_term::world::WorldType::At {
+                inner: seat(states, inner)?,
+                world: minted_world(world, &placed)?,
+            },
+        )),
+        ContentNode::CapabilityType(ref world) => ArenaNode::ValueType(arena.value_type_world(
+            gandr_core_term::world::WorldType::Capability(minted_world(world, &placed)?),
+        )),
+        ContentNode::Perform {
+            ref signature,
+            ref operation,
+            payload,
+        } => ArenaNode::Computation(arena.computation_perform(
+            signature.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+            operation.clone(),
+            seat(states, payload)?,
+        )),
+        ContentNode::Handle {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        }
+        | ContentNode::Scope {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        } => {
+            let signature = signature.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?;
+            let (subject, on_return) = (seat(states, subject)?, seat(states, on_return)?);
+            let clauses = clauses
+                .iter()
+                .map(|clause| {
+                    seat(states, clause.body).map(|body| gandr_core_term::control::EffectClause {
+                        operation: clause.operation.clone(),
+                        body,
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+            ArenaNode::Computation(if matches!(*node, ContentNode::Scope { .. }) {
+                arena.computation_scope(signature, subject, on_return, clauses)
+            }
+            else {
+                arena.computation_handle(signature, subject, on_return, clauses)
+            })
+        },
+        ContentNode::Exercise {
+            capability,
+            ref signature,
+            ref operation,
+            payload,
+        } => ArenaNode::Computation(arena.computation_exercise(
+            seat(states, capability)?,
+            signature.try_relocate(|ty| seat::<ValueTypeId>(states, ty))?,
+            operation.clone(),
+            seat(states, payload)?,
+        )),
+        ContentNode::Resume(stack, body) => ArenaNode::Computation(
+            arena.computation_resume(seat(states, stack)?, seat(states, body)?),
+        ),
+        ContentNode::Abandon(stack) => {
+            ArenaNode::Computation(arena.computation_abandon(seat(states, stack)?))
+        },
+        ContentNode::Split(scrutinee, arity, body) => ArenaNode::Computation(
+            arena.computation_split(seat(states, scrutinee)?, arity, seat(states, body)?),
+        ),
+        ContentNode::DependentSplit {
+            scrutinee,
+            arity,
+            motive,
+            body,
+        } => ArenaNode::Computation(arena.computation_dependent_split(
+            seat(states, scrutinee)?,
+            arity,
+            seat(states, motive)?,
+            seat(states, body)?,
+        )),
+        ContentNode::Reset(body) => {
+            ArenaNode::Computation(arena.computation_reset(seat(states, body)?))
+        },
+        ContentNode::Shift(body) => {
+            ArenaNode::Computation(arena.computation_shift(seat(states, body)?))
+        },
+        ContentNode::With(ref components) => ArenaNode::Computation(
+            arena.computation_with(&seats::<ComputationId>(states, components)?),
+        ),
+        ContentNode::Ascribe { body, ty } => ArenaNode::Computation(
+            arena.computation_ascribe(seat(states, body)?, seat(states, ty)?),
+        ),
+        ContentNode::Project(component, subject) => {
+            ArenaNode::Computation(arena.computation_project(component, seat(states, subject)?))
+        },
+        ContentNode::Primitive(primitive, arguments) => {
+            use gandr_core_term::primitive::Arguments;
+            let arguments = match arguments {
+                Arguments::Unary(argument) => Arguments::Unary(seat(states, argument)?),
+                Arguments::Binary([first, second]) => {
+                    Arguments::Binary([seat(states, first)?, seat(states, second)?])
+                },
+            };
+            ArenaNode::Computation(arena.computation_primitive(primitive, arguments))
+        },
+        ContentNode::Transport(path, value) => ArenaNode::Computation(
+            arena.computation_transport(seat(states, path)?, seat(states, value)?),
+        ),
+        ContentNode::ElementTransport {
+            motive,
+            path,
+            value,
+        } => ArenaNode::Computation(arena.computation_path_transport(
+            seat(states, motive)?,
+            seat(states, path)?,
+            seat(states, value)?,
+        )),
+        ContentNode::TelescopeTransport {
+            motive,
+            path,
+            start,
+            over,
+            value,
+        } => ArenaNode::Computation(arena.computation_telescope_transport(
+            seat(states, motive)?,
+            seat(states, path)?,
+            seat(states, start)?,
+            seat(states, over)?,
+            seat(states, value)?,
+        )),
+        ContentNode::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        } => ArenaNode::Computation(arena.computation_list_fold(
+            seat(states, element)?,
+            seat(states, result)?,
+            seat(states, list)?,
+            seat(states, on_nil)?,
+            seat(states, on_cons)?,
+        )),
+        ContentNode::ListCase {
+            list,
+            on_nil,
+            on_cons,
+        } => ArenaNode::Computation(arena.computation_list_case(
+            seat(states, list)?,
+            seat(states, on_nil)?,
+            seat(states, on_cons)?,
+        )),
+        ContentNode::ReturnAll(ref values) => {
+            ArenaNode::Computation(arena.computation_return_all(&seats::<ValueId>(states, values)?))
+        },
+        ContentNode::BindAll(bound, arity, body) => ArenaNode::Computation(
+            arena.computation_bind_all(seat(states, bound)?, arity, seat(states, body)?),
+        ),
+        ContentNode::Lambda(body) => {
+            ArenaNode::Computation(arena.computation_lambda(seat(states, body)?))
+        },
+        ContentNode::LinearLambda(body) => {
+            ArenaNode::Computation(arena.computation_linear_lambda(seat(states, body)?))
+        },
+        ContentNode::Application(head, argument) => ArenaNode::Computation(
+            arena.computation_application(seat(states, head)?, seat(states, argument)?),
+        ),
+        ContentNode::Return(value) => {
+            ArenaNode::Computation(arena.computation_return(seat(states, value)?))
+        },
+        ContentNode::Bind(bound, body) => ArenaNode::Computation(
+            arena.computation_bind(seat(states, bound)?, seat(states, body)?),
+        ),
+        ContentNode::Force(value) => {
+            ArenaNode::Computation(arena.computation_force(seat(states, value)?))
+        },
+        ContentNode::Decompose(dialogue) => {
+            ArenaNode::Computation(arena.computation_decompose(seat(states, dialogue)?))
+        },
+        ContentNode::Case {
+            scrutinee,
+            ref branches,
+        } => ArenaNode::Computation(arena.computation_case(
+            seat(states, scrutinee)?,
+            &seats::<ComputationId>(states, branches)?,
+        )),
+        ContentNode::ComputationHole(hole) => ArenaNode::Computation(arena.computation_hole(hole)),
+        ContentNode::ComputationMark { mark, body } => {
+            ArenaNode::Computation(arena.computation_mark(mark, seat(states, body)?))
+        },
+        ContentNode::Fixpoint { body, evidence } => {
+            ArenaNode::Computation(arena.computation_fixpoint(seat(states, body)?, evidence))
+        },
+        ContentNode::Unresolved(_) => return Err(seating::Absent::Unresolved),
+    })
+}
+
+/// The world `world` names, a declared one placed by `placed`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the host's world for [`WorldContent::Host`]; the world at the
+///   position `placed` gives a declared one.
+/// - fails: as `placed` fails.
+/// - panics: none.
+///
+/// # Errors
+/// As `placed`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`mint_node`].
+/// - witness: `gandr-core-incremental::content::tests::an_item_of_a_located_program_is_transparent_3381`
+#[spec(ensures: |ref ret| match *world {
+    WorldContent::Host => matches!(*ret, Ok(gandr_core_term::world::World::Host)),
+    WorldContent::Declared(_) => !matches!(*ret, Ok(gandr_core_term::world::World::Host)),
+})]
+fn minted_world<Placed>(
+    world: &WorldContent,
+    placed: &Placed,
+) -> Result<gandr_core_term::world::World, seating::Absent>
+where
+    Placed: Fn(&Reference) -> Result<gandr_kernel_term::ConstantIndex, seating::Absent>,
+{
+    match *world {
+        WorldContent::Host => Ok(gandr_core_term::world::World::Host),
+        WorldContent::Declared(ref reference) => {
+            placed(reference).map(gandr_core_term::world::World::Declared)
+        },
+    }
+}
+
+/// The roots of a nominal declaration in a discovery-numbered table, and the
+/// rules presenting its terms, which name constructors by tag and no node.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DataRoots
+{
+    /// Parameter classifiers in telescope order.
+    pub parameters: Vec<NodeIndex>,
+    /// Index classifiers in telescope order; none for a parameterised type.
+    pub indices: Vec<NodeIndex>,
+    /// Constructor field classifiers in constructor and field order.
+    pub constructors: Vec<Vec<NodeIndex>>,
+    /// Each constructor's stated indices; none for a parameterised type.
+    pub results: Vec<Vec<NodeIndex>>,
+    /// The universe classifying the declared datatype.
+    pub kind: NodeIndex,
+    /// The rules rewriting the datatype's constructor terms, and the cells of
+    /// a type of words; none for a free type.
+    pub presentation: PresentationRoots,
+}
+
+/// The rules that present the terms of a nominal type, and the free cells of
+/// a type of words, as content.
+///
+/// Each rule names a constructor by its tag. The cells name their sort by its
+/// reference, not by its admission position.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct PresentationRoots
+{
+    /// The rules, in written order: none for a free type.
+    pub rules: Vec<gandr_core_term::PresentedRule>,
+    /// The free cells the type of words is minted over.
+    pub cells: Maybe<CellsRoots, words::Absent>,
+}
+
+impl PresentationRoots
+{
+    /// The presentation of a free type: no rule and no cell.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn free() -> Self
+    {
+        Self {
+            rules: Vec::new(),
+            cells: Maybe::Absent(words::Absent::Unworded),
+        }
+    }
+}
+
+/// The free cells a type of words is minted over, its sort named by its
+/// reference.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CellsRoots
+{
+    /// The sort the cells' endpoints are terms of.
+    pub sort: Reference,
+    /// How many times the cells' point is wrapped in its reflexivity.
+    pub reflexivities: gandr_kernel_term::Reflexivities,
+    /// The cells, in written order.
+    pub cells: Vec<gandr_kernel_term::FreeCell>,
+}
+
+impl DataRoots
+{
+    /// All roots in their canonical discovery order.
+    ///
+    /// # Specification
+    /// - ensures: parameters, then indices, then constructor fields, then
+    ///   stated indices, then the kind.
+    /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native checkpoint round trips preserve each signature
+    ///   slot; a signature whose fields are open keeps one support per root.
+    /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    /// - witness: `gandr-core-incremental::content::tests::open_roots_project_under_their_own_supports`
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = NodeIndex> + Clone + '_
+    {
+        self.parameters
+            .iter()
+            .chain(&self.indices)
+            .chain(self.constructors.iter().flatten())
+            .chain(self.results.iter().flatten())
+            .copied()
+            .chain(core::iter::once(self.kind))
+    }
+
+    /// All roots in their canonical discovery order, each with the sort its
+    /// node must have.
+    ///
+    /// # Specification
+    /// - ensures: [`Self::iter`]'s roots in its order, a stated index a value
+    ///   and every other root a value type.
+    /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a vector's stated lengths are values beside its
+    ///   classifiers, and its checkpoint round-trips.
+    /// - witness: `gandr-core-incremental::codec::tests::an_indexed_family_round_trips_its_indices`
+    #[inline]
+    pub fn sorted(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
+    {
+        let classifiers = self
+            .parameters
+            .iter()
+            .chain(&self.indices)
+            .chain(self.constructors.iter().flatten())
+            .map(|&root| (root, Sort::ValueType));
+        let stated = self
+            .results
+            .iter()
+            .flatten()
+            .map(|&root| (root, Sort::Value));
+        classifiers
+            .chain(stated)
+            .chain(core::iter::once((self.kind, Sort::ValueType)))
+    }
+}
+
+impl DataRoots
+{
+    /// The roots with every index replaced by its image under `image`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same shape and presentation, each root replaced by its
+    ///   image in [`DataRoots::iter`] order; the predicate checks the kind's
+    ///   image and the shape's widths, and the witness the per-root images,
+    ///   since comparing them walks every root.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as `DeclarationRoots::renumbered` of
+    ///   `gandr-core-incremental`.
+    /// - witness: `gandr-core-incremental::tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    ///
+    /// # Cost
+    /// - allocation: the renumbered lists of roots, growth within the roots
+    #[spec(ensures: |ret| ret.kind == image(self.kind)
+        && ret.parameters.len() == self.parameters.len()
+        && ret.constructors.len() == self.constructors.len()
+        && ret.presentation.rules.len() == self.presentation.rules.len())]
+    #[inline]
+    #[must_use]
+    pub fn renumbered<Image>(
+        &self,
+        image: Image,
+    ) -> Self
+    where
+        Image: Fn(NodeIndex) -> NodeIndex,
+    {
+        let rows = |rows: &[Vec<NodeIndex>]| {
+            rows.iter()
+                .map(|row| row.iter().map(|&root| image(root)).collect())
+                .collect()
+        };
+        Self {
+            parameters: self.parameters.iter().map(|&root| image(root)).collect(),
+            indices: self.indices.iter().map(|&root| image(root)).collect(),
+            constructors: rows(&self.constructors),
+            results: rows(&self.results),
+            kind: image(self.kind),
+            presentation: self.presentation.clone(),
+        }
+    }
+}
+
+/// A de Bruijn table factored into supported nodes and numbered from its
+/// roots.
+///
+/// # Specification
+/// - executable: none — a data declaration; [`tabled`] establishes it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`tabled`].
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+pub struct Tabled
+{
+    /// The supported nodes, numbered by discovery from the roots.
+    pub nodes: Vec<SupportedNode>,
+    /// Where each de Bruijn entry landed in the factored table.
+    placed: Vec<crate::support::Placement>,
+    /// The number each factored node took.
+    numbers: Vec<Option<NodeIndex>>,
+}
+
+impl Tabled
+{
+    /// The supported node the de Bruijn entry `raw` became.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of(
+        &self,
+        raw: NodeIndex,
+    ) -> NodeIndex
+    {
+        self.placed.get(usize::from(raw)).map_or(raw, |placed| {
+            self.numbers
+                .get(usize::from(placed.node))
+                .copied()
+                .flatten()
+                .unwrap_or(placed.node)
+        })
+    }
+
+    /// The support of the de Bruijn entry `raw` in its ambient scope.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the thinning of the support of the entry, growth within
+    ///   the support
+    #[inline]
+    pub fn support(
+        &self,
+        raw: NodeIndex,
+    ) -> Thinning
+    {
+        self.placed
+            .get(usize::from(raw))
+            .map_or_else(Thinning::empty, |placed| placed.support.clone())
+    }
+
+    /// The supports of the de Bruijn entries `roots`, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the thinning of the support of each root, growth within
+    ///   the supports
+    #[inline]
+    #[must_use]
+    pub fn supports(
+        &self,
+        roots: &[NodeIndex],
+    ) -> Vec<Thinning>
+    {
+        roots.iter().map(|&root| self.support(root)).collect()
+    }
+}
+
+/// Where a node stands in a content table: the supported node it became and
+/// its support in its ambient scope.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TablePlace
+{
+    /// The supported node.
+    pub node: NodeIndex,
+    /// Its support in its ambient scope.
+    pub support: Thinning,
+}
+
+/// The places in one content table of the arena nodes that it was built
+/// from.
+pub struct Placer
+{
+    /// The de Bruijn entry each arena node took.
+    seen: BTreeMap<ArenaNode, NodeIndex>,
+    /// Where each de Bruijn entry landed in the factored table.
+    placed: Vec<crate::support::Placement>,
+    /// The number each factored node took.
+    numbers: Vec<Option<NodeIndex>>,
+}
+
+/// The content table of the nodes `roots` of `arena`, constants placed
+/// through `layout`, numbered from them in order, beside the place of each
+/// root in it.
+///
+/// # Specification
+/// - requires: every root is held by `arena`.
+/// - ensures: as [`tabled`] for the encoded roots; one place per root, in
+///   order; no table and no place for no root.
+/// - panics: none.
+/// - executable: none — the clause compares with [`tabled`], which a predicate
+///   runs again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the nodes of a report that neither its item nor its entry
+///   holds mint back to themselves from this table.
+/// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+///
+/// # Cost
+/// - allocation: the de Bruijn table and the supported table and the place of
+///   each root, growth within the table
+#[inline]
+pub fn tabled_roots(
+    arena: &CoreArena,
+    layout: &Layout,
+    roots: &[ArenaNode],
+) -> (Vec<SupportedNode>, Vec<TablePlace>)
+{
+    if roots.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let mut encoder = Encoder::new(arena, layout);
+    let raws: Vec<NodeIndex> = roots.iter().map(|&root| encoder.discover(root)).collect();
+    encoder.drain();
+    let tabled = tabled(&encoder.nodes, &raws);
+    let places = raws
+        .iter()
+        .map(|&raw| TablePlace {
+            node: tabled.of(raw),
+            support: tabled.support(raw),
+        })
+        .collect();
+    (tabled.nodes, places)
+}
+
+impl Placer
+{
+    /// The place of the arena node `node` in the table, when the table was
+    /// built from it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the thinning of the support of the place, growth within
+    ///   the support
+    #[inline]
+    #[must_use]
+    pub fn place(
+        &self,
+        node: ArenaNode,
+    ) -> Option<TablePlace>
+    {
+        let raw = *self.seen.get(&node)?;
+        let placed = self.placed.get(usize::from(raw))?;
+        let number = self
+            .numbers
+            .get(usize::from(placed.node))
+            .copied()
+            .flatten()?;
+        Some(TablePlace {
+            node: number,
+            support: placed.support.clone(),
+        })
+    }
+}
+
+/// A content table minted into an arena from the places of its roots.
+pub struct Minted
+{
+    /// The expanded entry of each place reached from the roots.
+    numbered: BTreeMap<(NodeIndex, Thinning), NodeIndex>,
+    /// The minted node of each expanded entry.
+    nodes: Vec<ArenaNode>,
+}
+
+impl Minted
+{
+    /// Mint the places `roots` of the content table `nodes` into `arena`,
+    /// constants placed through `layout`, and each place beneath them.
+    ///
+    /// # Specification
+    /// - requires: `nodes` is a supported table and each root is a place in it.
+    /// - ensures: on success each place reached from the roots names a node of
+    ///   `arena` whose content is its own.
+    /// - fails: as [`TypeContent::mint`].
+    /// - panics: none.
+    /// - executable: none — a predicate reads each minted node again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the places of a report mint back to the nodes that
+    ///   they were taken from.
+    /// - witness: `gandr-core-incremental::report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
+    #[inline]
+    pub fn of<Roots>(
+        nodes: &[SupportedNode],
+        roots: Roots,
+        (arena, layout): (&mut CoreArena, &Layout),
+    ) -> Maybe<Self, seating::Absent>
+    where
+        Roots: IntoIterator<Item = TablePlace>,
+    {
+        let Ok(expanded) = crate::support::expand_from(
+            nodes,
+            roots.into_iter().map(|place| (place.node, place.support)),
+        )
+        else {
+            return Maybe::Absent(seating::Absent::Unplaceable);
+        };
+        match mint_all(&expanded.table, arena, layout) {
+            Ok(minted) => Maybe::Present(Self {
+                numbered: expanded.numbered,
+                nodes: minted,
+            }),
+            Err(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The node minted for `place`, when a root reached it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the support of `place` as the key of the lookup,
+    ///   growth within the support
+    #[inline]
+    #[must_use]
+    pub fn node(
+        &self,
+        place: &TablePlace,
+    ) -> Option<ArenaNode>
+    {
+        let entry = self.numbered.get(&(place.node, place.support.clone()))?;
+        self.nodes.get(usize::from(*entry)).copied()
+    }
+}
+
+/// Factor the de Bruijn table `raw` and number it from `roots`.
+///
+/// # Specification
+/// - requires: every root is an entry of `raw`, as the encoder hands them out.
+/// - ensures: the supported table of every node reachable from the roots,
+///   numbered breadth-first from them in order; the numbered image and the
+///   support of every entry.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an item's signature renumbered from its table equals its
+///   type encoded alone; a shared subterm is one node.
+/// - witness: `gandr-core-incremental::content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `gandr-core-incremental::content::tests::a_shared_node_is_listed_once`
+///
+/// # Cost
+/// - allocation: the factored table and its renumbered copy, growth within the
+///   table
+#[spec(ensures: |ret| ret.placed.len() == raw.len())]
+#[inline]
+#[must_use]
+pub fn tabled(
+    raw: &[ContentNode],
+    roots: &[NodeIndex],
+) -> Tabled
+{
+    let factored = crate::support::factor(raw);
+    let placed = factored.placements;
+    let mut owned: Vec<Option<SupportedNode>> = factored.nodes.into_iter().map(Some).collect();
+    let numbered = crate::support::number(
+        NodeIndex::from(owned.len()),
+        roots.iter().map(|&root| {
+            placed
+                .get(usize::from(root))
+                .map_or(root, |placement| placement.node)
+        }),
+        |old| owned.get_mut(usize::from(old)).and_then(Option::take),
+    );
+    Tabled {
+        nodes: named_holes(numbered.nodes),
+        placed,
+        numbers: numbered.numbers,
+    }
+}
+
+/// The table `nodes`, each hole named by its place among the holes the table
+/// meets, in table order ([`hole_name`]).
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the map of hole names, growth within the table
+#[inline]
+#[must_use]
+pub fn named_holes(nodes: Vec<SupportedNode>) -> Vec<SupportedNode>
+{
+    let mut holes = BTreeMap::new();
+    nodes
+        .into_iter()
+        .map(|node| node.hole_renamed(|hole| hole_name(&mut holes, hole)))
+        .collect()
+}
+
+/// The name a table gives `hole`, `holes` the names it gave the holes it met
+/// before: on its first meeting, the name of the next place in `hole`'s own
+/// origin, and a splice's name keeps its tactic; the same name on each later
+/// meeting.
+///
+/// An elaborator names a hole by the number of its form among the forms of
+/// the whole laid unit, so one hole takes another name in another closure.
+/// The name in the table counts only the holes that the table meets before
+/// it, in table order, so the table is a function of its own nodes, and the
+/// table under one of its roots names its holes as that root's own table
+/// does. A hole name keeps the origin, because the checker solves a
+/// nominated hole and reports a written one. A place past the names of its
+/// origin keeps the hole's own name: a splice's origin holds 2^24 places, and
+/// the other origins hold more.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one name per hole the table meets, distinct holes taking distinct
+///   names of their own origins.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two holes met twice each, in two arenas that name them
+///   apart, take the same two names in both tables; a hole under a root of an
+///   item takes the name that the root's own table gives it.
+/// - witness: `gandr-core-incremental::content::tests::a_hole_is_named_by_its_place_in_the_table_6522`
+/// - witness: `gandr-core-incremental::content::tests::a_root_names_its_holes_by_their_place_under_it`
+///
+/// # Cost
+/// - allocation: an entry of the map of hole names for a new hole, growth
+///   within the map
+#[spec(
+    captures: [old = holes.get(&hole).copied(), count = holes.len()],
+    ensures: |ret| holes.get(&hole) == Some(&ret) && ret.origin() == hole.origin()
+        && old.is_none_or(|old| old == ret && holes.len() == count),
+)]
+fn hole_name(
+    holes: &mut BTreeMap<HoleId, HoleId>,
+    hole: HoleId,
+) -> HoleId
+{
+    let place = u32::try_from(holes.len()).unwrap_or(u32::MAX);
+    *holes.entry(hole).or_insert_with(|| {
+        let index = NominationIndex::from(place);
+        match hole.origin() {
+            HoleOrigin::Written => {
+                Some(HoleId::from(place)).filter(|named| named.origin() == HoleOrigin::Written)
+            },
+            HoleOrigin::Nominated => HoleId::nominated(index),
+            HoleOrigin::Wildcard => HoleId::wildcard(index),
+            HoleOrigin::Spliced => hole
+                .tactic()
+                .and_then(|tactic| HoleId::spliced(index, tactic)),
+        }
+        .unwrap_or(hole)
+    })
+}

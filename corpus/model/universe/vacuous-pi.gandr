@@ -1,0 +1,38 @@
+//! This fixture defines a constant type family.
+//!
+//! The family ignores each natural argument.
+//!
+//! A family applied at its binder is a dependent codomain until the checker
+//! reads the family. A family that reads to one type at every argument makes
+//! the function type over it the arrow to that type. The checker converts the
+//! two arrows in both directions.
+//!
+//! - cites: [MartinLof-1984-intuitionistic_type_theory]
+//!
+//! [MartinLof-1984-intuitionistic_type_theory]: https://archive-pml.github.io/martin-lof/pdfs/Bibliopolis-Book-retypeset-1984.pdf "Martin-Löf, Intuitionistic Type Theory"
+
+// The naturals.
+import "../data/data-base.gandr";
+
+/// The `always` family returns naturals.
+@[checks, form(explicit)]
+def always(n : Nat) -> -F Type { return Nat }
+
+/// The `idAlways` function uses the constant family.
+@[checks]
+def idAlways(x : Nat) -> -F always(x) { return x }
+
+/// The `viaArrow` declaration uses the converted plain arrow. It checks because
+/// `always(x)` reads to `Nat` at each `x`.
+@[checks]
+def viaArrow : +U (Nat -> -F Nat);
+def viaArrow = idAlways;
+
+/// The `viaFamily` declaration uses the dependent arrow.
+@[checks]
+def viaFamily : +U ((x : Nat) -> -F always(x));
+def viaFamily = viaArrow;
+
+/// The `appliedArrow` function applies the plain arrow.
+@[runs("Succ Zero")]
+def appliedArrow() -> -F Nat { viaArrow (Succ Zero) }

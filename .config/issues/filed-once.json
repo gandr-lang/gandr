@@ -1,0 +1,36 @@
+[
+  {
+    "name": "#5149: an epic that holds 100 sub-issues, GitHub's limit, gets no link, and the issue is filed under no epic with its body naming the epic and exit 0; #5709: one read, the epic's before the filing, and none after it",
+    "kind": "epic",
+    "subs": 100,
+    "output": "exit 0; 1 open, 0 closed; 0 links; reads 1; the body ends `Epic: #4481 (full)`"
+  },
+  {
+    "name": "#5149: an epic one sub-issue below the limit links the issue, and the body names no epic; #5709: two reads, the epic's before the filing and the new issue's id after it",
+    "kind": "epic",
+    "subs": 99,
+    "output": "exit 0; 1 open, 0 closed; 1 links; reads 2; the body ends `from: #5`"
+  },
+  {
+    "name": "#5149: two refactor:file runs for one pull request, from two clones with runtime directories of their own, both read the board before either files and leave one open issue and the later one closed as its duplicate; the stub's lock holds on a host with no flock(1) (#5159)",
+    "kind": "race",
+    "subs": 50,
+    "output": "exit 0 0; 1 open, 1 closed; closed: `issue close 2 -R case/case --duplicate-of 1`"
+  },
+  {
+    "name": "#7545: a unit whose title names a term of the map, which `unit:check` refuses after the filing, is filed with no `shape:signed` and gets no marker and no label",
+    "kind": "unit",
+    "subs": 0,
+    "title": "feat(workflow): the case unit keeps its lockfile",
+    "body": "A case of `filed-once.bash` (#7545): `issue:file` files this unit whole.\n\n## Sources\n\n| Source | Role | What it gives |\n| ------ | ---- | ------------- |\n| `units.md` § units-issue | primary | the sections |\n\n## Readings\n\n| Family | Axis | Selected |\n| ------ | ---- | -------- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Cost | `bounded` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n| Level | `general` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| ------- | ------- |\n| `collapse` | no |\n| `fork` | no |\n| `measure` | no |\n| `nominal` | no |\n| `oracle` | no |\n| `sharing` | no |\n\n## Engineering\n\n| Row | Bound |\n| --- | ----- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n| streaming | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNone.\n\n## After\n\nnone\n",
+    "output": "exit 1; 1 open, 0 closed; signed at the create: no; after it: nothing"
+  },
+  {
+    "name": "#7545: a unit that `unit:check` passes after the filing gets the frame's marker, then `shape:signed`",
+    "kind": "unit",
+    "subs": 0,
+    "title": "feat(workflow): the case unit is filed whole",
+    "body": "A case of `filed-once.bash` (#7545): `issue:file` files this unit whole.\n\n## Sources\n\n| Source | Role | What it gives |\n| ------ | ---- | ------------- |\n| `units.md` § units-issue | primary | the sections |\n\n## Readings\n\n| Family | Axis | Selected |\n| ------ | ---- | -------- |\n| Identity | `univalent` | no — not this case's |\n| Locality | `oracle` | no — not this case's |\n| Locality | `descent` | no — not this case's |\n| Place | `located` | no — not this case's |\n| Place | `resident` | no — not this case's |\n| Dimension | `rewriting` | no — not this case's |\n| Cost | `zero-cost` | no — not this case's |\n| Cost | `bounded` | no — not this case's |\n| Names | `nominal` | no — not this case's |\n| Level | `general` | no — not this case's |\n\n## Concerns\n\n| Concern | Touched |\n| ------- | ------- |\n| `collapse` | no |\n| `fork` | no |\n| `measure` | no |\n| `nominal` | no |\n| `oracle` | no |\n| `sharing` | no |\n\n## Engineering\n\n| Row | Bound |\n| --- | ----- |\n| change | n/a — not this case's |\n| complexity | n/a — not this case's |\n| latency | n/a — not this case's |\n| parallelism | n/a — not this case's |\n| memory | n/a — not this case's |\n| failure | n/a — not this case's |\n| streaming | n/a — not this case's |\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNone.\n\n## After\n\nnone\n",
+    "output": "exit 0; 1 open, 0 closed; signed at the create: no; after it: marker, label"
+  }
+]

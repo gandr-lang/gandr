@@ -1,0 +1,71 @@
+// A flow with code, which `Path` refuses at its member.
+//
+// `Path` admits a translation only when each of its members renames one
+// member, so no code runs at the boundary. The test is on each member's
+// definition: a member that computes is code, whatever it computes.
+//
+// This file is a site and a manifold at once. `far` requires the older store
+// under `store` and under `cache`. The site answers `store` via `keeping`,
+// whose `put` drops the write in a definition of its own, and `cache` through
+// a renaming. The manifold states `Path`, and the check refuses the placement
+// at `store` and names `put`. The file itself settles, and `gandr check` of
+// it as a deployment refuses the entry.
+//
+// - see: `corpus/model/translations/translated.gandr` — the program, whose
+//   `far` requires the older store
+// - see: `corpus/model/translations/translated.manifold.gandr` — a renaming
+//   under `Path`, admitted
+// - see: `crates/surface-driver/tests/cli.rs` — the check refusing it
+
+// The deployment theories, and the translation policy.
+import std.manifold (Site, Manifold, Placement, At, Translation, Path);
+// The native finite lists.
+import std.list (List);
+// The two versions of the store.
+import "../../model/translations/translated.versions.gandr" (Older, Newer);
+
+/// The newer store read as the older one: `put` keeps nothing, in code.
+flow keeping : Newer ~~> Older where {
+  type V = V;
+  type C = C;
+  def get = fetch;
+  def put(key : V, value : V, k : C) -> C { k }
+}
+
+/// Every key holds its own name, and a write keeps nothing.
+pub module Echo : Model(Newer) with sort V = String where
+  /// A computation answers a string.
+  type C = String;
+  /// Hands the key on.
+  def fetch(key : String, k : String -> String) -> String { k key }
+  /// Drops the write and runs what comes after.
+  def put(key : String, value : String, k : String) -> String { k }
+
+/// The site offers the newer store as the older one, via a flow with code and
+/// through a renaming.
+pub offers [store = Echo via keeping, cache = Echo renaming { fetch as get }];
+
+/// The site, on a loopback socket.
+pub module Site : Model(Site) where
+  /// The key the hosting process proves.
+  def key = "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1";
+  /// The socket it binds, where a dialer reaches it.
+  def sockets = "127.0.0.1:7433";
+  /// The name of the key's secret.
+  def secret = "far";
+
+/// The site's model, which a placement holds.
+pub def site : Model Site = pack Site at Model Site;
+
+/// The program this deployment runs.
+pub module Manifold : Model(Manifold) where
+  /// The program whose `far` requires the older store.
+  def artifact = "../../model/translations/translated.gandr";
+
+/// The manifold admits only translations that rename.
+pub def translation : Translation = Path;
+
+/// `far` at a site whose flow computes a member.
+pub def placements : List Placement = #[
+  At "far" site,
+];

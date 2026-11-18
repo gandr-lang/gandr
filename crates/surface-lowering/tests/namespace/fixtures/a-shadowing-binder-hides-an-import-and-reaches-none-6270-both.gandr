@@ -1,0 +1,3 @@
+import "./left.gandr";
+import "./right.gandr";
+def both(one : Integer) -> -F Integer { return one }

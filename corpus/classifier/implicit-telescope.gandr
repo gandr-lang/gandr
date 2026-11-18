@@ -1,0 +1,128 @@
+// Implicit parameters: the telescope `[a : Type]` binds parameters of the
+// function. A use supplies them in the instantiation slot. It supplies them by
+// position in the written order, `same[Integer] 3`. Or it supplies them by
+// name in any order, `same[.a = Integer] 3`.
+//
+// The implicit and the explicit
+// parameters merge into one telescope, each after every parameter its type
+// names, ties kept in the written order; which ones are implicit is the
+// declaration's metadata, so the declared type is the one the function written
+// with every parameter explicit, in the merged order, has. A call that omits
+// its implicits has each one solved from its arguments and the type it is
+// checked against. The checker solves a call in a declared type where the type
+// forms.
+// What refuses is in `../pathological/classifier/implicit-telescope.gandr`.
+//
+// - see: #315
+// - see: #1216
+// - see: #1498 — `identityAt`
+// - see: #1188 — `twiceRun`
+// - see: #5026 — `sameSigned`
+
+/// The identity at a type supplied by name.
+pub def same[a : Type](y : a) -> a { y }
+
+/// `same` at the integers, which a call supplies by position.
+@[runs("3")]
+def sameRun() -> Integer { same[Integer] 3 }
+
+/// `same` with its implicit omitted: the argument `3` determines `a`.
+@[runs("3")]
+def sameInferred() -> Integer { same 3 }
+
+/// The first of two values of two types, both implicit.
+def first[a : Type, b : Type](x : a, y : b) -> a { x }
+
+/// `first` supplied with its implicits in the written order.
+@[runs("5")]
+def firstRun() -> Integer { first[Integer, Unit] 5 (*{}) }
+
+/// `first` supplied with its implicits the other way round: a resident names
+/// its implicit, so the order the slot writes them in is free.
+@[runs("5")]
+def firstSwapped() -> Integer { first[.b = Unit, .a = Integer] 5 (*{}) }
+
+/// `first` with both implicits omitted, each determined by its own argument.
+@[runs("5")]
+def firstInferred() -> Integer { first 5 (*{}) }
+
+/// An implicit whose type names an explicit parameter written after it: the
+/// merge binds `t` first, so `x : t` reads it.
+pub def chosen[x : t](t : Type) -> t { x }
+
+/// `chosen` at the integers, its implicit supplied by position: the written
+/// block holds `x` alone, though the merge binds `t` first.
+@[runs("7")]
+def chosenRun() -> Integer { chosen[7] Integer }
+
+/// A stage and an implicit in one telescope: the stage quantifies the
+/// signature and binds no value, the implicit binds the first parameter.
+def kept[i : Size, a : Type](n : Integer, y : a) -> a { y }
+
+/// `kept` with its implicit supplied by name: the stage `i` comes first in
+/// the written block, and the call omits it.
+@[runs("4")]
+def keptRun() -> Integer { kept[.a = Integer] 0 4 }
+
+/// `kept` with its implicit omitted: the stage binds no value, and the second
+/// argument determines `a`.
+@[runs("4")]
+def keptInferred() -> Integer { kept 0 4 }
+
+/// `same` called at a type the definition binds: the solution for `a` is the
+/// parameter `t`, which the call stands under.
+def sameAt(t : Type, y : t) -> t { same y }
+
+/// `same(3)` in a declared type: the argument `3` determines `a` where the
+/// type forms.
+def sameSigned : Path(same 3, 3) = Path.here 3;
+
+/// A function taking a function of a type and a value of it, the result type
+/// of that function implicit.
+pub def konst[b : Type](f : (t : Type, t) -> b) -> Integer { 1 }
+
+/// `konst` with its implicit omitted: the lambda returns an integer under its
+/// own binders, and `b` is solved as `Integer`, which names none of them.
+@[runs("1")]
+def konstInferred() -> Integer { konst (fun (t) { fun (y) { 0 } }) }
+
+/// A function applied to the integer it is passed.
+def apply(f : Integer -> Integer, x : Integer) -> Integer { f x }
+
+/// `same` passed as a value, its implicit supplied where it is taken: the
+/// function applied to its implicits alone is a function of the rest.
+@[runs("3")]
+def passedRun() -> Integer { apply same[Integer] 3 }
+
+/// A function applied to a value of the type it is passed, the function
+/// implicit: its type names `t`, so the merge binds `t` before it.
+def applyAt[g : t -> t](t : Type, v : t) -> t { g v }
+
+/// `applyAt` passed as a value with `g` supplied: the supply opens a lambda
+/// for `t`, which `g`'s type names, and is a function of a type and a value
+/// of it.
+def identityAt : (t : Type, t) -> t = applyAt[.g = fun (y) { y }];
+
+/// `identityAt` at the integers.
+@[runs("5")]
+def identityRun() -> Integer { identityAt Integer 5 }
+
+/// The integers' addition, a member of a module.
+module Adding where {
+  /// The sum of two integers.
+  @[checks]
+  def plus(x : Integer, y : Integer) -> Integer { x + y }
+}
+
+/// A value combined with itself, the combination and its carrier implicit.
+pub def twice[m : Type, combine : (m, m) -> m](x : m) -> m { combine x x }
+
+/// `twice` with its carrier by position and its combination, a module path, by
+/// name. A resident's value runs to the slot's next `,` or its `]`.
+@[runs("6")]
+def twiceRun() -> Integer { twice[Integer, .combine = Adding.plus] 3 }
+
+/// The explicit twin of `same`: the function `same`'s implicit makes explicit
+/// runs as the same curried function.
+@[runs("fun (a) { fun (b) { b } }")]
+def sameExplicit(a : Type, y : a) -> a { y }

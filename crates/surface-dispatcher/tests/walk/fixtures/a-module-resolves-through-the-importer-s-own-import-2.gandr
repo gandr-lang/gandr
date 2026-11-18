@@ -1,0 +1,5 @@
+import "./shared.gandr";
+
+module Seat where {
+  def other : Integer = 2;
+}

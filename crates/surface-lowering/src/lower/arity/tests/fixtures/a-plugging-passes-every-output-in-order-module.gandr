@@ -1,0 +1,5 @@
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
+def recombine(q : Integer, r : Integer) -> Integer { q }
+def round(n : Integer) -> Integer { divmod n n |> recombine }
+def double(n : Integer) -> Integer { n }
+def single(n : Integer) -> Integer { double n |> double }

@@ -1,0 +1,5 @@
+{COLOR}def rank(c : Color) -> -F Integer {{ match c {{ | Red => return 0 | _ => return 1 }} }}
+def stated(c : Color) -> -F Integer {{ let n = match c -> -F Integer {{ | Red => pure 0 | _ => pure 1 }}; return n }}
+def typed(t : Type, x : t, c : Color) -> -F t {{ match c {{ | Red => return x | _ => return x }} }}
+def any(c : Color) -> -F Integer {{ match c {{ | _ => return 1 }} }}
+def same(c : Color) -> -F Color {{ match c {{ | d => return d }} }}
