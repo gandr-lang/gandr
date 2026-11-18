@@ -1071,6 +1071,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - hypothesis: L3 — as `lower_unit`.
     /// - witness: `gandr-surface-lowering::tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
     /// - witness: `gandr-surface-lowering::tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    ///
+    /// # Cost
+    /// - allocation: the lowered source and its tables, durable by the source
     #[spec(ensures: |result| result.is_err() || self.cx().current.source == source)]
     #[inline]
     pub fn lower_source(

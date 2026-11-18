@@ -66,6 +66,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   takes its own refusal.
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_native_signature_lowers_to_its_row_7961`
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_faulty_native_mark_is_refused_by_name_7961`
+    ///
+    /// # Cost
+    /// - allocation: the text of each mark's payload, setup
+    /// - allocation: the marks read, growth within the source's slots
+    /// - allocation: the row of each mark, durable by the source
+    /// - allocation: the refusal of a faulty mark, error path
     #[inline]
     pub fn read_natives(&mut self)
     {
@@ -135,6 +141,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - hypothesis: L3 — as [`Self::read_natives`].
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_native_signature_lowers_to_its_row_7961`
     /// - witness: `gandr-surface-lowering::lower::row::tests::a_faulty_native_mark_is_refused_by_name_7961`
+    ///
+    /// # Cost
+    /// - allocation: the rows that earlier sources declare, setup
+    /// - allocation: the minted declarations, growth within the source's slots
+    /// - allocation: the row's type, its thunk and its value, durable by the
+    ///   source
+    /// - allocation: the refusal of a faulty mark, error path
     #[inline]
     pub fn mint_natives(
         &mut self,

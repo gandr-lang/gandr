@@ -823,6 +823,9 @@ impl AttributeRegistry
     ///   near miss for every named schema.
     /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
     /// - witness: `attribute::tests::a_near_misspelling_suggests_its_attribute`
+    ///
+    /// # Cost
+    /// - allocation: the list of names, setup
     #[spec(
         ensures: |ret| {
             ret.len() == REGISTRY.len()
@@ -882,14 +885,12 @@ impl AttributeRegistry
     ) -> Maybe<(RegisteredAttribute, AttributeSchema), registry::Absent>
     {
         let spelled: &str = name.as_ref();
-        let found = REGISTRY.into_iter().find_map(|(entry, schema)| {
-            (entry == spelled).then_some((RegisteredAttribute(entry), schema))
-        });
-
-        found.map_or(
-            Maybe::Absent(registry::Absent::Unregistered),
-            Maybe::Present,
-        )
+        for (entry, schema) in REGISTRY {
+            if entry == spelled {
+                return Maybe::Present((RegisteredAttribute(entry), schema));
+            }
+        }
+        Maybe::Absent(registry::Absent::Unregistered)
     }
 
     /// The registered name nearest `name`, when one sits within the bound.
@@ -916,6 +917,9 @@ impl AttributeRegistry
     /// - witness: `attribute::tests::a_near_misspelling_suggests_its_attribute`
     /// - witness: `attribute::tests::a_distant_spelling_suggests_nothing`
     /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
+    ///
+    /// # Cost
+    /// - allocation: the rows of each edit distance, diagnostic
     #[spec(
         ensures: |ret| {
             let spelled: &str = name.as_ref();
