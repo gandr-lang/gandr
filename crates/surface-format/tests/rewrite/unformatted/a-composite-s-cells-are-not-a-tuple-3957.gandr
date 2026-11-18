@@ -1,0 +1,5 @@
+def cells(a : Type, x : a, y : a, z : a, w : a, p : Path[.A = a](x, y), q : Path[.A = a](y, z), r : Path[.A = a](z, w)) -> Path[.A = a](x, w) {
+  compose[5, 7] (chain 3) (p, q, r)
+}
+
+def pair = *{1, 2} ;

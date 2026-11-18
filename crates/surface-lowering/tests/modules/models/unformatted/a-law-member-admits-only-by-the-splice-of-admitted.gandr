@@ -1,0 +1,4 @@
+{theory}module Host : Model(Same) with sort Carrier = Integer where {{
+  def same(a : Integer, b : Integer) -> Bool {{ int.eq a b }}
+  {member}
+}}

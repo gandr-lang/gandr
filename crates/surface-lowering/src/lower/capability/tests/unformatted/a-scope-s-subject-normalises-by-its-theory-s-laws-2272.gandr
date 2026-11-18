@@ -1,0 +1,2 @@
+{STATE}{GET_GET}def once() -> -F Integer {{ handle st : StateGetGet with sort S = Integer {subject} with {{ | pure(x) => pure x | oper get(k) => k 4 }} }}
+def twice() -> -F Integer {{ handle st : State with sort S = Integer {subject} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}

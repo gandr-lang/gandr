@@ -1,0 +1,4 @@
+{MAYBE}def annotated = (*{{Some 1, None}} : Maybe(Integer) * Maybe(Integer)) ;
+def returned(n : Integer) -> -F (Maybe(Integer) * Maybe(Integer)) {{ *{{None, Some n}} }}
+def listed() -> -F List(Maybe(Integer) * Maybe(Integer)) {{ #[*{{Some 1, None}}] }}
+def nested = (*{{Some 1, *{{None, Some 2}}}} : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer))) ;

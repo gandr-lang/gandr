@@ -1,0 +1,2 @@
+/// The base.
+def seven : Integer = 7;

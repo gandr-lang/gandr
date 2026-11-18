@@ -1,0 +1,13 @@
+/// The identity on integers.
+def k(x : Integer) -> Integer { x }
+
+/// The identity on integers, through `k`.
+def j(x : Integer) -> Integer { k x }
+
+/// The two functions agree under a thunk. The kernel's own reading does not
+/// unfold `j` there, so it relates the endpoints only by the dialogue that
+/// the judgement records.
+def law : Path[.A = Integer -> Integer](
+  thunk { fun (x : Integer) { k x } },
+  thunk { fun (x : Integer) { j x } }
+) = Path.here (thunk { fun (x : Integer) { k x } });

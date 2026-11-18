@@ -1,0 +1,6 @@
+rec {
+  data U : Type where { | NatC : U | PiC : (a : U, b : +U (el(a) -> -F U)) --> U }
+  def rec el(u : U) -> -F Type {
+    match u { | NatC => return Integer | PiC(a, b) => return (+U ((x : el[<](a)) -> -F Integer)) }
+  }
+}

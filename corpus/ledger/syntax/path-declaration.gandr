@@ -1,0 +1,19 @@
+/// `path_declaration`: a path: two signatures, a body each way and the round
+/// trips, written with its glyph and in ASCII.
+theory Older where
+  oper answer : Integer;
+
+theory Newer where
+  oper reply : Integer;
+
+path versions : Older ≃ Newer where
+  into where
+    def reply = answer;
+  from where
+    def answer = reply;
+
+path versionsAscii : Older <~> Newer where
+  into where
+    def reply = answer;
+  from where
+    def answer = reply;

@@ -1,0 +1,8 @@
+data Circle : Type where { | Base : Circle | loop : Base <-> Base }
+def rec size(p : Path[.A = Circle](Base, Base)) -> -F Integer {
+  match p {
+    | here => return 0
+    | loop ∷ q => become size[<] q
+    | back$0(loop) ∷ q => become size[<] q
+  }
+}

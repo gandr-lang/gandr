@@ -1,0 +1,5 @@
+import "./base.gandr" as base;
+def again : base.Point;
+def again = base.one;
+def lost : Integer;
+def lost = base.two;

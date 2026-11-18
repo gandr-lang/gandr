@@ -1,0 +1,131 @@
+/// This source states maps out of the spheres by cases, and `Path.ap` of them
+/// on the spheres' cells.
+///
+/// A case over a sphere takes an arm at the point and an arm at the cell.
+/// The arm at the cell is a cell of the answer at the reflexivity of the arm
+/// at the point.
+/// `Path.ap f surf` acts on the 2-cell as the action of `Path.ap f` on paths.
+/// It takes one layer per reflexivity between the cell's type and the map's
+/// domain.
+/// It reduces to the case's arm at the cell, by the rule at dimension one.
+///
+/// The checker converts each image to the arm, and the kernel replays each
+/// reduction. A dependent case into a path family owes no arm at the cell.
+/// The family at the cell carries the answer along the bound path.
+/// Transport along the cell reads that endpoint by the family's two
+/// endpoints, one `Path.ap` layer deeper. The checker converts the transport
+/// of the answer to the answer, and the kernel re-derives the same reading.
+///
+/// Limits: the rule reads a path family alone. It reduces the transport where
+/// the answer at the point is reflexivity, or where both images of the cell
+/// are empty (`sphere-whiskers.gandr`). An arm written at the cell of a
+/// dependent case is checked at the motive's own type, so it does not check.
+///
+/// - see: #6458 — `selfrefl2`, `throughName2`, `selfrefl3`
+/// - see: corpus/pathological/identity/sphere-maps.gandr — a map with no arm
+///   at the cell, which the case refuses
+/// - see: #6477 — `apEmptyCell`
+/// - see: #6531 — the answer at the point that holds a letter
+/// - see: corpus/model/identity/sphere-whiskers.gandr
+/// - see: corpus/model/identity/sphere.gandr
+/// - see: corpus/model/identity/circle-maps.gandr
+/// - see: corpus/model/identity/hopf.gandr
+
+// The 2-sphere and the 3-sphere.
+import "./sphere.gandr";
+
+/// The identity of the 2-sphere by cases: the cell goes to itself.
+def sphereId(x : S2) -> S2 =
+  match x where
+    | Base2 => Base2
+    | surf => surf
+
+/// The identity of the 3-sphere by cases.
+pub def sphereId3(x : S3) -> S3 =
+  match x where
+    | Base3 => Base3
+    | surf3 => surf3
+
+/// A case with no arm at the cell sends the cell to reflexivity.
+def flatten(x : S2) -> S2 =
+  match x where
+    | Base2 => Base2
+
+/// `Path.ap` of the identity on the 2-cell is the 2-cell.
+def apSurf : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
+  Path.here Base2,
+  Path.here Base2
+)](
+  Path.ap sphereId surf,
+  surf
+) = Path.here surf;
+
+/// `Path.ap` of the identity on the 3-cell is the 3-cell.
+def apSurf3 : Path[.A = Path[.A = Path[.A = Path[.A = S3](Base3, Base3)](
+  Path.here Base3,
+  Path.here Base3
+)](
+  Path.here (Path.here Base3),
+  Path.here (Path.here Base3)
+)](
+  Path.ap sphereId3 surf3,
+  surf3
+) = Path.here surf3;
+
+/// `Path.ap` of a case with no arm at the cell is reflexivity.
+def apFlat : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
+  Path.here Base2,
+  Path.here Base2
+)](
+  Path.ap flatten surf,
+  Path.here (Path.here Base2)
+) = Path.here (Path.here (Path.here Base2));
+
+/// `Path.ap` of a map on the reflexivity of the point's reflexivity is that
+/// reflexivity, the empty word of the 2-cell's words.
+def apEmptyCell : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
+  Path.here Base2,
+  Path.here Base2
+)](
+  Path.ap sphereId (Path.here (Path.here Base2)),
+  Path.here (Path.here Base2)
+) = Path.here (Path.here (Path.here Base2));
+
+/// `Path.ap` of the identity on the 2-cell stands at the type its endpoints
+/// give.
+def mapped : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) = Path.ap
+  sphereId
+  surf;
+
+/// `Path.ap` of a map acts on every 2-cell, a bound one too.
+def mapCell(
+  c : Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2)
+) -> Path[.A = Path[.A = S2](Base2, Base2)](Path.here Base2, Path.here Base2) =
+  Path.ap sphereId c
+
+/// The identity does not send the 2-cell to reflexivity.
+@[refuses("EndpointMismatch")]
+def apSurfFlat : Path[.A = Path[.A = Path[.A = S2](Base2, Base2)](
+  Path.here Base2,
+  Path.here Base2
+)](
+  Path.ap sphereId surf,
+  Path.here (Path.here Base2)
+) = Path.here (Path.here (Path.here Base2));
+
+/// A dependent case at the 2-cell owes no arm there: carried along the cell,
+/// the answer at the point is that answer.
+def selfrefl2(x : S2) -> Path[.A = S2](x, x) =
+  match x where
+    | Base2 => Path.here Base2
+
+/// The family's left endpoint runs through a map, whose arm at the cell is the
+/// cell.
+def throughName2(b : S2) -> Path[.A = S2](sphereId b, b) =
+  match b where
+    | Base2 => Path.here Base2
+
+/// At the 3-cell the family carries the family at the 2-cell in turn.
+def selfrefl3(x : S3) -> Path[.A = S3](x, x) =
+  match x where
+    | Base3 => Path.here Base3
