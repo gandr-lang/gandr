@@ -134,7 +134,7 @@ use crate::shape::VertexOrders;
 pub struct WreathShape<Object>
 {
     /// The outer shape.
-    outer: Shape,
+    outer: alloc::sync::Arc<Shape>,
     /// The inner objects, one per outer vertex.
     columns: Box<[Object]>,
 }
@@ -164,11 +164,14 @@ impl<Object> WreathShape<Object>
         Ok(ref object) => object.columns.len() == usize::from(object.outer.vertex_count()),
         Err(WreathShapeObstruction::Columns { vertices, columns }) => vertices != columns,
     })]
-    pub fn new(
-        outer: Shape,
+    pub fn new<O>(
+        outer: O,
         columns: Vec<Object>,
     ) -> Result<Self, WreathShapeObstruction>
+    where
+        O: Into<alloc::sync::Arc<Shape>>,
     {
+        let outer = outer.into();
         let vertices = outer.vertex_count();
         if columns.len() != usize::from(vertices) {
             return Err(WreathShapeObstruction::Columns {
@@ -188,7 +191,7 @@ impl<Object> WreathShape<Object>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn outer(&self) -> &Shape
+    pub fn outer(&self) -> &Shape
     {
         &self.outer
     }
@@ -670,7 +673,7 @@ impl<Inner: Level> Wreath<Inner>
             .filter_map(|column| inner.objects().get(usize::from(*column)).cloned())
             .collect();
         Some(WreathShape {
-            outer: outer_shape,
+            outer: alloc::sync::Arc::new(outer_shape),
             columns,
         })
     }
@@ -728,19 +731,21 @@ impl<Inner: Level> Wreath<Inner>
                 &mut tuples,
             );
             for tuple in &tuples {
-                let least = automorphisms
-                    .iter()
-                    .map(|permutation| {
-                        let mut moved = tuple.clone();
-                        for (vertex, column) in permutation.iter().zip(tuple) {
-                            if let Some(slot) = moved.get_mut(usize::from(*vertex)) {
-                                *slot = *column;
-                            }
+                let mut least = tuple.clone();
+                let mut moved = tuple.clone();
+                let mut first = true;
+                for permutation in automorphisms.iter() {
+                    moved.copy_from_slice(tuple);
+                    for (vertex, column) in permutation.iter().zip(tuple) {
+                        if let Some(slot) = moved.get_mut(usize::from(*vertex)) {
+                            *slot = *column;
                         }
-                        moved
-                    })
-                    .min()
-                    .unwrap_or_else(|| tuple.clone());
+                    }
+                    if first || moved < least {
+                        core::mem::swap(&mut least, &mut moved);
+                        first = false;
+                    }
+                }
                 let total = least
                     .iter()
                     .filter_map(|column| sizes.get(usize::from(*column)))

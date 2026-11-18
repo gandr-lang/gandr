@@ -1201,7 +1201,9 @@ where
     for (position, (outer, column)) in outer_inclusions.iter().zip(object.columns()).enumerate() {
         let vertex = Edge::from(position);
         let uncovered = LevelDefect::Uncovered { column: vertex };
-        let outer_corolla = corolla(outer.corolla).ok_or_else(|| uncovered.clone())?;
+        let outer_corolla: alloc::sync::Arc<Shape> = corolla(outer.corolla)
+            .ok_or_else(|| uncovered.clone())?
+            .into();
         let places: Vec<Place<Below>> = match below.cover(column) {
             Maybe::Absent(()) => return Err(uncovered),
             Maybe::Present(Cover::Empty) => {
@@ -1225,8 +1227,9 @@ where
             },
         };
         for (spot, column_object, inner_map) in places {
-            let cell = WreathShape::new(outer_corolla.clone(), vec![column_object])
-                .map_err(|_columns| uncovered.clone())?;
+            let cell =
+                WreathShape::new(alloc::sync::Arc::clone(&outer_corolla), vec![column_object])
+                    .map_err(|_columns| uncovered.clone())?;
             let Maybe::Present(at) = wreath.find(&cell)
             else {
                 return Err(uncovered);

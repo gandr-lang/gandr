@@ -376,9 +376,9 @@ pub struct Element
     /// The generator.
     generator: GeneratorIndex,
     /// The port each input leg attaches to.
-    inputs: Box<[Port]>,
+    inputs: alloc::sync::Arc<[Port]>,
     /// The port each output leg attaches to.
-    outputs: Box<[Port]>,
+    outputs: alloc::sync::Arc<[Port]>,
 }
 
 impl Element
@@ -397,8 +397,8 @@ impl Element
     {
         Self {
             generator,
-            inputs: inputs.into_boxed_slice(),
-            outputs: outputs.into_boxed_slice(),
+            inputs: inputs.into(),
+            outputs: outputs.into(),
         }
     }
 
@@ -419,7 +419,7 @@ impl Element
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn inputs(&self) -> &[Port]
+    pub fn inputs(&self) -> &[Port]
     {
         &self.inputs
     }
@@ -430,7 +430,7 @@ impl Element
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn outputs(&self) -> &[Port]
+    pub fn outputs(&self) -> &[Port]
     {
         &self.outputs
     }
@@ -453,7 +453,7 @@ impl Element
         relabelling: &Relabelling,
     ) -> Self
     {
-        let read = |ports: &[Port], positions: &[usize]| -> Box<[Port]> {
+        let read = |ports: &[Port], positions: &[usize]| -> alloc::sync::Arc<[Port]> {
             positions
                 .iter()
                 .filter_map(|&position| ports.get(position).copied())
@@ -499,7 +499,7 @@ impl Labelling
 /// - witness: `tests::stratum::the_corolla_stratum_is_certified_at_degree_one`
 #[spec(ensures: |ref all| all.iter().zip(all.iter().skip(1)).all(|(first, second)| first < second)
     && all.iter().all(|permutation| permutation.len() == usize::from(count)))]
-fn permutations(count: PortCount) -> Vec<Box<[Port]>>
+fn permutations(count: PortCount) -> Vec<alloc::sync::Arc<[Port]>>
 {
     let mut partial: Vec<Vec<Port>> = vec![Vec::new()];
     let mut used: BTreeSet<Port> = BTreeSet::new();
@@ -509,14 +509,16 @@ fn permutations(count: PortCount) -> Vec<Box<[Port]>>
             used.clear();
             used.extend(prefix.iter().copied());
             for port in (0 .. count.0).map(Port).filter(|port| !used.contains(port)) {
-                let mut extended = prefix.clone();
-                extended.push(port);
+                let extended: Vec<Port> = prefix.iter().copied().chain([port]).collect();
                 longer.push(extended);
             }
         }
         partial = longer;
     }
-    partial.into_iter().map(Vec::into_boxed_slice).collect()
+    partial
+        .into_iter()
+        .map(alloc::sync::Arc::<[Port]>::from)
+        .collect()
 }
 
 /// A graphical species: finitely many generators at each profile.
@@ -606,8 +608,8 @@ impl Species
                 for output in &outputs {
                     elements.push(Element {
                         generator,
-                        inputs: input.clone(),
-                        outputs: output.clone(),
+                        inputs: alloc::sync::Arc::clone(input),
+                        outputs: alloc::sync::Arc::clone(output),
                     });
                 }
             }
@@ -645,8 +647,8 @@ impl Species
             let mut longer = Vec::with_capacity(partial.len().saturating_mul(elements.len()));
             for prefix in &partial {
                 for element in &elements {
-                    let mut extended = prefix.clone();
-                    extended.push(element.clone());
+                    let extended: Vec<Element> =
+                        prefix.iter().cloned().chain([element.clone()]).collect();
                     longer.push(extended);
                 }
             }

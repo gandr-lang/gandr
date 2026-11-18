@@ -426,7 +426,7 @@ pub enum Invertibility
 pub struct SiteMap
 {
     /// The image `S_v` of each source vertex, in vertex order.
-    images: Box<[VertexSet]>,
+    images: alloc::sync::Arc<[VertexSet]>,
     /// The image `φ(w)` of each source wire, in wire order.
     wires: Box<[Wire]>,
 }
@@ -439,13 +439,15 @@ impl SiteMap
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn new(
-        images: Vec<VertexSet>,
+    pub fn new<I>(
+        images: I,
         wires: Vec<Wire>,
     ) -> Self
+    where
+        I: Into<alloc::sync::Arc<[VertexSet]>>,
     {
         Self {
-            images: images.into_boxed_slice(),
+            images: images.into(),
             wires: wires.into_boxed_slice(),
         }
     }
@@ -485,7 +487,7 @@ impl SiteMap
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn images(&self) -> &[VertexSet]
+    pub fn images(&self) -> &[VertexSet]
     {
         &self.images
     }
@@ -1491,6 +1493,7 @@ pub fn homs(
         }
         let candidates = wire_candidates(source, target, images);
         let choices: Vec<Choices> = candidates.iter().map(|list| Choices(list.len())).collect();
+        let shared: alloc::sync::Arc<[VertexSet]> = images.into();
         let mut picking = Odometer::new(choices);
         while picking.turn() == Progress::Running {
             let wires: Vec<Wire> = picking
@@ -1499,7 +1502,7 @@ pub fn homs(
                 .zip(candidates.iter())
                 .filter_map(|pair| pair.1.get(pair.0.0).copied())
                 .collect();
-            let map = SiteMap::new(images.to_vec(), wires);
+            let map = SiteMap::new(alloc::sync::Arc::clone(&shared), wires);
             if map
                 .check_with(source.graph(), target.graph(), &mut marks)
                 .is_ok()
