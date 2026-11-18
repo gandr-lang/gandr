@@ -304,9 +304,15 @@ type MoldRows<S> = BTreeMap<<S as WalkSym>::Label, Vec<MoldRow<S>>>;
 /// Every end and walk one swing closure emits.
 type SwingClosureOutput<S> = Vec<(WalkEnd<S>, MachineWalk<S>)>;
 
-/// One queued outer-closure prefix: its last end, its walk, and the ends its
-/// path has passed through.
-type ClosureQueueItem<S> = (WalkEnd<S>, MachineWalk<S>, BTreeSet<WalkEnd<S>>);
+/// One queued outer-closure prefix: its last end, its walk, and the link of
+/// its last end in the pass's chain of passed ends.
+type ClosureQueueItem<S> = (WalkEnd<S>, MachineWalk<S>, usize);
+
+/// One link of a pass's chain of passed ends: an end, and the index of the
+/// link before it. The source's link points at itself. A prefix that extends
+/// another adds one link after the other's last link, so the two share every
+/// earlier link.
+type PassedLink<S> = (WalkEnd<S>, usize);
 
 /// Direct rows indexed by direction and source end.
 type RowsBySource<'rows, S> =
@@ -1612,9 +1618,12 @@ where
     let mut rows: DirectRows<S> = BTreeMap::new();
     // Each pass drains the queue before the next begins.
     let mut queue: VecDeque<ClosureQueueItem<S>> = VecDeque::new();
+    let mut links: Vec<PassedLink<S>> = Vec::new();
     for dir in [Dir::Left, Dir::Right] {
         for src in &spec.ends {
-            let start = BTreeSet::from([src.clone()]);
+            links.clear();
+            let start = links.len();
+            links.push((src.clone(), start));
             for &(dst, walks) in by_source.get(&(dir, src)).into_iter().flatten() {
                 for walk in walks {
                     guard_cap(walk, spec.max_chain_len)?;
@@ -1625,13 +1634,14 @@ where
                     if !bool::from(minimal::<S>(walk)?) {
                         continue;
                     }
-                    let mut visited = start.clone();
-                    let expand = matches!(*dst, End::Node(_)) && visited.insert(dst.clone());
+                    let expand = matches!(*dst, End::Node(_)) && dst != src;
                     rows.entry((dir, src.clone(), dst.clone()))
                         .or_default()
                         .push(walk.clone());
                     if expand {
-                        queue.push_back((dst.clone(), walk.clone(), visited));
+                        let at = links.len();
+                        links.push((dst.clone(), start));
+                        queue.push_back((dst.clone(), walk.clone(), at));
                     }
                 }
             }
@@ -1643,14 +1653,28 @@ where
                         if !bool::from(minimal::<S>(&combined)?) {
                             continue;
                         }
-                        let mut next_visited = visited.clone();
-                        let expand =
-                            matches!(*dst, End::Node(_)) && next_visited.insert(dst.clone());
+                        let mut link = visited;
+                        let seen = loop {
+                            let Some(&(ref end, before)) = links.get(link)
+                            else {
+                                break false;
+                            };
+                            if end == dst {
+                                break true;
+                            }
+                            if before == link {
+                                break false;
+                            }
+                            link = before;
+                        };
+                        let expand = matches!(*dst, End::Node(_)) && !seen;
                         rows.entry((dir, src.clone(), dst.clone()))
                             .or_default()
                             .push(combined.clone());
                         if expand {
-                            queue.push_back((dst.clone(), combined, next_visited));
+                            let at = links.len();
+                            links.push((dst.clone(), visited));
+                            queue.push_back((dst.clone(), combined, at));
                         }
                     }
                 }

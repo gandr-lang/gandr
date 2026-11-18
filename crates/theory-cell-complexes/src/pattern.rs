@@ -77,6 +77,7 @@
 
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -175,10 +176,10 @@ impl core::fmt::Display for Sym
 /// A name worn by a producer metavariable and by a consumer metavariable is
 /// one hole at two polarities; the two metavariables stay distinct
 /// substitution targets, because a [`MetaVar`] is the `(name, category)`
-/// pair.
+/// pair. Each copy of a name shares its spelling.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HoleName(Box<str>);
+pub struct HoleName(Arc<str>);
 
 impl HoleName
 {
@@ -218,7 +219,7 @@ impl From<String> for HoleName
     #[inline]
     fn from(value: String) -> Self
     {
-        Self(value.into_boxed_str())
+        Self(value.into())
     }
 }
 
