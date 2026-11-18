@@ -653,6 +653,40 @@
     }
   },
   {
+    "name": "#8019: a bound line with a final full stop is the repair",
+    "program": "repair.jq",
+    "input": {
+      "runs": [
+        {
+          "databaseId": 3,
+          "status": "completed",
+          "conclusion": "failure",
+          "headSha": "2222222222222222222222222222222222222222",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/3"
+        },
+        {
+          "databaseId": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "headSha": "3333333333333333333333333333333333333333",
+          "url": "https://github.com/gandr-lang/gandr/actions/runs/2"
+        }
+      ],
+      "merges": [
+        {
+          "sha": "5555555555555555555555555555555555555555",
+          "number": 7057,
+          "body": "Repairs integration at 222222222222.\n"
+        }
+      ]
+    },
+    "output": {
+      "sha": "5555555555555555555555555555555555555555",
+      "held": true,
+      "from": 7057
+    }
+  },
+  {
     "name": "#7078: a bound line below a merge with no line is the repair",
     "program": "repair.jq",
     "input": {
@@ -729,7 +763,7 @@
     "output": null
   },
   {
-    "name": "#7078: no line takes nothing",
+    "name": "#8019: a line with a final full stop and text takes nothing",
     "program": "repair.jq",
     "input": {
       "runs": [
@@ -752,7 +786,7 @@
         {
           "sha": "5555555555555555555555555555555555555555",
           "number": 7057,
-          "body": "The cycle on 222222222222 fails."
+          "body": "Repairs integration at 222222222222. after"
         },
         {
           "sha": "6666666666666666666666666666666666666666",
