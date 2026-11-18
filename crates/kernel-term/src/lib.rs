@@ -189,6 +189,7 @@ pub use crate::arena::ValueId;
 pub use crate::arena::ValueTypeId;
 pub use crate::base::BaseType;
 pub use crate::base::CharacterLiteral;
+pub use crate::base::DecimalDigits;
 pub use crate::base::FixedInteger;
 pub use crate::base::Float64Literal;
 pub use crate::base::FractionDigits;

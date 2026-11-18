@@ -13,16 +13,16 @@
 
 /// The greatest `u8` plus one wraps to zero.
 @[runs("0u8")]
-def wrapped_u8() -> u8 { u8.wrapping_add 255u8 1u8 }
+def wrapped_u8() -> u8 = u8.wrapping_add 255u8 1u8;
 
 /// The greatest `u8` plus one stays at the greatest.
 @[runs("255u8")]
-def saturated_u8() -> u8 { u8.saturating_add 255u8 1u8 }
+def saturated_u8() -> u8 = u8.saturating_add 255u8 1u8;
 
 /// The greatest `u8` plus one is absent.
 @[runs("+{.1 = *{}}")]
-def checked_u8() -> u8 + Unit { u8.checked_add 255u8 1u8 }
+def checked_u8() -> u8 + Unit = u8.checked_add 255u8 1u8;
 
 /// A shift by the bit count is absent.
 @[runs("+{.1 = *{}}")]
-def shifted_u32() -> u32 + Unit { u32.checked_shl 1u32 32u32 }
+def shifted_u32() -> u32 + Unit = u32.checked_shl 1u32 32u32;

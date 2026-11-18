@@ -22125,7 +22125,7 @@ pub fn typed_number_literal(text: SourceFragment<'_>) -> Maybe<Literal, literal:
     else {
         return Maybe::Absent(literal::Absent::Malformed);
     };
-    FixedInteger::from_decimal(width, digits)
+    FixedInteger::from_decimal(width, gandr_kernel_term::DecimalDigits(digits))
         .map_or(Maybe::Absent(literal::Absent::OutsideWidth), |fixed| {
             Maybe::Present(Literal::Fixed(fixed))
         })

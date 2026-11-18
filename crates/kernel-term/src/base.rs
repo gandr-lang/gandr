@@ -836,6 +836,14 @@ pub struct WiderThanWidth;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OutsideWidth;
 
+/// The decimal digits of a width literal, without its sign and suffix.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecimalDigits<'text>(pub &'text str);
+
 impl FixedInteger
 {
     /// The literal of `width` whose value `digits` spell in decimal.
@@ -859,9 +867,10 @@ impl FixedInteger
     #[inline]
     pub fn from_decimal(
         width: IntegerWidth,
-        digits: &str,
+        digits: DecimalDigits<'_>,
     ) -> Result<Self, OutsideWidth>
     {
+        let DecimalDigits(digits) = digits;
         if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
             return Err(OutsideWidth);
         }
@@ -919,12 +928,15 @@ impl FixedInteger
     /// - ensures: returns the value's shortest decimal spelling.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the returned decimal, diagnostic.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — zero, one and each width's extremes, the signed
     ///   minimums included, spell as their decimal values.
     /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
     #[spec(
-        ensures: |ret| ret.strip_prefix('-').map_or_else(|| Self::from_decimal(self.width(), ret.as_str()) == Ok(*self), |digits| !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|byte| byte.is_ascii_digit())),
+        ensures: |ret| ret.strip_prefix('-').map_or_else(|| Self::from_decimal(self.width(), DecimalDigits(ret.as_str())) == Ok(*self), |digits| !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|byte| byte.is_ascii_digit())),
     )]
     #[inline]
     #[must_use]
@@ -1390,6 +1402,7 @@ mod tests
 
     use super::BaseType;
     use super::CharacterLiteral;
+    use super::DecimalDigits;
     use super::FixedInteger;
     use super::Float64Literal;
     use super::FractionDigits;
@@ -1652,24 +1665,24 @@ mod tests
         ] {
             assert_eq!(
                 Ok(greatest),
-                FixedInteger::from_decimal(width, &greatest.to_decimal()),
+                FixedInteger::from_decimal(width, DecimalDigits(&greatest.to_decimal())),
                 "the greatest {width:?} reads from its digits"
             );
             assert_eq!(
                 Err(OutsideWidth),
-                FixedInteger::from_decimal(width, beyond),
+                FixedInteger::from_decimal(width, DecimalDigits(beyond)),
                 "one past the greatest {width:?} is refused"
             );
         }
         assert_eq!(
             Ok(FixedInteger::U8(7)),
-            FixedInteger::from_decimal(IntegerWidth::U8, "007"),
+            FixedInteger::from_decimal(IntegerWidth::U8, DecimalDigits("007")),
             "leading zeros are no part of the value"
         );
         for text in ["", "-1", "+1", "1_0", "1.5"] {
             assert_eq!(
                 Err(OutsideWidth),
-                FixedInteger::from_decimal(IntegerWidth::I8, text),
+                FixedInteger::from_decimal(IntegerWidth::I8, DecimalDigits(text)),
                 "{text:?} is no digits"
             );
         }

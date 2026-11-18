@@ -1837,6 +1837,7 @@ INSERT INTO purpose VALUES('kernel-term','arena::ValueId','struct','The id of a 
 INSERT INTO purpose VALUES('kernel-term','arena::ValueTypeId','struct','The id of a ValueType node in a TermArena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','base::BaseType','enum','A rigid base-type atom.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','base::CharacterLiteral','struct','A character literal, one Unicode scalar value, inhabiting BaseType::Character.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-term','base::DecimalDigits','struct','The decimal digits of a width literal, without its sign and suffix, that FixedInteger::from_decimal reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','base::FixedInteger','enum','An integer literal of a stated width, inhabiting BaseType::Fixed at that width.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','base::Float64Literal','struct','A canonical 64-bit binary floating-point literal (IEEE 754 binary64), inhabiting BaseType::Float64, held as its bit pattern.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-term','base::FractionDigits','struct','A canonical fractional-digit sequence: ASCII decimal digits with no trailing zeros, the empty sequence denoting an integral value.',NULL,'fits','sound',NULL);
