@@ -1,11 +1,15 @@
-// A source that imports an `extern` block's source and performs the block's
-// operation.
+// A source that performs the operation of an `extern` block in another source.
+// `round-trip.gandr` declares the block `Boundary`, and this source declares
+// no block.
 //
-// `round-trip.gandr` declares the block `Boundary`. This source writes no
-// block of its own. Its import opens the block's interface, so a row here
-// names `Boundary`, and a call performs `Boundary.add`. The run offers each
-// perform to the Rust caller's host, as it does for `quadrupled`. The block's
-// row check runs at the block's own source alone.
+// A program keeps its Rust boundary in one source. Each other source performs
+// the boundary's operations through an import of that source, and it writes no
+// copy of the block.
+//
+// The import opens the block's interface. A row here names `Boundary`, and a
+// call performs `Boundary.add`. The run offers each perform to the Rust
+// caller's host, as it does for `quadrupled`. The block's row check runs at the
+// block's own source alone.
 //
 // - see: `model/interop/boundary/round-trip.gandr` — the block and
 //   `quadrupled`
