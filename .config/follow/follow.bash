@@ -25,7 +25,8 @@
 # the XDG directories:
 #   $XDG_CONFIG_HOME/gandr/follow.json   `{checkout, interval, page}`: the
 #       main checkout it builds in, the seconds between readings, and the
-#       page command's argument vector before the line;
+#       page command's argument vector before the line, each path under
+#       `$HOME` when it starts with `~/`;
 #   $XDG_CONFIG_HOME/gandr/host-tools.toml   the builder's configuration,
 #       on the builder only (`crates/workflow-host-tools`);
 #   $XDG_STATE_HOME/gandr/follow.json    `{deployed, previous, failed,
@@ -57,13 +58,17 @@ follow_toolchains="${XDG_DATA_HOME:-$HOME/.local/share}/gandr/toolchains"
 # `page`, set by `toolchain:follow`.
 follow_page_command=()
 
-# The configuration, or nothing on stdout and exit 2 when it is missing or
-# malformed.
+# Print the configuration. Print nothing and exit 2 when it is missing or
+# malformed. The hosts share one configuration, and their home directories
+# differ. So a `checkout` and a `page` entry that start with `~/` read under
+# `$HOME`.
+# - see: #8000
 follow_configuration() {
   if [[ -f "$follow_config" ]] && jq -e '(.checkout | type == "string")
       and (.interval | type == "number" and . > 0)
       and (.page | type == "array" and length > 0 and all(type == "string"))' "$follow_config" > /dev/null; then
-    jq -c . "$follow_config"
+    jq -c --arg home "$HOME" 'def homed: if startswith("~/") then $home + .[1:] else . end;
+      .checkout |= homed | .page |= map(homed)' "$follow_config"
     return
   fi
   echo "toolchain:follow reads $follow_config: {\"checkout\": <the main checkout>, \"interval\": <seconds>, \"page\": [<page script>, <its arguments before the line>, ...]}" >&2
