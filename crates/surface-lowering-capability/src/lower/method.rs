@@ -280,6 +280,7 @@ fn link(pieces: &[Piece]) -> Maybe<Link, unpathed::Absent>
             TileName::IDENTIFIER,
             TileName::TYPE_VARIABLE,
             TileName::TYPE_IDENTIFIER,
+            TileName::CONSTRUCTOR,
         ]
         .contains(&label)
         {
@@ -725,7 +726,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         else {
             return Ok(Planned(false));
         };
-        if label == TileName::TYPE_IDENTIFIER {
+        if [TileName::TYPE_IDENTIFIER, TileName::CONSTRUCTOR].contains(&label) {
             return Ok(Planned(false));
         }
         let own = pieces.pieces.get(read ..).unwrap_or_default();
@@ -1656,7 +1657,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         loop {
             self.cx_mut().fuel.spend()?;
             match self.cx().form_at(at)? {
-                Some((_, Former::Name | Former::TypeHead)) => {
+                Some((_, Former::Name | Former::Constructor | Former::TypeHead)) => {
                     segments.push(Segment::from(self.cx().name_at(at).as_ref()));
                     break;
                 },
