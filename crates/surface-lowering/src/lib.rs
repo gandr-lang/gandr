@@ -389,8 +389,8 @@
 //!   module pass reads nothing of the lowering's context, so it compiles in the
 //!   base crate, and this crate reads it there.
 //! - `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: a dot call `s.f`
-//!   elaborates to `M.f(s)`, so a call through the method's path lowers as the
-//!   dot call at every receiver mode, and a call with no block reads the place.
+//!   elaborates to `M.f(s)`. So a call through the method's path lowers as the
+//!   dot call at every receiver mode. A call with no block reads the place.
 
 // Module documentation that predates the shape lint: 111 headings outside the
 // vocabulary, 61 decision records, 144 issue references and 27 budgets exceeded.
