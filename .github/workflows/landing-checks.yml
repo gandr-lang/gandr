@@ -1849,6 +1849,8 @@ jobs:
           path: target/evidence/records
           if-no-files-found: error
           retention-days: 2
+      - name: record the policy state sources
+        run: mise run ci:sources-record target/evidence
       # This lane hands over its policy caches, not the dependency cache.
       - name: archive the policy state and gate binary
         id: build-state-archive
@@ -3053,6 +3055,8 @@ jobs:
       - name: unpack Dylint drivers
         if: *promote-drivers
         run: tar -xf dylint-drivers.tar -C "$HOME"
+      - name: record the policy state sources
+        run: mise run ci:sources-record target/evidence
       - *save-policy-state
       - name: delete superseded policy state
         if: ${{ env.ACT != 'true' && steps.save-policy-state.outcome == 'success' }}

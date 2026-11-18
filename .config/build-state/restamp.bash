@@ -14,6 +14,10 @@
 # would read as changed. A case with `"tools": "bsd"` runs the restamp and
 # the reading under `xargs`, `touch` and `find` that refuse the GNU-only
 # options macOS's lack, as a macOS checkout runs them (#3244).
+#
+# A `policy` case records `target/evidence` before it changes `a/x`. It
+# records `target/debug` after the change. The restamp reads both records.
+# - see: #7779
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/sources.bash"
@@ -61,15 +65,21 @@ for (( i = 0; i < count; i++ )); do
   write a/x x && write a/y y && write b/c/z z
   git add . && git commit --quiet --message base
   [[ $change == dirty ]] && write a/x dirty
-  sources_record target/debug
+  if [[ $change == policy ]]; then
+    sources_record target/evidence
+  else
+    sources_record target/debug
+  fi
   [[ $change == dirty ]] && git checkout --quiet -- a/x
   case $change in
     modify) write a/x changed && git add a/x ;;
     add) write a/w added && git add a/w ;;
     remove) git rm --quiet a/y ;;
     unrecorded) rm target/debug/$SOURCES_RECORD ;;
+    policy) write a/x changed && git add a/x ;;
   esac
   git diff --cached --quiet || git commit --quiet --message next
+  [[ $change == policy ]] && sources_record target/debug
   # A clone's checkout dates every path now; a reused work tree keeps the
   # date an earlier job's restamp gave each path.
   if [[ $workspace == reused ]]; then
@@ -78,7 +88,9 @@ for (( i = 0; i < count; i++ )); do
     find . -path ./.git -prune -o -path ./target -prune -o -mindepth 1 -exec touch -h {} +
   fi
   records=()
-  [[ -e target/debug/$SOURCES_RECORD ]] && records=(target/debug/"$SOURCES_RECORD")
+  for dir in target/debug target/evidence; do
+    [[ -e $dir/$SOURCES_RECORD ]] && records+=("$dir/$SOURCES_RECORD")
+  done
   path=$PATH
   [[ $tools == bsd ]] && path=$bsd:$PATH
   if ! PATH=$path sources_restamp "${records[@]}"; then
