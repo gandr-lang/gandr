@@ -124,6 +124,7 @@ impl Resolver for Closed
 
 /// The bytes that the node codec writes.
 #[derive(Default)]
+#[repr(transparent)]
 struct Buffer(Vec<u8>);
 
 impl NodeSink for Buffer
