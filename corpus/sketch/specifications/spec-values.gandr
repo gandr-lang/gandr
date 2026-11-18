@@ -25,7 +25,7 @@ pub def lookupSpec[k : Type, v : Type](s : Store k v, key : k) -> Spec (State He
       | contents(s) == old (contents s)
       | r == find(old(contents(s)), key
     }
-  };
+  }
 
 /// What splitting the first element off a nonempty list must do, its result
 /// named by a pattern.

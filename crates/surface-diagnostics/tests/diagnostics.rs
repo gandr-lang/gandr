@@ -2249,7 +2249,7 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
             .find(needle)
             .expect("the tail is written")
             .saturating_add(2);
-        let end = start.saturating_add(needle.len()).saturating_sub(4);
+        let end = start.saturating_add(needle.len()).saturating_sub(3);
         (
             ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
                 .expect("the tail is ordered"),
@@ -2257,8 +2257,8 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
                 .expect("an insertion is ordered"),
         )
     };
-    let (returned, before_returned) = tail("{ n }");
-    let (called, before_called) = tail("{ kept n }");
+    let (returned, before_returned) = tail("= n;");
+    let (called, before_called) = tail("= kept n;");
     let finding = |diagnostic: &Diagnostic| {
         (
             diagnostic.severity,
@@ -2347,8 +2347,8 @@ fn an_inferred_exit_is_a_finding_whose_fix_writes_its_keyword()
     }
     assert_eq!(
         fixed,
-        "@[explicit_exits]\ndef kept(n : Integer) -> -F Integer { return n }\ndef called(n : \
-             Integer) -> -F Integer { become kept n }\n"
+        "@[explicit_exits]\ndef kept(n : Integer) -> -F Integer = return n;\ndef called(n : \
+             Integer) -> -F Integer = become kept n;\n"
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
     assert_eq!(
@@ -2382,10 +2382,10 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
                 .expect("an insertion is ordered"),
         )
     };
-    let (inner, before_inner) = call("{ id (id n) }", 6_usize, 4_usize);
-    let (returned, before_returned) = call("{ return id n }", 9_usize, 4_usize);
-    let (leading, before_leading) = call("{ id n + 1 }", 2_usize, 4_usize);
-    let (grouped, _) = call("{ return n + 1 }", 9_usize, 5_usize);
+    let (inner, before_inner) = call("= id (id n);", 6_usize, 4_usize);
+    let (returned, before_returned) = call("= return id n;", 9_usize, 4_usize);
+    let (leading, before_leading) = call("= id n + 1;", 2_usize, 4_usize);
+    let (grouped, _) = call("= return n + 1;", 9_usize, 5_usize);
     let finding = |diagnostic: &Diagnostic| {
         (
             diagnostic.severity,
@@ -2459,10 +2459,10 @@ fn an_inferred_run_is_a_finding_whose_fix_writes_its_keyword()
     }
     assert_eq!(
         fixed,
-        "def id(n : Integer) -> -F Integer { n }\n@[explicit_runs]\ndef nested(n : Integer) \
-             -> -F Integer { id (run id n) }\ndef returned(n : Integer) -> -F Integer { return run \
-             id n }\ndef leading(n : Integer) -> -F Integer { run id n + 1 }\ndef grouped(n : \
-             Integer) -> -F Integer { return run (n + 1) }\n"
+        "def id(n : Integer) -> -F Integer = n;\n@[explicit_runs]\ndef nested(n : Integer) \
+             -> -F Integer = id (run id n);\ndef returned(n : Integer) -> -F Integer = return run \
+             id n;\ndef leading(n : Integer) -> -F Integer = run id n + 1;\ndef grouped(n : \
+             Integer) -> -F Integer = return run (n + 1);\n"
     );
     let rechecked = unsettled(path, SourceRoot::Strict, SourceText::from(fixed.as_str()));
     assert_eq!(
