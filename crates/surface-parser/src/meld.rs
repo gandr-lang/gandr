@@ -2482,7 +2482,7 @@ impl<'pbg> MeldState<'pbg>
 
     /// The sort of the operands that the spine at the slope's top takes, where
     /// its head's rule states it: `Path[.A = T] a` takes expressions, though
-    /// the spine is a type (#5750).
+    /// the spine is a type.
     ///
     /// # Specification
     /// - ensures: the [`Rule::operands`](gandr_surface_grammar::Rule::operands)
@@ -2526,7 +2526,7 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// The sort of the operands that the type spine `spine` takes, where the
-    /// rule of its head states it (#5750).
+    /// rule of its head states it.
     ///
     /// # Specification
     /// - ensures: the [`Rule::operands`](gandr_surface_grammar::Rule::operands)
@@ -4120,7 +4120,7 @@ impl<'pbg> MeldState<'pbg>
     /// applies by juxtaposition: the head is an operand, its sort has an
     /// application tile, and `mold` is of that sort (#5326), or of the sort
     /// that the head's rule states for its operands, as an expression at
-    /// `Path a` (#5750).
+    /// `Path a`.
     ///
     /// # Specification
     /// - ensures: admitted exactly when `frontier`'s head is an operand whose
@@ -4939,7 +4939,7 @@ impl<'pbg> MeldState<'pbg>
     /// too, so the enclosing form, not the tail, meets the token. A list
     /// continues a completable form only at a glued `(`: after a space the
     /// `(` opens a group that the closed form applies, so
-    /// `Path[.A = T] (e) (e)` reads two juxtaposed endpoints (#5750).
+    /// `Path[.A = T] (e) (e)` reads two juxtaposed endpoints.
     ///
     /// # Specification
     /// - requires: `labels` are the upcoming token's candidate labels, and
@@ -8970,7 +8970,7 @@ pub struct Frontier
     /// open below `Run` (#6102).
     pub argument: Option<Sort>,
     /// The sort of the operands that the spine at the head takes, where the
-    /// rule of the spine's head states it: an expression after `Path` (#5750).
+    /// rule of the spine's head states it: an expression after `Path`.
     /// It ranks an operand that opens next before the slot sort and the head's
     /// sort, wherever a hole stands below the head.
     pub endpoint: Option<Sort>,

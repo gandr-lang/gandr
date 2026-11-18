@@ -809,7 +809,7 @@ impl Band
     /// only when its own tiles close it or it is a postfix form, `f(x)` and
     /// `r.x`. Every other expression, an operator or a keyword form such as
     /// `x ∷ w` or `pure x`, binds loose, so an endpoint the path rewrite
-    /// juxtaposes keeps its parentheses (#5750).
+    /// juxtaposes keeps its parentheses.
     ///
     /// # Specification
     /// trivial.
@@ -1016,7 +1016,7 @@ fn enclosure(
 /// argument is `first`: a bridge when the head is a bridge or the first
 /// argument takes parentheses after an atom head, as the printer's `led`
 /// rule binds a former there, so that `-F` encloses it (`-F Var (Extend a
-/// b) c` reads as a call of `Var`); an application otherwise (#5750).
+/// b) c` reads as a call of `Var`); an application otherwise.
 ///
 /// # Specification
 /// trivial.

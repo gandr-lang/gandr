@@ -3319,7 +3319,7 @@ impl<'pbg> Molder<'pbg>
     /// The former heads its own form in each place where a type stands, and
     /// its rule states that its endpoints are expressions: `Path a b`,
     /// `Path (f x) y` and `Path(Path.walk f p v, w)` read their endpoints as
-    /// terms, so no window weighs a type group against a term group (#5750).
+    /// terms, so no window weighs a type group against a term group.
     /// Where the tile is not admissible, as in an argument that a value fills
     /// or before the `.` of `Path.here x`, the type name and the constructor
     /// stay.

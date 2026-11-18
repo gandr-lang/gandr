@@ -447,7 +447,7 @@ struct Reading
     bounds: (BoundShape, BoundShape),
     /// The sort of the operands that the mold's rule takes by juxtaposition,
     /// where the rule states it. A spine whose head is the form reads its
-    /// next operand in this sort (#5750).
+    /// next operand in this sort.
     operands: Option<Sort>,
     /// What the mold's rule takes as its left operand.
     left: LeftOperand,
