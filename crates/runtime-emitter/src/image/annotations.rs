@@ -20,6 +20,7 @@
 //!   § io-direction-first-crate: one byte form of a content table, for the
 //!   store and for the image.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use gandr_core_content::ArenaNode;
@@ -47,23 +48,41 @@ use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
-/// The bytes that the node codec writes for an image.
+use super::Ordinal;
+use super::Word32;
+
+/// The bytes that the node codec writes for an image: a table, an interface
+/// or a session action.
 ///
 /// # Specification
 /// trivial.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
+#[repr(transparent)]
 pub(super) struct Buffer(Vec<u8>);
 
-impl Buffer
+impl AsRef<[u8]> for Buffer
 {
     /// The bytes written.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub(super) fn into_bytes(self) -> Vec<u8>
+    fn as_ref(&self) -> &[u8]
     {
-        self.0
+        &self.0
+    }
+}
+
+impl From<Vec<u8>> for Buffer
+{
+    /// The bytes that an image holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: Vec<u8>) -> Self
+    {
+        Self(bytes)
     }
 }
 
@@ -176,28 +195,33 @@ impl Table
     ///   ordinal of each root is the place of its content. So two arenas that
     ///   share nodes differently give the same table.
     /// - panics: none.
+    /// - executable: none — the table is equal only up to the arena's sharing,
+    ///   so the read's round trip states it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — each annotated item of the corpus writes its table
+    ///   and reads back to equal bytes.
+    /// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
     ///
     /// # Cost
-    /// - allocation: the table, the places and the ordinals, growth within the
-    ///   annotations
+    /// - allocation: the table, the places, their index and the ordinals,
+    ///   growth within the annotations
     #[inline]
     pub(super) fn of(
         arena: &CoreArena,
         roots: &[ArenaNode],
-    ) -> (Self, Vec<u32>)
+    ) -> (Self, Vec<Word32>)
     {
         let (nodes, every) = tabled_roots(arena, &Positions, roots);
         let mut places: Vec<TablePlace> = Vec::new();
+        let mut held: BTreeMap<TablePlace, Word32> = BTreeMap::new();
         let mut ordinals = Vec::with_capacity(every.len());
         for place in every {
-            let at = places
-                .iter()
-                .position(|held| *held == place)
-                .unwrap_or_else(|| {
-                    places.push(place);
-                    places.len().saturating_sub(1)
-                });
-            ordinals.push(u32::try_from(at).unwrap_or(u32::MAX));
+            let ordinal = *held.entry(place.clone()).or_insert_with(|| {
+                places.push(place);
+                Word32(u32::try_from(places.len().saturating_sub(1)).unwrap_or(u32::MAX))
+            });
+            ordinals.push(ordinal);
         }
         (Self { nodes, places }, ordinals)
     }
@@ -207,9 +231,9 @@ impl Table
     /// # Specification
     /// trivial.
     #[inline]
-    pub(super) const fn roots(&self) -> usize
+    pub(super) const fn roots(&self) -> Ordinal
     {
-        self.places.len()
+        Ordinal(self.places.len())
     }
 
     /// The bytes of the table: its nodes, then the place of each root.
@@ -223,7 +247,7 @@ impl Table
     /// # Cost
     /// - allocation: the bytes, growth within the table
     #[inline]
-    pub(super) fn bytes(&self) -> Result<Vec<u8>, CodecError>
+    pub(super) fn bytes(&self) -> Result<Buffer, CodecError>
     {
         let mut buffer = Buffer::default();
         let mut writer = Writer { sink: &mut buffer };
@@ -232,7 +256,7 @@ impl Table
             write_index(&mut writer, place.node)?;
             write_selection(&mut writer, &place.support);
         }
-        Ok(buffer.0)
+        Ok(buffer)
     }
 
     /// Read a table of `roots` roots from `bytes`.
@@ -244,22 +268,32 @@ impl Table
     ///   after it, a table not numbered by discovery from its roots, and bytes
     ///   past the last place.
     /// - panics: none.
+    /// - executable: none — the table that wrote the bytes is not at hand.
     ///
     /// # Errors
     /// The [`CodecError`] of the first fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — each annotated item of the corpus reads its table
+    ///   back. L3 — bytes past the last place are refused by name.
+    /// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
     ///
     /// # Cost
     /// - allocation: the nodes and the places, growth within the bytes
     #[inline]
     pub(super) fn read(
-        bytes: &[u8],
-        roots: usize,
+        bytes: &Buffer,
+        roots: Ordinal,
     ) -> Result<Self, CodecError>
     {
-        let mut reader = Reader { bytes, cursor: 0 };
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
         let nodes = read_nodes(&mut reader)?;
         let mut places = Vec::new();
-        for _root in 0 .. roots {
+        for _root in 0 .. usize::from(roots) {
             places.push(read_table_place(&mut reader, &nodes)?);
         }
         reader.finish()?;
@@ -273,9 +307,17 @@ impl Table
     /// - requires: nothing.
     /// - ensures: on success one node of `arena` for each root, in order.
     /// - panics: none.
+    /// - executable: none — a minted node is equal to its root only up to the
+    ///   arena's sharing, which the read's check covers.
     ///
     /// # Errors
     /// The reason that a root does not mint.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — each annotated item of the corpus mints its roots and
+    ///   runs alike. L3 — a root past its table is refused by name.
+    /// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
+    /// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
     ///
     /// # Cost
     /// - allocation: each minted node and the list of roots, growth within the

@@ -381,48 +381,30 @@ impl fmt::Display for ImageRefusal
             Self::Check(ref refusal) => write!(f, "the root does not check: {refusal}"),
             Self::Open(_) => f.write_str("the root has free variables"),
             Self::Table(error) => {
-                write!(
-                    f,
-                    "the table of annotations is refused: {}",
-                    codec_fault(error)
-                )
+                f.write_str("the table of annotations is refused: ")?;
+                f.write_str(match error {
+                    CodecError::Corrupt => "bytes that no table writes",
+                    CodecError::NonCanonical => "bytes that are not the one form of their table",
+                    CodecError::LevelOffsetTooLarge { .. } => "a level past the cap of the reader",
+                    CodecError::Unsupported(_) => "a form that has no byte form",
+                    CodecError::Unrepresentable => "a count or a length past its word",
+                })
             },
             Self::Annotation(reason) => {
-                write!(f, "an annotation does not mint: {}", mint_fault(reason))
+                f.write_str("an annotation does not mint: ")?;
+                f.write_str(match reason {
+                    seating::Absent::Unresolved => "an id of another arena",
+                    seating::Absent::Cyclic => "a node that is its own descendant",
+                    seating::Absent::Unplaced => {
+                        "a root or a constant that the image does not hold"
+                    },
+                    seating::Absent::IllSorted => "a root of another sort",
+                    seating::Absent::Unseatable => "an item with no seat",
+                    seating::Absent::Unplaceable => "an index past its space",
+                    seating::Absent::Unwalked => "a place past the walk",
+                })
             },
         }
-    }
-}
-
-/// The words that name a fault of the node codec.
-///
-/// # Specification
-/// trivial.
-const fn codec_fault(error: CodecError) -> &'static str
-{
-    match error {
-        CodecError::Corrupt => "bytes that no table writes",
-        CodecError::NonCanonical => "bytes that are not the one form of their table",
-        CodecError::LevelOffsetTooLarge { .. } => "a level past the cap of the reader",
-        CodecError::Unsupported(_) => "a form that has no byte form",
-        CodecError::Unrepresentable => "a count or a length past its word",
-    }
-}
-
-/// The words that name why a root of the table does not mint.
-///
-/// # Specification
-/// trivial.
-const fn mint_fault(reason: seating::Absent) -> &'static str
-{
-    match reason {
-        seating::Absent::Unresolved => "an id of another arena",
-        seating::Absent::Cyclic => "a node that is its own descendant",
-        seating::Absent::Unplaced => "a root or a constant that the image does not hold",
-        seating::Absent::IllSorted => "a root of another sort",
-        seating::Absent::Unseatable => "an item with no seat",
-        seating::Absent::Unplaceable => "an index past its space",
-        seating::Absent::Unwalked => "a place past the walk",
     }
 }
 
@@ -461,19 +443,21 @@ pub struct Read
 ///   [`read`].
 ///
 /// # Errors
-/// [`ImageRefusal::Uncodable`] naming the first node in walk order whose form
-/// names core types; [`ImageRefusal::Dangling`] for an address the arena does
+/// [`ImageRefusal::Uncodable`] naming the first node in walk order whose head
+/// does not cross; [`ImageRefusal::Dangling`] for an address the arena does
 /// not hold; [`ImageRefusal::Undefined`] for a constant with no definition;
-/// [`ImageRefusal::Plane`] for the plane's refusal of the emission.
+/// [`ImageRefusal::Table`] for an annotation that the node codec does not
+/// write; [`ImageRefusal::Plane`] for the plane's refusal of the emission.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — each `runs` item of the corpus without an annotation
-///   reads back, checks, and runs to its first command's outcome on both tiers;
-///   two focus runs of one source give equal bytes. L3 — a command with a code
-///   is refused by name.
+/// - hypothesis: L2 — each `runs` item of the corpus whose head crosses reads
+///   back, checks, and runs to its first command's outcome on both tiers; two
+///   focus runs of one source give equal bytes. L3 — a code round-trips, and a
+///   root past its table and bytes past the table are each refused by name.
 /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
 /// - witness: `tests::image::two_focuses_give_equal_bytes`
-/// - witness: `tests::image::an_annotation_is_refused_by_name`
+/// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
+/// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
 ///
 /// # Cost
 /// - allocation: the walk's order and its slots, growth within the command
@@ -506,14 +490,17 @@ pub fn encode(
 /// twice; [`ImageRefusal::Mint`] for a child after its parent;
 /// [`ImageRefusal::Mark`] for a mark on a node that is not a binder;
 /// [`ImageRefusal::Check`] and [`ImageRefusal::Open`] for a root that does
-/// not check closed.
+/// not check closed; [`ImageRefusal::Table`] for a table of annotations that
+/// the node codec refuses; [`ImageRefusal::Annotation`] for an annotation
+/// that does not mint.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`encode`]. L3 — a tag that no node has, a child after
-///   its parent, a count past the ceiling and bytes after the image are each
-///   refused by name.
+///   its parent, a count past the ceiling, bytes after the image, a root past
+///   its table and bytes past the table are each refused by name.
 /// - witness: `tests::image::each_named_program_reads_back_and_runs_alike`
 /// - witness: `tests::image::each_fault_of_the_bytes_is_refused_by_name`
+/// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
 ///
 /// # Cost
 /// - allocation: the nodes and the fresh arena, growth within the image
@@ -551,14 +538,14 @@ enum Node<'arena>
 enum Pending
 {
     /// A code.
-    Code(u32),
+    Code(Word32),
     /// A fold over a list.
     ListFold
     {
         /// The ordinal of the element type.
-        element: u32,
+        element: Word32,
         /// The ordinal of the result type.
-        result: u32,
+        result: Word32,
         /// The nil branch.
         on_nil: CommandId,
         /// The cons branch.
@@ -570,7 +557,7 @@ enum Pending
     Perform
     {
         /// The interface, over ordinals.
-        signature: Vec<u8>,
+        signature: annotations::Buffer,
         /// The operation.
         operation: OperationName,
         /// The route.
@@ -584,7 +571,7 @@ enum Pending
     Handle
     {
         /// The interface, over ordinals.
-        signature: Vec<u8>,
+        signature: annotations::Buffer,
         /// Whether the handler introduces a capability.
         introduces: Introduces,
         /// The handled command.
@@ -600,7 +587,7 @@ enum Pending
     Session
     {
         /// The action, over positions and ordinals.
-        action: Vec<u8>,
+        action: annotations::Buffer,
         /// The continuation.
         continuation: ConsumerId,
     },
@@ -852,9 +839,9 @@ struct Annotations
     /// The number of roots, zero for a command that names none.
     roots: usize,
     /// The bytes of the table, in the node codec of `gandr-core-content`.
-    bytes: Vec<u8>,
+    bytes: annotations::Buffer,
     /// The ordinal of each root, for a walk; empty for a read.
-    ordinals: BTreeMap<ArenaNode, u32>,
+    ordinals: BTreeMap<ArenaNode, Word32>,
 }
 
 /// The state of one walk from a root.
@@ -884,7 +871,7 @@ struct Walk<'arena>
     /// The roots of the annotations, in the order the walk met them.
     roots: Vec<ArenaNode>,
     /// The ordinal of each root.
-    ordinals: BTreeMap<ArenaNode, u32>,
+    ordinals: BTreeMap<ArenaNode, Word32>,
 }
 
 impl Walk<'_>
@@ -1055,7 +1042,8 @@ impl Walk<'_>
     )
     {
         if let alloc::collections::btree_map::Entry::Vacant(entry) = self.ordinals.entry(node) {
-            let _ordinal = entry.insert(u32::try_from(self.roots.len()).unwrap_or(u32::MAX));
+            let _ordinal =
+                entry.insert(Word32(u32::try_from(self.roots.len()).unwrap_or(u32::MAX)));
             self.roots.push(node);
         }
     }
@@ -1232,7 +1220,7 @@ impl<'arena> Image<'arena>
         else {
             let (table, ordinals) = annotations::Table::of(arena.annotations(), &walk.roots);
             Annotations {
-                roots: table.roots(),
+                roots: usize::from(table.roots()),
                 bytes: table.bytes().map_err(ImageRefusal::Table)?,
                 ordinals: walk.roots.iter().copied().zip(ordinals).collect(),
             }
@@ -1278,8 +1266,9 @@ impl<'arena> Image<'arena>
             Vec::new()
         }
         else {
-            let table = annotations::Table::read(&self.annotations.bytes, self.annotations.roots)
-                .map_err(ImageRefusal::Table)?;
+            let table =
+                annotations::Table::read(&self.annotations.bytes, Ordinal(self.annotations.roots))
+                    .map_err(ImageRefusal::Table)?;
             match table.mint(arena.annotations_mut()) {
                 Maybe::Present(roots) => roots,
                 Maybe::Absent(reason) => return Err(ImageRefusal::Annotation(reason)),
@@ -1366,9 +1355,17 @@ enum Settled
 /// - fails: an ordinal past the roots, a root of another sort, and bytes of a
 ///   signature or an action that the node codec refuses.
 /// - panics: none.
+/// - executable: none — the check of the read root is the postcondition, and it
+///   runs.
 ///
 /// # Errors
 /// [`ImageRefusal::Annotation`] and [`ImageRefusal::Table`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — each annotated form round-trips in the corpus. L3 — a
+///   root past its table is refused by name.
+/// - witness: `gandr-runtime-stencils::tests::image::each_runs_item_reads_back_and_runs_alike`
+/// - witness: `tests::image::a_code_round_trips_and_a_fault_of_its_table_is_refused_by_name`
 ///
 /// # Cost
 /// - allocation: the signature or the action of the node, durable by the read
@@ -1445,10 +1442,10 @@ fn settle(
 /// [`ImageRefusal::Annotation`] for an ordinal past the roots.
 fn root(
     roots: &[ArenaNode],
-    ordinal: u32,
+    ordinal: Word32,
 ) -> Result<ArenaNode, ImageRefusal>
 {
-    usize::try_from(ordinal)
+    usize::try_from(u32::from(ordinal))
         .ok()
         .and_then(|at| roots.get(at))
         .copied()
@@ -1465,7 +1462,7 @@ fn root(
 /// another sort.
 fn value_type(
     roots: &[ArenaNode],
-    ordinal: u32,
+    ordinal: Word32,
 ) -> Result<ValueTypeId, ImageRefusal>
 {
     match root(roots, ordinal)? {
@@ -1488,7 +1485,10 @@ fn indexed_type(
     index: NodeIndex,
 ) -> Result<ValueTypeId, ImageRefusal>
 {
-    value_type(roots, u32::try_from(usize::from(index)).unwrap_or(u32::MAX))
+    value_type(
+        roots,
+        Word32(u32::try_from(usize::from(index)).unwrap_or(u32::MAX)),
+    )
 }
 
 /// The position that the node index `index` writes.
@@ -1498,9 +1498,11 @@ fn indexed_type(
 ///
 /// # Errors
 /// [`ImageRefusal::Table`] for an index past 32 bits.
-fn indexed_position(index: NodeIndex) -> Result<u32, ImageRefusal>
+fn indexed_position(index: NodeIndex) -> Result<Word32, ImageRefusal>
 {
-    u32::try_from(usize::from(index)).map_err(|_wider| ImageRefusal::Table(CodecError::Corrupt))
+    u32::try_from(usize::from(index))
+        .map(Word32)
+        .map_err(|_wider| ImageRefusal::Table(CodecError::Corrupt))
 }
 
 /// The interface that `bytes` write over ordinals, over the minted roots.
@@ -1515,11 +1517,14 @@ fn indexed_position(index: NodeIndex) -> Result<u32, ImageRefusal>
 /// # Cost
 /// - allocation: the operations of the interface, durable by the read command
 fn signature_of(
-    bytes: &[u8],
+    bytes: &annotations::Buffer,
     roots: &[ArenaNode],
 ) -> Result<EffectSig, ImageRefusal>
 {
-    let mut reader = NodeReader { bytes, cursor: 0 };
+    let mut reader = NodeReader {
+        bytes: bytes.as_ref(),
+        cursor: 0,
+    };
     let indexed = read_effect_signature(&mut reader).map_err(ImageRefusal::Table)?;
     reader.finish().map_err(ImageRefusal::Table)?;
     let mut operations = Vec::with_capacity(indexed.operations().len());
@@ -1547,11 +1552,14 @@ fn signature_of(
 /// - allocation: the label and the arms of the action, durable by the read
 ///   command
 fn action_of(
-    bytes: &[u8],
+    bytes: &annotations::Buffer,
     roots: &[ArenaNode],
 ) -> Result<SessionAction<ProducerId, CommandId, ValueTypeId>, ImageRefusal>
 {
-    let mut reader = NodeReader { bytes, cursor: 0 };
+    let mut reader = NodeReader {
+        bytes: bytes.as_ref(),
+        cursor: 0,
+    };
     let indexed = read_session_action(&mut reader).map_err(ImageRefusal::Table)?;
     reader.finish().map_err(ImageRefusal::Table)?;
     indexed.try_map(
@@ -1602,7 +1610,7 @@ impl CanonicalValue for Image<'_>
         sink.word(position(u32::from(self.root)))?;
         if annotated {
             sink.word(count(self.annotations.roots)?)?;
-            sink.bytes(TokenBytes::from(self.annotations.bytes.as_slice()))?;
+            sink.bytes(TokenBytes::from(self.annotations.bytes.as_ref()))?;
         }
         for node in &self.nodes {
             match *node {
@@ -1675,7 +1683,7 @@ impl CanonicalValue for Image<'_>
                 .ok_or_else(|| opened.refused())?;
             Annotations {
                 roots,
-                bytes: <&[u8]>::from(reader.read_bytes()?).to_vec(),
+                bytes: annotations::Buffer::from(<&[u8]>::from(reader.read_bytes()?).to_vec()),
                 ordinals: BTreeMap::new(),
             }
         }
@@ -2239,10 +2247,10 @@ where
                 continuation: ConsumerId::from(index(opened, reader)?),
             })
         },
-        CODE => Node::Pending(Pending::Code(u32::from(index(opened, reader)?))),
+        CODE => Node::Pending(Pending::Code(index(opened, reader)?)),
         LIST_FOLD => {
-            let element = u32::from(index(opened, reader)?);
-            let result = u32::from(index(opened, reader)?);
+            let element = index(opened, reader)?;
+            let result = index(opened, reader)?;
             let on_nil = CommandId::from(index(opened, reader)?);
             let on_cons = CommandId::from(index(opened, reader)?);
             Node::Pending(Pending::ListFold {
@@ -2254,7 +2262,7 @@ where
             })
         },
         PERFORM => {
-            let signature = <&[u8]>::from(reader.read_bytes()?).to_vec();
+            let signature = annotations::Buffer::from(<&[u8]>::from(reader.read_bytes()?).to_vec());
             let operation = OperationName::from(opened.text(reader)?.as_str());
             let route = match case(opened, reader, 2_u64)? {
                 0_u64 => Route::Nearest,
@@ -2270,7 +2278,7 @@ where
             })
         },
         HANDLE => {
-            let signature = <&[u8]>::from(reader.read_bytes()?).to_vec();
+            let signature = annotations::Buffer::from(<&[u8]>::from(reader.read_bytes()?).to_vec());
             let introduces = match case(opened, reader, 2_u64)? {
                 0_u64 => Introduces::Nothing,
                 _ => Introduces::Capability,
@@ -2296,7 +2304,7 @@ where
             })
         },
         SESSION => {
-            let action = <&[u8]>::from(reader.read_bytes()?).to_vec();
+            let action = annotations::Buffer::from(<&[u8]>::from(reader.read_bytes()?).to_vec());
             Node::Pending(Pending::Session {
                 action,
                 continuation: ConsumerId::from(index(opened, reader)?),
@@ -2401,7 +2409,7 @@ impl Image<'_>
     fn ordinal(
         &self,
         node: ArenaNode,
-    ) -> Result<u32, ValueError>
+    ) -> Result<Word32, ValueError>
     {
         self.annotations
             .ordinals
@@ -2423,7 +2431,7 @@ impl Image<'_>
     ) -> Result<NodeIndex, ValueError>
     {
         let ordinal = self.ordinal(ArenaNode::ValueType(ty))?;
-        usize::try_from(ordinal)
+        usize::try_from(u32::from(ordinal))
             .map(NodeIndex::from)
             .map_err(|_wider| untaken())
     }
@@ -2444,7 +2452,7 @@ impl Image<'_>
     fn signature_bytes(
         &self,
         signature: &EffectSig,
-    ) -> Result<Vec<u8>, ValueError>
+    ) -> Result<annotations::Buffer, ValueError>
     {
         let mut operations = Vec::with_capacity(signature.operations().len());
         for operation in signature.operations() {
@@ -2459,7 +2467,7 @@ impl Image<'_>
         let mut buffer = annotations::Buffer::default();
         write_effect_signature(&mut NodeWriter { sink: &mut buffer }, &indexed)
             .map_err(|_unwritten| untaken())?;
-        Ok(buffer.into_bytes())
+        Ok(buffer)
     }
 
     /// The bytes of the session action `action`, each child as its position
@@ -2478,7 +2486,7 @@ impl Image<'_>
     fn action_bytes(
         &self,
         action: &SessionAction<ProducerId, CommandId, ValueTypeId>,
-    ) -> Result<Vec<u8>, ValueError>
+    ) -> Result<annotations::Buffer, ValueError>
     {
         let at = |word: CanonicalWord| {
             usize::try_from(u64::from(word))
@@ -2495,7 +2503,7 @@ impl Image<'_>
         let mut buffer = annotations::Buffer::default();
         write_session_action(&mut NodeWriter { sink: &mut buffer }, &indexed)
             .map_err(|_unwritten| untaken())?;
-        Ok(buffer.into_bytes())
+        Ok(buffer)
     }
 
     /// Write the producers of `ids` after their count.
@@ -2824,9 +2832,7 @@ impl Image<'_>
                 continuation,
             } => {
                 sink.open(ConstructorTag::from(PERFORM))?;
-                sink.bytes(TokenBytes::from(
-                    self.signature_bytes(signature)?.as_slice(),
-                ))?;
+                sink.bytes(TokenBytes::from(self.signature_bytes(signature)?.as_ref()))?;
                 sink.bytes(TokenBytes::from(str::as_bytes(operation.as_ref())))?;
                 match route {
                     Route::Nearest => sink.word(CanonicalWord::from(0_u64))?,
@@ -2847,9 +2853,7 @@ impl Image<'_>
                 continuation,
             } => {
                 sink.open(ConstructorTag::from(HANDLE))?;
-                sink.bytes(TokenBytes::from(
-                    self.signature_bytes(signature)?.as_slice(),
-                ))?;
+                sink.bytes(TokenBytes::from(self.signature_bytes(signature)?.as_ref()))?;
                 sink.word(CanonicalWord::from(match introduces {
                     Introduces::Nothing => 0_u64,
                     Introduces::Capability => 1_u64,
@@ -2868,7 +2872,7 @@ impl Image<'_>
                 continuation,
             } => {
                 sink.open(ConstructorTag::from(SESSION))?;
-                sink.bytes(TokenBytes::from(self.action_bytes(action)?.as_slice()))?;
+                sink.bytes(TokenBytes::from(self.action_bytes(action)?.as_ref()))?;
                 sink.word(numbering.consumer(continuation)?)?;
             },
             CommandNode::Resume {
