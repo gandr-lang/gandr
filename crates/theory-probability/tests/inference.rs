@@ -417,16 +417,41 @@ fn the_clique_marginals_glue_and_a_changed_weight_is_obstructed()
         ]))
     );
     assert_eq!(family.possibility(&semiring), Ok(Possibility::Extends));
+    let overlaps: alloc::sync::Arc<[_]> = family.overlaps().into();
     for (member, belief) in family.members().iter().enumerate() {
         for entry in 0 .. belief.weights().len() {
-            let mut weights = belief.weights().to_vec();
-            let raised = weights.get_mut(entry).expect("an entry");
-            *raised = raised.plus(rational!(1, 100)).expect("a raised weight");
-            let mut members = family.members().to_vec();
-            *members.get_mut(member).expect("a member") =
-                Table::new(belief.scope().clone(), weights).expect("the same width");
-            let changed =
-                Family::new(members, family.overlaps().to_vec()).expect("the same overlaps");
+            let weights: Vec<_> = belief
+                .weights()
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(at, weight)| {
+                    if at == entry {
+                        weight.plus(rational!(1, 100)).expect("a raised weight")
+                    }
+                    else {
+                        weight
+                    }
+                })
+                .collect();
+            let mut raised =
+                Some(Table::new(belief.scope().clone(), weights).expect("the same width"));
+            let members: Vec<_> = family
+                .members()
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(at, other)| {
+                    if at == member {
+                        raised.take().expect("one raised member")
+                    }
+                    else {
+                        other
+                    }
+                })
+                .collect();
+            let changed = Family::new(members, alloc::sync::Arc::clone(&overlaps))
+                .expect("the same overlaps");
             let at = [sprinkler(), rain()].map(|variable| {
                 belief
                     .scope()

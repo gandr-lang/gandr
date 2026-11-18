@@ -20,6 +20,8 @@ macro_rules! rational {
     }};
 }
 
+extern crate alloc;
+
 #[cfg(test)]
 mod canonical;
 #[cfg(test)]

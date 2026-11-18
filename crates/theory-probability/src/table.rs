@@ -175,7 +175,7 @@ pub enum Inclusion
 pub struct Scope
 {
     /// The variables in ascending order.
-    slots: Vec<Slot>,
+    slots: alloc::sync::Arc<[Slot]>,
     /// The number of entries of a table over the scope.
     width: NonZeroUsize,
 }
@@ -228,7 +228,10 @@ impl Scope
             width = width.checked_mul(values).ok_or(InferenceError::TooLarge)?;
         }
         slots.reverse();
-        Ok(Self { slots, width })
+        Ok(Self {
+            slots: slots.into(),
+            width,
+        })
     }
 
     /// The number of entries of a table over the scope.

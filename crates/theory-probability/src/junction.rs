@@ -661,7 +661,7 @@ impl JunctionTree
                 )?;
             }
         }
-        let edges = self.links.iter().map(|link| link.ends).collect();
+        let edges: alloc::sync::Arc<[_]> = self.links.iter().map(|link| link.ends).collect();
         Ok(Calibrated {
             family: Family::new(potentials, edges)?,
         })

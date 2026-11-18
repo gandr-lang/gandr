@@ -39,7 +39,7 @@ pub struct Family<E>
     /// The local tables.
     members: Vec<Table<E>>,
     /// The pairs of members to compare.
-    overlaps: Vec<(CoverIndex, CoverIndex)>,
+    overlaps: alloc::sync::Arc<[(CoverIndex, CoverIndex)]>,
 }
 
 /// Where two members of a family differ.
@@ -115,11 +115,14 @@ impl<E> Family<E>
     /// - witness: `tests::inference::a_contextual_family_glues_and_is_refused_a_joint`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |family| family.overlaps.iter().all(|&(first, second)| usize::from(first) < family.members.len() && usize::from(second) < family.members.len())))]
     #[inline]
-    pub fn new(
+    pub fn new<O>(
         members: Vec<Table<E>>,
-        overlaps: Vec<(CoverIndex, CoverIndex)>,
+        overlaps: O,
     ) -> Result<Self, InferenceError>
+    where
+        O: Into<alloc::sync::Arc<[(CoverIndex, CoverIndex)]>>,
     {
+        let overlaps = overlaps.into();
         if let Some(past) = overlaps
             .iter()
             .flat_map(|&pair| <[CoverIndex; 2]>::from(pair))
@@ -203,7 +206,7 @@ impl<E: Clone + Eq> Family<E>
         let mut right = Vec::new();
         let mut glued = Vec::with_capacity(self.overlaps.len());
         let mut obstructed = Vec::new();
-        for &(first, second) in &self.overlaps {
+        for &(first, second) in self.overlaps.iter() {
             let (one, other) = (self.member(first)?, self.member(second)?);
             let overlap = one.scope().meet(other.scope())?;
             one.marginal_into(semiring, &overlap, &mut left)?;
