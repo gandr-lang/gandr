@@ -552,7 +552,7 @@ impl Index
     )
     {
         let status = match (&regression.accepted, regression.shift) {
-            (&Maybe::Present(ref acceptance), _) => format!("accepted — {acceptance}"),
+            (&Maybe::Present(acceptance), _) => format!("accepted — {acceptance}"),
             (&Maybe::Absent(_), Maybe::Present(shift)) => format!(
                 "runner shift — the {} functions both reports time moved {} % at the median, and \
                  none moved past the policy's threshold beside it",
