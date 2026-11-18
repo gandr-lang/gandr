@@ -11,7 +11,8 @@
 # The body's lines, a carriage return dropped from each.
 def lines: split("\n") | map(sub("\r$"; ""));
 # Whether labels describe a unit that a filer can sign after its mechanical
-# check. New work waits for the coordinator's shape reading (#7598).
+# check. A feature or performance unit waits for the coordinator's reading.
+# - see: #7598
 def signed_by_construction($labels):
   ($labels | any(. == "kind:feature" or . == "kind:performance")) | not;
 
