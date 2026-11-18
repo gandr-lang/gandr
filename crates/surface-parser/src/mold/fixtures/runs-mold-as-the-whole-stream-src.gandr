@@ -1,3 +1,4 @@
-def a : Type = List (Integer);
+def a : Type;
+def a = List (Integer);
 def b = Inl 1;
 def c = match b { | Inl(x) => x | Inr(y) => y };
