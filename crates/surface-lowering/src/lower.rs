@@ -7425,9 +7425,11 @@ mod tests
             ),
             (
                 "def b = Integer => Integer;\n",
-                27,
-                FormName::from(NamedKind("lambda_expression")),
-                FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)),
+                15,
+                FormName::from(NamedKind("def_value")),
+                FormFault::Repaired(Repair::Unended(crate::form::Ending::Tile(
+                    crate::form::TileName::SEMICOLON,
+                ))),
             ),
         ] {
             assert_eq!(lowered(source), [refused(at, at, form, fault)], "{source}");
