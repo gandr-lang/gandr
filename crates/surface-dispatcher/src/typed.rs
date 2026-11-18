@@ -10811,8 +10811,8 @@ mod tests
             .map(|back| (back.spelled, back.trip))
             .collect();
         for spelled in [
-            "(x : Type) -> -F Path[.A = Type](same(same(x)), x)",
-            "*{a : +U (Type -> -F Type), b : (b : Type) -> Path[.A = Type](same(a(b)), b)}",
+            "(x : Type) -> -F Path[.A = Type] same(same(x)) x",
+            "*{a : +U (Type -> -F Type), b : (b : Type) -> Path[.A = Type] same(a(b)) b}",
         ] {
             assert!(
                 trips.iter().any(|&(ref printed, _)| printed == spelled),
