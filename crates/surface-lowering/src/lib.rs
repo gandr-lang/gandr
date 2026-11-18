@@ -554,6 +554,7 @@ pub use crate::module::Mark;
 pub use crate::module::Offered;
 pub use crate::module::OfferedLabel;
 pub use crate::module::OfferedTranslation;
+pub use crate::module::ReceiverMode;
 pub use crate::module::RecordFaces;
 pub use crate::module::Required;
 pub use crate::module::SealedComponent;

@@ -5566,7 +5566,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   the read; [`LoweringRefusal::ImplicitUnsupplied`] for a declaration
     ///   with implicits named anywhere but a call supplying them; the
     ///   wrong-sort refusal for a flattened model implicit, which is its
-    ///   components and no value (`ModelsRef::unflattened`).
+    ///   components and no value (`ModelsRef::unflattened`);
+    ///   [`LoweringRefusal::MethodAsValue`] for a method read as a value, not
+    ///   as a call's head, whose receiver mode is exclusive or deduced.
     /// - panics: none.
     ///
     /// # Errors
@@ -5582,7 +5584,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     #[spec(
         ensures: |ret| match ret {
             | Err(ref refusal) => match resolved {
-                | Resolved::Declaration { .. } => matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. } | LoweringRefusal::ImplicitUnsupplied { .. }),
+                | Resolved::Declaration { .. } => matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::InertRead { .. } | LoweringRefusal::ImplicitUnsupplied { .. } | LoweringRefusal::MethodAsValue { .. }),
                 | Resolved::Binder(bound) => self.cx().flattened.contains_key(&bound.binder),
             },
             | Ok(ref plan) => match (resolved, self.cx().in_type.contains(&site.at.node)) {
@@ -5617,8 +5619,22 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             },
             Resolved::Binder(_) => Ok(resolved.term()),
             Resolved::Declaration { constant, .. } => {
-                self.shared()
-                    .admit_read(site, SlotIndex::from(usize::from(constant)))?;
+                let slot = SlotIndex::from(usize::from(constant));
+                // A method that writes through its receiver, or answers a
+                // place, needs the caller's hold, which no function value
+                // carries: only a call, the name read as a head, lends it.
+                if let Reading::Value(_) = site.reading
+                    && let Some(&mode @ (ReceiverMode::Exclusive | ReceiverMode::Deduced)) =
+                        self.cx().collected.receivers.get(&slot)
+                    && let Some(entry) = self.cx().collected.slots.get(usize::from(slot))
+                {
+                    return Err(LoweringRefusal::MethodAsValue {
+                        span: site.at.span,
+                        method: entry.name,
+                        mode,
+                    });
+                }
+                self.shared().admit_read(site, slot)?;
                 self.shared().supplied_or_refused(site, constant)?;
                 Ok(resolved.term())
             },

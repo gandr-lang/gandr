@@ -283,6 +283,7 @@ impl LoweringRefusal<'_>
             | Self::InstanceAmbiguous { .. }
             | Self::ModelImplicitValue { .. }
             | Self::RegionAsValue { .. }
+            | Self::MethodAsValue { .. }
             | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
@@ -365,6 +366,7 @@ impl LoweringRefusal<'_>
             | Self::InstanceAmbiguous { .. }
             | Self::ModelImplicitValue { .. }
             | Self::RegionAsValue { .. }
+            | Self::MethodAsValue { .. }
             | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
@@ -1066,6 +1068,11 @@ mod tests
             LoweringRefusal::RegionAsValue {
                 span: empty,
                 name: SurfaceName::from("r"),
+            },
+            LoweringRefusal::MethodAsValue {
+                span: empty,
+                method: SurfaceName::from("first"),
+                mode: crate::module::ReceiverMode::Deduced,
             },
             LoweringRefusal::StrayReceiverMode {
                 span: empty,

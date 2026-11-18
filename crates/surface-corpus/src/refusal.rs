@@ -1059,6 +1059,8 @@ pub enum RefusalName
     TacticRefused,
     /// A definition's region binder named as a value.
     RegionAsValue,
+    /// A method that needs its caller's hold, named as a value, not called.
+    MethodAsValue,
     /// A source's top-level `main` declared at a type no entry has.
     EntryType,
     /// A receiver mode word on a parameter that is no method's receiver.
@@ -1345,7 +1347,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 251_usize] = [
+    pub const VOCABULARY: [Self; 252_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1480,6 +1482,7 @@ impl RefusalName
         Self::ModelAmbiguous,
         Self::TacticRefused,
         Self::RegionAsValue,
+        Self::MethodAsValue,
         Self::EntryType,
         Self::StrayReceiverMode,
         Self::AmbiguousMethod,
@@ -1713,6 +1716,7 @@ impl RefusalName
         (Self::ModelAmbiguous, b"ModelAmbiguous") |
         (Self::TacticRefused, b"TacticRefused") |
         (Self::RegionAsValue, b"RegionAsValue") |
+        (Self::MethodAsValue, b"MethodAsValue") |
         (Self::EntryType, b"EntryType") |
         (Self::StrayReceiverMode, b"StrayReceiverMode") |
         (Self::AmbiguousMethod, b"AmbiguousMethod") |
@@ -2116,6 +2120,7 @@ impl RefusalName
             Self::ModelAmbiguous => "ModelAmbiguous",
             Self::TacticRefused => "TacticRefused",
             Self::RegionAsValue => "RegionAsValue",
+            Self::MethodAsValue => "MethodAsValue",
             Self::EntryType => "EntryType",
             Self::StrayReceiverMode => "StrayReceiverMode",
             Self::AmbiguousMethod => "AmbiguousMethod",
@@ -2932,7 +2937,8 @@ impl<'source> RefusalOf<'source, Arena>
         RefusalName::InstanceUnanswered) | (LoweringRefusal::InstanceAmbiguous { .. },
         RefusalName::InstanceAmbiguous) | (LoweringRefusal::ModelImplicitValue { .. },
         RefusalName::ModelImplicitValue) | (LoweringRefusal::RegionAsValue { .. },
-        RefusalName::RegionAsValue) | (LoweringRefusal::EntryType { .. },
+        RefusalName::RegionAsValue) | (LoweringRefusal::MethodAsValue { .. },
+        RefusalName::MethodAsValue) | (LoweringRefusal::EntryType { .. },
         RefusalName::EntryType) | (LoweringRefusal::StrayReceiverMode { .. },
         RefusalName::StrayReceiverMode) | (LoweringRefusal::AmbiguousMethod { .. },
         RefusalName::AmbiguousMethod) | (LoweringRefusal::AmbiguousConstructor { .. },
@@ -3070,6 +3076,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::InstanceAmbiguous { .. } => RefusalName::InstanceAmbiguous,
         LoweringRefusal::ModelImplicitValue { .. } => RefusalName::ModelImplicitValue,
         LoweringRefusal::RegionAsValue { .. } => RefusalName::RegionAsValue,
+        LoweringRefusal::MethodAsValue { .. } => RefusalName::MethodAsValue,
         LoweringRefusal::EntryType { .. } => RefusalName::EntryType,
         LoweringRefusal::StrayReceiverMode { .. } => RefusalName::StrayReceiverMode,
         LoweringRefusal::AmbiguousMethod { .. } => RefusalName::AmbiguousMethod,
