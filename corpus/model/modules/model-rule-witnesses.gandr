@@ -31,7 +31,7 @@ theory LeftUnit where
   rule unitL : mul e x <=> x;
 
 /// `tick` adds one natural number.
-def tick(n : Ticks) -> Ticks { Tick n }
+def tick(n : Ticks) -> Ticks = Tick n;
 
 /// `joinLeft` recurses on its left argument.
 def rec joinLeft(m : Ticks, n : Ticks) -> Ticks =
@@ -60,10 +60,10 @@ module ByLeft : Model(LeftUnit) where
   def e : Ticks = NoTick;
 
   /// `mul` uses `joinLeft`.
-  def mul(x : Ticks, y : Ticks) -> Ticks { joinLeft x y }
+  def mul(x : Ticks, y : Ticks) -> Ticks = joinLeft x y;
 
   /// `unitL` uses `Path.here`.
-  def unitL(x : Ticks) -> Path(mul e x, x) { Path.here x }
+  def unitL(x : Ticks) -> Path(mul e x, x) = Path.here x;
 
 /// `ByRight` proves the rule by induction.
 module ByRight : Model(LeftUnit) where
@@ -74,7 +74,7 @@ module ByRight : Model(LeftUnit) where
   def e : Ticks = NoTick;
 
   /// `mul` uses `joinRight`.
-  def mul(x : Ticks, y : Ticks) -> Ticks { joinRight x y }
+  def mul(x : Ticks, y : Ticks) -> Ticks = joinRight x y;
 
   /// `unitL` uses `noTickJoinsRight`.
-  def unitL(x : Ticks) -> Path(mul e x, x) { noTickJoinsRight x }
+  def unitL(x : Ticks) -> Path(mul e x, x) = noTickJoinsRight x;

@@ -20,7 +20,7 @@ module Sealed :> Model(Unital) where
 
   def e : Integer = 0;
 
-  def mul(x : Integer, y : Integer) -> Integer { y }
+  def mul(x : Integer, y : Integer) -> Integer = y;
 
   /// The unit law follows by computation.
-  def unitL(x : Integer) -> Path(mul e x, x) { Path.here x }
+  def unitL(x : Integer) -> Path(mul e x, x) = Path.here x;
