@@ -116,6 +116,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 
 - `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The module pass reads nothing of the lowering's context, so it compiles in the base, and this crate reads it there.
 - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
+- `vault:01a15b47-4304-793b-a542-d12afcf732a6` — anchor: a dot call `s.f` elaborates to `M.f(s)`, so a call through the method's path lowers as the dot call at every receiver mode, and a call with no block reads the place.
 
 ## License
 
