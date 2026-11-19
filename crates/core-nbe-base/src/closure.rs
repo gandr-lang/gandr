@@ -51,6 +51,7 @@
 //!
 //! [the domain]: crate::domain
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -828,6 +829,16 @@ pub enum Orientation
     Inverse,
 }
 
+/// An owned environment or the shared capture of several case branches.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CapturedEnvironment
+{
+    /// One closure owns the environment.
+    Owned(Environment),
+    /// Several immutable closures share the environment.
+    Shared(Arc<Environment>),
+}
+
 /// A suspended **computation** body with the environment its free variables
 /// stand in: what a lambda, a thunk, a bind continuation and a case branch all
 /// become.
@@ -837,7 +848,7 @@ pub struct CompClosure
     /// The core computation body, unevaluated.
     body: CompBody,
     /// What the body's free variables stand for.
-    environment: Environment,
+    environment: CapturedEnvironment,
 }
 
 impl CompClosure
@@ -866,13 +877,33 @@ impl CompClosure
     /// - witness: `gandr-core-nbe::eval::tests::native_transport_sequences_product_components`
     #[inline]
     #[must_use]
-    #[spec(captures: [intuitionistic = environment.depth(Zone::Intuitionistic), linear = environment.depth(Zone::Linear)], ensures: |ret| ret.body == body && ret.environment.depth(Zone::Intuitionistic) == intuitionistic && ret.environment.depth(Zone::Linear) == linear)]
+    #[spec(captures: [intuitionistic = environment.depth(Zone::Intuitionistic), linear = environment.depth(Zone::Linear)], ensures: |ret| ret.body == body && ret.environment().depth(Zone::Intuitionistic) == intuitionistic && ret.environment().depth(Zone::Linear) == linear)]
     pub(crate) fn new(
         body: CompBody,
         environment: Environment,
     ) -> Self
     {
-        Self { body, environment }
+        Self {
+            body,
+            environment: CapturedEnvironment::Owned(environment),
+        }
+    }
+
+    /// Close `body` over a shared immutable environment.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn shared(
+        body: CompBody,
+        environment: Arc<Environment>,
+    ) -> Self
+    {
+        Self {
+            body,
+            environment: CapturedEnvironment::Shared(environment),
+        }
     }
 
     /// The suspended body.
@@ -894,7 +925,10 @@ impl CompClosure
     #[must_use]
     pub fn environment(&self) -> &Environment
     {
-        &self.environment
+        match self.environment {
+            CapturedEnvironment::Owned(ref environment) => environment,
+            CapturedEnvironment::Shared(ref environment) => environment.as_ref(),
+        }
     }
 }
 

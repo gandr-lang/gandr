@@ -9330,6 +9330,11 @@ impl crate::fork::Job for DrainPart<'_>
 ///   Any other refusal is the serial drain's to give.
 /// - panics: a panic of a part.
 ///
+/// # Cost
+/// - allocation: the memo and job lists, setup.
+/// - allocation: the parts and their obligation lists, setup.
+/// - allocation: the fork worker state, setup.
+///
 /// # Errors
 /// [`KernelError::KeptOutcomesDisagree`], naming the key by its content digest
 /// and both outcomes, when the memo or the session of a part keeps an outcome
@@ -9380,7 +9385,7 @@ where
         .map(|(obligations, part_memo)| DrainPart {
             judgement: unforked,
             refused: &refused,
-            arena: arena.clone(),
+            arena: arena.fork(),
             memo: part_memo,
             session: session.fork(arena),
             census: ExpansionCensus::new(),
@@ -9713,7 +9718,7 @@ where
         .map(|((&goal, part_memo), position)| SiblingPart {
             judgement,
             refused: &refused,
-            arena: arena.clone(),
+            arena: arena.fork(),
             memo: part_memo,
             session: session.fork_goal(arena),
             census: ExpansionCensus::new(),

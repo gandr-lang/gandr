@@ -1729,20 +1729,20 @@ pub fn replay(
     inputs: &[LooseInstance],
 ) -> Maybe<LooseInstance, replay_outcome::Absent>
 {
-    let declined = Maybe::Absent(replay_outcome::Absent::Declined);
     let kind = &cell.kind;
     let mut stack = vec![ReplayFrame::Eval {
         at: kind.root(),
         inputs: inputs.to_vec(),
     }];
-    let mut last: Maybe<LooseInstance, replay_outcome::Absent> = declined.clone();
+    let mut last: Maybe<LooseInstance, replay_outcome::Absent> =
+        Maybe::Absent(replay_outcome::Absent::Declined);
     while let Some(frame) = stack.pop() {
         match frame {
             ReplayFrame::Eval { at, inputs } => match kind.view_at(at) {
                 CellView::Ident => {
                     last = match *inputs.as_slice() {
                         [ref only] => Maybe::Present(only.clone()),
-                        _ => declined.clone(),
+                        _ => Maybe::Absent(replay_outcome::Absent::Declined),
                     };
                 },
                 CellView::Bang => {
@@ -1755,7 +1755,7 @@ pub fn replay(
                         .first()
                         .and_then(|instance| instance.per_factor.get(usize::from(idx)))
                         .map_or_else(
-                            || declined.clone(),
+                            || Maybe::Absent(replay_outcome::Absent::Declined),
                             |factor| {
                                 Maybe::Present(LooseInstance {
                                     per_factor: vec![factor.clone()],
@@ -1785,12 +1785,13 @@ pub fn replay(
                                 inputs: vec![left_input.clone(), right_input.clone()],
                             });
                         },
-                        _ => last = declined.clone(),
+                        _ => last = Maybe::Absent(replay_outcome::Absent::Declined),
                     }
                 },
             },
             ReplayFrame::PairRight { right, inputs } => {
-                let Maybe::Present(left_out) = core::mem::replace(&mut last, declined.clone())
+                let Maybe::Present(left_out) =
+                    core::mem::replace(&mut last, Maybe::Absent(replay_outcome::Absent::Declined))
                 else {
                     continue;
                 };
@@ -1798,7 +1799,8 @@ pub fn replay(
                 stack.push(ReplayFrame::Eval { at: right, inputs });
             },
             ReplayFrame::PairCombine { left_out } => {
-                let Maybe::Present(right_out) = core::mem::replace(&mut last, declined.clone())
+                let Maybe::Present(right_out) =
+                    core::mem::replace(&mut last, Maybe::Absent(replay_outcome::Absent::Declined))
                 else {
                     continue;
                 };
@@ -2403,8 +2405,8 @@ mod tests
             start: fixtures::zero(),
             steps: vec![RewriteStep {
                 cell: GeneratorIndex::from(0_usize),
-                pos: vec![],
-                subst: Binding::new(),
+                pos: vec![].into(),
+                subst: Binding::new().into(),
             }],
         };
         for (left, right, expected) in [
@@ -2476,8 +2478,8 @@ mod tests
         let start = FreeTerm::op("plus", [fixtures::zero(), value.clone()]);
         let step = RewriteStep {
             cell: GeneratorIndex::from(0_usize),
-            pos: vec![],
-            subst: Binding::from([(Name::from("n"), value.clone())]),
+            pos: vec![].into(),
+            subst: Binding::from([(Name::from("n"), value.clone())]).into(),
         };
         let path = BaseInstance::Path {
             start: start.clone(),
@@ -2520,8 +2522,8 @@ mod tests
                 start: start.clone(),
                 steps: vec![RewriteStep {
                     cell: GeneratorIndex::from(cell),
-                    pos,
-                    subst: Binding::new(),
+                    pos: pos.into(),
+                    subst: Binding::new().into(),
                 }],
             };
             assert_eq!(
@@ -2701,8 +2703,8 @@ mod tests
                 start: FreeTerm::op("plus", [fixtures::zero(), fixtures::zero()]),
                 steps: vec![RewriteStep {
                     cell: GeneratorIndex::from(0_usize),
-                    pos: vec![],
-                    subst: Binding::from([(Name::from("n"), fixtures::zero())]),
+                    pos: vec![].into(),
+                    subst: Binding::from([(Name::from("n"), fixtures::zero())]).into(),
                 }],
             }],
         };
@@ -3012,8 +3014,8 @@ mod tests
         let start = FreeTerm::op("plus", [fixtures::zero(), fixtures::succ(fixtures::zero())]);
         let valid = RewriteStep {
             cell: GeneratorIndex::from(0_usize),
-            pos: vec![],
-            subst: Binding::from([(Name::from("n"), fixtures::succ(fixtures::zero()))]),
+            pos: vec![].into(),
+            subst: Binding::from([(Name::from("n"), fixtures::succ(fixtures::zero()))]).into(),
         };
         let cells = fixtures::nat_desc().rules;
         let generator = input.per_factor.first().expect("one factor").clone();
@@ -3040,8 +3042,8 @@ mod tests
                 generator: generator.clone(),
                 absorbed: vec![RewriteStep {
                     cell: GeneratorIndex::from(cell),
-                    pos,
-                    subst: Binding::new(),
+                    pos: pos.into(),
+                    subst: Binding::new().into(),
                 }],
                 path_start: start.clone(),
             };

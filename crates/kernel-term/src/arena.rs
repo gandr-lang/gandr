@@ -1594,6 +1594,34 @@ impl TermArena
 
 impl TermArena
 {
+    /// Fork a frozen arena, sharing each frozen node family with the child.
+    ///
+    /// # Specification
+    /// - requires: [`Self::freeze`] ran after the parent minted its last node.
+    /// - ensures: the child starts at the parent's watermark and each id reads
+    ///   the same node from either arena.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: segment references, growth within the frozen family's
+    ///   segment cap
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork preserves the frozen parent's reads, then a
+    ///   child mint stays outside the parent.
+    /// - witness: `arena::tests::clones_of_a_clone_drop_into_their_parents_as_truncations_3476`
+    #[spec(ensures: |ret| ret.watermark() == self.watermark())]
+    #[inline]
+    #[must_use]
+    pub fn fork(&self) -> Self
+    {
+        self.clone()
+    }
+}
+
+impl TermArena
+{
     /// Append raw finite session-code syntax; admission checks its invariants.
     ///
     /// # Specification

@@ -56,6 +56,7 @@
 //! constructor, regraft a finished `in` subtree, fold a finished `union`
 //! branch — the continuations of the recursive reading.
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::mem;
 use core::slice;
@@ -726,6 +727,9 @@ impl<Label> Modifier<Label>
     /// - witness: `tests::namespace::a_hook_can_replace_the_namespace`
     /// - witness: `tests::namespace::a_nested_modifier_survives_a_round_trip`
     /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
+    ///
+    /// # Cost
+    /// - allocation: modifier instructions, setup.
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -761,7 +765,7 @@ impl<Label> Modifier<Label>
         let mut current = subject;
         let mut stack: Vec<Instruction<'_, Data, Tag>> = Vec::new();
         stack.push(Instruction::Apply {
-            prefix: NamePath::root(),
+            prefix: Arc::new(NamePath::root()),
             constructor: ConstructorId(self.constructors.len().saturating_sub(1_usize)),
         });
         while let Some(instruction) = stack.pop() {
@@ -795,7 +799,7 @@ impl<Label> Modifier<Label>
                         Some(&next) => {
                             current = input.clone();
                             stack.push(Instruction::UnionFold {
-                                prefix: prefix.clone(),
+                                prefix: Arc::clone(&prefix),
                                 input,
                                 accumulated,
                                 remaining,
@@ -841,6 +845,10 @@ impl<Label> Modifier<Label>
     /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_missing_selection`
     /// - witness: `tests::namespace::a_rejecting_handler_refuses_a_hook`
     /// - witness: `tests::namespace::every_namespace_walk_is_iterative`
+    ///
+    /// # Cost
+    /// - allocation: nested modifier instructions, growth within the stack
+    ///   capacity.
     #[spec(
         requires: constructor.0 < self.constructors.len(),
         captures: before = (stack.len(), usize::from(current.binding_count())),
@@ -891,7 +899,7 @@ impl<Label> Modifier<Label>
         current: &mut Trie<Data, Tag>,
         stack: &mut Vec<Instruction<'modifier, Data, Tag>>,
         handler: &mut Handler,
-        prefix: NamePath,
+        prefix: Arc<NamePath>,
         constructor: ConstructorId,
     ) -> Result<(), EventRejection>
     where
@@ -916,11 +924,11 @@ impl<Label> Modifier<Label>
                 let detached = current.detach_subtree(subtree);
                 let outside = mem::replace(current, detached);
                 stack.push(Instruction::Regraft {
-                    prefix: subtree.clone(),
+                    prefix: Arc::new(subtree.clone()),
                     outside,
                 });
                 stack.push(Instruction::Apply {
-                    prefix: prefix.extended(subtree),
+                    prefix: Arc::new(prefix.extended(subtree)),
                     constructor: inner,
                 });
             },
@@ -934,7 +942,7 @@ impl<Label> Modifier<Label>
             Constructor::Seq(ref members) => {
                 for &member in members.iter().rev() {
                     stack.push(Instruction::Apply {
-                        prefix: prefix.clone(),
+                        prefix: Arc::clone(&prefix),
                         constructor: member,
                     });
                 }
@@ -945,7 +953,7 @@ impl<Label> Modifier<Label>
                     None => *current = Trie::empty(),
                     Some(&first) => {
                         stack.push(Instruction::UnionFold {
-                            prefix: prefix.clone(),
+                            prefix: Arc::clone(&prefix),
                             input: current.clone(),
                             accumulated: Trie::empty(),
                             remaining,
@@ -995,7 +1003,7 @@ enum Instruction<'modifier, Data, Tag>
     Apply
     {
         /// The accumulated prefix events report at.
-        prefix: NamePath,
+        prefix: Arc<NamePath>,
         /// The constructor still to run.
         constructor: ConstructorId,
     },
@@ -1004,7 +1012,7 @@ enum Instruction<'modifier, Data, Tag>
     Regraft
     {
         /// Where the inner namespace came from, relative to `outside`.
-        prefix: NamePath,
+        prefix: Arc<NamePath>,
         /// The bindings outside the subtree.
         outside: Trie<Data, Tag>,
     },
@@ -1013,7 +1021,7 @@ enum Instruction<'modifier, Data, Tag>
     UnionFold
     {
         /// The accumulated prefix events report at.
-        prefix: NamePath,
+        prefix: Arc<NamePath>,
         /// The namespace every branch runs on.
         input: Trie<Data, Tag>,
         /// The union of the branches finished so far.
