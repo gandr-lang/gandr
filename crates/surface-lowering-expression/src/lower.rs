@@ -1307,8 +1307,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                         .get(usize::from(member.held))
                         .map(|slot| (defined.node, slot.named.node))
                 },
-                TypeMeaning::Manifest(_) => None,
-                TypeMeaning::Sealed
+                TypeMeaning::Manifest(_)
+                | TypeMeaning::Sealed
                 | TypeMeaning::Builtin(_)
                 | TypeMeaning::Instantiated { .. }
                 | TypeMeaning::Family(_) => None,
