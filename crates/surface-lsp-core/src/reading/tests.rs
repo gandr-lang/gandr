@@ -76,9 +76,10 @@ fn chain(selection: &SelectionRange) -> Vec<String>
 }
 
 /// A root form that declares nothing is an `Event` symbol named by what it
-/// writes: a final expression over its attribute block and its `;`, a
-/// stray, and a run of attribute blocks no form follows; an import and
-/// a `rec` group writing a declaration are none (#2073).
+/// writes: a final expression over its attribute block, a stray, and a run
+/// of attribute blocks no form follows. The `;` after a final expression,
+/// which the parser owes alone, stands outside its symbol. An import and a
+/// `rec` group writing a declaration are none (#2073).
 #[test]
 fn a_root_form_that_declares_nothing_is_a_symbol_2073()
 {
@@ -88,7 +89,7 @@ fn a_root_form_that_declares_nothing_is_a_symbol_2073()
     let answered = Reading::of(SourceText::from(targeted)).symbols();
     assert_eq!(outline(&answered), [
         "a 12 0:0-0:11 at 0:4-0:5",
-        "thunk { … } 24 1:0-4:3 at 2:0-4:1",
+        "thunk { … } 24 1:0-4:1 at 2:0-4:1",
     ]);
     assert_eq!(
         answered
@@ -103,9 +104,8 @@ fn a_root_form_that_declares_nothing_is_a_symbol_2073()
         "outline/unformatted/a-root-form-that-declares-nothing-is-a-symbol-2073-strays.gandr"
     );
     assert_eq!(outline(&Reading::of(SourceText::from(strays)).symbols()), [
-        "1 24 1:0-1:3 at 1:0-1:1",
+        "1 24 1:0-1:1 at 1:0-1:1",
         "b 12 3:2-3:13 at 3:6-3:7",
-        "b 24 5:0-5:3 at 5:0-5:1",
         "@[checks] 24 6:0-7:11 at 6:0-6:11",
     ]);
 }

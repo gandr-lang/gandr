@@ -3588,34 +3588,19 @@ mod tests
     }
 
     /// A stray answers as a declaration the outline holds: its refusal at
-    /// every tile, at its `;` and at the attributes before it. An expression
-    /// at the top level, the last one too, is refused there, and an arm
-    /// outside any match is of the wrong sort (#2073, #2572).
+    /// every tile and at the attributes before it. The `;` after it, which
+    /// the parser owes alone, answers nothing. An expression at the top
+    /// level, the last one too, is refused there, and an arm outside any
+    /// match is of the wrong sort (#2073, #2572).
     #[test]
     fn a_stray_hovers_as_a_declaration_2073()
     {
         let top_level = "stands at a source's top level, where only declarations stand; a program \
                          runs the `main` it declares";
-        let rows: [(&str, &str, String); 5] = [
-            (
-                "a final expression's `;`",
-                include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-1.gandr"),
-                format!(
-                    "{}\n\nrefused: `identifier`, read as a declaration, {top_level}",
-                    fenced(SourceText::from("answer"))
-                ),
-            ),
+        let rows: [(&str, &str, String); 3] = [
             (
                 "an expression before a definition",
                 include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-2.gandr"),
-                format!(
-                    "{}\n\nrefused: `number`, read as a declaration, {top_level}",
-                    fenced(SourceText::from("1"))
-                ),
-            ),
-            (
-                "its `;`",
-                include_str!("hover/unformatted/a-stray-hovers-as-a-declaration-2073-3.gandr"),
                 format!(
                     "{}\n\nrefused: `number`, read as a declaration, {top_level}",
                     fenced(SourceText::from("1"))
