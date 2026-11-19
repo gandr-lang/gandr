@@ -7935,6 +7935,21 @@ fn bare_goal(unit: crate::DomainValueId) -> super::Goal
     }
 }
 
+/// A forked snapshot keeps the shared parent when its child changes.
+///
+/// # Specification
+/// The shared parent keeps its original element after the child adds one.
+#[test]
+fn a_forked_snapshot_keeps_the_parent_8144()
+{
+    let mut child = super::Snapshot::from(Vec::from([1_u8]));
+    let parent = child.share();
+    child.push(2);
+
+    assert_eq!(&*parent, &[1]);
+    assert_eq!(&*child, &[1, 2]);
+}
+
 #[test]
 fn a_dependency_is_needed_exactly_while_a_needed_waiter_holds_it()
 {
