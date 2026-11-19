@@ -1,25 +1,27 @@
-//! The reader's witnesses on the host's own toolchain: the record agrees
-//! with the `define` line that rustc emits for each function, each layout
-//! equals what `std.layout` computes, each refusal names its cause, and a
-//! second request starts no process.
+//! The reader's witnesses on the host's own toolchain: each symbol of the
+//! record is a symbol of the built object, the record agrees with the
+//! `define` line that rustc emits for each function, each layout equals
+//! what `std.layout` computes, a leaf function has no symbol, each refusal
+//! names its cause, and a second request starts no process.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
+use gandr_runtime_rust_record::Absence;
 use gandr_runtime_rust_record::Answer;
 use gandr_runtime_rust_record::Cache;
-use gandr_runtime_rust_record::CrateName;
 use gandr_runtime_rust_record::Discriminant;
-use gandr_runtime_rust_record::Edition;
 use gandr_runtime_rust_record::Extension;
 use gandr_runtime_rust_record::Field;
 use gandr_runtime_rust_record::Function;
 use gandr_runtime_rust_record::FunctionPath;
 use gandr_runtime_rust_record::Identity;
 use gandr_runtime_rust_record::Layout;
+use gandr_runtime_rust_record::Linkage;
 use gandr_runtime_rust_record::Origin;
 use gandr_runtime_rust_record::Outcome;
 use gandr_runtime_rust_record::Part;
@@ -40,20 +42,87 @@ fn cache(label: &str) -> (Cache, PathBuf)
     (Cache::at(directory.join("cache")), directory)
 }
 
-/// The request of the named functions of a fixture.
+/// The request of the named functions of a fixture, under the build's
+/// command line: a library at optimisation level 3, under the v0 mangling,
+/// with a `-C metadata` value as Cargo gives, its LLVM IR and its object
+/// written to `out`.
 fn request(
     fixture: &str,
     functions: &[&str],
+    out: &Path,
 ) -> Request
 {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(format!("{fixture}.rs"));
+    let mut arguments: Vec<OsString> = [
+        "--crate-type",
+        "lib",
+        "--crate-name",
+        fixture,
+        "--edition",
+        "2024",
+        "-C",
+        "opt-level=3",
+        "-C",
+        "symbol-mangling-version=v0",
+        "-C",
+        "metadata=5eed",
+        "--emit=llvm-ir,obj",
+        "--out-dir",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    arguments.push(out.as_os_str().to_owned());
+    arguments.push(root.into_os_string());
     Request {
-        root: Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures")
-            .join(format!("{fixture}.rs")),
-        name: CrateName::from(fixture),
-        edition: Edition::E2024,
+        arguments,
         functions: functions.iter().copied().map(FunctionPath::from).collect(),
     }
+}
+
+/// Runs the build of a request with plain `rustc`, word for word.
+fn build(
+    request: &Request,
+    out: &Path,
+)
+{
+    fs::create_dir_all(out).expect("the output directory");
+    let status = Command::new("rustc")
+        .args(&request.arguments)
+        .status()
+        .expect("rustc runs");
+    assert!(status.success(), "rustc builds the crate");
+}
+
+/// The symbols that an object defines, as the toolchain's `llvm-nm` lists
+/// them, without the extra underscore of a Mach-O name.
+fn defined(object: &Path) -> Vec<String>
+{
+    let sysroot = Command::new("rustc")
+        .args(["--print", "sysroot"])
+        .output()
+        .expect("rustc runs");
+    let sysroot = String::from_utf8(sysroot.stdout).expect("the sysroot is UTF-8");
+    let nm = Path::new(sysroot.trim())
+        .join("lib/rustlib")
+        .join(Identity::of_build().target.as_ref())
+        .join("bin/llvm-nm");
+    let output = Command::new(nm)
+        .args(["--defined-only", "--just-symbol-name"])
+        .arg(object)
+        .output()
+        .expect("llvm-nm runs");
+    assert!(output.status.success(), "llvm-nm reads the object");
+    String::from_utf8(output.stdout)
+        .expect("the symbols are UTF-8")
+        .lines()
+        .map(|line| match line.strip_prefix('_') {
+            Some(rest) if rest.starts_with("_R") => rest.to_owned(),
+            Some(_) | None => line.to_owned(),
+        })
+        .collect()
 }
 
 /// The reader that Cargo built for the tests.
@@ -239,35 +308,56 @@ fn implied(function: &Function) -> Signature
 }
 
 #[test]
-fn the_six_agree_with_their_define_lines()
+fn the_six_agree_with_their_object_and_their_define_lines()
 {
     let (cache, directory) = cache("six");
+    let out = directory.join("out");
     let six = ["weigh", "pair", "wide", "narrow", "make", "opt"];
-    let request = request("six", &six);
+    let request = request("six", &six, &out);
     let answer = cache
         .read(&program(), &request, &Identity::of_build())
         .expect("the six read");
-    fs::create_dir_all(&directory).expect("the directory");
-    let ir = directory.join("six.ll");
-    let status = Command::new("rustc")
-        .args(request.flags(&Identity::of_build().target))
-        .args(["--emit=llvm-ir", "-o"])
-        .arg(&ir)
-        .status()
-        .expect("rustc runs");
-    assert!(status.success(), "rustc emits the IR");
-    let defines = defines(&fs::read_to_string(&ir).expect("the IR"));
+    assert!(!out.exists(), "the reader writes no output of the build");
+    build(&request, &out);
+    let defines = defines(&fs::read_to_string(out.join("six.ll")).expect("the IR"));
+    let symbols = defined(&out.join("six.o"));
     let functions = read(&answer);
     assert_eq!(functions.len(), six.len());
     for function in functions {
-        let define = defines.get(function.symbol.as_ref()).unwrap_or_else(|| {
-            panic!(
-                "{} has a define line under {}",
-                function.path, function.symbol
-            )
-        });
+        let Linkage::Symbol(ref symbol) = function.linkage
+        else {
+            panic!("{} has a symbol", function.path);
+        };
+        assert!(
+            symbols.iter().any(|defined| defined == symbol.as_ref()),
+            "{symbol} is a symbol of the object"
+        );
+        let define = defines
+            .get(symbol.as_ref())
+            .unwrap_or_else(|| panic!("{} has a define line under {symbol}", function.path));
         assert_eq!(&implied(function), define, "{}", function.path);
     }
+}
+
+#[test]
+fn a_leaf_function_has_no_symbol()
+{
+    let (cache, directory) = cache("leaf");
+    let out = directory.join("out");
+    let request = request("refused", &["inlined"], &out);
+    let answer = cache
+        .read(&program(), &request, &Identity::of_build())
+        .expect("the leaf reads");
+    let leaf = read(&answer).first().expect("one function");
+    assert_eq!(leaf.linkage, Linkage::Absent(Absence::Inlined));
+    build(&request, &out);
+    let symbols = defined(&out.join("refused.o"));
+    assert!(
+        !symbols
+            .iter()
+            .any(|symbol| symbol.ends_with("7refused7inlined")),
+        "the object holds no symbol of the leaf: {symbols:?}"
+    );
 }
 
 /// The fields in memory order, as `std.layout` prints them.
@@ -364,7 +454,7 @@ fn goldens() -> HashMap<String, String>
 #[test]
 fn the_eleven_layouts_equal_std_layout()
 {
-    let (cache, _directory) = cache("eleven");
+    let (cache, directory) = cache("eleven");
     let eleven = [
         ("mixed", "mixed"),
         ("wide", "wide"),
@@ -382,7 +472,7 @@ fn the_eleven_layouts_equal_std_layout()
     let answer = cache
         .read(
             &program(),
-            &request("eleven", &paths),
+            &request("eleven", &paths, &directory.join("out")),
             &Identity::of_build(),
         )
         .expect("the eleven read");
@@ -402,10 +492,12 @@ fn the_eleven_layouts_equal_std_layout()
 #[test]
 fn each_refusal_names_its_cause()
 {
-    let (cache, _directory) = cache("refused");
-    let request = request("refused", &[
-        "generic", "private", "inlined", "array", "absent",
-    ]);
+    let (cache, directory) = cache("refused");
+    let request = request(
+        "refused",
+        &["generic", "private", "array", "absent"],
+        &directory.join("out"),
+    );
     let answer = cache
         .read(&program(), &request, &Identity::of_build())
         .expect("the refusal reads");
@@ -414,7 +506,6 @@ fn each_refusal_names_its_cause()
         Outcome::Refused(vec![
             Refusal::Generic(FunctionPath::from("generic")),
             Refusal::NotPublic(FunctionPath::from("private")),
-            Refusal::Inlined(FunctionPath::from("inlined")),
             Refusal::Unstated {
                 function: FunctionPath::from("array"),
                 ty: TypeName::from("[u8; 4]"),
@@ -428,8 +519,8 @@ fn each_refusal_names_its_cause()
 #[test]
 fn a_second_request_starts_no_process()
 {
-    let (cache, _directory) = cache("second");
-    let request = request("six", &["weigh"]);
+    let (cache, directory) = cache("second");
+    let request = request("six", &["weigh"], &directory.join("out"));
     let first = cache
         .read(&program(), &request, &Identity::of_build())
         .expect("the first read");

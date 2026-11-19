@@ -7,9 +7,9 @@
 //! the entry that it writes, and publishes the entry whole.
 //!
 //! The reader is a program that compiles the crate as `rustc` does, with
-//! the request's flags. It takes the paths of the functions in
-//! [`FUNCTIONS`], one on each line, and writes its entry to the file that
-//! [`ENTRY`] names.
+//! the build's arguments word for word. It takes the paths of the functions
+//! in [`FUNCTIONS`], one on each line, and writes its entry to the file that
+//! [`ENTRY`] names. Each other output of its run goes beside the entry.
 
 use alloc::string::String;
 use core::fmt;
@@ -35,7 +35,6 @@ use crate::bytes::Undecoded;
 use crate::names::Status;
 use crate::record::Identity;
 use crate::record::Record;
-use crate::request::Edition;
 use crate::request::Request;
 
 /// The variable that gives the reader the paths of the functions, one on
@@ -248,10 +247,7 @@ impl Cache
             functions.push_str(path.as_ref());
         }
         let output = Command::new(&program.0)
-            .args(request.flags(&identity.target))
-            .arg("--emit=metadata")
-            .arg("--out-dir")
-            .arg(&scratch.0)
+            .args(&request.arguments)
             .env(FUNCTIONS, functions)
             .env(ENTRY, &written)
             .stdin(Stdio::null())
@@ -289,8 +285,8 @@ impl Cache
 /// # Specification
 /// - requires: nothing.
 /// - ensures: equal inputs give equal names; a change of the commit, the
-///   target, the program's size or time, the root, the name, the edition or any
-///   function gives another name, up to a collision of BLAKE3.
+///   target, the program's size or time, any argument or any function gives
+///   another name, up to a collision of BLAKE3.
 /// - fails: [`Unread::Program`] when the program's metadata cannot be read.
 /// - panics: none.
 /// - executable: none — the property ranges over every input.
@@ -327,12 +323,14 @@ pub fn key(
     part(identity.target.as_ref().as_bytes());
     part(&metadata.len().to_le_bytes());
     part(&changed.to_le_bytes());
-    part(request.root.as_os_str().as_encoded_bytes());
-    part(request.name.as_ref().as_bytes());
-    part(match request.edition {
-        Edition::E2021 => b"2021",
-        Edition::E2024 => b"2024",
-    });
+    part(
+        &u64::try_from(request.arguments.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    for argument in &request.arguments {
+        part(argument.as_encoded_bytes());
+    }
     for function in &request.functions {
         part(function.as_ref().as_bytes());
     }

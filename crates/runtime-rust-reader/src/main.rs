@@ -1,14 +1,18 @@
 //! The reader of a Rust crate: a compiler driver on rustc's own libraries
 //! that writes the record of the requested functions.
 //!
-//! The reader takes the arguments of `rustc`, compiles the crate as the
-//! build does, and stops after the analysis. It takes the paths of the
-//! functions in `GANDR_RUST_RECORD_FUNCTIONS`, one on each line, and writes
-//! one entry of the record to the file that `GANDR_RUST_RECORD_ENTRY` names.
-//! The entry holds the digest of each source file that the compiler read,
-//! taken from the bytes that it read. A Dylint driver adds its own
-//! `-C metadata` value, which changes each symbol, so the reader is a driver
-//! of its own.
+//! The reader takes the build's command line for the crate, word for word,
+//! and stops after the analysis. Cargo adds its own `-C metadata` value to
+//! each crate, and that value enters each symbol. So a command line that the
+//! reader built again would give other symbols. A Dylint driver adds its own
+//! value too, so the reader is a driver of its own. Each output of the run
+//! goes beside the entry, and no output of the build changes.
+//!
+//! The reader takes the paths of the functions in
+//! `GANDR_RUST_RECORD_FUNCTIONS`, one on each line, and writes one entry of
+//! the record to the file that `GANDR_RUST_RECORD_ENTRY` names. The entry
+//! holds the digest of each source file that the compiler read, taken from
+//! the bytes that it read.
 //!
 //! The reader exits with rustc's status. A crate that does not compile
 //! writes no entry.
@@ -142,6 +146,9 @@ struct Reader
 
 impl rustc_driver::Callbacks for Reader
 {
+    /// Reads each source through the loader that keeps its digest, and puts
+    /// each output of the run beside the entry. The build's command line
+    /// stays word for word, and no output of the build changes.
     fn config(
         &mut self,
         config: &mut Config,
@@ -150,6 +157,8 @@ impl rustc_driver::Callbacks for Reader
         config.file_loader = Some(Box::new(Loader {
             sources: Arc::clone(&self.sources),
         }));
+        config.output_dir = self.entry.parent().map(Path::to_path_buf);
+        config.output_file = None;
     }
 
     fn after_analysis(

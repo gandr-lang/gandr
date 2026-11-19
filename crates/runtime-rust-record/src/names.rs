@@ -177,11 +177,6 @@ text! {
     pub struct Target;
 }
 
-text! {
-    /// The name of a crate, as `--crate-name` takes it.
-    pub struct CrateName;
-}
-
 number! {
     /// A count of bytes: a size, an offset, a stride or an alignment.
     pub struct Bytes(u64);

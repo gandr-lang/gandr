@@ -20,8 +20,9 @@
 //!
 //! # Boundaries
 //!
-//! The record states a plain function: public, with no generic parameter,
-//! and with a symbol in the build. A layout states a scalar, a struct, a
+//! The record states a plain function: public and with no generic parameter.
+//! A function that the build copies into each caller has no symbol, and its
+//! [`Linkage`] states that. A layout states a scalar, a struct, a
 //! tuple or an enum; the record refuses an array, a union, an unsized type
 //! and a type with no value by name. A crate depends on the standard library
 //! alone. The reader trusts rustc's front end, and the record holds the
@@ -61,7 +62,6 @@ pub use crate::cache::Unread;
 pub use crate::names::Available;
 pub use crate::names::Bytes;
 pub use crate::names::Commit;
-pub use crate::names::CrateName;
 pub use crate::names::FieldName;
 pub use crate::names::FunctionPath;
 pub use crate::names::LlvmType;
@@ -72,6 +72,7 @@ pub use crate::names::Symbol;
 pub use crate::names::Target;
 pub use crate::names::TypeName;
 pub use crate::names::VariantName;
+pub use crate::record::Absence;
 pub use crate::record::Arm;
 pub use crate::record::Discriminant;
 pub use crate::record::Extension;
@@ -79,6 +80,7 @@ pub use crate::record::Field;
 pub use crate::record::Function;
 pub use crate::record::Identity;
 pub use crate::record::Layout;
+pub use crate::record::Linkage;
 pub use crate::record::Niche;
 pub use crate::record::Operand;
 pub use crate::record::Outcome;
@@ -88,5 +90,4 @@ pub use crate::record::Record;
 pub use crate::record::Refusal;
 pub use crate::record::Shape;
 pub use crate::record::Unstatable;
-pub use crate::request::Edition;
 pub use crate::request::Request;

@@ -1,12 +1,14 @@
 //! The record of the requested functions, from rustc's own answers.
 //!
-//! The symbol is `symbol_name` of the function's instance. The convention is
-//! `fn_abi_of_instance`, and each LLVM type is spelled as rustc's LLVM
-//! backend spells it for that passage. Each layout is `layout_of` the
-//! operand's type.
+//! The symbol is `symbol_name` of the function's instance. A function that
+//! the build copies into each caller has no symbol, and its linkage states
+//! that. The convention is `fn_abi_of_instance`, and each LLVM type is
+//! spelled as rustc's LLVM backend spells it for that passage. Each layout
+//! is `layout_of` the operand's type.
 
 use std::collections::HashMap;
 
+use gandr_runtime_rust_record::Absence;
 use gandr_runtime_rust_record::Arm;
 use gandr_runtime_rust_record::Available;
 use gandr_runtime_rust_record::Bytes;
@@ -17,6 +19,7 @@ use gandr_runtime_rust_record::FieldName;
 use gandr_runtime_rust_record::Function;
 use gandr_runtime_rust_record::FunctionPath;
 use gandr_runtime_rust_record::Layout;
+use gandr_runtime_rust_record::Linkage;
 use gandr_runtime_rust_record::LlvmType;
 use gandr_runtime_rust_record::Niche;
 use gandr_runtime_rust_record::Operand;
@@ -118,11 +121,13 @@ fn function(
     if !tcx.effective_visibilities(()).is_exported(def_id) {
         return Err(Refusal::NotPublic(path.clone()));
     }
-    if tcx.cross_crate_inlinable(def_id) {
-        return Err(Refusal::Inlined(path.clone()));
-    }
     let instance = ty::Instance::mono(tcx, def_id.to_def_id());
-    let symbol = Symbol::from(tcx.symbol_name(instance).name);
+    let linkage = if tcx.cross_crate_inlinable(def_id) {
+        Linkage::Absent(Absence::Inlined)
+    }
+    else {
+        Linkage::Symbol(Symbol::from(tcx.symbol_name(instance).name))
+    };
     let input = ty::TypingEnv::fully_monomorphized().as_query_input((instance, ty::List::empty()));
     let Ok(abi) = tcx.fn_abi_of_instance(input)
     else {
@@ -140,7 +145,7 @@ fn function(
     let result = operand(tcx, path, &abi.ret)?;
     Ok(Function {
         path: path.clone(),
-        symbol,
+        linkage,
         arguments,
         result,
     })

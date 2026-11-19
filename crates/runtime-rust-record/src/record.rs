@@ -71,18 +71,41 @@ pub enum Outcome
     Refused(Vec<Refusal>),
 }
 
-/// One function: its symbol and the passage and layout of each operand.
+/// One function: its symbol or why it has none, and the passage and layout
+/// of each operand.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Function
 {
     /// The path that the request named.
     pub path: FunctionPath,
-    /// The name of the function in the build's object.
-    pub symbol: Symbol,
+    /// The name of the function in the build's object, or why it has none.
+    pub linkage: Linkage,
     /// Each argument, in declared order.
     pub arguments: Vec<Operand>,
     /// The result.
     pub result: Operand,
+}
+
+/// The name of a function in the build's object, or why the object holds no
+/// name for it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Linkage
+{
+    /// The function's symbol under the v0 mangling.
+    Symbol(Symbol),
+    /// The object holds no symbol of the function.
+    Absent(Absence),
+}
+
+/// Why the build's object holds no symbol of a function.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Absence
+{
+    /// The build copies the function into each caller and emits no body of
+    /// its own. A consumer that links by symbol refuses the function, and a
+    /// consumer that takes the function's address makes the build keep a
+    /// body.
+    Inlined,
 }
 
 /// One argument or the result: how it passes and how its type is laid out.
@@ -246,8 +269,6 @@ pub enum Refusal
     NotPublic(FunctionPath),
     /// The crate has no function at the path.
     Missing(FunctionPath),
-    /// The build copies the function into each caller, so it has no symbol.
-    Inlined(FunctionPath),
     /// The record does not state the layout or the passage of a type of the
     /// function's signature.
     Unstated
@@ -310,10 +331,6 @@ impl fmt::Display for Refusal
             Self::Missing(ref path) => write!(
                 f,
                 "`{path}` is missing: the crate has no function at this path"
-            ),
-            Self::Inlined(ref path) => write!(
-                f,
-                "`{path}` is inlined: the build copies it into each caller, so it has no symbol"
             ),
             Self::Unstated {
                 ref function,

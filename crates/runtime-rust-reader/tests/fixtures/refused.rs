@@ -1,6 +1,7 @@
 //! One function for each refusal that a crate can cause: a generic one, a
-//! private one, one that the build copies into each caller, and one whose
-//! argument is an array.
+//! private one and one whose argument is an array. Beside them, a plain leaf
+//! function that the build copies into each caller, which the record states
+//! with no symbol.
 
 #[inline(never)]
 pub fn generic<T: Copy>(value: T) -> T

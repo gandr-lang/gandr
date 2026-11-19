@@ -5,20 +5,20 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
+use crate::Absence;
 use crate::Answer;
 use crate::Arm;
 use crate::Available;
 use crate::Bytes;
 use crate::Cache;
 use crate::Commit;
-use crate::CrateName;
 use crate::Digest;
 use crate::Discriminant;
-use crate::Edition;
 use crate::Encoded;
 use crate::Entry;
 use crate::Exit;
@@ -29,6 +29,7 @@ use crate::Function;
 use crate::FunctionPath;
 use crate::Identity;
 use crate::Layout;
+use crate::Linkage;
 use crate::LlvmType;
 use crate::Niche;
 use crate::Offset;
@@ -270,7 +271,7 @@ fn every_read() -> Entry
     };
     let function = Function {
         path: FunctionPath::from("inner::each"),
-        symbol: Symbol::from("_RNvNtCs1_5probe5inner4each"),
+        linkage: Linkage::Symbol(Symbol::from("_RNvNtCs1_5probe5inner4each")),
         arguments: vec![
             Operand {
                 passage: Passage::Ignore,
@@ -315,6 +316,18 @@ fn every_read() -> Entry
             layout: wide,
         },
     };
+    let leaf = Function {
+        path: FunctionPath::from("inner::leaf"),
+        linkage: Linkage::Absent(Absence::Inlined),
+        arguments: vec![],
+        result: Operand {
+            passage: Passage::Ignore,
+            layout: Layout {
+                shape: Shape::Struct(vec![]),
+                ..scalar(Label("()"), zero)
+            },
+        },
+    };
     Entry {
         sources: vec![SourceFile {
             path: SourcePath::from("/src/lib.rs"),
@@ -322,7 +335,7 @@ fn every_read() -> Entry
         }],
         record: Record {
             identity: identity(),
-            outcome: Outcome::Read(vec![function]),
+            outcome: Outcome::Read(vec![function, leaf]),
         },
     }
 }
@@ -346,7 +359,6 @@ fn every_refusal() -> Entry
                 Refusal::Generic(FunctionPath::from("g")),
                 Refusal::NotPublic(FunctionPath::from("p")),
                 Refusal::Missing(FunctionPath::from("m")),
-                Refusal::Inlined(FunctionPath::from("i")),
                 unstated(Unstatable::Unsized),
                 unstated(Unstatable::Uninhabited),
                 unstated(Unstatable::Array),
@@ -525,7 +537,6 @@ fn each_refusal_names_its_function_and_its_cause()
         "`g` is generic: the record states a function with no generic parameter",
         "`p` is not public: no caller outside its crate reaches it",
         "`m` is missing: the crate has no function at this path",
-        "`i` is inlined: the build copies it into each caller, so it has no symbol",
         "`u` is unstated: the record does not state `[u8; 4]`, since it has no size",
         "`u` is unstated: the record does not state `[u8; 4]`, since it has no value",
         "`u` is unstated: the record does not state `[u8; 4]`, since it is an array",
@@ -612,9 +623,11 @@ fn request_and_entry(scratch: &Scratch) -> (Request, PathBuf)
     let fixture = scratch.0.join("fixture.entry");
     fs::write(&fixture, entry.encode().as_encoded().0).expect("the fixture is written");
     let request = Request {
-        root,
-        name: CrateName::from("probe"),
-        edition: Edition::E2024,
+        arguments: vec![
+            OsString::from("--crate-type"),
+            OsString::from("lib"),
+            root.into_os_string(),
+        ],
         functions: vec![FunctionPath::from("inner::each")],
     };
     (request, fixture)
@@ -670,7 +683,7 @@ fn an_edited_source_reads_again()
             .origin,
         Origin::Process
     );
-    fs::write(&request.root, "pub fn each() { }\n").expect("the edit");
+    fs::write(scratch.0.join("lib.rs"), "pub fn each() { }\n").expect("the edit");
     assert_eq!(
         cache
             .read(&program, &request, &identity())
@@ -773,7 +786,11 @@ fn each_part_of_the_key_changes_the_name()
         key(
             &program,
             &Request {
-                root: scratch.0.join("main.rs"),
+                arguments: vec![
+                    OsString::from("--crate-type"),
+                    OsString::from("lib"),
+                    scratch.0.join("main.rs").into_os_string(),
+                ],
                 ..request.clone()
             },
             &identity(),
@@ -781,16 +798,11 @@ fn each_part_of_the_key_changes_the_name()
         key(
             &program,
             &Request {
-                name: CrateName::from("other"),
-                ..request.clone()
-            },
-            &identity(),
-        ),
-        key(
-            &program,
-            &Request {
-                edition: Edition::E2021,
-                ..request.clone()
+                arguments: request.arguments.iter().take(2).cloned().collect(),
+                functions: vec![
+                    FunctionPath::from(scratch.0.join("lib.rs").to_str().expect("a UTF-8 path")),
+                    FunctionPath::from("inner::each"),
+                ],
             },
             &identity(),
         ),

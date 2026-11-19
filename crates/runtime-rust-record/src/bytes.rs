@@ -31,6 +31,7 @@ use crate::names::Symbol;
 use crate::names::Target;
 use crate::names::TypeName;
 use crate::names::VariantName;
+use crate::record::Absence;
 use crate::record::Arm;
 use crate::record::Discriminant;
 use crate::record::Extension;
@@ -38,6 +39,7 @@ use crate::record::Field;
 use crate::record::Function;
 use crate::record::Identity;
 use crate::record::Layout;
+use crate::record::Linkage;
 use crate::record::Niche;
 use crate::record::Operand;
 use crate::record::Outcome;
@@ -424,7 +426,16 @@ impl Writer
     )
     {
         self.text(Text(function.path.as_ref()));
-        self.text(Text(function.symbol.as_ref()));
+        match function.linkage {
+            Linkage::Symbol(ref symbol) => {
+                self.tag(Tag(0));
+                self.text(Text(symbol.as_ref()));
+            },
+            Linkage::Absent(Absence::Inlined) => {
+                self.tag(Tag(1));
+                self.tag(Tag(0));
+            },
+        }
         self.count(Count(function.arguments.len()));
         for argument in &function.arguments {
             self.operand(argument);
@@ -586,16 +597,12 @@ impl Writer
                 self.tag(Tag(2));
                 self.text(Text(path.as_ref()));
             },
-            Refusal::Inlined(ref path) => {
-                self.tag(Tag(3));
-                self.text(Text(path.as_ref()));
-            },
             Refusal::Unstated {
                 ref function,
                 ref ty,
                 why,
             } => {
-                self.tag(Tag(4));
+                self.tag(Tag(3));
                 self.text(Text(function.as_ref()));
                 self.text(Text(ty.as_ref()));
                 self.tag(match why {
@@ -751,7 +758,18 @@ impl Reader<'_>
     fn function(&mut self) -> Result<Function, Undecoded>
     {
         let path = FunctionPath::from(self.text()?);
-        let symbol = Symbol::from(self.text()?);
+        let at = self.offset();
+        let linkage = match self.tag()? {
+            Tag(0) => Linkage::Symbol(Symbol::from(self.text()?)),
+            Tag(1) => {
+                let at = self.offset();
+                match self.tag()? {
+                    Tag(0) => Linkage::Absent(Absence::Inlined),
+                    Tag(_) => return Err(Undecoded::Tag(at)),
+                }
+            },
+            Tag(_) => return Err(Undecoded::Tag(at)),
+        };
         let count = self.count()?;
         let mut arguments = Vec::new();
         for _ in 0 .. count.0 {
@@ -760,7 +778,7 @@ impl Reader<'_>
         let result = self.operand()?;
         Ok(Function {
             path,
-            symbol,
+            linkage,
             arguments,
             result,
         })
@@ -892,8 +910,7 @@ impl Reader<'_>
             Tag(0) => Ok(Refusal::Generic(FunctionPath::from(self.text()?))),
             Tag(1) => Ok(Refusal::NotPublic(FunctionPath::from(self.text()?))),
             Tag(2) => Ok(Refusal::Missing(FunctionPath::from(self.text()?))),
-            Tag(3) => Ok(Refusal::Inlined(FunctionPath::from(self.text()?))),
-            Tag(4) => {
+            Tag(3) => {
                 let function = FunctionPath::from(self.text()?);
                 let ty = TypeName::from(self.text()?);
                 let at = self.offset();
