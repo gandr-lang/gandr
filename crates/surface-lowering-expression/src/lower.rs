@@ -14393,7 +14393,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _open = cursor.tile(TileName::PAREN_OPEN);
+        let open = cursor.tile(TileName::PAREN_OPEN);
         // A group written as a function's result is its outputs, as the group
         // before an arrow is its inputs: `-> (q : Nat, r : Nat)`, `-> ()`.
         if let Reading::Result(frame) = site.reading
@@ -14418,10 +14418,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         // A list in parentheses outside a domain and a result is the old
         // spelling of a product: `*{A, B}` replaces `(A, B)`.
         if let Maybe::Present(comma) = cursor.at(TileName::COMMA) {
-            return Err(site.fault(
-                comma.span,
-                FormFault::Retired(RetiredForm::ParenthesizedProduct),
-            ));
+            let span = match open {
+                Maybe::Present(open) => open.span,
+                Maybe::Absent(_) => comma.span,
+            };
+            return Err(site.fault(span, FormFault::Retired(RetiredForm::ParenthesizedProduct)));
         }
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         self.group(site, inner);
