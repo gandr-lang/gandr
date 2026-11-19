@@ -31,6 +31,7 @@ The kernel's own data types: a region whose ids carry its brand, a small vector,
 - The small vector: `SmallVec<T, N, A>` keeps up to `N` items in place and all of them past `N` in one block of `A`, and `try_reserve` answers a refused grow with `Refused`.
 - The shared pointer: `Shared<T, A>` shares one value by one count with no weak count, `Unique<T, A>` builds the value before the share, and `ThinShared<H, T, A>` is one word over a header and a slice. An empty default of `ThinShared` with no header, over the global allocator, shares one static block and allocates nothing.
 - The small string: `SmallString<A>` holds a text of up to 23 bytes inline, a static text, or a block of `A`, in 24 bytes for the global allocator.
+- The crossings: a `Vec<T, A>` and a `SmallVec<T, 0, A>` exchange their block and copy no item, and a `String` whose block is its text's length does the same with a `SmallString`. A shorter text takes the inline form, and the crossing frees the block.
 
 ## Expected features
 
