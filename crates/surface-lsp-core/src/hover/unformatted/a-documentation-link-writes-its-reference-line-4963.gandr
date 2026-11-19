@@ -1,0 +1,6 @@
+import "./base.gandr";
+/// Squares, as [cube] and [twice], not [Red].
+def square = 1 ;
+
+def twice = 2 ;
+data Color : Type where { | Red : Color }
