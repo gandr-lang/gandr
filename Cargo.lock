@@ -1904,6 +1904,7 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-runtime-emitter",
  "gandr-runtime-net",
+ "gandr-runtime-rust-record",
  "gandr-runtime-scope",
  "gandr-runtime-uring",
  "gandr-storage-artifact",

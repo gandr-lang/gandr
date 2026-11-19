@@ -2124,6 +2124,12 @@ impl Graph
             else {
                 continue;
             };
+            // A mark names its crate as the source's imports name a file:
+            // beside the opened source.
+            let staged = crate::thir::staged(
+                SourceText::from(read.text.as_str()),
+                read.opened.parent().unwrap_or(Path::new("")),
+            );
             text.push('\n');
             let start = ByteOffset::from(text.len());
             text.push_str(&read.text);
@@ -2144,7 +2150,10 @@ impl Graph
                 root: read.root,
                 written,
             });
-            sources.push(sourced(UnitSource::new(start, targets), &read.path));
+            sources.push(sourced(
+                UnitSource::new(start, targets).staged(staged),
+                &read.path,
+            ));
         }
         let reading = self.reading;
         Unit::preluded(sources).map_or(Maybe::Absent(laid::Absent::Alone), |unit| {

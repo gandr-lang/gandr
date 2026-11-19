@@ -90,6 +90,7 @@ gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-runtime-emitter.workspace = true
 gandr-runtime-net.workspace = true
+gandr-runtime-rust-record = { workspace = true, features = ["std"] }
 gandr-storage-artifact.workspace = true
 gandr-storage-store.workspace = true
 gandr-storage-values.workspace = true
