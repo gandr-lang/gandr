@@ -1509,36 +1509,57 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
     }
 }
 
+/// #2410, #8139: the read keeps a bare port sort that no sort declares, with
+/// its operation and its bytes, for the scope of the source to resolve. It
+/// refuses an indexed one at once, since no type member takes index terms.
 #[test]
-fn a_port_at_a_sort_nothing_declares_is_refused_2410()
+fn a_port_at_a_sort_nothing_declares_is_kept_for_its_scope_8139()
 {
     let source =
         "theory FailNonsense where { sort Reason : Type; oper raise : (r : Reason) --> Nonsense; }";
     let report = described(source);
-    let [ref diagnostic] = *report.diagnostics.as_slice()
+    assert_eq!(report.diagnostics, [], "the read refuses no bare port");
+    let Maybe::Present(ref presentation) = report.declarations[0].presentation
     else {
-        panic!("one refusal: {:?}", report.diagnostics)
+        panic!("the theory presents its members")
     };
     let start = source.rfind("Nonsense").expect("the result is written");
-    assert!(
-        matches!(
-            diagnostic.fault,
-            DescriptionFault::IllFormed(ref reason)
-                if reason.kind == gandr_theory_levitation::WfKind::UnknownPortSort
-                    && *reason.subjects == [Name::from("raise"), Name::from("Nonsense")]
-        ) && usize::from(diagnostic.span.start()) == start
-            && usize::from(diagnostic.span.end()) == start.saturating_add("Nonsense".len()),
-        "a result no sort declares is refused at its name: {diagnostic:?}"
-    );
-    let report = described(
-        "theory Fail where { sort Reason : Type; oper raise : (r : Reason) --> Void; oper test : (r : Reason) --> Bool; }",
-    );
+    let [ref kept] = *presentation.ported.as_slice()
+    else {
+        panic!("one kept port: {:?}", presentation.ported)
+    };
     assert_eq!(
-        report.diagnostics,
-        [],
-        "a builtin type is a port's sort as a declared one is"
+        (
+            kept.operation.as_ref(),
+            kept.sort.as_ref(),
+            usize::from(kept.span.start()),
+            usize::from(kept.span.end())
+        ),
+        (
+            "raise",
+            "Nonsense",
+            start,
+            start.saturating_add("Nonsense".len())
+        ),
+        "the result no sort declares is kept at its name"
     );
     let report = described("theory Fail where { oper raise : (r : Reason) --> Void; }");
+    let Maybe::Present(ref presentation) = report.declarations[0].presentation
+    else {
+        panic!("the theory presents its members")
+    };
+    assert_eq!(
+        presentation
+            .ported
+            .iter()
+            .map(|kept| (kept.operation.as_ref(), kept.sort.as_ref()))
+            .collect::<Vec<_>>(),
+        [("raise", "Reason"), ("raise", "Void")],
+        "an input no sort declares is kept as a result is, and the read calls no table of atoms"
+    );
+    let report = described(
+        "theory FailIndexed where { sort Reason : Type; oper raise : (r : Reason) --> Nonsense(r); }",
+    );
     assert!(
         matches!(
             *report.diagnostics.as_slice(),
@@ -1546,9 +1567,9 @@ fn a_port_at_a_sort_nothing_declares_is_refused_2410()
                 fault: DescriptionFault::IllFormed(ref reason),
                 ..
             }] if reason.kind == gandr_theory_levitation::WfKind::UnknownPortSort
-                && *reason.subjects == [Name::from("raise"), Name::from("Reason")]
+                && *reason.subjects == [Name::from("raise"), Name::from("Nonsense")]
         ),
-        "an input no sort declares is refused as a result is: {:?}",
+        "an indexed port no sort declares is refused at the read: {:?}",
         report.diagnostics
     );
 }

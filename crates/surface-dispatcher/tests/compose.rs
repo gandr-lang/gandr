@@ -2087,6 +2087,136 @@ fn a_closure_judged_otherwise_is_not_continued()
     );
 }
 
+/// #8139: a port sort names the type member that the scope of its theory's
+/// source binds. The closure binds `Integer` to the strings, privately, and
+/// declares `Shout`, whose `say` gives an `Integer`. The document imports the
+/// closure and sees the atom `Integer`. A model whose `say` gives a string
+/// checks, and a model whose `say` gives the atom is refused, judged after the
+/// closure and judged whole alike.
+#[test]
+fn a_port_sort_reads_the_binding_of_its_theory_s_source_8139()
+{
+    use alloc::string::String;
+    use alloc::sync::Arc;
+
+    use gandr_surface_dispatcher::Checking;
+    use gandr_surface_dispatcher::JudgedClosure;
+    use gandr_surface_dispatcher::judge_member_after;
+    use gandr_surface_dispatcher::lower_closure;
+    use gandr_surface_dispatcher::lower_onto_closure;
+    use gandr_surface_dispatcher::lower_parsed_unit;
+    use gandr_surface_lowering::ImportTarget;
+    use gandr_surface_lowering::SourceIndex;
+    use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::UnitSource;
+    use gandr_surface_syntax::ByteOffset;
+
+    let closure_text = SourceText::from(
+        "type Integer = String ;\npub theory Shout where { sort C : Type ; oper say : (c : C) --> Integer ; }\n",
+    );
+    let own = SourceText::from(
+        "import \"./shout.gandr\" ;\nmodule Loud : Model(Shout) where { type C = Bool ; def say(flag : Bool) -> String = \"loud\" ; }\nmodule Quiet : Model(Shout) where { type C = Bool ; def say(flag : Bool) -> Integer = 0 ; }\n",
+    );
+    let said = |judged: gandr_surface_dispatcher::Judged<'_>| -> Vec<String> {
+        let Ok(Composed::Settled { report, .. }) = judged.into_parts().0
+        else {
+            panic!("the document settles");
+        };
+        report
+            .declarations()
+            .iter()
+            .map(|declaration| format!("{} {}", declaration.name(), declaration.outcome()))
+            .collect()
+    };
+    let grammar = grammar();
+    let mut lowerings = LoweringCount::default();
+    let closure = Arc::new(
+        lower_closure(
+            Arc::new(grammar.clone()),
+            String::from(<&str>::from(closure_text)),
+            alone(),
+            &mut lowerings,
+        )
+        .expect("the closure is held"),
+    );
+    let held = JudgedClosure::new::<Evaluator>(
+        Arc::clone(&closure),
+        &HostGrant::UNBOUNDED,
+        CorpusRoot::Fixture,
+    )
+    .expect("the closure lowers to its end");
+    let text = format!("{}{}", <&str>::from(closure_text), <&str>::from(own));
+    let text = SourceText::from(text.as_str());
+    let base = ByteOffset::from(<&str>::from(closure_text).len());
+    let unit = Unit::new(vec![
+        UnitSource::new(ByteOffset::from(0_usize), Vec::new()),
+        UnitSource::new(base, vec![ImportTarget::Source(SourceIndex::from(0_usize))]),
+    ])
+    .expect("two sources make a unit");
+    let laid = parse(&grammar, own)
+        .expect("the document parses")
+        .after(closure.tree(), text)
+        .expect("the document lays after its closure");
+    let (lowering, checking) = lower_onto_closure(
+        &held,
+        held.arena(),
+        laid,
+        &unit,
+        &mut lowerings,
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the document lowers");
+    assert!(
+        matches!(checking, Checking::After(_)),
+        "the document is lowered after the closure"
+    );
+    let Lowered::Module { module, arena } = lowering.into_lowered()
+    else {
+        panic!("the document is not refused whole");
+    };
+    let after = said(judge_member_after::<Evaluator>(
+        CorpusRoot::Fixture,
+        (module, text),
+        arena,
+        (&HostGrant::UNBOUNDED, checking),
+        base,
+    ));
+    let Lowered::Module { module, arena } = lower_parsed_unit(
+        &grammar,
+        parse(&grammar, text).expect("the unit parses"),
+        &unit,
+        &mut lowerings,
+        &mut gandr_surface_lowering::coincide::Decisions::none(),
+    )
+    .expect("the unit lowers")
+    .into_lowered()
+    else {
+        panic!("the unit is not refused whole");
+    };
+    let whole = said(judge_member_after::<Evaluator>(
+        CorpusRoot::Fixture,
+        (module, text),
+        arena,
+        (&HostGrant::UNBOUNDED, Checking::Whole),
+        base,
+    ));
+    assert_eq!(
+        whole,
+        [
+            "say checks owing 0",
+            "say checks owing 0",
+            "say refuses TypeMismatch",
+            "say refuses TypeMismatch"
+        ],
+        "the report names each member twice: `Loud`'s word checks and `Quiet`'s number is \
+         refused, so the port names the closure's `Integer`, the strings"
+    );
+    assert_eq!(
+        after, whole,
+        "after the closure, the port reads the same binding"
+    );
+}
+
 /// Each source of a component judged once reports its own declarations,
 /// the obligations they owe and the builtins they shadow, and none of its
 /// neighbour's.

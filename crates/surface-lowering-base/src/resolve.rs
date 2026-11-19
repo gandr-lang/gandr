@@ -440,10 +440,11 @@ pub enum TypeFormer
 /// - hypothesis: L3 — every row has an exact answer, with the other arity and
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 17_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 18_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
+    ("Integer", TypeAtom::Integer),
     ("String", TypeAtom::Text),
     ("Char", TypeAtom::Character),
     ("f64", TypeAtom::Float64),

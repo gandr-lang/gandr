@@ -163,3 +163,40 @@ fn a_type_signature_under_builtin_reads_its_atom_8073()
         "`onward` and `back` check, and `wide` is refused: {report:?}"
     );
 }
+
+/// #8139: a port at a name that no scope of its source binds refuses its
+/// theory at the name's bytes, with the reason that the description read gave
+/// before the resolve.
+#[test]
+fn a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139()
+{
+    use gandr_theory_levitation::WfKind;
+    use quenchant_shape::shape::Maybe;
+
+    let text =
+        "theory FailNonsense where { sort Reason : Type; oper raise : (r : Reason) --> Nonsense; }";
+    let start = text.rfind("Nonsense").expect("the result is written");
+    let at = ByteSpan::new(
+        ByteOffset::from(start),
+        ByteOffset::from(start.saturating_add("Nonsense".len())),
+    )
+    .expect("the name's span");
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text), &Unit::single(), &mut arena);
+    let refusal = refusal_of(&module, SurfaceName::from("FailNonsense"));
+    assert!(
+        matches!(
+            refusal,
+            LoweringRefusal::IllFormedDescription {
+                span,
+                fault,
+                kind: WfKind::UnknownPortSort,
+                subjects: [Maybe::Present(operation), Maybe::Present(sort)],
+            } if span == at
+                && fault == at
+                && operation == SurfaceName::from("raise")
+                && sort == SurfaceName::from("Nonsense")
+        ),
+        "the theory is refused at the unbound name: {refusal:?}"
+    );
+}
