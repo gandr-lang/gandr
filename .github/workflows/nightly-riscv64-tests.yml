@@ -30,15 +30,19 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The compiler writes two paths into the test binaries: the checkout's, for
-  # `env!("CARGO_MANIFEST_DIR")`, and the target directory's, for
-  # `env!("CARGO_BIN_EXE_<name>")`. So both jobs see each at one fixed path,
-  # a link to the job's own directory. Cargo keeps a linked path as it is
-  # given. The paths hold no run number, so the kept target directory stays
-  # warm from one run to the next. Cargo does not rebuild when the target
-  # path alone changes, so a new target path needs an empty kept directory.
+  # The test binaries name three paths of the job that builds them. The
+  # checkout's path serves `env!("CARGO_MANIFEST_DIR")`, and the target
+  # directory's path serves `env!("CARGO_BIN_EXE_<name>")`. The assembler's
+  # path serves the emitter's `env!("GANDR_LLC")`. So both jobs see each at
+  # one fixed path, a link to the job's own directory or program. Cargo keeps
+  # a linked path as the job gives it.
+  #
+  # The paths hold no run number, so the kept target directory stays warm
+  # from one run to the next. Cargo does not rebuild when the target path
+  # alone changes, so a new target path needs an empty kept directory.
   GANDR_RISCV64_SOURCE: /tmp/gandr-riscv64
   GANDR_RISCV64_TARGET_DIR: /tmp/gandr-riscv64-target
+  GANDR_RISCV64_LLC: /tmp/gandr-riscv64-llc
   GANDR_RISCV64_TARGET: riscv64gc-unknown-linux-gnu
   GANDR_RISCV64_ARCHIVE: riscv64-tests.tar.zst
   # The host lock that the riscv64 host's measures hold (#6945).
@@ -131,6 +135,7 @@ jobs:
       - name: build the test archive
         env:
           CARGO_TARGET_DIR: ${{ env.GANDR_RISCV64_TARGET_DIR }}
+          GANDR_LLC: ${{ env.GANDR_RISCV64_LLC }}
         run: .config/riscv64/cross.bash cargo nextest archive --manifest-path "$GANDR_RISCV64_SOURCE/Cargo.toml" --workspace --target "$GANDR_RISCV64_TARGET" --profile riscv64 --archive-file "$RUNNER_TEMP/$GANDR_RISCV64_ARCHIVE"
       # The archive is zstd already, so the upload stores it as it is.
       - name: upload the test archive
@@ -172,6 +177,12 @@ jobs:
       # source of the lockfile; a cache that holds them all fetches nothing.
       - name: fetch the sources of the lockfile
         run: cargo fetch --locked --manifest-path "$GANDR_RISCV64_SOURCE/Cargo.toml"
+      # The machine blocks start `llc` at the assembler path of the archive.
+      # The toolchain file names `llvm-tools`, so the runner's own toolchain
+      # holds an `llc` for riscv64. The fetch above runs that toolchain, so
+      # it stands installed here.
+      - name: link the runner's llc at the assembler path of the archive
+        run: ln -sfn "$(rustc --print sysroot)/lib/rustlib/$GANDR_RISCV64_TARGET/bin/llc" "$GANDR_RISCV64_LLC"
       # The riscv64 host also runs timed measures, each under the host lock
       # `par` (`bench:scaling`, #6879). A test run beside a measure loads the
       # host past the tests' timeouts, and the measure times the run's load
