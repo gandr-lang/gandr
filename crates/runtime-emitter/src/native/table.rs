@@ -3,13 +3,7 @@
 
 use gandr_runtime_stencils::StencilId;
 
-/// A byte offset inside one stencil's code.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Offset(pub usize);
+use crate::executable::Offset;
 
 /// A relocation's explicit addend, which the compiler folds a constant
 /// offset of the operand into (an immediate's bias of one among them).

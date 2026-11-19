@@ -1,5 +1,5 @@
 import "./store.gandr";
-def read() -> [st : Store.Eff with sort S = Integer] Integer = st.get ();
+def read() -> [st : Store.Eff with sort S = Integer] Integer = st.get;
 def scoped() -> Integer = handle st : Store.Eff with sort S = Integer {
   read ()
 } with { | pure(x) => pure x | oper get(k) => k 4 };

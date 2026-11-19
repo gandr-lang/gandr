@@ -580,6 +580,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// The block's refusal.
     ///
+    /// # Cost
+    /// - allocation: the call's plan and the view's binder, growth within the
+    ///   module's calls
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a block after a call of a method answering a place,
     ///   in either spelling, and after one of a method that reads its receiver.
@@ -967,6 +971,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// As `fails`.
     ///
+    /// # Cost
+    /// - allocation: the result's pieces and the recorded view type, growth
+    ///   within the module's view types
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a method answering its receiver's first element, its
     ///   result written with its returner and without, and one declaring a
@@ -1098,6 +1106,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// As `fails`.
     ///
+    /// # Cost
+    /// - allocation: the form's pieces in the shared scratch, growth within the
+    ///   form's pieces
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a held list's name at a name and at a number, and a
     ///   parameter's name no slot holds.
@@ -1158,6 +1170,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Errors
     /// As `fails`.
+    ///
+    /// # Cost
+    /// - allocation: the form's pieces in the shared scratch, growth within the
+    ///   form's pieces
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a held list's name and a parameter's name before a

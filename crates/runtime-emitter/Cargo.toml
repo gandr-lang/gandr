@@ -57,8 +57,8 @@ quenchant-shape.workspace = true
 gandr-runtime-stencils.workspace = true
 object.workspace = true
 
-# A unix host maps a run's regions, reads its memory and, where it has a
-# patcher, maps executable memory through the C library.
+# A unix host maps a run's regions and reads its memory through the C
+# library. It maps executable memory for emitted code and blocks too.
 [target."cfg(unix)".dependencies]
 libc.workspace = true
 

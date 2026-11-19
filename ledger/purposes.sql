@@ -2231,7 +2231,7 @@ INSERT INTO purpose VALUES('kernel-term','wire::WireUsize','struct','A decoded o
 INSERT INTO purpose VALUES('runtime-emitter','PATCHER','constant','States whether this host has a patcher, so native code runs here.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Answer','enum','Names the word that a block returns: zero, or the value that a register or a register of a class holds on exit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Assembler','struct','The path of the llc that compiles each block, by default the llc of the toolchain that built the crate.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','block::Block','struct','The bytes of one compiled block and where a request found them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','block::Block','struct','One compiled block: its key, its target, its bytes and where a request found them.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Blocks','struct','The block compiler: it compiles a description by llc in a process of its own and keeps the bytes under the digest of the description, in the process and in a directory.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Cache','enum','Names where a block compiler keeps its bytes: in the process alone, or in a directory too.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Class','enum','Names a class of registers from which LLVM picks the register of an operand.',NULL,'fits','sound',NULL);
@@ -2239,6 +2239,7 @@ INSERT INTO purpose VALUES('runtime-emitter','block::Code','struct','The machine
 INSERT INTO purpose VALUES('runtime-emitter','block::Description','struct','The data that the bytes of a block are a function of: the target, the template, the operands, the answer, the clobbers and the options.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Direction','enum','Names how an operand passes between its word and its register: in, out, or in and out.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Flags','enum','Names whether the template of a block can change the flags of the target.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','block::Key','struct','The digest of the description of a block, which names the block in a function and in the table of blocks of the process.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Memory','enum','Names whether the template of a block can touch memory.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Operand','struct','One operand of a block: its direction and the register or class that holds its word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','block::Options','struct','The options of a block, as the options of Rust''s asm! state them: whether it touches memory and whether it changes the flags.',NULL,'fits','sound',NULL);
@@ -2261,17 +2262,19 @@ INSERT INTO purpose VALUES('runtime-emitter','crossing::commit','function','Comm
 INSERT INTO purpose VALUES('runtime-emitter','crossing::deref','function','Reads a committed value back into a store at addresses fresh there, refusing a profile other than the crossing profile before any chunk is read.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','crossing::profile','function','Builds the value-plane profile a crossing commits and reads under from the deployment''s chunker constants and this codec''s identity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','cut::evaluate_scheduled_on','function','Runs a scheduled program on the caller''s fork, its root and writers lowered once: each spawn copies its writer''s thunk into a store of its own and starts it, and each read waits for that writer and copies its answer back.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','executable::MapFailure','struct','Names why mapping a region failed: the host''s error number, or zero on a host with no mapping.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Alt','enum','Names the second continuation of an instruction: none for a one-way stencil, or the label a two-way stencil continues at on a match.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','function::BlockRow','struct','Names a block as an index into the function''s table of block keys.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Constant','struct','Names a word offset into a function''s constants.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Function','struct','Holds a lowered function: the straight list of stencil instructions both tiers run, its labels, its constants and its entry window''s slot count, compared and hashed by value as the cache key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Immediate','struct','Holds an immediate operand: a slot, a count, an ordinal or half a header, below 2 to the 32nd so either patcher materialises it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Instruction','struct','Holds one stencil instruction: the stencil, its two operands, and the second continuation of a two-way stencil.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Label','struct','Names a label as an index into the function''s label table, bound to one instruction.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','function::Operand','enum','Names what an operand hole receives: nothing, an immediate, the address of a labelled instruction''s code, a constant, or a shared frame stub.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','function::Operand','enum','Names what an operand hole receives: nothing, an immediate, the address of a labelled instruction''s code, a constant, a shared frame stub, or the address of a block.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Position','struct','Names an instruction''s index in its function.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Slots','struct','Holds a count of window slots.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','function::Stub','enum','Names a frame stub every function shares: the code a frame whose second word is a value, never a window, resumes.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','function::Unbound','struct','Names a label no instruction is bound to.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','function::Unbound','enum','Names a label no instruction is bound to, or a block row past the function''s table of blocks.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','fuse::Dispatches','struct','Holds how many dispatches a function''s instructions cost, one per stencil.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','fuse::Fused','struct','Records one fusion: the position, in the unfused function, of the pair''s first instruction, and the rule that fused it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','fuse::FusionRefusal','enum','Names why a replay refused a decision: the position does not hold the rule''s left side, a label enters the pair, or the decision does not follow the one before it.',NULL,'fits','sound',NULL);
@@ -2301,9 +2304,10 @@ INSERT INTO purpose VALUES('runtime-emitter','lower::Window','struct','Records a
 INSERT INTO purpose VALUES('runtime-emitter','lower::lower','function','Lowers the closed command, then fuses its adjacent pairs, refusing the form of the first ill-formed or oversized node.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','lower::lower_open','function','Lowers a command delivering to the halt as a function opened over the producer bindings its support selects in the entry window''s first slots: the code an open endpoint runs, each free variable an accumulator.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','lower::lower_unfused','function','Lowers the closed command, every instruction its own dispatch: the function a fused one''s trace is replayed over.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','machine::Unentered','enum','Names why the key of a block gives no address: no compile gave the key, the block is for another target, or the host refused the mapping.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','machine::address','function','Gives the address of a block in this process, and maps its bytes executable on the first request.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','native::EmitRefusal','enum','Names why emission failed: a region mapping failed, the function is larger than a region, a hole could not be patched, a label is unbound, the last instruction falls off, or an operand is missing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','native::PatchRefusal','enum','Names why a hole could not be patched: a branch target beyond reach, an address beyond page reach, a value past its field, a wrong shape, or a wrong kind.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','native::memory::MapFailure','struct','Names why mapping a region failed: the host''s error number.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Bytes','struct','A size in bytes, read from its spelling with a unit and written with its digits grouped.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Charge','struct','What the process''s own cgroup charges against its memory.max: the bytes charged, and the count of times the charge met the bound.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Held','struct','A run''s stop at its memory bound: what each region held, at which step, and which region asked for the chunk that did not fit.',NULL,'fits','sound',NULL);
@@ -2368,6 +2372,8 @@ INSERT INTO purpose VALUES('runtime-stencils','layout::ACCUMULATED_APPLIED','con
 INSERT INTO purpose VALUES('runtime-stencils','layout::ACCUMULATED_FORCED','constant','The family position of an accumulator a force grew, holding the accumulator forced.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::ACCUMULATOR_FREE','constant','The least family position of a free variable''s accumulator, to which its index doubled, plus one for the linear zone, is added.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::Arity','struct','A header''s arity field: a field count or a capture count.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-stencils','layout::BLOCK_ANSWERS','constant','The bit of a block entry''s second operand that asks for an object that holds the answer of the block.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-stencils','layout::BLOCK_OPERANDS','constant','The bits of a block entry''s second operand that hold the count of its operands.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::CHUNK','constant','The words a region commits at a time: the heap and the window region each grow by whole chunks of 2²⁰ words.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::COUNT_IMMORTAL','constant','The count word of an object no drop frees: a constant laid out in the function''s data.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::COUNT_ONE','constant','The count word of a fresh object: its one owner.',NULL,'fits','sound',NULL);
@@ -2377,6 +2383,7 @@ INSERT INTO purpose VALUES('runtime-stencils','layout::FieldOverflow','enum','Wh
 INSERT INTO purpose VALUES('runtime-stencils','layout::Flavour','enum','How a closure answers its observation, carried in its header''s tag.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::Fuel','struct','A count of code-word jumps a run may take before it exits with Status::FuelExhausted.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::Header','struct','A heap object''s header word.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-stencils','layout::INTEGER_HEADER','constant','The header word of a machine integer: one field, tag zero and no family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::Kind','enum','What a heap object is.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::Observed','enum','The destructor an observation applied when it took the stuck exit, as the runtime record''s observed word names it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-stencils','layout::RELEASE','constant','The host entry a drop calls with the object whose count it found at one: no callee table numbers an entry this high.',NULL,'fits','sound',NULL);

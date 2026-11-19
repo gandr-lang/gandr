@@ -38,7 +38,7 @@ import "../../model/effects/tree.gandr";
 /// what follows from the stored value.
 def incrObserved() -> ((Unit, Integer) -> Type, Integer) -> Type =
   handle st : StateLaws with sort S = Integer {
-    let n = st.get ();
+    let n = st.get;
     st.put (n + 1);
     pure fun (q) { fun (s) { q (*{}) s } }
   } with {

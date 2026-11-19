@@ -637,6 +637,14 @@ pub const FREE_CLASSES: usize = 16;
 /// The host entry a drop calls with the object whose count it found at one:
 /// no callee table numbers an entry this high.
 pub const RELEASE: Word = Word(u64::MAX);
+/// The header of a machine integer that a stencil writes: kind
+/// [`Kind::Integer`], whose bits are zero, no tag, one field and no family.
+pub const INTEGER_HEADER: Word = Word(1_u64.wrapping_shl(ARITY_SHIFT));
+/// The bits of a block entry's operand B that count the block's operands: no
+/// more than an arity holds.
+pub const BLOCK_OPERANDS: usize = ARITY_MASK;
+/// The bit of a block entry's operand B that says the block answers.
+pub const BLOCK_ANSWERS: usize = 1_usize.wrapping_shl(ARITY_SHIFT);
 
 /// Why a run returned to its entry.
 ///

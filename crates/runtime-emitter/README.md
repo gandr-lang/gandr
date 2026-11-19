@@ -51,7 +51,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - Sessions run: `fork`, `send`, `recv`, `select`, `offer` and `close` are host calls on one cooperative, deterministic scheduler the run's host state holds, on the run's thread. `HostHandler::task_order` and `TaskOrder` give the order of its ready queue: the oldest task first, or the newest. A channel keeps one queue per direction; a receive or an offer with nothing sent parks its task's frames until its peer sends, and a run whose tasks all wait is `Stuck::Deadlock`, naming each waiting action. An end abandoned before its protocol ended is cancelled, and a root that meets a cancelled peer is `Stuck::Cancelled` at that action.
 - `RunInputs::traced`, `Trace`, `Play`, `Played`, `Carried`, `TaskNumber`, `ChannelNumber`: a run that records each channel it forks as a play, every move with the task and side that made it and its payload's place in the store, and reads a play's causal web, `Play::web`, by the facing rule a dialogue's is read by. A run over inputs not traced records nothing.
 - `Policy` and `POLICY_VARIABLE`: `GANDR_NATIVE=always` (the default) emits on first run, `never` takes the executor, `cached` serves only what the cache holds.
-- `block`: machine blocks compiled from their description by the pinned `llc`.
+- `block`, `machine`: machine blocks compiled from their description by the pinned `llc`, and entered by one stencil on both tiers.
 - `image`: a closed command's canonical bytes, read into a fresh arena and checked again.
 - `PATCHER`: whether this host emits native code.
 - `Fuel` and `Status`, re-exported: the code-word jumps a run may take, and why it returned.

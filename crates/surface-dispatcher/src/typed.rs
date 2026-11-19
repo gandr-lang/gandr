@@ -10536,7 +10536,7 @@ mod tests
         let scope = |name: &str, theory: &str| {
             format!(
                 "def {name}() -> -F Integer {{\n  handle st : {theory} with sort S = Integer {{\n    \
-                 let a = st.get ();\n    let b = st.get ();\n    pure a + b\n  }} with {{\n    \
+                 let a = st.get;\n    let b = st.get;\n    pure a + b\n  }} with {{\n    \
                  | pure(x) => pure x\n    | oper get(k) => k 4\n  }}\n}}\n\n"
             )
         };
@@ -10574,8 +10574,8 @@ mod tests
         };
         for name in ["def once", "def twice"] {
             let (Some(kept), Some(second)) = (
-                at(name, "st.get ();\n    let b"),
-                at(name, "st.get ();\n    pure"),
+                at(name, "st.get;\n    let b"),
+                at(name, "st.get;\n    pure"),
             )
             else {
                 panic!("`{name}`: both reads' instance names answer");

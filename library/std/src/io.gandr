@@ -24,4 +24,4 @@ pub def eprint(console : Cap { eprint }, line : String) -> [std.io.Stderr.Eff] U
 /// The next line of standard input through `console`, with its newline. It
 /// answers the empty string once the input runs out.
 pub def read_line(console : Cap { read_line }) -> [std.io.Stdin.Eff] String =
-  console.read_line *{}
+  console.read_line

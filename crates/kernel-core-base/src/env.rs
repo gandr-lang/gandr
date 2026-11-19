@@ -6,7 +6,6 @@
 //! record.
 
 use alloc::alloc::Global;
-use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -1295,8 +1294,8 @@ pub struct AdmittedDeclaration
     rested_on: BTreeSet<ConstantIndex>,
     /// The positions its content names, ascending: what joins a check's
     /// support when the check reads it. A mutual block's members each keep the
-    /// references of the whole block.
-    references: Box<[ConstantIndex]>,
+    /// references of the whole block, and share one slice of them.
+    references: alloc::sync::Arc<[ConstantIndex]>,
     /// The block it was admitted in: its own position alone unless a mutual
     /// block admitted it, whose families share one stage.
     block: crate::occurrence::Block,
@@ -1340,8 +1339,8 @@ pub struct AdmittedParts
     pub rested_on: BTreeSet<ConstantIndex>,
     /// The positions its content names, ascending: what joins a check's
     /// support when the check reads it. A mutual block's members each keep the
-    /// references of the whole block.
-    pub references: Box<[ConstantIndex]>,
+    /// references of the whole block, and share one slice of them.
+    pub references: alloc::sync::Arc<[ConstantIndex]>,
     /// The block it was admitted in: its own position alone unless a mutual
     /// block admitted it, whose families share one stage.
     pub block: crate::occurrence::Block,
@@ -2169,7 +2168,7 @@ impl Entries
         match support.read(ConstantIndex::from(position)) {
             crate::weakening::Read::Open | crate::weakening::Read::Again => Some(entry),
             crate::weakening::Read::First => {
-                for &reference in &entry.references {
+                for &reference in &*entry.references {
                     log.join(support, reference);
                 }
                 Some(entry)
@@ -3397,8 +3396,8 @@ pub fn collect_reachable(
 /// - panics: none.
 ///
 /// # Cost
-/// - allocation: the set and slice of positions the declaration's content
-///   names, growth within the declaration's content
+/// - allocation: the set of positions the declaration's content names, and the
+///   shared slice of them, growth within the declaration's content
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a check that reads only what its content names admits,
@@ -3410,7 +3409,7 @@ pub fn collect_reachable(
 pub fn references(
     arena: &TermArena,
     declaration: &Declaration,
-) -> Box<[ConstantIndex]>
+) -> alloc::sync::Arc<[ConstantIndex]>
 {
     let mut found = BTreeSet::new();
     {

@@ -16,11 +16,11 @@
 //! forms and every displacement inside a region fits the relative one; a
 //! value that does not fit is refused, never truncated.
 
-use crate::native::Address;
-use crate::native::CodeBytes;
+use crate::executable::Address;
+use crate::executable::CodeBytes;
+use crate::executable::Offset;
 use crate::native::PatchRefusal;
 use crate::native::table::Addend;
-use crate::native::table::Offset;
 
 /// A 32-bit field's value, before its range is checked.
 #[repr(transparent)]
@@ -167,11 +167,11 @@ mod tests
     use super::absolute;
     use super::absolute_signed;
     use super::relative;
-    use crate::native::Address;
-    use crate::native::CodeBytes;
+    use crate::executable::Address;
+    use crate::executable::CodeBytes;
+    use crate::executable::Offset;
     use crate::native::PatchRefusal;
     use crate::native::table::Addend;
-    use crate::native::table::Offset;
 
     /// The field `patch` writes one byte into a five-byte copy, after a
     /// one-byte opcode.

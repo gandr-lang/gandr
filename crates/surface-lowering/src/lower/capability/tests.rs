@@ -848,6 +848,60 @@ fn an_operation_is_performed_by_its_interface_s_name_2279()
     );
 }
 
+/// An operation of no input, `std.io.Stdin.read_line`, is performed by its
+/// bare name with the unit payload, and the checker admits it under the row
+/// naming `Stdin`; the call `read_line ()` is refused by name (#7935).
+#[test]
+fn an_operation_of_no_input_is_performed_by_its_bare_name_7935()
+{
+    let mut arena = CoreArena::new();
+    let text = hosting(include_str!(
+        "tests/fixtures/an-operation-of-no-input-is-performed-by-its-bare-name-7935.gandr"
+    ));
+    let module = hosted(&text, &mut arena);
+    let bare = tail_of(&module, &arena, "bare".into());
+    let Some(&Computation::Perform {
+        ref signature,
+        ref operation,
+        payload,
+    }) = arena.computation(bare)
+    else {
+        panic!(
+            "`std.io.Stdin.read_line` is a perform: {:?}",
+            arena.computation(bare)
+        );
+    };
+    assert_eq!(
+        (signature.name().as_ref(), operation.as_ref()),
+        ("std.io.Stdin.Eff", "read_line")
+    );
+    assert!(
+        matches!(arena.value(payload), Some(Value::Tuple(items)) if items.is_empty()),
+        "the payload is the empty tuple, the encoding of no input: {:?}",
+        arena.value(payload)
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "called".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::RetiredName {
+                form: gandr_surface_grammar::RetiredForm::EmptyOperationCall,
+                ..
+            })
+        ),
+        "{:?}",
+        outcome_of(&module, "called".into())
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "bare".into()),
+            Verdict::Checked { .. } | Verdict::Synthesised { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "bare".into())
+    );
+}
+
 /// An `extern "rust"` block declares an interface its source's rows name and
 /// its calls perform, one operation per member, and declares no name of its
 /// own (#2901).
@@ -1223,7 +1277,7 @@ fn a_scope_handles_a_theory_s_operations_2272()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{STATE}def constant() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get (); st.put a; let b = st.get (); pure a + b + 1 }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}\n"
+        "{STATE}def constant() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get; st.put a; let b = st.get; pure a + b + 1 }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let constant = tail_of(&module, &arena, "constant".into());
@@ -1282,7 +1336,7 @@ fn a_scope_records_the_theory_and_sorts_it_handles_2382()
     let source = alloc::format!(
         concat!(
             "{state}",
-            "def fixed() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get (); pure a }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}\n",
+            "def fixed() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get; pure a }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}\n",
             "def hosted() -> -F Unit {{ handle c : std.process.Exit.Eff {{ pure *{{}} }} with {{ | pure(x) => pure x | oper exit(code, k) => k *{{}} }} }}\n",
         ),
         state = STATE,
@@ -1387,15 +1441,15 @@ fn a_row_names_a_theory_at_the_sorts_it_fixes_2844()
     let source = alloc::format!(
         concat!(
             "{state}",
-            "def labelled() -> -F [st : State with sort S = Integer] Integer {{ st.get () }}\n",
-            "def after() -> -F [st : State with sort S = Integer, out : std.io.Console.Eff] Integer {{ out.print \"x\"; st.get () }}\n",
+            "def labelled() -> -F [st : State with sort S = Integer] Integer {{ st.get }}\n",
+            "def after() -> -F [st : State with sort S = Integer, out : std.io.Console.Eff] Integer {{ out.print \"x\"; st.get }}\n",
             "def whole() -> -F [State with sort S = Integer, std.io.Console.Eff] Unit {{ std.io.Console.print \"x\" }}\n",
             "def discharged() -> -F Integer {{ handle s : State with sort S = Integer {{ labelled () }} with {{ | pure(x) => pure x | oper get(k) => k 7 | oper put(v, k) => k *{{}} }} }}\n",
-            "def undeclared() -> -F [st : State with sort T = Integer] Integer {{ st.get () }}\n",
+            "def undeclared() -> -F [st : State with sort T = Integer] Integer {{ st.get }}\n",
             "def hosted() -> -F [std.io.Console.Eff with sort S = Integer] Unit {{ pure *{{}} }}\n",
-            "def twice() -> -F [st : State with sort S = Integer with sort S = Integer] Integer {{ st.get () }}\n",
+            "def twice() -> -F [st : State with sort S = Integer with sort S = Integer] Integer {{ st.get }}\n",
             "def again() -> -F [State with sort S = Integer, State with sort S = Integer] Unit {{ pure *{{}} }}\n",
-            "def unfixed() -> -F [st : State] Integer {{ st.get () }}\n",
+            "def unfixed() -> -F [st : State] Integer {{ st.get }}\n",
             "def unknown() -> -F [Nothing with sort S = Integer] Unit {{ pure *{{}} }}\n",
         ),
         state = STATE,
@@ -1683,7 +1737,7 @@ fn a_row_records_the_theory_and_sorts_each_entry_fixes_3230()
     let source = alloc::format!(
         concat!(
             "{state}",
-            "def labelled() -> -F [st : State with sort S = Integer] Integer {{ st.get () }}\n",
+            "def labelled() -> -F [st : State with sort S = Integer] Integer {{ st.get }}\n",
             "def whole() -> -F [State with sort S = Integer, std.io.Console.Eff] Unit {{ std.io.Console.print \"x\" }}\n",
             "def hosted() -> -F [std.io.Console.Eff] Unit {{ std.io.Console.print \"x\" }}\n",
         ),
@@ -1758,8 +1812,8 @@ fn a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881()
     let source = alloc::format!(
         concat!(
             "{state}",
-            "def scoped(a : Type, x : a, y : Integer) -> -F a {{ handle s : State with sort S = a {{ s.get () }} with {{ | pure(w) => pure w | oper get(k) => k x | oper put(v, k) => k *{{}} }} }}\n",
-            "def labelled(a : Type, x : a) -> -F [st : State with sort S = a] a {{ st.get () }}\n",
+            "def scoped(a : Type, x : a, y : Integer) -> -F a {{ handle s : State with sort S = a {{ s.get }} with {{ | pure(w) => pure w | oper get(k) => k x | oper put(v, k) => k *{{}} }} }}\n",
+            "def labelled(a : Type, x : a) -> -F [st : State with sort S = a] a {{ st.get }}\n",
             "def discharged() -> -F Integer {{ handle s : State with sort S = Integer {{ labelled (Integer) 0 }} with {{ | pure(w) => pure w | oper get(k) => k 7 | oper put(v, k) => k *{{}} }} }}\n",
         ),
         state = STATE,
@@ -1892,7 +1946,7 @@ fn a_scope_owes_its_theory_s_stated_laws_3966()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{PUT_SKIP}def discarding() -> -F Integer {{ handle st : StatePutSkip with sort S = Integer {{ st.put 1; st.get () }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => pure 9 }} }}\n"
+        "{PUT_SKIP}def discarding() -> -F Integer {{ handle st : StatePutSkip with sort S = Integer {{ st.put 1; st.get }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => pure 9 }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let Some(declaration) = module
@@ -1948,7 +2002,7 @@ const GET_GET: &str = include_str!("tests/fixtures/get-get.gandr");
 fn a_scope_s_subject_normalises_by_its_theory_s_laws_2272()
 {
     let mut arena = CoreArena::new();
-    let subject = "{ let a = st.get (); let b = st.get (); pure a * 10 + b }";
+    let subject = "{ let a = st.get; let b = st.get; pure a * 10 + b }";
     let source = alloc::format!(
         include_str!(
             "tests/unformatted/a-scope-s-subject-normalises-by-its-theory-s-laws-2272.gandr"
@@ -2007,7 +2061,7 @@ fn a_scope_s_subject_normalises_by_its_theory_s_laws_2272()
     };
     assert_eq!(
         text(module.origins().computation(answered)).as_deref(),
-        Some("st.get ()"),
+        Some("st.get"),
         "the return answers at the request it stands for"
     );
     assert_eq!(
@@ -2052,7 +2106,7 @@ fn a_scope_names_a_model_of_its_theory_2272()
     let source = alloc::format!(
         concat!(
             "{state}{put_put}{passing}",
-            "def answered() -> Integer -> Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put 4; let a = st.get (); pure fun (_s) {{ pure a }} }} with Passing }}\n",
+            "def answered() -> Integer -> Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put 4; let a = st.get; pure fun (_s) {{ pure a }} }} with Passing }}\n",
             "def unnamed() -> Integer -> Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} with Stateless }}\n",
             "def hosted() -> -F Unit {{ handle c : std.process.Exit.Eff {{ pure *{{}} }} with Passing }}\n",
         ),
@@ -2259,7 +2313,7 @@ fn a_scope_records_the_model_answering_it_3196()
             "{state}{put_put}{passing}",
             "def named() -> Integer -> Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} with Passing }}\n",
             "def inScope() -> Integer -> Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fun (s) {{ pure s }} }} }}\n",
-            "def written() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get (); pure a }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}\n",
+            "def written() -> -F Integer {{ handle st : State with sort S = Integer {{ let a = st.get; pure a }} with {{ | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{{}} }} }}\n",
         ),
         state = STATE,
         put_put = PUT_PUT,
@@ -2302,7 +2356,7 @@ fn a_scope_is_answered_by_the_model_in_scope_2272()
     let source = alloc::format!(
         concat!(
             "{state}{put_put}{passing}{zero_and_one}",
-            "def answered() -> Integer -> Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put 4; let a = st.get (); pure fun (_s) {{ pure a }} }} }}\n",
+            "def answered() -> Integer -> Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put 4; let a = st.get; pure fun (_s) {{ pure a }} }} }}\n",
             "def ambiguous() -> Integer -> Integer {{ handle st : State with sort S = Integer {{ pure fun (s) {{ pure s }} }} }}\n",
             "def unanswered() -> Integer -> Integer {{ handle st : State with sort S = Unit {{ pure fun (s) {{ pure 1 }} }} }}\n",
             "def hosted() -> -F Unit {{ handle c : std.process.Exit.Eff {{ pure *{{}} }} }}\n",

@@ -233,6 +233,7 @@ fn main() -> Result<(), Refusal>
     let table = out.join("stencils.rs");
     println!("cargo::rerun-if-changed=../runtime-stencils/src");
     println!("cargo::rustc-check-cfg=cfg(gandr_patcher)");
+    println!("cargo::rustc-check-cfg=cfg(gandr_executable)");
     // The block compiler runs the `llc` of this toolchain, which the
     // `llvm-tools` component keeps under the host's directory of the sysroot.
     let rustc = env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
@@ -249,6 +250,14 @@ fn main() -> Result<(), Refusal>
     println!("cargo::rustc-env=GANDR_LLC={}", llc.display());
     let os = variable("CARGO_CFG_TARGET_OS")?;
     let arch = variable("CARGO_CFG_TARGET_ARCH")?;
+    // Executable memory, for native code and for the blocks of machine code
+    // that a run enters: each host with a patcher, and Linux riscv64.
+    if matches!(
+        (os.to_str(), arch.to_str()),
+        (Some("macos"), Some("aarch64")) | (Some("linux"), Some("aarch64" | "x86_64" | "riscv64"))
+    ) {
+        println!("cargo::rustc-cfg=gandr_executable");
+    }
     let layout = match (os.to_str(), arch.to_str()) {
         (Some("macos"), Some("aarch64")) => Layout::MachOArm64,
         (Some("linux"), Some("aarch64")) => Layout::ElfArm64,

@@ -29,7 +29,7 @@ pub theory StatePutLaws where {
 }
 def forgetful() -> Integer = handle st : StatePutLaws with sort S = Integer {
   st.put 1;
-  st.get ()
+  st.get
 } with { | pure(x) => pure x | oper get(k) => k 4 | oper put(s, k) => k *{} };
 data NatAdd : Type where {
   | AddZero : NatAdd

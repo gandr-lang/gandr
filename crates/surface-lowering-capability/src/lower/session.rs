@@ -1097,6 +1097,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// The path's refusal.
     ///
+    /// # Cost
+    /// - allocation: the path's pieces, its links and its name, growth within
+    ///   the path's links
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::stands`].
     /// - witness: `gandr-surface-lowering::lower::session::tests::a_parameter_at_a_named_session_type_is_placed`
@@ -1393,6 +1397,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// The operands' refusal.
     ///
+    /// # Cost
+    /// - allocation: the application's pieces in the shared scratch, growth
+    ///   within the application's pieces
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — an application of one argument, one of two, a lone
     ///   operand and a tuple.
@@ -1459,6 +1467,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Termination
     /// - reason: each round moves to a child of the node before it.
     /// - measure: the depth of the operand's subtree below the current node.
+    ///
+    /// # Cost
+    /// - allocation: each group's pieces in the shared scratch, growth within
+    ///   the operand's pieces
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as the keyword heads that read through it.
@@ -1611,6 +1623,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     /// # Errors
     /// The receive's refusal.
     ///
+    /// # Cost
+    /// - allocation: the receive's pieces and its recorded statement, growth
+    ///   within the block's statements
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the seat's receive binds the dispatch over the rest
     ///   of its block, and the operator's receives under offer arms.
@@ -1682,6 +1698,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///
     /// # Errors
     /// The fork's refusal.
+    ///
+    /// # Cost
+    /// - allocation: the fork's pieces and its recorded statement, growth
+    ///   within the block's statements
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the seat exchange forks the seat's end to the child

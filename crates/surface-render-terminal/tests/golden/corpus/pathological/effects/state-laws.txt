@@ -3,7 +3,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
    │
 12 │ ┏   handle st : StatePutGet with sort S = Integer {
 13 │ ┃     st.put 1;
-14 │ ┃     let a = st.get ();
+14 │ ┃     let a = st.get;
 15 │ ┃     pure a
    ┆ ┇
 19 │ ┃     | oper put(s, k) => k *{}
@@ -18,7 +18,7 @@ error[HandlerUnlawful]: this handler is not shown to satisfy the law `putGet` of
    │
 27 │ ┏   handle st : StatePutLaws with sort S = Integer {
 28 │ ┃     st.put 1;
-29 │ ┃     let a = st.get ();
+29 │ ┃     let a = st.get;
 30 │ ┃     pure thunk { fun (s : Integer) { pure a } }
    ┆ ┇
 34 │ ┃     | oper put(s, k) => pure thunk { fun (t : Integer) { let g = k *{}; g (s + t) } }

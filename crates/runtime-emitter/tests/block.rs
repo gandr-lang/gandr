@@ -203,6 +203,8 @@ fn a_second_request_starts_no_process()
     assert_eq!(
         again,
         Block {
+            key: compiled.key,
+            target: compiled.target,
             code: compiled.code.clone(),
             origin: Origin::Process
         },
@@ -211,6 +213,8 @@ fn a_second_request_starts_no_process()
     assert_eq!(
         later,
         Block {
+            key: compiled.key,
+            target: compiled.target,
             code: compiled.code,
             origin: Origin::Directory
         },

@@ -1,7 +1,7 @@
 //! A command's image over the corpus: each `runs` item reads back from its
-//! bytes, checks, and runs as its first command runs, its annotations
-//! included. Each item whose head does not cross is refused by name, and the
-//! counts of each kind of annotation that the written items reach are stated.
+//! bytes, checks, and runs as its first command runs. The test names each
+//! head that does not cross. It compares the annotation kinds of the first
+//! command and the read command. Five named items witness the kinds.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -104,7 +104,13 @@ fn items() -> Vec<Item>
                 )
                 .expect("a runs item's return focuses");
                 found.push(Item {
-                    name: format!("{} {}", path.display(), declaration.name()),
+                    name: format!(
+                        "{} {}",
+                        path.strip_prefix(&corpus)
+                            .expect("a corpus source is below its root")
+                            .display(),
+                        declaration.name()
+                    ),
                     arena,
                     definitions: parts.definitions.clone(),
                     root,
@@ -137,23 +143,26 @@ enum Kind
 ///
 /// # Specification
 /// trivial.
-fn annotated(item: &Item) -> BTreeSet<Kind>
+fn annotated(
+    arena: &CommandArena,
+    definitions: &Definitions,
+    root: CommandId,
+) -> BTreeSet<Kind>
 {
     let mut seen = BTreeSet::new();
     let mut order = Vec::new();
-    let mut roots = vec![NodeAddress::Command(item.root)];
+    let mut roots = vec![NodeAddress::Command(root)];
     let mut met = BTreeSet::new();
     let mut kinds = BTreeSet::new();
     while !roots.is_empty() {
         let from = order.len();
-        reach(&item.arena, &roots, &mut seen, &mut order).expect("the item's nodes resolve");
+        reach(arena, &roots, &mut seen, &mut order).expect("the item's nodes resolve");
         roots.clear();
         for &node in &order[from ..] {
             match node {
-                NodeAddress::Producer(id) => match item.arena.producer(id) {
+                NodeAddress::Producer(id) => match arena.producer(id) {
                     Some(&ProducerNode::Constant(constant)) if met.insert(constant) => {
-                        if let Some(Definition::Transparent(body)) = item.definitions.get(constant)
-                        {
+                        if let Some(Definition::Transparent(body)) = definitions.get(constant) {
                             roots.push(NodeAddress::Producer(body));
                         }
                     },
@@ -163,11 +172,11 @@ fn annotated(item: &Item) -> BTreeSet<Kind>
                     _ => {},
                 },
                 NodeAddress::Consumer(id) => {
-                    if let Some(&ConsumerNode::ListFold { .. }) = item.arena.consumer(id) {
+                    if let Some(&ConsumerNode::ListFold { .. }) = arena.consumer(id) {
                         kinds.insert(Kind::Fold);
                     }
                 },
-                NodeAddress::Command(id) => match item.arena.command(id) {
+                NodeAddress::Command(id) => match arena.command(id) {
                     Some(&CommandNode::Perform { .. }) => {
                         kinds.insert(Kind::Perform);
                     },
@@ -188,15 +197,41 @@ fn annotated(item: &Item) -> BTreeSet<Kind>
 /// Each `runs` item writes its image, reads it back into a fresh arena that
 /// checks, and answers on both tiers what its first command answers. Its
 /// image read back writes the same bytes. An item whose head does not cross
-/// is refused by name. The counts of the written items and of each kind of
-/// annotation that they reach are stated, so a change in the corpus or in
-/// the codec shows here.
+/// is refused by name. The read command reaches the same annotation kinds as
+/// the first command. Five named items witness the kinds.
 #[test]
 fn each_runs_item_reads_back_and_runs_alike()
 {
-    let mut written = 0_usize;
-    let mut heads = 0_usize;
-    let mut reached: BTreeMap<Kind, usize> = BTreeMap::new();
+    let expected_heads = BTreeSet::from([
+        String::from("corpus/model/sessions/run-transport.gandr decodedRun"),
+        String::from("corpus/model/sessions/seat-evolution.gandr moved"),
+        String::from("corpus/model/sessions/seat-prefix-evolution.gandr upgraded"),
+        String::from("corpus/model/sessions/seat-prefix.gandr shown"),
+    ]);
+    let expected_witnesses = BTreeMap::from([
+        (
+            String::from("corpus/classifier/implicit-telescope.gandr sameRun"),
+            BTreeSet::from([Kind::Code]),
+        ),
+        (
+            String::from("corpus/model/cancellation/abandoned.gandr cancelled"),
+            BTreeSet::from([Kind::Perform, Kind::Handle, Kind::Session]),
+        ),
+        (
+            String::from("corpus/model/cancellation/answered.gandr answered"),
+            BTreeSet::from([Kind::Perform, Kind::Handle]),
+        ),
+        (
+            String::from("corpus/model/cancellation/resumed.gandr resumed"),
+            BTreeSet::from([Kind::Perform, Kind::Handle, Kind::Session]),
+        ),
+        (
+            String::from("corpus/model/identity/flow-data.gandr two"),
+            BTreeSet::from([Kind::Fold]),
+        ),
+    ]);
+    let mut heads = BTreeSet::new();
+    let mut found_witnesses = BTreeMap::new();
     for item in items() {
         match encode(&item.arena, &item.definitions, item.root) {
             Ok(bytes) => {
@@ -215,34 +250,30 @@ fn each_runs_item_reads_back_and_runs_alike()
                     "{}: the read command writes the same bytes",
                     item.name
                 );
-                written = written.saturating_add(1);
-                for kind in annotated(&item) {
-                    let count = reached.entry(kind).or_default();
-                    *count = count.saturating_add(1);
+                let written_kinds = annotated(&item.arena, &item.definitions, item.root);
+                let read_kinds = annotated(&back.arena, &back.definitions, back.root);
+                assert_eq!(
+                    written_kinds, read_kinds,
+                    "{}: the read command reaches the first command's kinds",
+                    item.name
+                );
+                if expected_witnesses.contains_key(&item.name) {
+                    found_witnesses.insert(item.name, written_kinds);
                 }
             },
             Err(ImageRefusal::Uncodable {
                 form: Uncodable::Head(_),
                 ..
             }) => {
-                heads = heads.saturating_add(1);
+                heads.insert(item.name);
             },
             Err(refusal) => panic!("{}: the image is refused: {refusal}", item.name),
         }
     }
+    assert_eq!(heads, expected_heads, "the set of refused heads is stable");
     assert_eq!(
-        (written, heads, reached),
-        (
-            802,
-            4,
-            BTreeMap::from([
-                (Kind::Code, 184),
-                (Kind::Fold, 7),
-                (Kind::Perform, 60),
-                (Kind::Handle, 73),
-                (Kind::Session, 15),
-            ])
-        )
+        found_witnesses, expected_witnesses,
+        "the named items reach their stated kinds"
     );
 }
 

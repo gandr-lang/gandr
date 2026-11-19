@@ -2056,11 +2056,14 @@ enum TypeLevelFrame
 
 /// The universe level of a well-formed value or computation type: the
 /// well-formedness gate, computed iteratively so it is total on any depth.
+/// The walk binds and unbinds on `context` in place, so a caller lends it the
+/// places of one buffer for each formation.
 ///
 /// # Specification
 /// - requires: the judgement and context belong to this arena; the memo and
 ///   session hold only this call's history. An unreadable root is admissible
-///   input and refuses rather than panicking.
+///   input and refuses rather than panicking. `context` holds the context the
+///   type stands in, and holds no promised items when the walk ends.
 /// - ensures: `Ok(level)` — the type's universe level — exactly when every
 ///   embedded level is in scope, every lift strictly raises, every sealed atom
 ///   resolves to an admitted abstract-type declaration, every static Pi stands
@@ -2086,7 +2089,8 @@ enum TypeLevelFrame
 /// As `- fails:`.
 ///
 /// # Cost
-/// - allocation: the stacks and the context, growth within the type's depth.
+/// - allocation: the stacks and the lent context, growth within the type's
+///   depth.
 ///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the composite level is pinned by the join over one
@@ -2123,7 +2127,7 @@ fn type_level<M>(
     arena: &TermArena,
     judgement: Judgement<'_>,
     root: TypeLevelGoal,
-    mut context: Vec<ValueTypeId>,
+    context: &mut Vec<ValueTypeId>,
     recording: Recording<'_, M>,
 ) -> Result<Level, KernelError>
 where
@@ -2176,7 +2180,7 @@ where
             {
                 // The recalled goal's binders and keys are read here, as if
                 // its walk had run.
-                session.read(hit.support().reads(), &context);
+                session.read(hit.support().reads(), context);
                 session.owe(owes.keys());
                 recalled = Some(level.clone());
                 answered = ExpansionKind::Recalled;
@@ -2193,7 +2197,7 @@ where
                 answered = ExpansionKind::Kept;
             }
             else {
-                let opened = session.open(&context);
+                let opened = session.open(context);
                 frames.push(TypeLevelFrame::Memoize(question, opened));
             }
         }
@@ -2242,8 +2246,7 @@ where
                             if matches!(M::ACTIVITY, MemoActivity::Active) {
                                 barriers.push(session.open_barrier());
                             }
-                            frames
-                                .push(TypeLevelFrame::SessionScope(core::mem::take(&mut context)));
+                            frames.push(TypeLevelFrame::SessionScope(core::mem::take(context)));
                             goal = TypeLevelGoal::Value(payloads);
                             continue 'expand;
                         },
@@ -2577,7 +2580,7 @@ where
                     continue 'expand;
                 },
                 TypeLevelFrame::SessionScope(outer) => {
-                    context = outer;
+                    *context = outer;
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -3156,11 +3159,12 @@ impl<Item: Copy> Slice<Item>
     }
 }
 
-/// The checker machine's continuation: its frames, innermost last, and the
-/// stacks of the items that its frames name by slice. On each stack, a
-/// frame's slice stands above the slices of the frames below it. A check
-/// owns one and lends it to each of its runs, and each run empties it first,
-/// so its places outlive the run.
+/// The checker machine's continuation: its frames, innermost last, the stacks
+/// of the items that its frames name by slice, and the places of the contexts
+/// and the stage order that a run works on. On each stack, a frame's slice
+/// stands above the slices of the frames below it. A check owns one and lends
+/// it to each of its runs, and each run empties it first, so its places
+/// outlive the run.
 ///
 /// # Specification
 /// trivial.
@@ -3181,6 +3185,33 @@ struct Continuation
     components: Vec<ComponentChecks>,
     /// The questions of the frames' memo records.
     questions: Vec<Question>,
+    /// The context the run stands in, innermost last: a run fills it with the
+    /// context its goal is owed in, and the machine binds and unbinds on it.
+    context: Vec<ValueTypeId>,
+    /// The context a formation walk works on, filled for each formation.
+    formation: Vec<ValueTypeId>,
+    /// The places of the stage order a run's walk mints into, which the walk
+    /// hands back when it ends.
+    stages: StageOrder,
+}
+
+/// `scratch` holding the items of `context` alone, in its own places.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the places of `scratch`, growth within the longest context it
+///   holds
+#[inline]
+fn refilled<'scratch>(
+    scratch: &'scratch mut Vec<ValueTypeId>,
+    context: &[ValueTypeId],
+) -> &'scratch mut Vec<ValueTypeId>
+{
+    scratch.clear();
+    scratch.extend_from_slice(context);
+    scratch
 }
 
 /// One component of a higher evaluation on the machine's stacks: the
@@ -4186,14 +4217,15 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 
 /// The checker machine that [`run`] drives: from an initial goal and context
 /// to a verdict, minting synthesized types into `arena`, over the frame stack
-/// `frames` that the caller holds.
+/// and the context that `continuation` holds.
 ///
 /// # Specification
-/// - requires: `context` is the initial typing context, empty for a
-///   declaration's body; its types and the admission log belong to this arena.
-///   `stages` is the order the goal was owed under, empty unless the goal is a
-///   drained obligation. The memo and session hold only this call's history.
-///   `frames` is empty, and the caller reads it after a refusal.
+/// - requires: `continuation.context` is the initial typing context, empty for
+///   a declaration's body; its types and the admission log belong to this
+///   arena. `walk` holds the order the goal was owed under, empty unless the
+///   goal is a drained obligation. The memo and session hold only this call's
+///   history. `continuation.frames` is empty, and the caller reads it after a
+///   refusal.
 /// - ensures: `Ok(produced)` — a synthesized type for a synthesis goal, or the
 ///   checked answer for a checking goal — exactly when the term checks or
 ///   synthesizes under this subset's rules. The walk is iterative over a heap
@@ -4214,7 +4246,8 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 /// Any [`KernelError`].
 ///
 /// # Cost
-/// - allocation: the stacks and the context, growth within the term's depth.
+/// - allocation: the stacks and the lent contexts, growth within the term's
+///   depth.
 ///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the finite corpus separates selected checking and
@@ -4249,7 +4282,6 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 fn machine<M>(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
-    mut context: Vec<ValueTypeId>,
     initial: Goal,
     walk: &mut Walk,
     recording: Recording<'_, M>,
@@ -4272,6 +4304,9 @@ where
         comp_types: ref mut comp_type_stack,
         components: ref mut component_stack,
         questions: ref mut question_stack,
+        ref mut context,
+        ref mut formation,
+        stages: _,
     } = continuation;
     let first_owed = owed.len();
     // The barriers opened where the machine swapped its context, innermost
@@ -4315,7 +4350,7 @@ where
             {
                 // The recalled goal's binders are read here, as if its
                 // subgoals had run.
-                session.read(hit.support().reads(), &context);
+                session.read(hit.support().reads(), context);
                 recalled = Some(outcome);
                 answered = ExpansionKind::Recalled;
             }
@@ -4330,7 +4365,7 @@ where
                 answered = ExpansionKind::Kept;
             }
             else {
-                let opened = session.open(&context);
+                let opened = session.open(context);
                 frames.push(Frame::Memoize(
                     Slice::pushed(question_stack, [question]),
                     opened,
@@ -4350,7 +4385,7 @@ where
                             arena,
                             judgement,
                             TypeLevelGoal::Value(datatype),
-                            context.clone(),
+                            refilled(formation, context),
                             Recording {
                                 memo,
                                 session,
@@ -4396,7 +4431,7 @@ where
                             arena,
                             judgement,
                             TypeLevelGoal::Value(path_type),
-                            Vec::new(),
+                            refilled(formation, &[]),
                             Recording {
                                 memo,
                                 session,
@@ -4424,7 +4459,7 @@ where
                         }
                         frames.push(Frame::SessionPayload {
                             classifier: path_type,
-                            context: Slice::saved(type_stack, &mut context),
+                            context: Slice::saved(type_stack, context),
                         });
                         goal = Goal::CheckValue(payload_paths, expected);
                         continue 'expand;
@@ -4439,7 +4474,7 @@ where
                             arena,
                             judgement,
                             TypeLevelGoal::Value(flow_type),
-                            Vec::new(),
+                            refilled(formation, &[]),
                             Recording {
                                 memo,
                                 session,
@@ -4467,7 +4502,7 @@ where
                         }
                         frames.push(Frame::SessionPayload {
                             classifier: flow_type,
-                            context: Slice::saved(type_stack, &mut context),
+                            context: Slice::saved(type_stack, context),
                         });
                         goal = Goal::CheckValue(payload_paths, expected);
                         continue 'expand;
@@ -4490,7 +4525,7 @@ where
                             arena,
                             judgement,
                             TypeLevelGoal::Value(flow_type),
-                            Vec::new(),
+                            refilled(formation, &[]),
                             Recording {
                                 memo,
                                 session,
@@ -4514,7 +4549,7 @@ where
                         frames.push(Frame::FlowForward {
                             flow: id,
                             endpoints,
-                            context: Slice::saved(type_stack, &mut context),
+                            context: Slice::saved(type_stack, context),
                         });
                         goal = Goal::CheckValue(translator, expected);
                         continue 'expand;
@@ -4528,7 +4563,7 @@ where
                             arena,
                             judgement,
                             TypeLevelGoal::Value(flow_type),
-                            Vec::new(),
+                            refilled(formation, &[]),
                             Recording {
                                 memo,
                                 session,
@@ -4571,7 +4606,7 @@ where
                             arena,
                             judgement,
                             TypeLevelGoal::Value(endpoint),
-                            Vec::new(),
+                            refilled(formation, &[]),
                             Recording {
                                 memo,
                                 session,
@@ -4605,7 +4640,7 @@ where
                         frames.push(Frame::PathForward {
                             path: id,
                             endpoints,
-                            context: Slice::saved(type_stack, &mut context),
+                            context: Slice::saved(type_stack, context),
                         });
                         goal = Goal::CheckValue(forward, translator);
                         continue 'expand;
@@ -4690,7 +4725,7 @@ where
                             arena,
                             judgement,
                             TypeLevelGoal::Value(quoted),
-                            context.clone(),
+                            refilled(formation, context),
                             Recording {
                                 memo,
                                 session,
@@ -4705,7 +4740,7 @@ where
                             arena,
                             judgement,
                             TypeLevelGoal::Comp(quoted),
-                            context.clone(),
+                            refilled(formation, context),
                             Recording {
                                 memo,
                                 session,
@@ -4924,7 +4959,7 @@ where
                         arena,
                         judgement,
                         TypeLevelGoal::Value(datatype),
-                        context.clone(),
+                        refilled(formation, context),
                         Recording {
                             memo,
                             session,
@@ -4938,7 +4973,7 @@ where
                     // The stage witness scans the context for a value at a
                     // stage, so every binder is read.
                     if matches!(M::ACTIVITY, MemoActivity::Active) {
-                        session.read(&WIDEST, &context);
+                        session.read(&WIDEST, context);
                     }
                     recursion::constructor_fields(
                         arena,
@@ -5229,7 +5264,7 @@ where
                         if matches!(M::ACTIVITY, MemoActivity::Active) {
                             barriers.push(session.open_barrier());
                         }
-                        let outer = Slice::saved(type_stack, &mut context);
+                        let outer = Slice::saved(type_stack, context);
                         let remaining = ComponentChecks::pushed(
                             (component_stack, type_stack, goal_stack),
                             &remaining,
@@ -5262,7 +5297,7 @@ where
                         if matches!(M::ACTIVITY, MemoActivity::Active) {
                             barriers.push(session.open_barrier());
                         }
-                        let outer = Slice::saved(type_stack, &mut context);
+                        let outer = Slice::saved(type_stack, context);
                         let remaining = ComponentChecks::pushed(
                             (component_stack, type_stack, goal_stack),
                             &remaining,
@@ -5336,7 +5371,7 @@ where
                                 arena,
                                 judgement,
                                 TypeLevelGoal::Value(annotation),
-                                context.clone(),
+                                refilled(formation, context),
                                 Recording {
                                     memo,
                                     session,
@@ -5409,7 +5444,7 @@ where
                         // variables, which their carried supports cover.
                         if matches!(M::ACTIVITY, MemoActivity::Active) {
                             for &applied in &arguments {
-                                session.read(arena.value_support(applied), &context);
+                                session.read(arena.value_support(applied), context);
                             }
                         }
                         let at = quantified::instantiation(
@@ -5868,7 +5903,7 @@ where
             match frame {
                 Frame::Pending(slice, result) => {
                     let siblings = Siblings {
-                        context: &context,
+                        context,
                         goals: slice.items(goal_stack),
                         field: None,
                         stages: &stages,
@@ -5906,7 +5941,7 @@ where
                     begun,
                 } => {
                     let siblings = Siblings {
-                        context: &context,
+                        context,
                         goals: remaining.items(goal_stack),
                         field: Some((holder, begun)),
                         stages: &stages,
@@ -6070,7 +6105,7 @@ where
                         arena,
                         judgement,
                         TypeLevelGoal::Comp(motive),
-                        context.clone(),
+                        refilled(formation, context),
                         Recording {
                             memo,
                             session,
@@ -6109,7 +6144,7 @@ where
                                 .checked_sub(slot.saturating_add(1))
                                 .and_then(|index| u32::try_from(index).ok())
                         {
-                            session.read(&Reads::variable(DeBruijnIndex::from(index)), &context);
+                            session.read(&Reads::variable(DeBruijnIndex::from(index)), context);
                         }
                         // Inside the declaration's own fixpoint, its constant
                         // in a field type reads as the self binder, at the
@@ -6162,7 +6197,7 @@ where
                             else {
                                 return Err(KernelError::ArenaFault);
                             };
-                            let mut under = context.clone();
+                            let under = refilled(formation, context);
                             for _before in 0 .. usize::from(read.field) {
                                 let Some(&CompType::Pi { domain, codomain }) =
                                     arena.comp_type(telescope)
@@ -6212,7 +6247,7 @@ where
                     // The loops read the slots of the variables nested cases
                     // are over, which the case's carried support covers.
                     if matches!(M::ACTIVITY, MemoActivity::Active) {
-                        session.read(arena.computation_support(case), &context);
+                        session.read(arena.computation_support(case), context);
                     }
                     let unfoldings = admitted_unfoldings(judgement);
                     loops::respected(arena, &unfoldings, context.as_slice(), (case, datatype))?;
@@ -6244,7 +6279,7 @@ where
                         arena,
                         judgement,
                         TypeLevelGoal::Comp(motive),
-                        context.clone(),
+                        refilled(formation, context),
                         Recording {
                             memo,
                             session,
@@ -6489,7 +6524,7 @@ where
                     });
                     arena.truncate_to(watermark);
                     result.map_err(KernelError::Path)?;
-                    outer.restored(type_stack, &mut context);
+                    outer.restored(type_stack, context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -6523,7 +6558,7 @@ where
                         arena,
                         judgement,
                         TypeLevelGoal::Value(path_type),
-                        context.clone(),
+                        refilled(formation, context),
                         Recording {
                             memo,
                             session,
@@ -6579,14 +6614,14 @@ where
                     let Some((component, rest)) = remaining.next(component_stack)
                     else {
                         remaining.release(component_stack);
-                        outer.restored(type_stack, &mut context);
+                        outer.restored(type_stack, context);
                         if let Some(barrier) = barriers.pop() {
                             let _closed = session.close(barrier);
                         }
                         produced = Produced::Checked;
                         continue;
                     };
-                    component.context.restored(type_stack, &mut context);
+                    component.context.restored(type_stack, context);
                     frames.push(Frame::Components {
                         outer,
                         remaining: rest,
@@ -6613,7 +6648,7 @@ where
                     };
                     let (domain, left, right) =
                         crate::words::followed(arena, judgement.presentations, path_type)?;
-                    let mut scoped = context.clone();
+                    let scoped = refilled(formation, context);
                     scoped.push(domain);
                     let _level = type_level(
                         arena,
@@ -6630,8 +6665,7 @@ where
                     let (table, rewrites) = session.rewrite_parts();
                     let source = substitute_value_type(arena, table, rewrites, motive, left);
                     let target = substitute_value_type(arena, table, rewrites, motive, right);
-                    let target =
-                        carried_stage(arena, judgement, &context, (value, domain, target))?;
+                    let target = carried_stage(arena, judgement, context, (value, domain, target))?;
                     frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
                     // A path motive's endpoints check first, under the binder
                     // at the path's carrier, and the value after them. A tower
@@ -6685,7 +6719,7 @@ where
                         arena,
                         judgement,
                         TypeLevelGoal::Comp(motive),
-                        context.clone(),
+                        refilled(formation, context),
                         Recording {
                             memo,
                             session,
@@ -6864,7 +6898,7 @@ where
                     );
                     arena.truncate_to(watermark);
                     result.map_err(KernelError::Flow)?;
-                    outer.restored(type_stack, &mut context);
+                    outer.restored(type_stack, context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -6956,7 +6990,7 @@ where
                     };
                     let ends =
                         crate::flow_universe::ends(arena, flow_type).map_err(KernelError::Flow)?;
-                    let mut scoped = context.clone();
+                    let scoped = refilled(formation, context);
                     scoped.push(ends.carrier);
                     let _level = type_level(
                         arena,
@@ -7011,7 +7045,7 @@ where
                         arena,
                         judgement,
                         TypeLevelGoal::Comp(motive),
-                        context.clone(),
+                        refilled(formation, context),
                         Recording {
                             memo,
                             session,
@@ -7245,7 +7279,7 @@ where
                         arena,
                         judgement,
                         TypeLevelGoal::Value(body_type),
-                        context.clone(),
+                        refilled(formation, context),
                         Recording {
                             memo,
                             session,
@@ -7503,7 +7537,7 @@ where
                     classifier,
                     context: outer,
                 } => {
-                    outer.restored(type_stack, &mut context);
+                    outer.restored(type_stack, context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -7683,8 +7717,7 @@ where
                     next,
                     first,
                 } => {
-                    let branch_type =
-                        strengthened(arena, session, &context, produced.comp_type()?)?;
+                    let branch_type = strengthened(arena, session, context, produced.comp_type()?)?;
                     let first_type = match first {
                         None => branch_type,
                         Some(first_type) => {
@@ -7862,7 +7895,7 @@ where
                 Frame::Strengthen => {
                     let synthesized = produced.comp_type()?;
                     produced =
-                        Produced::CompType(strengthened(arena, session, &context, synthesized)?);
+                        Produced::CompType(strengthened(arena, session, context, synthesized)?);
                 },
             }
         }
@@ -7873,11 +7906,12 @@ where
 /// name the field whose value a refusal is about.
 ///
 /// # Specification
-/// - requires: as [`machine`]; `continuation` is the check's own, which this
-///   run empties first and then holds.
-/// - ensures: [`machine`]'s verdict, except that [`field_refused`] names the
-///   refusal of a field's value by the field's label. A refusal deeper inside
-///   the value, or outside every field, stays as the machine raised it.
+/// - requires: as [`machine`] for `context` and `stages`; `continuation` is the
+///   check's own, which this run empties first and then holds.
+/// - ensures: [`machine`]'s verdict for the goal in `context` under `stages`,
+///   except that [`field_refused`] names the refusal of a field's value by the
+///   field's label. A refusal deeper inside the value, or outside every field,
+///   stays as the machine raised it.
 /// - fails: any [`KernelError`] a rule surfaces.
 /// - panics: none.
 /// - executable: none — [`machine`]'s and [`field_refused`]'s attributes check
@@ -7887,6 +7921,10 @@ where
 /// Any [`KernelError`] a rule surfaces, named by its field where the refusal
 /// is about a field's value.
 ///
+/// # Cost
+/// - allocation: the continuation's context and stage order, growth within the
+///   longest context and order of the check's runs
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`field_refused`].
 /// - witness: `check::tests::a_record_field_of_another_type_is_refused_by_its_label`
@@ -7894,9 +7932,9 @@ where
 fn run<M>(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
-    context: Vec<ValueTypeId>,
+    context: &[ValueTypeId],
     initial: Goal,
-    stages: StageOrder,
+    stages: &StageOrder,
     recording: Recording<'_, M>,
     continuation: &mut Continuation,
 ) -> Result<Produced, KernelError>
@@ -7910,16 +7948,23 @@ where
     continuation.comp_types.clear();
     continuation.components.clear();
     continuation.questions.clear();
-    machine(
+    let _filled = refilled(&mut continuation.context, context);
+    let mut order = core::mem::take(&mut continuation.stages);
+    order.clone_from(stages);
+    let mut walk = Walk::starting(order);
+    let verdict = machine(
         arena,
         judgement,
-        context,
         initial,
-        &mut Walk::starting(stages),
+        &mut walk,
         recording,
         continuation,
     )
-    .map_err(|refusal| field_refused(arena, &continuation.frames, refusal))
+    .map_err(|refusal| field_refused(arena, &continuation.frames, refusal));
+    // A walk that ends hands its order back, and the next run mints into its
+    // places.
+    continuation.stages = walk.stages;
+    verdict
 }
 
 /// `refusal`, named by the innermost field frame of `frames` when it is about
@@ -8137,6 +8182,10 @@ pub(crate) fn check_declaration(
 /// # Errors
 /// Any [`KernelError`].
 ///
+/// # Cost
+/// - allocation: the memo, the owed obligations and the formation's stacks,
+///   growth within the declared type
+///
 /// # Adequacy
 /// - hypothesis: L3 — a decoder's type over its universe forms in the block.
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
@@ -8161,7 +8210,7 @@ pub(crate) fn form_declared(
         arena,
         judgement,
         TypeLevelGoal::Value(unsealed),
-        Vec::new(),
+        &mut Vec::new(),
         Recording {
             memo: &mut memo,
             session,
@@ -8411,11 +8460,15 @@ where
     // the atom.
     let unsealed = seal::unseal(arena, judgement.entries, judgement.manifest, declared)?;
     let mut owed: Vec<CodeObligation> = Vec::new();
+    // One continuation for every run and every formation of the check: each
+    // empties what it takes first and keeps its places, so its stacks and its
+    // contexts allocate once for the check.
+    let mut continuation = Continuation::default();
     let _level = type_level(
         arena,
         judgement,
         TypeLevelGoal::Value(unsealed),
-        Vec::new(),
+        refilled(&mut continuation.formation, &[]),
         Recording {
             memo,
             session,
@@ -8425,9 +8478,6 @@ where
     )?;
     check_sealing_provenance(arena, declared, declaration.provenance())?;
     let mut following = Maybe::Absent(recursion::Unstaged::Plain);
-    // One continuation for every run of the check: each run empties it first
-    // and keeps its places, so its stacks allocate once for the check.
-    let mut continuation = Continuation::default();
     let verdict: Result<(), KernelError> = match *declaration.content() {
         DeclarationContent::Data {
             kind,
@@ -8456,7 +8506,7 @@ where
                     arena,
                     judgement,
                     TypeLevelGoal::Value(*parameter),
-                    context.clone(),
+                    refilled(&mut continuation.formation, &context),
                     Recording {
                         memo,
                         session,
@@ -8473,7 +8523,7 @@ where
                     arena,
                     judgement,
                     TypeLevelGoal::Value(*index),
-                    indexed.clone(),
+                    refilled(&mut continuation.formation, &indexed),
                     Recording {
                         memo,
                         session,
@@ -8495,7 +8545,7 @@ where
                         arena,
                         judgement,
                         TypeLevelGoal::Value(*field),
-                        scope.clone(),
+                        refilled(&mut continuation.formation, &scope),
                         Recording {
                             memo,
                             session,
@@ -8523,9 +8573,9 @@ where
                     let _checked = run(
                         arena,
                         judgement,
-                        scope.clone(),
+                        &scope,
                         Goal::CheckValue(value, expected),
-                        StageOrder::default(),
+                        &StageOrder::default(),
                         Recording {
                             memo,
                             session,
@@ -8572,7 +8622,7 @@ where
                     arena,
                     judgement,
                     TypeLevelGoal::Value(*parameter),
-                    context.clone(),
+                    refilled(&mut continuation.formation, &context),
                     Recording {
                         memo,
                         session,
@@ -8594,7 +8644,7 @@ where
                     arena,
                     judgement,
                     TypeLevelGoal::Comp(observation),
-                    context.clone(),
+                    refilled(&mut continuation.formation, &context),
                     Recording {
                         memo,
                         session,
@@ -8608,7 +8658,7 @@ where
         },
         DeclarationContent::Def { body, .. } => {
             // The body is checked at the declared type the seal rule read.
-            let context: Vec<ValueTypeId> = Vec::new();
+            let context: &[ValueTypeId] = &[];
             // A ruled operation's partial fixpoints terminate by its rules.
             let ruled = if declaration.operation_rules().rules().is_empty() {
                 judgement
@@ -8650,7 +8700,7 @@ where
                 owning,
                 context,
                 Goal::CheckValue(body, checked_at),
-                minted,
+                &minted,
                 Recording {
                     memo,
                     session,
@@ -8677,9 +8727,9 @@ where
                 let staged = run(
                     arena,
                     owning.following(root),
-                    Vec::new(),
+                    &[],
                     Goal::CheckValue(body, unsealed),
-                    StageOrder::default(),
+                    &StageOrder::default(),
                     Recording {
                         memo: unrecorded,
                         session,
@@ -8780,7 +8830,7 @@ where
                 arena,
                 judgement,
                 TypeLevelGoal::Value(representation),
-                Vec::new(),
+                refilled(&mut continuation.formation, &[]),
                 Recording {
                     memo,
                     session,
@@ -8820,9 +8870,9 @@ where
                     let _checked = run(
                         arena,
                         judgement,
-                        Vec::new(),
+                        &[],
                         Goal::CheckValue(value, expected),
-                        StageOrder::default(),
+                        &StageOrder::default(),
                         Recording {
                             memo,
                             session,
@@ -9012,8 +9062,8 @@ const FORKED_PART: usize = 16;
 ///   than re-entering this function.
 ///
 /// # Cost
-/// - allocation: the owed obligations, the ledger's checked keys, and the
-///   cloned contexts and stages, growth within the obligation ceiling
+/// - allocation: the owed obligations and the ledger's checked keys, growth
+///   within the obligation ceiling
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`drain_code_obligations`].
@@ -9063,9 +9113,9 @@ where
                 let _checked = run(
                     arena,
                     scope.reading(judgement),
-                    context,
+                    &context,
                     Goal::CheckValue(code, universe),
-                    stages,
+                    &stages,
                     Recording {
                         memo,
                         session,
@@ -9088,9 +9138,9 @@ where
                     let _checked = run(
                         arena,
                         scope.reading(judgement),
-                        context.clone(),
+                        &context,
                         Goal::CheckValue(endpoint, domain),
-                        stages.clone(),
+                        &stages,
                         Recording {
                             memo,
                             session,
@@ -9149,9 +9199,9 @@ where
                     let _checked = run(
                         arena,
                         judgement,
-                        context.clone(),
+                        &context,
                         Goal::CheckValue(argument, expected),
-                        stages.clone(),
+                        &stages,
                         Recording {
                             memo,
                             session,
@@ -9184,9 +9234,9 @@ where
                     let _checked = run(
                         arena,
                         judgement,
-                        context.clone(),
+                        &context,
                         Goal::CheckValue(argument, expected),
-                        stages.clone(),
+                        &stages,
                         Recording {
                             memo,
                             session,
@@ -9474,8 +9524,9 @@ struct Siblings<'frame>
 
 /// One sibling goal of a frame, checked apart from its siblings: on a clone
 /// of the frame's frozen arena, through overlays of the frame's memo and
-/// session, from a copy of the frame's walk. It drains the obligations it
-/// owes on its own clone, so none of them names a node the join leaves out.
+/// session, from a copy of the frame's walk that the part makes when it runs.
+/// It drains the obligations it owes on its own clone, so none of them names
+/// a node the join leaves out.
 struct SiblingPart<'part>
 {
     /// The judgement of the frame.
@@ -9491,12 +9542,11 @@ struct SiblingPart<'part>
     session: SupportContext,
     /// The goals the part expanded and recalled.
     census: ExpansionCensus,
-    /// The context the goal is checked in, until the part runs.
-    context: Vec<ValueTypeId>,
+    /// The frame: the context the goal is checked in, and the walk the part
+    /// starts from.
+    frame: &'part Siblings<'part>,
     /// The goal.
     goal: Goal,
-    /// The part's walk, a copy of the frame's.
-    walk: Walk,
     /// The holder of the field the goal checks, and how many of its fields
     /// began with this one, so a refusal names the field.
     field: Option<(ValueId, usize)>,
@@ -9532,9 +9582,14 @@ impl SiblingPart<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the part's continuation and its copies of the frame's
+    ///   context and stages, growth within the part's goal
     #[inline]
     fn check(&mut self) -> Result<(), KernelError>
     {
+        let frame = self.frame;
         let mut continuation = Continuation::default();
         if let Some((holder, begun)) = self.field {
             continuation.frames.push(Frame::Fields {
@@ -9543,13 +9598,22 @@ impl SiblingPart<'_>
                 begun,
             });
         }
+        let _context = refilled(&mut continuation.context, frame.context);
+        // The part mints into its own order, so it starts from a copy of the
+        // frame's.
+        let mut walk = Walk {
+            stages: frame.stages.clone(),
+            root: frame.root,
+            staged_bodies: frame.staged_bodies,
+            own_fixpoint: frame.own_fixpoint,
+            parameters: frame.parameters,
+        };
         let mut owed = Vec::new();
         let _produced = machine(
             &mut self.arena,
             self.judgement,
-            core::mem::take(&mut self.context),
             self.goal,
-            &mut self.walk,
+            &mut walk,
             Recording {
                 memo: &mut self.memo,
                 session: &mut self.session,
@@ -9602,6 +9666,10 @@ impl SiblingPart<'_>
 /// under a key that an earlier part kept with an outcome that does not agree.
 /// Two types of one content agree ([`NodeOutcome::agrees`]).
 ///
+/// # Cost
+/// - allocation: the memos and the parts, each with its clone of the frozen
+///   arena, growth within the frame's goals
+///
 /// # Adequacy
 /// - hypothesis: L3 — declarations whose frames pass and refuse, checked at
 ///   width one, in the reverse order and on threads of their own, against the
@@ -9624,16 +9692,7 @@ where
         census,
         ..
     } = recording;
-    let &Siblings {
-        context,
-        goals,
-        field,
-        stages,
-        root,
-        staged_bodies,
-        own_fixpoint,
-        parameters,
-    } = frame;
+    let &Siblings { goals, field, .. } = frame;
     let mut memos = Vec::with_capacity(goals.len());
     for _goal in goals {
         let Some(child) = memo.fork_child()
@@ -9658,15 +9717,8 @@ where
             memo: part_memo,
             session: session.fork_goal(arena),
             census: ExpansionCensus::new(),
-            context: context.to_vec(),
+            frame,
             goal,
-            walk: Walk {
-                stages: stages.clone(),
-                root,
-                staged_bodies,
-                own_fixpoint,
-                parameters,
-            },
             field: field.map(|(holder, begun)| (holder, begun.saturating_add(position))),
             answer: None,
         })
@@ -9791,7 +9843,7 @@ pub(crate) fn check_closed_value(
         arena,
         judgement,
         TypeLevelGoal::Value(expected),
-        Vec::new(),
+        &mut Vec::new(),
         Recording {
             memo: &mut memo,
             session: &mut session,
@@ -9802,9 +9854,9 @@ pub(crate) fn check_closed_value(
     let _checked = run(
         arena,
         judgement,
-        Vec::new(),
+        &[],
         Goal::CheckValue(value, expected),
-        StageOrder::default(),
+        &StageOrder::default(),
         Recording {
             memo: &mut memo,
             session: &mut session,
@@ -9871,9 +9923,9 @@ pub(crate) fn synth_closed_value(
     let result = run(
         arena,
         judgement,
-        Vec::new(),
+        &[],
         Goal::SynthValue(value),
-        StageOrder::default(),
+        &StageOrder::default(),
         Recording {
             memo: &mut memo,
             session: &mut session,
@@ -10170,11 +10222,11 @@ mod tests
         let computation = arena.computation_return(value);
         arena.truncate_to(before);
         assert!(matches!(
-            synth_value(&mut arena, vec![], value),
+            synth_value(&mut arena, &[], value),
             Err(KernelError::ArenaFault)
         ));
         assert!(matches!(
-            synth_comp(&mut arena, vec![], computation),
+            synth_comp(&mut arena, &[], computation),
             Err(KernelError::ArenaFault)
         ));
         assert_eq!(before, arena.watermark());
@@ -10249,7 +10301,7 @@ mod tests
     })]
     fn synth_value(
         arena: &mut TermArena,
-        context: Vec<ValueTypeId>,
+        context: &[ValueTypeId],
         value: ValueId,
     ) -> Result<Produced, KernelError>
     {
@@ -10263,7 +10315,7 @@ mod tests
             Judgement::new(&entries, &context_levels),
             context,
             Goal::SynthValue(value),
-            StageOrder::default(),
+            &StageOrder::default(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -10294,7 +10346,7 @@ mod tests
     #[spec(ensures: |ret| matches!(&ret, Ok(Produced::Checked) | Err(_)))]
     fn check_value(
         arena: &mut TermArena,
-        context: Vec<ValueTypeId>,
+        context: &[ValueTypeId],
         value: ValueId,
         expected: ValueTypeId,
     ) -> Result<Produced, KernelError>
@@ -10309,7 +10361,7 @@ mod tests
             Judgement::new(&entries, &context_levels),
             context,
             Goal::CheckValue(value, expected),
-            StageOrder::default(),
+            &StageOrder::default(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -10346,7 +10398,7 @@ mod tests
     })]
     fn synth_comp(
         arena: &mut TermArena,
-        context: Vec<ValueTypeId>,
+        context: &[ValueTypeId],
         computation: ComputationId,
     ) -> Result<Produced, KernelError>
     {
@@ -10360,7 +10412,7 @@ mod tests
             Judgement::new(&entries, &context_levels),
             context,
             Goal::SynthComp(computation),
-            StageOrder::default(),
+            &StageOrder::default(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -10408,7 +10460,7 @@ mod tests
             arena,
             Judgement::new(&entries, &context_levels),
             TypeLevelGoal::Value(root),
-            Vec::new(),
+            &mut Vec::new(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -10425,7 +10477,7 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let unit = arena.value_type_unit();
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let produced = synth_value(&mut arena, vec![unit, integer], variable)
+        let produced = synth_value(&mut arena, &[unit, integer], variable)
             .expect("an in-scope variable synthesizes");
         assert_eq!(
             integer,
@@ -10433,14 +10485,14 @@ mod tests
             "index zero names the innermost slot"
         );
         let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
-        let produced = synth_value(&mut arena, vec![unit, integer], outer)
+        let produced = synth_value(&mut arena, &[unit, integer], outer)
             .expect("the outermost slot remains in scope");
         assert_eq!(unit, produced.value_type().expect("a value type"));
         assert_eq!(
             Err(KernelError::UnboundVariable {
                 index: DeBruijnIndex::from(0_u32)
             }),
-            synth_value(&mut arena, Vec::new(), variable),
+            synth_value(&mut arena, &[], variable),
             "an empty context has no innermost slot"
         );
         let maximal = arena.value_variable(DeBruijnIndex::from(u32::MAX));
@@ -10448,7 +10500,7 @@ mod tests
             Err(KernelError::UnboundVariable {
                 index: DeBruijnIndex::from(u32::MAX)
             }),
-            synth_value(&mut arena, vec![unit, integer], maximal),
+            synth_value(&mut arena, &[unit, integer], maximal),
             "a maximal external index is absent without arithmetic failure"
         );
         let escaping = arena.value_variable(DeBruijnIndex::from(2_u32));
@@ -10456,7 +10508,7 @@ mod tests
             Err(KernelError::UnboundVariable {
                 index: DeBruijnIndex::from(2_u32)
             }),
-            synth_value(&mut arena, vec![unit, integer], escaping),
+            synth_value(&mut arena, &[unit, integer], escaping),
             "and an index past the context escapes"
         );
     }
@@ -10471,7 +10523,7 @@ mod tests
             Err(KernelError::NotInferable {
                 form: NonInferableForm::Injection
             }),
-            synth_value(&mut arena, Vec::new(), injection),
+            synth_value(&mut arena, &[], injection),
             "an injection carries no record of which sum it injects into"
         );
     }
@@ -10486,13 +10538,13 @@ mod tests
         let sum = arena.value_type_sum(&[unit_type, integer]);
         let left = arena.value_injection(Side::Left.into(), unit);
         assert!(
-            check_value(&mut arena, Vec::new(), left, sum).is_ok(),
+            check_value(&mut arena, &[], left, sum).is_ok(),
             "the left injection checks against the left summand"
         );
         let right = arena.value_injection(Side::Right.into(), unit);
         assert!(
             matches!(
-                check_value(&mut arena, Vec::new(), right, sum),
+                check_value(&mut arena, &[], right, sum),
                 Err(KernelError::ValueShapeMismatch {
                     expected: ExpectedValueShape::Product,
                     ..
@@ -10501,7 +10553,7 @@ mod tests
             "and the right injection is checked against the right summand, which the unit tuple \
              is not"
         );
-        let refused = check_value(&mut arena, Vec::new(), left, unit_type);
+        let refused = check_value(&mut arena, &[], left, unit_type);
         assert!(
             matches!(
                 refused,
@@ -10526,13 +10578,13 @@ mod tests
         let pair = arena.value_tuple(&[unit, injection]);
         let product = arena.value_type_product(&[unit_type, sum]);
         assert!(
-            check_value(&mut arena, Vec::new(), pair, product).is_ok(),
+            check_value(&mut arena, &[], pair, product).is_ok(),
             "the expected product flows into both components, so the checking-only injection \
              reaches its sum"
         );
         assert!(
             matches!(
-                synth_value(&mut arena, Vec::new(), pair),
+                synth_value(&mut arena, &[], pair),
                 Err(KernelError::NotInferable {
                     form: NonInferableForm::Injection
                 })
@@ -10560,7 +10612,7 @@ mod tests
             (label("host"), unit_type),
             (label("port"), integer),
         ]));
-        let refused = check_value(&mut arena, Vec::new(), record, expected);
+        let refused = check_value(&mut arena, &[], record, expected);
         assert!(
             matches!(
                 refused,
@@ -10580,14 +10632,14 @@ mod tests
         ]));
         assert!(
             matches!(
-                check_value(&mut arena, Vec::new(), injection, integer),
+                check_value(&mut arena, &[], injection, integer),
                 Err(KernelError::ValueShapeMismatch { .. })
             ),
             "and the same value checked outside a record names no field"
         );
         assert!(
             matches!(
-                check_value(&mut arena, Vec::new(), right, unit_type),
+                check_value(&mut arena, &[], right, unit_type),
                 Err(KernelError::ValueShapeMismatch { .. })
             ),
             "and a record checked at another former is refused as a whole, by no field"
@@ -10618,7 +10670,7 @@ mod tests
             record,
             alloc::collections::BTreeMap::from([(label("port"), injection)]),
         );
-        let refused = synth_value(&mut arena, Vec::new(), restriction);
+        let refused = synth_value(&mut arena, &[], restriction);
         assert!(
             matches!(
                 refused,
@@ -10634,7 +10686,7 @@ mod tests
             alloc::collections::BTreeMap::from([(label("port"), zero)]),
         );
         assert!(
-            synth_value(&mut arena, Vec::new(), restriction).is_ok(),
+            synth_value(&mut arena, &[], restriction).is_ok(),
             "and the same restriction at the field's own value synthesizes"
         );
     }
@@ -10652,7 +10704,7 @@ mod tests
         let head = arena.computation_force(head_variable);
         let unit = arena.value_unit();
         let application = arena.computation_application(head, unit);
-        let produced = synth_comp(&mut arena, vec![thunk_type], application)
+        let produced = synth_comp(&mut arena, &[thunk_type], application)
             .expect("an application of a forced thunk synthesizes");
         assert_eq!(
             returner,
@@ -10671,7 +10723,7 @@ mod tests
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let force = arena.computation_force(variable);
         let produced =
-            synth_comp(&mut arena, vec![thunk_type], force).expect("forcing a thunk synthesizes");
+            synth_comp(&mut arena, &[thunk_type], force).expect("forcing a thunk synthesizes");
         assert_eq!(
             returner,
             produced.comp_type().expect("a computation type"),
@@ -10681,7 +10733,7 @@ mod tests
         let bad_force = arena.computation_force(not_a_thunk);
         assert!(
             matches!(
-                synth_comp(&mut arena, vec![unit_type], bad_force),
+                synth_comp(&mut arena, &[unit_type], bad_force),
                 Err(KernelError::ValueShapeMismatch {
                     expected: ExpectedValueShape::Thunk,
                     ..
@@ -10704,7 +10756,7 @@ mod tests
         let payload = arena.value_variable(DeBruijnIndex::from(0_u32));
         let body = arena.computation_return(payload);
         let sequence = arena.computation_bind(bound, body);
-        let produced = synth_comp(&mut arena, vec![thunk_type], sequence)
+        let produced = synth_comp(&mut arena, &[thunk_type], sequence)
             .expect("a bind over a returner synthesizes");
         let produced_type = produced.comp_type().expect("a computation type");
         let read = arena.comp_type(produced_type).expect("the type resolves");
@@ -10727,7 +10779,7 @@ mod tests
         let right = arena.computation_return(bound);
         let case = arena.computation_case(scrutinee, &[left, right]);
         assert!(
-            synth_comp(&mut arena, vec![sum], case).is_ok(),
+            synth_comp(&mut arena, &[sum], case).is_ok(),
             "two branches returning their own summand converge when the summands agree"
         );
 
@@ -10736,7 +10788,7 @@ mod tests
         let case = arena.computation_case(scrutinee, &[left, right]);
         assert!(
             matches!(
-                synth_comp(&mut arena, vec![mixed], case),
+                synth_comp(&mut arena, &[mixed], case),
                 Err(KernelError::CaseBranchMismatch(_))
             ),
             "and they diverge when the summands do"
@@ -10759,7 +10811,7 @@ mod tests
         let thunk = arena.value_thunk(case);
         let thunk_type = arena.value_type_thunk(expected);
         assert!(
-            check_value(&mut arena, vec![mixed], thunk, thunk_type).is_ok(),
+            check_value(&mut arena, &[mixed], thunk, thunk_type).is_ok(),
             "checking pushes one expected type into both branches, where synthesis would have \
              required them to agree on their own"
         );
@@ -10780,7 +10832,7 @@ mod tests
         let three_way = arena.computation_case(scrutinee, &[returned, returned, returned]);
 
         let uniform = arena.value_type_sum(&[integer, integer, integer]);
-        let produced = synth_comp(&mut arena, vec![uniform], three_way)
+        let produced = synth_comp(&mut arena, &[uniform], three_way)
             .expect("three branches returning agreeing summands converge");
         assert!(
             matches!(
@@ -10792,7 +10844,7 @@ mod tests
         let middle_differs = arena.value_type_sum(&[integer, unit_type, integer]);
         assert!(
             matches!(
-                synth_comp(&mut arena, vec![middle_differs], three_way),
+                synth_comp(&mut arena, &[middle_differs], three_way),
                 Err(KernelError::CaseBranchMismatch(_))
             ),
             "the middle branch binds the middle summand"
@@ -10800,7 +10852,7 @@ mod tests
         let two_way = arena.value_type_sum(&[integer, integer]);
         assert!(
             matches!(
-                synth_comp(&mut arena, vec![two_way], three_way),
+                synth_comp(&mut arena, &[two_way], three_way),
                 Err(KernelError::ValueShapeMismatch {
                     expected: ExpectedValueShape::Sum,
                     ..
@@ -10815,19 +10867,19 @@ mod tests
         let thunk_type = arena.value_type_thunk(returner);
         let thunk = arena.value_thunk(no_branches);
         assert!(
-            check_value(&mut arena, vec![empty], thunk, thunk_type).is_ok(),
+            check_value(&mut arena, &[empty], thunk, thunk_type).is_ok(),
             "a case of no branches over the empty sum checks at any type"
         );
         assert_eq!(
             Err(KernelError::NotInferable {
                 form: NonInferableForm::EmptyCase
             }),
-            synth_comp(&mut arena, vec![empty], no_branches),
+            synth_comp(&mut arena, &[empty], no_branches),
             "and has no branch to synthesize a type from"
         );
         assert!(
             matches!(
-                check_value(&mut arena, vec![unit_type], thunk, thunk_type),
+                check_value(&mut arena, &[unit_type], thunk, thunk_type),
                 Err(KernelError::ValueShapeMismatch {
                     expected: ExpectedValueShape::Sum,
                     ..
@@ -10849,8 +10901,8 @@ mod tests
         let unit = arena.value_unit();
         let triple = arena.value_tuple(&[unit, unit, unit]);
         let three = arena.value_type_product(&[unit_type, unit_type, unit_type]);
-        assert!(check_value(&mut arena, Vec::new(), triple, three).is_ok());
-        let produced = synth_value(&mut arena, Vec::new(), triple)
+        assert!(check_value(&mut arena, &[], triple, three).is_ok());
+        let produced = synth_value(&mut arena, &[], triple)
             .expect("a tuple synthesizes")
             .value_type()
             .expect("a value type");
@@ -10862,7 +10914,7 @@ mod tests
         let two = arena.value_type_product(&[unit_type, unit_type]);
         assert!(
             matches!(
-                check_value(&mut arena, Vec::new(), triple, two),
+                check_value(&mut arena, &[], triple, two),
                 Err(KernelError::ValueShapeMismatch {
                     expected: ExpectedValueShape::Product,
                     ..
@@ -10874,13 +10926,13 @@ mod tests
         let sum = arena.value_type_sum(&[integer, integer, unit_type]);
         let last = arena.value_injection(Summand::from(2_usize), unit);
         assert!(
-            check_value(&mut arena, Vec::new(), last, sum).is_ok(),
+            check_value(&mut arena, &[], last, sum).is_ok(),
             "the third summand is the unit type"
         );
         let past = arena.value_injection(Summand::from(3_usize), unit);
         assert!(
             matches!(
-                check_value(&mut arena, Vec::new(), past, sum),
+                check_value(&mut arena, &[], past, sum),
                 Err(KernelError::ValueShapeMismatch {
                     expected: ExpectedValueShape::Sum,
                     ..
@@ -10911,7 +10963,7 @@ mod tests
             &arena,
             Judgement::new(&entries, &levels),
             TypeLevelGoal::Value(in_scope),
-            Vec::new(),
+            &mut Vec::new(),
             Recording {
                 memo: &mut NullMemo,
                 session: &mut SupportContext::new(),
@@ -10924,7 +10976,7 @@ mod tests
             &arena,
             Judgement::new(&entries, &levels),
             TypeLevelGoal::Value(out_of_scope),
-            Vec::new(),
+            &mut Vec::new(),
             Recording {
                 memo: &mut NullMemo,
                 session: &mut SupportContext::new(),
@@ -11058,7 +11110,7 @@ mod tests
         let code = arena.value_quote(integer);
         let head = arena.value_variable(DeBruijnIndex::from(0_u32));
         let instance = arena.value_static_application(head, code);
-        let produced = synth_value(&mut arena, vec![operator], instance)
+        let produced = synth_value(&mut arena, &[operator], instance)
             .expect("an operator applied to a code of its domain synthesizes");
         assert_eq!(
             computations,
@@ -11070,7 +11122,7 @@ mod tests
         let ill_argument = arena.value_static_application(head, unit);
         assert!(
             matches!(
-                synth_value(&mut arena, vec![operator], ill_argument),
+                synth_value(&mut arena, &[operator], ill_argument),
                 Err(KernelError::ValueShapeMismatch {
                     expected: ExpectedValueShape::Product,
                     ..
@@ -11080,7 +11132,7 @@ mod tests
         );
         assert!(
             matches!(
-                synth_value(&mut arena, vec![small], instance),
+                synth_value(&mut arena, &[small], instance),
                 Err(KernelError::ValueShapeMismatch {
                     expected: ExpectedValueShape::StaticPi,
                     ..
@@ -11125,9 +11177,9 @@ mod tests
         let checked = run(
             &mut arena,
             Judgement::new(&entries, &context_levels),
-            Vec::new(),
+            &[],
             Goal::CheckComp(lambda, identity),
-            StageOrder::default(),
+            &StageOrder::default(),
             Recording {
                 memo: &mut memo,
                 session: &mut session,
@@ -11147,7 +11199,7 @@ mod tests
         let head = arena.computation_force(head_variable);
         let unit = arena.value_unit();
         let application = arena.computation_application(head, unit);
-        let produced = synth_comp(&mut arena, vec![head_thunk], application)
+        let produced = synth_comp(&mut arena, &[head_thunk], application)
             .expect("an application at a dependent head synthesizes");
         assert_eq!(
             unit_returner,
@@ -12132,7 +12184,7 @@ mod tests
         let payload = arena.value_variable(DeBruijnIndex::from(0_u32));
         let body = arena.computation_return(payload);
         let sequence = arena.computation_bind(bound, body);
-        let produced = synth_comp(&mut arena, vec![universe, element], sequence)
+        let produced = synth_comp(&mut arena, &[universe, element], sequence)
             .expect("a bind returning its payload synthesizes");
         let produced_type = produced.comp_type().expect("a computation type");
         let Some(&CompType::Returner(result)) = arena.comp_type(produced_type)
@@ -12163,7 +12215,7 @@ mod tests
         let chosen = arena.value_variable(DeBruijnIndex::from(0_u32));
         let body = arena.computation_application(head, chosen);
         let dependent = arena.computation_bind(bound, body);
-        let escaped = synth_comp(&mut arena, vec![made, pick], dependent);
+        let escaped = synth_comp(&mut arena, &[made, pick], dependent);
         assert!(
             matches!(escaped, Err(KernelError::BinderEscape { .. })),
             "a type naming the bound code is refused: {escaped:?}"
@@ -12257,7 +12309,7 @@ mod tests
         let zero = level(LevelConstant::from(0));
         let unit = arena.value_type_unit();
         let quote = arena.value_quote(unit);
-        let produced = synth_value(&mut arena, Vec::new(), quote).expect("a quote synthesizes");
+        let produced = synth_value(&mut arena, &[], quote).expect("a quote synthesizes");
         assert_eq!(
             Some(&ValueType::Universe {
                 sort: GroundSort::Value,
@@ -12268,7 +12320,7 @@ mod tests
         );
         let returner = arena.comp_type_returner(unit);
         let quoted = arena.value_quote_computation(returner);
-        let produced = synth_value(&mut arena, Vec::new(), quoted).expect("a quote synthesizes");
+        let produced = synth_value(&mut arena, &[], quoted).expect("a quote synthesizes");
         assert_eq!(
             Some(&ValueType::Universe {
                 sort: GroundSort::Computation,
@@ -12279,8 +12331,7 @@ mod tests
         );
         let universe = arena.value_type_universe(GroundSort::Computation, zero);
         let quoted_universe = arena.value_quote(universe);
-        let produced =
-            synth_value(&mut arena, Vec::new(), quoted_universe).expect("a quote synthesizes");
+        let produced = synth_value(&mut arena, &[], quoted_universe).expect("a quote synthesizes");
         assert_eq!(
             Some(&ValueType::Universe {
                 sort: GroundSort::Value,
@@ -12304,7 +12355,7 @@ mod tests
         let one = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
         assert!(
             matches!(
-                check_value(&mut arena, Vec::new(), quote, one),
+                check_value(&mut arena, &[], quote, one),
                 Err(KernelError::ValueTypeMismatch(_))
             ),
             "the kernel has no cumulativity, so a bare code does not check one level up"
@@ -12313,7 +12364,7 @@ mod tests
         let lifted_quote = arena.value_quote(lifted);
         assert_eq!(
             Ok(Produced::Checked),
-            check_value(&mut arena, Vec::new(), lifted_quote, one),
+            check_value(&mut arena, &[], lifted_quote, one),
             "while the code of its lift does"
         );
         let zero = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
@@ -12321,7 +12372,7 @@ mod tests
         let sunk_quote = arena.value_quote(sunk);
         assert!(
             matches!(
-                check_value(&mut arena, Vec::new(), sunk_quote, zero),
+                check_value(&mut arena, &[], sunk_quote, zero),
                 Err(KernelError::UniverseViolation(_))
             ),
             "and a lift that does not strictly raise is refused inside the quote"
@@ -12376,7 +12427,7 @@ mod tests
         let head = arena.computation_force(head_variable);
         let application = arena.computation_application(head, argument);
         let outer_universe = arena.value_type_universe(GroundSort::Value, zero);
-        let produced = synth_comp(&mut arena, vec![outer_universe, head_thunk], application)
+        let produced = synth_comp(&mut arena, &[outer_universe, head_thunk], application)
             .expect("the dependent application synthesizes");
         let synthesized = produced.comp_type().expect("a computation type");
         let Some(&CompType::Returner(result)) = arena.comp_type(synthesized)
@@ -12809,7 +12860,7 @@ mod tests
                 .iter()
                 .map(|&code| {
                     let constant = builder.arena().value_constant(code);
-                    builder.arena().value_type_element(constant, zero.clone())
+                    builder.arena().value_type_element(constant, Level::zero())
                 })
                 .collect();
             let not_a_code = builder.arena().value_unit();
