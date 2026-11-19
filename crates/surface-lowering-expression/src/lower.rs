@@ -14417,12 +14417,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         let inner = site.one(run)?;
         // A list in parentheses outside a domain and a result is the old
         // spelling of a product: `*{A, B}` replaces `(A, B)`.
-        if let Maybe::Present(comma) = cursor.at(TileName::COMMA) {
-            let span = match open {
-                Maybe::Present(open) => open.span,
-                Maybe::Absent(_) => comma.span,
-            };
-            return Err(site.fault(span, FormFault::Retired(RetiredForm::ParenthesizedProduct)));
+        if let Maybe::Present(open) = open
+            && let Maybe::Present(_) = cursor.at(TileName::COMMA)
+        {
+            return Err(site.fault(
+                open.span,
+                FormFault::Retired(RetiredForm::ParenthesizedProduct),
+            ));
         }
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         self.group(site, inner);
