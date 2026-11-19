@@ -869,14 +869,18 @@ pub struct Run
 ///   includes — or by the closing `}`, in source order; a `|` at the braces'
 ///   depth ends the run before it and opens the next, which leaves the bar out,
 ///   and that run ends before the next `oper`, `op` or `rule`, which writes no
-///   bar; a brace a run writes nests, so a `shape`'s faces stay in its run. A
-///   tile reads as [`Braces::spelled`] gives it, so a zero-width `{`, `;` or
-///   `}` the layout pass writes cuts as a written one does. An empty stretch is
-///   no run.
+///   bar, and before an attribute block, which stands before the next member; a
+///   brace a run writes nests, so a `shape`'s faces stay in its run. A tile
+///   reads as [`Braces::spelled`] gives it, so a zero-width `{`, `;` or `}` the
+///   layout pass writes cuts as a written one does. An empty stretch is no run.
 /// - provides: the members a theory, a family or a codata declaration writes,
 ///   for its symbols and its hover.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the runs and the tiles of each, growth within the form's
+///   members
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`declarations`], and a theory's hover lists its
@@ -885,6 +889,7 @@ pub struct Run
 /// - witness: `gandr-surface-lsp-core::reading::tests::a_theory_holds_its_members`
 /// - witness: `gandr-surface-lsp-core::reading::tests::a_layout_block_holds_its_members_4853`
 /// - witness: `gandr-surface-lsp-core::hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
+/// - witness: `gandr-surface-lsp-core::hover::tests::an_attribute_block_before_an_arm_hovers_alike_8119`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [first, second] if first.span.end() <= second.span.start())))]
 #[must_use]
 #[inline]
@@ -916,6 +921,20 @@ pub fn runs(
         let tile = matches!(node.label(), NodeLabel::Tile(_));
         let written_at = depth;
         let ends_barred = barred && matches!(text, Some("oper" | "op" | "rule"));
+        // An attribute block after an arm stands before the next member, as
+        // one before the first arm does: it ends the arm's run.
+        let block = depth == 1
+            && matches!(node.label(), NodeLabel::Meld(mold)
+                if grammar.rule_of(mold).is_ok_and(|rule| rule.name().0 == ATTRIBUTE_BLOCK));
+        if block && barred {
+            if let Some(span) = written.take() {
+                runs.push(Run {
+                    span,
+                    tiles: core::mem::take(&mut tiles),
+                });
+            }
+            barred = false;
+        }
         if depth == 1 && (text == Some("|") || ends_barred) {
             if let Some(span) = written.take() {
                 runs.push(Run {

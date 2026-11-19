@@ -3698,6 +3698,30 @@ mod tests
         }
     }
 
+    /// #8119: an attribute block before a constructor arm answers alike
+    /// before each arm, though the parser holds a block after the first arm
+    /// in the arm before it.
+    #[test]
+    fn an_attribute_block_before_an_arm_hovers_alike_8119()
+    {
+        let first = marked(SourceText::from(include_str!(
+            "hover/unformatted/an-attribute-block-before-an-arm-hovers-its-constructor-8119-1.gandr"
+        )));
+        let second = marked(SourceText::from(include_str!(
+            "hover/unformatted/an-attribute-block-before-an-arm-hovers-its-constructor-8119-2.gandr"
+        )));
+        assert_eq!(
+            first,
+            Ok(String::from("```gandr\n@[item(\"one\")]\n```")),
+            "a block before the first arm answers as written"
+        );
+        assert_eq!(
+            second,
+            Ok(String::from("```gandr\n@[item(\"two\")]\n```")),
+            "a block after an arm answers as written, as the first does"
+        );
+    }
+
     /// The sweep over every tile of the corpus. A hover finds its entry by a
     /// scan of the table, which the enforcing build scans again for each
     /// specification, so a run visits the sources [`Sweep::visit`] names:
