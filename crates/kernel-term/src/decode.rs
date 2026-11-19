@@ -2848,13 +2848,6 @@ impl<'bytes> ByteReader<'bytes>
                 && self.image.as_ref().get(self.position.0.saturating_sub(text.len()) .. self.position.0) == Some(text.as_bytes()) }),
     )]
     #[inline]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            std_container,
-            reason = "the text is a field label's or a name segment's, each a `String` that crates outside `kernel-term` build"
-        )
-    )]
     fn read_text(
         &mut self,
         site: MalformedSite,

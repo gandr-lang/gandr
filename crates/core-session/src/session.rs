@@ -21,13 +21,6 @@ pub struct ValueTypeId(pub [u8; 32]);
 /// A protocol branch name, compared by exact spelling.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "`Label::from` is infallible and `core-checker-base` calls it, while a `SmallString` built from text can refuse"
-    )
-)]
 pub struct Label(pub String);
 
 impl From<&str> for Label
@@ -37,13 +30,6 @@ impl From<&str> for Label
     /// # Specification
     /// trivial.
     #[inline]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            std_container,
-            reason = "`Label::from` is infallible and `core-checker-base` calls it, while a `SmallString` built from text can refuse"
-        )
-    )]
     fn from(value: &str) -> Self
     {
         Self(String::from(value))

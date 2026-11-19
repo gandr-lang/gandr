@@ -645,13 +645,6 @@ pub enum DeclarationContent
 /// - witness: `tests::sharing_format::a_segment_holding_a_separator_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "crates outside `kernel-term` build a name segment from their own `String`"
-    )
-)]
 pub struct NameSegment(String);
 
 impl NameSegment
@@ -690,13 +683,6 @@ impl NameSegment
                 && !segment.0.contains(Self::SEPARATOR)),
     )]
     #[inline]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            std_container,
-            reason = "crates outside `kernel-term` build a name segment from their own `String`"
-        )
-    )]
     #[must_use]
     pub fn from_text(text: String) -> Option<Self>
     {

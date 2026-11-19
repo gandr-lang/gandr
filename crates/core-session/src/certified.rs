@@ -159,13 +159,6 @@ impl core::error::Error for TransportError
     Err(_) => false,
 })]
 #[inline]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "a code's label is `kernel-term`'s `session::Label`, a `String` that `core-checker-bridge` builds"
-    )
-)]
 pub fn encode(
     arena: &mut TermArena,
     session: &Session,

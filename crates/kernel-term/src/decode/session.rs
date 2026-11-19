@@ -64,13 +64,6 @@ fn state(reader: &mut ByteReader<'_>) -> Result<State, DecodeError>
     Ok(ref graph) => reader.position.0.saturating_sub(start) >= graph.nodes.len().saturating_add(2),
     Err(_) => true,
 })]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "a branch label is `session::Label`, a `String` that crates outside `kernel-term` build"
-    )
-)]
 pub fn graph(reader: &mut ByteReader<'_>) -> Result<Graph, DecodeError>
 {
     let root = state(reader)?;

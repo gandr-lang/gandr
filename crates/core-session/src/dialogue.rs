@@ -302,13 +302,6 @@ impl DialogueWeb
     /// - witness: `tests::dialogue::queued_sends_leave_a_prime_node`
     /// - witness: `tests::dialogue::a_deadlocked_shape_has_no_decomposition`
     #[inline]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            std_container,
-            reason = "`core-nbe` and `runtime-emitter` hold the pieces as the `Arc<[WebPiece]>` of their own types"
-        )
-    )]
     pub fn decompose(&self) -> Result<Arc<[WebPiece]>, DecompositionRefusal>
     {
         let tree = self.precedes.decompose()?;

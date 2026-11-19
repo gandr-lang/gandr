@@ -1824,13 +1824,6 @@ pub enum OccurrenceSite
 /// An exact UTF-8 record label; ordering is lexical, without normalization.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "crates outside `kernel-term` build a field label from their own `String`"
-    )
-)]
 pub struct FieldLabel(alloc::string::String);
 
 impl From<alloc::string::String> for FieldLabel
@@ -1840,13 +1833,6 @@ impl From<alloc::string::String> for FieldLabel
     /// # Specification
     /// trivial.
     #[inline]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            std_container,
-            reason = "crates outside `kernel-term` build a field label from their own `String`"
-        )
-    )]
     fn from(text: alloc::string::String) -> Self
     {
         Self(text)

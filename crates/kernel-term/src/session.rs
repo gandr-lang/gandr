@@ -25,13 +25,6 @@ pub struct PayloadSlot(pub usize);
 /// An exact UTF-8 branch label.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        std_container,
-        reason = "`core-checker-bridge` and `core-session` build a branch label from their own `String`"
-    )
-)]
 pub struct Label(pub String);
 
 /// One finite syntax occurrence; recursive ownership is absent.

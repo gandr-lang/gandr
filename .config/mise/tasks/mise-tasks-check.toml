@@ -595,7 +595,7 @@ trait_object_classes = ["core::error::Error", "core::ops::Fn", "core::ops::FnMut
 allocation_default_crates = []
 repeated_call_crates = []
 allocation_base_records = "{{ config_root }}/target/allocation-base"
-std_container_crates = ["gandr_kernel_strata", "gandr_kernel_conversion_trace", "gandr_kernel_check_memo", "gandr_kernel_term", "gandr_core_session"]
+std_container_crates = ["gandr_kernel_strata", "gandr_kernel_conversion_trace", "gandr_kernel_check_memo"]
 
 [quenchant-dylints.productions]
 marker = "gandr_surface_pretty::walk::Production"
