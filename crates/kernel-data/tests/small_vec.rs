@@ -665,6 +665,32 @@ fn an_item_whose_drop_panics_leaves_each_other_item_dropped_once()
     assert_eq!(drops.get(), 7_usize, "the rest drop with the vector");
 }
 
+/// An extend writes past the length up to the reserved room with no test of
+/// the capacity. An iterator that panics inside that room leaves the items
+/// written before it in the vector, and each drops once with the vector.
+#[test]
+fn an_extend_whose_iterator_panics_keeps_the_items_before_it_8126()
+{
+    let drops = Cell::new(0_usize);
+    let mut vec = SmallVec::<Bomb<'_>, 0, Global>::new();
+    let unwound = catch_unwind(AssertUnwindSafe(|| {
+        vec.extend((0_usize .. 5_usize).map(|at| {
+            assert_ne!(at, 3_usize, "the fourth item panics");
+            Bomb {
+                drops: &drops,
+                explodes: false,
+            }
+        }));
+    }));
+    assert_eq!(
+        (unwound.is_err(), vec.len(), drops.get()),
+        (true, 3_usize, 0_usize),
+        "the three items before the panic stay, and none drops"
+    );
+    drop(vec);
+    assert_eq!(drops.get(), 3_usize, "each written item drops once");
+}
+
 /// An array converts in place, and the conversion's error is the never type,
 /// so the match takes `Ok` alone.
 #[test]
