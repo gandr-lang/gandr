@@ -341,7 +341,7 @@ mod tests
     }
 
     #[test]
-    fn a_native_row_and_an_atom_are_given_and_a_role_is_found()
+    fn a_native_row_is_given_and_a_role_is_found()
     {
         for row in Row::all() {
             match row {
