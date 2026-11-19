@@ -1,0 +1,40 @@
+//! `held-within` keeps a shared view inside its hold.
+//!
+//! The hold freezes its value. The pathological twin refuses a view that
+//! escapes the hold as `ViewEscaped`.
+//!
+//! The checker keeps each view at its declared hold. The binding of a handler
+//! opens no region of its own. Both examples run to `42`. The source imports
+//! the early exit host interface.
+//!
+//! - see: corpus/pathological/regions/held-within.gandr — a view after its hold
+import std.process;
+/// `keptAtHold` forces a view before its hold ends.
+@[runs("42")]
+def keptAtHold() -> Integer =
+  handle inner : std.process.Exit.Eff {
+    var l = 42;
+    let q : (() -> Integer) at l = access shared l as w { pure pure w };
+    force q
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => pure 0
+  }
+
+/// `keptAtNestedHold` does the same with nested handlers.
+@[runs("42")]
+def keptAtNestedHold() -> Integer =
+  handle outer : std.process.Exit.Eff {
+    let x : Integer = handle inner : std.process.Exit.Eff {
+      var l = 42;
+      let q : (() -> Integer) at l = access shared l as w { pure pure w };
+      force q
+    } with {
+      | pure(y) => pure y
+      | oper exit(code, k) => pure 0
+    };
+    pure x
+  } with {
+    | pure(y) => pure y
+    | oper exit(code, k) => pure 0
+  }

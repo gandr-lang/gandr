@@ -1,0 +1,83 @@
+test: hub::tests::a_hub_whose_connection_faults_exits_after_its_linger_4497
+package: gandr-surface-lsp
+command: mise run debug:test gandr-surface-lsp hub::tests::a_hub_whose_connection_faults_exits_after_its_linger_4497 --break gandr_surface_lsp::hub::tests::faulting
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-lsp/9c40e977d0897421/out/gandr_surface_lsp-9c40e977d0897421"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-lsp/9c40e977d0897421/out/gandr_surface_lsp-9c40e977d0897421' (arm64).
+(lldb) settings set -- target.run-args  "hub::tests::a_hub_whose_connection_faults_exits_after_its_linger_4497" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex gandr_surface_lsp::hub::tests::faulting
+Breakpoint 1: where = gandr_surface_lsp-9c40e977d0897421`gandr_surface_lsp::hub::tests::faulting + 36 at hub.rs:1829:24, address = 0x0000000100452e7c
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_surface_lsp-9c40e977d0897421`__rustc::rust_panic + 12 at panicking.rs:887:25, address = 0x000000010388f0a8
+(lldb) run
+
+running 1 test
+test hub::tests::a_hub_whose_connection_faults_exits_after_its_linger_4497 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 86794 launched: 'target/debug-trace/debug/build/gandr-surface-lsp/9c40e977d0897421/out/gandr_surface_lsp-9c40e977d0897421' (arm64)
+Process 86794 stopped
+* thread #6, stop reason = breakpoint 1.1
+       frame #0: 0x0000000100452e7c gandr_surface_lsp-9c40e977d0897421`gandr_surface_lsp::hub::tests::faulting(reading={buf:{buf:{data_ptr:{None:(), value:{value:{…}}}, length:8192}, pos:0, filled:12, initialized:false}, inner:{0:{0:{0:{fd:{…}}}}}}, _peer={0:1}, _workspace={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0}}}) at hub.rs:1829:24
+   1826	        _workspace: &std::sync::Mutex<super::Workspace>,
+   1827	    )
+   1828	    {
+-> 1829	        let mut line = String::new();
+    	                       ^
+   1830	        drop(reading.read_line(&mut line));
+   1831	        panic!("the face faults on {line:?}");
+   1832	    }
+(lldb) bt 24
+error: gandr_surface_lsp-9c40e977d0897421.gandr_surface_lsp.f4fb4f976b938467-cgu.03.rcgu.o 0x400003000013edf2: DW_TAG_member 'data' refers to type 0x00000000000404a0 which was unable to be parsed
+* thread #6, stop reason = breakpoint 1.1
+   * frame #0: 0x0000000100452e7c gandr_surface_lsp-9c40e977d0897421`gandr_surface_lsp::hub::tests::faulting(reading={buf:{buf:{data_ptr:{None:(), value:{value:{…}}}, length:8192}, pos:0, filled:12, initialized:false}, inner:{0:{0:{0:{fd:{…}}}}}}, _peer={0:1}, _workspace={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0}}}) at hub.rs:1829:24
+     frame #1: 0x00000001004a3ad0 gandr_surface_lsp-9c40e977d0897421`gandr_surface_lsp::hub::connection::<core::io::util::Sink>(stream={0:{0:{0:{fd:{0:4}}}}}, peer={0:1}, workspace={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0}}}, disk={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:Some({arming:{inner:{…}}, directories:{map:{…}}, followed:strong=4, weak=0, wake:strong=3, weak=0})}}, log={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{}}}, lines=Some({})) at hub.rs:566:9
+     frame #2: 0x00000001004cd8f8 gandr_surface_lsp-9c40e977d0897421`gandr_surface_lsp::hub::run_hub::<core::io::util::Sink>::{closure#0}::{closure#0} at hub.rs:467:13
+     frame #3: 0x0000000100283a1c gandr_surface_lsp-9c40e977d0897421`std::sys::backtrace::__rust_begin_short_backtrace::<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}::{closure#0}, ()>(f=<unavailable>) at backtrace.rs:166:18
+     frame #4: 0x00000001006bd2e8 gandr_surface_lsp-9c40e977d0897421`std::thread::lifecycle::spawn_unchecked::<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}::{closure#0}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13
+     frame #5: 0x000000010085e9c8 gandr_surface_lsp-9c40e977d0897421`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}::{closure#0}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once(self=<unavailable>, (null)=<unavailable>) at unwind_safe.rs:275:9
+     frame #6: 0x000000010053ec10 gandr_surface_lsp-9c40e977d0897421`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}::{closure#0}, ()>::{closure#1}::{closure#0}>, ()>(data={f:{value:{0:{0:{hooks:{…}, f:{…}}}}}, r:{value:{None:()}}, p:{value:{0:{pointer:(), vtable:0x0000000000000008}}}}) at panicking.rs:576:43
+     frame #7: 0x00000001006dd1f0 gandr_surface_lsp-9c40e977d0897421`__rust_try + 32
+     frame #8: 0x00000001006b8e98 gandr_surface_lsp-9c40e977d0897421`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}::{closure#0}, ()>::{closure#1}::{closure#0}>>(f={0:{hooks:{hooks:{first:None}, to_run:size=0}, f:{opened:{0:strong=2, weak=0}, stream:{0:{0:{…}}}, peer:{0:1}, workspace:strong=2, weak=0, disk:strong=2, weak=0, log:strong=2, weak=0, lines:Some({})}}}) at panicking.rs:544:19
+     frame #9: 0x00000001006b8e54 gandr_surface_lsp-9c40e977d0897421`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}::{closure#0}, ()>::{closure#1}::{closure#0}>, ()>(f={0:{hooks:{hooks:{first:None}, to_run:size=0}, f:{opened:{0:strong=2, weak=0}, stream:{0:{0:{…}}}, peer:{0:1}, workspace:strong=2, weak=0, disk:strong=2, weak=0, log:strong=2, weak=0, lines:Some({})}}}) at panic.rs:359:14 [inlined]
+     frame #10: 0x00000001006b8e54 gandr_surface_lsp-9c40e977d0897421`std::thread::lifecycle::spawn_unchecked::<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}::{closure#0}, ()>::{closure#1} at lifecycle.rs:68:26
+     frame #11: 0x00000001008c56ec gandr_surface_lsp-9c40e977d0897421`<std::thread::lifecycle::spawn_unchecked<gandr_surface_lsp::hub::run_hub<core::io::util::Sink>::{closure#0}::{closure#0}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}((null)={f:{0:{opened:{0:strong=2, weak=0}, stream:{0:{0:{…}}}, peer:{0:1}, workspace:strong=2, weak=0, disk:strong=2, weak=0, log:strong=2, weak=0, lines:Some({})}}, hooks:{hooks:{first:None}, to_run:size=0}, their_packet:strong=1, weak=0}, (null)=<unavailable>) at function.rs:250:5
+     frame #12: 0x000000010384dfb8 gandr_surface_lsp-9c40e977d0897421`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2318:9 [opt] [inlined]
+     frame #13: 0x000000010384dfac gandr_surface_lsp-9c40e977d0897421`<std::sys::thread::unix::Thread>::new::thread_start at unix.rs:123:17 [opt]
+     frame #14: 0x000000018cf9fc58 libsystem_pthread.dylib`_pthread_start + 136
+(lldb) frame variable --depth 3
+(alloc::io::buffered::bufreader::BufReader<std::os::unix::net::stream::UnixStream> *) reading = 0x0000000170836428 {buf:{buf:{data_ptr:{None:(), value:{value:{…}}}, length:8192}, pos:0, filled:12, initialized:false}, inner:{0:{0:{0:{fd:{…}}}}}}
+(gandr_surface_lsp::server::Peer) _peer = {0:1}
+(std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace> *) _workspace = 0x000000010c274840 {inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0}}}
+(lldb) up
+frame #1: 0x00000001004a3ad0 gandr_surface_lsp-9c40e977d0897421`gandr_surface_lsp::hub::connection::<core::io::util::Sink>(stream={0:{0:{0:{fd:{0:4}}}}}, peer={0:1}, workspace={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0}}}, disk={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:Some({arming:{inner:{…}}, directories:{map:{…}}, followed:strong=4, weak=0, wake:strong=3, weak=0})}}, log={inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{}}}, lines=Some({})) at hub.rs:566:9
+   563 	        _ => None,
+   564 	    };
+   565 	    if let Some(face) = face {
+-> 566 	        face(&mut reading, peer, workspace);
+    	        ^
+   567 	        lock(workspace).depart(peer);
+   568 	        drop(reading.get_ref().shutdown(std::net::Shutdown::Both));
+   569 	        return;
+(lldb) frame variable --depth 3
+(std::os::unix::net::stream::UnixStream) stream = {0:{0:{0:{fd:{0:4}}}}}
+(gandr_surface_lsp::server::Peer) peer = {0:1}
+(std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace> *) workspace = 0x000000010c274840 {inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{documents:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, paths:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, editors:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, watchers:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, spelling:Unicode, files:borrow=0, reporting:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, watched:{map:{root:None, length:0, alloc:{…}, _marker:{…}}}, saved:None, handed:{root:None, length:0, alloc:{value:{…}}, _marker:{}}, pool:strong=1, weak=0}}}
+(std::sync::poison::mutex::Mutex<core::option::Option<gandr_surface_lsp::disk::Disk> > *) disk = 0x000000010c275610 {inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:Some({arming:{inner:{…}}, directories:{map:{…}}, followed:strong=4, weak=0, wake:strong=3, weak=0})}}
+(std::sync::poison::mutex::Mutex<core::io::util::Sink> *) log = 0x000000010c2752b0 {inner:{pal:{ptr:{v:{value:{…}}}}}, poison:{failed:{v:{value:{0:'\0'}}}}, data:{value:{}}}
+(core::option::Option<fn(&mut alloc::io::buffered::bufreader::BufReader<std::os::unix::net::stream::UnixStream>, gandr_surface_lsp::server::Peer, &std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace>)>) lines = Some({}) {
+  0 = 0x0000000100452e58 {}
+}
+(alloc::io::buffered::bufreader::BufReader<std::os::unix::net::stream::UnixStream>) reading = {buf:{buf:{data_ptr:{None:(), value:{value:{…}}}, length:8192}, pos:0, filled:12, initialized:false}, inner:{0:{0:{0:{fd:{…}}}}}}
+(core::option::Option<u8>) first = Some('{') {
+  0 = '{'
+}
+(core::option::Option<fn(&mut alloc::io::buffered::bufreader::BufReader<std::os::unix::net::stream::UnixStream>, gandr_surface_lsp::server::Peer, &std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace>)>) face = Some({}) {
+  0 = 0x0000000100452e58 {}
+}
+(void (*)(alloc::io::buffered::bufreader::BufReader<std::os::unix::net::stream::UnixStream> *, gandr_surface_lsp::server::Peer, std::sync::poison::mutex::Mutex<gandr_surface_lsp::server::Workspace> *)) face = 0x0000000100452e58 {}
