@@ -5,40 +5,66 @@
 use core::ffi::c_int;
 use core::ffi::c_void;
 use core::num::NonZeroU16;
-use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
+use crate::Base;
 use crate::ENOMEM;
 use crate::ErrorNumber;
+use crate::Length;
 use crate::Protection;
+
+/// A C `int` of the system library: a protection, the flags, a descriptor or
+/// an answer.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Int(c_int);
+
+/// A C `size_t` of the system library: the bytes of a mapping.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Size(usize);
+
+/// A C `off_t` of the system library: an offset into a file.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FileOffset(i64);
 
 #[link(name = "System")]
 unsafe extern "C" {
     /// The system library's `mmap`.
     fn mmap(
         address: *mut c_void,
-        length: usize,
-        protection: c_int,
-        flags: c_int,
-        descriptor: c_int,
-        offset: i64,
+        length: Size,
+        protection: Int,
+        flags: Int,
+        descriptor: Int,
+        offset: FileOffset,
     ) -> *mut c_void;
 
     /// The system library's `mprotect`.
     fn mprotect(
         address: *mut c_void,
-        length: usize,
-        protection: c_int,
-    ) -> c_int;
+        length: Size,
+        protection: Int,
+    ) -> Int;
 
     /// The system library's `munmap`.
     fn munmap(
         address: *mut c_void,
-        length: usize,
-    ) -> c_int;
+        length: Size,
+    ) -> Int;
 
     /// The address of the calling thread's error number.
-    fn __error() -> *mut c_int;
+    fn __error() -> *mut Int;
 }
 
 /// The flag of a mapping that no file backs.
@@ -63,12 +89,19 @@ fn error() -> ErrorNumber
     // SAFETY: the system library gives each thread its own error number, and
     // the address stays valid while the thread lives.
     let number = unsafe { *__error() };
-    ErrorNumber(
-        u16::try_from(number)
-            .ok()
-            .and_then(NonZeroU16::new)
-            .unwrap_or(ENOMEM),
-    )
+    u16::try_from(number.0)
+        .ok()
+        .and_then(NonZeroU16::new)
+        .map_or(ENOMEM, ErrorNumber)
+}
+
+/// The protection `protection` as the system library reads it.
+///
+/// # Specification
+/// trivial.
+fn protection(protection: Protection) -> Int
+{
+    Int(c_int::from(super::bits(protection).0))
 }
 
 /// Maps `length` bytes of private anonymous memory with the protection
@@ -84,20 +117,20 @@ fn error() -> ErrorNumber
 /// - hypothesis: L3 — each page of the mapping takes a byte.
 /// - witness: `tests::map::a_block_takes_a_byte_on_each_page`
 pub fn map(
-    length: NonZeroUsize,
+    length: Length,
     protection: Protection,
-) -> Result<NonNull<u8>, ErrorNumber>
+) -> Result<Base, ErrorNumber>
 {
     // SAFETY: a private anonymous mapping at an address that the kernel picks
     // touches no memory that the process holds.
     let base = unsafe {
         mmap(
             core::ptr::null_mut(),
-            length.get(),
-            c_int::from(super::bits(protection)),
-            MAP_PRIVATE | MAP_ANON,
-            -1,
-            0,
+            Size(length.0.get()),
+            self::protection(protection),
+            Int(MAP_PRIVATE | MAP_ANON),
+            Int(-1),
+            FileOffset(0),
         )
     };
     // `MAP_FAILED` is the address of all ones.
@@ -106,7 +139,7 @@ pub fn map(
     }
     // macOS keeps the first page of each process unmapped, so the base of a
     // mapping is never null.
-    NonNull::new(base.cast::<u8>()).ok_or(ErrorNumber(ENOMEM))
+    NonNull::new(base.cast::<u8>()).map(Base).ok_or(ENOMEM)
 }
 
 /// Sets the protection of the `length` bytes at `base` to `protection`.
@@ -126,20 +159,25 @@ pub fn map(
 ///   writable again takes one.
 /// - witness: `tests::map::a_block_made_read_only_reads_its_byte`
 pub unsafe fn protect(
-    base: NonNull<u8>,
-    length: NonZeroUsize,
+    base: Base,
+    length: Length,
     protection: Protection,
 ) -> Result<(), ErrorNumber>
 {
     // SAFETY: the caller's invariants hold for the bytes.
     let answer = unsafe {
         mprotect(
-            base.as_ptr().cast(),
-            length.get(),
-            c_int::from(super::bits(protection)),
+            base.0.as_ptr().cast(),
+            Size(length.0.get()),
+            self::protection(protection),
         )
     };
-    if answer == 0 { Ok(()) } else { Err(error()) }
+    if answer == Int(0) {
+        Ok(())
+    }
+    else {
+        Err(error())
+    }
 }
 
 /// Unmaps the `length` bytes at `base`.
@@ -158,11 +196,16 @@ pub unsafe fn protect(
 ///   ends as before it started.
 /// - witness: `pages::heap::mixed_blocks_leave_the_mapped_pages_as_they_were`
 pub unsafe fn unmap(
-    base: NonNull<u8>,
-    length: NonZeroUsize,
+    base: Base,
+    length: Length,
 ) -> Result<(), ErrorNumber>
 {
     // SAFETY: the caller's invariants hold for the bytes.
-    let answer = unsafe { munmap(base.as_ptr().cast(), length.get()) };
-    if answer == 0 { Ok(()) } else { Err(error()) }
+    let answer = unsafe { munmap(base.0.as_ptr().cast(), Size(length.0.get())) };
+    if answer == Int(0) {
+        Ok(())
+    }
+    else {
+        Err(error())
+    }
 }

@@ -18,8 +18,12 @@ use core::cell::Cell;
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
+use crate::Base;
+use crate::Bytes;
 use crate::EINVAL;
 use crate::ENOMEM;
+use crate::Granted;
+use crate::Length;
 use crate::Operation;
 use crate::PageSize;
 use crate::Protection;
@@ -37,7 +41,7 @@ const LARGEST: u32 = 12;
 const CLASSES: usize = 9;
 
 /// The bytes of a run when a page is smaller: 64 KiB.
-const RUN: NonZeroUsize = NonZeroUsize::new(1_usize << 16_u32).expect("2^16 is not zero");
+const RUN: Length = Length(NonZeroUsize::new(1_usize << 16_u32).expect("2^16 is not zero"));
 
 /// The size class that a layout falls in.
 ///
@@ -52,10 +56,10 @@ enum Size
         /// The class's place, smallest first.
         index: usize,
         /// The bytes of each block of the class: `2^(index + 4)`.
-        bytes: usize,
+        bytes: Bytes,
     },
     /// Whole pages of their own: this many bytes.
-    Pages(NonZeroUsize),
+    Pages(Length),
 }
 
 /// One size class: its free blocks and the cut of its newest run.
@@ -106,7 +110,7 @@ pub struct Heap
     /// The host's page size.
     page: PageSize,
     /// The bytes of one run: 64 KiB, or one page when a page is larger.
-    run: NonZeroUsize,
+    run: Length,
     /// The size classes, smallest first.
     classes: [Class; CLASSES],
 }
@@ -128,7 +132,7 @@ impl Heap
     #[inline]
     pub const fn new(page: PageSize) -> Self
     {
-        let run = if page.0.get() > RUN.get() {
+        let run = if page.0.0.get() > RUN.0.get() {
             page.0
         }
         else {
@@ -166,14 +170,18 @@ impl Heap
             let bytes = size.max(1 << SMALLEST).next_power_of_two();
             let index =
                 usize::try_from(bytes.trailing_zeros().saturating_sub(SMALLEST)).unwrap_or(CLASSES);
-            return Ok(Size::Class { index, bytes });
+            return Ok(Size::Class {
+                index,
+                bytes: Bytes(bytes),
+            });
         }
-        if layout.align() > self.page.0.get() {
+        let page = self.page.0.0.get();
+        if layout.align() > page {
             return Err(Refused::new(Operation::Allocate, EINVAL));
         }
-        size.checked_next_multiple_of(self.page.0.get())
+        size.checked_next_multiple_of(page)
             .and_then(NonZeroUsize::new)
-            .map(Size::Pages)
+            .map(|length| Size::Pages(Length(length)))
             .ok_or(Refused::new(Operation::Allocate, ENOMEM))
     }
 
@@ -181,12 +189,24 @@ impl Heap
     ///
     /// # Specification
     /// trivial.
-    const fn bytes(size: Size) -> usize
+    const fn bytes(size: Size) -> Bytes
     {
         match size {
             Size::Class { bytes, .. } => bytes,
-            Size::Pages(bytes) => bytes.get(),
+            Size::Pages(length) => Bytes(length.0.get()),
         }
+    }
+
+    /// The block of `bytes` bytes at `base`, as the heap grants it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn granted(
+        base: Base,
+        bytes: Bytes,
+    ) -> Granted
+    {
+        Granted(NonNull::slice_from_raw_parts(base.0, bytes.0))
     }
 
     /// Maps a new run for the class `class` of `bytes`-byte blocks, and cuts
@@ -206,20 +226,20 @@ impl Heap
     fn refill(
         &self,
         class: &Class,
-        bytes: usize,
+        bytes: Bytes,
     ) -> Result<(), Refused>
     {
         let run = sys::map(self.run, Protection::ReadWrite)
-            .map_err(|number| Refused::host(Operation::Map, number))?;
+            .map_err(|number| Refused::new(Operation::Map, number))?;
         // SAFETY: the run is the heap's own, readable and writable, aligned
         // to a page, and its first block holds one address.
         unsafe {
-            run.cast::<*mut u8>().write(class.runs.get());
+            run.0.cast::<*mut u8>().write(class.runs.get());
         }
-        let base = run.as_ptr();
+        let base = run.0.as_ptr();
         class.runs.set(base);
-        class.cursor.set(base.wrapping_add(bytes));
-        class.end.set(base.wrapping_add(self.run.get()));
+        class.cursor.set(base.wrapping_add(bytes.0));
+        class.end.set(base.wrapping_add(self.run.0.get()));
         Ok(())
     }
 
@@ -249,13 +269,13 @@ impl Heap
     pub fn allocate(
         &self,
         layout: Layout,
-    ) -> Result<NonNull<[u8]>, Refused>
+    ) -> Result<Granted, Refused>
     {
         let (index, bytes) = match self.size(layout)? {
             Size::Pages(length) => {
                 let base = sys::map(length, Protection::ReadWrite)
-                    .map_err(|number| Refused::host(Operation::Map, number))?;
-                return Ok(NonNull::slice_from_raw_parts(base, length.get()));
+                    .map_err(|number| Refused::new(Operation::Map, number))?;
+                return Ok(Self::granted(base, Bytes(length.0.get())));
             },
             Size::Class { index, bytes } => (index, bytes),
         };
@@ -273,10 +293,10 @@ impl Heap
                 self.refill(class, bytes)?;
             }
             let cursor = class.cursor.get();
-            class.cursor.set(cursor.wrapping_add(bytes));
+            class.cursor.set(cursor.wrapping_add(bytes.0));
             NonNull::new(cursor).ok_or(Refused::new(Operation::Allocate, ENOMEM))?
         };
-        Ok(NonNull::slice_from_raw_parts(block, bytes))
+        Ok(Self::granted(Base(block), bytes))
     }
 
     /// Gives the block at `block` back to the heap.
@@ -307,7 +327,7 @@ impl Heap
     #[inline]
     pub unsafe fn free(
         &self,
-        block: NonNull<u8>,
+        block: Base,
         layout: Layout,
     ) -> Result<(), Refused>
     {
@@ -320,15 +340,15 @@ impl Heap
                 // SAFETY: the block is the caller's to give back, and it has
                 // room for one address.
                 unsafe {
-                    block.cast::<*mut u8>().write(class.free.get());
+                    block.0.cast::<*mut u8>().write(class.free.get());
                 }
-                class.free.set(block.as_ptr());
+                class.free.set(block.0.as_ptr());
                 Ok(())
             },
             // SAFETY: the block is the caller's to give back, and the heap
             // mapped its pages for it alone.
             Size::Pages(length) => unsafe { sys::unmap(block, length) }
-                .map_err(|number| Refused::host(Operation::Unmap, number)),
+                .map_err(|number| Refused::new(Operation::Unmap, number)),
         }
     }
 
@@ -358,20 +378,20 @@ impl Heap
     #[inline]
     pub unsafe fn grow(
         &self,
-        block: NonNull<u8>,
+        block: Base,
         old: Layout,
         new: Layout,
-    ) -> Result<NonNull<[u8]>, Refused>
+    ) -> Result<Granted, Refused>
     {
         let size = self.size(old)?;
         if self.size(new)? == size {
-            return Ok(NonNull::slice_from_raw_parts(block, Self::bytes(size)));
+            return Ok(Self::granted(block, Self::bytes(size)));
         }
         let grown = self.allocate(new)?;
         // SAFETY: the old block holds `old.size()` bytes, the new block holds
         // at least as many, and two blocks of the heap never overlap.
         unsafe {
-            core::ptr::copy_nonoverlapping(block.as_ptr(), grown.cast::<u8>().as_ptr(), old.size());
+            core::ptr::copy_nonoverlapping(block.0.as_ptr(), grown.base().0.as_ptr(), old.size());
         }
         // SAFETY: the caller's invariants hold for the old block.
         unsafe { self.free(block, old) }?;
@@ -401,14 +421,22 @@ impl Drop for Heap
                 // SAFETY: a run's first word holds the run before it.
                 run = unsafe { base.cast::<*mut u8>().read() };
                 // SAFETY: the heap ends, so no block of the run lives.
-                let _unmapped = unsafe { sys::unmap(base, self.run) };
+                let _unmapped = unsafe { sys::unmap(Base(base), self.run) };
             }
         }
     }
 }
 
-// SAFETY: a block stays valid while the heap lives, a copy of the reference
-// names the same heap, and two live blocks never overlap.
+/// The heap as Rust's allocator, through a shared reference.
+///
+/// # Safety
+///
+/// - unsafe invariants: a block stays valid while the heap lives, a copy of the
+///   reference names the same heap, and two live blocks never overlap.
+///
+/// # Specification
+/// trivial.
+// SAFETY: as above.
 unsafe impl Allocator for &Heap
 {
     /// The heap's [`Heap::allocate`].
@@ -421,10 +449,17 @@ unsafe impl Allocator for &Heap
         layout: Layout,
     ) -> Result<NonNull<[u8]>, AllocError>
     {
-        Heap::allocate(self, layout).map_err(|_refused| AllocError)
+        Heap::allocate(self, layout)
+            .map(|granted| granted.0)
+            .map_err(|_refused| AllocError)
     }
 
     /// The heap's [`Heap::free`].
+    ///
+    /// # Safety
+    ///
+    /// - unsafe invariants: the heap gave the block for a layout that `layout`
+    ///   fits, and no reference into the block lives.
     ///
     /// # Specification
     /// trivial.
@@ -435,11 +470,17 @@ unsafe impl Allocator for &Heap
         layout: Layout,
     )
     {
-        // SAFETY: the trait's contract is the caller's.
-        let _freed = unsafe { Heap::free(self, ptr, layout) };
+        // SAFETY: the caller's invariants are the free's.
+        let _freed = unsafe { Heap::free(self, Base(ptr), layout) };
     }
 
     /// The heap's [`Heap::grow`].
+    ///
+    /// # Safety
+    ///
+    /// - unsafe invariants: the heap gave the block for a layout that
+    ///   `old_layout` fits; `new_layout` is at least as large; and no reference
+    ///   into the block lives.
     ///
     /// # Specification
     /// trivial.
@@ -451,7 +492,9 @@ unsafe impl Allocator for &Heap
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, AllocError>
     {
-        // SAFETY: the trait's contract is the caller's.
-        unsafe { Heap::grow(self, ptr, old_layout, new_layout) }.map_err(|_refused| AllocError)
+        // SAFETY: the caller's invariants are the grow's.
+        unsafe { Heap::grow(self, Base(ptr), old_layout, new_layout) }
+            .map(|granted| granted.0)
+            .map_err(|_refused| AllocError)
     }
 }

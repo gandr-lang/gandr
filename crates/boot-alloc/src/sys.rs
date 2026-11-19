@@ -21,6 +21,14 @@ pub use macos::unmap;
 
 use crate::Protection;
 
+/// The bits of a protection, as the kernel reads them.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Bits(u8);
+
 /// The bits of the protection `protection`, which Linux and macOS spell
 /// alike: read 1, write 2, execute 4.
 ///
@@ -34,12 +42,12 @@ use crate::Protection;
 /// - hypothesis: L3 — a page made read-only reads its byte, and a page made
 ///   writable again takes one.
 /// - witness: `tests::map::a_block_made_read_only_reads_its_byte`
-const fn bits(protection: Protection) -> u8
+const fn bits(protection: Protection) -> Bits
 {
-    match protection {
+    Bits(match protection {
         Protection::Inaccessible => 0,
         Protection::Read => 1,
         Protection::ReadWrite => 1 | 2,
         Protection::ReadExecute => 1 | 4,
-    }
+    })
 }

@@ -9,8 +9,8 @@ mod host;
 mod heap
 {
     use core::alloc::Layout;
-    use core::ptr::NonNull;
 
+    use gandr_boot_alloc::Base;
     use gandr_boot_alloc::Heap;
 
     use crate::host;
@@ -32,7 +32,7 @@ mod heap
             .and_then(|field| field.parse().ok())
             .expect("statm starts with a count");
         pages
-            .checked_mul(host::page().bytes().get())
+            .checked_mul(host::page().length().0.get())
             .expect("the bytes fit a word")
     }
 
@@ -99,7 +99,7 @@ mod heap
     fn mixed_blocks_leave_the_mapped_pages_as_they_were()
     {
         let page = host::page();
-        let mut blocks: Vec<(NonNull<u8>, Layout, u8)> = Vec::with_capacity(10_000);
+        let mut blocks: Vec<(Base, Layout, u8)> = Vec::with_capacity(10_000);
         let before = mapped();
         let heap = Heap::new(page);
         let mut seed = 0x2545_F491_u32;
@@ -113,17 +113,17 @@ mod heap
             let block = heap
                 .allocate(layout)
                 .expect("the heap gives a block")
-                .cast::<u8>();
+                .base();
             // SAFETY: the block holds at least `size` writable bytes.
             unsafe {
-                block.as_ptr().write_bytes(mark, size);
+                block.0.as_ptr().write_bytes(mark, size);
             }
             blocks.push((block, layout, mark));
         }
         let during = mapped();
         for &(block, layout, mark) in &blocks {
             // SAFETY: the block holds at least `layout.size()` readable bytes.
-            let bytes = unsafe { core::slice::from_raw_parts(block.as_ptr(), layout.size()) };
+            let bytes = unsafe { core::slice::from_raw_parts(block.0.as_ptr(), layout.size()) };
             assert!(bytes.iter().all(|&byte| byte == mark), "{layout:?}");
         }
         // 7919 is prime and divides no power of ten, so the stride visits

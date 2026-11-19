@@ -4,6 +4,7 @@
 use core::ffi::c_int;
 use core::ffi::c_long;
 
+use gandr_boot_alloc::Bytes;
 use gandr_boot_alloc::PageSize;
 
 unsafe extern "C" {
@@ -27,6 +28,8 @@ pub fn page() -> PageSize
 {
     // SAFETY: `sysconf` reads a value of the host and writes no memory.
     let bytes = unsafe { sysconf(SC_PAGESIZE) };
-    PageSize::new(usize::try_from(bytes).expect("the host reports a page size"))
-        .expect("the host's page size is a power of two")
+    PageSize::new(Bytes(
+        usize::try_from(bytes).expect("the host reports a page size"),
+    ))
+    .expect("the host's page size is a power of two")
 }

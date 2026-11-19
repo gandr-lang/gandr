@@ -17,14 +17,14 @@
 //! shared reference. Each refusal is one [`Refused`]: the name of the
 //! operation and an error number.
 //!
-//! A crate of the area `boot` is a stage of the bootstrap. A twin in gandr
+//! A crate of the layer `boot` is a stage of the bootstrap. A twin in gandr
 //! replaces it, so each public function has no generic parameter and states
 //! the clauses that the twin meets.
 //!
 //! # References
 //!
 //! - `vault:01a1ebc5-2ff2-7833-b871-85901e734925` — newest: the data core of
-//!   the bootstrap (§ boot-data-crates): the rules of a crate of the area
+//!   the bootstrap (§ boot-data-crates): the rules of a crate of the layer
 //!   `boot`, and the row of this crate.
 //! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — newest: the IO direction (§
 //!   io-direction-no-libc): the path with no libc, and the census of the
@@ -43,10 +43,57 @@ use core::ptr::NonNull;
 pub use crate::heap::Heap;
 
 /// The error number of an argument that the call does not take: `EINVAL`.
-pub(crate) const EINVAL: NonZeroU16 = NonZeroU16::new(22).expect("22 is not zero");
+const EINVAL: ErrorNumber = ErrorNumber(NonZeroU16::new(22).expect("22 is not zero"));
 
 /// The error number of a call that finds no memory: `ENOMEM`.
-pub(crate) const ENOMEM: NonZeroU16 = NonZeroU16::new(12).expect("12 is not zero");
+const ENOMEM: ErrorNumber = ErrorNumber(NonZeroU16::new(12).expect("12 is not zero"));
+
+/// A count of bytes.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Bytes(pub usize);
+
+/// The bytes of a mapping or of a page: never zero.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Length(pub NonZeroUsize);
+
+/// The address of the first byte of a block.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Base(pub NonNull<u8>);
+
+/// The bytes that a heap grants for one allocation: their address and their
+/// count, which can be more than the layout asks.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Granted(pub NonNull<[u8]>);
+
+impl Granted
+{
+    /// The address of the first granted byte.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn base(self) -> Base
+    {
+        Base(self.0.cast::<u8>())
+    }
+}
 
 /// The size of the host's page in bytes: a power of two that the caller
 /// reads from its host.
@@ -55,7 +102,7 @@ pub(crate) const ENOMEM: NonZeroU16 = NonZeroU16::new(12).expect("12 is not zero
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PageSize(NonZeroUsize);
+pub struct PageSize(Length);
 
 impl PageSize
 {
@@ -75,10 +122,10 @@ impl PageSize
     /// # Errors
     /// `EINVAL` under the name `page`, for a count that is not a power of two.
     #[inline]
-    pub const fn new(bytes: usize) -> Result<Self, Refused>
+    pub const fn new(bytes: Bytes) -> Result<Self, Refused>
     {
-        match NonZeroUsize::new(bytes) {
-            Some(size) if size.is_power_of_two() => Ok(Self(size)),
+        match NonZeroUsize::new(bytes.0) {
+            Some(size) if size.is_power_of_two() => Ok(Self(Length(size))),
             _ => Err(Refused::new(Operation::Page, EINVAL)),
         }
     }
@@ -89,7 +136,7 @@ impl PageSize
     /// trivial.
     #[must_use]
     #[inline]
-    pub const fn bytes(self) -> NonZeroUsize
+    pub const fn length(self) -> Length
     {
         self.0
     }
@@ -101,32 +148,7 @@ impl PageSize
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Pages(NonZeroUsize);
-
-impl Pages
-{
-    /// The count of `count` pages.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    #[inline]
-    pub const fn new(count: NonZeroUsize) -> Self
-    {
-        Self(count)
-    }
-
-    /// The count.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    #[inline]
-    pub const fn count(self) -> NonZeroUsize
-    {
-        self.0
-    }
-}
+pub struct Pages(pub NonZeroUsize);
 
 /// What a block's bytes allow.
 ///
@@ -157,9 +179,9 @@ pub enum Protection
 pub struct Block
 {
     /// The address of the first byte.
-    base: NonNull<u8>,
+    base: Base,
     /// The bytes of the block: a whole number of pages.
-    length: NonZeroUsize,
+    length: Length,
 }
 
 impl Block
@@ -170,7 +192,7 @@ impl Block
     /// trivial.
     #[must_use]
     #[inline]
-    pub const fn base(&self) -> NonNull<u8>
+    pub const fn base(&self) -> Base
     {
         self.base
     }
@@ -181,7 +203,7 @@ impl Block
     /// trivial.
     #[must_use]
     #[inline]
-    pub const fn length(&self) -> NonZeroUsize
+    pub const fn length(&self) -> Length
     {
         self.length
     }
@@ -207,23 +229,25 @@ pub enum Operation
     Allocate,
 }
 
-impl Operation
+impl fmt::Display for Operation
 {
-    /// The name of the operation.
+    /// Writes the name of the operation.
     ///
     /// # Specification
     /// trivial.
-    #[must_use]
     #[inline]
-    pub const fn name(self) -> &'static str
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
     {
-        match self {
+        f.write_str(match *self {
             Self::Page => "page",
             Self::Map => "map",
             Self::Protect => "protect",
             Self::Unmap => "unmap",
             Self::Allocate => "allocate",
-        }
+        })
     }
 }
 
@@ -233,30 +257,7 @@ impl Operation
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ErrorNumber(NonZeroU16);
-
-impl ErrorNumber
-{
-    /// The error number `number`.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(crate) const fn new(number: NonZeroU16) -> Self
-    {
-        Self(number)
-    }
-
-    /// The number.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    #[inline]
-    pub const fn get(self) -> NonZeroU16
-    {
-        self.0
-    }
-}
+pub struct ErrorNumber(pub NonZeroU16);
 
 /// An operation that the host or the crate refuses: its name and an error
 /// number.
@@ -279,21 +280,6 @@ impl Refused
     /// # Specification
     /// trivial.
     const fn new(
-        operation: Operation,
-        number: NonZeroU16,
-    ) -> Self
-    {
-        Self {
-            operation,
-            number: ErrorNumber::new(number),
-        }
-    }
-
-    /// The refusal of `operation` with the host's error number `number`.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn host(
         operation: Operation,
         number: ErrorNumber,
     ) -> Self
@@ -336,12 +322,7 @@ impl fmt::Display for Refused
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        write!(
-            f,
-            "{}: error number {}",
-            self.operation.name(),
-            self.number.0
-        )
+        write!(f, "{}: error number {}", self.operation, self.number.0)
     }
 }
 
@@ -364,10 +345,10 @@ impl core::error::Error for Refused
 const fn length(
     page: PageSize,
     pages: Pages,
-) -> Result<NonZeroUsize, Refused>
+) -> Result<Length, Refused>
 {
-    match page.0.checked_mul(pages.0) {
-        Some(length) => Ok(length),
+    match page.0.0.checked_mul(pages.0) {
+        Some(length) => Ok(Length(length)),
         None => Err(Refused::new(Operation::Map, ENOMEM)),
     }
 }
@@ -398,7 +379,7 @@ pub fn map(
 {
     let length = length(page, pages)?;
     let base =
-        sys::map(length, protection).map_err(|number| Refused::host(Operation::Map, number))?;
+        sys::map(length, protection).map_err(|number| Refused::new(Operation::Map, number))?;
     Ok(Block { base, length })
 }
 
@@ -426,7 +407,7 @@ pub fn protect(
     // SAFETY: a reference into the block that the new protection forbids is
     // the caller's to end, as the block's documentation states.
     unsafe { sys::protect(block.base, block.length, protection) }
-        .map_err(|number| Refused::host(Operation::Protect, number))
+        .map_err(|number| Refused::new(Operation::Protect, number))
 }
 
 /// Gives `block` back to the host.
@@ -454,5 +435,5 @@ pub fn unmap(block: Block) -> Result<(), Refused>
     let Block { base, length } = block;
     // SAFETY: the call takes the block, and a reference into it is the
     // caller's to end, as the block's documentation states.
-    unsafe { sys::unmap(base, length) }.map_err(|number| Refused::host(Operation::Unmap, number))
+    unsafe { sys::unmap(base, length) }.map_err(|number| Refused::new(Operation::Unmap, number))
 }

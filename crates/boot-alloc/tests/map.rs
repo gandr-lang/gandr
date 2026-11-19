@@ -3,6 +3,7 @@
 
 use core::num::NonZeroUsize;
 
+use gandr_boot_alloc::Bytes;
 use gandr_boot_alloc::Operation;
 use gandr_boot_alloc::PageSize;
 use gandr_boot_alloc::Pages;
@@ -20,13 +21,13 @@ const ENOMEM: u16 = 12;
 /// `count` pages.
 fn pages(count: usize) -> Pages
 {
-    Pages::new(NonZeroUsize::new(count).expect("a count of pages is not zero"))
+    Pages(NonZeroUsize::new(count).expect("a count of pages is not zero"))
 }
 
 /// The operation and the error number of `refused`.
 fn named(refused: Refused) -> (Operation, u16)
 {
-    (refused.operation(), refused.number().get().get())
+    (refused.operation(), refused.number().0.get())
 }
 
 /// Each page of a readable and writable block takes a byte at its first and
@@ -35,12 +36,12 @@ fn named(refused: Refused) -> (Operation, u16)
 fn a_block_takes_a_byte_on_each_page()
 {
     let page = host::page();
-    let size = page.bytes().get();
+    let size = page.length().0.get();
     let block = gandr_boot_alloc::map(page, pages(16), Protection::ReadWrite)
         .expect("the host maps 16 pages");
-    assert_eq!(16 * size, block.length().get());
-    assert_eq!(0, block.base().as_ptr().addr() % size);
-    let base = block.base().as_ptr();
+    assert_eq!(16 * size, block.length().0.get());
+    let base = block.base().0.as_ptr();
+    assert_eq!(0, base.addr() % size);
     for (index, mark) in (0 .. 16).zip(1_u8 ..) {
         let first = base.wrapping_add(index * size);
         let last = first.wrapping_add(size - 1);
@@ -71,7 +72,7 @@ fn a_block_made_read_only_reads_its_byte()
     let page = host::page();
     let block =
         gandr_boot_alloc::map(page, pages(1), Protection::ReadWrite).expect("the host maps a page");
-    let base = block.base().as_ptr();
+    let base = block.base().0.as_ptr();
     // SAFETY: the page is readable and writable.
     unsafe {
         base.write(0xA5);
@@ -100,14 +101,14 @@ fn a_count_past_the_address_space_is_refused()
     let page = host::page();
     let block =
         gandr_boot_alloc::map(page, pages(1), Protection::ReadWrite).expect("the host maps a page");
-    let base = block.base().as_ptr();
+    let base = block.base().0.as_ptr();
     // SAFETY: the page is readable and writable.
     unsafe {
         base.write(0x3C);
     }
     let overflow = gandr_boot_alloc::map(page, pages(usize::MAX), Protection::ReadWrite);
     assert_eq!(Some((Operation::Map, ENOMEM)), overflow.err().map(named));
-    let count = (1_usize << 60_u32) >> page.bytes().trailing_zeros();
+    let count = (1_usize << 60_u32) >> page.length().0.trailing_zeros();
     let past = gandr_boot_alloc::map(page, pages(count), Protection::ReadWrite);
     assert_eq!(Some((Operation::Map, ENOMEM)), past.err().map(named));
     // SAFETY: the page is readable.
@@ -121,13 +122,16 @@ fn a_count_past_the_address_space_is_refused()
 #[test]
 fn a_page_size_is_a_power_of_two()
 {
-    let host = host::page().bytes().get();
+    let host = host::page().length().0.get();
     for bytes in [0, 3, host + 1] {
         assert_eq!(
             Some((Operation::Page, EINVAL)),
-            PageSize::new(bytes).err().map(named),
+            PageSize::new(Bytes(bytes)).err().map(named),
             "{bytes}"
         );
     }
-    assert_eq!(Ok(host), PageSize::new(host).map(|page| page.bytes().get()));
+    assert_eq!(
+        Ok(host),
+        PageSize::new(Bytes(host)).map(|page| page.length().0.get())
+    );
 }

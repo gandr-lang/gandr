@@ -2,11 +2,12 @@
 //! function in assembly. No libc stands between the crate and the kernel.
 
 use core::num::NonZeroU16;
-use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
+use crate::Base;
 use crate::ENOMEM;
 use crate::ErrorNumber;
+use crate::Length;
 use crate::Protection;
 
 #[cfg(target_arch = "aarch64")]
@@ -27,6 +28,7 @@ use x86_64 as arch;
 ///
 /// # Specification
 /// trivial.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Call(usize);
 
@@ -34,6 +36,7 @@ struct Call(usize);
 ///
 /// # Specification
 /// trivial.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Raw(usize);
 
@@ -59,14 +62,14 @@ const LAST_ERROR: u16 = 4095;
 /// - hypothesis: L3 — a map past the address space refuses with `ENOMEM`, and a
 ///   page that `map` gives takes a byte.
 /// - witness: `tests::map::a_count_past_the_address_space_is_refused`
-fn answer(raw: Raw) -> Result<usize, ErrorNumber>
+fn answer(raw: Raw) -> Result<Raw, ErrorNumber>
 {
     match u16::try_from(raw.0.wrapping_neg())
         .ok()
         .and_then(NonZeroU16::new)
     {
         Some(number) if number.get() <= LAST_ERROR => Err(ErrorNumber(number)),
-        _ => Ok(raw.0),
+        _ => Ok(raw),
     }
 }
 
@@ -82,17 +85,17 @@ fn answer(raw: Raw) -> Result<usize, ErrorNumber>
 /// - hypothesis: L3 — each page of the mapping takes a byte.
 /// - witness: `tests::map::a_block_takes_a_byte_on_each_page`
 pub fn map(
-    length: NonZeroUsize,
+    length: Length,
     protection: Protection,
-) -> Result<NonNull<u8>, ErrorNumber>
+) -> Result<Base, ErrorNumber>
 {
     // SAFETY: a private anonymous mapping at an address that the kernel picks
     // touches no memory that the process holds.
     let raw = unsafe {
         arch::syscall6(arch::MMAP, [
             Raw(0),
-            Raw(length.get()),
-            Raw(usize::from(super::bits(protection))),
+            Raw(length.0.get()),
+            Raw(usize::from(super::bits(protection).0)),
             Raw(MAP_PRIVATE | MAP_ANONYMOUS),
             Raw(usize::MAX),
             Raw(0),
@@ -101,9 +104,9 @@ pub fn map(
     let base = answer(raw)?;
     // The kernel makes the mapping outside the abstract machine, so its base
     // takes the exposed provenance.
-    let pointer = core::ptr::with_exposed_provenance_mut::<u8>(base);
+    let pointer = core::ptr::with_exposed_provenance_mut::<u8>(base.0);
     if let Some(base) = NonNull::new(pointer) {
-        return Ok(base);
+        return Ok(Base(base));
     }
     // The kernel gives the address 0 only on a host whose `vm.mmap_min_addr`
     // is 0. A block holds no null base, so the crate gives the mapping back
@@ -112,14 +115,14 @@ pub fn map(
     let _unmapped = unsafe {
         arch::syscall6(arch::MUNMAP, [
             Raw(0),
-            Raw(length.get()),
+            Raw(length.0.get()),
             Raw(0),
             Raw(0),
             Raw(0),
             Raw(0),
         ])
     };
-    Err(ErrorNumber(ENOMEM))
+    Err(ENOMEM)
 }
 
 /// Sets the protection of the `length` bytes at `base` to `protection`.
@@ -139,17 +142,17 @@ pub fn map(
 ///   writable again takes one.
 /// - witness: `tests::map::a_block_made_read_only_reads_its_byte`
 pub unsafe fn protect(
-    base: NonNull<u8>,
-    length: NonZeroUsize,
+    base: Base,
+    length: Length,
     protection: Protection,
 ) -> Result<(), ErrorNumber>
 {
     // SAFETY: the caller's invariants hold for the bytes.
     let raw = unsafe {
         arch::syscall6(arch::MPROTECT, [
-            Raw(base.as_ptr().addr()),
-            Raw(length.get()),
-            Raw(usize::from(super::bits(protection))),
+            Raw(base.0.as_ptr().addr()),
+            Raw(length.0.get()),
+            Raw(usize::from(super::bits(protection).0)),
             Raw(0),
             Raw(0),
             Raw(0),
@@ -174,15 +177,15 @@ pub unsafe fn protect(
 ///   ends as before it started.
 /// - witness: `pages::heap::mixed_blocks_leave_the_mapped_pages_as_they_were`
 pub unsafe fn unmap(
-    base: NonNull<u8>,
-    length: NonZeroUsize,
+    base: Base,
+    length: Length,
 ) -> Result<(), ErrorNumber>
 {
     // SAFETY: the caller's invariants hold for the bytes.
     let raw = unsafe {
         arch::syscall6(arch::MUNMAP, [
-            Raw(base.as_ptr().addr()),
-            Raw(length.get()),
+            Raw(base.0.as_ptr().addr()),
+            Raw(length.0.get()),
             Raw(0),
             Raw(0),
             Raw(0),
