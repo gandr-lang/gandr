@@ -10,7 +10,7 @@ Categories are a layering order: a crate depends only on crates of its own categ
 
 ```text
 # Categories in dependency order: each depends only on its own and those above it.
-boot      Rust with no std that the bootstrap stands on until a twin in gandr replaces it: memory from the kernel with no libc
+boot      Rust with no std that the bootstrap stands on until a twin in gandr replaces it: memory from the kernel with no libc, and the operations on bytes that allocate nothing
 theory    reusable metatheory machinery
 kernel    the certified trusted base and its substrate: levels, the term arena and sharing format, the checking machine
 core      the core language: call-by-push-value syntax, the unified context, normalization by evaluation
@@ -64,6 +64,7 @@ One row per directory: the directory and what it is.
 # Rows sort lexicographically by directory; the dependency order is § Layering.
 crates/
 ├── boot-alloc/                    whole pages from the kernel's mapping calls with no libc, and a heap in size classes over them
+├── boot-core/                     the operations on a range of bytes that allocate nothing: copy, move, fill, compare, search, and the checks of UTF-8 and of a zero byte
 ├── core-checker-base/             the faces, module run and refusals
 ├── core-checker-bridge/           kernel readmission, staging families
 ├── core-checker/                  the checking judgement under one name
