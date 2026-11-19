@@ -48,21 +48,24 @@ error[EndpointAsValue]: an endpoint can be used only by a session action
    ╰ help: use the endpoint only in a session action
 
 error[StageNotBelow]: the recursion is not structural: nothing places it below that parameter, neither as a field of it nor beside one
-   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:47:62
+   ╭▸ corpus/pathological/sessions/endpoint-parameter.gandr:50:62
    │
-45 │    def rec follow(operator : rec open => &{report : Integer >? open, retire : Integer >? end}) -> Unit =
+45 │    def rec follow(operator : rec open => &{
    │    │              ──────── checked against `(rec t => &{report : Integer >? t, retire : Integer >? end}) -> -F Unit`; while checking the rest of this receive's block; binds operator : rec t => &{report : Integer >? t, retire : Integer >? end}
    │ ┌──┘
    │ │
-46 │ │┌   offer operator {
-47 │ ││     | report => { let next = recv operator; become follow[<] operator }
+46 │ │    report : Integer >? open,
+47 │ │    retire : Integer >? end
+48 │ │  }) -> Unit =
+49 │ │┌   offer operator {
+50 │ ││     | report => { let next = recv operator; become follow[<] operator }
    │ ││                   ┬──                              ┬─────────┯━━━━━━━
    │ ││                   │                                │         │
    │ ││                   │                                │         not below the stage its recursion wants
    │ ││                   │                                checked against `-F Unit`; while synthesising the function this applies
    │ ││                   checked against `-F Unit`; while checking the rest of this receive's block
-48 │ ││     | retire => { let last = recv operator; close operator }
-49 │ ││   }
+51 │ ││     | retire => { let last = recv operator; close operator }
+52 │ ││   }
    │ ││   │
    │ └│───│
    │  └───checked against `(rec t => &{report : Integer >? t, retire : Integer >? end}) -> Unit`; while checking the body of this function; binds follow : (rec t => &{report : Integer >? t, retire : Integer >? end}) -> Unit
