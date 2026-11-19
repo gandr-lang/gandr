@@ -50,7 +50,7 @@ const REFUSED: u8 = 2;
     all(dylint_lib = "quenchant_dylints", not(test)),
     expect(
         std_container,
-        reason = "clap builds a String, and this field is the value it parses"
+        reason = "clap builds a String. The lint reads a field after #8206"
     )
 )]
 type ParsedName = String;
