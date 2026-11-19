@@ -1396,6 +1396,10 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns `FamilyHead` or `Malformed` when the head cannot be read.
     ///
+    /// # Cost
+    /// - allocation: the members of the description it reads, durable by the
+    ///   declaration
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — member-local and family-wide failures have different
     ///   surviving declarations, and a W-shaped family with and without a rule
