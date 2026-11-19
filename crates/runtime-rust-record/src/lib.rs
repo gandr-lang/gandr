@@ -29,8 +29,9 @@
 //!
 //! # References
 //!
-//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — § io-direction-interop: the
-//!   record of a Rust function, read from the toolchain that compiles it.
+//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — newest: the record of a
+//!   Rust function comes from the toolchain that compiles it (§
+//!   io-direction-interop).
 
 extern crate alloc;
 

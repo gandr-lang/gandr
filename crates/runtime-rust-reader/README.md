@@ -23,7 +23,7 @@ The reader of a Rust crate: a driver on rustc's own libraries that writes the re
 
 ## References
 
-- `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — the direction of the interop (§ io-direction-interop): a call into Rust uses rustc's own record of the function.
+The reader is no member of the workspace, so the ledger of references does not read it. `runtime-rust-record` cites the design page that the reader serves.
 
 ## Provided features
 

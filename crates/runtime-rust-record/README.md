@@ -23,7 +23,7 @@ The record of a Rust function as rustc builds it: its symbol, the passage of eac
 
 ## References
 
-- `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — the direction of the interop (§ io-direction-interop): a call into Rust uses rustc's own record of the function, not a guess from its source.
+- `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — newest: a call into Rust uses rustc's own record of the function, never a guess from its source (§ io-direction-interop).
 
 ## Provided features
 
