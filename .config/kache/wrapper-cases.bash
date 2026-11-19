@@ -63,6 +63,8 @@ for job in first second; do
   wrapper=$(RUNNER_TEMP=$scratch/$job KACHE_TRUSTED=false KACHE_USER=case KACHE_TOKEN=case "$here/kache-wrapper.bash")
   wrappers+=("$wrapper")
   "$wrapper" daemon start > /dev/null
+  grep -Eq '^repository = "ghcr.io/gandr-lang/gandr-kache-[0-9]{4}w[0-5][0-9]"$' "$scratch/$job/kache.toml" \
+    || fail "#7854: the $job job's kache remote has no ISO-week package name"
 done
 first=${wrappers[0]}
 second=${wrappers[1]}

@@ -1,0 +1,97 @@
+name: nightly-cache-retention
+
+# A manual run reports its deletion set with a read-only token. The scheduled
+# run has the write token and deletes that same set.
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: nightly-cache-retention
+  cancel-in-progress: false
+
+jobs:
+  retention:
+    if: ${{ github.event_name == 'schedule' }}
+    name: delete older cache packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      packages: write
+    steps:
+      - &list
+        name: list older weekly packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          owner=${GITHUB_REPOSITORY_OWNER:?}
+          week=$(date -u +%Gw%V)
+          page_file=$RUNNER_TEMP/cache-retention-page
+          candidate_data=$RUNNER_TEMP/cache-retention-candidates.unsorted
+          candidates=$RUNNER_TEMP/cache-retention-candidates
+          : > "$candidate_data"
+          stays=0
+          for page in 1 2; do
+            gh api "orgs/$owner/packages?package_type=container&per_page=100&page=$page" \
+              --jq '.[] | .name' > "$page_file"
+            while IFS= read -r package; do
+              if [[ $package =~ ^gandr-kache-([0-9]{4}w[0-5][0-9])$ ]]; then
+                package_week=${BASH_REMATCH[1]}
+                if [[ $package_week < $week ]]; then
+                  printf '%s\t%s\n' "$package_week" "$package" >> "$candidate_data"
+                else
+                  ((stays += 1))
+                fi
+              fi
+            done < "$page_file"
+          done
+          LC_ALL=C sort -k1,1 "$candidate_data" > "$candidates"
+          rm "$candidate_data" "$page_file"
+          older=$(( $(wc -l < "$candidates") ))
+          printf 'CACHE_RETENTION_CANDIDATES=%s\n' "$candidates" >> "$GITHUB_ENV"
+          printf 'CACHE_RETENTION_OLDER=%s\n' "$older" >> "$GITHUB_ENV"
+          printf 'CACHE_RETENTION_STAYS=%s\n' "$stays" >> "$GITHUB_ENV"
+          printf 'CACHE_RETENTION_WEEK=%s\n' "$week" >> "$GITHUB_ENV"
+      - name: delete older weekly packages
+        env:
+          CACHE_RETENTION_DRY_RUN: "false"
+        run: &retain |
+          set -euo pipefail
+          deleted=0
+          while IFS=$'\t' read -r _week package; do
+            if (( deleted == 8 )); then
+              break
+            fi
+            if [[ $CACHE_RETENTION_DRY_RUN == true ]]; then
+              printf 'would delete `%s`\n' "$package"
+            else
+              gh api --method DELETE "orgs/${GITHUB_REPOSITORY_OWNER:?}/packages/container/$package"
+            fi
+            ((deleted += 1))
+          done < "${CACHE_RETENTION_CANDIDATES:?}"
+          deferred=$((CACHE_RETENTION_OLDER - deleted))
+          if [[ $CACHE_RETENTION_DRY_RUN == true ]]; then
+            verb='would delete'
+          else
+            verb='deleted'
+          fi
+          printf 'cache retention: %s %d earlier package(s); %d earlier package(s) wait; %s current or later package(s) stay.\n' \
+            "$verb" "$deleted" "$deferred" "$CACHE_RETENTION_STAYS" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  dry-run:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    name: report older cache packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      packages: read
+    steps:
+      - *list
+      - name: report older weekly packages
+        env:
+          CACHE_RETENTION_DRY_RUN: "true"
+        run: *retain

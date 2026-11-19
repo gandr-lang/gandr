@@ -40,7 +40,7 @@
     "gandr-surface-grammar",
     "gandr-surface-parser"
   ],
-  "light": ["check:cases", "check:deny", "check:spec-cost-landed"],
+  "light": ["check:cache-retention", "check:cases", "check:deny", "check:spec-cost-landed"],
   "landing": [
     "check:corpus",
     "check:corpus-comments",

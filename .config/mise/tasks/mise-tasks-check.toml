@@ -2951,6 +2951,13 @@ run = ".config/mise/host-lock-cases.bash"
 description = "Two jobs at one time on one host each run a kache daemon of their own, and the end of one leaves the other's running"
 run = ".config/kache/wrapper-cases.bash"
 
+# The retention cases execute the shared workflow scripts against two pages of
+# packages. They observe the eight oldest deletes and the read-only dispatch.
+["check:cache-retention"]
+description = "The retention workflow reads two pages, deletes the eight oldest cache packages, and its dispatch path deletes none"
+tools.yq = "4.54.1"
+run = ".config/cache-retention/cases.bash"
+
 # A target that another compiler filled (#7497):
 # `.config/mise/target-pin-cases.bash` builds a scratch package on the tree's
 # toolchain and reads cargo's record. The step keeps the target of the tree's

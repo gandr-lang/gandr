@@ -41,7 +41,8 @@ config=$state/kache.toml
 token=$state/kache-token
 wrapper=$state/kache-wrapper
 runtime=$state/kache-runtime
-printf '[cache]\ncache_executables = true\nruntime_dir = "%s"\n\n[cache.remote]\ntype = "oci"\nrepository = "ghcr.io/gandr-lang/gandr-kache"\nprefix = "gandr"\n' "$runtime" > "$config"
+week=$(date -u +%Gw%V)
+printf '[cache]\ncache_executables = true\nruntime_dir = "%s"\n\n[cache.remote]\ntype = "oci"\nrepository = "ghcr.io/gandr-lang/gandr-kache-%s"\nprefix = "gandr"\n' "$runtime" "$week" > "$config"
 (umask 077 && printf '%s' "${KACHE_TOKEN:?}" > "$token")
 trusted=
 if [[ ${KACHE_TRUSTED:-} == true ]]; then trusted='export GITHUB_ACTIONS=false'; fi
