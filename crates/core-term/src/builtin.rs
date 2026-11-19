@@ -184,10 +184,12 @@ impl Row
     #[inline]
     pub fn named(key: Key<'_>) -> Maybe<Self, row::Absent>
     {
-        match Self::all().find(|row| row.key() == key) {
-            Some(row) => Maybe::Present(row),
-            None => Maybe::Absent(row::Absent::Unkeyed),
+        for row in Self::all() {
+            if row.key() == key {
+                return Maybe::Present(row);
+            }
         }
+        Maybe::Absent(row::Absent::Unkeyed)
     }
 }
 
