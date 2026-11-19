@@ -6,14 +6,16 @@
 # commit needs changes in one place.
 
 # Sets the scratch identity on the repository `$1`, or on the repository in
-# the working directory: a name and an address that no server reads, and no
-# signing by default. A command that asks for a signature (`rebase
-# --gpg-sign` in `chain_replay`, an annotated tag under a host's
-# `tag.gpgsign`) signs with a key of the scratch repository's own, through
+# the working directory. The identity has a name and an address that no
+# server reads. It does not sign by default.
+#
+# Some commands ask for a signature, such as `rebase --gpg-sign` in
+# `chain_replay` or an annotated tag under a host's `tag.gpgsign`. Such a
+# command signs with a key of the scratch repository's own, through
 # `ssh-keygen`. So a host's signing key, and the agent that holds it, never
-# touches a scratch commit (#7159). A host with no `ssh-keygen`, such as the
-# image of the format job, holds no signing key either, so the scratch
-# repository gets no key there and no case there signs (#5469).
+# touch a scratch commit. Each host and the CI image hold `ssh-keygen`.
+# - see: #7159, #7684
+#
 # `check:cases` refuses a case harness that commits with no call of it.
 identity() {
   local repo=${1:-.} key
@@ -21,7 +23,6 @@ identity() {
   git -C "$repo" config user.email case@example.invalid
   git -C "$repo" config commit.gpgsign false
   git -C "$repo" config tag.gpgsign false
-  command -v ssh-keygen > /dev/null || return 0
   key=$(git -C "$repo" rev-parse --absolute-git-dir)/scratch-signing-key
   [[ -e $key ]] || ssh-keygen -q -t ed25519 -N '' -C case -f "$key"
   git -C "$repo" config gpg.format ssh
