@@ -1,0 +1,67 @@
+// This source shows the machine widths and their operations.
+//
+// `u8`, `u16`, `i8`, `i16`, `usize` and `isize` join the four widths.
+// `usize` and `isize` hold 64 bits, the word of each target.
+// Each width has the same forms, called by their qualified names.
+//
+// A `wrapping_` form reduces its result modulo two to the bit count.
+// A `saturating_` form clamps its result to the nearest bound.
+// A `checked_` form answers `w + Unit`, with the absence on the right.
+//
+// - see: Rust `u8::wrapping_add`, `u8::checked_add` — integer methods.
+
+/// The greatest `u8`.
+@[runs("255u8")]
+def greatest_u8() -> u8 = 255u8;
+
+/// One past the greatest `u8` does not fit.
+@[refuses("MalformedLiteral")]
+def overflowed_u8 = 256u8;
+
+/// The least `i8`.
+@[runs("-128i8")]
+def least_i8() -> i8 = i8.from_integer (- 128);
+
+/// The greatest `u16`.
+@[runs("65535u16")]
+def greatest_u16() -> u16 = 65535u16;
+
+/// The greatest `i16`.
+@[runs("32767i16")]
+def greatest_i16() -> i16 = 32767i16;
+
+/// The greatest `usize`, which is the greatest `u64`.
+@[runs("18446744073709551615usize")]
+def greatest_usize() -> usize = 18446744073709551615usize;
+
+/// Minus one at `isize`.
+@[runs("-1isize")]
+def minus_one_isize() -> isize = isize.from_integer (- 1);
+
+/// The greatest `u8` plus one wraps to zero.
+@[runs("0u8")]
+def wrapped_u8() -> u8 = u8.wrapping_add 255u8 1u8;
+
+/// The greatest `u8` plus one stays at the greatest.
+@[runs("255u8")]
+def saturated_u8() -> u8 = u8.saturating_add 255u8 1u8;
+
+/// The greatest `u8` plus one is absent.
+@[runs("+{.1 = *{}}")]
+def checked_u8() -> u8 + Unit = u8.checked_add 255u8 1u8;
+
+/// A sum that fits is present.
+@[runs("+{.0 = 255u8}")]
+def fitting_u8() -> u8 + Unit = u8.checked_add 254u8 1u8;
+
+/// A shift by the bit count is absent.
+@[runs("+{.1 = *{}}")]
+def shifted_u32() -> u32 + Unit = u32.checked_shl 1u32 32u32;
+
+/// A comparison answers a boolean.
+@[runs("+{.0 = *{}}")]
+def below_i16() -> Unit + Unit = i16.lt (i16.from_integer (- 1)) 0i16;
+
+/// A width form takes its own width only.
+@[refuses("TypeMismatch")]
+def mixed_u8() -> u8 = u8.wrapping_add 1u8 1u16;

@@ -1,0 +1,15 @@
+// This source shows a functor argument from an imported module.
+//
+// `model-functor.gandr` provides `Squaring` and `Times`.
+//
+// The checker resolves the imported module through an unqualified import.
+//
+// - see: #1993
+import "./model-functor.gandr";
+
+/// `ImportedSquared` applies `Squaring` to `Times`.
+module ImportedSquared = Squaring(Times);
+
+/// `sixteen` squares four through `ImportedSquared`.
+@[runs("16")]
+def sixteen() -> Integer = ImportedSquared.square 4;

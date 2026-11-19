@@ -1,0 +1,3 @@
+import text.greet (hidden);
+def a : Integer;
+def a = 1;
