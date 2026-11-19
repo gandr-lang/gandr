@@ -1,5 +1,5 @@
-//! The parser's sweeps: the corpus cut short and with each token dropped,
-//! against the recovery records and through the molder's two procedures.
+//! The parser's sweeps: the corpus with each token dropped, against the
+//! facts of recovery and through the molder's two procedures.
 //!
 //! Each visits its stated sample under every pull-request profile, the whole
 //! corpus under the `sweeps` profile, and the night's slice of it under the
@@ -57,7 +57,7 @@ use crate::failure::Failure;
 /// The recovery sweep's sample: forty-eight sources, and the rows of every
 /// sixteenth significant token of each, widened past [`SAMPLED_SPAN`].
 const RECOVERY: Sample = Sample {
-    name: SampleName("dropped_tokens_recover_no_worse_than_the_record"),
+    name: SampleName("each_variant_parses_marks_and_keeps_the_clean_tree"),
     size: SampleSize(48),
 };
 
@@ -75,9 +75,10 @@ const RECOVERY_STRIDE: usize = 16;
 /// alone (#4668).
 const RECOVERY_NIGHTS: Nights = Nights(78);
 
-/// The most tab-separated fields a recovery record row holds, with room
-/// to spare: a row with more is read as its first this many.
-const ROW_FIELDS: usize = 8;
+/// The most nodes a variant's tree holds for each significant token of its
+/// source: the bound on the parser's work, stated in the count of nodes that
+/// the tree gives.
+const NODES_PER_TOKEN: usize = 16;
 
 /// The table sweep's sample: twelve sources, the rows of every sixteenth
 /// significant token of each, every sixty-fourth under `anodized_panic`. A
@@ -123,20 +124,25 @@ struct RowStep(usize);
 #[derive(Clone, Copy, Debug)]
 struct TokenCount(usize);
 
-/// Every corpus source, whole and cut short after each significant token,
-/// keeps its recorded tree, and dropping each significant token recovers no
-/// worse than the record.
+/// Every corpus source keeps its recorded tree, and each variant of it, the
+/// source with one significant token dropped, parses, marks what it repairs
+/// and stays under a bound of work.
 ///
 /// Each source of the fixture and strict roots has a record under
 /// `tests/recovery/` at its path in the corpus, with the extension `recovery`.
-/// Its first row is the whole parse's obligation count, node count and
-/// fingerprint; then comes one row per significant token: the parse cut short
-/// after it (obligations, nodes and the fingerprint's first eight hex digits)
-/// and the parse with it dropped (obligations and nodes). A whole or cut-short
-/// row must match exactly. A dropped row is worse when either count grows; the
-/// failure names the worst. A source with no record, a record whose rows do not
-/// match its source's tokens and a record with no source are stale; the
-/// failure names each, with the command that re-records it.
+/// The record is one row: the whole parse's obligation count, node count and
+/// fingerprint. The row must match exactly, so a change of the tree of a
+/// source is one changed line of its record in the same change. A source with
+/// no record, a record of another shape and a record with no source are
+/// stale; the failure names each, with the command that re-records it.
+///
+/// Each variant owes three facts. It gives a tree. Its tree holds at most
+/// [`NODES_PER_TOKEN`] nodes for each significant token of its text, and one
+/// more such share, since the parser states its work in nodes. A variant whose
+/// tree holds a repair, a grout or a minted close, owes one obligation or
+/// more, and each obligation's span lies inside the variant's text. The count
+/// of obligations refuses nothing: `ledger:recovery` reports its classes as a
+/// number of each pull request.
 ///
 /// The fingerprint hashes the tree's significant nodes in preorder, as the
 /// tree's own digest does, but names each mold by its rule, its label and its
@@ -152,42 +158,30 @@ struct TokenCount(usize);
 /// `ci:recovery-change` names the sources a pull request touches, so its
 /// sweep holds those records alone. `UPDATE_EXPECT=1 mise run ci:recovery`
 /// rewrites every record and deletes those whose source is gone. The rewrite
-/// is a reviewed diff, never a
-/// blind re-pin: a dropped row whose counts grew is a recovery regression, and
-/// a whole or cut-short row that moved is a tree change, each answered by the
-/// change that causes it. A row that a landing leaves worse by a reviewed
-/// ruling keeps its new count in the record and a line of
-/// `tests/recovery-owed.tsv` that names the issue owing the count it lost
-/// (#6323). A row that reads its owed count or less again refuses nothing:
-/// its line stays until a change deletes it (#8152).
+/// is a reviewed diff, never a blind re-pin: a row that moved is a tree
+/// change, answered by the change that causes it.
 ///
-/// The whole matrix is some two hundred thousand parses, two for each of the
-/// corpus's hundred thousand significant tokens (`mise run ci:recovery`, and
-/// the `sweeps` profile), and the rewrite always runs it; the `nightly`
-/// profile parses every source whole and the night's thirteenth of each
-/// source's rows ([`Rotation::holds_row`]). A queue entry that changes the
-/// parser, its grammar or its syntax tree (`crates/surface-parser/`,
-/// `crates/surface-grammar/`, `crates/surface-syntax/`) reaches every record,
-/// and the plain lane runs the whole matrix for it; the enforcing shards keep
-/// the sample, where the whole matrix would take half an hour. The sources
-/// are independent, so they are parsed on every available core, the longest
-/// first ([`observed_in_parallel`]): run one after another, the whole matrix
-/// took 127 s of the plain lane's critical path (#2148). The sample,
-/// [`RECOVERY`], parses forty-eight sources: each one's whole row and the
-/// rows of every sixteenth significant token, a source past [`SAMPLED_SPAN`]
-/// tokens at that step times its multiple of the span ([`sampled_step`]).
-/// Its companion parses the sources the change touches beside them (#4654).
-/// Every source's record is still required to exist, and every record to have
-/// a source, under every profile.
+/// The whole matrix is one parse for each of the corpus's hundred thousand
+/// significant tokens (`mise run ci:recovery`, and the `sweeps` profile), and
+/// the rewrite reads every whole source; the `nightly` profile parses every
+/// source whole and the night's share of each source's variants
+/// ([`Rotation::holds_row`]). The sources are independent, so they are parsed
+/// on every available core, the longest first ([`observed_in_parallel`]). The
+/// sample, [`RECOVERY`], parses forty-eight sources: each one whole and the
+/// variants of every sixteenth significant token, a source past
+/// [`SAMPLED_SPAN`] tokens at that step times its multiple of the span
+/// ([`sampled_step`]). Its companion parses the sources the change touches
+/// beside them (#4654). Every source's record is still required to exist, and
+/// every record to have a source, under every profile.
 #[test]
-fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Failure>
+fn each_variant_parses_marks_and_keeps_the_clean_tree() -> Result<(), Failure>
 {
     recovers(Portion::Fixed)
 }
 
 /// The change's sources beside the fixed set (#4654).
 #[test]
-fn dropped_tokens_recover_no_worse_than_the_record_changed() -> Result<(), Failure>
+fn each_variant_parses_marks_and_keeps_the_clean_tree_changed() -> Result<(), Failure>
 {
     recovers(Portion::Changed)
 }
@@ -200,13 +194,13 @@ fn dropped_tokens_recover_no_worse_than_the_record_changed() -> Result<(), Failu
 /// trivial.
 ///
 /// # Errors
-/// A source or record that cannot be read or written, or a row that does not
-/// parse.
+/// A source or record that cannot be read or written, or a variant that gives
+/// no tree.
 fn recovers(portion: Portion) -> Result<(), Failure>
 {
     use core::fmt::Write as _;
 
-    /// How many moved or worse rows a failure lists.
+    /// How many moved rows or broken facts a failure lists.
     const LISTED: usize = 16;
 
     let pbg = built();
@@ -328,7 +322,7 @@ fn recovers(portion: Portion) -> Result<(), Failure>
     let mut sourced: HashSet<PathBuf> = HashSet::new();
     let mut stale = Vec::new();
     let mut moved = Vec::new();
-    let mut worse: Vec<(usize, usize, String)> = Vec::new();
+    let mut broken: Vec<String> = Vec::new();
     let mut jobs: Vec<(&str, PathBuf, &Path)> = Vec::new();
     for source in &sources {
         let rel = source.name.as_ref();
@@ -352,126 +346,104 @@ fn recovers(portion: Portion) -> Result<(), Failure>
     let observations = observed_in_parallel(
         &jobs,
         |&(_, _, path)| path,
-        |&(_, _, path)| {
+        |&(rel, _, path)| {
             let src = std::fs::read_to_string(path)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
-            let mut observed = String::new();
+            let mut whole_row = String::new();
+            let mut faults: Vec<String> = Vec::new();
             let mut dropped = String::new();
             let whole =
                 parse(pbg, SourceText::from(src.as_str())).map_err(|error| error.to_string())?;
-            let digest = fingerprint(whole.tree());
             writeln!(
-                observed,
-                "W\t{}\t{}\t{digest}",
+                whole_row,
+                "W\t{}\t{}\t{}",
                 whole.obligations().len(),
-                whole.tree().positions().count()
+                whole.tree().positions().count(),
+                fingerprint(whole.tree())
             )
             .map_err(|error| error.to_string())?;
+            if update {
+                return Ok((whole_row, faults));
+            }
             let labelled = label(SourceFragment::from(src.as_str()));
             let significant = || {
                 labelled
                     .iter()
                     .filter(|token| token.lexeme != Lexeme::Space)
             };
-            let RowStep(step) =
-                sampled_step(coverage, RowStep(stride), TokenCount(significant().count()));
+            let tokens = significant().count();
+            let RowStep(step) = sampled_step(coverage, RowStep(stride), TokenCount(tokens));
+            // The variant holds one significant token fewer than the source.
+            let bound = NODES_PER_TOKEN.saturating_mul(tokens);
             for (index, token) in significant().enumerate() {
                 if !index.is_multiple_of(step)
                     || rotation.holds_row(Row(index), RECOVERY_NIGHTS) == Held::Elsewhen
                 {
-                    writeln!(observed, "T").map_err(|error| error.to_string())?;
                     continue;
                 }
                 let start = usize::try_from(token.start).map_err(|error| error.to_string())?;
                 let end = usize::try_from(token.end).map_err(|error| error.to_string())?;
-                let cut = parse(pbg, SourceText::from(src.get(.. end).unwrap_or_default()))
-                    .map_err(|error| error.to_string())?;
-                let cut_digest = fingerprint(cut.tree());
                 dropped.clear();
                 dropped.push_str(src.get(.. start).unwrap_or_default());
                 dropped.push_str(src.get(end ..).unwrap_or_default());
-                let variant = parse(pbg, SourceText::from(dropped.as_str()))
-                    .map_err(|error| error.to_string())?;
-                writeln!(
-                    observed,
-                    "T\t{}\t{}\t{}\t{}\t{}",
-                    cut.obligations().len(),
-                    cut.tree().positions().count(),
-                    cut_digest.get(.. 8).unwrap_or_default(),
-                    variant.obligations().len(),
-                    variant.tree().positions().count()
-                )
-                .map_err(|error| error.to_string())?;
+                let variant = match parse(pbg, SourceText::from(dropped.as_str())) {
+                    Ok(variant) => variant,
+                    Err(error) => {
+                        faults.push(format!("{rel} drop {index} gives no tree: {error}"));
+                        continue;
+                    },
+                };
+                let tree = variant.tree();
+                let nodes = tree.positions().count();
+                if nodes > bound {
+                    faults.push(format!(
+                        "{rel} drop {index} builds {nodes} nodes, past the bound of {bound}"
+                    ));
+                }
+                let repaired = tree.positions().any(|at| {
+                    label_of(tree, at).is_some_and(|node| {
+                        matches!(node, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. })
+                    })
+                });
+                if repaired && variant.obligations().is_empty() {
+                    faults.push(format!(
+                        "{rel} drop {index} repairs its tree and owes no obligation"
+                    ));
+                }
+                if let Some(outside) = variant
+                    .obligations()
+                    .iter()
+                    .find(|obligation| usize::from(obligation.span.end()) > dropped.len())
+                {
+                    faults.push(format!(
+                        "{rel} drop {index} owes {:?} at {:?}, outside its text of {} bytes",
+                        outside.class,
+                        outside.span,
+                        dropped.len()
+                    ));
+                }
             }
-            Ok(observed)
+            Ok((whole_row, faults))
         },
     )?;
-    for (&(rel, ref record, _), observed) in jobs.iter().zip(&observations) {
+    for (&(rel, ref record, _), (whole_row, faults)) in jobs.iter().zip(observations) {
         if update {
             if let Some(parent) = record.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(record, observed)?;
+            std::fs::write(record, &whole_row)?;
             continue;
         }
+        broken.extend(faults);
         let recorded = std::fs::read_to_string(record)?;
-        let (rows, recorded_rows) = (observed.lines().count(), recorded.lines().count());
-        if rows != recorded_rows {
+        if recorded.lines().count() != 1 || !recorded.starts_with("W\t") {
             stale.push(format!(
-                "{rel} has {rows} rows and its record {recorded_rows}; {}",
+                "{rel} has a record of another shape; {}",
                 rerecord(rel)
             ));
-            continue;
         }
-        for (row, (got, want)) in observed.lines().zip(recorded.lines()).enumerate() {
-            let token = row.saturating_sub(1);
-            // Each row's fields, the observed then the recorded, split into
-            // fixed slots rather than a fresh vector per row.
-            let mut slots = [[""; ROW_FIELDS]; 2];
-            let mut counts = [0_usize; 2];
-            for ((row_slots, count), text) in slots.iter_mut().zip(&mut counts).zip([got, want]) {
-                for (slot, field) in row_slots.iter_mut().zip(text.split('\t')) {
-                    *slot = field;
-                    *count = count.saturating_add(1);
-                }
-            }
-            let ([ref observed_slots, ref recorded_slots], [count, recorded_count]) =
-                (slots, counts);
-            let fields = observed_slots.get(.. count).unwrap_or(&[]);
-            let recorded_fields = recorded_slots.get(.. recorded_count).unwrap_or(&[]);
-            match (fields, recorded_fields) {
-                (&["T"], &["T", ..]) => {},
-                (&["W", ..], &["W", ..]) => {
-                    if got != want {
-                        moved.push(format!("{rel} whole"));
-                    }
-                },
-                (
-                    &["T", ref cut @ .., obligations, nodes],
-                    &["T", ref recorded_cut @ .., old_obligations, old_nodes],
-                ) if cut.len() == 3 && recorded_cut.len() == 3 => {
-                    if cut != recorded_cut {
-                        moved.push(format!("{rel} cut after token {token}"));
-                    }
-                    let obligations: usize = obligations.parse()?;
-                    let nodes: usize = nodes.parse()?;
-                    let old_obligations: usize = old_obligations.parse()?;
-                    let old_nodes: usize = old_nodes.parse()?;
-                    if obligations > old_obligations || nodes > old_nodes {
-                        worse.push((
-                            obligations.saturating_sub(old_obligations),
-                            nodes.saturating_sub(old_nodes),
-                            format!(
-                                "{rel} drop {token}: obligations {old_obligations} -> {obligations}, nodes {old_nodes} -> {nodes}"
-                            ),
-                        ));
-                    }
-                },
-                _ => {
-                    stale.push(format!("{rel} row {row} is malformed; {}", rerecord(rel)));
-                    break;
-                },
-            }
+        else if recorded != whole_row {
+            moved.push(format!("{rel} whole"));
         }
     }
     let mut orphans = Vec::new();
@@ -510,23 +482,15 @@ fn recovers(portion: Portion) -> Result<(), Failure>
     );
     assert!(
         moved.is_empty(),
-        "{} whole or cut-short trees moved from the record: {:?}",
+        "{} whole trees moved from the record: {:?}",
         moved.len(),
         moved.iter().take(LISTED).collect::<Vec<_>>()
     );
-    let worst = worse
-        .iter()
-        .max_by_key(|&&(obligations, nodes, _)| (obligations, nodes));
     assert!(
-        worse.is_empty(),
-        "{} dropped tokens recover worse than the record; worst {:?}; first {:?}",
-        worse.len(),
-        worst.map(|entry| &entry.2),
-        worse
-            .iter()
-            .take(LISTED)
-            .map(|entry| &entry.2)
-            .collect::<Vec<_>>()
+        broken.is_empty(),
+        "{} variants break a fact of recovery; first {:?}",
+        broken.len(),
+        broken.iter().take(LISTED).collect::<Vec<_>>()
     );
     Ok(())
 }
@@ -549,7 +513,7 @@ fn recovers(portion: Portion) -> Result<(), Failure>
 /// - hypothesis: L3 — the whole recovery sweep compares every observed row with
 ///   the record kept at the job's own source; a result out of the jobs' order,
 ///   or one missing, moves every row after it and fails the sweep.
-/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |observed| observed.len() == jobs.len()))]
 fn observed_in_parallel<T, J>(
     jobs: &[T],
@@ -623,7 +587,7 @@ where
 /// - hypothesis: L3 — the sampled sweeps visit a source of 4729 tokens beside
 ///   sources under the span; a step that never widened would take the bound,
 ///   and one that widened under the whole sweep would skip rows it owes.
-/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+/// - witness: `tests::sweeps::each_variant_parses_marks_and_keeps_the_clean_tree`
 /// - witness: `tests::sweeps::table_verdicts_equal_dry_run_verdicts`
 #[spec(ensures: |ret| ret.0 >= stride.0 && match coverage {
     Coverage::Full => ret.0 == stride.0,

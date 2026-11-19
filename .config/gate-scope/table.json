@@ -290,12 +290,10 @@
         "crates/",
         "ledger/"
       ],
-      "check:recovery-rise": [
-        ".config/cases/",
-        ".config/recovery/",
-        "corpus/",
-        "crates/surface-corpus/strict/",
-        "crates/surface-parser/tests/"
+      "check:recovery-counts": [
+        ".config/mise/tasks/mise-tasks-check.toml",
+        ".config/mise/tasks/mise-tasks-ci.toml",
+        ".config/recovery/"
       ],
       "check:references": [
         ".config/bodies/",
