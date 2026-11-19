@@ -1,0 +1,3 @@
+data Past : (n : Nat, i : Fin(n)) --> Type where {
+  | Over : (n : Nat, i : Fin(n)) --> Past(Succ(n), i)
+}

@@ -1,0 +1,1 @@
+def outside : Integer = S.seed;
