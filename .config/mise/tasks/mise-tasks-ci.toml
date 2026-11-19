@@ -4049,11 +4049,13 @@ jq -r 'group_by(.file)[] | [.[0].file, (map([.start, .end]) | unique | tojson)] 
   | while IFS=$'\t' read -r file ranges; do printf '%s\0%s\0' "$file" "$ranges"; done > "$scratch/blame-requests"
 if [[ -s $scratch/blame-requests ]]; then
   xargs -0 -P "$(nproc)" -n 2 bash -c '
-    mapfile -t flags < <(jq -r ".[] | \"-L\", \"\(.[0]),\(.[1])\"" <<< "$5")
+    ranges_file=$2/$$.ranges.json
+    printf '%s' "$5" > "$ranges_file"
+    mapfile -t flags < <(jq -r ".[] | \"-L\", \"\(.[0]),\(.[1])\"" "$ranges_file")
     git blame --porcelain ${3:+"$3"} "${flags[@]}" -- "$4" > "$2/$$.porcelain"
-    jq -n -c --rawfile porcelain "$2/$$.porcelain" --argjson ranges "$5" "{porcelain: \$porcelain, ranges: \$ranges}" \
+    jq -n -c --rawfile porcelain "$2/$$.porcelain" --slurpfile ranges "$ranges_file" "{porcelain: \$porcelain, ranges: \$ranges[0]}" \
       | jq -c -f "$1/blame.jq" | jq -c --arg file "$4" "with_entries(.key = \"\(\$file):\(.key)\")" > "$2/$$.json"
-    rm -- "$2/$$.porcelain"' _ "$rules" "$scratch/dates" "$rev" < "$scratch/blame-requests"
+    rm -- "$2/$$.porcelain" "$ranges_file"' _ "$rules" "$scratch/dates" "$rev" < "$scratch/blame-requests"
 fi
 jq -s -c 'add // {}' "$scratch"/dates/*.json < /dev/null > "$scratch/dates.json"
 # The crates that no other crate names (#6817), each with the epics that its
