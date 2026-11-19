@@ -1,5 +1,5 @@
-/// `builtin-declarations`: a module of `std` declares a row of the native
-/// table. The signature has no body, and the mark `native` names the row.
+/// `builtin-declarations`: a module of `std` binds a row of the builtin table.
+/// The signature has no body, and the mark `builtin` names the row by its key.
 /// Implemented: `std.string` declares `string.append` as `append`, and a call
 /// of the declaration is a call of the row.
 /// Not implemented: each other row keeps its reserved name, and no module of

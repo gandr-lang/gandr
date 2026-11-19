@@ -1,5 +1,0 @@
-/// `NativeMark.OutsideStd`: a `native` mark in a source that is no module of
-/// `std`. Only `std` declares a row of the native table.
-@[refuses("NativeMark.OutsideStd")]
-@[builtin("string.append")]
-def append : (a : String, b : String) -> String;

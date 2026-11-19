@@ -1,5 +1,0 @@
-/// `NativeMark.Bodied`: a `native` mark on a declaration with a body. The row
-/// gives the value, so the declaration has no body.
-@[refuses("NativeMark.Bodied")]
-@[builtin("string.append")]
-def append(a : String, b : String) -> String = a;

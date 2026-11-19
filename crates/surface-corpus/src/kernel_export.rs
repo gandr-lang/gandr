@@ -2382,7 +2382,10 @@ mod kernel_discard_readmission
 /// diverge are refused by name.
 mod kernel_presented_readmission
 {
+    use alloc::string::String;
+    use alloc::string::ToString;
     use alloc::vec::Vec;
+    use std::path::Path;
     use std::path::PathBuf;
 
     use gandr_kernel_core::EndpointSide;
@@ -2410,6 +2413,7 @@ mod kernel_presented_readmission
     use gandr_kernel_term::ValueType;
     use gandr_surface_grammar::built_in;
 
+    use super::Class;
     use super::Root;
     use super::Swept;
     use super::export;
@@ -2954,23 +2958,95 @@ mod kernel_presented_readmission
         });
     }
 
+    /// A package named `std` in a fresh directory named by `label`, whose
+    /// module `std.holders` is `text`: the path of that module. Only a
+    /// package of the toolchain holds a role, so a holder is laid there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn laid_in_std(
+        label: &str,
+        text: &str,
+    ) -> PathBuf
+    {
+        let library = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../library/std"));
+        let root =
+            std::env::temp_dir().join(alloc::format!("gandr-{label}-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).expect("the package's sources are made");
+        for model in ["package.gandr", "package.gandr.toml"] {
+            let _bytes = std::fs::copy(library.join(model), root.join(model))
+                .expect("the model of `std` is copied");
+        }
+        let path = root.join("src/holders.gandr");
+        std::fs::write(&path, text).expect("the holders write");
+        path
+    }
+
+    /// #8071: the holder of `E` whose `δ` case asks for a function from the
+    /// family is refused by the checker as `BuiltinMark.NotCanonical`, laid as
+    /// a module of `std`.
+    #[test]
+    fn a_holder_of_e_whose_delta_case_asks_from_the_family_is_refused_by_the_checker_8071()
+    {
+        let path = laid_in_std(
+            "ir-holders-8071",
+            include_str!("kernel_export/fixtures/ir-holders.gandr"),
+        );
+        let pbg = built_in().expect("the built-in grammar builds");
+        let swept = export(&pbg, path.clone(), Root::Fixture);
+        std::fs::remove_dir_all(
+            path.parent()
+                .and_then(Path::parent)
+                .expect("a package root"),
+        )
+        .expect("the package is removed");
+        let Swept::Exported(exported) = swept
+        else {
+            panic!("the holders lower");
+        };
+        let refused: Vec<String> = exported
+            .classes
+            .iter()
+            .filter_map(|&(_, class)| match class {
+                Class::Marked(name) | Class::NeverOffered(name) => Some(name.to_string()),
+                Class::Defined
+                | Class::Assumed
+                | Class::Data
+                | Class::Withheld
+                | Class::Static
+                | Class::Unfinished
+                | Class::Suspended
+                | Class::Session
+                | Class::Unrepresentable(_)
+                | Class::Located
+                | Class::World => None,
+            })
+            .collect();
+        assert_eq!(
+            refused,
+            ["BuiltinMark.NotCanonical"],
+            "only `fields` is refused, by the checker, at its role"
+        );
+    }
+
     #[test]
     fn a_holder_of_e_whose_delta_case_asks_from_the_family_is_refused_by_the_kernel_5304()
     {
         use gandr_kernel_term::Builtin;
-        // The pathological holder of `E` with its mark taken off: the checker
-        // admits it as a plain definition, so it crosses, and the kernel meets
-        // its body once the role is forged back on.
-        let unmarked = include_str!("../../../corpus/pathological/universe/ir-holders.gandr")
-            .replace("@[builtin(irArgs), refuses(\"BuiltinNotCanonical\")]\n", "");
-        let path = std::env::temp_dir().join(alloc::format!(
-            "gandr-ir-fields-5304-{}.gandr",
-            std::process::id()
-        ));
-        std::fs::write(&path, unmarked).expect("the unmarked holder writes");
+        // The holder of `E` with its mark taken off: the checker admits it as
+        // a plain definition, so it crosses, and the kernel meets its body
+        // once the role is forged back on.
+        let unmarked = include_str!("kernel_export/fixtures/ir-holders.gandr")
+            .replace("@[builtin(\"irArgs\")]\n", "");
+        let path = laid_in_std("ir-fields-5304", &unmarked);
         let pbg = built_in().expect("the built-in grammar builds");
         let swept = export(&pbg, path.clone(), Root::Fixture);
-        std::fs::remove_file(&path).expect("the unmarked holder is removed");
+        std::fs::remove_dir_all(
+            path.parent()
+                .and_then(Path::parent)
+                .expect("a package root"),
+        )
+        .expect("the package is removed");
         let Swept::Exported(exported) = swept
         else {
             panic!("the unmarked holder lowers");

@@ -8530,16 +8530,13 @@ mod tests
     }
 
     /// #3575: a `builtin` mark gives the declaration it decorates the role
-    /// its word names, and an unmarked declaration takes none. A word that
-    /// names no role is refused at the payload.
+    /// its key names, and an unmarked declaration takes none. A key that
+    /// names no role gives none.
     #[test]
     fn a_builtin_mark_gives_its_declaration_the_role_3575()
     {
         use gandr_kernel_term::Builtin;
         use gandr_kernel_term::builtin_role;
-
-        use crate::attribute::PayloadForm;
-        use crate::attribute::RegisteredAttribute;
 
         let mut arena = CoreArena::new();
         let module = lowered(
@@ -8561,23 +8558,17 @@ mod tests
         assert_eq!(
             role("a"),
             Maybe::Present(Builtin::IrArgs),
-            "the mark gives the role its word names"
+            "the mark gives the role its key names"
         );
         assert_eq!(
             role("b"),
             Maybe::Absent(builtin_role::Absent::Unmarked),
             "an unmarked declaration takes no role"
         );
-        assert!(
-            matches!(
-                refusal(SourceText::from("@[ builtin(irElim) ] def a = 3 ;")),
-                LoweringRefusal::IllTypedPayload {
-                    name: RegisteredAttribute::BUILTIN,
-                    written: PayloadForm::OtherWord,
-                    ..
-                }
-            ),
-            "a word that names no role is refused at the payload"
+        assert_eq!(
+            role("c"),
+            Maybe::Absent(builtin_role::Absent::Unnamed),
+            "a key that names no role gives none"
         );
     }
 

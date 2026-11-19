@@ -104,10 +104,11 @@ const HOST_ENTRY: Reason = Reason(
     "raised only under a host entry, `gandr check --entry`, and a fixture is settled under none",
 );
 
-/// Why no source of the ledger reaches a fault of a `native` mark past its
+/// Why no source of the ledger reaches a fault of a `builtin` mark past its
 /// place: the mark stands in a module of `std` alone, and an exemplar is none.
 const STD_ONLY: Reason = Reason(
-    "the check runs in a module of `std` alone, and an exemplar is refused as outside `std` first",
+    "the check runs in a module of `std` alone, and an exemplar is refused as outside the \
+     toolchain first",
 );
 
 /// A tracker issue, by number.
@@ -131,7 +132,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 71_usize] = [
+const OWED: [(&str, Owed); 76_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -364,8 +365,13 @@ const OWED: [(&str, Owed); 71_usize] = [
     ),
     ("HostWorldUndeclared", Owed::Unreachable(HOST_ENTRY)),
     ("EntryUngranted", Owed::Unreachable(HOST_ENTRY)),
-    ("NativeMark.TypeDiffers", Owed::Unreachable(STD_ONLY)),
-    ("NativeMark.SecondDeclaration", Owed::Unreachable(STD_ONLY)),
+    ("BuiltinMark.NoRow", Owed::Unreachable(STD_ONLY)),
+    ("BuiltinMark.Bodied", Owed::Unreachable(STD_ONLY)),
+    ("BuiltinMark.Unbodied", Owed::Unreachable(STD_ONLY)),
+    ("BuiltinMark.Repeated", Owed::Unreachable(STD_ONLY)),
+    ("BuiltinMark.TypeDiffers", Owed::Unreachable(STD_ONLY)),
+    ("BuiltinMark.Misplaced", Owed::Unreachable(STD_ONLY)),
+    ("BuiltinMark.NotCanonical", Owed::Unreachable(STD_ONLY)),
     (
         "OutOfFragment.ValueLift",
         Owed::Unreachable(Reason(

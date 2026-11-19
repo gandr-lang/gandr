@@ -62,11 +62,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   carries a `builtin` mark whose payload is a text takes the row that
     ///   its key names: a native value in the context's natives, and a role in
     ///   the context's roles when no earlier slot holds the role. The mark is
-    ///   refused by name instead, by the first of these faults: the key names
-    ///   no row; a given row's declaration has a body; a found row's
-    ///   declaration has none; the source is no module of `std`; an earlier
-    ///   slot holds the role. A mark whose payload is no text is left to the
-    ///   attribute pass, which refuses it.
+    ///   refused by name instead, by the first of these faults: the source is
+    ///   no module of `std`; the key names no row; a given row's declaration
+    ///   has a body; a found row's declaration has none; an earlier slot holds
+    ///   the role. A mark whose payload is no text is left to the attribute
+    ///   pass, which refuses it.
     /// - panics: none.
     /// - executable: none — the rows and the refusals are tables of the
     ///   context, and a predicate would read every slot again.
@@ -109,13 +109,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 continue;
             };
             let bodied = matches!(slot.definition, Maybe::Present(_));
-            let found = match Row::named(Key(key.as_ref())) {
-                Maybe::Absent(_) => Err(BuiltinFault::NoRow),
-                Maybe::Present(row) => match (row.direction(), bodied, homed) {
-                    (Direction::Given, true, _) => Err(BuiltinFault::Bodied),
-                    (Direction::Found, false, _) => Err(BuiltinFault::Unbodied),
-                    (_, _, false) => Err(BuiltinFault::OutsideToolchain),
-                    (Direction::Given, false, true) | (Direction::Found, true, true) => Ok(row),
+            let found = match (homed, Row::named(Key(key.as_ref()))) {
+                (false, _) => Err(BuiltinFault::OutsideToolchain),
+                (true, Maybe::Absent(_)) => Err(BuiltinFault::NoRow),
+                (true, Maybe::Present(row)) => match (row.direction(), bodied) {
+                    (Direction::Given, true) => Err(BuiltinFault::Bodied),
+                    (Direction::Found, false) => Err(BuiltinFault::Unbodied),
+                    (Direction::Given, false) | (Direction::Found, true) => Ok(row),
                 },
             };
             read.push((SlotIndex::from(index), mark.at.node, mark.span, found));

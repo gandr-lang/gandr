@@ -1,8 +1,0 @@
-error[NativeMark.Bodied]: a declaration with a `native` mark has no body
-  ╭▸ corpus/ledger/diagnostics/NativeMark.Bodied.gandr:4:3
-  │
-4 │ @[native("string.append")]
-  │   ━━━━━━━━━━━━━━━━━━━━━━━ a native declaration with a body
-  │
-  ├ note: `append` is refused with NativeMark.Bodied, as its expectation states
-  ╰ help: delete the body, and the row gives the value
