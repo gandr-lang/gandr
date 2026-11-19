@@ -4964,10 +4964,11 @@ mise run --quiet check:refactoring "$body" \
 # changes has its row in `## Preserved and changed`.
 mise run --quiet check:deletes --title "${usage_title:?}" "$body" "$from" \
   || { echo "account for what the change takes out in \`## Deletes\`, then run \`pr:open\` again" >&2; exit 2; }
-# A change under the parser, its grammar or its syntax tree states the five
-# counts of `ledger:recovery` at its base and at its head, and their share
-# marked where they were made falls at most one point (#8152,
-# `check:recovery-counts`).
+# A change can touch the parser, its grammar or its syntax tree. Its body then
+# states the five counts of `ledger:recovery` at its base and at its head. A
+# fall of more than one point in the share marked where made is refused.
+#
+# - see: #8152, `check:recovery-counts`
 "$(git rev-parse --show-toplevel)/.config/recovery/counts.bash" "$from" "$body" \
   || { echo "state the counts of recovery as the lines above ask, then run \`pr:open\` again" >&2; exit 2; }
 # Landed worktrees go before anything else, and under the disk floor the

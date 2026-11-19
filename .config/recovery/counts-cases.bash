@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# The cases of `counts.bash` (#8152), run by `check:recovery-counts`. Each case
+# The cases of `counts.bash`. `check:recovery-counts` runs them. Each case
 # commits a base and a head in a scratch repository. A stub stands for
 # `ledger:recovery`: it prints the line of `counts.txt` in the tree it runs in.
+#
+# - see: #8152
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$here/../cases/scratch.bash"

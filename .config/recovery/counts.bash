@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-# The five counts of recovery in a pull request's body (#8152), read by
-# `pr:open`:
+# The five counts of recovery in a pull request's body. `pr:open` reads them:
 #
 #   counts.bash <base> <body>
 #
-# A change under the parser, its grammar or its syntax tree states the counts
-# of `ledger:recovery` at its base and at its head, in a `### Recovery`
-# subsection of its body:
+# A change can touch the parser, its grammar or its syntax tree. Its body then
+# states the counts of `ledger:recovery` at its base and at its head. They
+# stand in a `### Recovery` subsection:
 #
 #   - base: <the last line of ledger:recovery at the base>
 #   - head: <the last line of ledger:recovery at the head>
 #
-# The script computes both lines, the base in a scratch worktree, and refuses
-# a body that states other lines, with the lines to write. It refuses a fall
-# of the share "marked where they were made" of more than one point from the
-# base to the head, unless the subsection holds a line that the owner admits
-# it: `- fall: admitted by the owner, <where>`. A change that touches none of
-# the three crates passes with no subsection. `RECOVERY_LEDGER` names the
-# command that prints the counts in a tree, for the cases.
+# The script computes both lines, the base in a scratch worktree. It refuses
+# a body that states other lines, and it names the lines to write.
+#
+# The script also measures the share "marked where they were made" at the
+# base and at the head. A fall of more than one point is refused. The owner's
+# word admits a fall in one line: `- fall: admitted by the owner, <where>`.
+#
+# A change that touches none of the three crates passes with no subsection.
+# `RECOVERY_LEDGER` names the command that prints the counts in a tree, for
+# the cases.
+#
+# - see: #8152
 set -euo pipefail
 base=${1:?usage: counts.bash <base> <body>}
 body=${2:?usage: counts.bash <base> <body>}

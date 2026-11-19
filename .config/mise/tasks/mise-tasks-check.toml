@@ -3126,11 +3126,13 @@ run = [".config/build-state/restamp.bash", ".config/build-state/freshness.bash"]
 description = "A pull request's recovery sweep holds the records its change touches, and every record for the parser or a removed source"
 run = ".config/recovery/change-cases.bash"
 
-# The five counts of recovery in a pull request's body (#8152):
-# `.config/recovery/counts-cases.bash` commits a base and a head in a scratch
-# repository, `ledger:recovery` stubbed, and runs `counts.bash` on each case:
-# a change outside the parser, stated counts, other counts, a fall of two
-# points and a fall that the owner admits.
+# The five counts of recovery in a pull request's body. A harness commits a
+# base and a head in a scratch repository, with `ledger:recovery` stubbed. It
+# runs `counts.bash` on five cases. A change outside the parser and stated
+# counts pass. Other counts and a fall of two points are refused. A fall that
+# the owner admits passes.
+#
+# - see: #8152, `.config/recovery/counts-cases.bash`
 ["check:recovery-counts"]
 description = "A body states the counts of recovery at its base and at its head, and their share falls at most one point"
 run = ".config/recovery/counts-cases.bash"
