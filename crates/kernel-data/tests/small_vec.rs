@@ -761,7 +761,7 @@ fn an_empty_vector_at_n_zero_holds_a_dangling_block_8124()
     assert_eq!(
         (
             from_array.as_slice().as_ptr(),
-            boxed.as_ptr(),
+            (&raw const *boxed).cast::<u64>(),
             unboxed.as_ptr(),
             unboxed.capacity()
         ),
