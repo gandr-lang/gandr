@@ -14372,7 +14372,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   constructor; empty parentheses are refused by name; a result's group
     ///   of outputs lowers to the many-value returner.
     /// - witness: `gandr-surface-lowering::lower::tests::an_arrow_lowers_under_a_thunk_type`
-    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_is_refused_by_name_5192`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_parenthesized_product_is_refused_by_name_at_its_opener_8050`
     /// - witness: `gandr-surface-lowering::lower::tests::the_alias_is_the_thunked_arrow`
     /// - witness: `gandr-surface-lowering::lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `gandr-surface-lowering::lower::native::tests::a_type_valued_calls_argument_takes_an_annotation_3633`
