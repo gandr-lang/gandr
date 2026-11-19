@@ -354,27 +354,30 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             }
             resolved.push((SlotIndex::from(index), theory, members, refused));
         }
+        let mut reached = Vec::new();
+        let mut held = BTreeSet::new();
         for (position, theory, mut members, refused) in resolved {
             // An included theory's ports stand in the theory's members, and
             // its source resolved them first: an earlier source, or an
             // earlier theory of this one, which this pass has stored.
-            let reached: Vec<_> = cx
-                .collected
-                .included
-                .get(&position)
-                .into_iter()
-                .flatten()
-                .filter_map(|&(included, _)| {
-                    cx.collected
-                        .slots
-                        .get(usize::from(included))
-                        .map(|held| held.introduced_by.node)
-                })
-                .collect();
-            let mut held: BTreeSet<_> = members.iter().map(|&(ref name, _)| name.clone()).collect();
-            for node in reached {
-                for &(ref name, member) in cx.collected.port_sorts.get(&node).into_iter().flatten()
-                {
+            reached.clear();
+            reached.extend(
+                cx.collected
+                    .included
+                    .get(&position)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|&(included, _)| {
+                        cx.collected
+                            .slots
+                            .get(usize::from(included))
+                            .map(|slot| slot.introduced_by.node)
+                    }),
+            );
+            held.clear();
+            held.extend(members.iter().map(|&(ref name, _)| name.clone()));
+            for node in &reached {
+                for &(ref name, member) in cx.collected.port_sorts.get(node).into_iter().flatten() {
                     if held.insert(name.clone()) {
                         members.push((name.clone(), member));
                     }
