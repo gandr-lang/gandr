@@ -163,6 +163,9 @@
 //!   bikeshed (row "An effect whose sort is fixed at a type"): the row entry's
 //!   spelling, `T with sort x = A`, which [`CapabilityRef::returner_row`]
 //!   reads.
+//! - `vault:01a1e7b4-8c77-7a81-9165-ff37ea870424` — anchor: the direction of
+//!   I/O (§ io-direction-interop): a handler in gandr answers the interface of
+//!   an `extern` block, which `capability_scope` records as a host scope.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
