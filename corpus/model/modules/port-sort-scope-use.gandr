@@ -1,0 +1,20 @@
+// This source shows a model of a theory that another source declares.
+//
+// The port of `say` names `Integer` in the declaring source, where it names
+// the strings. This source sees the prelude's `Integer`. The model still gives
+// a word, because the port reads the declaring source's binding.
+//
+// - see: #8139
+// - see: model/modules/port-sort-scope.gandr
+// - see: pathological/modules/port-sort-scope.gandr
+
+import "./port-sort-scope.gandr";
+
+/// `Loud` says the same word of each flag.
+module Loud : Model(Shout) where
+  type C = Bool;
+  /// `say` gives the word.
+  def say(flag : Bool) -> String = "loud";
+
+/// The word of a flag, through the model.
+def shouted() -> String = Loud.say true;

@@ -1,0 +1,18 @@
+// A model that reads a port at its own scope's `Integer`.
+//
+// The port of `say` names `Integer` in the declaring source, where it names
+// the strings. This source sees the prelude's `Integer`. A member that gives
+// a prelude integer does not give the word that the port names, so the model
+// refuses it.
+//
+// - see: #8139
+// - see: model/modules/port-sort-scope.gandr — the theory and its binding
+
+import "../../model/modules/port-sort-scope.gandr";
+
+/// `Quiet` gives a number where the port names a word.
+module Quiet : Model(Shout) where
+  type C = Bool;
+  /// `say` gives a prelude integer, which the port does not name.
+  @[refuses("TypeMismatch")]
+  def say(flag : Bool) -> Integer = 0;

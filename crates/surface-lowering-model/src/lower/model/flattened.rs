@@ -514,8 +514,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 binds: &binds,
                 manifests: sorts,
             }),
-            atoms: slot.theories.first().map_or(&[][..], |theory| {
-                self.cx().collected.port_atoms_of(theory.signature.theory)
+            ported: slot.theories.first().map_or(&[][..], |theory| {
+                self.cx().collected.port_sorts_of(theory.signature.theory)
             }),
             origin,
         };

@@ -1526,16 +1526,11 @@ pub struct Collected<'source>
     pub descriptions: Layered<NodeIndex, crate::description::DescribedDeclaration>,
     /// Member-local diagnostics retained independently of native admission.
     pub description_diagnostics: Vec<crate::description::DescriptionDiagnostic>,
-    /// The type atom that each kept port sort of a theory names, keyed by the
-    /// theory's written declaration: the resolve of its source's scope, kept
-    /// apart from the descriptions that a layer can share (#8139).
-    pub port_atoms: BTreeMap<
-        NodeIndex,
-        Vec<(
-            gandr_theory_levitation::Name,
-            gandr_core_term::builtin::TypeAtom,
-        )>,
-    >,
+    /// The type member that each kept port sort of a theory names, keyed by
+    /// the theory's written declaration: the resolve of its source's scope,
+    /// kept apart from the descriptions that a layer can share (#8139).
+    pub port_sorts:
+        BTreeMap<NodeIndex, Vec<(gandr_theory_levitation::Name, TypeComponent<'source>)>>,
     /// The data families the native reading owns whole, where their members
     /// are written.
     pub natives: Vec<crate::description::NativeFamily>,
@@ -3752,7 +3747,7 @@ pub fn begin_collection<'source>(
                 .collect(),
         ),
         description_diagnostics: described.diagnostics,
-        port_atoms: BTreeMap::new(),
+        port_sorts: BTreeMap::new(),
         natives: described.natives,
         cells,
         slots: Vec::new(),

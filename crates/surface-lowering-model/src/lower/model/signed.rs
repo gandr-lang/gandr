@@ -435,7 +435,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                 binds: &[],
                 manifests: &[],
             }),
-            atoms: self.cx().collected.port_atoms_of(derived.theory),
+            ported: self.cx().collected.port_sorts_of(derived.theory),
             origin: Origin::new(named.node, named.span),
         };
         for component in &derived.components {
@@ -525,13 +525,13 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
             Ok(produced) => produced,
             Err(unmatched) => return Maybe::Present(unmatched),
         };
-        let minting = |named: Placed, atoms| Minting {
+        let minting = |named: Placed, ported| Minting {
             members: Members::Fields(Fields {
                 before: &[],
                 binds: &[],
                 manifests: &[],
             }),
-            atoms,
+            ported,
             origin: Origin::new(named.node, named.span),
         };
         // The codomain's components by name, the first of each name kept.
@@ -560,7 +560,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                     form,
                     &minting(
                         signature.named,
-                        self.cx().collected.port_atoms_of(stated.theory),
+                        self.cx().collected.port_sorts_of(stated.theory),
                     ),
                     sink,
                 ),
@@ -568,7 +568,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
                     made_form,
                     &minting(
                         codomain.named,
-                        self.cx().collected.port_atoms_of(produced.theory),
+                        self.cx().collected.port_sorts_of(produced.theory),
                     ),
                     sink,
                 ),

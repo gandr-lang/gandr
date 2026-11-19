@@ -39,6 +39,7 @@ use gandr_core_term::builtin::Row;
 use gandr_core_term::equal_type_syntax;
 use gandr_core_term::primitive::Primitive;
 use gandr_kernel_term::Literal;
+use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 
 use super::Expressions;
@@ -53,7 +54,6 @@ use crate::module::Half;
 use crate::module::Operand;
 use crate::module::Payload;
 use crate::module::SlotIndex;
-use crate::module::TypeMeaning;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
 use crate::resolve::type_atom;
@@ -261,22 +261,25 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - requires: the collection declared the current source's slots and read
     ///   its builtin marks.
     /// - ensures: each theory of the current source whose presentation keeps a
-    ///   port sort takes, in the collection's port atoms under its written
-    ///   declaration, the atom of each kept name that the scope binds to a type
-    ///   member under a `builtin` mark, or that the table of atoms still
-    ///   answers; each other kept name is refused as a port at a sort that no
-    ///   sort declares, at its bytes.
+    ///   port sort, or that includes a theory, takes, in the collection's port
+    ///   sorts under its written declaration, the type member that the scope
+    ///   binds each kept name to, and each that its included theories took. A
+    ///   kept name that no member binds and that the table of atoms answers
+    ///   takes nothing, and the carrier reads the atom. Each other kept name is
+    ///   refused as a port at a sort that no sort declares, at its bytes.
     /// - panics: none.
-    /// - executable: none — the atoms and the refusals are tables of the
+    /// - executable: none — the members and the refusals are tables of the
     ///   collection, and a predicate would resolve every name again.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a port at the prelude's `Integer` reads its atom, and
-    ///   a port at a name that no scope binds is refused at its bytes.
-    /// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_resolves_in_the_scope_of_its_source_8139`
+    /// - hypothesis: L3 — a port at a name that its source binds reads that
+    ///   source's member, in a source that uses the theory too, and a port at a
+    ///   name that no scope binds is refused at its bytes.
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_reads_the_binding_of_its_theory_s_source_8139`
+    /// - witness: `gandr-surface-lowering::lower::row::tests::a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139`
     ///
     /// # Cost
-    /// - allocation: the atoms of each theory's kept names, durable by the
+    /// - allocation: the members of each theory's kept names, durable by the
     ///   collection
     /// - allocation: the refusal of an unbound name, error path
     #[inline]
@@ -303,7 +306,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 continue;
             };
             let theory = slot.introduced_by.node;
-            let mut atoms = Vec::new();
+            let mut members = Vec::new();
             let mut refused = Vec::new();
             for ported in &presentation.ported {
                 // The kept name at its bytes, read back as a name of the
@@ -331,18 +334,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                             Ok(Maybe::Absent(_)) | Err(_) => None,
                         })
                 });
-                let atom = match member {
-                    Some(member) => match (member.meaning, cx.builtin_atom(member.held)) {
-                        (TypeMeaning::Builtin(_), Maybe::Present(atom)) => Some(atom),
-                        _ => None,
-                    },
-                    None => match type_atom(SurfaceName::from(ported.sort.as_ref())) {
-                        Maybe::Present(atom) => Some(atom),
-                        Maybe::Absent(_) => None,
-                    },
-                };
-                match atom {
-                    Some(atom) => atoms.push((ported.sort.clone(), atom)),
+                match member {
+                    Some(member) => members.push((ported.sort.clone(), member)),
+                    // economy: a name that the table of atoms still answers
+                    // reads its atom at the carrier, until #8140 declares
+                    // each atom as a type member.
+                    None if matches!(
+                        type_atom(SurfaceName::from(ported.sort.as_ref())),
+                        Maybe::Present(_)
+                    ) => {},
                     None => refused.push(unknown_port_sort(
                         &ported.operation,
                         &ported.sort,
@@ -350,9 +350,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     )),
                 }
             }
-            resolved.push((SlotIndex::from(index), theory, atoms, refused));
+            resolved.push((SlotIndex::from(index), theory, members, refused));
         }
-        for (position, theory, mut atoms, refused) in resolved {
+        for (position, theory, mut members, refused) in resolved {
             // An included theory's ports stand in the theory's members, and
             // its source resolved them first: an earlier source, or an
             // earlier theory of this one, which this pass has stored.
@@ -370,14 +370,26 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 })
                 .collect();
             for node in reached {
-                for &(ref name, atom) in cx.collected.port_atoms.get(&node).into_iter().flatten() {
-                    if !atoms.iter().any(|&(ref held, _)| held == name) {
-                        atoms.push((name.clone(), atom));
+                for &(ref name, member) in cx.collected.port_sorts.get(&node).into_iter().flatten()
+                {
+                    if !members.iter().any(|&(ref held, _)| held == name) {
+                        members.push((name.clone(), member));
                     }
                 }
             }
-            let _first = cx.collected.port_atoms.insert(theory, atoms);
-            cx.collected.description_diagnostics.extend(refused);
+            let _first = cx.collected.port_sorts.insert(theory, members);
+            // The collection read the theory's refusals before its scope
+            // stood, so a port at a name that nothing binds refuses the
+            // theory here, as the description read refuses its other faults.
+            let written = cx
+                .tree
+                .fragment(theory)
+                .unwrap_or_else(|| SourceFragment::from(""));
+            if let Some(diagnostic) = refused.first()
+                && let Some(slot) = cx.collected.slots.get_mut(usize::from(position))
+            {
+                slot.refuse(theory, diagnostic.lowering_refusal(written));
+            }
         }
     }
 }

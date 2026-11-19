@@ -596,24 +596,24 @@ impl<'source> Collected<'source>
         crate::model::derive(presentation, theory)
     }
 
-    /// The atom of each port sort of the theory `theory` names, as the scope
-    /// of its source resolved them: none before its source's resolve pass,
-    /// and none for a signature of no written theory.
+    /// The type member that each port sort of the theory `theory` names, as
+    /// the scope of its source resolved them: none before its source's
+    /// resolve pass, and none for a signature of no written theory.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn port_atoms_of(
+    pub fn port_sorts_of(
         &self,
         theory: Maybe<gandr_surface_syntax::NodeIndex, crate::model::signature_theory::Absent>,
     ) -> &[(
         gandr_theory_levitation::Name,
-        gandr_core_term::builtin::TypeAtom,
+        crate::module::TypeComponent<'source>,
     )]
     {
         match theory {
-            Maybe::Present(node) => self.port_atoms.get(&node).map_or(&[], Vec::as_slice),
+            Maybe::Present(node) => self.port_sorts.get(&node).map_or(&[], Vec::as_slice),
             Maybe::Absent(_) => &[],
         }
     }
