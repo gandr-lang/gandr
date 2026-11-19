@@ -4,13 +4,14 @@
 //! A signature with no body owes its value. A `thir` mark names a Rust file
 //! beside the source and a function of that file, and the function's body is
 //! the value. The signature's type is `Expr` of `std.thir` at an item type.
-//! The item type names each function that a body calls, under an `item`
-//! mark:
+//! Each constructor of the item type names the Rust function that a call of
+//! it means, under an `item` mark:
 //!
 //! ```text
-//! @[item(("identity Identity", "example Example"))]
 //! pub data Item : Type where
+//!   @[item("identity")]
 //!   | Identity : Item
+//!   @[item("example")]
 //!   | Example : Item
 //!
 //! @[thir(("example.rs", "example"))]
@@ -24,7 +25,6 @@
 //! - see: #8117
 
 use alloc::collections::BTreeMap;
-use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
@@ -57,6 +57,7 @@ use crate::module::Half;
 use crate::module::Operand;
 use crate::module::Payload;
 use crate::module::SlotIndex;
+use crate::module::Standing;
 use crate::origin::Origin;
 use crate::resolve::SurfaceName;
 use crate::unit::MarkIndex;
@@ -346,19 +347,20 @@ fn shape(
 }
 
 /// The tag of the item that each call of `body` names, in the order of the
-/// calls, read from the `item` mark of the shape's item type.
+/// calls, read from the `item` mark of each constructor of the shape's item
+/// type.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Errors
-/// [`StagedFault::ItemMark`] for an item mark whose text is no path, a space
-/// and a constructor of the item type with no field, or whose path or
-/// constructor repeats. [`StagedFault::Unmapped`] for the first call whose
-/// path no text states.
+/// [`StagedFault::ItemMark`] for an item mark whose path is empty, that
+/// stands on a constructor with fields, or whose path another constructor
+/// states. [`StagedFault::Unmapped`] for the first call whose path no mark
+/// states.
 ///
 /// # Cost
-/// - allocation: the texts of the item mark and its map, setup
+/// - allocation: the map of the item marks, setup
 /// - allocation: the item of each call, growth within the body's nodes
 fn callees(
     cx: &Context<'_, '_>,
@@ -374,13 +376,27 @@ fn callees(
     else {
         return Err(ill);
     };
-    let source = cx.collected.unit.source_at(slot.named.span.start());
+    let constructors: BTreeMap<_, _> = cx
+        .collected
+        .constructors
+        .values()
+        .filter(|constructor| constructor.family == family)
+        .map(|constructor| (constructor.named, constructor))
+        .collect();
     let mut items = BTreeMap::new();
-    if let Some(written) = slot
+    for written in slot
         .attributes
         .iter()
-        .find(|written| written.name.as_ref() == RegisteredAttribute::ITEM.as_ref())
+        .filter(|written| written.name.as_ref() == RegisteredAttribute::ITEM.as_ref())
     {
+        let Standing::Constructor(named) = written.standing
+        else {
+            return Err(ill);
+        };
+        let Some(&constructor) = constructors.get(&named)
+        else {
+            return Err(ill);
+        };
         let Payload::Written(placed) = written.payload
         else {
             return Err(ill);
@@ -393,28 +409,18 @@ fn callees(
         else {
             return Err(ill);
         };
-        let mut held = BTreeSet::new();
-        for text in stated {
-            let Some((path, name)) = text.as_ref().split_once(' ')
-            else {
-                return Err(ill);
-            };
-            let Some(constructor) =
-                cx.collected
-                    .constructors
-                    .get(&(source, SurfaceName::from(name), family))
-            else {
-                return Err(ill);
-            };
-            if path.is_empty()
-                || constructor.arity != 0
-                || !held.insert(constructor.tag)
-                || items
-                    .insert(path, ConstructorTag::from(constructor.tag))
-                    .is_some()
-            {
-                return Err(ill);
-            }
+        let [text] = stated[..]
+        else {
+            return Err(ill);
+        };
+        let path: &str = text.as_ref();
+        if path.is_empty()
+            || constructor.arity != 0
+            || items
+                .insert(path, ConstructorTag::from(constructor.tag))
+                .is_some()
+        {
+            return Err(ill);
         }
     }
     body.nodes

@@ -1,8 +1,9 @@
-/// `item`: each text names a Rust path and the constructor of the item type
-/// that a staged call of that path reads as. A constructor with no text is
-/// admitted.
-@[item(("identity Identity", "example Example"))]
+/// `item`: the mark of a constructor of the item type names the Rust path
+/// that a staged call reads as that constructor. A constructor with no mark
+/// is admitted.
 data Item : Type where
+  @[item("identity")]
   | Identity : Item
+  @[item("example")]
   | Example : Item
   | Other : Item

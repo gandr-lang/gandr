@@ -1,7 +1,7 @@
 //! The twin of `example.gandr`: each `thir` mark whose function stages no
 //! expression of its type is refused by name.
 
-// `Item`, whose item mark names `identity` and `example`.
+// `Item`, whose constructors' item marks name `identity` and `example`.
 import "../../../../../corpus/model/interop/thir/example.gandr";
 
 // The expressions.
@@ -21,20 +21,21 @@ def escapesBody : Expr Item;
 @[thir(("outside.rs", "helper"))]
 def helperBody : Expr Item;
 
-/// `calls` calls `helper`, and the item mark of `Item` states no constructor
-/// for it.
+/// `calls` calls `helper`, and no constructor of `Item` states it.
 @[refuses("StagedBody.Unmapped")]
 @[thir(("outside.rs", "calls"))]
 def callsBody : Expr Item;
 
-/// An item type whose item mark names a constructor that it does not
-/// declare.
-@[item("helper Missing")]
+/// An item type whose two constructors state one path.
 data Broken : Type where
-  /// The one item.
+  /// The first item.
+  @[item("helper")]
   | Helper : Broken
+  /// A second item at the same path.
+  @[item("helper")]
+  | Again : Broken
 
-/// `calls` calls `helper`, and the item mark of `Broken` is ill-formed.
+/// `calls` calls `helper`, and two item marks of `Broken` state it.
 @[refuses("StagedBody.ItemMark")]
 @[thir(("outside.rs", "calls"))]
 def brokenBody : Expr Broken;

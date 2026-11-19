@@ -371,6 +371,9 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
         LoweringRefusal::IllTypedPayload { name, expected, .. } => {
             format!("give `{name}` {expected}")
         },
+        LoweringRefusal::MisplacedAttribute { name, takes, .. } => {
+            format!("write `{name}` before {takes}")
+        },
         LoweringRefusal::NonValuePayload { .. } => {
             String::from("give the attribute a value payload")
         },

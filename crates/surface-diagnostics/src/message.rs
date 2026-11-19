@@ -631,6 +631,9 @@ fn lowered(
             written,
             ..
         } => write!(f, "the attribute `{name}` takes {expected}, not {written}"),
+        LoweringRefusal::MisplacedAttribute {
+            name, place, takes, ..
+        } => write!(f, "the attribute `{name}` stands on {takes}, not on {place}"),
         LoweringRefusal::ForwardMemberReference { name, .. } => {
             write!(f, "the member `{name}` is used before it is declared")
         },

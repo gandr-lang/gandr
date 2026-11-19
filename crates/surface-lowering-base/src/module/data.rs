@@ -447,6 +447,21 @@ pub struct DataMember
     pub introducer: Placed,
     /// The attribute blocks written before it, in order.
     pub blocks: Vec<Placed>,
+    /// The name tile of the constructor that the member declares, or the
+    /// absence for a member that declares none.
+    pub constructor: Maybe<Placed, member_constructor::Absent>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a member of a data declaration holds no constructor.
+    pub mod member_constructor {
+        /// The reason no constructor is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The member is no constructor arm.
+            Unwritten,
+        }
+    }
 }
 
 /// Where the generators of a constructor's family are read from.
@@ -1281,6 +1296,7 @@ impl<'source> Collector<'_, 'source>
                     first: at,
                     introducer: blocks.first().copied().unwrap_or(at),
                     blocks: core::mem::take(&mut blocks),
+                    constructor: Maybe::Absent(member_constructor::Absent::Unwritten),
                 });
             }
             match piece {
@@ -1295,6 +1311,9 @@ impl<'source> Collector<'_, 'source>
                         Maybe::Present(Piece::Tile { label, at })
                             if label == TileName::CONSTRUCTOR =>
                         {
+                            if let Some(member) = members.last_mut() {
+                                member.constructor = Maybe::Present(at);
+                            }
                             generators.extend(self.generator(
                                 at,
                                 cursor,

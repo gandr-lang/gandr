@@ -1321,6 +1321,21 @@ pub enum LoweringRefusal<'source>
         written: PayloadForm,
     },
 
+    /// An attribute written at a place that the registry does not let it
+    /// stand: before a declaration where it takes a constructor, or the
+    /// reverse.
+    MisplacedAttribute
+    {
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+        /// The registered name written at the wrong place.
+        name: RegisteredAttribute,
+        /// The place where it is written.
+        place: crate::attribute::AttributePlace,
+        /// The place that it takes.
+        takes: crate::attribute::AttributePlace,
+    },
+
     /// A module member named at or after the position of the member that
     /// names it.
     ForwardMemberReference
@@ -2366,6 +2381,9 @@ impl fmt::Display for LoweringRefusal<'_>
                 written,
                 ..
             } => write!(f, "`{name}` takes {expected} and was given {written}"),
+            Self::MisplacedAttribute {
+                name, place, takes, ..
+            } => write!(f, "`{name}` stands on {takes}, and here it stands on {place}"),
             Self::ForwardMemberReference { name, .. } => write!(
                 f,
                 "the member `{name}` is declared at or after the member naming it; a member \
@@ -2936,6 +2954,7 @@ impl LoweringRefusal<'_>
             | Self::MissingPayload { span, .. }
             | Self::NonValuePayload { span, .. }
             | Self::IllTypedPayload { span, .. }
+            | Self::MisplacedAttribute { span, .. }
             | Self::ForwardMemberReference { span, .. }
             | Self::PhaseDependence { span, .. }
             | Self::InertRead { span, .. }
