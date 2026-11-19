@@ -1,0 +1,2 @@
+def x : -F Integer;
+def x = pure 1;

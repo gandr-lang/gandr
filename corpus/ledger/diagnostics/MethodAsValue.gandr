@@ -1,0 +1,14 @@
+/// `MethodAsValue`: a method that writes through its receiver, named as a value.
+/// `Counter` holds the method.
+module Counter where
+  /// `bump` adds one to its receiver.
+  def bump(self : Integer) -> Unit =
+    access self as v { resume v (v + 1) }
+
+/// `named` binds `Counter.bump` as a value.
+@[refuses("MethodAsValue")]
+def named() -> Integer =
+  var n = 1
+  let f = Counter.bump
+  f n
+  pure n

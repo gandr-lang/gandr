@@ -1,0 +1,4 @@
+pub data Point : Type where { | One : Point }
+pub def one : Point;
+def one = One;
+def pending = ?;

@@ -1,0 +1,30 @@
+// This source tests host modules inside a block.
+//
+// `fs`, `path` and `env` access the file system, paths and environment.
+//
+// The lowering does not yet admit module member selection. The pathological
+// examples cover uncalled selection, an unknown member and wrong arity.
+//
+// - see: #1106 — `tour`
+
+/// `tour` creates a directory and exercises `fs`, `path` and `env`. It writes,
+/// reads, globs and states a file beside the working directory and search path.
+@[refuses("OutOfFragment.projection_expression")]
+def tour() -> *{content : String, name : String, ext : String, kind : String} =
+  let dir = fs.tempdir
+  let nested = path.join dir "nested"
+  fs.mkdir nested
+  let file = path.join nested "greeting.txt"
+  fs.write file "hello from gandr"
+  let content = fs.read file
+  let matches = fs.glob (path.join nested "*.txt")
+  let stat = fs.stat file
+  let cwd = fs.cwd
+  let tracked = fs.ls_files "."
+  let path_entries = env.path
+  pure *{
+    content = content,
+    name = path.basename file,
+    ext = path.extension file,
+    kind = stat.kind
+  }
