@@ -207,7 +207,7 @@ fn a_port_sort_no_scope_binds_is_refused_at_its_bytes_8139()
 #[test]
 fn the_scope_wins_over_the_atom_8139()
 {
-    let text = "type Integer = String ;\ndef word(x : Integer) -> String = x ;\ndef number() -> Integer = 0 ;\n";
+    let text = include_str!("tests/unformatted/the-scope-wins-over-the-atom-8139.gandr");
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text), &Unit::single(), &mut arena);
     let report = judged(&module, &mut arena);
