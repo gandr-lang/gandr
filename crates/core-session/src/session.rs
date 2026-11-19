@@ -1,11 +1,12 @@
 //! Closed, contractive syntax in a flat arena.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 /// A position in one session's syntax arena.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -146,7 +147,7 @@ impl core::error::Error for TypeError
 pub struct Session
 {
     /// The exclusively owned syntax tree, including variable leaves.
-    nodes: Vec<Node>,
+    nodes: SmallVec<Node, 0, Global>,
     /// The root of the syntax tree.
     root: NodeId,
 }
@@ -193,6 +194,9 @@ impl Session
     /// # Errors
     /// Returns the corresponding [`TypeError`] with the offending node.
     ///
+    /// # Cost
+    /// - allocation: the visits pending, growth within twice the arena's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 exact refusals distinguish malformed edges, sibling
     ///   scope escape, structural cycles/sharing, and both unguarded heads.
@@ -214,14 +218,15 @@ impl Session
     )]
     #[inline]
     pub fn new(
-        nodes: Vec<Node>,
+        nodes: SmallVec<Node, 0, Global>,
         root: NodeId,
     ) -> Result<Self, TypeError>
     {
         let session = Self { nodes, root };
         let mut seen = BTreeSet::new();
         let mut binders = BTreeSet::new();
-        let mut pending = alloc::vec![Visit::Enter(root)];
+        let mut pending = SmallVec::<Visit, 0, Global>::new();
+        pending.push(Visit::Enter(root));
         while let Some(visit) = pending.pop() {
             let id = match visit {
                 Visit::Leave(id) => {
@@ -273,6 +278,9 @@ impl Session
     /// - ensures: send/receive and select/offer swap; payload identities,
     ///   labels, continuations, recursion binding, and end are preserved.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the dual arena, growth within the arena's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L2 explicit independent protocol duals and L3 all former

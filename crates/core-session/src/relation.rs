@@ -3,7 +3,6 @@
 use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_data::SmallVec;
@@ -175,7 +174,8 @@ pub fn relate_states(
 ) -> Result<RelationResult, TypeError>
 {
     let mut visited = BTreeSet::new();
-    let mut pending = alloc::vec![(left_state, right_state)];
+    let mut pending = SmallVec::<(NodeId, NodeId), 0, Global>::new();
+    pending.push((left_state, right_state));
     while let Some((left_id, right_id)) = pending.pop() {
         let (left_id, left_node) = left.head(left_id)?;
         let (right_id, right_node) = right.head(right_id)?;
@@ -277,6 +277,10 @@ enum Orientation
 /// - provides: `Unrelated` on missing labels or unequal equivalence widths.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the pairs of matched continuations, growth within the branches
+///   of the subset
+///
 /// # Adequacy
 /// - hypothesis: L3 nested choices distinguish width reversal from the separate
 ///   obligation to preserve direction inside matched continuations.
@@ -298,7 +302,7 @@ fn branches(
     superset: &BTreeMap<Label, NodeId>,
     relation: Relation,
     orientation: Orientation,
-    pending: &mut Vec<(NodeId, NodeId)>,
+    pending: &mut SmallVec<(NodeId, NodeId), 0, Global>,
 ) -> Decision
 {
     if relation == Relation::Equivalent && subset.len() != superset.len() {

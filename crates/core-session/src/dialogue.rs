@@ -20,12 +20,14 @@
 //! nodes a gandr program sees: series, parallel and prime, over events named
 //! by their endpoint and their position among its moves.
 
+use alloc::alloc::Global;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 
 use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::WebPiece;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_theory_deep_inference::DecompositionRefusal;
 use gandr_theory_deep_inference::DependenceBits;
 use gandr_theory_deep_inference::LinearizationRefusal;
@@ -197,6 +199,10 @@ impl DialogueWeb
     /// - panics: none.
     /// - executable: none — the clause would build the same edges again.
     ///
+    /// # Cost
+    /// - allocation: the facings of each endpoint and the web's edges, growth
+    ///   within the turns and twice their count
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — one message decomposes to its send before the two
     ///   endpoints' tails side by side, and two sends queued before the first
@@ -209,7 +215,10 @@ impl DialogueWeb
     where
         Turns: IntoIterator<Item = (Endpoint, Facing)>,
     {
-        let (mut left, mut right) = (Vec::new(), Vec::new());
+        let (mut left, mut right) = (
+            SmallVec::<Facing, 0, Global>::new(),
+            SmallVec::<Facing, 0, Global>::new(),
+        );
         for (endpoint, facing) in turns {
             match endpoint {
                 Endpoint::Left => left.push(facing),
@@ -221,8 +230,10 @@ impl DialogueWeb
             right: right.len(),
             precedes: DependenceBits::closure(WebVertexCount::from(0_usize), &[]),
         };
-        let mut edges =
-            Vec::with_capacity(left.len().saturating_add(right.len()).saturating_mul(2));
+        let mut edges = SmallVec::<_, 0, Global>::with_capacity_in(
+            Count::from(left.len().saturating_add(right.len()).saturating_mul(2)),
+            Global,
+        );
         for (side, facings) in [(Endpoint::Left, &left), (Endpoint::Right, &right)] {
             for at in 1 .. facings.len() {
                 edges.push((
@@ -286,6 +297,10 @@ impl DialogueWeb
     /// # Errors
     /// As above.
     ///
+    /// # Cost
+    /// - allocation: the pieces, their pending factors and the shared pieces,
+    ///   growth within the nodes of the decomposition
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — one message decomposes to its send before the two
     ///   endpoints' tails side by side, two sends queued before the first
@@ -302,8 +317,12 @@ impl DialogueWeb
         else {
             return Ok(Arc::from([]));
         };
-        let mut pieces = Vec::with_capacity(usize::from(tree.node_count()));
-        let mut pending = Vec::from([root]);
+        let mut pieces = SmallVec::<WebPiece, 0, Global>::with_capacity_in(
+            Count::from(usize::from(tree.node_count())),
+            Global,
+        );
+        let mut pending = SmallVec::<_, 0, Global>::new();
+        pending.push(root);
         while let Some(id) = pending.pop() {
             let Maybe::Present(node) = tree.node(id)
             else {
@@ -328,7 +347,7 @@ impl DialogueWeb
             pieces.push(piece);
             pending.extend(factors.iter().rev().copied());
         }
-        Ok(Arc::from(pieces))
+        Ok(Arc::from(pieces.as_slice()))
     }
 
     /// The web's vertex for `event`.
@@ -454,6 +473,10 @@ impl DialogueWeb
 /// # Errors
 /// As above.
 ///
+/// # Cost
+/// - allocation: the moves of each endpoint and the run, growth within the
+///   dialogue's turns
+///
 /// # Adequacy
 /// - hypothesis: L3 — the seat and the operator's dialogue is admitted in two
 ///   interleavings; a receipt recorded before its send is refused by that edge;
@@ -469,8 +492,8 @@ pub fn admit(
     dialogue: &[Turn],
 ) -> Result<DialogueWeb, DialogueRefusal>
 {
-    let mut left = Vec::new();
-    let mut right = Vec::new();
+    let mut left = SmallVec::<Move, 0, Global>::new();
+    let mut right = SmallVec::<Move, 0, Global>::new();
     for turn in dialogue {
         match turn.side {
             Endpoint::Left => left.push(turn.movement.clone()),
@@ -545,7 +568,7 @@ pub fn admit(
             .map(|turn| (turn.side, Facing::of_move(&turn.movement))),
     );
     let (mut lefts, mut rights) = (0_usize, 0_usize);
-    let mut run = Vec::with_capacity(dialogue.len());
+    let mut run = SmallVec::<_, 0, Global>::with_capacity_in(Count::from(dialogue.len()), Global);
     for turn in dialogue {
         let count = match turn.side {
             Endpoint::Left => &mut lefts,

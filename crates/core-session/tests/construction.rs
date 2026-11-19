@@ -62,10 +62,13 @@ fn malformed_arenas_are_refused()
         ),
     ];
     for (nodes, error) in cases {
-        assert_eq!(Session::new(nodes, NodeId(0)).err(), Some(error));
+        assert_eq!(
+            Session::new(nodes.into_iter().collect(), NodeId(0)).err(),
+            Some(error)
+        );
     }
     assert_eq!(
-        Session::new(alloc::vec![Node::End], NodeId(9)).err(),
+        Session::new(core::iter::once(Node::End).collect(), NodeId(9)).err(),
         Some(TypeError::MissingNode(NodeId(9)))
     );
 }
@@ -122,7 +125,9 @@ fn nonzero_root_and_dual_preserve_the_protocol()
     use crate::common::payload;
 
     let protocol = Session::new(
-        alloc::vec![Node::End, Node::Send(YIELD, NodeId(0))],
+        [Node::End, Node::Send(YIELD, NodeId(0))]
+            .into_iter()
+            .collect(),
         NodeId(1),
     )
     .expect("nonzero root owns the whole tree");
