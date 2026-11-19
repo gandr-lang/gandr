@@ -105,10 +105,11 @@ sqlite3 -bail "$fresh/shared.db" < ledger/shared.sql
 sqlite3 "$fresh/shared.db" .dump > ledger/shared.sql
 '''
 
-# The listing of the built-in names, `ledger/builtins.sql`, is edited by hand:
-# an `INSERT` added or changed. This task rewrites it as `sqlite3`'s own dump,
-# rows in key order, refusing a row that breaks a constraint and leaving the
-# file as it was. `check:builtins` holds the round trip.
+# A person writes each change of the listing of the builtins as an `INSERT`.
+# This task rewrites the listing as the own dump of `sqlite3`, with its rows in
+# key order. A row that breaks a constraint is refused, and the file stays as
+# it was. `check:builtins` holds the round trip.
+# - see: `ledger/builtins.sql`
 ["ledger:builtins"]
 description = "Normalize ledger/builtins.sql as its own sqlite3 dump"
 run = '''

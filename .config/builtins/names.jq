@@ -1,8 +1,8 @@
-# The built-in names that the places outside the one table hold, one line per
-# name and place. A place is a list of names in a surface crate that a later
-# unit of #8070 moves into the table of `gandr-core-term`. That table gives
+# The names of the builtins that the surface places hold, one line for each
+# name and place. A place is a list of names in a surface crate. A later unit
+# moves each place into the one table of `gandr-core-term`. That table gives
 # its own names through a test of its crate.
-# - see: #8098, `ledger/builtins.sql`
+# - see: #8070, #8098, `ledger/builtins.sql`
 #
 # The input is the lines that `git grep -n` prints for the places and for the
 # constants of their spellings. Each line is `<file>:<line>:<text>`. The
@@ -10,9 +10,9 @@
 # once, sorted.
 #
 # A block opens at a list of names and closes at the end of its item. The
-# lists are the constants of the resolver, the molder, the highlighter and the
-# member table, and the rules of the type grammar whose tiles are heads. A
-# member is `<Head>.<member>`, or bare when its holder is `Bare`. A member
+# lists are constants of the resolver, the molder, the highlighter and the
+# member table. They are also rules of the type grammar whose tiles are heads.
+# A member is `<Head>.<member>`, or bare when its holder is `Bare`. A member
 # that a constant spells reads the constant's text.
 #
 # The highlighter lists the universes `Type` and `Type+` beside the atoms. A

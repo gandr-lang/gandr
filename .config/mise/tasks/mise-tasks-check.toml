@@ -2419,12 +2419,12 @@ read -r fields chunked layered whole grows read_only stated <<< "$counts"
 echo "shared check OK: $fields fields, each with its row; rows: $chunked chunked, $layered layered, $whole copied whole, $grows grows with the module, $read_only read only; $stated stated rows, each naming an item its file declares"
 {% endraw %}'''
 
-# The listing of the built-in names holds a row in `builtin` for every name
-# that a place of the tree gives the toolchain. Every row names such a name.
-# The one table of `gandr-core-term` gives its names through its own test,
-# since a macro makes its rows of the widths. Each other place is a list in a
-# surface crate, and `.config/builtins/names.jq` reads it.
-# - see: #8098, `ledger/builtins.sql`, `vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf`
+# The listing of the builtins holds a row in `builtin` for every name that a
+# place of the tree gives the toolchain. Every row names such a name. The one
+# table of `gandr-core-term` gives its names through its own test, since a
+# macro makes its rows of the widths. Each other place is a list in a surface
+# crate, and a reader of the text finds its names.
+# - see: #8098, `ledger/builtins.sql`, `.config/builtins/names.jq`, `vault:01a1f320-0881-7ed1-9a54-c0c713ccf7cf`
 #
 # Each reader stands until a later unit moves its place into the table. The
 # table below names that unit for each place.
