@@ -1,0 +1,10 @@
+/// `hold_expression`: reading a held cell.
+world seat;
+module Seat :> *{mobile type Report, progress : Report} where {
+  type Report = String;
+  @[checks]
+  def progress = "progress";
+}
+@[entry(seat)]
+def progress() -> -F (Seat.Report at seat) =
+  (hold Seat.progress)

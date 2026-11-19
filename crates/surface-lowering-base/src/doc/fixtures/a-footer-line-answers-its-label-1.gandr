@@ -1,0 +1,5 @@
+/// See [guide], [`spec`] and [other].
+///
+/// [guide]: https://example.org
+/// [`spec`]: ../spec.md
+def x = 1;

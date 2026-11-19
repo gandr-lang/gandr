@@ -1,0 +1,40 @@
+/// This source states quasi-inverses and bi-invertible equivalences.
+///
+/// A quasi-inverse has one forward map, one backward map, and two round trips.
+/// A bi-invertible map has independent left and right inverses.
+///
+/// The checker converts a quasi-inverse into a bi-invertible record.
+/// It derives a quasi-inverse from the left inverse.
+///
+/// - see: #791 — `leftRetraction`
+/// - see: #674 — `equivHere`
+
+/// The `isoToEquiv` function uses one backward map as both inverses.
+pub def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b =
+  match i where
+    | *{t, k, s, r} => *{t, *{*{k, s}, *{k, r}}}
+
+/// The left and right inverse laws identify the two inverse maps at `y`.
+def leftRetraction(
+  a : Type,
+  b : Type,
+  t : a -> b,
+  g : b -> a,
+  h : b -> a,
+  y : b,
+  sh : Path (g (t (h y))) (h y),
+  ry : Path (t (h y)) y
+) -> Path (t (g y)) y =
+  Path.step (Path.back (Path.ap t (Path.step (Path.back sh) (Path.ap g ry)))) ry
+
+/// The `equivToIso` function derives a quasi-inverse from a bi-invertible map.
+def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b =
+  match e where
+    | *{t, *{g, s}, *{h, r}} => *{
+      t,
+      *{g, *{s, fun (y) { leftRetraction a b t g h y (s (h y)) (r y) }}}
+    }
+
+/// The `equivHere` proof checks reflexivity under the bi-invertible map type.
+def equivHere(a : Type, b : Type, e : a ≃ b) -> Path[.A = a ≃ b] e e =
+  Path.here e
