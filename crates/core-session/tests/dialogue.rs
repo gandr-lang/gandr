@@ -261,7 +261,7 @@ fn a_message_without_its_counterpart_is_unmatched()
 #[test]
 fn one_message_decomposes_as_its_send_before_both_tails()
 {
-    // `!A. end` against its dual: the send, then the left's close beside the
+    // `A >! end` against its dual: the send, then the left's close beside the
     // right's receipt and close, logged in the one order a recorder can.
     let sends = session(vec![Node::Send(REPORT, NodeId(1)), Node::End]);
     let receives = session(vec![Node::Receive(REPORT, NodeId(1)), Node::End]);
@@ -312,7 +312,7 @@ fn one_message_decomposes_as_its_send_before_both_tails()
 #[test]
 fn queued_sends_leave_a_prime_node()
 {
-    // `!A. !A. end`: both sends logged before the first receipt. The second
+    // `A >! A >! end`: both sends logged before the first receipt. The second
     // send precedes the second receipt and the left's close, the first
     // receipt precedes the second, and the left's close is beside the
     // right's tail: an N past the first send.

@@ -2688,7 +2688,7 @@ mod tests
             ),
             (
                 inner,
-                after(inner, "-> Run (?(Seat.Dispatch"),
+                after(inner, "-> Run ((Seat.Dispatch"),
                 "the inner `(` of a result type takes the `)`, though the outer `(` is the first \
                  bracket left open",
             ),

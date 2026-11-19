@@ -46,7 +46,7 @@ pub fn payload(identity: ValueTypeId) -> Payload
     }
 }
 
-/// The generator endpoint, `mu t. &{next: !Y.t, stop: end}`.
+/// The generator endpoint, `rec t => &{next: Y >! t, stop: end}`.
 ///
 /// # Specification
 /// trivial.
@@ -61,7 +61,8 @@ pub fn generator() -> Session
     ])
 }
 
-/// The independently stated loop endpoint, `mu t. +{next: ?Y.t, stop: end}`.
+/// The independently stated loop endpoint, `rec t => +{next: Y >? t, stop:
+/// end}`.
 ///
 /// # Specification
 /// trivial.

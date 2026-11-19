@@ -793,8 +793,8 @@ fn ascription(
 ///   recursion variable naming its binder's position, rooted at the root. Past
 ///   it, the tree reachable from the state, copied with each recursion variable
 ///   whose binder the copy did not pass through replaced by a fresh copy of
-///   that binder, so `S` at a state inside `mu t. B` is `S[t := mu t. B]`,
-///   rooted at the copy of the state.
+///   that binder, so `S` at a state inside `rec t => B` is `S[t := rec t =>
+///   B]`, rooted at the copy of the state.
 /// - provides: the graph the kernel replays a session statement's pairs over,
 ///   which the engine computed over the same positions; a statement relates
 ///   sessions at their roots only.

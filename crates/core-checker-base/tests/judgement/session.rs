@@ -404,7 +404,7 @@ fn a_received_value_crosses_as_an_assumption_1319()
     let unit = arena.value_type_unit();
     let returns_unit = arena.comp_type_returner(unit);
     let running = arena.value_type_thunk(returns_unit);
-    // let d = fork (c : !String. end) { send(c, "task") ; close(c) };
+    // let d = fork (c : String >! end) { send(c, "task") ; close(c) };
     //     let task = recv(d); close(d) ; return task
     let sending = session(
         &mut arena,
@@ -609,7 +609,7 @@ fn a_fork_carries_nothing_kept_in_a_region()
             gandr_core_term::effect::capability::RegionDepth::from(1_u32),
         ),
     );
-    // `?A. end`: the child receives one payload, then closes.
+    // `A >? end`: the child receives one payload, then closes.
     let receiving = |arena: &mut CoreArena, payload| {
         session(
             arena,

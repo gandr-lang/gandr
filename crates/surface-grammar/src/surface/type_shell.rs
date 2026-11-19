@@ -853,18 +853,44 @@ fn add_type_rules(
     rules.push(telescope_type);
     // A protocol step and the rest: `T >! S` sends `T`, and `T >? S` receives
     // it. Each is infix in the band of the arrow and groups to the right, so
-    // `Integer >! String >? end` reads the send first.
-    rules.push(binary_infix_rule(
-        RuleName("send_session_type"),
-        ty,
-        type_arrow,
-        TileLabel(">!"),
+    // `Integer >! String >? end` reads the send first. The retired step with a
+    // lead `!` or `?`, `! T . S` or `! T >> S`, stays an alternative so that
+    // the lowering refuses it by name.
+    let step = |infix: &'static str, lead: &'static str, name, form, reason| {
+        let mut step = rule(
+            RuleName(name),
+            ty,
+            type_arrow,
+            Regex::alt([
+                Regex::seq([Regex::sort(ty), tile(TileLabel(infix)), Regex::sort(ty)]),
+                Regex::seq([
+                    tile(TileLabel(lead)),
+                    Regex::sort(ty),
+                    Regex::alt([tile(TileLabel(".")), tile(TileLabel(">>"))]),
+                    Regex::sort(ty),
+                ]),
+            ]),
+        );
+        step.adaptations.push(Adaptation::refused(
+            RuleName(name),
+            form,
+            AdaptationReason(reason),
+        ));
+        step
+    };
+    rules.push(step(
+        ">!",
+        "!",
+        "send_session_type",
+        RetiredForm::PrefixSendStep,
+        "the send step with a lead `!`, `! T . S` or `! T >> S`, is refused by name: `T >! S` is the send",
     ));
-    rules.push(binary_infix_rule(
-        RuleName("receive_session_type"),
-        ty,
-        type_arrow,
-        TileLabel(">?"),
+    rules.push(step(
+        ">?",
+        "?",
+        "receive_session_type",
+        RetiredForm::PrefixReceiveStep,
+        "the receive step with a lead `?`, `? T . S` or `? T >> S`, is refused by name: `T >? S` is the receive",
     ));
     rules.push(rule(
         RuleName("end_session_type"),
@@ -918,18 +944,36 @@ fn add_type_rules(
         AdaptationReason("read, not repeated: the session offer is the lazy record over labels `&{ … }` whose entries are session types, one former read in the zone its type is written in"),
     ));
     rules.push(lazy_record);
-    // The recursive protocol `rec X => S`.
-    rules.push(rule(
+    // The recursive protocol `rec X => S`. The retired `mu X . S` stays an
+    // alternative so that the lowering refuses it by name.
+    let mut recursive = rule(
         RuleName("mu_session_type"),
         ty,
         type_arrow,
         Regex::seq([
-            tile(TileLabel("rec")),
-            tile(TileLabel("type_variable")),
-            tile(TileLabel("=>")),
+            Regex::alt([
+                Regex::seq([
+                    tile(TileLabel("rec")),
+                    tile(TileLabel("type_variable")),
+                    tile(TileLabel("=>")),
+                ]),
+                Regex::seq([
+                    tile(TileLabel("mu")),
+                    tile(TileLabel("type_variable")),
+                    tile(TileLabel(".")),
+                ]),
+            ]),
             Regex::sort(ty),
         ]),
+    );
+    recursive.adaptations.push(Adaptation::refused(
+        RuleName("mu_session_type"),
+        RetiredForm::MuRecursion,
+        AdaptationReason(
+            "the recursive protocol `mu X . S` is refused by name: `rec X => S` is the recursion",
+        ),
     ));
+    rules.push(recursive);
     rules.push(rule(
         RuleName("primitive_type"),
         ty,

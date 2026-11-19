@@ -2805,7 +2805,7 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
-        let base = "module P :> *{\n  type Spent = Cap[1] {write},\n  type Moving = ?Spent. end\n} where {\n}\n";
+        let base = "module P :> *{\n  type Spent = Cap[1] {write},\n  type Moving = Spent >? end\n} where {\n}\n";
         let user = include_str!(
             "recheck/fixtures/a-refusal-in-an-import-is-published-where-the-document-reaches-it-1199-user.gandr"
         );

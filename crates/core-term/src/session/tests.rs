@@ -42,8 +42,8 @@ fn label(Spelled(text): Spelled) -> FieldLabel
     FieldLabel::from(String::from(text))
 }
 
-/// `?Dispatch. mu turn. +{ report : !Report. &{ next : turn, retire : end
-/// }, handoff : !Handoff. end }`, payload slots in that order.
+/// `Dispatch >? rec turn => +{ report : Report >! &{ next : turn, retire :
+/// end }, handoff : Handoff >! end }`, payload slots in that order.
 ///
 /// # Specification
 /// trivial.
@@ -195,7 +195,7 @@ fn malformed_protocols_are_refused_by_rule()
 #[test]
 fn recursion_variables_resolve_to_their_own_binder()
 {
-    // mu s. !A. mu t. +{ outer : s, inner : t }
+    // rec s => A >! rec t => +{ outer : s, inner : t }
     let protocol = Protocol::new(
         alloc::vec![
             ProtocolSyntax::Mu(ProtocolState::from(1_usize)),

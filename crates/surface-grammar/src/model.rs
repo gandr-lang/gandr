@@ -888,12 +888,20 @@ pub enum RetiredForm
     /// A `builtin` mark whose payload is a bare word, `@[builtin(irPair)]`,
     /// which the key in quotes replaces: `@[builtin("irPair")]`.
     BuiltinWord,
+    /// A protocol step that sends, written with a lead `!`, `! T . S` or
+    /// `! T >> S`, which the infix `T >! S` replaces.
+    PrefixSendStep,
+    /// A protocol step that receives, written with a lead `?`, `? T . S` or
+    /// `? T >> S`, which the infix `T >? S` replaces.
+    PrefixReceiveStep,
+    /// A recursive protocol written `mu X . S`, which `rec X => S` replaces.
+    MuRecursion,
 }
 
 impl RetiredForm
 {
     /// Every retired spelling, in the order of the enum.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 20] = [
         Self::ShapeMember,
         Self::UnitValue,
         Self::PositionalPathCarrier,
@@ -911,6 +919,9 @@ impl RetiredForm
         Self::BareUpdateField,
         Self::NativeAttribute,
         Self::BuiltinWord,
+        Self::PrefixSendStep,
+        Self::PrefixReceiveStep,
+        Self::MuRecursion,
     ];
 
     /// The surface name of the spelling: the row's surface and the tag of its
@@ -940,6 +951,9 @@ impl RetiredForm
             Self::BareUpdateField => "bare_update_field",
             Self::NativeAttribute => "native_attribute",
             Self::BuiltinWord => "builtin_word",
+            Self::PrefixSendStep => "prefix_send_step",
+            Self::PrefixReceiveStep => "prefix_receive_step",
+            Self::MuRecursion => "mu_recursion",
         })
     }
 
@@ -970,6 +984,9 @@ impl RetiredForm
             Self::BareUpdateField => "*{ r | .l = e }",
             Self::NativeAttribute => "builtin",
             Self::BuiltinWord => "builtin(\"key\")",
+            Self::PrefixSendStep => "T >! S",
+            Self::PrefixReceiveStep => "T >? S",
+            Self::MuRecursion => "rec X => S",
         })
     }
 
@@ -999,6 +1016,9 @@ impl RetiredForm
             Self::BareUpdateField => "*{ r | l = e }",
             Self::NativeAttribute => "native",
             Self::BuiltinWord => "builtin(key)",
+            Self::PrefixSendStep => "!",
+            Self::PrefixReceiveStep => "?",
+            Self::MuRecursion => "mu",
         })
     }
 }

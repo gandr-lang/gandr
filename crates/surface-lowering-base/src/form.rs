@@ -828,6 +828,12 @@ impl TileName
     pub const DROP: Self = Self("drop");
     /// The closed session type `end`.
     pub const END: Self = Self("end");
+    /// The lead `mu` of the retired recursive protocol `mu X . S`, read only
+    /// to refuse the form by name.
+    pub const MU: Self = Self(RetiredForm::MuRecursion.written().0);
+    /// The lead `?` of the retired receive step `? T . S`, read only to refuse
+    /// the step by name.
+    pub const QUESTION: Self = Self(RetiredForm::PrefixReceiveStep.written().0);
     /// The session keyword `offer`.
     pub const OFFER: Self = Self("offer");
     /// The session keyword `select`.
@@ -1087,7 +1093,7 @@ pub enum Former
     /// The instantiation `e[i, …]`: a recursive definition's descent claim
     /// `f[<]` at the head of its own call, and nothing else.
     Instantiation,
-    /// A session type's own forms, `!A >> S`, `?A >> S`, `end` and `rec t =>
+    /// A session type's own forms, `A >! S`, `A >? S`, `end` and `rec t =>
     /// S`: the outermost form of a protocol, read whole down its
     /// continuations.
     SessionType,

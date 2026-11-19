@@ -169,8 +169,8 @@
 //!
 //! # Session types
 //!
-//! A session type is spelled as the grammar writes it: `!A. S`, `?A. S`,
-//! `+{l : S, …}`, `&{l : S, …}`, `mu t. S` and `end`, each payload type a
+//! A session type is spelled as the grammar writes it: `A >! S`, `A >? S`,
+//! `+{l : S, …}`, `&{l : S, …}`, `rec t => S` and `end`, each payload type a
 //! child the walk spells and parenthesizes past an atom. The protocol is
 //! spelled from the state the type stands at; a recursion variable whose
 //! binder lies outside that state unfolds once to its binder, so the spelling
@@ -2387,13 +2387,13 @@ impl Nesting
 ///
 /// # Specification
 /// - requires: nothing; a state past the protocol spells `?`.
-/// - ensures: `!` and `?` prefix their payload slot and `. ` their
-///   continuation; a selection is `+{l : S, …}` and an offer `&{l : S, …}` in
-///   label order; `end` is `end`; a `mu` is `mu t. S`, its binder named by its
-///   nesting; a variable is its binder's name, and a variable whose binder
-///   encloses the state rather than the spelling unfolds to that binder, so the
-///   spelling is closed. A selection, an offer and `end` bind as atoms, every
-///   other head as an arrow does.
+/// - ensures: a send is its payload slot, ` >! ` and its continuation, and a
+///   receive the same with ` >? `; a selection is `+{l : S, …}` and an offer
+///   `&{l : S, …}` in label order; `end` is `end`; a `mu` is `rec t => S`, its
+///   binder named by its nesting; a variable is its binder's name, and a
+///   variable whose binder encloses the state rather than the spelling unfolds
+///   to that binder, so the spelling is closed. A selection, an offer and `end`
+///   bind as atoms, every other head as an arrow does.
 /// - provides: the one session-type spelling both sources share, since both
 ///   read the same protocol.
 /// - fails: never.
@@ -8891,7 +8891,7 @@ impl Walk<'_, '_>
     }
 
     /// Whether `node` is written with a head no expression reads as the type:
-    /// a session type standing at a receive `?A. S`, a selection `+{…}` or an
+    /// a session type standing at a receive `A >? S`, a selection `+{…}` or an
     /// offer `&{…}`; a sum or a lazy product, written between braces or, in
     /// the sugared form, as a chain an expression reads as arithmetic; a
     /// labelled record type `*{a : A}` or a telescope type `*{a : A, b : B}`,

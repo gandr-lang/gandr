@@ -5,11 +5,10 @@
 //!
 //! A session type is one core value type: a protocol, one node per state,
 //! over the payload types its sends and receives carry. The lowering reads
-//! it from its outermost session form — `!A >> S`, `?A >> S`, `end`, `rec t
-//! => S`,
-//! or braces whose entries are all session forms — down through every
-//! continuation, and plans the protocol there. A continuation is a state of
-//! that protocol, never a type of its own, so the sweep does not read it; a
+//! it from its outermost session form — `A >! S`, `A >? S`, `end`,
+//! `rec t => S`, or braces whose entries are all session forms — down through
+//! every continuation, and plans the protocol there. A continuation is a state
+//! of that protocol, never a type of its own, so the sweep does not read it; a
 //! payload `A` is an ordinary value type, read where it stands, so a payload
 //! names a module's type component as any type does.
 //!
@@ -23,8 +22,7 @@
 //! name; any other type standing where a continuation is read is refused by
 //! sort, the session continuation. A protocol whose recursion reaches its own
 //! variable before any action, `rec t => t`, is refused as not contractive
-//! where the `rec` is written. The dotted `!A. S`, `?A. S` and `mu t. S` are
-//! read alike until the corpus moves.
+//! where the `rec` is written.
 //!
 //! - Alternatives: a core type per continuation, which mints one protocol per
 //!   state and makes the protocol's identity depend on sharing; second grammar
@@ -118,6 +116,7 @@ use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering_base::lower::arity::Arranged;
 use gandr_surface_lowering_base::lower::arity::Key;
 use gandr_surface_lowering_base::lower::arity::arrange;
@@ -722,16 +721,21 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
     ///   as a value type under the form's frame, stores it in the next slot and
     ///   queues its continuation as a fresh state; `rec t => S` binds `t` for
     ///   the walk under it, queues a leave after `S`, is the fixed point of the
-    ///   state `S` fills, and keeps `t` as a site naming `state`.
-    /// - fails: a misplaced tile or a hole's own fault.
+    ///   state `S` fills, and keeps `t` as a site naming `state`; a form led by
+    ///   `mu`, `!` or `?` is refused as its retired spelling.
+    /// - fails: a misplaced tile, a hole's own fault, or a retired spelling.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::MalformedForm`].
+    /// [`LoweringRefusal::MalformedForm`]; [`LoweringRefusal::RetiredName`] of
+    /// [`RetiredForm::MuRecursion`], [`RetiredForm::PrefixSendStep`] or
+    /// [`RetiredForm::PrefixReceiveStep`] at the form's span.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the seat's protocol reads every one of the four.
+    /// - hypothesis: L3 — the seat's protocol reads every one of the four, and
+    ///   each retired spelling is refused by its own name.
     /// - witness: `gandr-surface-lowering::lower::session::tests::a_session_type_lowers_to_its_protocol`
+    /// - witness: `gandr-surface-lowering::lower::session::tests::each_retired_protocol_spelling_is_refused_by_name`
     #[spec(
         captures: before = (draft.syntax.len(), self.cx().operands.entries().len()),
         ensures: |ret| ret.as_ref().map_or(true, |node| match *node {
@@ -750,6 +754,18 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Capability<'_, F>
         binders: &mut Vec<SurfaceName<'source>>,
     ) -> Result<ProtocolSyntax, LoweringRefusal<'source>>
     {
+        for (lead, form) in [
+            (TileName::MU, RetiredForm::MuRecursion),
+            (TileName::BANG, RetiredForm::PrefixSendStep),
+            (TileName::QUESTION, RetiredForm::PrefixReceiveStep),
+        ] {
+            if let Maybe::Present(_) = cursor.at(lead) {
+                return Err(LoweringRefusal::RetiredName {
+                    span: here.at.span,
+                    form,
+                });
+            }
+        }
         if let Maybe::Present(_) = cursor.tile(TileName::END) {
             exhausted(here, &cursor)?;
             return Ok(ProtocolSyntax::End);

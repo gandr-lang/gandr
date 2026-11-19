@@ -41,10 +41,10 @@ use crate::report::Verdict;
 #[derive(Clone, Copy, Debug)]
 pub enum Seat
 {
-    /// `?D. mu turn. +{ report : !R. &{ next : turn, retire : end }, handoff :
-    /// !H. end }`.
+    /// `D >? rec turn => +{ report : R >! &{ next : turn, retire : end },
+    /// handoff : H >! end }`.
     End,
-    /// `End` with `pause : !R. turn` added to the selection.
+    /// `End` with `pause : R >! turn` added to the selection.
     Wide,
     /// `End` unfolded once under a renamed binder.
     Twice,
