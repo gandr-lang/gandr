@@ -92,6 +92,16 @@
 //! replay, would copy windows of sizes only the lowering knows inside code
 //! that cannot call.
 //!
+//! A block of machine code takes a seam of its own, the stencil `block`,
+//! and no host call. Operand A is the block's address. Operand B counts the
+//! machine integers pushed before it, and its bit `BLOCK_ANSWERS` says
+//! that the block answers. The stencil writes the field of each integer
+//! over its pushed word and calls the block under the platform's C
+//! convention with the address of the first word. An answering block's
+//! word becomes a fresh machine integer in hand, allocated before the call.
+//! The executor runs the same stencil, so a host with no patcher enters the
+//! same block.
+//!
 //! # The authoring rules
 //!
 //! - **A hole is never a valid pointer to the optimiser.** The address of a
@@ -102,11 +112,12 @@
 //! - **No two stencils share a body.** LLVM merges identical functions into one
 //!   symbol, leaving the other stencil with no bytes; the generator refuses an
 //!   empty stencil, so a duplicate fails the build.
-//! - **A stencil calls nothing but the host.** No `memcpy` (the crate is
-//!   `#![no_builtins]`), no panic path (arithmetic wraps and the object is
-//!   built with overflow checks and debug assertions off), no constant pool: a
-//!   relocation to anything but a hole fails the build. `call` reaches the host
-//!   through a pointer the record holds, which needs none.
+//! - **A stencil calls nothing but the host and a block.** No `memcpy` (the
+//!   crate is `#![no_builtins]`), no panic path (arithmetic wraps and the
+//!   object is built with overflow checks and debug assertions off), no
+//!   constant pool: a relocation to anything but a hole fails the build. `call`
+//!   reaches the host through a pointer the record holds, which needs none, and
+//!   `block` reaches its block through operand A.
 //! - **Every unbounded jump spends fuel.** Lowered code is straight-line
 //!   between code-word jumps — a frame's resumption, a closure's entry — so
 //!   `resume!` decrements the run's fuel and exits with
@@ -188,6 +199,8 @@ pub use crate::layout::ACCUMULATED_APPLIED;
 pub use crate::layout::ACCUMULATED_FORCED;
 pub use crate::layout::ACCUMULATOR_FREE;
 pub use crate::layout::Arity;
+pub use crate::layout::BLOCK_ANSWERS;
+pub use crate::layout::BLOCK_OPERANDS;
 pub use crate::layout::CHUNK;
 pub use crate::layout::COUNT_IMMORTAL;
 pub use crate::layout::COUNT_ONE;
@@ -197,6 +210,7 @@ pub use crate::layout::FieldOverflow;
 pub use crate::layout::Flavour;
 pub use crate::layout::Fuel;
 pub use crate::layout::Header;
+pub use crate::layout::INTEGER_HEADER;
 pub use crate::layout::Kind;
 pub use crate::layout::Observed;
 pub use crate::layout::RELEASE;

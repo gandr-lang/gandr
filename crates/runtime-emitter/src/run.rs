@@ -130,6 +130,8 @@ use crate::lower::Lowered;
 use crate::lower::lower;
 use crate::lower::lower_open;
 use crate::lower::lower_unfused;
+use crate::machine;
+use crate::machine::Unentered;
 #[cfg(gandr_patcher)]
 use crate::native::EmitRefusal;
 #[cfg(gandr_patcher)]
@@ -279,7 +281,7 @@ pub enum Declined
     /// Emission refused the function.
     #[cfg(gandr_patcher)]
     Emission(EmitRefusal),
-    /// A label of the function is unbound.
+    /// The function names a label or a block that it does not hold.
     Unbound,
     /// The policy serves only cached code and the cache misses.
     Uncached,
@@ -307,6 +309,8 @@ pub enum Declined
     Environment,
     /// This migration answered nothing, for the reason named.
     Migration(CommandId, Unmigrated),
+    /// A block of machine code that the function enters gives no address.
+    Block(Unentered),
 }
 
 impl From<Form> for Declined
@@ -348,6 +352,19 @@ impl From<TransferRefusal> for Declined
     }
 }
 
+impl From<Unentered> for Declined
+{
+    /// The block that gives no address, and why.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(unentered: Unentered) -> Self
+    {
+        Self::Block(unentered)
+    }
+}
+
 impl core::fmt::Display for Declined
 {
     /// Says why the run gave no outcome, in a line.
@@ -370,7 +387,9 @@ impl core::fmt::Display for Declined
             Self::NoPatcher => f.write_str("the host has no patcher for native code"),
             #[cfg(gandr_patcher)]
             Self::Emission(_) => f.write_str("native emission refused the function"),
-            Self::Unbound => f.write_str("a label of the function is unbound"),
+            Self::Unbound => {
+                f.write_str("the function names a label or a block that it does not hold")
+            },
             Self::Uncached => f.write_str("the cache holds no code for the function"),
             Self::Stuck => f.write_str("the run stopped stuck where nothing named why"),
             Self::Spent(budget) => core::fmt::Display::fmt(&budget.spent(), f),
@@ -408,6 +427,7 @@ impl core::fmt::Display for Declined
                 "the migration at {} answered nothing: {why}",
                 gandr_core_sequent::NodeAddress::Command(at)
             ),
+            Self::Block(unentered) => core::fmt::Display::fmt(&unentered, f),
         }
     }
 }
@@ -1266,7 +1286,8 @@ fn run_executor(
     inputs: RunInputs<'_, '_>,
 ) -> Result<Ran, Declined>
 {
-    let program = Program::build(&lowered.function)?;
+    let blocks = machine::resolve(lowered.function.blocks())?;
+    let program = Program::build(&lowered.function, &blocks)?;
     let codes = Codes::Executor(&program, &lowered.function);
     let sites = Sites::new(lowered, codes);
     run(Code::Executor(&program), Parts {
@@ -1314,10 +1335,11 @@ fn run_native(
             Arc::clone(held)
         }
         else {
+            let blocks = machine::resolve(lowered.function.blocks())?;
             let emitted = Arc::new(
                 cache
                     .native
-                    .emit(&lowered.function)
+                    .emit(&lowered.function, &blocks)
                     .map_err(Declined::Emission)?,
             );
             cache

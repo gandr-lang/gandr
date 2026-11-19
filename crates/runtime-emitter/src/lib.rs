@@ -182,12 +182,14 @@ pub mod block;
 pub mod budget;
 pub mod crossing;
 mod cut;
+mod executable;
 mod executor;
 mod function;
 mod fuse;
 mod host;
 pub mod image;
 mod lower;
+pub mod machine;
 #[cfg(gandr_patcher)]
 mod native;
 pub mod regions;

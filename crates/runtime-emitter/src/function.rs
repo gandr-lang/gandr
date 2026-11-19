@@ -1,13 +1,17 @@
 //! A lowered function: the straight list of stencil instructions both tiers
-//! run, its labels and its constants.
+//! run, its labels, its constants and the blocks of machine code it enters.
 //!
 //! The function is the cache key: two lowerings that produce equal functions
 //! run the same code, so a function is compared by value — every instruction,
-//! label, constant and the slot count — and hashed the same way.
+//! label, constant, block key and the slot count — and hashed the same way.
+//! A block enters the function by its key alone, and a run resolves each key
+//! to the address of the block's bytes before it starts.
 
 use gandr_runtime_stencils::COUNT_IMMORTAL;
 use gandr_runtime_stencils::StencilId;
 use gandr_runtime_stencils::Word;
+
+use crate::block::Key;
 
 /// A label: an index into the function's label table, bound to one
 /// instruction.
@@ -49,6 +53,28 @@ impl From<Constant> for usize
     fn from(constant: Constant) -> Self
     {
         constant.0
+    }
+}
+
+/// A block of machine code that a function enters: its row in the function's
+/// blocks.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BlockRow(usize);
+
+impl From<BlockRow> for usize
+{
+    /// The block's row in the function's blocks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(row: BlockRow) -> Self
+    {
+        row.0
     }
 }
 
@@ -189,6 +215,9 @@ pub enum Operand
     Data(Constant),
     /// The address of a shared frame stub.
     Stub(Stub),
+    /// The address of a block of machine code, by its row in the function's
+    /// blocks.
+    Block(BlockRow),
 }
 
 /// One stencil instruction.
@@ -246,6 +275,8 @@ pub struct Function
     labels: Vec<usize>,
     /// The constants, as words.
     constants: Vec<Word>,
+    /// The key of each block of machine code the function enters, each once.
+    blocks: Vec<Key>,
     /// The entry window's slot count.
     slots: Slots,
 }
@@ -342,6 +373,30 @@ impl Function
         self.constant(words)
     }
 
+    /// The row of the block of `key`, appended when the function enters no
+    /// block of that key yet.
+    ///
+    /// # Specification
+    /// - ensures: one row per key; a key entered again answers its first row.
+    /// - executable: none — the clause would scan the table the body scans.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two keys take two rows, and one key entered twice
+    ///   takes its first row again; a row per entry or a lost key changes one.
+    /// - witness: `function::tests::a_key_entered_twice_takes_one_row`
+    #[inline]
+    pub fn block(
+        &mut self,
+        key: Key,
+    ) -> BlockRow
+    {
+        if let Some(row) = self.blocks.iter().position(|held| *held == key) {
+            return BlockRow(row);
+        }
+        self.blocks.push(key);
+        BlockRow(self.blocks.len().saturating_sub(1))
+    }
+
     /// Set the entry window's slot count.
     ///
     /// # Specification
@@ -381,7 +436,7 @@ impl Function
     {
         match self.labels.get(label.0) {
             Some(&index) if index != usize::MAX => Ok(Position(index)),
-            Some(_) | None => Err(Unbound(label)),
+            Some(_) | None => Err(Unbound::Label(label)),
         }
     }
 
@@ -404,6 +459,17 @@ impl Function
     pub fn constants(&self) -> &[Word]
     {
         &self.constants
+    }
+
+    /// The key of each block the function enters, by row.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn blocks(&self) -> &[Key]
+    {
+        &self.blocks
     }
 
     /// The entry window's slot count.
@@ -503,6 +569,7 @@ impl Function
             instructions,
             labels,
             constants: self.constants.clone(),
+            blocks: self.blocks.clone(),
             slots: self.slots,
         }
     }
@@ -516,13 +583,18 @@ impl Function
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Position(pub usize);
 
-/// A label no instruction is bound to.
+/// What a function names and does not hold.
 ///
 /// # Specification
 /// trivial.
-#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Unbound(pub Label);
+pub enum Unbound
+{
+    /// A label no instruction is bound to.
+    Label(Label),
+    /// A block row past the function's blocks.
+    Block(BlockRow),
+}
 
 #[cfg(test)]
 mod tests

@@ -13,7 +13,6 @@
 
 #[cfg(any(target_arch = "aarch64", test))]
 mod aarch64;
-mod memory;
 mod table;
 #[cfg(any(target_arch = "x86_64", test))]
 mod x86_64;
@@ -21,38 +20,23 @@ mod x86_64;
 use gandr_runtime_stencils::StencilId;
 use gandr_runtime_stencils::Word;
 
+use crate::executable::Address;
+use crate::executable::CodeBytes;
+use crate::executable::MapFailure;
+use crate::executable::Offset;
+use crate::executable::Region;
 use crate::function::Alt;
-use crate::function::Constant;
 use crate::function::Function;
 use crate::function::Instruction;
 use crate::function::Label;
 use crate::function::Operand;
 use crate::function::Stub;
-pub use crate::native::memory::MapFailure;
-use crate::native::memory::Region;
 use crate::native::table::HoleKind;
 use crate::native::table::HoleSymbol;
-use crate::native::table::Offset;
 use crate::native::table::code;
 
 /// The bytes one region maps: within a branch's reach on both patchers.
 const REGION_BYTES: usize = 1 << 26;
-
-/// An absolute address in the process's address space.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Address(pub usize);
-
-/// The writable bytes of code being copied and patched.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Debug)]
-pub struct CodeBytes<'bytes>(pub &'bytes mut [u8]);
 
 /// What a hole is patched to.
 ///
@@ -184,11 +168,13 @@ const SHARED: [StencilId; 6_usize.wrapping_add(Stub::ALL.len())] = [
 
 impl Native
 {
-    /// Emit `function`, mapping a region first when none has room.
+    /// Emit `function`, mapping a region first when none has room. Operand
+    /// A of each block entry takes the address of its row of `blocks`.
     ///
     /// # Specification
     /// - requires: `function` came from the lowering, so every label it names
-    ///   is bound and its last instruction does not continue at `hole_next`.
+    ///   is bound and its last instruction does not continue at `hole_next`;
+    ///   `blocks` holds the address of each block the function enters, by row.
     /// - ensures: the copy at `entry` runs the function: each instruction's
     ///   stencil with its operands, continuing at the next copy or its label,
     ///   its exits at its region's shared copies.
@@ -200,12 +186,15 @@ impl Native
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every named program emits its function here and
-    ///   compares the answer with the executor's and the answer it states.
+    ///   compares the answer with the executor's and the answer it states, and
+    ///   a block entry answers what the executor's entry of it answers.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `run::tests::a_block_answers_alike_on_each_tier`
     #[inline]
     pub fn emit(
         &mut self,
         function: &Function,
+        blocks: &[Word],
     ) -> Result<Emitted, EmitRefusal>
     {
         let instructions = function.instructions();
@@ -233,7 +222,7 @@ impl Native
             self.offsets = offsets;
             return Err(EmitRefusal::Oversized);
         }
-        let result = self.place(function, &offsets, data, total);
+        let result = self.place(function, blocks, &offsets, (data, total));
         self.offsets = offsets;
         result
     }
@@ -249,9 +238,9 @@ impl Native
     fn place(
         &mut self,
         function: &Function,
+        blocks: &[Word],
         offsets: &[Offset],
-        data: Offset,
-        total: Offset,
+        (data, total): (Offset, Offset),
     ) -> Result<Emitted, EmitRefusal>
     {
         let reserved = self
@@ -283,12 +272,21 @@ impl Native
                 .map(|position| at(position.0))
                 .map_err(|_unbound| EmitRefusal::Unbound(target))
         };
-        let constant = |offset: Constant| -> Address {
-            Address(
-                base.0
-                    .wrapping_add(data.0)
-                    .wrapping_add(usize::from(offset).saturating_mul(8)),
-            )
+        let places = |operand: Operand| -> Result<Address, EmitRefusal> {
+            match operand {
+                Operand::Data(offset) => Ok(Address(
+                    base.0
+                        .wrapping_add(data.0)
+                        .wrapping_add(usize::from(offset).saturating_mul(8)),
+                )),
+                Operand::Block(row) => blocks
+                    .get(usize::from(row))
+                    .map(|&word| Address(usize::from(word)))
+                    .ok_or(EmitRefusal::Operand),
+                Operand::Unused | Operand::Immediate(_) | Operand::Code(_) | Operand::Stub(_) => {
+                    Err(EmitRefusal::Operand)
+                },
+            }
         };
         region.write(
             reservation,
@@ -306,15 +304,7 @@ impl Native
                     );
                     let next = at(index.saturating_add(1));
                     copy_and_patch(&mut copy, at(index), instruction, &|symbol, operand| {
-                        resolve(
-                            symbol,
-                            operand,
-                            instruction,
-                            next,
-                            shared,
-                            &label,
-                            &constant,
-                        )
+                        resolve(symbol, operand, instruction, next, shared, &label, &places)
                     })?;
                 }
                 for (slot, word) in function.constants().iter().enumerate() {
@@ -457,18 +447,18 @@ fn copied(stencil: StencilId) -> Offset
 /// # Errors
 /// [`EmitRefusal::Operand`] for a continuation or operand the instruction
 /// lacks, or [`EmitRefusal::Unbound`] for an unbound label.
-fn resolve<L, C>(
+fn resolve<L, P>(
     symbol: HoleSymbol,
     operand: Operand,
     instruction: &Instruction,
     next: Address,
     shared: Shared,
     label: &L,
-    constant: &C,
+    places: &P,
 ) -> Result<Value, EmitRefusal>
 where
     L: Fn(Label) -> Result<Address, EmitRefusal>,
-    C: Fn(Constant) -> Address,
+    P: Fn(Operand) -> Result<Address, EmitRefusal>,
 {
     Ok(match symbol {
         HoleSymbol::Next => Value::Address(next),
@@ -489,7 +479,7 @@ where
                 Value::Immediate(Word::from(usize::from(immediate).saturating_add(1)))
             },
             Operand::Code(target) => Value::Address(label(target)?),
-            Operand::Data(offset) => Value::Address(constant(offset)),
+            Operand::Data(_) | Operand::Block(_) => Value::Address(places(operand)?),
             Operand::Stub(stub) => Value::Address(stub.of(&shared.stubs)),
             Operand::Unused => return Err(EmitRefusal::Operand),
         },

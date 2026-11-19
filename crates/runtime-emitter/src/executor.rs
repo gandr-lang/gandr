@@ -61,9 +61,12 @@ const HALT: usize = Stub::ALL.len();
 
 impl Program
 {
-    /// The program running `function`.
+    /// The program running `function`, each block entry's operand A the
+    /// address of its row of `blocks`.
     ///
     /// # Specification
+    /// - requires: `blocks` holds the address of each block the function
+    ///   enters, by row.
     /// - ensures: the first step runs the function's first instruction, each
     ///   step continuing at the next or at its label's step, as the emitted
     ///   copy of the same function continues.
@@ -72,14 +75,19 @@ impl Program
     ///
     /// # Errors
     /// [`Unbound`] for a label an instruction names and the lowering never
-    /// bound.
+    /// bound, or a block row past `blocks`.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every agreement case runs the program this builds
-    ///   beside the emitted code of the same function and the answer it states.
+    ///   beside the emitted code of the same function and the answer it states,
+    ///   and a block entry answers the sum that its block computes.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `run::tests::a_block_answers_alike_on_each_tier`
     #[inline]
-    pub fn build(function: &Function) -> Result<Self, Unbound>
+    pub fn build(
+        function: &Function,
+        blocks: &[Word],
+    ) -> Result<Self, Unbound>
     {
         let instructions = function.instructions();
         let stubs = instructions.len();
@@ -104,6 +112,10 @@ impl Program
                     Word::from_pointer(constant_base.wrapping_add(usize::from(offset)))
                 },
                 Operand::Stub(stub) => stub.of(&codes),
+                Operand::Block(row) => blocks
+                    .get(usize::from(row))
+                    .copied()
+                    .ok_or(Unbound::Block(row))?,
             })
         };
         let (body, tail) = steps.split_at_mut(stubs);

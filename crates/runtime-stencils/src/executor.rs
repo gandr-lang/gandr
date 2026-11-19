@@ -188,6 +188,8 @@ stencils! {
     Pop => stencil_pop,
     /// `stencil_call`.
     Call => stencil_call,
+    /// `stencil_block`.
+    Block => stencil_block,
     /// `stencil_dup`.
     Dup => stencil_dup,
     /// `stencil_dup_fields`.
