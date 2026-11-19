@@ -121,13 +121,11 @@ use gandr_core_term::generic::Uncovered;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_grammar::RetiredForm;
 use gandr_surface_lowering::BuiltinFault;
-use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::MatchFault;
 use gandr_surface_lowering::OperandCount;
-use gandr_surface_lowering::Repair;
 use gandr_surface_lowering::StagedFault;
 use gandr_surface_lowering::Unbuilt;
 use gandr_surface_lowering::description::MemberFault;
@@ -2984,8 +2982,7 @@ impl<'source> RefusalOf<'source, Arena>
                 | gandr_surface_lowering::WfKind::SplitCircuitOutputs
                 | gandr_surface_lowering::WfKind::SharedCircuitPort,
             ..
-        } | LoweringRefusal::MalformedForm { .. }, RefusalName::MalformedForm | RefusalName::RetiredSpelling(_)) | (
-        LoweringRefusal::RetiredName { .. }, RefusalName::RetiredSpelling(_)) | (
+        } | LoweringRefusal::MalformedForm { .. }, RefusalName::MalformedForm) | (
         LoweringRefusal::IllFormedDescription { .. }, RefusalName::IllFormedDescription) | (
         LoweringRefusal::GradedBridge { .. }, RefusalName::GradedBridge) | (
         LoweringRefusal::MalformedLiteral { .. }, RefusalName::MalformedLiteral) | (
@@ -3074,14 +3071,6 @@ impl<'source> RefusalOf<'source, Arena>
         ret == RefusalName::BuiltinMark(builtin_tag(fault))
     } else if let LoweringRefusal::StagedBody { fault, .. } = refusal {
         ret == RefusalName::StagedBody(staged_tag(fault))
-    } else if let LoweringRefusal::MalformedForm {
-        fault: FormFault::Retired(form) | FormFault::Repaired(Repair::Retired(form)),
-        ..
-    } = refusal
-    {
-        ret == RefusalName::RetiredSpelling(form)
-    } else if let LoweringRefusal::RetiredName { form, .. } = refusal {
-        ret == RefusalName::RetiredSpelling(form)
     } else if let LoweringRefusal::GenericUncovered { fault, .. } = refusal {
         ret == RefusalName::GenericUncovered(GenericCoverage::of(fault))
     } else {
@@ -3111,11 +3100,6 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
             ..
         } => RefusalName::OutOfFragment(fragment(FragmentFeature::of(form, sort, boundary))),
         LoweringRefusal::BareFeedback { .. } => RefusalName::BareFeedback,
-        LoweringRefusal::RetiredName { form, .. }
-        | LoweringRefusal::MalformedForm {
-            fault: FormFault::Retired(form) | FormFault::Repaired(Repair::Retired(form)),
-            ..
-        } => RefusalName::RetiredSpelling(form),
         LoweringRefusal::IllFormedDescription {
             kind:
                 gandr_surface_lowering::WfKind::CyclicCircuitWiring

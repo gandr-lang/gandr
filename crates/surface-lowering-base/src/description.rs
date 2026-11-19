@@ -208,10 +208,6 @@ pub enum DescriptionFault
     NoType,
     /// A sort's classifier is no universe.
     NoUniverse,
-    /// The retired rule arrow has no rewrite-face reading.
-    RetiredRuleArrow,
-    /// The retired operation lead is not a synonym for an operation member.
-    RetiredOperation,
     /// The native interpreter refused a well-formed description leaf.
     NativeDecode(gandr_core_term::description::DecodeError),
     /// The description checker refused the declaration.
@@ -581,13 +577,6 @@ impl DescriptionDiagnostic
                 },
                 Maybe::Absent(_) => malformed(),
             },
-            DescriptionFault::Signature(crate::circuit::SignatureFault::Retired(retired)) => {
-                LoweringRefusal::MalformedForm {
-                    span: self.span,
-                    form: crate::form::FormName::DECLARATION,
-                    fault: crate::error::FormFault::Retired(retired),
-                }
-            },
             DescriptionFault::IllFormed(ref reason) => LoweringRefusal::IllFormedDescription {
                 span: self.span,
                 fault: self.span,
@@ -612,8 +601,6 @@ impl DescriptionDiagnostic
             | DescriptionFault::FamilyHead
             | DescriptionFault::MemberPolarity
             | DescriptionFault::NoType
-            | DescriptionFault::RetiredRuleArrow
-            | DescriptionFault::RetiredOperation
             | DescriptionFault::Signature(_) => malformed(),
         }
     }
@@ -1506,9 +1493,6 @@ impl Reader<'_, '_>
                         written.operations.push(ports);
                     })
                 }
-            }
-            else if member.eat(Spelling("op")).0 {
-                Err(member.fault(DescriptionFault::RetiredOperation))
             }
             else {
                 match polarity {

@@ -6132,10 +6132,10 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 .push((queued.slot, head.span, PatternReading::Constructor));
             return Ok(shape);
         }
-        // A match scrutinee is a value, so a group in parentheses here matches
-        // a stored product: its pattern is `*{p, q}`.
+        // A match scrutinee is a value, so a group in parentheses here stands
+        // where a stored product's pattern `*{p, q}` belongs.
         if name == FormName::TUPLE_PATTERN {
-            return Err(here.fault(at.span, FormFault::product_pattern()));
+            return Err(here.fault(at.span, FormFault::MisplacedTile));
         }
         if name == FormName::TELESCOPE_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);

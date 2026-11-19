@@ -114,7 +114,6 @@
 
 mod decisions;
 mod exemplars;
-mod fences;
 mod recovery;
 mod standing;
 
@@ -174,8 +173,6 @@ use serde_json::json;
 pub use self::exemplars::ExemplarFault;
 pub use self::exemplars::ExemplarFinding;
 pub use self::exemplars::ExemplarReport;
-pub use self::fences::FenceFinding;
-pub use self::fences::FenceReport;
 pub use self::recovery::RecoveryFinding;
 pub use self::recovery::RecoveryReport;
 pub use self::recovery::RecoveryTally;
@@ -238,13 +235,6 @@ pub enum LedgerTask
         /// The feature.
         id: FeatureId,
     },
-    /// The fenced `gandr` blocks of the prose of each file of `paths`, each
-    /// read for a retired spelling.
-    Fences
-    {
-        /// The Markdown, `.rs` and `.gandr` files to read.
-        paths: Vec<PathBuf>,
-    },
 }
 
 /// What a ledger task did.
@@ -262,8 +252,6 @@ pub enum LedgerRun
     /// The feature a show named, boxed: its row's thirteen columns make it
     /// the largest variant inline.
     Shown(Box<ShownFeature>),
-    /// What a fence check found.
-    Fenced(FenceReport),
 }
 
 /// Why a ledger could not be generated or written.
@@ -333,15 +321,6 @@ pub enum LedgerFault
         /// How many refused rows name it.
         rows: usize,
     },
-    /// A file whose fenced blocks the fence check reads could not be read as
-    /// text.
-    Prose
-    {
-        /// The file.
-        path: PathBuf,
-        /// Why.
-        error: std::io::Error,
-    },
 }
 
 impl core::fmt::Display for LedgerFault
@@ -389,10 +368,6 @@ impl core::fmt::Display for LedgerFault
                 f,
                 "the retired form `{surface}` has {rows} refused rows, and each has exactly one"
             ),
-            Self::Prose {
-                ref path,
-                ref error,
-            } => write!(f, "{}: cannot read: {error}", path.display()),
         }
     }
 }
@@ -400,8 +375,7 @@ impl core::fmt::Display for LedgerFault
 impl LedgerTask
 {
     /// Generate the task's ledger and write its files, verify its exemplars,
-    /// sweep them for recovery, read the features ledger, or read the fenced
-    /// `gandr` blocks of the prose.
+    /// sweep them for recovery, or read the features ledger.
     ///
     /// # Specification
     /// - requires: nothing; a syntax ledger's directory is created when it is
@@ -416,23 +390,19 @@ impl LedgerTask
     ///   of the recovery sweep over the directory's syntax exemplars (the
     ///   `recovery` module). Under [`LedgerTask::List`] and
     ///   [`LedgerTask::Show`], what [`FeatureLedger::listed`] and
-    ///   [`FeatureLedger::shown`] answer of the root's features ledger. Under
-    ///   [`LedgerTask::Fences`], the report of the fenced `gandr` blocks of the
-    ///   files (the `fences` module).
+    ///   [`FeatureLedger::shown`] answer of the root's features ledger.
     /// - provides: `ledger syntax --write <directory>`, `ledger exemplars
-    ///   <directory>`, `ledger recovery <directory>`, `ledger list`, `ledger
-    ///   show <id>` and `ledger fences <path>…`.
-    /// - fails: the ledger cannot be built, a committed rule's exemplar or a
-    ///   file of the prose cannot be read, a file cannot be written, an
-    ///   exemplar directory cannot be listed, or the features ledger cannot be
-    ///   read or answer.
+    ///   <directory>`, `ledger recovery <directory>`, `ledger list` and `ledger
+    ///   show <id>`.
+    /// - fails: the ledger cannot be built, a committed rule's exemplar cannot
+    ///   be read, a file cannot be written, an exemplar directory cannot be
+    ///   listed, or the features ledger cannot be read or answer.
     /// - panics: none.
     ///
     /// # Errors
     /// What [`SyntaxLedger::build`] and [`SyntaxLedger::admitted`] report,
     /// [`LedgerFault::Unwritable`] naming the file,
     /// [`LedgerFault::Unreadable`] naming the directory,
-    /// [`LedgerFault::Prose`] naming a file of the prose that cannot be read,
     /// or [`LedgerFault::Features`] holding what [`FeatureLedger::read`],
     /// [`FeatureLedger::listed`] and [`FeatureLedger::shown`] report.
     ///
@@ -445,22 +415,19 @@ impl LedgerTask
     ///   the rendered bytes, a second run writes the same bytes, and a
     ///   directory under a file is refused naming the path; the committed
     ///   exemplars verify with no finding; a definition's exemplar is swept
-    ///   tile by tile; the features ledger lists and shows; a fenced block that
-    ///   writes a retired spelling is named. Arbitrary filesystem failures are
-    ///   outside these observations.
+    ///   tile by tile; the features ledger lists and shows. Arbitrary
+    ///   filesystem failures are outside these observations.
     /// - witness: `ledger::tests::a_run_writes_both_files_and_repeats_them_exactly`
     /// - witness: `ledger::tests::an_unwritable_directory_is_refused_by_path`
     /// - witness: `ledger::exemplars::tests::the_committed_exemplars_verify`
     /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
     /// - witness: `ledger::tests::a_list_and_a_show_read_the_root_s_features_ledger`
-    /// - witness: `ledger::fences::tests::a_retired_spelling_in_a_fenced_block_is_refused_by_name_5190`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |run| match (self, run) {
         (&Self::Syntax { .. }, &LedgerRun::Written(ref paths)) => paths.len() == 2,
         (&Self::Exemplars { .. }, &LedgerRun::Verified(_)) | (&Self::Recovery { .. }, &LedgerRun::Swept(_))
-            | (&Self::List { .. }, &LedgerRun::Listed(_)) | (&Self::Show { .. }, &LedgerRun::Shown(_))
-            | (&Self::Fences { .. }, &LedgerRun::Fenced(_)) => true,
-        (&Self::Syntax { .. } | &Self::Exemplars { .. } | &Self::Recovery { .. } | &Self::List { .. } | &Self::Show { .. } | &Self::Fences { .. },
-            &LedgerRun::Written(_) | &LedgerRun::Verified(_) | &LedgerRun::Swept(_) | &LedgerRun::Listed(_) | &LedgerRun::Shown(_) | &LedgerRun::Fenced(_)) => false,
+            | (&Self::List { .. }, &LedgerRun::Listed(_)) | (&Self::Show { .. }, &LedgerRun::Shown(_)) => true,
+        (&Self::Syntax { .. } | &Self::Exemplars { .. } | &Self::Recovery { .. } | &Self::List { .. } | &Self::Show { .. },
+            &LedgerRun::Written(_) | &LedgerRun::Verified(_) | &LedgerRun::Swept(_) | &LedgerRun::Listed(_) | &LedgerRun::Shown(_)) => false,
     }))]
     #[inline]
     pub fn run(&self) -> Result<LedgerRun, LedgerFault>
@@ -506,10 +473,6 @@ impl LedgerTask
                 .and_then(|ledger| ledger.shown(id))
                 .map(|shown| LedgerRun::Shown(Box::new(shown)))
                 .map_err(LedgerFault::Features),
-            Self::Fences { ref paths } => {
-                let pbg = built_in().map_err(LedgerFault::Grammar)?;
-                fences::check(&pbg, paths).map(LedgerRun::Fenced)
-            },
         }
     }
 }

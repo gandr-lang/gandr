@@ -1072,13 +1072,13 @@ fn a_telescope_value_lowers_by_its_arity()
         "dotted labels make the record keyed by them"
     );
     let bare = "def bare = *{n = 3} ;";
-    assert_eq!(
-        refused(bare),
-        LoweringRefusal::RetiredName {
-            span: at(bare, "n", 0_usize),
-            form: gandr_surface_grammar::RetiredForm::BareRecordField,
-        },
-        "a field with no dot is the retired spelling, refused at its key"
+    assert!(
+        matches!(
+            refused(bare),
+            LoweringRefusal::MalformedForm { span, .. } if span == at(bare, "=", 1_usize)
+        ),
+        "a field with no dot has a tile out of place at its `=`: {:?}",
+        refused(bare)
     );
     // Two entries side by side are one entry, an application. So the case
     // writes a tile that neither separates nor closes the entry before it.
@@ -1130,13 +1130,13 @@ fn a_record_update_lowers_to_its_base_and_its_fields()
         "an update writes a field once"
     );
     let bare = "def r = *{.n = 1} ; def bare = *{r | n = 2} ;";
-    assert_eq!(
-        refused(bare),
-        LoweringRefusal::RetiredName {
-            span: at(bare, "n", 1_usize),
-            form: gandr_surface_grammar::RetiredForm::BareUpdateField,
-        },
-        "an update's field with no dot is the retired spelling, refused at its key"
+    assert!(
+        matches!(
+            refused(bare),
+            LoweringRefusal::MalformedForm { span, .. } if span == at(bare, "n", 1_usize)
+        ),
+        "an update's field with no dot has a tile out of place at its key: {:?}",
+        refused(bare)
     );
 }
 

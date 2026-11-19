@@ -1626,26 +1626,6 @@ run = ".config/ledger/syntax-cases.bash"
 description = "One verified exemplar per committed rule and attribute of the syntax ledger, every features exemplar exhibiting, and every refusal name an exemplar or an owed row"
 run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-workflow-ledger-tasks -- exemplars corpus/ledger"
 
-# A doc page or a comment that shows gandr source can keep a spelling that the
-# grammar no longer reads. `ledger fences` reads each Markdown file that git
-# holds, and the `//`, `///` and `//!` comments of each `.rs` and `.gandr` file
-# that git holds. It gives each fenced `gandr` block to the reader. It names
-# each block that the reader refuses as `RetiredSpelling.<surface>`, with the
-# spelling that replaces it.
-#
-# The check leaves each other refusal alone, so a fragment passes. It holds no
-# list of spellings: the refused rows of the syntax ledger are the list.
-# `check:syntax-exemplars` builds the same binary at the same profile, so the
-# wall builds nothing more for this check.
-["check:fences"]
-description = "No fenced `gandr` block of a doc page or a comment writes a spelling that the reader refuses as retired"
-run = '''
-#!/usr/bin/env bash
-set -euo pipefail
-git ls-files -z -- '*.md' '*.rs' '*.gandr' \
-  | xargs -0 .config/mise/scope cargo run --locked --quiet --profile test --package gandr-workflow-ledger-tasks -- fences
-'''
-
 # Every exemplar under `corpus/ledger` (syntax, attributes, features and
 # diagnostics), settled as an author runs them. `ledger/` is a fixture root, so
 # each declaration states what the checker makes of it: `checks`, `runs` or

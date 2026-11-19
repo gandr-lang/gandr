@@ -1253,7 +1253,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Identities<'_, F>
         closed(site, cursor, TileName::COMMA)?;
         let right = site.one(cursor.operands())?;
         if let (None, Maybe::Present(_)) = (supplied, cursor.at(TileName::COMMA)) {
-            return Err(site.fault(written, FormFault::carrier_first(head)));
+            return Err(site.fault(written, FormFault::ExtraOperand));
         }
         closed(site, cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, cursor)?;

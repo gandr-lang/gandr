@@ -163,7 +163,6 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
-use gandr_surface_grammar::RetiredForm;
 pub(super) use gandr_surface_lowering_base::lower::arity::Arranged;
 pub(super) use gandr_surface_lowering_base::lower::arity::Dependent;
 pub(super) use gandr_surface_lowering_base::lower::arity::Entry;
@@ -552,14 +551,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - requires: `cursor` stands just past the telescope's `*{`.
     /// - ensures: every entry in written order, each positional, the cursor
     ///   exhausted; for an update, its base and the fields it writes.
-    /// - fails: the retired spelling at an undotted field `l = e`; a key that
-    ///   is not a bare name, a misplaced tile — a `|` after any entry but one
-    ///   positional first one — and a hole's own fault.
+    /// - fails: a misplaced tile at an undotted field's `=`, and at a `|` after
+    ///   any entry but one positional first one; a hole's own fault.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::RetiredName`], [`LoweringRefusal::MalformedForm`]
-    /// and [`LoweringRefusal::UnknownMold`].
+    /// [`LoweringRefusal::MalformedForm`] and [`LoweringRefusal::UnknownMold`].
     ///
     /// # Termination
     /// Every round consumes at least one piece of the finite cursor or
@@ -587,15 +584,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
             let first = site.one(cursor.operands())?;
-            if let Maybe::Present(_) = cursor.at(TileName::EQUALS) {
-                if !matches!(self.cx().form_at(first)?, Some((name, _)) if name == FormName::IDENTIFIER)
-                {
-                    return Err(site.fault(first.span, FormFault::MisplacedTile));
-                }
-                return Err(LoweringRefusal::RetiredName {
-                    span: first.span,
-                    form: RetiredForm::BareRecordField,
-                });
+            if let Maybe::Present(equals) = cursor.at(TileName::EQUALS) {
+                return Err(site.fault(equals.span, FormFault::MisplacedTile));
             }
             let entry = Entry {
                 key: Key::Positional,
@@ -625,13 +615,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     /// - requires: `cursor` stands just past the update's `|`, at `bar`.
     /// - ensures: one labelled entry per field in written order, the cursor
     ///   exhausted.
-    /// - fails: the retired spelling at a field written with no dot; a
-    ///   misplaced tile where a field's name or its `=` should stand, and at
-    ///   `bar` when no field is written; a hole's own fault.
+    /// - fails: a misplaced tile where a field's dot, name or `=` should stand,
+    ///   and at `bar` when no field is written; a hole's own fault.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::RetiredName`] and
     /// [`LoweringRefusal::MalformedForm`].
     ///
     /// # Termination
@@ -656,17 +644,14 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ModelsRef<'h
     {
         let mut written = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
-            let dotted = cursor.tile(TileName::DOT);
+            let Maybe::Present(_) = cursor.tile(TileName::DOT)
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
             let Maybe::Present(word) = cursor.tile(TileName::IDENTIFIER)
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            if let Maybe::Absent(_) = dotted {
-                return Err(LoweringRefusal::RetiredName {
-                    span: word.span,
-                    form: RetiredForm::BareUpdateField,
-                });
-            }
             closed(site, cursor, TileName::EQUALS)?;
             written.push(Entry {
                 key: Key::Label(self.cx().name_at(word), word),

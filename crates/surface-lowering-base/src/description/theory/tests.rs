@@ -109,13 +109,15 @@ fn an_expression_kind_signature_endpoint_is_refused_by_the_description_route()
 }
 
 #[test]
-fn an_item_level_data_member_declines_with_the_nested_block_respelling()
+fn an_item_level_data_member_is_refused_in_a_theory()
 {
     let report = described(
         "theory Stale where { sort Nat : Type; data Zero : Nat; oper add : (Nat, Nat) --> Nat; }",
     );
-    assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
-        == DescriptionFault::Signature(SignatureFault::RetiredDataMember)));
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| diagnostic.fault
+            == DescriptionFault::Signature(SignatureFault::DataMember))
+    );
     assert_eq!(report.declarations[0].description.ctors.as_ref(), []);
     assert_eq!(
         report.declarations[0].description.opers[0].name.as_ref(),
@@ -1378,13 +1380,6 @@ fn a_face_past_its_shape_is_refused_by_name()
             "theory Cells where { face left = { a }; sort A : Type; }",
             DescriptionFault::Malformed,
             "a face with no boundary",
-        ),
-        (
-            "theory Cells where { shape Square : 4 { left = {0, 2}; }; sort A : Type; }",
-            DescriptionFault::Signature(SignatureFault::Retired(
-                gandr_surface_grammar::RetiredForm::ShapeMember,
-            )),
-            "the retired `shape`",
         ),
     ] {
         let report = described(source);

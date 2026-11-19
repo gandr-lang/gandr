@@ -357,25 +357,13 @@ fn a_parenthesized_result_list_reads_as_a_results_tuple()
 }
 
 #[test]
-fn the_ruled_face_arrow_elaborates_and_the_retired_one_declines_with_its_respelling()
+fn the_ruled_face_arrow_elaborates()
 {
     let ruled = elaborated(SourceText::from(
         "data NatFace : Type where { | Zero : NatFace oper id : (x : NatFace) --> NatFace; rule : id Zero ==> Zero; }",
     ));
     assert_eq!(ruled.diagnostics, []);
     assert_eq!(ruled.declarations[0].description.rules.len(), 1);
-    let source = "data NatFace : Type where { | Zero : NatFace oper id : (x : NatFace) --> NatFace; rule : id Zero ~> Zero; }";
-    let retired = elaborated(SourceText::from(source));
-    assert!(retired.declarations[0].description.rules.is_empty());
-    let [ref diagnostic] = *retired.diagnostics.as_slice()
-    else {
-        panic!("one arrow refusal")
-    };
-    assert_eq!(diagnostic.fault, DescriptionFault::RetiredRuleArrow);
-    assert_eq!(
-        source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("~>")
-    );
 }
 
 #[test]
@@ -398,23 +386,6 @@ fn an_equation_states_no_direction()
     assert_eq!(
         rule.print_theory(&gandr_theory_levitation::Name::from("id")),
         "rule id : id(Zero) <=> Zero"
-    );
-}
-
-#[test]
-fn the_retired_op_member_lead_declines_with_its_respelling()
-{
-    let source = "data NatRetired : Type where { | Zero : NatRetired op stale : (x : NatRetired) --> NatRetired; }";
-    let report = elaborated(SourceText::from(source));
-    assert!(report.declarations[0].description.opers.is_empty());
-    let [ref diagnostic] = *report.diagnostics.as_slice()
-    else {
-        panic!("one retired member")
-    };
-    assert_eq!(diagnostic.fault, DescriptionFault::RetiredOperation);
-    assert_eq!(
-        source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("op stale : (x : NatRetired) --> NatRetired")
     );
 }
 

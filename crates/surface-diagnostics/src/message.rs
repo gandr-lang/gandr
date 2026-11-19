@@ -274,12 +274,6 @@ fn lowered(
 {
     match refusal {
         LoweringRefusal::UnresolvedName { name, .. } => write!(f, "`{name}` is not defined"),
-        LoweringRefusal::RetiredName { form, .. } => write!(
-            f,
-            "`{}` is a retired spelling, and `{}` replaces it",
-            form.written().0,
-            form.replaced_by().0
-        ),
         LoweringRefusal::BuiltinMark { fault, .. } => f.write_str(match fault {
             BuiltinFault::NoRow => "the `builtin` key names no row of the builtin table",
             BuiltinFault::Bodied => "a declaration of a given row has no body",
@@ -568,11 +562,6 @@ fn lowered(
                     "this run of symbols reads as a name that nothing declares, one edit from the \
                      operator `{}`",
                     operator.as_ref()
-                ),
-                FormFault::Retired(retired) | FormFault::Repaired(Repair::Retired(retired)) => write!(
-                    f,
-                    "this spelling is retired, and `{}` replaces it",
-                    retired.replaced_by().0
                 ),
                 FormFault::NotAName => {
                     write!(f, "this {form} names its match with a name, and a pattern stands here")

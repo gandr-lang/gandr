@@ -1156,8 +1156,7 @@ mod tests
                 LedgerRun::Written(_)
                 | LedgerRun::Swept(_)
                 | LedgerRun::Listed(_)
-                | LedgerRun::Shown(_)
-                | LedgerRun::Fenced(_),
+                | LedgerRun::Shown(_),
             ) => {
                 panic!("verifying writes, sweeps and reads nothing else")
             },

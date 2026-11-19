@@ -1059,10 +1059,6 @@ jobs:
       - name: check the syntax exemplars
         if: *plain-gate
         run: mise run check:syntax-exemplars
-      # The step of the syntax exemplars builds the binary that the fence check runs.
-      - name: check the fenced gandr blocks of the prose
-        if: *plain-gate
-        run: mise run check:fences
       - name: settle the exemplars
         if: *plain-gate
         run: mise run check:exemplars

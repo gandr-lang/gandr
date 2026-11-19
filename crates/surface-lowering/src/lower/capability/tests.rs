@@ -851,7 +851,7 @@ fn an_operation_is_performed_by_its_interface_s_name_2279()
 
 /// An operation of no input, `std.io.Stdin.read_line`, is performed by its
 /// bare name with the unit payload, and the checker admits it under the row
-/// naming `Stdin`; the call `read_line ()` is refused by name (#7935).
+/// naming `Stdin`; the call `read_line ()` has a tile out of place (#7935).
 #[test]
 fn an_operation_of_no_input_is_performed_by_its_bare_name_7935()
 {
@@ -884,10 +884,7 @@ fn an_operation_of_no_input_is_performed_by_its_bare_name_7935()
     assert!(
         matches!(
             outcome_of(&module, "called".into()),
-            DeclarationOutcome::Refused(LoweringRefusal::RetiredName {
-                form: gandr_surface_grammar::RetiredForm::EmptyOperationCall,
-                ..
-            })
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm { .. })
         ),
         "{:?}",
         outcome_of(&module, "called".into())
