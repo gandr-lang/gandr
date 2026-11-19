@@ -856,9 +856,9 @@ fn a_composite_of_types_sugars_back_803()
           a : Type,
           b : Type,
           c : Type,
-          p : Path[.A = Type](a, b),
-          q : Path[.A = Type](b, c)
-        ) -> Path[.A = Path[.A = Type](a, c)] (Path.step p q) (Path.step p q) = Path.here (Path.step p q);
+          p : Path[.A = Type] a b,
+          q : Path[.A = Type] b c
+        ) -> Path[.A = Path[.A = Type] a c] (Path.step p q) (Path.step p q) = Path.here (Path.step p q);
     "#]]
     .assert_eq(formatted.text().as_ref());
 }
@@ -1550,7 +1550,9 @@ fn a_rewrite_keeps_a_matching_refusal_6681()
 fn a_rewrite_with_parser_obligations_is_withdrawn_6681()
 {
     let grammar = grammar();
-    let source = include_str!("../../../corpus/surface/data-field-decorations.gandr");
+    let source = include_str!(
+        "rewrite/unformatted/a-rewrite-with-parser-obligations-is-withdrawn-6681.gandr"
+    );
     let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
     let options = FormatOptions {
         form: Form::Sugared,
@@ -2129,6 +2131,8 @@ fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
 /// `Pair(a, Parcel(Integer))` writes `Pair a (Parcel Integer)`.
 /// A variable can precede a call.
 /// `Pair(a, plus(Integer))` writes `Pair a plus(Integer)`.
+/// A carrier the grammar spells as a keyword tile is a carrier too.
+/// `Path[.A = Type](a, a)` writes `Path[.A = Type] a a`.
 /// A returner encloses a juxtaposition whose first argument takes parentheses.
 /// The type grammar reads `-F Pair (Parcel Integer) Integer` as the call
 /// `Pair(Parcel Integer)` applied to `Integer` (#5708).
@@ -2182,6 +2186,21 @@ fn a_type_application_is_written_juxtaposed_5708()
         ("Path[.A = a](a, a)", Form::Explicit, "Path[.A = a] a a"),
         ("Bridge[.A = a](a, a)", Form::Sugared, "Bridge[.A = a] a a"),
         ("Bridge[.A = a](a, a)", Form::Explicit, "Bridge[.A = a] a a"),
+        (
+            "Path[.A = Type](a, a)",
+            Form::Sugared,
+            "Path[.A = Type] a a",
+        ),
+        (
+            "Path[.A = Type](a, a)",
+            Form::Explicit,
+            "Path[.A = Type] a a",
+        ),
+        (
+            "Bridge[.A = Type](a, a)",
+            Form::Sugared,
+            "Bridge[.A = Type] a a",
+        ),
         (
             "Pair(Parcel(Integer), Integer)",
             Form::Sugared,
